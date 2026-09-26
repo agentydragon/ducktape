@@ -66,11 +66,12 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "agent-workspaces"
 NAMESPACE = "agent-workspaces"
-OUTPUT_DIR = "cluster/k8s/agents/agent-sandbox/workspaces"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/agent-sandbox/workspaces"
 
 
 def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:

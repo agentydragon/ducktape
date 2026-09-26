@@ -1,5 +1,5 @@
 """`kubeapi.allegedly.works`: the Gateway route and the nginx reverse proxy that bridges HTTP
-to HTTPS in front of the Kubernetes API (`cluster/k8s/kube-api-proxy/README.md`).
+to HTTPS in front of the Kubernetes API (`cluster/cdk8s/kube_api_proxy.md`).
 
 Cilium Gateway API doesn't support backend TLS re-encryption (no BackendTLSPolicy, no
 `appProtocol: https`), so nginx accepts plain HTTP from the Gateway after TLS termination and
@@ -18,11 +18,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "kube-api-proxy"
 NAMESPACE = "default"
-OUTPUT_DIR = "cluster/k8s/kube-api-proxy"
+OUTPUT_DIR = f"{GENERATED_ROOT}/kube-api-proxy"
 _PROXY = "kubeapi-proxy"
 _CONFIG_MAP = "kubeapi-proxy-config"
 _ROUTE = "kubeapi-allegedly-works"

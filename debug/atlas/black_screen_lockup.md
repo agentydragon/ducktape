@@ -89,7 +89,7 @@ Boot IDs are the first 8 hex chars of the systemd journal boot UUID (`journalctl
 
 ## Incident 1 — Feb 28
 
-### Timeline
+### Timeline — Incident 1
 
 | Time         | Event                                                                                           |
 | ------------ | ----------------------------------------------------------------------------------------------- |
@@ -105,7 +105,7 @@ Boot IDs are the first 8 hex chars of the systemd journal boot UUID (`journalctl
 
 ## Incident 2 — Mar 5
 
-### Timeline
+### Timeline — Incident 2
 
 | Time        | Event                                                                                                                                                                    |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -132,7 +132,7 @@ Boot IDs are the first 8 hex chars of the systemd journal boot UUID (`journalctl
 
 This incident occurred **after** the partial SATA cable reseat on Mar 6.
 
-### Timeline
+### Timeline — Incident 3
 
 | Time        | Event                                                                                                                                                             |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -166,7 +166,7 @@ This incident occurred **after** the partial SATA cable reseat on Mar 6.
 
 Boot `df5a691c` (Mar 7 13:00 → Mar 9 22:36, clean shutdown). ~2.5 days uptime — longest so far.
 
-### Timeline
+### Timeline — Incident 4
 
 | Time        | Event                                                                                                                      |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -181,7 +181,7 @@ Boot `df5a691c` (Mar 7 13:00 → Mar 9 22:36, clean shutdown). ~2.5 days uptime 
 | Mar 8 06:39 | `ata7` last errors: `SError: CommWake 10B8B Handshk LinkSeq`                                                               |
 | Mar 9 22:36 | Clean shutdown (SIGTERM, journal stopped normally)                                                                         |
 
-### Notable
+### Notable observations — Incident 4
 
 - **Did NOT escalate** to full chipset death. `ata7` had repeated errors with hard resets but the chipset PCIe fabric held.
 - Only `ata7` was affected — no `ata8`/`ata9`/`ata10`, no USB, no NIC.
@@ -191,7 +191,7 @@ Boot `df5a691c` (Mar 7 13:00 → Mar 9 22:36, clean shutdown). ~2.5 days uptime 
 
 Boot `4089259e` (Mar 9 22:37 → Mar 10 ~01:04, hung). Only ~2.5h uptime.
 
-### Timeline
+### Timeline — Incident 5
 
 | Time         | Event                                                                                                                            |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------- |
@@ -201,7 +201,7 @@ Boot `4089259e` (Mar 9 22:37 → Mar 10 ~01:04, hung). Only ~2.5h uptime.
 | Mar 10 01:03 | **Soft lockup**: CPU#8 stuck 22s in `pci_mmcfg_read` (pm_runtime_work). CPU#6 stuck 22s                                          |
 | Mar 10 01:04 | CPU#8 stuck 48s. Journal ends. Machine hung                                                                                      |
 
-### Notable
+### Notable observations — Incident 5
 
 - `interface fatal error` appeared immediately on first `ata7` error (not after escalation)
 - Very fast progression: ata7 errors at 00:01, hang at ~01:04 — only 1h between first error and death
@@ -211,7 +211,7 @@ Boot `4089259e` (Mar 9 22:37 → Mar 10 ~01:04, hung). Only ~2.5h uptime.
 
 Boot `c2a8b888` (Mar 10 01:06 → Mar 10 ~06:31, hung). ~5.5h uptime.
 
-### Timeline
+### Timeline — Incident 6
 
 | Time         | Event                                                                                                                                          |
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -222,7 +222,7 @@ Boot `c2a8b888` (Mar 10 01:06 → Mar 10 ~06:31, hung). ~5.5h uptime.
 | Mar 10 06:31 | CPU#0 stuck 22s in `aq_hw_read_reg` → `hw_atl2_shared_buffer_read_block` → `aq_nic_service_task` (atlantic workqueue) — NIC MMIO reads hanging |
 | Mar 10 06:31 | Journal ends. Machine hung                                                                                                                     |
 
-### Notable
+### Notable observations — Incident 6
 
 - **No `ata7` SATA errors logged before the hang** — the first visible symptom was the Atlantic NIC losing link, immediately followed by soft lockups
 - Two separate CPUs locked: CPU#8 on PCI config space read (pm_runtime_work), CPU#0 on Atlantic NIC MMIO read
@@ -233,7 +233,7 @@ Boot `c2a8b888` (Mar 10 01:06 → Mar 10 ~06:31, hung). ~5.5h uptime.
 
 After the ASPM/runtime PM intervention (incident 6), atlas was rebooted several times. VM autostart was still enabled, causing wyrm2 (VM 110, 2x RTX 5090 VFIO passthrough, 32 cores, 114GB RAM, ~25 SCSI disks) to start on every boot.
 
-### Timeline
+### Timeline — Incidents 7–10
 
 | Incident | Boot ID    | Started | Last log | Uptime  | Last logged activity                      |
 | -------- | ---------- | ------- | -------- | ------- | ----------------------------------------- |
@@ -261,7 +261,7 @@ After the ASPM/runtime PM intervention (incident 6), atlas was rebooted several 
 
 Boot `01bca0b8` (Mar 10 21:17 → Mar 11 02:51, clean reboot). ~5.5h uptime.
 
-### Timeline
+### Timeline — Incident 11
 
 | Time         | Event                                                                                                  |
 | ------------ | ------------------------------------------------------------------------------------------------------ |
@@ -272,7 +272,7 @@ Boot `01bca0b8` (Mar 10 21:17 → Mar 11 02:51, clean reboot). ~5.5h uptime.
 | Mar 10 23:48 | `ata7` errors: `SError: { PHYRdyChg CommWake DevExch }`, 2x WRITE FPDMA QUEUED failures. Hard reset    |
 | Mar 11 02:51 | Clean reboot (systemd-reboot)                                                                          |
 
-### Notable
+### Notable observations — Incident 11
 
 - **VFIO resets succeeded without crashing** — first time since incident 7. The difference from incidents 7–10 is unclear (identical config). VFIO crashes are not 100% deterministic.
 - **ata7 SATA errors appeared despite no GPU passthrough being active** — GPUs were removed from the VM config hours earlier, VMs were running without them. This confirms the **slow-onset ata7 pattern is independent of VFIO**.
@@ -282,7 +282,7 @@ Boot `01bca0b8` (Mar 10 21:17 → Mar 11 02:51, clean reboot). ~5.5h uptime.
 
 Boot `ad2bbb56` (Mar 11 02:52 → Mar 11 03:48, clean reboot). ~57 min uptime.
 
-### Timeline
+### Timeline — Boot ad2bbb56
 
 | Time         | Event                                                                                                      |
 | ------------ | ---------------------------------------------------------------------------------------------------------- |
@@ -292,7 +292,7 @@ Boot `ad2bbb56` (Mar 11 02:52 → Mar 11 03:48, clean reboot). ~57 min uptime.
 | Mar 11 03:40 | Ansible playbook runs again (second pass)                                                                  |
 | Mar 11 03:48 | Clean reboot (likely ansible-triggered for kernel cmdline changes)                                         |
 
-### Notable
+### Notable observations — Boot ad2bbb56
 
 - **Completely clean boot** — no SATA errors, no lockups, no PCIe issues.
 - Ansible re-applied configuration, added `ahci.mobile_lpm_policy=0` to kernel cmdline.
@@ -302,7 +302,7 @@ Boot `ad2bbb56` (Mar 11 02:52 → Mar 11 03:48, clean reboot). ~57 min uptime.
 
 Boot `dcad0e96` (Mar 11 03:49 → Mar 11 ~03:51, crash). ~2 min uptime.
 
-### Timeline
+### Timeline — Incident 12
 
 | Time         | Event                                                                                                  |
 | ------------ | ------------------------------------------------------------------------------------------------------ |
@@ -311,7 +311,7 @@ Boot `dcad0e96` (Mar 11 03:49 → Mar 11 ~03:51, crash). ~2 min uptime.
 | Mar 11 03:50 | Second round of VFIO GPU resets (both GPUs, multiple resets). VM 110 starts with PID 3714              |
 | Mar 11 03:51 | Journal ends abruptly (postfix/PackageKit activity, no shutdown messages). Hard crash                  |
 
-### Notable
+### Notable observations — Incident 12
 
 - **Another VFIO-triggered crash**, consistent with incidents 7–10 pattern.
 - GPU passthrough was re-added to VM 110 config after the clean boot `ad2bbb56` (testing if VFIO works after `ahci.mobile_lpm_policy=0` was added to cmdline — it doesn't).
@@ -345,7 +345,7 @@ The old Talos GPU worker VM had the same GPUs passed through and worked fine. Th
 
 All affected devices share the same root port `0000:02.1` through the AMD 800 Series chipset PCIe switch:
 
-```
+```text
 0000:02.1 (CPU PCIe root port)
   └─ 04:00.0 (PCIe switch upstream)
       └─ 05:xx (switch downstream ports)
@@ -532,7 +532,7 @@ The motherboard has 4 SATA connectors: 2 on the right side, 2 on the bottom.
 
 Ansible playbook ran during clean boot `ad2bbb56`, adding `ahci.mobile_lpm_policy=0` to `/etc/kernel/cmdline`:
 
-```
+```text
 root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off ahci.mobile_lpm_policy=0
 ```
 
@@ -563,7 +563,7 @@ After incident 12, removed `hostpci0`/`hostpci1` from all VMs, disabled autostar
 
 After incident 15's second stall recovery, disabled D3cold and runtime PM on all PCIe bridges live:
 
-```
+```bash
 for dev in /sys/bus/pci/devices/*/; do
   class=$(cat "$dev/class" 2>/dev/null)
   if [[ "$class" == 0x0604* ]]; then
@@ -625,7 +625,7 @@ Readable via `/sys/firmware/efi/efivars/` after enabling "Publish HII Resources"
 
 Boot `978abe76` (kernel 6.17, `pcie_aspm=off`, `ahci.mobile_lpm_policy=1`, `nvidia-drm.modeset=0` on guest). Full production config: wyrm2 (96 GiB, 2x RTX 5090 via VFIO) + Talos CP VM (10000, 8 GiB).
 
-### Timeline
+### Timeline — Incident 16
 
 | Time               | Event                                                                                   |
 | ------------------ | --------------------------------------------------------------------------------------- |
@@ -643,7 +643,7 @@ Boot `978abe76` (kernel 6.17, `pcie_aspm=off`, `ahci.mobile_lpm_policy=1`, `nvid
 | Mar 20 19:52:23    | Last journal entry (terminal scope started). **Journal silence — hard freeze**          |
 | Mar 20 19:58       | Hard power-off (5-second power button hold) and reboot                                  |
 
-### Analysis
+### Analysis — Incident 16
 
 **This is NOT a chipset/SATA/VFIO failure.** Zero `ata`, `SError`, `vfio`, `MCE`, or soft lockup messages for the entire 9-day run. All three previously-identified failure modes (slow-onset chipset, VFIO reset crash, memory pressure) are distinguishable — this is purely failure mode 3: **memory pressure / host starvation**.
 

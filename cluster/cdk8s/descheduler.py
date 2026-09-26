@@ -20,11 +20,12 @@ from cluster.cdk8s import stateful_infra
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "descheduler"
 NAMESPACE = "kube-system"
-OUTPUT_DIR = "cluster/k8s/descheduler"
+OUTPUT_DIR = f"{GENERATED_ROOT}/descheduler"
 _PVC_READER = "descheduler-pvc"
 
 

@@ -45,13 +45,12 @@ own GitHub account and pushes to its own forks.
 
 ## Layers
 
-| Directory    | Contents                                                                                                                                          |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `namespace/` | Namespace only                                                                                                                                    |
-| `proxy/`     | Interception CA, trust bundle, iron-proxy, FQDN allowlist, and proxy-only credential mirrors                                                      |
-| `app/`       | OpenClaw Deployment, config, state PVC, other ExternalSecrets, NetworkPolicies                                                                    |
-| `devbox/`    | KubeVirt build/test VM (Bazel/BuildBuddy/direnv), reached through `ssh` via `sshpiper/`                                                           |
-| `sshpiper/`  | Terminating SSH bastion to the devbox — the Agent's key opens the piper, the piper's key opens `coder@public-coder-devbox` (<sshpiper/README.md>) |
+| Directory   | Contents                                                                                                                                          |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `proxy/`    | Interception CA, trust bundle, iron-proxy, FQDN allowlist, and proxy-only credential mirrors                                                      |
+| `app/`      | Namespace, OpenClaw Deployment, config, state PVC, other ExternalSecrets, NetworkPolicies                                                         |
+| `devbox/`   | KubeVirt build/test VM (Bazel/BuildBuddy/direnv), reached through `ssh` via `sshpiper/`                                                           |
+| `sshpiper/` | Terminating SSH bastion to the devbox — the Agent's key opens the piper, the piper's key opens `coder@public-coder-devbox` (<sshpiper/README.md>) |
 
 The repository-owned tooling and approval operating instructions are in <TOOLING.md>. They cover
 which local, GitHub, Kubernetes, Haku, and physical-host surfaces to prefer, how to inspect the live
@@ -120,10 +119,9 @@ Haku Console privileged calls use the same mediated shape. Terraform generates a
 `public-coder-agent` static-Agent bearer and delivers it only to Haku Console and iron-proxy. The
 OpenClaw container sees `proxy-haku-console-placeholder`, which is replaced only in the
 `Authorization` header for `haku.allegedly.works`. Haku Console assigns this Agent the
-`public-coder` access profile: its typed repository policy auto-approves only reviewed reads of
-`agentydragon/ducktape` and `agentydragon/gaffer-private`. Every other downstream tool remains an
-operator-reviewed request, including the cluster-admin-backed kubectl passthrough surface, and the
-Agent bearer cannot approve requests. Ordinary public GitHub writes should instead use the
+`public-coder` access profile, which auto-approves only the Agent's own `grants` reads and
+revocations. Every other downstream tool remains an operator-reviewed request, and the Agent
+bearer cannot approve requests. Haku Console serves no GitHub tools: GitHub goes through the
 proxy-mediated `agentydragon-agent` token directly; see <TOOLING.md> for the operational
 playbook.
 
@@ -152,13 +150,12 @@ proxy environment handling.
   `embedded-outpost.yaml` owns outpost membership; a Terraform provider would
   split one object graph across two owners. Moves with the rest under issue #987.
 - **Temporary commit-built iron-proxy image.** <../../../images/iron-proxy/>
-  and `.github/workflows/iron-proxy-image.yml` build upstream commit `c90f4fe`
-  into the private Forgejo registry because it adds the HTTP/2/gRPC MITM support
-  BuildBuddy needs but is not in the upstream latest stable release (`v0.49.0`)
-  as of this audit. Flux rolls the proxy to that image after it is published.
-  Return to the official image and delete this build path once a stable release
-  includes the required support. The image is shared with
-  `haku-claude-oauth-proxy` and `haku-openclaw-spike-proxy`, so it is not owned
+  and `.github/workflows/iron-proxy-image.yml` build upstream `v0.50.0`
+  (`5bd11ab`), the first stable release with the HTTP/2/gRPC MITM support
+  BuildBuddy needs, into the private Forgejo registry. Flux rolls the proxy to
+  that image after it is published. Whether to return to the official image is
+  the pinning decision in <../../../../plans/personal_agents/TODO.md>. The image
+  is shared with `haku-openclaw-spike-proxy`, so it is not owned
   here — it was first named for public-coder because this was its first consumer.
 - **`gateway.bind: lan`**, unlike the loopback-bound lab rig, because the outpost
   reaches this pod over the cluster network. What makes that safe is

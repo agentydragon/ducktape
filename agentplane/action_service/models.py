@@ -416,3 +416,11 @@ class ProviderOutcome(BaseModel):
     evidence: PolicyEvidence | None = Field(
         default=None, description="Recorded on the Decision when the provider decided from policy objects."
     )
+
+
+@dataclass(frozen=True)
+class ProviderVote:
+    """The decisive outcome of admission's provider evaluation and the provider that cast it."""
+
+    provider: str
+    outcome: ProviderOutcome

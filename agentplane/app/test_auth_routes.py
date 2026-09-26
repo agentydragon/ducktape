@@ -9,6 +9,7 @@ the same app: one port, one guard, two credentials.
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import AsyncIterator, Collection
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -26,10 +27,10 @@ from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import create_app
 from agentplane.app.conftest import AGENT, AGENT_AUTH, AUDIENCE, STRANGER_AUTH
+from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
@@ -46,6 +47,7 @@ from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 OPERATOR = "agentydragon"
 SUBJECT = "op-subject-1"
 SESSION_SECRET = "test-session-secret"  # a test literal, not a real credential
+ACTIVITY_STEP = timedelta(minutes=5)
 MODELS = {Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]}
 
 
@@ -61,7 +63,7 @@ def serve(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: ThreadStore,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
@@ -112,6 +114,7 @@ def serve(
             client_secret="agentplane-secret",  # a test literal, not a real credential
             session_secret=SESSION_SECRET,
             public_base_url=app_url,
+            session_activity_step_seconds=int(ACTIVITY_STEP.total_seconds()),
         )
         reviewer = TokenReviewer(cast(Any, authentication), audience=AUDIENCE, subjects=subjects)
         app = create_app(
@@ -127,7 +130,7 @@ def serve(
             reviewer,
             event_logs=event_logs,
             content=content,
-            thread_updates=thread_updates,
+            database_updates=database_updates,
             operator_sessions=operator_sessions,
         )
         # The database pool belongs to this event loop, not serve_app's dedicated thread.
@@ -257,19 +260,57 @@ async def test_session_expiry_and_server_side_oauth_state(
         row = (await db.scalars(select(BrowserSession))).one()
         assert "_state_" in next(iter(row.payload))
         assert "code_verifier" in str(row.payload)
+        assert row.login is None
         assert row.expires_at <= datetime.now(UTC) + timedelta(minutes=10)
     await browser.get(response.headers["location"])
     async with operator_sessions.sessions.begin() as db:
         row = (await db.scalars(select(BrowserSession))).one()
-        assert row.payload["user"]["issuer"]
-        assert row.payload["user"]["subject"] == SUBJECT
-        assert row.payload["user"]["username"] == OPERATOR
-        assert "refresh_token" not in row.payload["user"]
-        assert row.payload["user"]["access_token"] is None, "disabled federation needs no retained token"
-        assert list(row.payload) == ["user"], "OAuth nonce/state/PKCE are consumed at login"
+        login = row.login
+        assert login is not None
+        assert login.issuer
+        assert login.subject == SUBJECT
+        assert login.username == OPERATOR
+        assert login.tokens is None, "disabled federation needs no retained token"
+        assert row.payload == {}, "OAuth nonce/state/PKCE are consumed at login, and the login is not payload"
         await db.execute(update(BrowserSession).values(expires_at=datetime.now(UTC) - timedelta(seconds=1)))
     assert (await browser.get("/auth/me")).status_code == 401
     assert (await browser.get("/sandboxes")).status_code == 401
+
+
+async def test_activity_extends_a_session_up_to_its_absolute_deadline(
+    browser: httpx.AsyncClient, operator_sessions: OperatorSessionStore
+) -> None:
+    login = await browser.get("/auth/login", follow_redirects=False)
+    authorization = await browser.get(login.headers["location"], follow_redirects=False)
+    callback = await browser.get(authorization.headers["location"], follow_redirects=False)
+    # The cookie outlives every idle deadline: it lasts until the absolute one, a week after login.
+    cookie_lifetime = re.search(r"Max-Age=(\d+)", callback.headers["set-cookie"])
+    assert cookie_lifetime is not None
+    assert timedelta(days=7) - timedelta(minutes=1) <= timedelta(seconds=int(cookie_lifetime[1])) <= timedelta(days=7)
+
+    async def after_a_request(expires_at: datetime, absolute_expires_at: datetime) -> datetime:
+        """The row's expiry after one request, when it had these deadlines before."""
+        async with operator_sessions.sessions.begin() as db:
+            await db.execute(
+                update(BrowserSession).values(expires_at=expires_at, absolute_expires_at=absolute_expires_at)
+            )
+        assert (await browser.get("/auth/me")).status_code == 200
+        async with operator_sessions.sessions() as db:
+            return (await db.scalars(select(BrowserSession.expires_at))).one()
+
+    now = datetime.now(UTC)
+    week = now + timedelta(days=7)
+    # Idle for an hour: the request moves the deadline to a day after itself.
+    extended = await after_a_request(now + timedelta(hours=23), week)
+    assert now + timedelta(days=1) <= extended <= datetime.now(UTC) + timedelta(days=1)
+    # A move smaller than a step is not worth a write.
+    recent = now + timedelta(days=1) - ACTIVITY_STEP / 2
+    assert await after_a_request(recent, week) == recent
+    # Never past the absolute deadline, which then ends the session like the idle one.
+    assert await after_a_request(now + timedelta(hours=1), now + timedelta(hours=2)) == now + timedelta(hours=2)
+    async with operator_sessions.sessions.begin() as db:
+        await db.execute(update(BrowserSession).values(expires_at=now, absolute_expires_at=now))
+    assert (await browser.get("/auth/me")).status_code == 401
 
 
 async def test_logout_and_mutations_require_exact_origin(browser: httpx.AsyncClient, served: str) -> None:

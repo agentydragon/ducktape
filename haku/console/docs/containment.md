@@ -38,7 +38,7 @@ privileged-action tier_ inventory entries.
 The operator owns _the frame, the secret, and the public door_; Haku owns _the picture
 inside the frame_. Haku ships the UI end-to-end from `haku-state`: Forgejo CI builds and
 pushes the image, Flux image automation rolls it out (see
-<../../../cluster/k8s/haku/workloads/README.md>); no ducktape rebuild is involved.
+<../../../cluster/cdk8s/haku/workloads.md>); no ducktape rebuild is involved.
 
 ## Containment invariants (the load-bearing part)
 

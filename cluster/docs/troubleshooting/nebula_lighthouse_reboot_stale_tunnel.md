@@ -46,7 +46,7 @@ talosctl -n <node> logs ext-nebula | grep -iE "handshake|tunnel.status"  # Talos
 Nebula's RecvError fast-recovery path is a single unauthenticated UDP packet with no
 retry, and neither of its two auto-recovery mechanisms fired here. Full source-code
 analysis, hypotheses, and the diagnostic log-message table live in
-<../../../debug/nebula-stale-tunnel-after-lighthouse-reboot.md>.
+<../../../cluster/debug/nebula-stale-tunnel-after-lighthouse-reboot.md>.
 
 ## Prevention
 

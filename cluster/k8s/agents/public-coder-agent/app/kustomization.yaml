@@ -1,13 +1,16 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - ../namespace
+  # keep-sorted start
   - ../proxy
   - ../sshpiper
   - devbox-ssh-key.sops.yaml
   # cdk8s-generated (cluster/cdk8s/public_coder_agent_config.py) -- see cluster/docs/cdk8s.md.
+  - namespace.k8s.yaml
   - public-coder-agent-config.k8s.yaml
+  - public-coder-agent-kubeconfig.k8s.yaml
   - public-coder-agent.k8s.yaml
+  # keep-sorted end
 components:
   - ./image-pins
 
@@ -15,10 +18,6 @@ components:
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
-  - name: public-coder-agent-kubeconfig
-    namespace: public-coder-agent
-    files:
-      - config=agent-kubeconfig.yaml
   - name: public-coder-agent-ssh
     namespace: public-coder-agent
     files:

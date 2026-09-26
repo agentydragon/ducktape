@@ -255,6 +255,24 @@ spec:
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: forgejo
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: forgejo
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: forgejo
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
 metadata:
   annotations:
@@ -272,24 +290,6 @@ spec:
     accessKeyField: accessKey
     name: forgejo-s3-credentials
     secretKeyField: secretKey
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: forgejo
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: forgejo
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: forgejo
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor

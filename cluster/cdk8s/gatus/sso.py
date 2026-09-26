@@ -7,18 +7,22 @@ from pathlib import Path
 from cdk8s import App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from tofu_controller.io.fluxcd.contrib.infra import TerraformV1Alpha2SpecStoreReadablePlan
 
 from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "gatus-sso"
-OUTPUT_DIR = "cluster/k8s/gatus/sso-tf"
+OUTPUT_DIR = f"{GENERATED_ROOT}/gatus/sso-tf"
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    terraform.gitops_terraform(chart, "terraform", name=NAME, variables={})
+    terraform.gitops_terraform(
+        chart, "terraform", name=NAME, variables={}, store_readable_plan=TerraformV1Alpha2SpecStoreReadablePlan.HUMAN
+    )
     return chart
 
 

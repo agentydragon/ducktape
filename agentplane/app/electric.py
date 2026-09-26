@@ -9,6 +9,7 @@ of forms, so a reader chooses which rows of its thread it reads, never how many 
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
@@ -17,14 +18,16 @@ from uuid import UUID
 
 import anyio
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import Receive, Scope, Send
 
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.fold import PayloadField
 from agentplane.app.agent_runtime.view.views import EntityKind
+from agentplane.app.changes import Changes
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +36,15 @@ _ENTITY_COLUMNS = (
     "text_ref,arguments_ref,output_ref,input_ref"
 )
 _CHUNK_COLUMNS = "thread_id,projection_epoch,owner_cursor,owner_id,field,generation,chunk_index,text"
-# Electric's own protocol parameters, including the two its client adds when recovering a handle.
-_PASSTHROUGH_QUERY = frozenset({"offset", "handle", "live", "cursor", "log", "expired_handle", "cache-buster"})
+# Electric's own protocol parameters, including the two its client adds when recovering a handle, and
+# the SSE flag it sends under both its current and its deprecated name.
+_PASSTHROUGH_QUERY = frozenset(
+    {"offset", "handle", "live", "live_sse", "experimental_live_sse", "cursor", "log", "expired_handle", "cache-buster"}
+)
 _APP_QUERY = frozenset({"projection_epoch"})
+# How long a scope read waits for a thread's first fold: Electric's own long-poll hold, which the
+# deployment leaves at its default, so whatever already carries a live shape request carries this.
+SCOPE_HOLD_SECONDS = 20.0
 # Rows per subset read; a reader pages further back one read at a time.
 SUBSET_ROW_LIMIT = 200
 # Bodies per subset read.
@@ -54,12 +63,13 @@ _ENTITY_SUBSETS = {
 _BODY = re.compile(r"\(owner_id = \$\d+ AND generation = \$\d+\)")
 _RESPONSE_HEADERS = frozenset(
     {
+        # keep-sorted start
         "cache-control",
         "content-encoding",
         "content-type",
         "electric-cursor",
-        "electric-has-data",
         "electric-handle",
+        "electric-has-data",
         "electric-internal-known-error",
         "electric-offset",
         "electric-schema",
@@ -68,6 +78,7 @@ _RESPONSE_HEADERS = frozenset(
         "etag",
         "retry-after",
         "vary",
+        # keep-sorted end
     }
 )
 
@@ -134,15 +145,40 @@ def _check_body_subset(subset: SubsetRequest) -> None:
 
 
 class ElectricProxy:
-    def __init__(self, client: httpx.AsyncClient, content: ContentStore) -> None:
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        content: ContentStore,
+        *,
+        event_logs: EventLogStore,
+        thread_changes: Changes,
+        scope_hold_seconds: float = SCOPE_HOLD_SECONDS,
+    ) -> None:
         self._client = client
         self._content = content
+        self._event_logs = event_logs
+        self._thread_changes = thread_changes
+        self._scope_hold_seconds = scope_hold_seconds
 
-    async def scope(self, thread_id: UUID) -> ThreadScopeResponse:
-        scope = await self._content.current_scope(thread_id)
-        if scope is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, f"no materialized fold for thread {thread_id}")
-        return ThreadScopeResponse(projection_epoch=scope.projection_epoch, through_cursor=str(scope.through_cursor))
+    async def scope(self, thread_id: UUID) -> ThreadScopeResponse | None:
+        """The thread's scope, held until its runner's first events are folded; None if they are
+        not by the end of the hold, and the reader asks again."""
+        if await self._event_logs.runner_session(thread_id) is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"no thread {thread_id}")
+        waiter = asyncio.Event()
+        with self._thread_changes.subscribe(waiter):
+            deadline = asyncio.get_running_loop().time() + self._scope_hold_seconds
+            while True:
+                waiter.clear()
+                if (scope := await self._content.current_scope(thread_id)) is not None:
+                    return ThreadScopeResponse(
+                        projection_epoch=scope.projection_epoch, through_cursor=str(scope.through_cursor)
+                    )
+                try:
+                    async with asyncio.timeout_at(deadline):
+                        await waiter.wait()
+                except TimeoutError:
+                    return None
 
     async def entities(
         self, request: Request, thread_id: UUID, projection_epoch: str, subset: SubsetRequest | None = None
@@ -247,7 +283,8 @@ class ElectricProxy:
         logger.info(
             "electric shape response: %s",
             f"{table=} subset={subset is not None} {upstream_seconds=:.3f} status={response.status_code} "
-            f"handle={response.headers.get('electric-handle')} live={request.query_params.get('live')}",
+            f"handle={response.headers.get('electric-handle')} live={request.query_params.get('live')} "
+            f"sse={request.query_params.get('live_sse')}",
         )
 
         headers = {name: value for name, value in response.headers.items() if name.lower() in _RESPONSE_HEADERS}
@@ -271,9 +308,14 @@ def _proxy(request: Request) -> ElectricProxy:
     return proxy
 
 
-@router.get("/scope")
-async def get_scope(request: Request, thread_id: UUID) -> ThreadScopeResponse:
-    return await _proxy(request).scope(thread_id)
+@router.get(
+    "/scope",
+    response_model=ThreadScopeResponse,
+    responses={status.HTTP_204_NO_CONTENT: {"description": "Still no fold at the end of the hold: ask again."}},
+)
+async def get_scope(request: Request, thread_id: UUID) -> ThreadScopeResponse | Response:
+    scope = await _proxy(request).scope(thread_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT) if scope is None else scope
 
 
 @router.get("/entities")

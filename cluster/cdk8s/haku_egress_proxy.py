@@ -1,11 +1,10 @@
 """haku-egress-proxy (cluster/k8s/agents/haku-egress-proxy): the mitmproxy egress chokepoint
-for haku-sandbox and haku-ci, its interception CA and trust bundle, and the two iron-proxy
-credential substituters (the Console-owned Claude sandbox's and the OpenClaw spike's).
+for haku-sandbox and haku-ci, its interception CA and trust bundle, and the OpenClaw spike's
+iron-proxy credential substituter.
 
 Written beside other generated files in the same directory (the Namespace from
 agents/namespaces.py, the CiliumNetworkPolicies from egress_fences.py). Hand-written there:
-`kustomization.yaml` (its configMapGenerator renames the iron configs into `iron.yaml`, and
-a patch renames a SOPS Secret), the iron configs themselves, the SOPS Secrets, and
+`kustomization.yaml` (a patch renames a SOPS Secret), the SOPS Secrets, and
 `image-pins/kustomization.yaml`, which overrides the iron-proxy placeholder tag via Flux's
 image-automation marker.
 """
@@ -53,18 +52,19 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetNamespaceSelectorMatchExpressions,
 )
 
-from cluster.cdk8s import cilium, external_creds
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
+from cluster.cdk8s import cilium, egress_fences, external_creds
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAME = "haku-egress-proxy"
-OUTPUT_DIR = "cluster/k8s/agents/haku-egress-proxy"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/haku-egress-proxy"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _CA_SECRET = "haku-egress-proxy-ca"
 _IRON_PROXY_IMAGE = "git.allegedly.works/ducktape-ci/iron-proxy:unset"
-_CLAUDE_PROXY = "haku-claude-oauth-proxy"
 _OPENCLAW_SPIKE_PROXY = "haku-openclaw-spike-proxy"
 _PUBLISHED_SECRETS_READER = "authentik-jwt-rotation-published-secrets-reader"
 
@@ -327,12 +327,17 @@ def _mitmproxy(chart: Chart) -> None:
     )
 
 
-def _iron_proxy(
-    chart: Chart, name: str, *, description: str, config_map: str, port: int, env: list[k8s.EnvVar]
-) -> None:
+def _iron_proxy(chart: Chart, name: str, *, description: str, config: dict, port: int, env: list[k8s.EnvVar]) -> None:
     """An iron-proxy Deployment holding real credentials and substituting them for a sandbox's
-    placeholders, plus its Service."""
+    placeholders, its config, and its Service."""
     labels = {"app.kubernetes.io/name": name}
+    # No content-hash name suffix: `reloader.stakater.com/auto` rolls the proxy when this changes.
+    config_map = k8s.KubeConfigMap(
+        chart,
+        f"{name}-config",
+        metadata=k8s.ObjectMeta(name=f"{name}-config", namespace=NAME),
+        data={"iron.yaml": yaml_config(config)},
+    )
     k8s.KubeDeployment(
         chart,
         f"{name}-deployment",
@@ -380,9 +385,7 @@ def _iron_proxy(
                         )
                     ],
                     volumes=[
-                        # Rendered from the iron config by the hand-written kustomization's
-                        # configMapGenerator.
-                        k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=config_map)),
+                        k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=config_map.name)),
                         k8s.Volume(name="ca", secret=k8s.SecretVolumeSource(secret_name=_CA_SECRET)),
                     ],
                 ),
@@ -407,7 +410,7 @@ def _github_token(chart: Chart, name: str) -> None:
     """The agentydragon-agent GitHub PAT, consumed only by one iron-proxy here; its sandbox
     receives a non-secret placeholder that the proxy replaces in Authorization headers for
     exact GitHub hosts."""
-    add_external_secret(
+    ExternalSecret(
         chart,
         name,
         name=name,
@@ -420,63 +423,61 @@ def _github_token(chart: Chart, name: str) -> None:
     )
 
 
-def _claude_proxy(chart: Chart) -> None:
-    # For the Console-owned Claude sandbox. Same remote PAT the OpenClaw spike reads — one
-    # account, separately delivered, so retiring the spike does not take this with it.
-    github_token = "haku-claude-github-token"
-    _github_token(chart, github_token)
-    _iron_proxy(
-        chart,
-        _CLAUDE_PROXY,
-        description=(
-            "Holds the real Claude subscription OAuth token and substitutes it for the sandbox"
-            " placeholder only on api.anthropic.com Authorization headers."
-        ),
-        config_map="haku-claude-oauth-proxy-config",
-        port=8180,
-        env=[
-            _secret_env("CLAUDE_CODE_OAUTH_TOKEN", "haku-claude-oauth-token", "CLAUDE_CODE_OAUTH_TOKEN"),
-            _secret_env("GITHUB_TOKEN", github_token, "GITHUB_TOKEN"),
-            # The same bearer aiquota-api authenticates with, reflected here from
-            # cli-proxy-api solely for iron-proxy to substitute into the sandbox's
-            # placeholder on the two read endpoints; the runtime never receives it.
-            # Optional: this proxy is the ONLY egress path for haku-runtime-sandbox, so a
-            # late-reflecting secret must not take Anthropic and GitHub down with it. Unset
-            # simply means no substitution — aiquota 401s, everything else is untouched.
-            _secret_env("AIQUOTA_API_BEARER_TOKEN", "aiquota-api-bearer-haku-claude", "bearer-token", optional=True),
-            # The central ActivityWatch read-only bearer, reflected here from the
-            # activitywatch namespace solely for iron-proxy to substitute into the sandbox's
-            # placeholder on the read route. Optional for the same reason as above.
-            _secret_env("AW_READ_TOKEN", "activitywatch-read-token", "token", optional=True),
+def _substitution(env: str, placeholder: str, *hosts: str) -> dict:
+    """An iron `secrets` entry: the value of `env` replaces `placeholder` in Authorization, on
+    `hosts` only. iron-proxy also substitutes inside base64 Basic authorization, which is how
+    git over HTTP carries a password."""
+    return {
+        "source": {"type": "env", "var": env},
+        "replace": {"proxy_value": placeholder, "match_headers": ["Authorization"]},
+        "rules": [{"host": host} for host in hosts],
+    }
+
+
+def _openclaw_spike_iron_config() -> dict:
+    return {
+        "dns": {"enabled": False},
+        "proxy": {
+            "tunnel_listen": ":8181",
+            # Forgejo generates a full-history Git pack before returning response headers. The
+            # default 30s cap aborts that request with HTTP 502, while shallow fetches finish in
+            # time. Keep a bounded but practical limit.
+            "upstream_response_header_timeout": "5m",
+        },
+        "tls": {"mode": "mitm", "ca_cert": "/ca/tls.crt", "ca_key": "/ca/tls.key"},
+        "transforms": [
+            # The L7 bound; the same tuple is the DNS half of the proxy's Cilium fence.
+            {"name": "allowlist", "config": {"domains": list(egress_fences.OPENCLAW_SPIKE_ALLOWLIST)}},
+            {
+                "name": "secrets",
+                "config": {
+                    "secrets": [
+                        _substitution(
+                            "CLAUDE_CODE_OAUTH_TOKEN",
+                            "sk-ant-oat01-proxy-haku-openclaw-placeholder",
+                            "api.anthropic.com",
+                        ),
+                        _substitution("HAKU_GIT_PASSWORD", "proxy-haku-forgejo-placeholder", "forgejo-http.forgejo"),
+                        _substitution("HAKU_CONSOLE_TOKEN", "proxy-haku-console-placeholder", "haku.allegedly.works"),
+                        _substitution(
+                            "GITHUB_TOKEN",
+                            "proxy-github-placeholder",
+                            "api.github.com",
+                            "github.com",
+                            "codeload.github.com",
+                        ),
+                        # An Authentik client_credentials JWT for the `haku` k8s group, minted and
+                        # rotated by agents/authentik-jwt-rotation. The apiserver derives
+                        # oidc-ksbx-groups:haku from it, so what this runtime may do in the
+                        # cluster is RBAC on that group -- this proxy only delivers the bearer,
+                        # it cannot tell `get pods` from `delete ns`.
+                        _substitution("HAKU_KUBE_JWT", "proxy-haku-kube-placeholder", "kubeapi.allegedly.works"),
+                    ]
+                },
+            },
         ],
-    )
-    k8s.KubeNetworkPolicy(
-        chart,
-        "claude-networkpolicy",
-        metadata=k8s.ObjectMeta(name="allow-haku-claude-oauth-proxy-ingress", namespace=NAME),
-        spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": _CLAUDE_PROXY}),
-            ingress=[
-                k8s.NetworkPolicyIngressRule(
-                    from_=[
-                        k8s.NetworkPolicyPeer(
-                            namespace_selector=k8s.LabelSelector(
-                                match_labels={"kubernetes.io/metadata.name": "haku-runtime-sandbox"}
-                            ),
-                            pod_selector=k8s.LabelSelector(
-                                match_labels={
-                                    "app.kubernetes.io/name": "haku-harness-runner",
-                                    "haku.allegedly.works/access-profile-id": "haku",
-                                }
-                            ),
-                        )
-                    ],
-                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(8180), protocol="TCP")],
-                )
-            ],
-            policy_types=["Ingress"],
-        ),
-    )
+        "log": {"level": "info"},
+    }
 
 
 def _openclaw_spike_proxy(chart: Chart) -> None:
@@ -490,7 +491,7 @@ def _openclaw_spike_proxy(chart: Chart) -> None:
         description=(
             "Holds Haku OpenClaw spike credentials and substitutes placeholders only for exact destination hosts."
         ),
-        config_map="haku-openclaw-spike-proxy-config",
+        config=_openclaw_spike_iron_config(),
         port=8181,
         env=[
             _secret_env("CLAUDE_CODE_OAUTH_TOKEN", "haku-claude-oauth-token", "CLAUDE_CODE_OAUTH_TOKEN"),
@@ -652,55 +653,6 @@ def _sandbox_fence(chart: Chart) -> None:
     )
 
 
-def _agent_runner_fence(chart: Chart) -> None:
-    """Console-owned Haku Agent runners are isolated from Haku's general sandbox namespace. They
-    can reach Haku Console's runner-protocol endpoint, the OAuth-substituting proxy, the in-cluster
-    Forgejo they check haku-state out of, and the Console's authorization proxy -- but have no
-    direct internet, general cluster access, or general-purpose proxy."""
-    CiliumClusterwideNetworkPolicy(
-        chart,
-        "haku-agent-runner-egress",
-        metadata=ApiObjectMetadata(name="haku-agent-runner-egress"),
-        spec=CiliumClusterwideNetworkPolicySpec(
-            endpoint_selector=CiliumClusterwideNetworkPolicySpecEndpointSelector(
-                match_labels={
-                    "app.kubernetes.io/name": "haku-harness-runner",
-                    "haku.allegedly.works/access-profile-id": "haku",
-                },
-                match_expressions=[_namespace_selector("haku-runtime-sandbox")],
-            ),
-            egress=[
-                _DNS,
-                # Cilium evaluates the destination endpoint after Service translation.
-                # haku-console Service port 9090 targets the API container's `api` port 8080.
-                _to_endpoint("haku-console", {"k8s:app.kubernetes.io/name": "haku-console"}, 8080),
-                _to_endpoint(NAME, {"k8s:app.kubernetes.io/name": _CLAUDE_PROXY}, 8180),
-                # Colocated Console egress fence (#4670): the runner's HTTPS_PROXY now points here
-                # (haku-egress-proxy.haku-console.svc:8888), carrying its inference to the
-                # in-cluster LiteLLM gateway and its GitHub traffic. The sidecar shares the Console
-                # pod's network namespace, so it is selected by the Console pod label on the
-                # proxy's container port. The haku-claude-oauth-proxy rule above stays until that
-                # iron proxy retires, so reverting the runner's proxy needs no policy change.
-                _to_endpoint("haku-console", {"k8s:app.kubernetes.io/name": "haku-console"}, 8888),
-                # Kubernetes access is mediated by the Haku Console authorization proxy. The runner
-                # writes an ephemeral tokenFile kubeconfig only when Console selects this route; no
-                # ServiceAccount token is mounted in the runner pod and there is no direct
-                # apiserver path. The proxy's TLS listener, because kubectl sends credentials only
-                # to an https server.
-                _to_endpoint("haku-console", {"k8s:app.kubernetes.io/name": "haku-kube-api-proxy"}, 8443),
-                # haku-state, so the session starts with Haku's manual rather than an empty
-                # workspace. In-cluster and plaintext, the way the haku-sandbox exec target already
-                # clones it -- so no credential passes through the OAuth-substituting proxy, which
-                # knows one host and one header and has no business rewriting git auth. The runner
-                # writes the same haku Forgejo account into ~/.netrc; a public git.allegedly.works
-                # route is deliberately NOT opened, since it would hairpin out through the Gateway
-                # for a service one hop away.
-                _to_endpoint("forgejo", {"k8s:app.kubernetes.io/name": "forgejo"}, 3000),
-            ],
-        ),
-    )
-
-
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
@@ -710,10 +662,8 @@ def chart(app: App) -> Chart:
     )
     _ca(chart)
     _mitmproxy(chart)
-    _claude_proxy(chart)
     _openclaw_spike_proxy(chart)
     _sandbox_fence(chart)
-    _agent_runner_fence(chart)
     return chart
 
 

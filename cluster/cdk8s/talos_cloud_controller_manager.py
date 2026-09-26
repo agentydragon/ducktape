@@ -15,11 +15,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "talos-cloud-controller-manager"
 NAMESPACE = "kube-system"
-OUTPUT_DIR = "cluster/k8s/talos-cloud-controller-manager"
+OUTPUT_DIR = f"{GENERATED_ROOT}/talos-cloud-controller-manager"
 _REPOSITORY = "siderolabs"
 _PORT = 50258
 

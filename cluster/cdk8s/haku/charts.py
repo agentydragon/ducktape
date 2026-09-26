@@ -35,16 +35,19 @@ from cluster.cdk8s.haku.console import Console
 from cluster.cdk8s.haku.database import Db
 from cluster.cdk8s.haku.kube_api_proxy import KubeApiProxy
 from cluster.cdk8s.haku.migration import Migration
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = console.NAME
 NAMESPACE = console.NAMESPACE
-PATH = "cluster/k8s/haku/console"
+PATH = f"{HAND_WRITTEN_ROOT}/haku/console"
 # Long enough for the slowest cold path -- CNPG bootstrapping a fresh two-instance Cluster,
 # then the migration and the GRANTs converging on their retries behind it.
 TIMEOUT = "20m"
 
 # Hand-written files the root Kustomization lists beside the generated one.
 EXTRA_RESOURCES = (
+    # Not read by the console: agentplane-staging copies it with ESO, and its Action Service
+    # links GitHub with it (cluster/k8s/haku/console/README.md).
     "haku-console-github-mcp-client-credentials.sops.yaml",
     "routine-launch-token.sops.yaml",
     "web-push-vapid.sops.yaml",
@@ -116,7 +119,6 @@ def haku_console(
     reflector: Kustomization,
     external_creds: Kustomization,
     external_secrets_config: Kustomization,
-    ssh_mcp: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     """Build the Flux graph node from its predecessor nodes."""
@@ -148,12 +150,12 @@ def haku_console(
             # TF creates the Authentik clients and haku-console-oidc Secret;
             # the console does OIDC discovery synchronously at startup.
             agent_machine_access_tf,
-            # Copies the MCP backends' bearers and aiquota's into this namespace.
+            # Copies aiquota's bearer, the ActivityWatch read token and the egress proxy's CA
+            # into this namespace.
             reflector,
             external_creds,
             external_secrets_config,
-            # The SSH MCP backend the console fronts and the ServiceMonitor CRD.
-            ssh_mcp,
+            # The ServiceMonitor CRD.
             monitoring_crds,
         ),
     )

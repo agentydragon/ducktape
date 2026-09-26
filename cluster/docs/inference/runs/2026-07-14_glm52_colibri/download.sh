@@ -2,7 +2,7 @@
 set -euo pipefail
 
 RUN_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-MODEL=${COLIBRI_MODEL:-/var/lib/colibri/glm-5.2-colibri-int4-with-int8-mtp}
+MODEL=${COLIBRI_MODEL:-/var/lib/llm-models-ssd/glm-5.2-colibri-int4-with-int8-mtp}
 REPO=mateogrgic/GLM-5.2-colibri-int4-with-int8-mtp
 REVISION=3cc8db99b1b13fc79325d987ba3c1c430766b3b8
 

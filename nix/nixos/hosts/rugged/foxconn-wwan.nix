@@ -27,10 +27,10 @@
 #    for the case where MM gives up on the unlock script (per upstream
 #    contract, failed scripts aren't retried — a transient FoxFlss failure
 #    would otherwise wedge the modem until manual intervention).
-#    See debug/rugged/hw/foxflss_wwan.md "Watchdog + dmidecode fix".
+#    See nix/debug/rugged/hw/foxflss_wwan.md "Watchdog + dmidecode fix".
 #
 # Hardware: Foxconn DP25-42843-47 (DW5934e, SDX72) — PCI 105b:e11d
-# See: debug/rugged/hw/esim.md
+# See: nix/debug/rugged/hw/esim.md
 {
   config,
   lib,
@@ -67,7 +67,7 @@ let
   #   returned FDE2.F0.0.0.1.2.TO.003.062. At that point the foxflss derivation,
   #   its /opt/foxconn/data symlinks, and the dispatcher script all collapse
   #   into a one-liner. Remove this when libqmi 1.38+ lands.
-  #   See debug/rugged/hw/modem.md TODO list.
+  #   See nix/debug/rugged/hw/modem.md TODO list.
   # Watchdog: see foxflss_watchdog.py and the file's docstring for rationale.
   # Listens to MM state changes and runs FoxFlss when the modem is stuck FCC-locked.
   watchdogScript = pkgs.writers.writePython3 "foxflss-watchdog" {
@@ -140,13 +140,13 @@ in
     # autosuspend never fires — identical M0-at-idle outcome. Upstream does NOT
     # set no_m3 for 105b:e11d (verified v6.19/master/7.2-rc2, 2026-07-17; only
     # qcom-qdu100 uses it), so we prevent the wedge here instead of carrying a
-    # kernel patch. Standby patch + evidence: debug/rugged/hw/modem_suspend_research.md §"P1".
+    # kernel patch. Standby patch + evidence: nix/debug/rugged/hw/modem_suspend_research.md §"P1".
     #
     # The first mitigation only matched PCI add; that was too early because
     # mhi_pci_probe() later calls pm_runtime_set_autosuspend_delay(..., 2000)
     # and re-allows runtime autosuspend. Keep the direct udev write for add,
     # bind, and change, and also trigger a systemd verifier after wwan0 appears.
-    # See debug/rugged/hw/modem_suspend_research.md
+    # See nix/debug/rugged/hw/modem_suspend_research.md
     # §"Runtime-PM recurrence after the udev rule".
     services.udev.extraRules = ''
       ACTION=="add|bind|change", SUBSYSTEM=="pci", ATTR{vendor}=="0x105b", ATTR{device}=="0xe11d", TEST=="power/control", ATTR{power/control}="on"
@@ -201,7 +201,7 @@ in
     # ICMP fragmentation feedback. That does NOT prove native Fi IPv6 has the
     # same defect: the modem advertises an ipv4v6 bearer, but the active profile
     # currently requests IPv4 only. Re-enable only after the controlled test in
-    # debug/rugged/network.md.
+    # nix/debug/rugged/network.md.
     # IPv4 route-metric 1050: WiFi (metric 600) is preferred when available;
     # cellular is used as failover when WiFi is down.
     networking.networkmanager.ensureProfiles.profiles.google-fi = {
@@ -217,7 +217,7 @@ in
         # with missing ICMP feedback, but the preserved decisive failure was a
         # Cilium-over-Nebula cellular path; that nested path alone cannot prove
         # the direct Fi IPv4 ceiling. The bearer reports MTU 1436. Run
-        # debug/rugged/fi-ipv4-mtu-probe.sh before changing this value, and keep
+        # nix/debug/rugged/fi-ipv4-mtu-probe.sh before changing this value, and keep
         # that result separate from the native IPv6 experiment in network.md.
         # gsm.mtu is the correct NM property for cellular interface MTU;
         # ipv4.mtu is ignored for GSM connections (ModemManager owns the bearer).
@@ -231,14 +231,14 @@ in
         # otherwise an application can try that address over Wi-Fi's unrelated
         # IPv6 default route before falling back to IPv4. A higher numeric
         # priority loses to the ordinary Wi-Fi connection, but Fi DNS remains
-        # available when Wi-Fi is absent. See debug/rugged/network.md.
+        # available when Wi-Fi is absent. See nix/debug/rugged/network.md.
         dns-priority = 200;
       };
       ipv6 = {
         # Disabled temporarily: IPv6 interfaces cannot use the 1200-byte GSM
         # MTU because IPv6 requires at least 1280. The prior ~1256-byte result
         # came from IPv4 DF probing, so it is an unresolved hypothesis—not proof
-        # that native Fi IPv6 is broken. See debug/rugged/network.md.
+        # that native Fi IPv6 is broken. See nix/debug/rugged/network.md.
         method = "disabled";
       };
     };
@@ -288,7 +288,7 @@ in
     # ahead of time and `mhi_pci_suspend` takes its early-exit path
     # (drivers/bus/mhi/host/pci_generic.c:1598-1600) instead of attempting the
     # M3 transition that's been wedging this device on resume.
-    # See debug/rugged/hw/modem_suspend_research.md §P0 for the full mechanism.
+    # See nix/debug/rugged/hw/modem_suspend_research.md §P0 for the full mechanism.
     # CLEANUP: once MM upstream promotes this to a per-plugin default or
     # renames the flag without `--test-` prefix, update the ExecStart here.
     systemd.services.ModemManager.serviceConfig.ExecStart = [
@@ -306,7 +306,7 @@ in
     #   ago' | grep -c stuck` should be 0 across boots, suspends, and
     #   slot switches. If so, drop this service block, the
     #   watchdogScript let-binding above, and foxflss_watchdog.py.
-    #   See debug/rugged/hw/modem.md TODO list.
+    #   See nix/debug/rugged/hw/modem.md TODO list.
     systemd.services.foxflss-watchdog = {
       description = "Foxconn DW5934e FCC-unlock watchdog";
       wants = [ "ModemManager.service" ];

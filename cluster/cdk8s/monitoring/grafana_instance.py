@@ -12,16 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecMonitoring,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecStorage,
-)
+from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb, ClusterSpecBootstrapInitdbSecret
 from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRoute,
     HttpRouteSpec,
@@ -57,40 +48,39 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecInstanceSelector,
 )
 
-from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
+from cluster.cdk8s import cnpg
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 _NAME = "grafana"
 _NAMESPACE = "monitoring"
-_OUTPUT_DIR = "cluster/k8s/monitoring/grafana-instance"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/grafana-instance"
 _DB_NAME = "grafana-db-ovh"
+# The credentials CNPG generated for the retired `grafana-db`, which this cluster was cloned
+# from; the role's password came with the clone.
+_DB_CREDENTIALS_SECRET = "grafana-db-app"
 # The label the Grafana CR carries and every dashboard and datasource selects.
 _INSTANCE_LABELS = {"dashboards": _NAME}
 
 
 def _database(chart: Chart) -> None:
-    Cluster(
+    cnpg.cluster(
         chart,
         "database",
-        metadata=metadata(_DB_NAME, _NAMESPACE),
-        spec=ClusterSpec(
-            instances=2,
-            image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
-                )
-            ),
-            affinity=ClusterSpecAffinity(
-                node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
-                topology_key="kubernetes.io/hostname",
-                # Prefer ordinary workers when this workload tolerates control planes.
-                node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
-            ),
-            storage=ClusterSpecStorage(storage_class="local-path-ovh", size="2Gi"),
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
+        name=_DB_NAME,
+        namespace=_NAMESPACE,
+        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+        storage_class="local-path-ovh",
+        size="2Gi",
+        # Created by pg_basebackup from the retired grafana-db, so this never initializes
+        # anything. It names the application database and role CNPG uses: the metrics
+        # exporter's default queries run against the database, and CNPG keeps the role's
+        # password in sync with the Secret Grafana also authenticates with. Without it CNPG
+        # defaults to `app`, which does not exist here.
+        initdb=ClusterSpecBootstrapInitdb(
+            database=_NAME, owner=_NAME, secret=ClusterSpecBootstrapInitdbSecret(name=_DB_CREDENTIALS_SECRET)
         ),
     )
 
@@ -181,7 +171,7 @@ def _grafana(chart: Chart) -> None:
                                         _secret_env(
                                             "GF_SECURITY_ADMIN_PASSWORD", "grafana-admin-password", "admin-password"
                                         ),
-                                        _secret_env("GF_DATABASE_PASSWORD", "grafana-db-app", "password"),
+                                        _secret_env("GF_DATABASE_PASSWORD", _DB_CREDENTIALS_SECRET, "password"),
                                         _secret_env(
                                             "GF_AUTH_GENERIC_OAUTH_CLIENT_ID",
                                             "grafana-oidc-config",
@@ -375,4 +365,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, _OUTPUT_DIR, chart)
+    write_charts(root, OUTPUT_DIR, chart)

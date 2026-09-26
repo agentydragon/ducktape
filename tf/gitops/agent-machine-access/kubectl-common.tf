@@ -20,9 +20,10 @@ resource "authentik_provider_oauth2" "kubectl_passthrough_mcp" {
   issuer_mode                = "per_provider"
   include_claims_in_id_token = true
 
-  # Same reason as ha-mcp.tf: haku-console holds an operator OAuth association here, and the
-  # Terraform provider's `minutes=10` default made it renew ~150x/day, any one of which can
-  # permanently wedge the association. This server was wedged that way on 2026-07-30.
+  # Same reason as ha-mcp.tf: agentplane-staging's `kubernetes` link holds an operator OAuth
+  # association here, and the Terraform provider's `minutes=10` default renews it ~150x/day, any
+  # one of which can permanently wedge the association. This server was wedged that way on
+  # 2026-07-30.
   access_token_validity = "hours=24"
 
   property_mappings = [
@@ -34,29 +35,28 @@ resource "authentik_provider_oauth2" "kubectl_passthrough_mcp" {
 
   # - Claude Code: http://localhost:<port>/callback
   # - kubernetes-mcp-server's built-in callback (browser testing): /oauth/callback
-  # - haku-console's operator_oauth flow (mcp_approval.py): /api/mcp/operator-auth/callback.
+  # - agentplane-staging's MCP linkage: /mcp-linkage/callback.
   #   kubernetes-mcp-server has no DCR endpoint of its own (it just mirrors Authentik's
-  #   OAuth metadata, which has none either), so haku-console is configured with this
+  #   OAuth metadata, which has none either), so agentplane-staging is configured with this
   #   provider's static client_id instead of registering dynamically — safe to share
   #   across callers since this is a public/PKCE client and redirect_uri is validated
   #   per request.
   #
   allowed_redirect_uris = [
     {
-      matching_mode = "regex"
-      url           = "^http://localhost:[0-9]+/callback$"
+      matching_mode     = "regex"
+      url               = "^http://localhost:[0-9]+/callback$"
+      redirect_uri_type = "authorization"
     },
     {
-      matching_mode = "strict"
-      url           = "https://kubectl-passthrough-mcp.allegedly.works/oauth/callback"
+      matching_mode     = "strict"
+      url               = "https://kubectl-passthrough-mcp.allegedly.works/oauth/callback"
+      redirect_uri_type = "authorization"
     },
     {
-      matching_mode = "strict"
-      url           = "https://haku.allegedly.works/api/mcp/operator-auth/callback"
-    },
-    {
-      matching_mode = "strict"
-      url           = "https://agentplane-staging.allegedly.works/mcp-linkage/callback"
+      matching_mode     = "strict"
+      url               = "https://agentplane-staging.allegedly.works/mcp-linkage/callback"
+      redirect_uri_type = "authorization"
     },
   ]
 }

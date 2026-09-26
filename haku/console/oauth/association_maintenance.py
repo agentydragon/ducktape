@@ -14,17 +14,9 @@ from uuid import UUID
 from sqlalchemy import Text, cast as sql_cast, literal, or_, select, text, union_all
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.database_schema import (
-    McpOperatorOAuthAssociation,
-    OAuthTokenState,
-    Operator,
-    OperatorAuthentikToken,
-    ProviderConnection,
-)
+from haku.console.database_schema import OAuthTokenState, Operator, OperatorAuthentikToken, ProviderConnection
 from haku.console.identity.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.identity.operator_identity import OperatorStatus
-from haku.console.mcp.operator_oauth import PostgresMcpOperatorOAuthStore
-from haku.console.mcp_config import McpServerEntry
 from haku.console.oauth.provider_connection import PostgresProviderConnectionStore
 from haku.console.oauth.token_support import REFRESH_SKEW
 
@@ -35,7 +27,6 @@ _REFRESH_ADVISORY_LOCK = 0x48414B554F415554
 
 
 class AssociationKind(StrEnum):
-    REMOTE_MCP = "remote_mcp"
     PROVIDER = "provider"
     OPERATOR_LOGIN = "operator_login"
 
@@ -55,16 +46,12 @@ class AssociationMaintenance:
         engine: AsyncEngine,
         sessions: async_sessionmaker[AsyncSession],
         *,
-        servers: list[McpServerEntry],
-        oauth_store: PostgresMcpOperatorOAuthStore,
         provider_store: PostgresProviderConnectionStore,
         authentik_store: PostgresAuthentikOperatorTokenStore,
         refresh_authentik_tokens: bool,
     ) -> None:
         self._engine = engine
         self._sessions = sessions
-        self._servers = {server.id: server for server in servers}
-        self._oauth_store = oauth_store
         self._provider_store = provider_store
         self._authentik_store = authentik_store
         self._refresh_authentik_tokens = refresh_authentik_tokens
@@ -89,21 +76,13 @@ class AssociationMaintenance:
         )
         candidates = [
             select(
-                literal(AssociationKind.REMOTE_MCP).label("kind"),
-                McpOperatorOAuthAssociation.server_id.label("name"),
-                OAuthTokenState.operator_id,
-            )
-            .join(OAuthTokenState, McpOperatorOAuthAssociation.token_state_id == OAuthTokenState.token_state_id)
-            .join(Operator, OAuthTokenState.operator_id == Operator.operator_id)
-            .where(*refreshable),
-            select(
                 literal(AssociationKind.PROVIDER).label("kind"),
                 ProviderConnection.connection_name.label("name"),
                 OAuthTokenState.operator_id,
             )
             .join(OAuthTokenState, ProviderConnection.token_state_id == OAuthTokenState.token_state_id)
             .join(Operator, OAuthTokenState.operator_id == Operator.operator_id)
-            .where(*refreshable),
+            .where(*refreshable)
         ]
         if self._refresh_authentik_tokens:
             candidates.append(
@@ -126,16 +105,6 @@ class AssociationMaintenance:
     async def _refresh(self, target: _RefreshTarget) -> None:
         try:
             match target.kind:
-                case AssociationKind.REMOTE_MCP:
-                    assert target.name is not None
-                    if (server := self._servers.get(target.name)) is None:
-                        logger.warning(
-                            "Cannot background-refresh OAuth association for removed MCP server %r (%s)",
-                            target.name,
-                            target.operator_id,
-                        )
-                        return
-                    await self._oauth_store.access_token_for(server=server, operator_id=target.operator_id)
                 case AssociationKind.PROVIDER:
                     assert target.name is not None
                     await self._provider_store.access_token_for(connection=target.name, operator_id=target.operator_id)

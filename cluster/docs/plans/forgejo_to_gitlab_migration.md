@@ -1,7 +1,7 @@
 # Forgejo → GitLab migration considerations
 
 Pre-think for replacing the in-cluster Forgejo with GitLab. Motivated by
-[the git-write latency + HA investigation](../../../debug/git_storage_latency_and_ha.md):
+[the git-write latency + HA investigation](../../../cluster/debug/git_storage_latency_and_ha.md):
 GitLab's **Gitaly Cluster (Praefect)** gives fast git writes **and** no single-node dependency,
 which the Forgejo multi-replica RWX share cannot. This note scopes what a migration
 touches and — importantly — what is actually in **Free/CE** vs paid tiers.
@@ -20,7 +20,7 @@ From `cluster/k8s/forgejo/*` and `tf/gitops/*`:
 - **Forgejo Actions CI** — notably `haku-ci`: a warm, **egress-fenced, in-cluster-only**
   runner that builds Haku's UI image from `haku-state` and pushes to the in-cluster
   registry, and must **never** touch BuildBuddy/RBE or external CI (see
-  `cluster/k8s/haku-ci/README.md`). Plus CI in props / budget-ledger / augur-evidence /
+  `cluster/cdk8s/haku_ci/README.md`). Plus CI in props / budget-ledger / augur-evidence /
   cpap-data. Runner tokens are fetched from the API by TF because the Forgejo provider has
   no runner-token resource.
 - **In-cluster container registry** (`forgejo-images`) + **Flux image automation** reading

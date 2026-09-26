@@ -19,7 +19,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import cast
 
-from cdk8s import ApiObject, ApiObjectMetadata, Chart
+import jsii
+from cdk8s import ApiObject, ApiObjectMetadata, App, Chart
+from constructs import IValidation
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
@@ -33,6 +35,8 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecImages,
     KustomizationSpecPatches,
     KustomizationSpecPostBuild,
+    KustomizationSpecPostBuildSubstituteFrom,
+    KustomizationSpecPostBuildSubstituteFromKind,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
@@ -45,6 +49,47 @@ SOPS_DECRYPTION = KustomizationSpecDecryption(
     provider=KustomizationSpecDecryptionProvider.SOPS,
     secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
 )
+# `${LETSENCRYPT_ISSUER}` from cert_manager/issuer_config.py's ConfigMap, which is reflected
+# into NAMESPACE: Flux reads substitution sources from the Kustomization's own namespace.
+CERT_MANAGER_ISSUER_CONFIG = "cert-manager-issuer-config"
+CERT_MANAGER_ISSUER_SUBSTITUTION = KustomizationSpecPostBuild(
+    substitute_from=[
+        KustomizationSpecPostBuildSubstituteFrom(
+            kind=KustomizationSpecPostBuildSubstituteFromKind.CONFIG_MAP, name=CERT_MANAGER_ISSUER_CONFIG
+        )
+    ]
+)
+
+
+@jsii.implements(IValidation)
+class _WaitExcludesHealthChecks:
+    """kustomize-controller ignores `spec.healthChecks` when `spec.wait` is true: it
+    health-checks every applied object instead, so such a list is dead config. Checked on
+    the rendered objects, so a Kustomization built without `flux_kustomization` is covered."""
+
+    def __init__(self, chart: Chart) -> None:
+        self._chart = chart
+
+    def validate(self) -> list[str]:
+        rendered = (
+            cast(ApiObject, node).to_json() for node in self._chart.node.find_all() if ApiObject.is_api_object(node)
+        )
+        return [
+            f"Kustomization/{obj['metadata']['name']}: wait: true ignores healthChecks; drop the list or set wait off"
+            for obj in rendered
+            if obj["kind"] == "Kustomization"
+            and obj["apiVersion"].startswith("kustomize.toolkit.fluxcd.io/")
+            and obj["spec"].get("wait")
+            and obj["spec"].get("healthChecks")
+        ]
+
+
+def kustomizations_chart(app: App) -> Chart:
+    """The shared chart every Flux Kustomization node is built in; synth fails on a
+    Kustomization setting both `wait` and `healthChecks`."""
+    chart = Chart(app, "kustomizations", disable_resource_name_hashes=True)
+    chart.node.add_validation(_WaitExcludesHealthChecks(chart))
+    return chart
 
 
 def health_checks(chart: Chart, kinds: Sequence[str]) -> list[KustomizationSpecHealthChecks]:
@@ -155,14 +200,28 @@ def flux_kustomization_depends_on_many(*dependencies: Kustomization) -> list[Kus
     return [flux_kustomization_depends_on(dependency) for dependency in dependencies]
 
 
+class GeneratorOptions(BaseModel):
+    """A generator entry's `options`, per kustomize.config.k8s.io/v1beta1."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    annotations: dict[str, str] | None = None
+    disable_name_suffix_hash: bool | None = None
+
+
 class ConfigMapArgs(BaseModel):
     """One `configMapGenerator` entry: a ConfigMap kustomize renders from hand-written files
-    beside the `kustomization.yaml`, with its content-hash name suffix and reference rewriting.
-    A construct mounting it references `name` (`ConfigMap.from_config_map_name`)."""
+    beside the `kustomization.yaml` or from literals, with its content-hash name suffix and
+    reference rewriting. A construct mounting it references `name`
+    (`ConfigMap.from_config_map_name`)."""
 
     name: str
     namespace: str
-    files: list[str] = Field(description="File names relative to the directory; each becomes a key of that name.")
+    options: GeneratorOptions | None = None
+    files: list[str] | None = Field(
+        default=None, description="File names relative to the directory; each becomes a key of that name."
+    )
+    literals: list[str] | None = Field(default=None, description="`KEY=value` entries, split at the first `=`.")
 
 
 class _KustomizeKustomization(BaseModel):

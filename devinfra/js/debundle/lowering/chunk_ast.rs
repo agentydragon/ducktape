@@ -7,6 +7,7 @@ use binding_targets::{
     binding_name_strings, binding_names as bt_binding_names, declaration_ids as bt_declaration_ids,
     declaration_name_strings,
 };
+use selector_outcome::{Declaration, DeclarationKind};
 
 use super::*;
 
@@ -135,6 +136,65 @@ pub(super) fn record_destructure_sibling_groups(
                 .extend(group.iter().cloned());
         }
     }
+}
+
+/// The top-level statement that declares `binding`: its entry in
+/// `declaration_by_name`, or else the import that binds it.
+pub(super) fn binding_declaration(
+    body: &[ModuleItem],
+    declaration_by_name: &HashMap<Id, usize>,
+    binding: &Id,
+) -> Result<Declaration> {
+    let owner = match declaration_by_name.get(binding) {
+        Some(&ordinal) => ordinal,
+        None => body
+            .iter()
+            .position(|item| {
+                let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+                    return false;
+                };
+                import.specifiers.iter().any(|specifier| {
+                    let local = match specifier {
+                        ImportSpecifier::Named(named) => &named.local,
+                        ImportSpecifier::Default(default) => &default.local,
+                        ImportSpecifier::Namespace(namespace) => &namespace.local,
+                    };
+                    local.to_id() == *binding
+                })
+            })
+            .with_context(|| format!("no top-level statement declares `{}`", binding.0))?,
+    };
+    let decl = match &body[owner] {
+        ModuleItem::ModuleDecl(ModuleDecl::Import(_)) => {
+            return Ok(Declaration {
+                owner,
+                kind: DeclarationKind::Import,
+            });
+        }
+        ModuleItem::Stmt(Stmt::Decl(decl)) => decl,
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => &export_decl.decl,
+        // A `var` hoisted out of a block, loop or `try`.
+        ModuleItem::Stmt(_) => {
+            return Ok(Declaration {
+                owner,
+                kind: DeclarationKind::Var,
+            });
+        }
+        ModuleItem::ModuleDecl(_) => bail!("body[{owner}] is not a declaration"),
+    };
+    let kind = match decl {
+        Decl::Fn(_) => DeclarationKind::Function,
+        Decl::Class(_) => DeclarationKind::Class,
+        Decl::Var(var) => match var.kind {
+            VarDeclKind::Var => DeclarationKind::Var,
+            VarDeclKind::Let => DeclarationKind::Let,
+            VarDeclKind::Const => DeclarationKind::Const,
+        },
+        Decl::Using(using) if using.is_await => DeclarationKind::AwaitUsing,
+        Decl::Using(_) => DeclarationKind::Using,
+        _ => bail!("body[{owner}] is a TypeScript declaration"),
+    };
+    Ok(Declaration { owner, kind })
 }
 
 /// Pick up `export { foo, bar as baz }` (no `from`) — i.e. re-exports

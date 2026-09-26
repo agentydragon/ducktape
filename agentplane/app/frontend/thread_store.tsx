@@ -17,36 +17,24 @@ import {
   type Row,
   type SubsetParams,
 } from "@electric-sql/client";
-import { createContext, type JSX, useContext, useEffect, useState, useSyncExternalStore } from "react";
+import { createContext, type JSX, type ReactNode, useContext, useEffect, useState, useSyncExternalStore } from "react";
 import { z } from "zod";
 
-import { displayableError, threadScope, type ThreadEntityView, type ThreadScope } from "./client";
+import { displayableError, fetchWithLogin, threadScope, type ThreadScope } from "./client";
+import type { StreamConnection } from "./live_stream";
+import {
+  decimalBigInt,
+  type Decimal,
+  type Payload,
+  type PayloadRef,
+  type ThreadEntity,
+  type ThreadState,
+  type ThreadSync,
+} from "./thread_sync";
 
-const decimal: z.ZodType<string | bigint> = z.union([z.string().regex(/^-?\d+$/), z.bigint()]);
-type Decimal = z.output<typeof decimal>;
-export function decimalBigInt(value: Decimal): bigint {
-  return typeof value === "bigint" ? value : BigInt(value);
-}
-export type PayloadRef = NonNullable<ThreadEntityView["text_ref"]>;
+const decimal: z.ZodType<Decimal> = z.union([z.string().regex(/^-?\d+$/), z.bigint()]);
 type PayloadField = PayloadRef["field"];
-type ThreadEntityState = ThreadEntityView["state"];
 
-export interface ThreadEntity {
-  threadId: string;
-  projectionEpoch: string;
-  entityKind: "view_state" | "item" | "confirmed_input" | "lifecycle" | "command";
-  entityId: string;
-  entityIndex: Decimal;
-  cursor: Decimal;
-  revisionCursor: Decimal;
-  pending: boolean;
-  turnId: string | null;
-  state: ThreadEntityState;
-  textRef: PayloadRef | null;
-  argumentsRef: PayloadRef | null;
-  outputRef: PayloadRef | null;
-  inputRef: PayloadRef | null;
-}
 const payloadRefSchema = z.object({
   projection_epoch: z.string(),
   owner_cursor: z.string(),
@@ -183,10 +171,11 @@ class Listeners {
  * behind the subset, skips every change in between to rows outside the subset. The stream's own
  * offset is on the request, so the response carries that back instead.
  */
-// CLEANUP(added 2026-09-23): Drop once a released @electric-sql/client moves only a stream at `now`
-//   to a subset's offset; 1.5.28's requestSnapshot moves a live one too (LiveState.handleResponseMetadata).
+// CLEANUP(added 2026-09-23): Drop, leaving `fetchWithLogin` as the shapes' fetch, once a released
+//   @electric-sql/client moves only a stream at `now` to a subset's offset; 1.5.28's requestSnapshot
+//   moves a live one too (LiveState.handleResponseMetadata).
 async function keepingOffset(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const response = await fetch(input, init);
+  const response = await fetchWithLogin(input, init);
   const offset = new URL(input instanceof Request ? input.url : String(input)).searchParams.get("offset");
   if (init?.method !== "POST" || !response.ok || offset === null || offset === "now") return response;
   const headers = new Headers(response.headers);
@@ -194,28 +183,69 @@ async function keepingOffset(input: RequestInfo | URL, init?: RequestInit): Prom
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
-/** One Electric shape from now: its rows arrive as subsets of it, and as its live changes. */
+/**
+ * One Electric shape from now: its rows arrive as subsets of it, and as its live changes, followed
+ * over SSE. Electric's client long-polls a shape instead once three SSE responses in a row have
+ * ended within a second, as Electric's answers to a reader behind the log do.
+ */
 class Shape {
   readonly #abort = new AbortController();
   readonly #stream: ShapeStream<Row>;
+  readonly #onAttempt: (failure: string | null) => void;
   // Settles with the shape's first subset. Electric answers that one from the shape's definition
   // with the handle and offset the stream then follows; later subsets name that handle.
   #opened: Promise<unknown> | null = null;
+  #retrying = false;
 
-  constructor(url: string, onMessages: (messages: Message<Row>[]) => void, onError: (error: unknown) => void) {
+  constructor(
+    url: string,
+    onMessages: (messages: Message<Row>[]) => void,
+    onError: (error: unknown) => void,
+    onAttempt: (failure: string | null) => void
+  ) {
+    this.#onAttempt = onAttempt;
     this.#stream = new ShapeStream({
       url,
       offset: "now",
       log: "changes_only",
+      liveSse: true,
       subsetMethod: "POST",
       columnMapper: columns,
-      fetchClient: keepingOffset,
+      fetchClient: (input, init) => this.#attempt(input, init),
       signal: this.#abort.signal,
       onError: (error) => {
         if (!this.#abort.signal.aborted) onError(error);
       },
     });
     this.#stream.subscribe(onMessages);
+  }
+
+  /**
+   * One attempt at one of the stream's requests. Electric's client retries a request that failed on
+   * the network or with a 5xx or 429 after a backoff, forever, and calls no `onError` meanwhile
+   * (`createFetchWithBackoff`), so the stream is retrying from such a failure until an attempt gets
+   * any other answer. Its `onFailedAttempt` hook cannot say so: it takes no argument, and fires as
+   * well for a 4xx the client hands back and for a request it aborted itself, as a subset aborts the
+   * live read.
+   */
+  async #attempt(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    let response: Response;
+    try {
+      response = await keepingOffset(input, init);
+    } catch (error) {
+      if (!init?.signal?.aborted) this.#attempted(displayableError(error));
+      throw error;
+    }
+    this.#attempted(response.status >= 500 || response.status === 429 ? `HTTP ${response.status}` : null);
+    return response;
+  }
+
+  /** Every failed attempt, and the first success after them. */
+  #attempted(failure: string | null): void {
+    // A subset's request carries no signal, so it goes on retrying once the shape is closed.
+    if (this.closed || (failure === null && !this.#retrying)) return;
+    this.#retrying = failure !== null;
+    this.#onAttempt(failure);
   }
 
   /** Rows of the shape, delivered to its subscriber like any change and returned. */
@@ -234,6 +264,7 @@ class Shape {
   }
 
   close(): void {
+    this.#attempted(null);
     this.#abort.abort();
   }
 }
@@ -242,6 +273,7 @@ class Shape {
 class PayloadShape extends Listeners {
   readonly #url: string;
   readonly #onGone: () => void;
+  readonly #onAttempt: (failure: string | null) => void;
   #shape: Shape | null = null;
   // Chunk text by index, per body: an owner at one generation.
   readonly #chunks = new Map<string, Map<number, string>>();
@@ -251,10 +283,11 @@ class PayloadShape extends Listeners {
   #error: string | null = null;
   #closed = false;
 
-  constructor(url: string, onGone: () => void) {
+  constructor(url: string, onGone: () => void, onAttempt: (failure: string | null) => void) {
     super();
     this.#url = url;
     this.#onGone = onGone;
+    this.#onAttempt = onAttempt;
   }
 
   getVersion = (): number => this.#version;
@@ -310,7 +343,8 @@ class PayloadShape extends Listeners {
     const shape = (this.#shape ??= new Shape(
       this.#url,
       (messages) => this.#apply(messages),
-      (error) => this.#fail(error)
+      (error) => this.#fail(error),
+      this.#onAttempt
     ));
     for (const batch of batches(this.#queued.splice(0), SUBSET_BODIES))
       shape.subset(bodySubset(batch)).catch((error: unknown) => {
@@ -355,11 +389,22 @@ interface WindowState {
   /** The tail, view state and pending commands have loaded, and reach the scope's cursor. */
   caughtUp: boolean;
   olderAvailable: boolean;
+  loadingOlder: boolean;
+  connection: StreamConnection;
   error: string | null;
 }
 
+const NO_WINDOW: WindowState = {
+  rows: [],
+  caughtUp: false,
+  olderAvailable: false,
+  loadingOlder: false,
+  connection: { phase: "live", since: 0 },
+  error: null,
+};
+
 /** A thread's rows at one projection epoch: the pages a reader has loaded, and what it waits on. */
-class ThreadWindow extends Listeners {
+class EpochWindow extends Listeners {
   readonly scope: ThreadScope;
   readonly #threadId: string;
   readonly #shape: Shape;
@@ -373,11 +418,16 @@ class ThreadWindow extends Listeners {
   #lowest: bigint | null = null;
   #exhausted = false;
   #loadingOlder = false;
+  // The epoch is gone: the window that replaces this one loads what it would have.
+  #gone = false;
   #ready = false;
   // Rows seen since a refetch began; what it did not see was deleted while the log was rebuilt.
   #refreshed: Set<string> | null = null;
+  // The shapes, by path, whose client is retrying a failed request.
+  readonly #retrying = new Set<string>();
+  #connection: StreamConnection = { phase: "live", since: Date.now() };
   #closed = false;
-  #state: WindowState = { rows: [], caughtUp: false, olderAvailable: false, error: null };
+  #state: WindowState = NO_WINDOW;
 
   constructor(threadId: string, scope: ThreadScope, onGone: () => void) {
     super();
@@ -387,7 +437,8 @@ class ThreadWindow extends Listeners {
     this.#shape = new Shape(
       this.#url("entities"),
       (messages) => this.#apply(messages),
-      (error) => this.#fail(error)
+      (error) => this.#fail(error),
+      (failure) => this.#attempted("entities", failure)
     );
     void this.#guard(async () => {
       await Promise.all([
@@ -403,8 +454,12 @@ class ThreadWindow extends Listeners {
   getState = (): WindowState => this.#state;
 
   loadOlder = (): void => {
-    if (this.#loadingOlder || this.#exhausted || this.#lowest === null) return;
+    // A stopped or retired window loads nothing more, or a view asking whenever the reader is at the
+    // top would repeat a failed page for as long as they stay there.
+    if (this.#loadingOlder || this.#exhausted || this.#lowest === null || this.#gone || this.#state.error !== null)
+      return;
     this.#loadingOlder = true;
+    this.#publish();
     void this.#guard(() => this.#serial(() => this.#page(PAGE))).finally(() => {
       this.#loadingOlder = false;
       this.#publish();
@@ -420,7 +475,12 @@ class ThreadWindow extends Listeners {
   bodies(field: PayloadField): PayloadShape {
     let shape = this.#bodies.get(field);
     if (shape === undefined)
-      this.#bodies.set(field, (shape = new PayloadShape(this.#url(`chunks/${field}`), this.#onGone)));
+      this.#bodies.set(
+        field,
+        (shape = new PayloadShape(this.#url(`chunks/${field}`), this.#onGone, (failure) =>
+          this.#attempted(field, failure)
+        ))
+      );
     return shape;
   }
 
@@ -487,10 +547,16 @@ class ThreadWindow extends Listeners {
 
   #apply(messages: Message<Row>[]): void {
     let changed = false;
+    let retired = false;
     for (const message of messages) {
       if (isChangeMessage(message)) {
         this.#refreshed?.add(message.key);
-        if (message.headers.operation === "delete") changed = this.#rows.delete(message.key) || changed;
+        if (message.headers.operation === "delete") {
+          // The fold never deletes a row: its view state leaves the shape when the epoch is retired.
+          // An SSE connection stays open, so this is sooner than the 410 its reconnect would get.
+          retired ||= this.#rows.get(message.key)?.entityKind === "view_state";
+          changed = this.#rows.delete(message.key) || changed;
+        }
         // Every row is new at the tail. A change to one older than the reader has loaded is not
         // its concern: loading that page reads the row as it is by then.
         else if (message.headers.operation === "insert" || this.#rows.has(message.key)) {
@@ -500,6 +566,7 @@ class ThreadWindow extends Listeners {
       } else if (message.headers.control === "must-refetch") void this.#refetch();
     }
     if (changed) this.#publish();
+    if (retired && !this.#closed) this.#retire();
   }
 
   async #guard(load: () => Promise<unknown>): Promise<void> {
@@ -513,8 +580,28 @@ class ThreadWindow extends Listeners {
   #fail(error: unknown): void {
     if (this.#closed) return;
     // The fold was rebuilt under a new epoch: the reader resolves the thread's scope again.
-    if (error instanceof FetchError && error.status === 410) this.#onGone();
+    if (error instanceof FetchError && error.status === 410) this.#retire();
     else this.#publish(displayableError(error));
+  }
+
+  #retire(): void {
+    this.#gone = true;
+    this.#onGone();
+  }
+
+  /** One shape's attempt: a failure counts against the window until every shape it has has recovered. */
+  #attempted(shape: string, failure: string | null): void {
+    const was = this.#connection;
+    if (failure !== null) {
+      this.#retrying.add(shape);
+      this.#connection =
+        was.phase === "reconnecting"
+          ? { ...was, attempt: was.attempt + 1, lastError: failure }
+          : { phase: "reconnecting", since: Date.now(), attempt: 1, lastError: failure };
+    } else if (this.#retrying.delete(shape) && this.#retrying.size === 0) {
+      this.#connection = { phase: "live", since: Date.now() };
+    }
+    this.#publish();
   }
 
   #publish(error: string | null = this.#state.error): void {
@@ -525,6 +612,8 @@ class ThreadWindow extends Listeners {
       caughtUp:
         this.#ready && view !== undefined && decimalBigInt(view.revisionCursor) >= BigInt(this.scope.through_cursor),
       olderAvailable: this.#lowest !== null && !this.#exhausted,
+      loadingOlder: this.#loadingOlder,
+      connection: this.#connection,
       error,
     };
     this.notify();
@@ -533,14 +622,14 @@ class ThreadWindow extends Listeners {
 
 interface SyncState {
   /** The window on screen. A replacement stays off screen until it has caught up. */
-  window: ThreadWindow | null;
+  window: EpochWindow | null;
   error: string | null;
 }
 
 /** A thread's scope, and the window over it: replaced whole when its epoch is gone. */
-class ThreadSync extends Listeners {
+class ThreadEpochs extends Listeners {
   readonly #threadId: string;
-  #next: ThreadWindow | null = null;
+  #next: EpochWindow | null = null;
   #resolving: AbortController | null = null;
   #retry: number | undefined;
   #closed = false;
@@ -573,13 +662,10 @@ class ThreadSync extends Listeners {
     try {
       const scope = await threadScope(this.#threadId, resolving.signal);
       if (resolving.signal.aborted || this.#closed) return;
-      if (scope === null) {
-        // No fold yet: the thread has one once its runner's first events are recorded.
-        this.#retry = window.setTimeout(this.refresh, 1_000);
-        return;
-      }
+      // The runner has recorded nothing for the whole of the server's hold: hold another read.
+      if (scope === null) return this.refresh();
       this.#next?.close();
-      const next = new ThreadWindow(this.#threadId, scope, this.refresh);
+      const next = new EpochWindow(this.#threadId, scope, this.refresh);
       // The first window shows its own catch-up; a replacement takes over once it has caught up,
       // or has an error to show.
       if (this.#state.window === null) return this.#set({ window: next, error: null });
@@ -596,6 +682,7 @@ class ThreadSync extends Listeners {
     } catch (error) {
       if (resolving.signal.aborted || this.#closed) return;
       this.#set({ ...this.#state, error: displayableError(error) });
+      // A failed read reconnects after a pause; an answered one never waits.
       this.#retry = window.setTimeout(this.refresh, 1_000);
     }
   }
@@ -607,20 +694,19 @@ class ThreadSync extends Listeners {
 }
 
 const NO_SYNC: SyncState = { window: null, error: null };
-const NO_WINDOW: WindowState = { rows: [], caughtUp: false, olderAvailable: false, error: null };
 const noSubscription = (): (() => void) => () => undefined;
 
-const WindowContext = createContext<ThreadWindow | null>(null);
+const ThreadContext = createContext<ThreadEpochs | null>(null);
 
-function useWindow(): ThreadWindow {
-  const current = useContext(WindowContext);
-  if (current === null) throw new Error("thread rows are read inside a ThreadCollection");
-  return current;
+function useEpochs(): SyncState {
+  const thread = useContext(ThreadContext);
+  return useSyncExternalStore(thread?.subscribe ?? noSubscription, thread?.getState ?? (() => NO_SYNC));
 }
 
-export interface ThreadHistory {
-  olderAvailable: boolean;
-  loadOlder: () => void;
+function useWindow(): EpochWindow {
+  const { window: shown } = useEpochs();
+  if (shown === null) throw new Error("thread rows are read inside a Thread, once its window is open");
+  return shown;
 }
 
 /** Settled commands are the command list's to show, by id, not the thread's. */
@@ -628,88 +714,56 @@ function threadRow(row: ThreadEntity): boolean {
   return row.entityKind !== "command" || row.pending;
 }
 
-export function ThreadCollection({
-  threadId,
-  children,
-}: {
-  threadId: string;
-  children: (rows: ThreadEntity[], history: ThreadHistory) => JSX.Element;
-}): JSX.Element {
-  const [sync, setSync] = useState<ThreadSync | null>(null);
+function Thread({ threadId, children }: { threadId: string; children: ReactNode }): JSX.Element {
+  const [thread, setThread] = useState<ThreadEpochs | null>(null);
   useEffect(() => {
-    const next = new ThreadSync(threadId);
-    setSync(next);
+    const next = new ThreadEpochs(threadId);
+    setThread(next);
     return () => next.close();
   }, [threadId]);
-  const { window: shown, error } = useSyncExternalStore(
-    sync?.subscribe ?? noSubscription,
-    sync?.getState ?? (() => NO_SYNC)
-  );
-  const state = useSyncExternalStore(shown?.subscribe ?? noSubscription, shown?.getState ?? (() => NO_WINDOW));
-  if (!sync || !shown) {
-    if (error) return <p role="alert">Thread sync failed: {error}</p>;
-    return <p role="status">Loading thread…</p>;
-  }
-  return (
-    <WindowContext.Provider value={shown}>
-      {error && <p role="alert">Thread sync failed: {error}; showing the current window and retrying.</p>}
-      {state.error && (
-        <p role="alert">
-          Thread synchronization stopped: {state.error} <button onClick={sync.refresh}>Refresh thread</button>
-        </p>
-      )}
-      {!state.error && !state.caughtUp && (
-        <p role="status" data-thread-catchup="true">
-          Catching up thread…
-        </p>
-      )}
-      {children(state.caughtUp ? state.rows.filter(threadRow) : [], {
-        olderAvailable: state.olderAvailable,
-        loadOlder: shown.loadOlder,
-      })}
-    </WindowContext.Provider>
-  );
+  return <ThreadContext.Provider value={thread}>{children}</ThreadContext.Provider>;
 }
 
-/** The command rows among `commandIds`, loaded by id: whether pending or settled, and however old. */
-export function CommandSelection({
-  commandIds,
-  children,
-}: {
-  commandIds: readonly string[];
-  children: (rows: ThreadEntity[]) => JSX.Element;
-}): JSX.Element {
-  const thread = useWindow();
-  const { rows } = useSyncExternalStore(thread.subscribe, thread.getState);
+function useThread(): ThreadState {
+  const thread = useContext(ThreadContext);
+  const { window: shown, error } = useEpochs();
+  const state = useSyncExternalStore(shown?.subscribe ?? noSubscription, shown?.getState ?? (() => NO_WINDOW));
+  return {
+    window:
+      thread === null || shown === null
+        ? null
+        : {
+            rows: state.rows.filter(threadRow),
+            caughtUp: state.caughtUp,
+            olderAvailable: state.olderAvailable,
+            loadingOlder: state.loadingOlder,
+            loadOlder: shown.loadOlder,
+            connection: state.connection,
+            error: state.error,
+            refresh: thread.refresh,
+          },
+    error,
+  };
+}
+
+function useCommandRows(commandIds: readonly string[]): ThreadEntity[] {
+  const shown = useWindow();
+  const { rows } = useSyncExternalStore(shown.subscribe, shown.getState);
   const key = [...new Set(commandIds)].sort().join("\u0000");
   useEffect(() => {
-    if (key) thread.selectCommands(key.split("\u0000"));
-  }, [key, thread]);
+    if (key) shown.selectCommands(key.split("\u0000"));
+  }, [key, shown]);
   const selected = new Set(commandIds);
-  return children(rows.filter((row) => row.entityKind === "command" && selected.has(row.entityId)));
+  return rows.filter((row) => row.entityKind === "command" && selected.has(row.entityId));
 }
 
-export function PayloadBody({
-  reference,
-  children,
-}: {
-  reference: PayloadRef;
-  children: (body: string | null) => JSX.Element;
-}): JSX.Element {
+function usePayload(reference: PayloadRef): Payload {
   const shape = useWindow().bodies(reference.field);
   useSyncExternalStore(shape.subscribe, shape.getVersion);
   useEffect(() => {
     shape.want(reference);
   }, [reference, shape]);
-  return (
-    <>
-      {shape.error && (
-        <p role="alert">
-          Payload synchronization stopped: {shape.error}{" "}
-          <button onClick={shape.retry}>Retry payload synchronization</button>
-        </p>
-      )}
-      {children(shape.body(reference))}
-    </>
-  );
+  return { body: shape.body(reference), error: shape.error, retry: shape.retry };
 }
+
+export const electricThreadSync: ThreadSync = { Thread, useThread, useCommandRows, usePayload };

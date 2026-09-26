@@ -8,9 +8,10 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "haku-forgejo-tea"
-OUTPUT_DIR = "cluster/k8s/haku/forgejo-tea"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/haku/forgejo-tea"
 
 
 def haku_forgejo_tea(

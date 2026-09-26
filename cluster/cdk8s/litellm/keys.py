@@ -21,6 +21,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.litellm.config import main_proxy_config
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_rosters import (
     ANTHROPIC_MODELS,
     CLIPROXY_MODELS,
@@ -39,7 +40,7 @@ from cluster.cdk8s.model_rosters import (
     ollama_chat_variant,
 )
 
-OUTPUT_DIR = "cluster/k8s/litellm/keys-tf"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/keys-tf"
 
 # The Codex-subscription models on LiteLLM's Responses surface, for Codex CLI clients
 # (codex-pod, agent-workspaces-codex, the agentplane staging session form) -- served
@@ -49,10 +50,9 @@ OAI_LANE_MODELS = [codex_responses_name(model) for model in CLIPROXY_MODELS]
 # (laptop codex-claude, agent-box, codex-pod).
 CODEX_CLIENT_MODELS = [codex_messages_name(model) for model in CLIPROXY_MODELS]
 # Claude-subscription models on the Anthropic Messages surface, fronted through
-# CLIProxyAPI's Claude OAuth session -- the Console-launched Claude runner, the laptop
-# litellm-claude wrapper, and the agentplane staging session form. A different
-# upstream session on the same pod as the Codex lanes; distinct from the direct-API
-# anthropic-api/ant-messages/* entries.
+# CLIProxyAPI's Claude OAuth session -- the laptop litellm-claude wrapper and the
+# agentplane staging session form. A different upstream session on the same pod as the
+# Codex lanes; distinct from the direct-API anthropic-api/ant-messages/* entries.
 CLAUDE_CLIENT_MODELS = [
     exposed_name(Provider.ANTHROPIC_MAX20, ApiShape.ANT_MESSAGES, model) for model in ANTHROPIC_MODELS
 ]
@@ -74,12 +74,21 @@ EMBEDDING_CLIENT_MODELS = [
     exposed_name(Provider.OLLAMA, ApiShape.OLM_EMBED, OLLAMA_EMBEDDING_MODEL),
 ]
 
+# Both existing LiteLLM chat routes for each local Ollama model, exposed to Agentplane
+# through the environment's own key.
+OLLAMA_CHAT_CLIENT_MODELS = [
+    exposed_name(Provider.OLLAMA, shape, ollama_chat_variant(model, context))
+    for model, _, contexts in OLLAMA_CHAT_MODELS
+    for context in contexts
+    for shape in (ApiShape.OAI_CHAT, ApiShape.OLM_CHAT)
+]
+
 # The one native subscription model per harness the agentplane testing session form
 # offers; the Codex one on both wires, for Claude Code clients on the same key.
 CHEAP_EXPERIMENTS_CLAUDE_MODEL = exposed_name(
     Provider.ANTHROPIC_API, ApiShape.ANT_MESSAGES, "claude-haiku-4-5-20251001"
 )
-_CHEAP_EXPERIMENTS_CODEX = "gpt-5.6-luna"
+_CHEAP_EXPERIMENTS_CODEX = "gpt-6-luna"
 CHEAP_EXPERIMENTS_CODEX_MODEL = codex_responses_name(_CHEAP_EXPERIMENTS_CODEX)
 # The cheap-experiments key, shared with agents only through an expiring Haku Console
 # Kubernetes grant and standing on the agentplane testing LLM ingress. Intentionally an
@@ -91,12 +100,7 @@ CHEAP_EXPERIMENTS_MODELS = [
     *GEMINI_CLIENT_MODELS,
     *_GEMINI_EMBEDDING_ROUTES,
     *(exposed_name(Provider.MISTRAL, ApiShape.OAI_CHAT, model) for model in MISTRAL_MODELS),
-    *(
-        exposed_name(Provider.OLLAMA, shape, ollama_chat_variant(model, context))
-        for model, _, contexts in OLLAMA_CHAT_MODELS
-        for context in contexts
-        for shape in (ApiShape.OAI_CHAT, ApiShape.OLM_CHAT)
-    ),
+    *OLLAMA_CHAT_CLIENT_MODELS,
     CHEAP_EXPERIMENTS_CLAUDE_MODEL,
     codex_messages_name(_CHEAP_EXPERIMENTS_CODEX),
     CHEAP_EXPERIMENTS_CODEX_MODEL,
@@ -113,6 +117,7 @@ def model_allowlists() -> dict[str, list[str]]:
         "claude_client_models": CLAUDE_CLIENT_MODELS,
         "embedding_client_models": EMBEDDING_CLIENT_MODELS,
         "gemini_client_models": GEMINI_CLIENT_MODELS,
+        "ollama_chat_client_models": OLLAMA_CHAT_CLIENT_MODELS,
         "cheap_experiments_models": CHEAP_EXPERIMENTS_MODELS,
     }
     for lane, models in lanes.items():

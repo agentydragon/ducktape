@@ -26,12 +26,13 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "seaweedfs-csi"
 NAMESPACE = "seaweedfs-csi-system"
 RELEASE = "seaweedfs-csi-driver"
-OUTPUT_DIR = "cluster/k8s/seaweedfs-csi"
+OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs-csi"
 _VERSION = "v1.4.30"
 _ZONE = "topology.kubernetes.io/zone"
 _OVH_AFFINITY = {
@@ -72,7 +73,7 @@ def _values() -> dict[str, object]:
         # Picks up seaweedfs/seaweedfs-csi-driver#301 (merged to master 2026-08-26, released
         # v1.4.30): before this, NodeGetInfo reported no topology at all and CSINode showed
         # topologyKeys=null for every node, so nothing stopped the scheduler from placing a
-        # seaweedfs-ovh*-PVC pod on a non-OVH node (cluster/k8s/kyverno/policies/ formerly
+        # seaweedfs-ovh*-PVC pod on a non-OVH node (cluster/generated/kyverno/policies/ formerly
         # carried a pin-seaweedfs-ovh-consumers ClusterPolicy working around exactly this, now
         # removed in favor of the StorageClasses' own allowedTopologies).
         # `topology.kubernetes.io/zone` matches the node label OVH nodes actually carry

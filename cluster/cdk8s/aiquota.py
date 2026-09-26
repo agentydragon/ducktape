@@ -3,16 +3,18 @@ ClickHouse schema), Service, HTTPRoute and ServiceMonitor, the pull-credentials
 ExternalSecret, and the narrow per-consumer mirrors of its API bearer.
 
 Hand-written beside the generated output (cluster/docs/cdk8s.md): the bearer itself
-(aiquota-api-bearer.sops.yaml), the configMapGenerator inputs config.toml and
-schema.sql, and image-pins/kustomization.yaml, which overrides the API container's
-`unset` placeholder tag.
+(aiquota-api-bearer.sops.yaml), the configMapGenerator input schema.sql, and
+image-pins/kustomization.yaml, which overrides the API container's `unset` placeholder
+tag.
 """
 
 from __future__ import annotations
 
+import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 
+import tomli_w
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     Capability,
@@ -37,6 +39,7 @@ from cdk8s_plus_34 import (
     ServicePort,
     Volume,
     VolumeMount,
+    k8s,
 )
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -54,8 +57,12 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from aiquota.api import Settings
+from aiquota.config import Config
+from cluster.cdk8s import public_coder_proxy
+from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE
+from cluster.cdk8s.cli_proxy_api import cli_proxy_api as cli_proxy_api_app  # aiquota()'s parameter is its Kustomization
 from cluster.cdk8s.clickhouse import client
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
@@ -67,15 +74,46 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
+from util.settings_contract import checked_value, env_name, settings_file
 
 NAME = "aiquota"
-OUTPUT_DIR = "cluster/k8s/aiquota"
-NAMESPACE = "cli-proxy-api"  # shared with CLIProxyAPI, whose Kustomization creates it
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/aiquota"
+NAMESPACE = cli_proxy_api_app.NAMESPACE  # created by CLIProxyAPI's Kustomization
 BEARER_SECRET_NAME = "aiquota-api-bearer"  # the SOPS-managed Secret; every mirror below copies its one key
-CONFIG_CONFIG_MAP = ConfigMapArgs(name="aiquota-api-config", namespace=NAMESPACE, files=["config.toml"])
+# The API reads its config at the Settings default; nothing sets AIQUOTA_CONFIG.
+_CONFIG_PATH: Path = Settings.model_fields["config_path"].default
+_CONFIG_HEADER = textwrap.dedent(
+    """\
+    # The CLIProxyAPI integration keeps the Claude and Codex OAuth credentials and
+    # performs the authenticated usage requests. The legacy Claude setup token
+    # remains owned by Haku's existing egress proxy, not by this Deployment.
+
+    """
+)
+_CONFIG = settings_file(
+    Config,
+    {
+        "cli_proxy_api": {
+            "url": (
+                f"http://{cli_proxy_api_app.NAME}.{cli_proxy_api_app.NAMESPACE}.svc.cluster.local:"
+                f"{cli_proxy_api_app.PORT}/v0/management"
+            )
+        },
+        "claude": {"enabled": True},
+        "codex": {"enabled": True},
+        "zai": {"enabled": False},
+    },
+)
+CONFIG_CONFIG_MAP = ConfigMapArgs(
+    name="aiquota-api-config",
+    namespace=NAMESPACE,
+    literals=[f"{_CONFIG_PATH.name}={_CONFIG_HEADER}{tomli_w.dumps(_CONFIG)}"],
+)
 SCHEMA_CONFIG_MAP = ConfigMapArgs(name="aiquota-schema", namespace=NAMESPACE, files=[client.SCHEMA_FILE])
 
 _API_NAME = "aiquota-api"
@@ -84,7 +122,6 @@ _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _HOSTNAME = "aiquota.allegedly.works"
 _PORT = 8080
 _LABELS = {"app.kubernetes.io/name": NAME}
-_CONFIG_DIR = "/etc/aiquota"
 _BEARER_KEY = "bearer-token"
 
 
@@ -101,22 +138,28 @@ class BearerMirror:
     def secret_name(self) -> str:
         return f"{BEARER_SECRET_NAME}-{self.consumer}"
 
+    @property
+    def secret_key_selector(self) -> k8s.SecretKeySelector:
+        """What a consumer's env reference names."""
+        return k8s.SecretKeySelector(name=self.secret_name, key=_BEARER_KEY)
+
+
+# In the destination namespace only the trusted egress proxy consumes this Secret; the OpenClaw
+# workload receives a non-secret placeholder instead.
+PUBLIC_CODER_BEARER = BearerMirror(
+    consumer="public-coder",
+    namespace=public_coder_proxy.NAMESPACE,
+    description="Shared AIQuota API bearer mirrored only to public-coder-agent's trusted egress proxy.",
+)
+# The same for agentplane-staging's egress proxy (agentplane/egress_staging_credentials.py).
+AGENTPLANE_STAGING_BEARER = BearerMirror(
+    consumer="agentplane-staging",
+    namespace=STAGING_NAMESPACE,
+    description="Shared AIQuota API bearer mirrored only to agentplane-staging's egress proxy credentials.",
+)
 
 BEARER_MIRRORS = (
-    # In the destination namespace only the trusted egress proxy consumes this Secret; the
-    # OpenClaw workload receives a non-secret placeholder instead.
-    BearerMirror(
-        consumer="public-coder",
-        namespace="public-coder-agent",
-        description="Shared AIQuota API bearer mirrored only to public-coder-agent's trusted egress proxy.",
-    ),
-    # Same shape as public-coder: only the trusted haku-claude-oauth-proxy consumes it, the
-    # haku-runtime sandbox receives a placeholder.
-    BearerMirror(
-        consumer="haku-claude",
-        namespace="haku-egress-proxy",
-        description="Shared AIQuota API bearer mirrored only to the haku-claude-oauth-proxy egress proxy.",
-    ),
+    PUBLIC_CODER_BEARER,
     BearerMirror(
         consumer="haku-console",
         namespace="haku-console",
@@ -129,6 +172,7 @@ BEARER_MIRRORS = (
         namespace="haku-sandbox",
         description="Shared AIQuota API bearer mirrored only to haku-sandbox for Haku's own quota reads.",
     ),
+    AGENTPLANE_STAGING_BEARER,
 )
 
 
@@ -157,13 +201,13 @@ class Aiquota(Construct):
         self._add_service_monitor()
 
     def _add_bearer_mirror(self, mirror: BearerMirror) -> None:
-        add_external_secret(
+        ExternalSecret(
             self,
             f"bearer-{mirror.consumer}",
             name=mirror.secret_name,
             namespace=NAMESPACE,
             refresh="1h",
-            store=cluster_secret_store("kubernetes-cli-proxy-api-secret-store"),
+            store=SecretStoreRef.cluster("kubernetes-cli-proxy-api-secret-store"),
             data=[remote_data(BEARER_SECRET_NAME, _BEARER_KEY)],
             creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
             deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
@@ -231,22 +275,28 @@ class Aiquota(Construct):
             image_pull_policy=ImagePullPolicy.ALWAYS,
             ports=[ContainerPort(name="http", number=_PORT, protocol=Protocol.TCP)],
             env_variables={
-                "AIQUOTA_API_BEARER_TOKEN": _secret_env(bearer, _BEARER_KEY),
-                "AIQUOTA_CLIPROXY_API_KEY": _secret_env(cli_proxy_api, "management-password"),
-                "AIQUOTA_CLICKHOUSE_URL": EnvValue.from_value(f"http://{client.HOST}:{client.HTTP_PORT}"),
-                "AIQUOTA_CLICKHOUSE_DATABASE": EnvValue.from_value("aiquota"),
-                "AIQUOTA_CLICKHOUSE_USERNAME": _secret_env(clickhouse_credentials, "username"),
-                "AIQUOTA_CLICKHOUSE_PASSWORD": _secret_env(clickhouse_credentials, "password"),
-                "AIQUOTA_POLL_INTERVAL_SECONDS": EnvValue.from_value("300"),
+                env_name(Settings, "api_bearer_token"): _secret_env(bearer, _BEARER_KEY),
+                env_name(Settings, "cli_proxy_api_key"): _secret_env(cli_proxy_api, "management-password"),
+                env_name(Settings, "clickhouse_url"): EnvValue.from_value(f"http://{client.HOST}:{client.HTTP_PORT}"),
+                env_name(Settings, "clickhouse_database"): EnvValue.from_value("aiquota"),
+                env_name(Settings, "clickhouse_username"): _secret_env(clickhouse_credentials, "username"),
+                env_name(Settings, "clickhouse_password"): _secret_env(clickhouse_credentials, "password"),
+                env_name(Settings, "poll_interval_seconds"): EnvValue.from_value(
+                    str(checked_value(Settings, "poll_interval_seconds", 300))
+                ),
                 # History endpoints restate the same months on every call; hourly is frequent
                 # enough to watch the current day accrue.
-                "AIQUOTA_HISTORY_INTERVAL_SECONDS": EnvValue.from_value("3600"),
+                env_name(Settings, "history_interval_seconds"): EnvValue.from_value(
+                    str(checked_value(Settings, "history_interval_seconds", 3600))
+                ),
                 # App-owned Authentik authorization-code flow for the browser UI and `/api/v1/*`;
                 # the bearer-only `/v1/*` surface remains for clients.
-                "AIQUOTA_OAUTH_ISSUER": EnvValue.from_value("https://auth.allegedly.works/application/o/aiquota/"),
-                "AIQUOTA_OAUTH_CLIENT_ID": _secret_env(oidc, "client_id"),
-                "AIQUOTA_OAUTH_CLIENT_SECRET": _secret_env(oidc, "client_secret"),
-                "AIQUOTA_OAUTH_SESSION_SECRET": _secret_env(oidc, "session_secret"),
+                env_name(Settings, "oauth_issuer"): EnvValue.from_value(
+                    "https://auth.allegedly.works/application/o/aiquota/"
+                ),
+                env_name(Settings, "oauth_client_id"): _secret_env(oidc, "client_id"),
+                env_name(Settings, "oauth_client_secret"): _secret_env(oidc, "client_secret"),
+                env_name(Settings, "oauth_session_secret"): _secret_env(oidc, "session_secret"),
             },
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(25), limit=Cpu.millis(250)),
@@ -260,7 +310,7 @@ class Aiquota(Construct):
             ),
             volume_mounts=[
                 VolumeMount(
-                    path=_CONFIG_DIR,
+                    path=str(_CONFIG_PATH.parent),
                     volume=Volume.from_config_map(
                         self,
                         "config-volume",
@@ -356,9 +406,9 @@ def aiquota(
     )
     write_yaml(
         out_dir / "kustomization.yaml",
-        # aiquota-api-bearer.sops.yaml, config.toml and schema.sql stay hand-written; the
-        # generator entries render the latter two into the ConfigMaps the Deployment mounts.
-        # See cluster/docs/cdk8s.md.
+        # aiquota-api-bearer.sops.yaml and schema.sql stay hand-written (cluster/docs/cdk8s.md);
+        # the generator entries render schema.sql and the config into the ConfigMaps the
+        # Deployment mounts.
         kustomize_kustomization(
             resources=[f"{name}.k8s.yaml", f"{BEARER_SECRET_NAME}.sops.yaml"],
             components=["./image-pins"],

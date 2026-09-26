@@ -36,10 +36,10 @@ from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import create_app
 from agentplane.app.database import connect
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
@@ -120,20 +120,34 @@ class GatedConversationDelivery:
             return
         thread_id = UUID(path.split("/")[2])
         messages: list[Message] = []
+        streaming = started = interrupted = False
 
         async def gated_send(message: Message) -> None:
-            messages.append(message)
-            if message["type"] != "http.response.body" or message.get("more_body", False):
+            nonlocal streaming, started, interrupted
+            if interrupted:
                 return
-            # Only these finite, bounded-interest responses are buffered. The real backend
-            # continues ingesting and Electric still owns snapshot/offset reconciliation.
+            messages.append(message)
+            if message["type"] == "http.response.start":
+                streaming = dict(message["headers"]).get(b"content-type", b"").startswith(b"text/event-stream")
+            # A finite, bounded-interest response is held whole. A live shape's SSE response does
+            # not finish, so each of its chunks is held as it comes. The real backend continues
+            # ingesting and Electric still owns snapshot/offset reconciliation.
+            if message["type"] != "http.response.body" or (message.get("more_body", False) and not streaming):
+                return
             cursor = await self._event_logs.last_cursor(thread_id)
             if cursor > self._gate.after_cursor and await self._gate.hold(cursor) is ReplayAction.DISCONNECT:
+                interrupted = True
+                if started:
+                    # An SSE response under way ends; the client reconnects from its own offset.
+                    await send({"type": "http.response.body", "body": b"", "more_body": False})
+                    return
                 await send({"type": "http.response.start", "status": 503, "headers": []})
                 await send({"type": "http.response.body", "body": b"test transport interruption"})
                 return
+            started = True
             for buffered in messages:
                 await send(buffered)
+            messages.clear()
 
         await self._app(scope, receive, gated_send)
 
@@ -238,7 +252,7 @@ async def _serve(
     engine = connect(database_url)
     store, event_logs, content = ThreadStore(engine), EventLogStore(engine), ContentStore(engine)
     ingestion = Ingestion(engine) if boundary is None else GatedIngestion(engine, Gate(boundary, connection), cursor)
-    thread_updates = ThreadUpdates(engine.url)
+    database_updates = DatabaseUpdates(engine.url)
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
     index = LiveIndex(stale_after_seconds=90, refreshed={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)})
     if sandbox_state is not None:
@@ -259,7 +273,7 @@ async def _serve(
         event_logs=event_logs,
         content=content,
         ingester=ingester,
-        thread_changes=thread_updates.changes,
+        thread_changes=database_updates.changes[Channel.THREADS],
     )
     async with (
         httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,
@@ -274,10 +288,19 @@ async def _serve(
             DecisionsClient(decisions_http),
             index,
             ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom),
-            electric=ElectricProxy(electric_http, content) if electric_url is not None else None,
+            electric=(
+                ElectricProxy(
+                    electric_http,
+                    content,
+                    event_logs=event_logs,
+                    thread_changes=database_updates.changes[Channel.THREADS],
+                )
+                if electric_url is not None
+                else None
+            ),
             event_logs=event_logs,
             content=content,
-            thread_updates=thread_updates,
+            database_updates=database_updates,
             operator_sessions=OperatorSessionStore(engine),
         )
         # Authentication is tested separately; the production routes, HTTP transport, ingestion,
@@ -289,7 +312,7 @@ async def _serve(
             )
         if frontend_directory is not None:
             app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
-        await thread_updates.start()
+        await database_updates.start()
         await ingester.start()
         try:
             with socket.socket() as listener:
@@ -299,7 +322,7 @@ async def _serve(
         finally:
             await ingester.close()
             await runners.close()
-            await thread_updates.close()
+            await database_updates.close()
             await engine.dispose()
 
 

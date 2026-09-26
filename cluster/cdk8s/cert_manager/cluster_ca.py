@@ -6,8 +6,6 @@ namespace.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cert_manager_clusterissuer_crds.io.cert_manager import (
     ClusterIssuer,
@@ -31,11 +29,9 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetConfigMap,
 )
 
-from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
 
 NAME = "cluster-ca"
-OUTPUT_DIR = "cluster/k8s/cert-manager/cluster-ca/base"
 _ROOT_CA_SECRET = "cluster-root-ca-secret"
 
 
@@ -75,14 +71,10 @@ def chart(app: App) -> Chart:
         spec=BundleSpec(
             sources=[
                 BundleSpecSources(secret=BundleSpecSourcesSecret(name=_ROOT_CA_SECRET, key="ca.crt")),
-                # The active issuer's root, from `config/base`; Flux postBuild substitutes it.
+                # The active issuer's root, from `config`; Flux postBuild substitutes it.
                 BundleSpecSources(secret=BundleSpecSourcesSecret(name="${LETSENCRYPT_ISSUER}-root-ca", key="ca.crt")),
             ],
             target=BundleSpecTarget(config_map=BundleSpecTargetConfigMap(key="ca-certificates.crt")),
         ),
     )
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)

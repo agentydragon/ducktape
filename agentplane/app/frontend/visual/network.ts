@@ -6,7 +6,8 @@
  * visual-test-lib's `assertNetworkSettled` reads.
  */
 
-/** An answer is a JSON body, `undefined` for 404, or a ready `Response` for any other status. */
+/** An answer is a JSON body, `undefined` for 404, a ready `Response` for any other status, or
+ * `UNANSWERED`. */
 export type Route = [
   method: string,
   pattern: RegExp,
@@ -19,6 +20,12 @@ export type Route = [
 ];
 
 export const routes: Route[] = [];
+
+/**
+ * An answer that never comes, as for a request queued behind the browser's connection limit: the
+ * fetch stays pending until its signal aborts, and the ledger does not wait for it.
+ */
+export const UNANSWERED: unique symbol = Symbol("unanswered");
 
 /** A real Electric HTTP shape batch: row operations followed by a completed-snapshot control. */
 export interface ElectricShapeMessage {
@@ -96,10 +103,10 @@ export function electricShape(rows: readonly ElectricShapeMessage[], handle: str
 }
 
 /**
- * A valid live response whose body has not received a change yet. Fetch itself settles, while
- * Electric's body reader waits until the store closes the shape.
+ * A live SSE response that has not carried a change yet. Fetch itself settles, while Electric's
+ * event reader waits until the store closes the shape.
  */
-export function electricLongPoll(handle: string, relation?: string, signal?: AbortSignal): Response {
+export function electricLive(handle: string, relation?: string, signal?: AbortSignal): Response {
   const schema = ELECTRIC_SCHEMAS[relation ?? "thread_entity"];
   if (schema === undefined) throw new Error(`no Electric schema for ${relation}`);
   let onAbort: (() => void) | undefined;
@@ -121,7 +128,7 @@ export function electricLongPoll(handle: string, relation?: string, signal?: Abo
       removeAbortListener();
     },
   });
-  return new Response(body, { headers: shapeHeaders(handle, schema) });
+  return new Response(body, { headers: { ...shapeHeaders(handle, schema), "content-type": "text/event-stream" } });
 }
 
 /**
@@ -179,6 +186,11 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
       if (routeMethod !== method || !match) continue;
       const requestBody = typeof init?.body === "string" ? init.body : undefined;
       const body = answer(match, url.searchParams, signal, requestBody);
+      if (body === UNANSWERED) {
+        return new Promise<Response>((_resolve, reject) => {
+          if (signal) signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      }
       if (body instanceof Response) return body;
       if (body === undefined) return Response.json({ detail: `no such sandbox ${match[1]}` }, { status: 404 });
       return Response.json(body);

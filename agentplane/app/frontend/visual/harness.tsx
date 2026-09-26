@@ -14,10 +14,12 @@ import { createRoot } from "react-dom/client";
 import App from "../app";
 import { sampleConnection } from "../connections_fixture";
 import type {
+  ActionGroupView,
   ActionPolicyView,
   ActionRequestView,
   BindingView,
   Decision,
+  McpLinkageView,
   PolicyView,
   SandboxView,
   ThreadView,
@@ -34,9 +36,10 @@ import {
   type SessionSpec,
   type SessionSummary,
 } from "../../../runner/protocol_pb";
-import { electricLongPoll, electricShape, electricSubset, routes } from "./network";
+import { electricLive, electricShape, electricSubset, routes, UNANSWERED } from "./network";
 import { SCENARIOS, type Scenario } from "./scenarios";
 import { LocalCommands } from "../local_commands";
+import { streamRegistry } from "../stream_status";
 
 /** Resolved before any fixture is built: the scenario's fields are what the fixtures vary on. */
 function resolveScenario(): Scenario {
@@ -726,6 +729,7 @@ function item(
     tool?: string;
     arguments?: string;
     output?: string;
+    failed?: boolean;
     complete?: boolean;
     turn?: string;
     threadId?: string;
@@ -738,8 +742,8 @@ function item(
     {
       kind,
       tool_name: extra.tool ?? "",
-      completion: extra.complete === false ? null : text,
-      tool_succeeded: extra.output === undefined ? null : true,
+      completion: extra.complete === false ? null : kind === ItemKind.TOOL_CALL ? "tool" : "text",
+      tool_succeeded: extra.output === undefined ? null : !extra.failed,
     },
     {
       thread_id: extra.threadId,
@@ -905,6 +909,7 @@ function statesRows(threadId: string): Record<string, unknown>[] {
       tool: "Bash",
       arguments: '{"command":"git branch -d stale"}',
       output: "fatal: branch 'stale' not found.",
+      failed: true,
     }),
     item(10, "m-0", ItemKind.ASSISTANT_TEXT, "That branch does not exist.", { threadId, turn: "t1" }),
     item(16, "r-0", ItemKind.REASONING, "Running the suite twice exposes flaky failures.", {
@@ -979,6 +984,130 @@ if (scenario.pendingCommands === "outcomes") {
   );
 }
 
+// One MCP server per row state the MCP servers page draws: linked and connected, a link whose token
+// lapsed while its refresh keeps failing, a refresh the provider refused, never linked, and
+// bearer-only backends that are up or unreachable.
+const MCP_LINKAGES: McpLinkageView[] = [
+  {
+    server_id: "example_docs",
+    server_url: "https://docs-mcp.example.test/mcp",
+    status: "linked",
+    revision: 3,
+    scopes: ["openid", "offline_access"],
+    expires_at: new Date(NOW + HOUR).toISOString(),
+    linked_at: ago(30 * 24 * HOUR),
+    linked_by: null,
+  },
+  {
+    server_id: "example_cluster",
+    server_url: "https://cluster-mcp.example.test/mcp",
+    status: "expired",
+    revision: 2,
+    scopes: ["openid", "email", "profile", "offline_access"],
+    expires_at: ago(2 * HOUR),
+    linked_at: ago(9 * 24 * HOUR),
+    linked_by: null,
+    refresh_failure: {
+      action: "retrying",
+      error: "the token endpoint answered HTTP 503 Service Unavailable",
+      attempts: 6,
+      retry_at: new Date(NOW + 4 * 60_000).toISOString(),
+    },
+  },
+  {
+    server_id: "example_calendar",
+    server_url: "https://calendar-mcp.example.test/mcp",
+    status: "degraded",
+    revision: 5,
+    scopes: ["openid", "offline_access"],
+    expires_at: ago(HOUR),
+    linked_at: ago(40 * 24 * HOUR),
+    linked_by: null,
+    refresh_failure: {
+      action: "reconnect",
+      error: "the OAuth provider refused the token request: invalid_grant: Token is not active",
+      attempts: 1,
+      retry_at: null,
+    },
+  },
+  {
+    server_id: "example_pantry",
+    server_url: "https://pantry-mcp.example.test/mcp",
+    status: "unlinked",
+    revision: 0,
+    scopes: [],
+    expires_at: null,
+    linked_at: null,
+    linked_by: null,
+  },
+];
+
+function mcpGroup(key: string, executorDescription: string, health: ActionGroupView["health"]): ActionGroupView {
+  return {
+    key,
+    title: key,
+    description: `Test MCP backend ${key}.`,
+    executor_kind: "mcp",
+    executor_description: executorDescription,
+    available: health?.state === "available",
+    health,
+    actions: [],
+  };
+}
+
+const MCP_GROUPS: ActionGroupView[] = [
+  mcpGroup("example_docs", "Linked operator account.", {
+    state: "available",
+    reason: null,
+    detail: null,
+    last_discovery_at: ago(60_000),
+    retry_at: null,
+    failures: 0,
+  }),
+  mcpGroup("example_cluster", "Linked operator account.", {
+    state: "disconnected",
+    reason: "linkage_unavailable",
+    detail: `the access token expired at ${ago(2 * HOUR)
+      .replace("T", " ")
+      .slice(0, 19)} UTC and has not been refreshed`,
+    last_discovery_at: ago(3 * HOUR),
+    retry_at: new Date(NOW + 20_000).toISOString(),
+    failures: 12,
+  }),
+  mcpGroup("example_calendar", "Linked operator account.", {
+    state: "disconnected",
+    reason: "linkage_unavailable",
+    detail: "refreshing the token failed in a way retrying cannot fix; link the account again",
+    last_discovery_at: ago(HOUR),
+    retry_at: new Date(NOW + 20_000).toISOString(),
+    failures: 9,
+  }),
+  mcpGroup("example_pantry", "Linked operator account.", {
+    state: "disconnected",
+    reason: "linkage_unavailable",
+    detail: "no account is linked",
+    last_discovery_at: null,
+    retry_at: new Date(NOW + 20_000).toISOString(),
+    failures: 4,
+  }),
+  mcpGroup("example_mail", "Test MCP backend behind a static bearer.", {
+    state: "disconnected",
+    reason: "connect_failed",
+    detail: "RuntimeError: Client failed to connect: All connection attempts failed",
+    last_discovery_at: null,
+    retry_at: new Date(NOW + 20_000).toISOString(),
+    failures: 7,
+  }),
+  mcpGroup("example_notes", "Test MCP backend behind a static bearer.", {
+    state: "available",
+    reason: null,
+    detail: null,
+    last_discovery_at: ago(60_000),
+    retry_at: null,
+    failures: 0,
+  }),
+];
+
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
 // live streams above.
 routes.push(
@@ -1033,9 +1162,10 @@ routes.push(
     ],
   ],
   ["GET", /^\/connection-service-accounts$/, () => [{ namespace: "agentplane-visual", name: "operator-assistant" }]],
-  // The Settings modal mounts all three tabs at once (Mantine keepMounted); MCP servers and
+  // The Settings modal mounts all three tabs at once (Mantine keepMounted), so MCP servers and
   // Notifications fetch on mount even while the OAuth clients tab is the one shown in the shot.
-  ["GET", /^\/mcp-servers$/, () => []],
+  ["GET", /^\/mcp-servers$/, () => MCP_LINKAGES],
+  ["GET", /^\/action-groups$/, () => MCP_GROUPS],
   ["GET", /^\/push\/config$/, () => ({ application_server_key: null })],
   ["GET", /^\/push\/subscriptions$/, () => []],
   [
@@ -1213,9 +1343,11 @@ routes.push(
     "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
     (match, query, signal) =>
-      query.get("live") === "true"
-        ? electricLongPoll(`visual-entities-${match[1]}`, undefined, signal)
-        : electricShape([], `visual-entities-${match[1]}`),
+      query.get("live") !== "true"
+        ? electricShape([], `visual-entities-${match[1]}`)
+        : scenario.sessionReplay === "reconnecting"
+          ? Response.json({ detail: "thread shape is temporarily unavailable" }, { status: 503 })
+          : electricLive(`visual-entities-${match[1]}`, undefined, signal),
   ],
   [
     "POST",
@@ -1238,7 +1370,7 @@ routes.push(
     /^\/threads\/([0-9a-f-]+)\/sync\/chunks\/([a-z_]+)$/,
     (match, query, signal) =>
       query.get("live") === "true"
-        ? electricLongPoll(`visual-chunks-${match[1]}-${match[2]}`, "thread_payload_chunk", signal)
+        ? electricLive(`visual-chunks-${match[1]}-${match[2]}`, "thread_payload_chunk", signal)
         : electricShape([], `visual-chunks-${match[1]}-${match[2]}`, "thread_payload_chunk"),
   ],
   [
@@ -1288,6 +1420,15 @@ routes.push(
       next_after_sequence: null,
     }),
   ],
+  // No runner here admits a command, so one the page delivers on load stays unadmitted.
+  [
+    "POST",
+    /^\/threads\/([0-9a-f-]+)\/commands$/,
+    () =>
+      scenario.commandAdmissionTimedOut
+        ? Response.json({ detail: "runner did not admit the command within 15 seconds" }, { status: 504 })
+        : UNANSWERED,
+  ],
   ["GET", /^\/threads\/([0-9a-f-]+)\/observations$/, (match) => observationPage(match[1])],
   [
     "GET",
@@ -1327,10 +1468,15 @@ function watch(): WatchHealth {
   return scenario.wedgedWatch ? WEDGED : FRESH;
 }
 
-/** Live inventory and action streams remain EventSource; projected threads use Electric fetches above. */
+/** Live inventory and action streams remain EventSource; projected threads use Electric fetches above.
+ * A stream a scenario drops goes back to `CONNECTING`, as a browser's does when the network drops,
+ * and never reconnects. */
 class HarnessEventSource extends EventTarget {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 2;
   readonly url: string;
-  readyState = 1;
+  readyState = HarnessEventSource.CONNECTING;
 
   constructor(url: string) {
     super();
@@ -1340,6 +1486,7 @@ class HarnessEventSource extends EventTarget {
   }
 
   private serve(url: URL): void {
+    this.readyState = HarnessEventSource.OPEN;
     if (url.pathname === "/live/threads") {
       const snapshot: ThreadsSnapshot = {
         sandboxes: SANDBOXES,
@@ -1348,12 +1495,13 @@ class HarnessEventSource extends EventTarget {
         watch: watch(),
       };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      if (scenario.sidebarSource === "disconnected") this.dispatchEvent(new Event("error"));
+      if (scenario.sidebarSource === "disconnected") this.drop();
       return;
     }
     if (url.pathname === "/live/sandboxes") {
       const snapshot: SandboxesSnapshot = { sandboxes: SANDBOXES, watch: watch() };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
+      if (scenario.inventoryDropped) this.drop();
       return;
     }
     const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
@@ -1375,12 +1523,34 @@ class HarnessEventSource extends EventTarget {
     throw new Error(`Unexpected EventSource route: ${url.pathname}`);
   }
 
+  private drop(): void {
+    this.readyState = HarnessEventSource.CONNECTING;
+    this.dispatchEvent(new Event("error"));
+  }
+
   close(): void {
-    this.readyState = 2;
+    this.readyState = HarnessEventSource.CLOSED;
   }
 }
 
 window.EventSource = HarnessEventSource as unknown as typeof EventSource;
+
+// Under the frozen clock no stream is ever off for any time at all, so the registry's runs ahead of
+// it instead: a stream off since the scene began has been off this long when it renders.
+const { outageAge } = scenario;
+if (outageAge !== undefined) streamRegistry.now = () => Date.now() + outageAge;
+
+if (scenario.openConnectionStatus) {
+  // Focus opens the indicator's tooltip, as it does for a keyboard or touch reader. Every stream is
+  // off until its first frame, so the one to open is the indicator for a stream that has dropped.
+  const openStatus = new MutationObserver(() => {
+    const indicator = document.querySelector<HTMLElement>('[data-connection][aria-label*="reconnecting"]');
+    if (!indicator) return;
+    openStatus.disconnect();
+    indicator.focus();
+  });
+  openStatus.observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-label"] });
+}
 
 if (scenario.openDebug) {
   const openDebug = new MutationObserver(() => {
@@ -1403,16 +1573,55 @@ if (scenario.openDebug) {
   openDebug.observe(document, { childList: true, subtree: true });
 }
 
+/** Opens the folded tool-call run, whose steps mount only once it is open. */
+function openRun(summaries: HTMLElement[]): void {
+  summaries
+    .find(
+      (candidate) =>
+        candidate.textContent?.includes("tool call") &&
+        candidate.parentElement instanceof HTMLDetailsElement &&
+        !candidate.parentElement.open
+    )
+    ?.click();
+}
+
 if (scenario.openReasoning) {
   const openReasoning = new MutationObserver(() => {
-    const summary = [...document.querySelectorAll("summary")].find(
-      (candidate) => candidate.textContent === "Reasoning"
-    );
-    if (!(summary instanceof HTMLElement)) return;
+    const summaries = [...document.querySelectorAll("summary")];
+    const step = summaries.find((candidate) => candidate.textContent === "Reasoning");
+    if (!step) {
+      openRun(summaries);
+      return;
+    }
     openReasoning.disconnect();
-    summary.click();
+    step.click();
   });
   openReasoning.observe(document, { childList: true, subtree: true });
+}
+
+if (scenario.openToolPayloads) {
+  const unopened = new Set(["Arguments", "Output"]);
+  const openToolPayloads = new MutationObserver(() => {
+    const summaries = [...document.querySelectorAll("summary")];
+    openRun(summaries);
+    for (const summary of summaries) {
+      if (unopened.delete(summary.textContent ?? "")) summary.click();
+    }
+    if (unopened.size === 0) openToolPayloads.disconnect();
+  });
+  openToolPayloads.observe(document, { childList: true, subtree: true });
+}
+
+if (scenario.openEvidence) {
+  const openEvidence = new MutationObserver(() => {
+    const button = document.querySelector<HTMLButtonElement>(
+      `[data-thread-anchor="${scenario.openEvidence}"] button[aria-label="Evidence"]`
+    );
+    if (!button) return;
+    openEvidence.disconnect();
+    button.click();
+  });
+  openEvidence.observe(document, { childList: true, subtree: true });
 }
 
 if (scenario.preselectReconnect) {

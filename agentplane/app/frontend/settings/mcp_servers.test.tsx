@@ -186,7 +186,14 @@ it("shows a bearer-auth group with a live health badge and no link/disconnect bu
         executor_kind: "mcp",
         executor_description: "Tana MCP tools",
         available: true,
-        health: { state: "available", reason: null, last_discovery_at: null, retry_at: null, failures: 0 },
+        health: {
+          state: "available",
+          reason: null,
+          detail: null,
+          last_discovery_at: null,
+          retry_at: null,
+          failures: 0,
+        },
         actions: [],
       },
     ]
@@ -198,7 +205,7 @@ it("shows a bearer-auth group with a live health badge and no link/disconnect bu
   expect(buttons).not.toContain("Disconnect");
 });
 
-it("surfaces a linked-but-disconnected mismatch that the oauth-only view would hide", async () => {
+it("labels a linked-but-disconnected server's two states and says why it cannot connect", async () => {
   const container = await render(
     async () => [
       {
@@ -224,6 +231,7 @@ it("surfaces a linked-but-disconnected mismatch that the oauth-only view would h
         health: {
           state: "disconnected",
           reason: "connect_failed",
+          detail: "RuntimeError: Client failed to connect: All connection attempts failed",
           last_discovery_at: null,
           retry_at: null,
           failures: 3,
@@ -232,8 +240,9 @@ it("surfaces a linked-but-disconnected mismatch that the oauth-only view would h
       },
     ]
   );
-  expect(container.textContent).toContain("linked");
-  expect(container.textContent).toContain("connect_failed");
+  expect(container.textContent).toContain("OAuth linklinked");
+  expect(container.textContent).toContain("Connectionconnect_failed");
+  expect(container.textContent).toContain("RuntimeError: Client failed to connect: All connection attempts failed");
 });
 
 it("renders an oauth linkage with no matching health row exactly as before", async () => {
@@ -274,4 +283,68 @@ it("excludes a non-mcp (e.g. sandbox-kind) group from the list", async () => {
   );
   expect(container.textContent).not.toContain("sandbox");
   expect(container.textContent).toContain("No MCP servers are configured");
+});
+
+it("shows a refused token refresh with the provider's error and what to do next", async () => {
+  const container = await render(async () => [
+    {
+      server_id: "github",
+      server_url: "https://mcp.example.test",
+      status: "degraded",
+      revision: 2,
+      scopes: [],
+      expires_at: null,
+      linked_at: null,
+      linked_by: null,
+      refresh_failure: {
+        action: "reconnect",
+        error: "the OAuth provider refused the token request: invalid_grant: Token is not active",
+        attempts: 1,
+        retry_at: null,
+      },
+    },
+  ]);
+  expect(container.textContent).toContain(
+    "Token refresh failed once, link the account again:the OAuth provider refused the token request: invalid_grant: Token is not active"
+  );
+});
+
+it("does not repeat a linkage wait under a refresh failure that already explains it", async () => {
+  const container = await render(
+    async () => [
+      {
+        server_id: "github",
+        server_url: "https://mcp.example.test",
+        status: "degraded",
+        revision: 2,
+        scopes: [],
+        expires_at: null,
+        linked_at: null,
+        linked_by: null,
+        refresh_failure: { action: "reconnect", error: "test-only refusal", attempts: 1, retry_at: null },
+      },
+    ],
+    {},
+    async () => [
+      {
+        key: "github",
+        title: "GitHub",
+        description: "Test MCP backend.",
+        executor_kind: "mcp",
+        executor_description: "Linked operator account.",
+        available: false,
+        health: {
+          state: "disconnected",
+          reason: "linkage_unavailable",
+          detail: "test-only linkage wait",
+          last_discovery_at: null,
+          retry_at: null,
+          failures: 1,
+        },
+        actions: [],
+      },
+    ]
+  );
+  expect(container.textContent).toContain("test-only refusal");
+  expect(container.textContent).not.toContain("test-only linkage wait");
 });

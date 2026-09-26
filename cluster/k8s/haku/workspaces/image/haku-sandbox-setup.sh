@@ -145,7 +145,7 @@ fi
 # This box mounts no ServiceAccount token, so `kubectl` reaches Kubernetes only through
 # haku-kube-api-proxy, which authorizes every request against Console before forwarding it
 # under the proxy's own in-cluster credential. Standing authority is unchanged: Console SARs
-# the haku access-profile group, which cluster/k8s/haku/rbac/rolebinding-haku.yaml binds to
+# the haku access-profile group, which cluster/cdk8s/haku/rbac.py binds to
 # the same haku-sandbox-admin Role the mounted token used to carry. What the box loses is a
 # credential it could exfiltrate, and `kubectl attach` / `kubectl proxy`, which the proxy
 # answers 501 (exec, port-forward, logs -f and watch all stream).

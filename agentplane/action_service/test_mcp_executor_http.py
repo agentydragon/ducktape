@@ -9,8 +9,9 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
+import socket
 from collections.abc import AsyncIterator, Iterator
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -239,7 +240,11 @@ async def test_http_session_discovery_call_and_shutdown(
         assert http_group.actions["echo"].input_schema == fake_server.tools[0]["inputSchema"]
         result = await executor.execute(execution_request, execution_lease)
         assert result.state is ExecutionState.SUCCEEDED
-        assert result.result == {"echoed": "hi", "api_key": "test-only-backend-secret"}
+        assert result.result == {
+            "content": [{"type": "text", "text": "hi"}],
+            "structuredContent": {"echoed": "hi", "api_key": "test-only-backend-secret"},
+            "isError": False,
+        }
         assert [post["method"] for post in fake_server.posts] == [
             "server/discover",
             "initialize",
@@ -313,7 +318,7 @@ async def test_http_tool_error_output_is_a_successful_result(
     result = await executor.execute(execution_request, execution_lease)
     assert result.state is ExecutionState.SUCCEEDED
     assert result.error is None
-    assert result.result == {"is_error": True, "content": ["backend tool error text"]}
+    assert result.result == {"content": [{"type": "text", "text": "backend tool error text"}], "isError": True}
     assert len(fake_server.calls) == 1
 
 
@@ -329,7 +334,19 @@ async def test_http_missing_call_result_is_unknown_without_retry(
     assert len(fake_server.calls) == 1
 
 
-async def test_unlinked_oauth_group_starts_dormant_without_connecting() -> None:
+@pytest.mark.parametrize(
+    ("unusable", "detail"),
+    [
+        (SimpleNamespace(status=McpLinkageStatus.UNLINKED), "no account is linked"),
+        (
+            SimpleNamespace(status=McpLinkageStatus.EXPIRED, expires_at=datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)),
+            "the access token expired at 2026-01-02 03:04:05 UTC and has not been refreshed",
+        ),
+    ],
+)
+async def test_oauth_group_without_a_usable_linkage_stays_dormant_and_says_why(
+    unusable: SimpleNamespace, detail: str
+) -> None:
     group = ActionGroup(
         title="OAuth test group",
         description="Unlinked OAuth test peer",
@@ -348,10 +365,7 @@ async def test_unlinked_oauth_group_starts_dormant_without_connecting() -> None:
     linkage_changed = asyncio.Event()
     linkage.subscribe_changes = Mock(return_value=linkage_changed)
     linkage.unsubscribe_changes = Mock()
-    linkage.status.side_effect = [
-        SimpleNamespace(status=McpLinkageStatus.UNLINKED),
-        SimpleNamespace(status=McpLinkageStatus.LINKED),
-    ]
+    linkage.status.side_effect = [unusable, SimpleNamespace(status=McpLinkageStatus.LINKED)]
     with patch("agentplane.action_service.mcp_executor.StreamableHttpTransport") as transport:
         executor = McpActionGroupExecutor.from_group_with_linkage("remote", group, linkage)
         connected = asyncio.Event()
@@ -369,6 +383,8 @@ async def test_unlinked_oauth_group_starts_dormant_without_connecting() -> None:
                 assert group.actions == {}
                 assert transport.call_count == 0
                 linkage.status.assert_awaited()
+                assert group.health is not None
+                assert (group.health.reason, group.health.detail) == ("linkage_unavailable", detail)
                 linkage_changed.set()
                 async with asyncio.timeout(1):
                     await connected.wait()
@@ -456,17 +472,54 @@ async def test_runtime_serves_unavailable_group_and_recovers_without_restart(
             "type": "object",
             "properties": {"invalid": {"type": "test-invalid-type"}},
         }
-    async with running_executor(ActionCatalog(groups={"remote": http_group})):
+    catalog = ActionCatalog(groups={"remote": http_group})
+    url = str(mcp_binding(http_group).config["url"])
+    async with running_executor(catalog):
         assert not http_group.available
         await wait_retry(http_group)
         assert http_group.health is not None
         assert http_group.actions == {}
-        assert str(mcp_binding(http_group).config["url"]) not in http_group.health.model_dump_json()
+        # The operator's view says what failed; a workload's never names the backend.
+        assert (
+            http_group.health.detail
+            == {
+                "unavailable": "MCPError: Server returned an error response",
+                "invalid_schema": "_InvalidMcpCatalogError: tool 'echo' input schema: "
+                "'test-invalid-type' is not valid under any of the given schemas",
+            }[failure]
+        )
+        assert url not in "".join(view.model_dump_json() for view in catalog.group_views(with_detail=False))
         assert fake_server.calls == []
         fake_server.list_unavailable = False
         fake_server.tools[0]["inputSchema"] = {"type": "object"}
         await wait_available(http_group)
         assert set(http_group.actions) == {"echo"}
+        assert http_group.health.detail is None
+
+
+async def test_unreachable_backend_reports_the_connection_error() -> None:
+    with socket.socket() as reserved:
+        reserved.bind(("127.0.0.1", 0))  # Bound but never listening: every connect is refused.
+        group = ActionGroup(
+            title="Unreachable test group",
+            description="Nothing accepts connections here",
+            executor=McpExecutorBinding(
+                kind="mcp",
+                description="Unreachable test peer",
+                config={
+                    "transport": "streamable-http",
+                    "url": f"http://127.0.0.1:{reserved.getsockname()[1]}/test-mcp",
+                    "auth": "none",
+                },
+            ),
+        )
+        async with running_executor(ActionCatalog(groups={"remote": group})):
+            await wait_retry(group)
+            assert group.health is not None
+            assert (group.health.reason, group.health.detail) == (
+                "connect_failed",
+                "RuntimeError: Client failed to connect: All connection attempts failed",
+            )
 
 
 async def test_main_oauth_serves_during_backend_outage_and_recovers(
@@ -525,7 +578,11 @@ async def test_main_oauth_serves_during_backend_outage_and_recovers(
                 while (final := await service.get(pending.id, caller)).state is not ActionState.SUCCEEDED:
                     pass  # Database reads yield until the durable result is published.
             assert final.execution is not None
-            assert final.execution.result == {"echoed": "recovered", "api_key": "[redacted]"}
+            assert final.execution.result == {
+                "content": [{"type": "text", "text": "hi"}],
+                "structuredContent": {"echoed": "recovered", "api_key": "[redacted]"},
+                "isError": False,
+            }
             assert len(fake_server.calls) == 1
             assert (await client.get("/.well-known/oauth-authorization-server")).json() == metadata.json()
 
@@ -552,7 +609,7 @@ async def test_production_http_composition_one_execution_no_replay(
         await wait_available(http_group)
         assert catalog.action_view("remote", "echo").input_schema == fake_server.tools[0]["inputSchema"]
         assert str(mcp_binding(http_group).config["url"]) not in "".join(
-            view.model_dump_json() for view in catalog.group_views()
+            view.model_dump_json() for view in catalog.group_views(with_detail=False)
         )
         body = ActionRequestInput(
             idempotency_key="http-once",
@@ -586,8 +643,12 @@ async def test_production_http_composition_one_execution_no_replay(
                 pass  # Each database read yields; wait for durable completion, not an elapsed delay.
         assert final.execution is not None
         assert final.execution.result == {
-            "success": {"echoed": "hi", "api_key": "[redacted]"},
-            "tool_error": {"is_error": True, "content": ["backend tool error text"]},
+            "success": {
+                "content": [{"type": "text", "text": "hi"}],
+                "structuredContent": {"echoed": "hi", "api_key": "[redacted]"},
+                "isError": False,
+            },
+            "tool_error": {"content": [{"type": "text", "text": "backend tool error text"}], "isError": True},
         }.get(outcome)
         if outcome not in {"success", "tool_error"}:
             assert final.execution.error is not None

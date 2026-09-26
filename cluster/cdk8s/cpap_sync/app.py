@@ -56,11 +56,12 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "cpap-sync"
 NAMESPACE = "cpap-sync"
-OUTPUT_DIR = "cluster/k8s/cpap-sync"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cpap-sync"
 # The tags come from image-pins/kustomization.yaml.
 _IMAGE = "git.allegedly.works/ducktape-ci/cpap-sync:unset"
 _GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/cpap-gateway:unset"

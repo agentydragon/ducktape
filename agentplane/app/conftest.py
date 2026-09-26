@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import secrets
 from collections.abc import AsyncIterator, Generator, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -23,16 +24,16 @@ from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.database import connect
 from agentplane.app.database_migrate import RUNNER
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
-from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
 from agentplane.app.testing.kubernetes import (
     NAMESPACE,
@@ -131,8 +132,8 @@ def ingestion(engine: AsyncEngine) -> Ingestion:
 
 
 @pytest.fixture
-async def thread_updates(engine: AsyncEngine) -> AsyncIterator[ThreadUpdates]:
-    updates = ThreadUpdates(engine.url)
+async def database_updates(engine: AsyncEngine) -> AsyncIterator[DatabaseUpdates]:
+    updates = DatabaseUpdates(engine.url)
     await updates.start()
     try:
         yield updates
@@ -147,13 +148,14 @@ class Replica:
     store: ThreadStore
     event_logs: EventLogStore
     ingestion: Ingestion
+    operator_sessions: OperatorSessionStore
 
 
 @pytest.fixture
 async def replica(db_url: str) -> AsyncIterator[Replica]:
     engine = connect(db_url)
     try:
-        yield Replica(ThreadStore(engine), EventLogStore(engine), Ingestion(engine))
+        yield Replica(ThreadStore(engine), EventLogStore(engine), Ingestion(engine), OperatorSessionStore(engine))
     finally:
         await engine.dispose()
 
@@ -161,6 +163,21 @@ async def replica(db_url: str) -> AsyncIterator[Replica]:
 @pytest.fixture
 def operator_sessions(engine: AsyncEngine) -> OperatorSessionStore:
     return OperatorSessionStore(engine)
+
+
+async def stored_login(store: OperatorSessionStore, login: OperatorSession) -> SessionRow:
+    """`login` in a session row, as a callback leaves one, reached as a request reaches it."""
+    now = datetime.now(UTC)
+    row = BrowserSession(
+        id=secrets.token_hex(32),
+        expires_at=now + timedelta(hours=1),
+        absolute_expires_at=now + timedelta(days=1),
+        payload={},
+    )
+    row.login = login
+    async with store.sessions.begin() as db:
+        db.add(row)
+    return SessionRow(store, row.id, idle=timedelta(hours=1), step=timedelta(minutes=5))
 
 
 SPEC = protocol_pb2.SessionSpec(
@@ -216,14 +233,14 @@ def bridge(
     event_logs: EventLogStore,
     content: ContentStore,
     ingester: Ingester,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
 ) -> RunnerBridge:
     return RunnerBridge(
         runners=runners,
         event_logs=event_logs,
         content=content,
         ingester=ingester,
-        thread_changes=thread_updates.changes,
+        thread_changes=database_updates.changes[Channel.THREADS],
     )
 
 

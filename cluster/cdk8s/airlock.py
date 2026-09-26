@@ -37,14 +37,15 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 
 NAME = "airlock"
-OUTPUT_DIR = "cluster/k8s/agents/airlock"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/airlock"
 _LABELS = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "server"}
 _PORT = 8765
 _SESSION_SECRET = "airlock-session-secret"
@@ -140,13 +141,13 @@ def _session_secret(chart: Chart) -> None:
         metadata=metadata(_SESSION_SECRET, NAME),
         spec=PasswordSpec(allow_repeat=True, digits=16, length=64, no_upper=False, symbols=0),
     )
-    add_external_secret(
+    ExternalSecret(
         chart,
         "session-secret",
         name=_SESSION_SECRET,
         namespace=NAME,
         refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[password_generator(generator.name)],
+        data_from=[DataFrom.from_password_generator(generator.name)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
         template=ExternalSecretSpecTargetTemplate(data={"session-secret": "{{ .password }}"}, type="Opaque"),
         immutable=True,

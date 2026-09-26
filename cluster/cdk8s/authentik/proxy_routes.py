@@ -23,14 +23,14 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesFiltersType,
 )
 
-from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "proxy-routes"
 NAMESPACE = "authentik"
-OUTPUT_DIR = "cluster/k8s/authentik/proxy-routes"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/proxy-routes"
 _OUTPOST = "authentik-server"
 _OUTPOST_PORT = 80
 
@@ -165,4 +165,3 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"]))

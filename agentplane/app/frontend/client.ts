@@ -21,12 +21,17 @@ export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({
 // of the app does the authenticating, since then no request of ours is ever answered 401. While
 // the login navigation is in flight the document is being replaced, so the request never settles:
 // the page keeps its loading state instead of flashing the 401 it cannot act on.
-api.use({
-  onResponse({ response }) {
-    if (response.status === 401 && redirectToLogin()) return new Promise<never>(() => {});
-    return response;
-  },
-});
+function unlessLoggedOut(response: Response): Response | Promise<never> {
+  if (response.status === 401 && redirectToLogin()) return new Promise<never>(() => {});
+  return response;
+}
+
+api.use({ onResponse: ({ response }) => unlessLoggedOut(response) });
+
+/** `fetch` under `api`'s 401 policy, for the app's own routes that do not go through `api`. */
+export async function fetchWithLogin(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  return unlessLoggedOut(await fetch(input, init));
+}
 
 export type SandboxView = components["schemas"]["SandboxView"];
 export type NewSandbox = components["schemas"]["NewSandbox"];
@@ -325,6 +330,14 @@ export async function models(): Promise<ModelCatalog> {
 }
 
 /**
+ * Above the server's own bound: two sequential `COMMAND_ADMISSION_S` (15 s) waits, for runner
+ * admission and then for its archive copy (`agentplane/app/agent_runtime/runner/bridge.py`). The
+ * clock also runs while the browser queues the request for a free connection, so a queued or hung
+ * request surfaces as a failed attempt rather than waiting silently forever.
+ */
+const COMMAND_TIMEOUT_MS = 45_000;
+
+/**
  * The saved command boundary: this is the exact archived CommandAdmitted EventEntry, not a
  * prediction that a harness has already executed the operation. Replaying the same immutable
  * command returns that same entry, so a lost HTTP response is safe to retry.
@@ -333,6 +346,7 @@ export async function command(threadId: string, message: Command): Promise<Event
   const { data, error } = await api.POST("/threads/{thread_id}/commands", {
     params: { path: { thread_id: threadId } },
     body: toJson(CommandSchema, message) as JsonObject,
+    signal: AbortSignal.timeout(COMMAND_TIMEOUT_MS),
   });
   if (error) throw new Error(displayableError(error));
   return fromJson(EventEntrySchema, data as JsonValue);
@@ -342,11 +356,14 @@ export function eventsUrl(threadId: string): string {
   return `/threads/${encodeURIComponent(threadId)}/events/stream`;
 }
 
-/** The epoch a thread's shapes are pinned to, or null while the thread has no fold yet. */
+/**
+ * The epoch a thread's shapes are pinned to. A long poll: the server holds the read until the
+ * thread has a fold, and answers null if it still has none when the hold runs out.
+ */
 export async function threadScope(threadId: string, signal?: AbortSignal): Promise<ThreadScope | null> {
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/scope`, window.location.href);
-  const response = await fetch(url, { signal });
-  if (response.status === 404) return null;
+  const response = await fetchWithLogin(url, { signal });
+  if (response.status === 204) return null;
   if (!response.ok) throw new Error(`Thread scope failed with ${response.status}`);
   return (await response.json()) as ThreadScope;
 }

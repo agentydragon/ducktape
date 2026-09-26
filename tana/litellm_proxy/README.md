@@ -78,9 +78,10 @@ order above for local tools such as `probe_models.py`.
 
 In the cluster deployment, this Secret is optional at LiteLLM startup. Without
 it, the proxy still starts and serves other providers; Tana model requests fail
-until the credential is available. The Deployment watches Secret changes, so
-the reflected Secret's return or rotation restarts LiteLLM with the current
-value. Flux does not gate LiteLLM reconciliation on Tana-MCP readiness.
+until the credential is available. ESO copies the Secret from `tana-mcp` every
+10 minutes, and the Deployment watches Secret changes, so the copy's return or
+rotation restarts LiteLLM with the current value. Flux does not gate LiteLLM
+reconciliation on Tana-MCP readiness.
 
 The local fallback secret is `tana-mcp/tana-firebase-refresh-token`, key
 `refresh_token`, matching the in-cluster Tana MCP setup. Treat that as a

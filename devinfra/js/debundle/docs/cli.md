@@ -21,12 +21,15 @@ as the rest of ducktape.
 - Read-only queries: `bindings list`, `modules {list,propose}`,
   `spec {stats,selector-debt,match-selector,validate}`, `atoms`, `coverage`,
   `graph-summary`, `describe <id>`, `show-source <id>`, `scc`,
-  `cluster <sym>`, `gate {list,describe,cut}`, `selector-solve`
+  `cluster <sym>`, `gate {list,describe,cut}`
+
+Renaming or disabling a module is a plain `mv` of its YAML file, not a
+command: <spec_editing.md> § Renaming or disabling a module.
 
 ## Common arguments and env vars
 
-Three common paths show up on most commands. Each accepts both a flag and an
-env var; the flag wins if both are set.
+Most commands take these paths, each as a flag or an env var; the flag wins if
+both are set.
 
 | Flag                  | Env var                | Meaning                                                                                                                                                     |
 | --------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -78,7 +81,7 @@ selection itself is a proposal/diagnostic id or `--include-proposals` is
 passed (it is expensive on large graphs), and proposal-derived JSON fields
 are omitted when the factorizer is skipped.
 
-The five mutating verbs (`bindings assign`, `bindings unassign`,
+The mutating verbs (`bindings assign`, `bindings unassign`,
 `bindings rename`, `modules merge`, `modules delete`) take the same
 `--format` flag with the same tty/pipe default. Under `text` they print a
 one-line verdict (`<action>` plus move/file counts). Under a JSON format
@@ -127,13 +130,13 @@ means name-collision detection; for comment edits, shape preservation only
 (`--no-verify` is a no-op there). If validation fails the command refuses
 with a structured diagnostic and **does not modify any file**.
 
-Two flags adjust the default on spec-edit commands:
+On spec-edit commands:
 
 | Flag          | Effect                                                                                                                                                        |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | (default)     | Validate; refuse the change if invalid; apply if valid.                                                                                                       |
 | `--no-verify` | Skip validation; apply the change regardless. Escape hatch for multi-step refactors where an intermediate state is intentionally invalid. Don't use casually. |
-| `--dry-run`   | Validate (or simulate) but do not modify any file. Print the validation result + a diff summary.                                                              |
+| `--dry-run`   | Validate (or simulate) but do not modify any file. Print the validation result and the planned file set, not a YAML diff.                                     |
 
 `--dry-run` and `--no-verify` can be combined: show what would change
 without validating — useful when investigating _why_ the gate would reject.
@@ -163,18 +166,99 @@ parse/facts/gate checks without writing emitted JS or reports; a gate
 rejection still writes `owner_graph.json` plus the rejection evidence, so
 the `gate` queries work on the rejection that was just reported.
 
-Broad spec migrations continue through supported diagnostic failures by
-default and report all findings from that pass (currently: unresolved
-source-match selectors and duplicate binding claims, with
-module/export/origin evidence). Use `--fail-fast` only when the first
-failing selector or claim is the useful debugging target.
+Selector failures follow the keep-going (default) and `--fail-fast` modes of
+<../SPEC.md> § Modes, in the order of `docs/selector_resolution.md` § Order. Broad
+spec migrations keep going, reporting every failure of a pass in each chunk's
+`selector_diagnostics.json`; use `--fail-fast` only when the first failing
+selector or claim is the useful debugging target (its outcome line is the
+error).
+
+Every chunk's selectors resolve as one program. In a tree spec, several
+module trees may scope to one chunk (`module_roots`, <../README.md>); their
+entities never claim the same place.
 
 `debundle spec validate` is `debundle run` in dry-run keep-going mode
 reporting every selector problem: it takes the **same inputs** (`--spec` /
 `--tree-config` + package roots) and needs the full pipeline, so run it via
 the Bazel `:debundle` target, not the standalone binary. Its source-only
 preflight mode (`--modules` plus `--source-file` or `--source-root
---chunk`) needs only the binary and the chunk.
+--chunk`) needs no pipeline build and resolves the module files jointly with
+the same resolve as `run`. How its outcomes differ from the pipeline's:
+<../SPEC.md> § Outcomes; also, a name pin on a binding the chunk does not
+declare is `no_match` in this mode but an unmatched claim in `run`.
+
+Each group of interacting selectors is one request to the CP-SAT sidecar, found in the
+`debundle` runfiles or through `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER` — in
+source-only `validate`, and in the edit gate, `describe` and `peel` when they
+resolve source claims. `match-selector` and `synthesize-selectors` resolve one
+selector at a time and never need it.
+
+### Selector outcomes
+
+`run --dry-run` (per chunk, `reports/tree/<chunk-id>/selector_diagnostics.json`),
+`spec validate` and `spec match-selector` all report selectors as
+`SelectorOutcome` records (`selector_outcome.rs`; kinds and severities in
+<../SPEC.md> § Outcomes). JSON is `{counts, outcomes}`; `run` and
+`validate` list only selectors that did not resolve plus warnings,
+`match-selector` its one probe (with `slack`). Text is one line per record:
+
+```text
+[ambiguous] static/app::ui/panel as `Panel` (source_matches[].bindings[`p`]): is ambiguous -- matched 2 top-level declarations: `a` (body[0]), `b` (body[1]) -- selector: const p = renderPanel(ANYTHING);
+```
+
+```json
+{
+  "counts": { "ambiguous": 1 },
+  "outcomes": [
+    {
+      "chunk": "static/app",
+      "placement": {
+        "logical_module": "ui/panel",
+        "entity": { "export": "Panel" },
+        "selector_kind": "source_matches"
+      },
+      "target_binding": "p",
+      "selector_preview": "const p = renderPanel(ANYTHING);",
+      "outcome": {
+        "kind": "ambiguous",
+        "candidates": [
+          { "owner": 0, "binding": "a" },
+          { "owner": 1, "binding": "b" }
+        ],
+        "truncated": false
+      },
+      "severity": "error"
+    }
+  ]
+}
+```
+
+`owner` is the matched statement's index in the chunk body.
+
+A `no_match` of a one-statement template also lists `nearest_unclaimed`: the
+statements no entity claimed that it comes closest to, each with its body
+index (`owner`), the `bindings` it declares, a `score` (higher is closer) and
+the first place it diverges. After an upstream bump, the first entry is
+usually the code the selector should now match:
+
+```text
+[no_match] app.js::widgets/widget as `Widget` (source_matches[].bindings[`Widget`]): did not match any top-level declaration; nearest unclaimed: body[0] declaring `a` (score 70): selector class pinned member `shut` was not found in the candidate class body in order; body[1] declaring `b` (score 70): selector class pinned member `open` was not found in the candidate class body in order -- selector: class Widget { open() { STMT_LIST; } shut() { STMT_LIST; } }
+```
+
+`validate` also lists, under `templates`, what each free identifier of every
+matched template (member, `source_matches[]` entry or anonymous statement)
+means (<../SPEC.md> § Matching): a `reference` with its `entity`, a `global`,
+an `ambiguous` name with the `modules` exporting it, or a `wildcard`. The text
+output counts them, then prints one line per reference and ambiguous name:
+
+```text
+2 matched template(s) with free identifiers: global=1, reference=1, wildcard=3
+  - static/app::ui/panel `Panel`: `Widget` references `Widget` in ui/widget
+```
+
+`validate --format ndjson` streams one line per outcome (`section: outcome`),
+then one per template (`section: template`), then a `summary` line with the
+counts.
 
 ## Batch atomicity (`bindings assign`)
 
@@ -224,19 +308,22 @@ selected proposal is a direct member move:
 - no `anonymous_statement_owner_ids`
 
 Fresh proposals move each `binding_ids[]` entry to `proposed_module_id`;
-extension proposals move them to `extends_module_id`. `merge_into` rows
-require `modules merge` or manual YAML because they combine existing source
-modules. Rows with `anonymous_statement_owner_ids` require
-`anonymous_statements:` edits, which `bindings assign` does not perform.
-Rows with `status: blocked_residual_dependency` carry
-`landable_today: false` and are rejected: grow the closure (assign them
-together with the residual cells they reference) or co-locate the owners
-manually first.
+extension proposals move them to `extends_module_id`. Proposal rows carry no
+`readable`; rename with a move array. The rest are rejected:
+
+- `merge_into` rows combine existing source modules: use `modules merge` or
+  manual YAML.
+- Rows with `anonymous_statement_owner_ids` need `anonymous_statements:`
+  edits, which `bindings assign` does not perform.
+- Rows with `status: blocked_residual_dependency` (`landable_today: false`)
+  read other residual cells (`other_residual_cells_referenced`), so promoting
+  one alone would trip the realizability gate: assign it together with the
+  cells it references, or co-locate the owners manually first.
 
 ## Rejection diagnostics
 
 When validation refuses a mutating command, the diagnostic names exactly
-what's wrong. Two kinds:
+what's wrong:
 
 **Atom split** (refused by the realizability gate). Lists each split atom:
 which owners it covers, which modules its members would land in, and the
@@ -279,24 +366,6 @@ Each `gate ...` command accepts `--cycles <path>` to override the default
 `cycles.json` location (sibling of `--graph`). A missing `cycles.json` is
 the clean state: zero blocking SCCs, exit 0.
 
-## Module rename / disable
-
-Renaming or disabling a module is **not** a CLI operation — it's a plain
-`mv` on the YAML file. The spec compiler infers the module path from the
-file location:
-
-```bash
-# Rename: the module path is re-derived from the new filename.
-mv $MOD/runtime/plugins.yaml $MOD/runtime/plugin_settings.yaml
-
-# Disable: any non-.yaml suffix makes the compiler skip the file.
-mv $MOD/runtime/plugins.yaml $MOD/runtime/plugins.yaml.disabled
-```
-
-After the `mv`, the next `debundle run` (or any subsequent mutating command
-on the spec) re-validates and surfaces any resulting atom split as a gate
-diagnostic.
-
 ## Workflow: investigating a binding end-to-end
 
 When a binding's role is unclear or a proposal is suspicious:
@@ -321,7 +390,8 @@ Typical debundle outputs:
   `rename_queue.json`, `vendor_swaps.json` when those outputs are
   configured
 - per-chunk reports under `reports/tree/<chunk-id>/`: `chunk.json`,
-  `modules.json`, `owner_graph.json`, plus `cycles.json` /
+  `modules.json`, `owner_graph.json`, `selector_diagnostics.json` when any
+  selector did not resolve or resolved with a warning, plus `cycles.json` /
   `atomic_unit_conflicts.json` only when validation rejects
 - mirrored per-directory and per-file dependency reports under
   `reports/tree/**/index.json` and `reports/tree/**/*.js.json`
@@ -356,16 +426,10 @@ authoring `comment:` fields". The CLI surface is `bindings comment` /
   facts (`StatementFacts`) aren't on the wire" and
   `lessons_learned/cross_process_stage_b.md`. `facts.json` is an
   in-process debug artifact, not a CLI input (`facts/wire.rs`).
-- **Auto-computed minimal completion** for atom-split rejections — worth
-  revisiting once the basic CLI surface is in use.
-- **YAML diff in `--dry-run`.** v1 prints only the verdict line and
-  planned file set; a structured diff (post-mutation YAML preview) is a
-  documented TODO in the codebase.
-- **Tab completion.** Not in v1.
+- **Shell tab completion.**
 
 ## See also
 
-- `AGENTS.md` — generic operator workflows that compose these commands.
 - `design.md` — the realizability theorem the gate enforces; § "Layered
   mental model" + § "Factor assembly inside `debundle run`" for the
   factorization algorithm `modules propose` draws from.

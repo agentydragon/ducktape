@@ -52,7 +52,7 @@ repos:
       - id: check-yaml
         args: ["--allow-multiple-documents"]
         # Skip ansible !vault tags (not parseable without custom YAML constructor), Helm/Flux dirs (Go templating), chart values
-        exclude: "ansible/host_vars/.*\\.yml$|cluster/k8s/|cluster/charts/|props/helm/templates/"
+        exclude: "ansible/host_vars/.*\\.yml$|cluster/k8s/|cluster/generated/|cluster/charts/|props/helm/templates/"
       - id: check-toml
 
       # TODO: enable check-json
@@ -69,6 +69,17 @@ repos:
       # Language-agnostic ordering for explicitly marked blocks. The binary is
       # in `preCommitPackages`, exposed as `.#precommit` for CI and included in
       # `devToolPackages` for Claude Code web.
+      #
+      # Blocks are opt-in, paired (`start`/`end` on their own lines, inside the
+      # block) and meant for lists that are sets: allowlists, path filters,
+      # package/command names, kustomize resources. Marking one is a claim that
+      # order carries no meaning, so don't mark argv, workflow steps, priorities,
+      # schema- or version-ordered sequences, or anything a generator owns --
+      # sort it in the generator, or leave it. Give a list a floor of ~6 entries:
+      # below that the markers cost more than the drift they catch. Blocks
+      # holding a YAML block scalar (`|-`) or an anchor need care -- a marker
+      # placed at an item's content indent is absorbed into the value, and
+      # prettier moves markers on anchored lines onto the key.
       - id: keep-sorted
         name: keep-sorted
         entry: keep-sorted
@@ -257,14 +268,14 @@ repos:
           -schema-location 'cluster/schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
           -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
           -ignore-missing-schemas
-        files: ^cluster/k8s/.*\.(yaml|yml)$
+        files: ^cluster/(k8s|generated)/.*\.(yaml|yml)$
         exclude: |
           (?x)^(
             cluster/k8s/flux-system/gotk-components\.yaml|
             # kustomize config files (kustomize.config.k8s.io/v1beta1) — not K8s resources
-            cluster/k8s/.*/kustomization\.yaml|
+            cluster/(k8s|generated)/.*/kustomization\.yaml|
             # RedisReplication CRD schema in datreeio catalog is outdated (missing spec.sentinel)
-            cluster/k8s/.*/valkey-instance\.yaml|
+            cluster/(k8s|generated)/.*/valkey-instance\.yaml|
             # Seaweed v1 CRD schema in datreeio catalog is outdated (missing spec.s3,
             # spec.master.defaultReplication, spec.volume.storageClassName — all
             # present in operator v1.0.19's live CRD)
@@ -273,7 +284,6 @@ repos:
             cluster/k8s/authentik/app/blueprints/.*|
             # Application config files, not K8s manifests
             cluster/k8s/gatus/config\.yaml|
-            cluster/k8s/home-assistant/app/provisioner\.yaml|
             cluster/k8s/evidence/market-roster\.yaml|
             cluster/k8s/agents/airlock/config\.yaml|
             cluster/k8s/grocy/sf/mcp/config\.yaml|
@@ -281,15 +291,10 @@ repos:
             cluster/k8s/agents/plaid-mcp/app/items\.yaml|
             cluster/k8s/agents/grocy-mcp/envoy\.yaml|
             cluster/k8s/agents/homeassistant-proxy/config\.yaml|
-            # act_runner config mounted via configMapGenerator, not a K8s manifest
-            cluster/k8s/haku-ci/config\.yaml|
             # OpenShell policy mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/agents/openshell/openclaw/policy\.yaml|
             # iron-proxy config mounted via configMapGenerator, not a K8s manifest
-            cluster/k8s/agents/public-coder-agent/proxy/iron\.yaml|
             cluster/k8s/agents/public-coder-agent/proxy/codex-runner-iron\.yaml|
-            cluster/k8s/agents/haku-egress-proxy/claude-iron\.yaml|
-            cluster/k8s/agents/haku-egress-proxy/openclaw-spike-iron\.yaml|
             cluster/k8s/litellm/app/(chatgpt-)?proxy-config\.yaml|
             cluster/k8s/litellm/tana/proxy-config\.yaml|
             haku/x/dispatch/deploy/workers-litellm-config\.yaml|
@@ -299,7 +304,7 @@ repos:
             haku/x/dispatch/deploy/job-template\.yaml|
             haku/x/dispatch/deploy/zones\.yaml|
             # Helm values files consumed via configMapGenerator, not K8s manifests
-            cluster/k8s/.*/ccm-values\.yaml|
+            cluster/(k8s|generated)/.*/ccm-values\.yaml|
             # Authelia configuration files consumed via configMapGenerator, not K8s manifests
             cluster/k8s/parked/authelia/(configuration|users)\.yml|
             # rotate.py rotation list, mounted via configMapGenerator, not a K8s manifest

@@ -11,11 +11,6 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecPostBuild,
-    KustomizationSpecPostBuildSubstituteFrom,
-    KustomizationSpecPostBuildSubstituteFromKind,
-)
 from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRoute,
     HttpRouteSpec,
@@ -47,13 +42,19 @@ from gateway_api_gateway_crds.io.k8s.networking.gateway import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import (
+    CERT_MANAGER_ISSUER_SUBSTITUTION,
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 _NAME = "cluster-gateway"
 _NAMESPACE = "gateway-system"
-OUTPUT_DIR = "cluster/k8s/gateway"
+OUTPUT_DIR = f"{GENERATED_ROOT}/gateway"
 # Not the plaintext listener: the gateway's HTTP-only route owns port 80 and redirects it.
 HTTPS_LISTENER = "https-wildcard"
 _HTTP_LISTENER = "http"
@@ -205,11 +206,5 @@ def gateway(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(cert_manager, kyverno, cert_manager_issuer_config),
-        post_build=KustomizationSpecPostBuild(
-            substitute_from=[
-                KustomizationSpecPostBuildSubstituteFrom(
-                    kind=KustomizationSpecPostBuildSubstituteFromKind.CONFIG_MAP, name="cert-manager-issuer-config"
-                )
-            ]
-        ),
+        post_build=CERT_MANAGER_ISSUER_SUBSTITUTION,
     )

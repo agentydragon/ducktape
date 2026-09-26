@@ -15,9 +15,10 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku.namespace import NAMESPACE
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "haku-rbac"
-OUTPUT_DIR = "cluster/k8s/haku/rbac"
+OUTPUT_DIR = f"{GENERATED_ROOT}/haku/rbac"
 SERVICE_ACCOUNT = "haku"
 ADMIN_ROLE = "haku-sandbox-admin"
 
@@ -72,16 +73,18 @@ def chart(app: App) -> Chart:
             k8s.PolicyRule(
                 api_groups=[""],
                 resources=[
-                    "pods",
-                    "pods/log",
-                    "pods/exec",
-                    "pods/attach",
-                    "pods/portforward",
-                    "services",
+                    # keep-sorted start
                     "configmaps",
-                    "secrets",
-                    "persistentvolumeclaims",
                     "events",
+                    "persistentvolumeclaims",
+                    "pods",
+                    "pods/attach",
+                    "pods/exec",
+                    "pods/log",
+                    "pods/portforward",
+                    "secrets",
+                    "services",
+                    # keep-sorted end
                 ],
                 verbs=["*"],
             ),

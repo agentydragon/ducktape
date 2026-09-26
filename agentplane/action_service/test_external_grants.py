@@ -29,6 +29,7 @@ from agentplane.action_service.db import (
     ExternalGrantNotAuthorizedError,
     make_sessionmaker,
 )
+from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.models import (
     ActionRequestInput,
     ActionRequestView,
@@ -48,7 +49,6 @@ from agentplane.action_service.providers import DecisionContext
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, admitted_callers, in_sync_index
 from agentplane.subjects import ServiceAccountRef
-from github_policy.visibility import RepositoryVisibilityService
 
 ISSUER = "https://actions.example.test"
 OPERATOR = OperatorPrincipal(issuer="operator", subject="single")
@@ -112,7 +112,9 @@ async def allow(store: ActionStore, request: ActionRequestView) -> ActionRequest
 async def test_shared_service_account_repeat_refused_and_lookup_keeps_first_snapshot_after_rename_and_revoke(
     engine: AsyncEngine, authority: ConnectionAuthority, store: ActionStore, grant: Grant, envelope: ActionRequestInput
 ) -> None:
-    first = await store.submit(envelope, grant.principal(), external_grant=grant.provenance())
+    first = await store.submit(
+        envelope, grant.principal(), request_id=uuid4(), vote=None, external_grant=grant.provenance()
+    )
     assert first.external_grant == grant.provenance()
     connection = await authority.get(grant.connection_id)
     await authority.rename(connection.id, expected_version=connection.version, display_name="renamed")
@@ -120,7 +122,9 @@ async def test_shared_service_account_repeat_refused_and_lookup_keeps_first_snap
     sibling = await activated(authority, "second-client")
     restarted = ActionStore(make_sessionmaker(engine), external_grants=authority)
     with pytest.raises(ActionConflictError):
-        await restarted.submit(envelope, sibling.principal(), external_grant=sibling.provenance())
+        await restarted.submit(
+            envelope, sibling.principal(), request_id=uuid4(), vote=None, external_grant=sibling.provenance()
+        )
     duplicate = one(await restarted.list_requests(sibling.principal(), idempotency_key=envelope.idempotency_key))
     assert duplicate.id == first.id
     assert duplicate.external_grant == grant.provenance()
@@ -143,16 +147,22 @@ async def test_admission_fails_closed_on_missing_disabled_revoked_or_mismatched_
     for changes in invalid_snapshots:
         with pytest.raises(ExternalGrantNotAuthorizedError):
             await store.submit(
-                envelope, grant.principal(), external_grant=grant.provenance().model_copy(update=changes)
+                envelope,
+                grant.principal(),
+                request_id=uuid4(),
+                vote=None,
+                external_grant=grant.provenance().model_copy(update=changes),
             )
     for checker in [None, ConnectionAuthority(make_sessionmaker(engine), admitted_callers(OTHER))]:
         with pytest.raises(ExternalGrantNotAuthorizedError):
             await ActionStore(make_sessionmaker(engine), external_grants=checker).submit(
-                envelope, grant.principal(), external_grant=grant.provenance()
+                envelope, grant.principal(), request_id=uuid4(), vote=None, external_grant=grant.provenance()
             )
     await authority.revoke(grant.id)
     with pytest.raises(ExternalGrantNotAuthorizedError):
-        await store.submit(envelope, grant.principal(), external_grant=grant.provenance())
+        await store.submit(
+            envelope, grant.principal(), request_id=uuid4(), vote=None, external_grant=grant.provenance()
+        )
     assert await store.list_requests(OPERATOR) == []
     with pytest.raises(ValidationError):
         ActionRequestInput.model_validate({**envelope.model_dump(), "external_grant": grant.provenance().model_dump()})
@@ -171,7 +181,9 @@ async def test_original_authority_is_rechecked_before_dispatch_without_rewriting
     invalidate: str,
     available: bool,
 ) -> None:
-    request = await store.submit(envelope, grant.principal(), external_grant=grant.provenance())
+    request = await store.submit(
+        envelope, grant.principal(), request_id=uuid4(), vote=None, external_grant=grant.provenance()
+    )
     allowed = await allow(store, request)
     if invalidate == "revoke":
         await authority.revoke(grant.id)
@@ -228,7 +240,9 @@ async def test_original_authority_is_rechecked_before_dispatch_without_rewriting
 async def test_claimed_work_continues_with_original_provenance_after_revocation(
     authority: ConnectionAuthority, store: ActionStore, grant: Grant, envelope: ActionRequestInput
 ) -> None:
-    request = await store.submit(envelope, grant.principal(), external_grant=grant.provenance())
+    request = await store.submit(
+        envelope, grant.principal(), request_id=uuid4(), vote=None, external_grant=grant.provenance()
+    )
     await allow(store, request)
     claim = await store.claim_execution(request.id, executor_id="worker", lease_duration=LEASE_DURATION)
     assert claim is not None
@@ -264,7 +278,9 @@ async def test_admission_and_claim_hold_revocation_lock_until_transaction_end(
 
     checker = CheckingAuthority()
     store = ActionStore(sessions, external_grants=checker)
-    request = await store.submit(envelope, grant.principal(), external_grant=grant.provenance())
+    request = await store.submit(
+        envelope, grant.principal(), request_id=uuid4(), vote=None, external_grant=grant.provenance()
+    )
     await allow(store, request)
     assert await store.claim_execution(request.id, executor_id="worker", lease_duration=LEASE_DURATION) is not None
     assert checker.calls == 2

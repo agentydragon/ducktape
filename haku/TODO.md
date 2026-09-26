@@ -132,6 +132,15 @@ doctrine change, not just a config line.
   for attribution / budget / kill-switch, if routing model calls through LiteLLM.
 - **Tighten egress** — narrow the `haku-sandbox` CCNP `toEntities: cluster` to
   only Haku's named in-cluster sources (the gap `claude-sandbox` also accepts).
+- **Haku's agentplane principal is named `claude-ai`.** With haku-console being decommissioned,
+  Haku runs as a claude.ai/code agent whose agentplane-staging MCP connection authenticates as the
+  `claude-ai` ServiceAccount, so Haku's credentials (`forgejo-haku`, `haku-mailbox`) and the reads
+  it relies on are bound there (`cluster/cdk8s/agentplane/actions_staging_policies.py`). The name
+  describes the client connection, not the agent: any other claude.ai/code agent run through the
+  same connection is Haku as far as agentplane can tell. Not pressing while Haku is the only agent
+  on that connection. When it matters: connect the same MCP server again as a separate claude.ai
+  connection bound to its own ServiceAccount, one per agent, and move the Haku-owned bindings to
+  Haku's.
 
 ## Console — operator-facing dashboard
 
@@ -222,7 +231,7 @@ the runtimes differ in where the sandbox runs — see
   haku-console keeps the logic in reviewed code. Works on Runtime A today; not
   coupled to the runtime question. Under the Agent SDK this is simpler still —
   hooks there are in-process callbacks and Python has both `PreCompact` and `Stop`
-  (see <plans/agent_sdk_sandbox_runtime.md>).
+  (see <docs/agent_sdk_runtime.md>).
 - **Cut the sandbox over to the Nix image** — `cluster/k8s/haku/workspaces/image/default.nix`
   builds in CI and publishes to `haku-sandbox-image-nix`, but the SandboxTemplate still pulls
   the apt/Dockerfile build. The blocker is a **runtime** question a green build can't answer:

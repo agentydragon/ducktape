@@ -76,6 +76,15 @@ that matched, so it explains itself after the objects change. Until the informer
 caller is human-only; an object that fails validation contributes nothing and reports `Ready=False`
 with the message in its status, so a bad runtime edit is visible in `kubectl get`.
 
+Evaluation finishes before the request is persisted, and an auto-decision commits in the same
+transaction as the insert. A request is therefore never observable as `decision_pending` unless it
+is waiting for a human, so nothing that watches for pending requests -- the operator queue, Web
+Push -- surfaces one a policy is about to decide. The cost is that a caller cannot find or cancel
+its request while evaluation runs; it holds the submit call instead, and a lost response is
+recovered by idempotency key once the request commits. Every policy is blocking in this sense; a
+non-blocking kind, whose request is persisted and shown to the operator while the policy runs,
+would need its own state, so that `decision_pending` keeps meaning a human is being asked.
+
 ## Example
 
 Staging's Git-owned half is the `github-reads` `ActionPolicySet`, the `claude-ai`
@@ -135,3 +144,9 @@ binding revision they used.
   app's managed-by label, and the preset stays on the Sandbox's own annotation.
 - **Re-evaluating policy at dispatch.** An approval a later object edit could withdraw is a
   different contract from a human approval; dispatch re-checks caller authority only.
+- **Persisting the request before evaluation and deciding in a second transaction.** The request
+  is committed as `decision_pending` for the length of the evaluation, and every reader of pending
+  requests sees it: Web Push notified the operator about requests the policy approved
+  milliseconds later, as a notification with nothing left to decide. A separate "policy pending"
+  state fixes that too, but every reader of the state then has to handle it, and a crash
+  mid-evaluation leaves a row that needs a sweep; deciding first leaves nothing behind.

@@ -12,9 +12,10 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.atuin.server import DB_APP_SECRET, NAMESPACE
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "atuin-user-provisioner"
-OUTPUT_DIR = "cluster/k8s/atuin/user-provisioner"
+OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 _SCRIPT_CONFIG_MAP = f"{NAME}-script"
 _SCRIPT_DIR = "/scripts"
 _SCRIPT = textwrap.dedent(

@@ -21,6 +21,24 @@ spec:
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: public-coder-agent-backups
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: public-coder-agent
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: public-coder-agent
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
 metadata:
   annotations:
@@ -38,24 +56,6 @@ spec:
     accessKeyField: AWS_ACCESS_KEY_ID
     name: public-coder-agent-seaweedfs-credentials
     secretKeyField: AWS_SECRET_ACCESS_KEY
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: public-coder-agent-backups
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: public-coder-agent
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: public-coder-agent
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

@@ -19,20 +19,6 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
-from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
-    S3Identity,
-    S3IdentitySpec,
-    S3IdentitySpecReclaimPolicy,
-    S3IdentitySpecSeaweedRef,
-)
 from seaweed_s3policy_crds.com.seaweedfs.seaweed import (
     S3Policy,
     S3PolicySpec,
@@ -55,11 +41,19 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.seaweedfs import cluster, drivefs_artifacts_bucket, external_credentials, loom_gym_bucket, namespace
+from cluster.cdk8s.seaweedfs import (
+    cluster,
+    drivefs_artifacts_bucket,
+    external_credentials,
+    loom_gym_bucket,
+    namespace,
+    s3,
+)
 
 NAME = "public-s3"
-OUTPUT_DIR = "cluster/k8s/seaweedfs/public-s3"
+OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs/public-s3"
 _PORT = 8333
 _METRICS_PORT = 9327
 _CONFIG_MAP = "public-s3-bootstrap-config"
@@ -75,29 +69,11 @@ _CLAUDE_READABLE_BUCKETS = ("attic", drivefs_artifacts_bucket.NAME, "vm-images",
 
 def _external_identity(scope: Construct, name: str, *, secret: str, access_key: str, secret_key: str) -> None:
     """An S3Identity plus the S3Credentials registering its externally managed key pair as-is."""
-    S3Identity(
-        scope,
-        f"{name}-identity",
-        metadata=metadata(name, namespace.NAME),
-        spec=S3IdentitySpec(
-            seaweed_ref=S3IdentitySpecSeaweedRef(name=cluster.NAME), reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN
-        ),
-    )
-    S3Credentials(
-        scope,
-        f"{name}-credentials",
-        metadata=metadata(name, namespace.NAME),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=cluster.NAME),
-            identity_ref=S3CredentialsSpecIdentityRef(name=name),
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=secret,
-                namespace=external_credentials.NAMESPACE,
-                access_key_field=access_key,
-                secret_key_field=secret_key,
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
+    s3.Identity(scope, name, name=name).credentials(
+        namespace=namespace.NAME,
+        secret=secret,
+        secret_namespace=external_credentials.NAMESPACE,
+        key_fields=s3.SecretKeyFields(access_key=access_key, secret_key=secret_key),
     )
 
 

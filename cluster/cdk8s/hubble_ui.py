@@ -17,9 +17,10 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "hubble-ui"
-OUTPUT_DIR = "cluster/k8s/hubble-ui"
+OUTPUT_DIR = f"{GENERATED_ROOT}/hubble-ui"
 _PORT = 8081
 
 

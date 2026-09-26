@@ -1,31 +1,49 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
-
-py_library(
-    name = "flux_kustomizations",
-    srcs = ["flux_kustomizations.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = [
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
-        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
-        "@pypi//cdk8s",
-    ],
-)
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "runner",
     srcs = ["runner.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":runner_config",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/cilium:ciliumclusterwidenetworkpolicy",
-        "//cluster/cdk8s/crd_bindings/keda:scaledjob",
-        "//cluster/cdk8s/crd_bindings/keda:triggerauthentication",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/providers/keda:scaledjob",
+        "//cluster/cdk8s/providers/keda:trigger_authentication",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "runner_config",
+    srcs = ["runner_config.py"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_runner",
+    srcs = ["test_runner.py"],
+    data = [
+        "//cluster/k8s:haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":runner",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )

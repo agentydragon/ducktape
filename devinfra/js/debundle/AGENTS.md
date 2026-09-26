@@ -39,41 +39,29 @@ A bug-reproducing fixture is the **smallest** input that still triggers the bug:
 strip every removable feature and use generic placeholder names (`a`, `mod_x`,
 `readable`) over upstream-flavored ones. A fixture that passes against
 `origin/devel` before the fix isn't testing the bug — drop it or move it to a
-separate PR documenting the invariant. If a bug genuinely can't be reproduced
-synthetically, say so in the PR body and add coverage at the next-coarsest level;
-bugs first seen against a private corpus should be minimized to synthetic e2e
-inputs so the regression test lands in public CI.
-
-## Verification
-
-- **Synthetic e2e fixtures** (`e2e/`) are the default regression corpus. Keep
-  them focused on one pipeline stage or bug class.
-
-When a bug only reproduces against a private corpus, document why and smoke-test
-that corpus after the synthetic regression test passes.
+separate PR documenting the invariant. Keep each fixture focused on one pipeline
+stage or bug class. Bugs first seen against a private corpus are minimized to
+synthetic e2e inputs so the regression test lands in public CI; if one genuinely
+can't be reproduced synthetically, say so in the PR body, add coverage at the
+next-coarsest level, and smoke-test that corpus.
 
 ## Performance Profiling
 
-Root `AGENTS.md` § Profiling applies. Locally: use the profile sibling targets from
-`debundle_pipeline` (see <README.md>) so the run shares the real Bazel action's spec
-paths and inputs; read `perf` captures per the artifact guide in <README.md>
-(`perf_record_stderr.txt` for progress markers, `perf_report_flat_symbols.txt` for
-self-cost, symbolized children report for callgraphs). For timed repros, stop the
+Use the `debundle_pipeline` profile sibling targets
+(<docs/bazel_integration.md> § Profiling) so the run shares the real Bazel action's
+spec paths and inputs. In `perf` captures, read `perf_record_stderr.txt` for
+progress markers, `perf_report_flat_symbols.txt` for self-cost, and the symbolized
+children report for callgraphs. For timed repros, stop the
 process on timeout and attach `gdb` to inspect live stacks; core-dump only when the
 state must outlive the process. Keep production telemetry coarse.
 
 ## Worktree discipline for parallel agents
 
-When multiple worker agents may simultaneously edit code here, **each works in its
-own git worktree** (the Agent tool's `isolation: "worktree"` does this); otherwise
-agents stomp each other's uncommitted changes in the shared tree. Symptoms of
-missed isolation: changes spanning multiple agents' files, "my work disappeared",
-`git status` showing another branch's files — bail out and re-dispatch with
-isolation rather than recovering from contamination. The orchestrator keeps the
-main worktree and never disturbs in-flight worker trees.
-
-This is a concurrency rule, not a requirement to create a new path for every round:
-once a worker has selected a worktree, it keeps using that path for the session.
+Dispatch parallel workers with the Agent tool's `isolation: "worktree"`. Symptoms
+of missed isolation: changes spanning multiple agents' files, "my work
+disappeared", `git status` showing another branch's files — bail out and
+re-dispatch with isolation rather than recovering from contamination. The
+orchestrator keeps the main worktree and never disturbs in-flight worker trees.
 
 ### Signing in worktrees
 
@@ -98,16 +86,11 @@ of re-deriving the fact in another stage.
 
 ## Selector resolution
 
-How a spec's selectors become a claim map — one IR, one joint CP-SAT solve, with
-`ChunkResolver` generating candidates for shape (`source_match`) selectors — is
-<docs/selector_resolution.md>. Read it before touching `source_match/`,
-`selector_ir_lowering`, or `selector_constraint_model_builder`.
-
-That doc records a measured rejection: encoding tree-shape matching as
-finite-domain constraints over AST nodes, so `source_match` lowers natively
-instead of through the matcher. Do not reopen it without a measurement that
-beats <debug/perf/2026_09_17_matcher_vs_native_lowering.md>. Remaining selector
-work is language, not architecture: <plans/relational_selectors.md>.
+Read <docs/selector_resolution.md> before touching `selector_resolve.rs`,
+`source_match/`, `selector_ir_lowering` or `selector_constraint_model_builder`.
+A command never decides exactly-one itself; it calls `selector_resolve`. Its
+§ "Rejected: tree matching as solver constraints" is a measured dead end: do not
+reopen it without a new measurement.
 
 ## Soundness over completeness
 
@@ -163,13 +146,9 @@ inputs and author decisions only — analysis provenance (`evidence`, `confidenc
 
 ## Spec `note:` field — STYLE.md exemption
 
-**Deviation** from STYLE.md ("every field needs a reader"; authoring provenance
-belongs in inert `#` comments, not `note:` schema fields): the spec's optional
-`note:` field on `LogicalModule` / `Member` / `AnonymousStatement`, plus
-per-binding annotation notes, is a ratified exemption — the rewriters drop `#`
-comments, so a round-tripped `note:` is the only debt-rationale annotation that
-survives a rewrite, and its reader is the human spec author. Semantics:
-<README.md> → "Comments".
+**Deviation** from STYLE.md ("every field needs a reader"; provenance belongs in
+`#` comments): the spec's `note:` fields are a ratified exemption, because the
+rewriters drop `#` comments (<README.md> → "Comments").
 
 ## Spec structure
 

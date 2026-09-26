@@ -7,7 +7,6 @@ resources:
   - haku-egress-proxy.k8s.yaml
   - openclaw-spike-cnp-egress.k8s.yaml
   - cnp-haku-cloud-api-egress.k8s.yaml
-  - cnp-haku-claude-egress.k8s.yaml
   - claude-code-oauth-token.sops.yaml
   # Step two of a deliberate two-step, now complete. authentik-jwt-rotation
   # landed openclaw-spike-kube-token.sops.yaml in 2bb0c7fbd (rotations.yaml:
@@ -21,16 +20,6 @@ resources:
   - openclaw-spike-kube-token.sops.yaml
 components:
   - ./image-pins
-
-configMapGenerator:
-  - name: haku-claude-oauth-proxy-config
-    namespace: haku-egress-proxy
-    files:
-      - iron.yaml=claude-iron.yaml
-  - name: haku-openclaw-spike-proxy-config
-    namespace: haku-egress-proxy
-    files:
-      - iron.yaml=openclaw-spike-iron.yaml
 
 patches:
   # CLEANUP(added 2026-08-29): the encrypted object keeps its historical inner name because the

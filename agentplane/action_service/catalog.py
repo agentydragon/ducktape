@@ -12,7 +12,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
-from agentplane.sandbox_actions.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 
 _KEY = r"^[a-z][a-z0-9_-]*$"
 Key = Annotated[str, StringConstraints(pattern=_KEY, min_length=1, max_length=200)]
@@ -77,10 +77,15 @@ class McpUnavailableReason(StrEnum):
 
 
 class McpHealth(BaseModel):
-    """Replica-local diagnostics; never contains backend exception text or configuration."""
+    """Replica-local diagnostics. Only `detail` may carry backend exception text or configuration."""
 
     state: McpLifecycle = McpLifecycle.DISCONNECTED
     reason: McpUnavailableReason | None = None
+    detail: str | None = Field(
+        default=None,
+        description="What `reason` came from: the backend's error, or the OAuth linkage's state. Operators only: "
+        "it can name backend addresses, so a workload's view leaves it out.",
+    )
     last_discovery_at: datetime | None = None
     retry_at: datetime | None = None
     failures: int = 0
@@ -172,8 +177,9 @@ class ActionCatalog(BaseModel):
             raise UnknownActionError(group_key, action_key)
         return group, action
 
-    def group_views(self) -> list[ActionGroupView]:
-        return [_group_view(key, group) for key, group in self.groups.items()]
+    def group_views(self, *, with_detail: bool) -> list[ActionGroupView]:
+        """`with_detail` keeps `McpHealth.detail`, which only an operator may read."""
+        return [_group_view(key, group, with_detail=with_detail) for key, group in self.groups.items()]
 
     def action_view(self, group_key: str, action_key: str) -> ActionView:
         _, action = self.resolve(group_key, action_key)
@@ -186,7 +192,7 @@ def _action_view(group_key: str, action_key: str, action: ActionDefinition) -> A
     )
 
 
-def _group_view(group_key: str, group: ActionGroup) -> ActionGroupView:
+def _group_view(group_key: str, group: ActionGroup, *, with_detail: bool) -> ActionGroupView:
     return ActionGroupView(
         key=group_key,
         title=group.title,
@@ -194,7 +200,9 @@ def _group_view(group_key: str, group: ActionGroup) -> ActionGroupView:
         executor_kind=group.executor.kind,
         executor_description=group.executor.description,
         available=group.available,
-        health=group.health,
+        health=group.health
+        if with_detail or group.health is None
+        else group.health.model_copy(update={"detail": None}),
         actions=[_action_view(group_key, name, action) for name, action in group.actions.items()]
         if group.available
         else [],

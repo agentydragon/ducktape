@@ -14,11 +14,12 @@ from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
 
 _NAME = "alloy"
 _NAMESPACE = "monitoring"
-_OUTPUT_DIR = "cluster/k8s/monitoring/alloy"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/alloy"
 _OTLP_HTTP_PORT = 4318
 
 
@@ -87,4 +88,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, _OUTPUT_DIR, chart)
+    write_charts(root, OUTPUT_DIR, chart)

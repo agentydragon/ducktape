@@ -26,28 +26,6 @@ from external_secrets_secretstore_crds.io.external_secrets import (
     SecretStoreSpecProviderKubernetesServerCaProvider,
     SecretStoreSpecProviderKubernetesServerCaProviderType,
 )
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSource,
@@ -69,7 +47,6 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data, secret_store
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -78,10 +55,13 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
+from cluster.cdk8s.seaweedfs import s3
 
 NAME = "public-coder-agent-backup"
-OUTPUT_DIR = "cluster/k8s/agents/public-coder-agent/backup"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/backup"
 _NAMESPACE = "public-coder-agent"
 _BUCKET_NAME = "public-coder-agent-backups"
 _SEAWEEDFS = "seaweedfs"
@@ -95,65 +75,22 @@ _RESTIC_PASSWORD_SECRET_NAME = "public-coder-agent-volsync-restic-password"
 
 
 def _bucket(scope: Construct) -> None:
-    Bucket(
+    bucket = s3.Bucket(
         scope,
         "bucket",
-        metadata=metadata(
-            _BUCKET_NAME,
-            _NAMESPACE,
-            annotations={"description": "Public Coder's tenant-local SeaweedFS backup bucket."},
-        ),
-        spec=BucketSpec(
-            name=_BUCKET_NAME,
-            adopt_existing=True,
-            cluster_ref=BucketSpecClusterRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-            access=[
-                BucketSpecAccess(
-                    user=_BUCKET_NAME,
-                    actions=[
-                        BucketSpecAccessActions.READ,
-                        BucketSpecAccessActions.WRITE,
-                        BucketSpecAccessActions.LIST,
-                        BucketSpecAccessActions.TAGGING,
-                    ],
-                )
-            ],
-        ),
+        name=_BUCKET_NAME,
+        namespace=_NAMESPACE,
+        adopt_existing=True,
+        description="Public Coder's tenant-local SeaweedFS backup bucket.",
     )
-    S3Credentials(
-        scope,
-        "credentials",
-        metadata=metadata(
-            _BUCKET_NAME,
-            _NAMESPACE,
-            annotations={"description": "Public Coder's tenant-local SeaweedFS backup credentials."},
-        ),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            identity_ref=S3CredentialsSpecIdentityRef(name=_BUCKET_NAME),
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_S3_CREDENTIALS_SECRET_NAME,
-                access_key_field="AWS_ACCESS_KEY_ID",
-                secret_key_field="AWS_SECRET_ACCESS_KEY",
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
-    )
-    # Permit only Public Coder's tenant-local Bucket and S3Credentials to reference the SeaweedFS
-    # cluster in its namespace.
-    group = "seaweed.seaweedfs.com"
-    ResourceReferenceGrant(
-        scope,
-        "reference-grant",
-        metadata=metadata(_BUCKET_NAME, _SEAWEEDFS),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=group, kind="Bucket", namespace=_NAMESPACE),
-                ResourceReferenceGrantSpecFrom(group=group, kind="S3Credentials", namespace=_NAMESPACE),
-            ],
-            to=[ResourceReferenceGrantSpecTo(group=group, kind="Seaweed", name=_SEAWEEDFS)],
-        ),
+    # Declared by the seaweedfs-public-coder-agent-backups-bucket Kustomization.
+    identity = s3.IdentityRef(scope, "identity", name=_BUCKET_NAME)
+    bucket.grant_read_write(identity)
+    identity.credentials(
+        namespace=_NAMESPACE,
+        secret=_S3_CREDENTIALS_SECRET_NAME,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
+        description="Public Coder's tenant-local SeaweedFS backup credentials.",
     )
 
 
@@ -263,13 +200,13 @@ def _repository_store(scope: Construct) -> None:
 def _repository(scope: Construct) -> None:
     """The combined repository Secret VolSync requires, rendered by ESO from the S3 credentials
     and the Restic password."""
-    add_external_secret(
+    ExternalSecret(
         scope,
         "repository",
         name=_REPOSITORY_SECRET_NAME,
         namespace=_NAMESPACE,
         refresh="1h",
-        store=secret_store(_SECRET_STORE_NAME),
+        store=SecretStoreRef.namespaced(_SECRET_STORE_NAME),
         data=[
             remote_data(_S3_CREDENTIALS_SECRET_NAME, "AWS_ACCESS_KEY_ID"),
             remote_data(_S3_CREDENTIALS_SECRET_NAME, "AWS_SECRET_ACCESS_KEY"),

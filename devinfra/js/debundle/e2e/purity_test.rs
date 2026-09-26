@@ -4,8 +4,8 @@
 //!
 //! Most tests run in CI. Two remain `#[ignore]`d as desiderata
 //! for future work — each ignore-reason names the specific
-//! analysis still missing (fresh-literal-arg gate for
-//! `Object.freeze`, `Expr::New` whitelist for `Set`/`Map`/`RegExp`).
+//! analysis still missing (interprocedural argument freshness for
+//! `Object.freeze`, an `Expr::New` whitelist entry for `RegExp`).
 //! Their bodies become regression fixtures the moment those
 //! analyses land.
 //!
@@ -113,8 +113,9 @@ export { A, B, C };
 }
 
 #[test]
-#[ignore = "blocked on Object.freeze whitelist with fresh-literal-arg gate \
-            (Step D in the purity-desiderata follow-up plan)"]
+#[ignore = "blocked on interprocedural freshness: `Object.freeze` of a fresh object \
+            literal is admitted, but here it freezes `schema`'s parameter, so the \
+            call-site literal's freshness must flow into the helper's body"]
 fn inferred_pure_schema_builder_across_modules_emits_no_s_cycle() {
     // `Object.freeze` is a statically-known pure built-in;
     // `schema(spec)` returns the frozen spec object. All `schema(...)`
@@ -916,39 +917,11 @@ export { a, b, c };
 // OptChain purity.
 // ---------------------------------------------------------------------------
 
-// Pin OptChain purity classification.
-//
-// `window?.foo?.bar` is observably equivalent to `window.foo.bar`
-// modulo the short-circuit when `window` or `window.foo` is
-// null/undefined. Optional chaining doesn't add semantic side
-// effects of its own; it only short-circuits.
-//
-// Today `purity::classify_expr_purity` returns
-// `Purity::Unknown` for any `Expr::OptChain` regardless of what
-// it expands to, so a `var x = window?.X?.Y;` initializer is
-// classified `has_side_effect = true` even when the underlying
-// chain reads only safe globals. That spurious has_side_effect
-// makes the var participate in the side-effect-order chain, and
-// a peel proposal that would otherwise be a clean
-// Direct-peelable singleton is forced to drag in whatever the
-// immediately-prior side-effecting owner happens to be.
-//
-// On the upstream this manifests as the `dg = window?.Meticulous?.…`
-// declarator being chained to the constructor-call declarator
-// `Lge = new $g()` that precedes it in the same comma-list,
-// creating a cross-module side-effect-order edge that closes a
-// 4-module cycle (apply_decorators → logger_module →
-// test_detection → workspace/invite/state) once the spec
-// claims dg in its proper home.
-//
-// Refinement under test: when `Expr::OptChain` is encountered,
-// recurse through its base (`OptChainBase::Member` /
-// `OptChainBase::Call`) and classify by the underlying access.
-// For static-property reads on a whitelisted receiver (Math,
-// Array, …), this returns `Pure`. The the upstream case
-// (`window?.Meticulous?.…`) needs R2 (extending the
-// whitelist to host globals) on top — this test pins R1
-// using a receiver that's already on the whitelist.
+// `recv?.prop` / `recv?.()` add only a null/undefined short-circuit, so
+// purity recurses through the chain: a whitelisted static read stays `Pure`.
+// Were it `Unknown`, the declarator would join the side-effect-order chain and
+// drag its side-effecting predecessor into any module that peels it.
+// Host-global receivers (`window?.X?.Y`) are not whitelisted.
 #[test]
 fn optional_chain_on_whitelisted_receiver_classified_pure() {
     // Cycle-forcing fixture:
@@ -958,8 +931,8 @@ fn optional_chain_on_whitelisted_receiver_classified_pure() {
     //   4. console.log(Z);
     //   5. export { X, Y, Z };
     //
-    // Today (no R1):
-    //   Y has has_side_effect=true (OptChain → Unknown).
+    // If OptChain were `Unknown`:
+    //   Y has has_side_effect=true.
     //   S-edges (transitive reduction over SE owners):
     //     Y → X        (Y depends on X via source order, both SE)
     //     console.log(Z) → Y
@@ -968,7 +941,7 @@ fn optional_chain_on_whitelisted_receiver_classified_pure() {
     //     residual → y_module (residual reads Y at init via const Z = Y + 1)
     //   That's a cycle in I ∪ S. Validator rejects the spec.
     //
-    // After R1:
+    // With OptChain classified through:
     //   Y is `Pure` (OptChain recurses into Number.MAX_SAFE_INTEGER
     //   which is whitelisted), so Y has has_side_effect=false.
     //   No Y → X s-edge. Only edge: residual → y_module

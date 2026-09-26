@@ -19,12 +19,14 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.haku_ci import runner
 from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "keda"
 NAMESPACE = "keda"
-OUTPUT_DIR = "cluster/k8s/keda"
+OUTPUT_DIR = f"{GENERATED_ROOT}/keda"
 
 
 def _resources(*, cpu_request: str, memory_request: str, cpu_limit: str, memory_limit: str) -> dict[str, object]:
@@ -63,7 +65,7 @@ def chart(app: App) -> Chart:
         values={
             # KEDA has cluster-scoped CRDs and admission plumbing, but its operator only
             # watches the one namespace whose runners it is allowed to scale.
-            "watchNamespace": "haku-ci",
+            "watchNamespace": runner.NAMESPACE,
             "nodeSelector": {"topology.kubernetes.io/region": "hil"},
             "resources": {
                 "operator": _resources(

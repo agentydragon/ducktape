@@ -33,7 +33,7 @@ Three fixes got there, none of them guessable from a green CI build:
 
 ### Why those three, and what was tried first
 
-Recorded once, in [the NixOS Bazel notes](../../../../../debug/nixos_bazel_bash/README.md) —
+Recorded once, in [the NixOS Bazel notes](../../../../../devinfra/debug/nixos_bazel_bash/README.md) —
 "Two substrates" and "Issue 4" — because it applies to anything running Bazel on Nix glibc,
 not just this image. The short version: Bazel renders actions as `exec env - …`, so a tool
 that needs configuration must get it from the **filesystem**, not the environment. An earlier

@@ -1,6 +1,6 @@
 # Thread view synchronization
 
-Status: **implementation in draft PRs; acceptance incomplete.** The server-side fold in
+Status: **implemented; acceptance incomplete.** The server-side fold in
 `agentplane/app/agent_runtime/view/fold.py` is connected to PostgreSQL through the
 transactional writer. The integration uses Electric through its published TypeScript client:
 one shape per thread and per payload field, with the browser's window loaded as subsets of them.
@@ -14,6 +14,9 @@ browser state. Record names below describe domain concepts; concrete schemas and
 representations remain implementation decisions to validate with the sync integration.
 
 ## Requirements
+
+[Thread sync requirements](thread_sync_requirements.md) states what any sync implementation
+owes the browser, with IDs; the list below is the whole view's.
 
 - A Thread has one ordered history. Existing items can change anywhere in it, including
   parallel tools completing out of order. Editing earlier user input, forks and branches
@@ -31,6 +34,8 @@ representations remain implementation decisions to validate with the sync integr
 - The runner persists semantic batches before forwarding them; the app commits projected
   state before publication to browsers. Multiple replicas and listeners share committed
   state. Disconnecting a reader does not interrupt execution.
+- A reader learns of changes over a held request or a stream (long poll, SSE, WebSocket),
+  never by asking again on a timer. Only a failed request waits before the next.
 - Raw capture is independently optional in the target storage model. Retained evidence is
   accessible at the item or turn that produced it, as well as in original chronology.
 
@@ -58,7 +63,7 @@ it does not require an entire turn or an ever-growing group object.
 | Confirmed user input                    | Preserve confirmed text and all origin command IDs at confirmation position.                      |
 | Item start or first mention             | Establish identity, order and available turn context.                                             |
 | Text / argument / output delta          | Append content to that item's named field; preserve other fields' references.                     |
-| Complete arguments or item completion   | Replace the corresponding field with its authoritative value; preserve the invocation's position. |
+| Complete arguments or item completion   | Replace the field with its authoritative value unless it is the streamed text; keep its position. |
 | Command admitted                        | Record pending summary and exact admission provenance.                                            |
 | Command effect, failure or noop         | Settle that same command, including one outside loaded history.                                   |
 | Turn interrupted / failed, harness lost | Preserve explicit outcome; unfinished items do not become successful completions.                 |
@@ -162,6 +167,21 @@ store gates subsets on the first subset's response, never on that message. It al
 stream to a subset response's offset, which skips changes to rows outside the subset; the store's
 fetch client hands a subset response the stream's own offset back.
 
+**Gotcha:** the client follows each live log over SSE, but long-polls a shape instead once three
+SSE responses in a row have ended within a second. Electric answers a reader behind the log at once
+rather than holding the connection, so a shape that changes faster than the client reconnects can
+drop to long polling. Both read the same log.
+
+Against the [requirements](thread_sync_requirements.md), it falls short in three places:
+
+- **E5:** the live log re-sends nothing a reader holds, but it carries rows the reader discards.
+- **O2:** Electric runs one active instance per replication slot, with shape logs on local disk.
+- **P10:** nothing evicts ([§ Retained browser state](#retained-browser-state)).
+
+Shapes per thread, shared by every reader of it: one entity shape, plus one per payload field in use.
+What Electric itself cannot do for following an agent, and where this design therefore stops:
+[Where Electric stops fitting thread sync](thread_sync_electric_limits.md).
+
 Acceptance must still establish:
 
 1. **Limited bootstrap and recovery.** Establish changes-only/on-demand synchronization
@@ -194,16 +214,32 @@ Acceptance must still establish:
    Electric snapshot metadata or maintain a second mutable cache. Pin versions, generate
    domain types once, and verify exact 64-bit cursor handling.
 
+### Rejected designs
+
+- **The window in a shape's `where`.** A shape's predicate is fixed when it is created, so a moved
+  window is a new shape. It replays the overlap (D1, E5) and withdraws the old shape's rows (P5).
+  And a tail bound that moves with every appended row mints a fresh shape each time a growing
+  thread is opened, which spends `ELECTRIC_MAX_SHAPES` without ever hitting the cache.
+- **Fixed-bound pages.** Pages that never move meet D1, but they cost:
+  - a shape for every page and every field in use (O1);
+  - a landing pad for a row that crosses a page boundary;
+  - a caught-up signal gated across pages (S3).
+
+  Subsets of one shape meet D1 without any of these.
+
+- **TanStack DB's Electric collection.** Its on-demand mode deduplicates only identical requests,
+  so a live query whose `where` moves fetches the overlap again. The raw client's
+  `requestSnapshot` reads only the rows it asks for.
+- **Completed bodies over a separate HTTP route.** It gives one body two read paths (D2). It also
+  assumes that a body which has stopped streaming never changes, which P3 does not grant.
+- **Polling the whole thread.** It fails E6 by construction, and E2 and E5 with it.
+
 Zero is the next engine candidate if Electric fails a required case; it supports query-driven
 partial sync but introduces its own replica and client integration. Matrix supplies useful
 limited-timeline and gap-recovery ideas, but its message-edit events do not provide streamed
 field replication without extra semantics. AG-UI, AI SDK and ACP provide useful agent-event
 vocabularies; they do not remove the storage/projection work. Evidence from the evaluation
 should select an engine before proposing a custom REST/SSE fallback.
-
-The existing test-only TanStack DB spike establishes same-collection atomic updates and
-selective subscriptions, not Electric integration, React consistency or pagination races:
-<../app/frontend/db_spike/README.md>.
 
 ## Component responsibilities
 
@@ -310,6 +346,11 @@ payload reference; loading is explicit until its whole revision is available. Fo
 concurrent changes using engine sync tokens. No replay of old token Events and no hidden
 background history load.
 
+A thread whose runner has recorded nothing yet has no fold to pin a shape to. Its scope
+read is a long poll: the proxy holds it until the first fold commits, for as long as
+Electric holds a live request (20 seconds), and answers 204 if there is still none; the
+store asks again at once.
+
 ### Scroll upward while an old item changes
 
 At processed source cursor 1000, request before item 400. The page reflects cursor 1010,
@@ -323,9 +364,11 @@ older consistent view. Preserve the visible item and pixel offset after prependi
 For a disconnect, the engine resumes the same shape from its own token and deduplicates
 delivery. When Electric retires a shape's log, reload the rows held as fresh subsets while
 they stay on screen; when the projection epoch is gone, read the scope again and replace the
-window once the new one has caught up. Restore an old reading position with by-ID and before/after
-queries. Preserve drafts, disclosure state and reading position. Do not download the items
-between that position and the tail. Ignore late callbacks from superseded subscriptions.
+window once the new one has caught up. The store takes the view state leaving the shape as that
+signal, since an open SSE connection meets the proxy's 410 only when it reconnects. Restore an old
+reading position with by-ID and before/after queries. Preserve drafts, disclosure state and
+reading position. Do not download the items between that position and the tail. Ignore late
+callbacks from superseded subscriptions.
 
 ### Expand content during streaming
 

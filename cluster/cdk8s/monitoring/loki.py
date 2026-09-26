@@ -32,57 +32,25 @@ from cilium_crds.io.cilium import (
 )
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
-from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
-    S3Identity,
-    S3IdentitySpec,
-    S3IdentitySpecReclaimPolicy,
-    S3IdentitySpecSeaweedRef,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.monitoring import grafana_helmrepository
+from cluster.cdk8s.seaweedfs import namespace, s3
 
 NAME = "loki"
-OUTPUT_DIR = "cluster/k8s/monitoring/loki"
+OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/loki"
 _SEAWEEDFS = "seaweedfs"
-_SEAWEED_GROUP = "seaweed.seaweedfs.com"
 # Written by the old cross-namespace S3Credentials in seaweedfs.
 _LEGACY_CREDENTIALS_SECRET = "loki-s3-credentials"
 # Written by the tenant-local S3Credentials; what the Loki pods read.
 _CREDENTIALS_SECRET = "loki-seaweedfs-credentials"
-_BUCKET_ACTIONS = [
-    BucketSpecAccessActions.READ,
-    BucketSpecAccessActions.WRITE,
-    BucketSpecAccessActions.LIST,
-    BucketSpecAccessActions.TAGGING,
-]
-_PUSH_URL = "http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push"
+WRITE_URL = "http://loki-write.loki.svc.cluster.local:3100"
+_PUSH_URL = f"{WRITE_URL}/loki/api/v1/push"
 _ZONE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh"}
 # Prefer ordinary workers when this workload tolerates control planes.
 _PREFER_WORKERS_AFFINITY = {
@@ -102,7 +70,7 @@ _GOLDILOCKS_OFF = {"goldilocks.fairwinds.com/enabled": "false"}
 _TOLERATE_NO_SCHEDULE = [{"effect": "NoSchedule", "operator": "Exists"}]
 # Must exceed the roaming-node count, or an offline laptop's undeletable pod
 # holds the whole unavailable budget and the rollout deadlocks silently.
-# Enforced by //cluster/validation:test_roaming_daemonset_capacity (which
+# Enforced by //cluster/cdk8s/monitoring:test_roaming_daemonset_capacity (which
 # derives the count from nebula-mesh.json); incident write-up in
 # cluster/docs/lessons_learned/2026_07_31_promtail_daemonset_roaming_deadlock.md.
 _ROAMING_SAFE_UPDATE_STRATEGY = {"type": "RollingUpdate", "rollingUpdate": {"maxUnavailable": 3}}
@@ -135,98 +103,46 @@ def _storage(chart: Chart) -> None:
     )
     # Permit only the SeaweedFS operator's S3Credentials resource to populate
     # this exact workload Secret across namespaces.
-    ResourceReferenceGrant(
-        chart,
-        "legacy-credentials-grant",
-        metadata=metadata(_LEGACY_CREDENTIALS_SECRET, NAME),
-        spec=ResourceReferenceGrantSpec(
-            from_=[ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="S3Credentials", namespace=_SEAWEEDFS)],
-            to=[ResourceReferenceGrantSpecTo(group="", kind="Secret", name=_LEGACY_CREDENTIALS_SECRET)],
-        ),
-    )
-    S3Identity(
-        chart,
-        "identity",
-        metadata=metadata(NAME, _SEAWEEDFS),
-        spec=S3IdentitySpec(
-            seaweed_ref=S3IdentitySpecSeaweedRef(name=_SEAWEEDFS), reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN
-        ),
-    )
-    S3Credentials(
-        chart,
-        "legacy-credentials-source",
-        metadata=metadata(NAME, _SEAWEEDFS),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=_SEAWEEDFS),
-            identity_ref=S3CredentialsSpecIdentityRef(name=NAME),
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_LEGACY_CREDENTIALS_SECRET,
-                namespace=NAME,
-                access_key_field="AWS_ACCESS_KEY_ID",
-                secret_key_field="AWS_SECRET_ACCESS_KEY",
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
+    s3.secret_grant(chart, secret=_LEGACY_CREDENTIALS_SECRET, namespace=NAME)
+    identity = s3.Identity(chart, "identity", name=NAME)
+    identity.credentials(
+        namespace=namespace.NAME,
+        secret=_LEGACY_CREDENTIALS_SECRET,
+        secret_namespace=NAME,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
     )
     # Single bucket "loki" carrying chunks, ruler, and admin sub-paths
     # (Loki splits them internally by key prefix). See the HelmRelease's
     # `storage.bucketNames` — all three point at the same bucket.
-    Bucket(
+    legacy_bucket = s3.Bucket(
         chart,
         "legacy-bucket",
-        metadata=metadata(NAME, _SEAWEEDFS),
-        spec=BucketSpec(
-            name=NAME,
-            cluster_ref=BucketSpecClusterRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            access=[BucketSpecAccess(user=NAME, actions=_BUCKET_ACTIONS)],
-        ),
+        name=NAME,
+        namespace=namespace.NAME,
+        adopt_existing=False,
+        # Unset: the CRD defaults to Retain.
+        reclaim_policy=None,
     )
+    legacy_bucket.grant_read_write(identity)
     # Tenant-local ownership for Loki's existing Seaweed bucket and credentials.
     # The old seaweedfs-namespace resources remain until the consumer cutover and
     # data-path verification are complete.
-    Bucket(
+    bucket = s3.Bucket(
         chart,
         "bucket",
-        metadata=metadata(NAME, NAME, annotations={"description": "Loki chunks, ruler, and admin objects."}),
-        spec=BucketSpec(
-            name=NAME,
-            adopt_existing=True,
-            cluster_ref=BucketSpecClusterRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-            access=[BucketSpecAccess(user=NAME, actions=_BUCKET_ACTIONS)],
-        ),
+        name=NAME,
+        namespace=NAME,
+        adopt_existing=True,
+        description="Loki chunks, ruler, and admin objects.",
     )
-    S3Credentials(
-        chart,
-        "credentials",
-        metadata=metadata(NAME, NAME, annotations={"description": "Loki's tenant-local SeaweedFS credentials."}),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            # The IAM identity name is cluster-global. Without a same-namespace
-            # S3Identity, the operator uses the existing identity named loki.
-            identity_ref=S3CredentialsSpecIdentityRef(name=NAME),
-            # Use a new Secret during the staged handoff. The existing Secret is
-            # populated by the old cross-namespace S3Credentials object and cannot be
-            # adopted here.
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_CREDENTIALS_SECRET, access_key_field="AWS_ACCESS_KEY_ID", secret_key_field="AWS_SECRET_ACCESS_KEY"
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
-    )
-    # Permit only Loki's tenant-local Bucket and S3Credentials to reference the
-    # SeaweedFS cluster in its namespace.
-    ResourceReferenceGrant(
-        chart,
-        "seaweed-grant",
-        metadata=metadata(NAME, _SEAWEEDFS),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="Bucket", namespace=NAME),
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="S3Credentials", namespace=NAME),
-            ],
-            to=[ResourceReferenceGrantSpecTo(group=_SEAWEED_GROUP, kind="Seaweed", name=_SEAWEEDFS)],
-        ),
+    bucket.grant_read_write(identity)
+    identity.credentials(
+        namespace=NAME,
+        # A new Secret during the staged handoff: the existing one is populated by the old
+        # cross-namespace S3Credentials object and cannot be adopted here.
+        secret=_CREDENTIALS_SECRET,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
+        description="Loki's tenant-local SeaweedFS credentials.",
     )
 
 
@@ -519,7 +435,7 @@ def _helm_releases(chart: Chart) -> None:
     # (wyrm2, rugged, iguana) so kernel messages — notably the RTX 5090
     # `Xid 79 "GPU has fallen off the bus"` events — reach Loki with cluster
     # retention instead of dying with the node's ~5-day local journal. Talos nodes
-    # have no journald and are handled separately (cluster/k8s/vector-talos-logs/);
+    # have no journald and are handled separately (cluster/cdk8s/vector_talos_logs.py);
     # the main pod-log promtail above is untouched and still runs on every node.
     helm_release(
         chart,

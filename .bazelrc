@@ -40,13 +40,11 @@ build --host_per_file_copt=external/protobuf[+]/.*@-Wno-maybe-uninitialized
 build --per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment,-Wno-deprecated-declarations,-Wno-narrowing,-Wno-unused-but-set-variable,-Wno-parentheses,-Wno-unused-result
 build --host_per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment,-Wno-deprecated-declarations,-Wno-narrowing,-Wno-unused-but-set-variable,-Wno-parentheses,-Wno-unused-result
 
-# OR-Tools' bitset header instantiates Abseil check templates in these
-# repository-owned translation units, so the external-source filter above does
-# not apply to their signed/unsigned comparison diagnostics.
+# OR-Tools' bitset header instantiates Abseil check templates in this
+# repository-owned translation unit, so the external-source filter above does
+# not apply to its signed/unsigned comparison diagnostics.
 build --per_file_copt=devinfra/js/debundle/solver_backends/ortools_cpsat/solver[.]cc@-Wno-sign-compare
-build --per_file_copt=devinfra/js/debundle/solver_backends/ortools_spike/ortools_cpsat_smoke_test[.]cc@-Wno-sign-compare
 build --host_per_file_copt=devinfra/js/debundle/solver_backends/ortools_cpsat/solver[.]cc@-Wno-sign-compare
-build --host_per_file_copt=devinfra/js/debundle/solver_backends/ortools_spike/ortools_cpsat_smoke_test[.]cc@-Wno-sign-compare
 
 # Reduce runfiles disk usage (prevents "No space left on device" on CI runners).
 # Each py_test creates a runfiles tree with ~2,458 symlinks for the Python toolchain;
@@ -110,7 +108,7 @@ common --@rules_python//python/config_settings:bootstrap_impl=script
 # Don't generate empty __init__.py stubs in runfiles. Fixes protobuf namespace
 # packages (google.*) and FreeCAD conda C extension shadowing repo-wide.
 # Must use the native flag, not the Starlark @rules_python//... config setting
-# (which is ignored in Bazel 8 — see debug/legacy-create-init-investigation.md).
+# (which is ignored in Bazel 8 — see devinfra/debug/legacy_create_init_investigation.md).
 common --incompatible_default_to_explicit_init_py
 
 # Quiet output mode — reduces progress spam for non-interactive contexts.

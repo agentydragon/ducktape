@@ -26,10 +26,10 @@ from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
 from agentplane.action_service.main import ActionServiceDeploymentSettings, WebPushDeploymentSettings
 from agentplane.action_service.mcp_linkage import McpOAuthServer
 from agentplane.action_service.operator_oidc import OperatorOidcSettings
+from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 from agentplane.app.action_federation import ExchangeFederationSettings
-from agentplane.sandbox_actions.binding import SandboxEnvironment, SandboxExecutorBinding
 from cluster.cdk8s import cilium, external_creds
-from cluster.cdk8s.agentplane import actions, staging_config
+from cluster.cdk8s.agentplane import actions, command_sandbox, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE, EgressCredentials, credential_external_secret
@@ -44,21 +44,22 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.external_secrets.external_secret import (
-    add_external_secret,
-    cluster_secret_store,
-    password_generator,
-    remote_data,
-)
+from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import (
+    DataFrom,
+    ExternalSecret,
+    SecretStoreRef,
+    remote_data,
+)
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
 
 _NAMESPACE = "agentplane-staging"
 _HOSTNAME = "agentplane-staging.allegedly.works"
 _AUTHENTIK = "https://auth.allegedly.works"
-_ACTIONS_OIDC_APP = f"{_AUTHENTIK}/application/o/agentplane-actions"
+_ACTIONS_OIDC_APP = f"{_AUTHENTIK}/application/o/agentplane-staging-actions"
 # The push services web-push subscriptions may target: both the Action Service's own
 # allowlist and its egress rule, so the policy cannot drift from what the app accepts.
 _WEB_PUSH_ALLOWED_HOSTS = ("fcm.googleapis.com", "updates.push.services.mozilla.com")
@@ -80,15 +81,14 @@ _TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
 # distinct paths -- see that module's docstring for its Google credential.
 _GMAIL_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/gmail/mcp"
 _CALENDAR_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/calendar/mcp"
-# ha-mcp and google-mcp each mint their bearer in their own namespace (cluster/cdk8s/ha_mcp.py,
-# google_mcp.py), and this namespace reads a copy through that backend's store; the Tana PAT is an
-# external-creds copy approved for this namespace (cluster/cdk8s/external_creds.py).
+# ssh-mcp, ha-mcp and google-mcp each mint their bearer in their own namespace
+# (cluster/cdk8s/ssh_mcp/backend.py, ha_mcp.py, google_mcp.py), and this namespace copies it
+# through a store that can read that one Secret; the Tana PAT is an external-creds copy approved
+# for this namespace (cluster/cdk8s/external_creds.py).
+_SSH_MCP_BEARER_SECRET = "ssh-mcp-client-bearer"
 _HA_MCP_BEARER_SECRET = "ha-mcp-client-bearer"
 _TANA_MCP_BEARER_SECRET = "tana-agentydragon-gmail-com-account-pat"
 _GOOGLE_MCP_BEARER_SECRET = "google-mcp-bearer"
-# cluster/cdk8s/external_secrets/config.py
-_HA_MCP_SECRET_STORE = "kubernetes-ha-mcp-secret-store"
-_GOOGLE_MCP_SECRET_STORE = "kubernetes-google-mcp-secret-store"
 _WEB_PUSH_SECRET = "agentplane-staging-web-push-vapid"
 _WEB_PUSH_SECRET_FILE = "web-push-vapid.sops.yaml"
 _GITHUB_MCP_CLIENT_SECRET = "haku-console-github-mcp-client-credentials"
@@ -98,13 +98,13 @@ _OIDC_SESSION_SECRET = "agentplane-staging-session-secret"
 # The token the app exchanges its login for, and the one the Action Service accepts
 # from operators: the same Authentik application.
 _FEDERATION_TARGET = OperatorOidcSettings(
-    issuer=f"{_ACTIONS_OIDC_APP}/", audience="agentplane-actions", jwks_uri=f"{_ACTIONS_OIDC_APP}/jwks/"
+    issuer=f"{_ACTIONS_OIDC_APP}/", audience="agentplane-staging-actions", jwks_uri=f"{_ACTIONS_OIDC_APP}/jwks/"
 )
 _ACTION_FEDERATION = ExchangeFederationSettings(
     mode="exchange",
     service_url=f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions.CONTAINER_PORT}",
     token_endpoint=f"{_AUTHENTIK}/application/o/token/",
-    login_jwks_uri=f"{_AUTHENTIK}/application/o/agentplane/jwks/",
+    login_jwks_uri=f"{_AUTHENTIK}/application/o/agentplane-staging/jwks/",
     target=_FEDERATION_TARGET,
     scope="openid",
 )
@@ -189,20 +189,10 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
                 kind="sandbox",
                 description="Stamped and exec'd by this service, as the caller, in its own namespace.",
                 namespace=_NAMESPACE,
-                environments={
-                    # The integration app's runner template, for now: it already carries the egress
-                    # sidecar, the interception CA and the proxy environment, so the path is real
-                    # end to end. Its workload container is the runner image, which is the wrong
-                    # destination -- a box to run commands in wants neither the harnesses nor the
-                    # state volume (agentplane/docs/sandbox_actions.md).
-                    "runner": SandboxEnvironment(
-                        template="agentplane-runner",
-                        container="runner",
-                        default_cwd="/state",
-                        description="The shared runner image: python, git and the agent harnesses.",
-                    )
-                },
-                default_environment="runner",
+                # Each describes itself in the annotation the sandbox Actions read. The integration app's
+                # runner template is offered for a caller that wants the harnesses or a state volume
+                # that survives its Pod.
+                templates={command_sandbox.NAME, command_sandbox.BUILD_NAME, "agentplane-runner"},
             ),
         ),
         "ssh": ActionGroup(
@@ -297,12 +287,12 @@ ENV = Environment(
         pdb_min_available=1,
     ),
     app_config=staging_config.config(action_federation=_ACTION_FEDERATION),
-    db=DbProps(instances=2, pod_anti_affinity=True),
+    db=DbProps(instances=2),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
     egress=EgressProps(ca_secret_name="agentplane-egress-ca", credentials_namespace=STAGING_NAMESPACE),
     app=AppProps(
         hostname=_HOSTNAME,
-        oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane/",
+        oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane-staging/",
         reach_incluster_authentik=True,
         runner_zone="hil-ovh",
         oidc_session_secret_name=_OIDC_SESSION_SECRET,
@@ -313,7 +303,7 @@ ENV = Environment(
         extra_reload_secrets=(
             _GITHUB_MCP_CLIENT_SECRET,
             _WEB_PUSH_SECRET,
-            BEARER_SECRET_NAME,
+            _SSH_MCP_BEARER_SECRET,
             _HA_MCP_BEARER_SECRET,
             _TANA_MCP_BEARER_SECRET,
             _GOOGLE_MCP_BEARER_SECRET,
@@ -323,7 +313,7 @@ ENV = Environment(
         web_push_secret_name=_WEB_PUSH_SECRET,
         github_mcp_client_secret_name=_GITHUB_MCP_CLIENT_SECRET,
         bearer_mcp_mounts=[
-            BearerMcpMount(name="ssh-mcp", secret_name=BEARER_SECRET_NAME, secret_key=BEARER_SECRET_KEY),
+            BearerMcpMount(name="ssh-mcp", secret_name=_SSH_MCP_BEARER_SECRET, secret_key=BEARER_SECRET_KEY),
             BearerMcpMount(name="ha-mcp", secret_name=_HA_MCP_BEARER_SECRET, secret_key="bearer-token"),
             # The Secret's own key is `token` (it's a Tana personal access token, not a
             # bearer minted for this purpose); renamed at mount time to the same
@@ -340,12 +330,12 @@ ENV = Environment(
             cilium.egress_to(cilium.endpoint_labels("tana-mcp", "tana-mcp"), 8263),
             cilium.egress_to(cilium.endpoint_labels("google-mcp", "google-mcp"), 8080),
             # Same public-origin Gateway path as the BFF: only Authentik SNI on node:443. The
-            # resolver fetches /application/o/agentplane-actions/jwks/ over HTTPS.
+            # resolver fetches /application/o/agentplane-staging-actions/jwks/ over HTTPS.
             cilium.egress_via_gateway("auth.allegedly.works"),
             # GitHub MCP discovery advertises github.com as its OAuth authorization server.
             cilium.egress_to_fqdns("api.githubcopilot.com", "github.com"),
             # `github_public_repository` policies confirm a repository is public with an
-            # unauthenticated GitHub REST call (github_policy/visibility.py); no credential
+            # unauthenticated GitHub REST call (agentplane/action_service/github_policy/visibility.py); no credential
             # rides this path.
             cilium.egress_to_fqdns("api.github.com"),
             # The Kubernetes MCP server uses the public Gateway/remote-node path.
@@ -361,10 +351,11 @@ ENV = Environment(
 
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
-    ServiceAccount(
+    command_sandbox.CommandSandbox(chart, "command-sandbox", ENV)
+    reader = ServiceAccount(
         chart, "external-creds-reader", metadata=metadata("external-creds-reader", _NAMESPACE), automount_token=False
     )
-    add_external_secret(
+    ExternalSecret(
         chart,
         "tana-pat-external-secret",
         name=_TANA_MCP_BEARER_SECRET,
@@ -376,25 +367,47 @@ def chart(app: App) -> Chart:
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
         annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
     )
-    add_external_secret(
+    for backend, target, source in (
+        ("ssh-mcp", _SSH_MCP_BEARER_SECRET, BEARER_SECRET_NAME),
+        ("google-mcp", _GOOGLE_MCP_BEARER_SECRET, _GOOGLE_MCP_BEARER_SECRET),
+        ("ha-mcp", _HA_MCP_BEARER_SECRET, "ha-mcp-bearer"),
+    ):
+        credential_external_secret(
+            chart,
+            namespace=_NAMESPACE,
+            target=target,
+            source=source,
+            key="bearer-token",
+            store=single_secret_store(
+                chart,
+                f"agentplane-staging-{backend}-bearer",
+                reader=reader,
+                source_namespace=backend,
+                source_secret=source,
+                consumer_namespace=_NAMESPACE,
+            ),
+        )
+    # The GitHub App's pre-registered OAuth client, whose SOPS source stays in haku-console
+    # (cluster/k8s/haku/console/README.md): the id rides an env var, the secret a mounted file.
+    ExternalSecret(
         chart,
-        "google-mcp-bearer-external-secret",
-        name=_GOOGLE_MCP_BEARER_SECRET,
+        "github-mcp-client-external-secret",
+        name=_GITHUB_MCP_CLIENT_SECRET,
         namespace=_NAMESPACE,
         refresh="1h",
-        store=cluster_secret_store(_GOOGLE_MCP_SECRET_STORE),
-        data=[remote_data(_GOOGLE_MCP_BEARER_SECRET, "bearer-token")],
+        store=SecretStoreRef.cluster(
+            single_secret_store(
+                chart,
+                "agentplane-staging-github-mcp-client",
+                reader=reader,
+                source_namespace="haku-console",
+                source_secret=_GITHUB_MCP_CLIENT_SECRET,
+                consumer_namespace=_NAMESPACE,
+            )
+        ),
+        data=[remote_data(_GITHUB_MCP_CLIENT_SECRET, key) for key in ("client_id", "client_secret")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        annotations={"description": "ESO copy of google-mcp's own caller-facing bearer."},
-    )
-    credential_external_secret(
-        chart,
-        namespace=_NAMESPACE,
-        target=_HA_MCP_BEARER_SECRET,
-        source="ha-mcp-bearer",
-        key="bearer-token",
-        store=_HA_MCP_SECRET_STORE,
     )
     _add_session_secret(chart)
     add_staging_action_policies(chart)
@@ -419,13 +432,13 @@ def _add_session_secret(scope: Chart) -> None:
         metadata=metadata(_OIDC_SESSION_SECRET, _NAMESPACE),
         spec=PasswordSpec(length=64, digits=16, symbols=0, no_upper=False, allow_repeat=True),
     )
-    add_external_secret(
+    ExternalSecret(
         scope,
         "session-external-secret",
         name=_OIDC_SESSION_SECRET,
         namespace=_NAMESPACE,
         refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[password_generator(_OIDC_SESSION_SECRET)],
+        data_from=[DataFrom.from_password_generator(_OIDC_SESSION_SECRET)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
         template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"session-secret": "{{ .password }}"}),

@@ -4,6 +4,9 @@ import { Accordion, Badge, Code, Group, Paper, Stack, Text, Title } from "@manti
 import { ActionCaller, ActionContext, RequestAuditDetails, stateLabel, useActionRequests } from "./actions";
 import { actionService, type ActionRequestView, type ActionService } from "./client";
 import { JsonView } from "./json_view";
+import { StaleNotice } from "./stream_status";
+
+import "./actions_history.css";
 
 /** A decided/terminal ActionRequest, kept as a durable receipt: the decision it's a record of leads
  * the card, with the exact arguments folded behind a disclosure rather than shown unconditionally
@@ -72,7 +75,7 @@ function HistoryCard({ request }: { request: ActionRequestView }): JSX.Element {
 
 /** Decided and terminal ActionRequests: durable receipts, not something an operator still acts on. */
 export function ActionHistory({ service = actionService }: { service?: ActionService }): JSX.Element {
-  const { requests, error, loading } = useActionRequests(service);
+  const { requests, error, loading, stream } = useActionRequests(service);
   const decided = requests.filter((request) => request.state !== "decision_pending");
 
   return (
@@ -83,6 +86,7 @@ export function ActionHistory({ service = actionService }: { service?: ActionSer
           Denied and terminal ActionRequests, kept as durable receipts.
         </Text>
       </div>
+      <StaleNotice streams={[stream]} />
       {error && <Text c="red">{error}</Text>}
       {loading && <Text role="status">Loading actions…</Text>}
       {!loading && !error && decided.length === 0 && <Text c="dimmed">No decided requests yet.</Text>}

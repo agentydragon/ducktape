@@ -24,10 +24,11 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "loki-read-proxy"
-OUTPUT_DIR = "cluster/k8s/agents/loki-read-proxy"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/loki-read-proxy"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/loki-read-proxy:unset"
 _PORT = 8080
@@ -39,6 +40,7 @@ _PORT = 8080
 # policy cannot drift. csi-proxmox and cpap-sync are separately reviewed Haku-only
 # exceptions retained from the original proxy policy.
 NAMESPACE_ALLOWLIST = (
+    # keep-sorted start
     "activitywatch",
     "agentplane-index",
     "agentplane-staging",
@@ -47,8 +49,8 @@ NAMESPACE_ALLOWLIST = (
     "analytics",
     "authentik",
     "cert-manager",
-    "clickhouse",
     "cli-proxy-api",
+    "clickhouse",
     "cnpg-system",
     "cpap-sync",
     "csi-proxmox",
@@ -68,10 +70,11 @@ NAMESPACE_ALLOWLIST = (
     "oci-cache",
     "openebs",
     "plaid-mcp",
-    "proxmox-proxy",
     "props",
+    "proxmox-proxy",
     "study-casino",
     "tana-mcp",
+    # keep-sorted end
 )
 
 

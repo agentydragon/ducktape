@@ -11,11 +11,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "metrics-server"
 NAMESPACE = "kube-system"
-OUTPUT_DIR = "cluster/k8s/metrics-server"
+OUTPUT_DIR = f"{GENERATED_ROOT}/metrics-server"
 
 
 def chart(app: App) -> Chart:

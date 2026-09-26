@@ -7,10 +7,12 @@ py_library(
     srcs = ["config.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
-        "//cluster/cdk8s/crd_bindings/external_secrets:clustersecretstore",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/providers/external_secrets:clustersecretstore",
         "@pypi//cdk8s",
     ],
 )
@@ -34,6 +36,7 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/cert_manager:issuer",
         "//cluster/cdk8s/crd_bindings/flux:helmrepository",
@@ -44,12 +47,14 @@ py_library(
 )
 
 py_library(
-    name = "external_secret",
-    srcs = ["external_secret.py"],
+    name = "single_secret_store",
+    srcs = ["single_secret_store.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
+        "//cluster/cdk8s/providers/external_secrets:clustersecretstore",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
 )

@@ -12,9 +12,6 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromFind,
-    ExternalSecretSpecDataFromFindName,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
 )
@@ -31,7 +28,6 @@ from external_secrets_secretstore_crds.io.external_secrets import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, secret_store
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -40,12 +36,14 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.seaweedfs import namespace
 
 SECRET_NAME = "seaweedfs-s3-config"
 SECRET_KEY = "seaweedfs_s3_config.json"
-OUTPUT_DIR = "cluster/k8s/seaweedfs/secrets"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/secrets"
 _CHART = "s3-config"
 _READER = "eso-reader"
 _SECRET_STORE = "seaweedfs-identities"
@@ -110,20 +108,14 @@ def chart(app: App) -> Chart:
     # Template note: ESO's `dataFrom.find` returns `.<secretName>` as a JSON-encoded *string*
     # of that Secret's data dict, not a Go map. Each per-tenant intermediate Secret has data
     # key `identity` holding the identity JSON, hence `| fromJson` and then `.identity`.
-    add_external_secret(
+    ExternalSecret(
         chart,
         "s3-config",
         name=SECRET_NAME,
         namespace=namespace.NAME,
         refresh="1m",
-        store=secret_store(_SECRET_STORE),
-        data_from=[
-            ExternalSecretSpecDataFrom(
-                find=ExternalSecretSpecDataFromFind(
-                    name=ExternalSecretSpecDataFromFindName(regexp="^s3-identity-.+-json$")
-                )
-            )
-        ],
+        store=SecretStoreRef.namespaced(_SECRET_STORE),
+        data_from=[DataFrom.from_find_by_name_regexp("^s3-identity-.+-json$")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         template=ExternalSecretSpecTargetTemplate(
             type="Opaque",

@@ -22,9 +22,11 @@ from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvValueFromSecretKeyRef,
     TerraformV1Alpha2SpecSourceRef,
     TerraformV1Alpha2SpecSourceRefKind,
+    TerraformV1Alpha2SpecStoreReadablePlan,
     TerraformV1Alpha2SpecVars,
 )
 
+from cluster.cdk8s import ducktape_flux, flux
 from cluster.cdk8s.metadata import metadata
 
 NAMESPACE = "flux-system"
@@ -56,12 +58,18 @@ def gitops_terraform(
     env: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv] = (),
     env_from: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFrom] = (),
     schema: str | None = None,
+    store_readable_plan: TerraformV1Alpha2SpecStoreReadablePlan | None = None,
 ) -> TerraformV1Alpha2:
     """`name` is the module directory under tf/gitops and, underscored, its state schema
     unless `schema` names the one its state already lives in.
 
     `variables` values are written structurally into the runner's tfvars, so a nested
     map arrives as a Terraform map/object, not a string.
+
+    `store_readable_plan=HUMAN` writes each plan's diff to the `tfplan-default-<name>`
+    ConfigMap, readable by anyone who can read ConfigMaps in flux-system. Enable it only
+    for modules whose providers mark every secret-bearing attribute `Sensitive`, which
+    the plan masks.
     """
     return TerraformV1Alpha2(
         scope,
@@ -70,9 +78,12 @@ def gitops_terraform(
         spec=TerraformV1Alpha2Spec(
             interval="15m",
             refresh_before_apply=True,
-            path=f"./tf/gitops/{name}",
+            store_readable_plan=store_readable_plan,
+            path=f"./{ducktape_flux.TF_GITOPS_ROOT}/{name}",
             source_ref=TerraformV1Alpha2SpecSourceRef(
-                kind=TerraformV1Alpha2SpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
+                kind=TerraformV1Alpha2SpecSourceRefKind.GIT_REPOSITORY,
+                name=ducktape_flux.SOURCE_NAME,
+                namespace=flux.NAMESPACE,
             ),
             service_account_name="tf-runner",
             approve_plan="auto",

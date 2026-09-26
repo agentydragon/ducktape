@@ -41,6 +41,11 @@ MTU: 1420
 gatewayAPI:
   enabled: true
   enableAppProtocol: true
+  # Offer HTTP/2 to clients. Over HTTP/1.1 a browser holds at most six connections
+  # per host across all tabs, and agentplane's live streams alone can fill them,
+  # queueing ordinary requests behind long polls. Upstreams stay HTTP/1.1 unless a
+  # Service's appProtocol says otherwise.
+  enableAlpn: true
   hostNetwork:
     enabled: true
     nodes:
@@ -72,7 +77,7 @@ envoy:
 
 # Observability (optional, not networking-critical)
 # Expose cilium-agent metrics through the chart-managed headless Service. The
-# ServiceMonitor is declared separately under cluster/k8s/monitoring/cilium so
+# ServiceMonitor is declared separately under cluster/generated/monitoring/cilium so
 # the bootstrap-time Helm install does not depend on monitoring CRDs.
 prometheus:
   enabled: true
@@ -89,7 +94,7 @@ hubble:
   # ring buffer: visible live in the UI, gone afterwards. Every egress question
   # then has to be asked while the traffic is happening, which is why short
   # captures here have repeatedly "cleared" callers that were merely idle at the
-  # time (debug/github_graphql_exhaustion/README.md). These are scraped
+  # time (devinfra/github_proxy/debug/github_graphql_exhaustion/README.md). These are scraped
   # into Mimir, so a window can be queried after the fact.
   #
   # Observability plane only: no datapath, MTU, or routing change, so the
@@ -126,7 +131,7 @@ hubble:
       - "drop:sourceContext=workload-name|reserved-identity;destinationContext=workload-name|ip"
       - "dns:query;ignoreAAAA"
     # As with `prometheus` above: the ServiceMonitor is declared under
-    # cluster/k8s/monitoring/cilium so this bootstrap-time install does not
+    # cluster/generated/monitoring/cilium so this bootstrap-time install does not
     # depend on monitoring CRDs.
     serviceMonitor:
       enabled: false

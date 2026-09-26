@@ -1,0 +1,62 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: registry-cache
+  namespace: oci-cache
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: registry-cache
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: registry-cache
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: registry-cache
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: oci-cache
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: oci-cache
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: registry-cache
+  namespace: seaweedfs
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: registry-cache
+  namespace: oci-cache
+spec:
+  identityRef:
+    name: registry-cache
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    name: registry-cache-s3-credentials

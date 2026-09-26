@@ -32,12 +32,13 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "flux-image-automation-forgejo"
 # Flux's own namespace, where the image-reflector controller reads these.
 NAMESPACE = "flux-system"
-OUTPUT_DIR = "cluster/k8s/flux-image-automation-forgejo"
+OUTPUT_DIR = f"{GENERATED_ROOT}/flux-image-automation-forgejo"
 _REGISTRY = "git.allegedly.works/ducktape-ci"
 _SCAN_INTERVAL = "5m"
 # The ducktape-ci pull credential, reflected here from cluster/k8s/forgejo-images/;
@@ -51,6 +52,7 @@ _TAG_PATTERN = r"^devel-\d{14}-[0-9a-f]{7}$"
 # (`{"$imagepolicy": "flux-system:<name>:tag"}`), so renaming one is a coordinated change
 # across every directory that pins the image -- not a rename here.
 IMAGES = (
+    # keep-sorted start
     "agent-workspace",
     "agentplane-action-service",
     "agentplane-action-service-migrate",
@@ -63,6 +65,8 @@ IMAGES = (
     "agentplane-llm-ingress",
     "agentplane-oauth-fixture",
     "agentplane-runner",
+    "agentplane-sandbox",
+    "agentplane-sandbox-build",
     "aiquota-api",
     "airlock",
     "attic-jwt-rotation",
@@ -77,14 +81,15 @@ IMAGES = (
     "google-mcp",
     "grocy-mcp-oidc-server",
     "grocy-user-perms-provisioner",
-    "ha-mcp-token-provisioner",
     "haku-console",
     "haku-console-static",
     "haku-kube-api-proxy",
     "haku-openclaw-spike",
     # The trailing `-image` is in the repository path too, unlike every other entry.
     "haku-sandbox-image",
-    "homeassistant-provisioner",
+    "homeassistant-component-installer",
+    "homeassistant-onboarding",
+    "homeassistant-token-provisioner",
     "iron-proxy",
     "loki-read-proxy",
     "matrix-user-provisioner",
@@ -103,6 +108,7 @@ IMAGES = (
     "tana-firebase-resigner",
     "tana-litellm-proxy",
     "tana-mcp",
+    # keep-sorted end
 )
 
 # Repository path for the entries whose image is not named after their policy.

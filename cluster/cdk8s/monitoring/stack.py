@@ -31,10 +31,11 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "monitoring-stack"
-OUTPUT_DIR = "cluster/k8s/monitoring/stack"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/stack"
 _NAMESPACE = "monitoring"
 _HELM_REPOSITORY = "prometheus-community"
 _CONTROL_PLANE_TOKEN = "alloy-control-plane-token"
@@ -267,10 +268,10 @@ def _values() -> dict[str, object]:
         "cleanPrometheusOperatorObjectNames": True,
         "defaultRules": {
             "create": True,
-            # This is a wyrm2-only volume for host-local Colibri/model data, not
+            # This is a wyrm2-only volume for host-local model data, not
             # storage used by Kubernetes workloads. Kubernetes filesystem alerts
             # should not care about it; node-exporter still exposes its raw metrics.
-            "node": {"fsSelector": 'fstype!="",mountpoint!="/var/lib/colibri"'},
+            "node": {"fsSelector": 'fstype!="",mountpoint!="/var/lib/llm-models-ssd"'},
             # Forked into cluster/cdk8s/monitoring/rules.py so
             # roaming laptops (iguana/rugged) can be excluded by taint. Denying these two by
             # alertname in the route below would also have silenced them for the
@@ -450,7 +451,7 @@ def _values() -> dict[str, object]:
         "kubeControllerManager": {"enabled": True, "serviceMonitor": _CONTROL_PLANE_SERVICE_MONITOR},
         # `serviceMonitor.authorization: null` is patched in below.
         "coreDns": {"enabled": True, "serviceMonitor": {}},
-        # Static Talos etcd endpoints are managed in cluster/k8s/monitoring/etcd.
+        # Static Talos etcd endpoints are managed in cluster/generated/monitoring/etcd.
         "kubeEtcd": {"enabled": False},
         "kubeScheduler": {"enabled": True, "serviceMonitor": _CONTROL_PLANE_SERVICE_MONITOR},
         # kube-proxy is intentionally absent: Cilium runs kube-proxy replacement,

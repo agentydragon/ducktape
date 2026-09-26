@@ -1,27 +1,92 @@
-"""CNPG `Cluster` affinity shared by every generated Postgres: soft anti-affinity off
-control-plane nodes, whose etcd is on a rotational HDD that co-located I/O starves
-(2026-06-28 outage)."""
+"""CNPG `Cluster`s: the shape every generated Postgres shares, and its placement."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    ClusterSpecAffinityNodeAffinity,
-    ClusterSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution,
-    ClusterSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
-    ClusterSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions,
+    ClusterSpecAffinity,
+    ClusterSpecAffinityTolerations,
+    ClusterSpecBootstrapInitdb,
+    ClusterSpecManaged,
+    ClusterSpecMonitoring,
+    ClusterSpecPlugins,
+    ClusterSpecPostgresql,
+    ClusterSpecProbes,
+    ClusterSpecProbesLiveness,
+    ClusterSpecProbesLivenessIsolationCheck,
+    ClusterSpecResources,
+)
+from constructs import Construct
+
+from cluster.cdk8s.local_path_provisioner import SSD_STORAGE_CLASSES
+from cluster.cdk8s.providers.cnpg.cluster import Cluster
+
+POSTGRES_IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie"
+
+_CONTROL_PLANE_TOLERATION = ClusterSpecAffinityTolerations(
+    key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
 )
 
-OFF_CONTROL_PLANE_NODE_AFFINITY = ClusterSpecAffinityNodeAffinity(
-    preferred_during_scheduling_ignored_during_execution=[
-        ClusterSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution(
-            weight=100,
-            preference=ClusterSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference(
-                match_expressions=[
-                    ClusterSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions(
-                        key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
-                    )
-                ]
-            ),
-        )
-    ]
-)
+
+def _affinity(*, node_selector: dict[str, str], storage_class: str) -> ClusterSpecAffinity:
+    """One instance per node within `node_selector`, required: instances sharing a node
+    share its failure, and preferred anti-affinity lets the scheduler co-locate them. A
+    Cluster tolerates control-plane nodes exactly when its storage is SSD, since OVH's
+    SSD nodes are its control planes."""
+    return ClusterSpecAffinity(
+        node_selector=node_selector,
+        tolerations=[_CONTROL_PLANE_TOLERATION] if storage_class in SSD_STORAGE_CLASSES else None,
+        topology_key="kubernetes.io/hostname",
+        pod_anti_affinity_type="required",
+    )
+
+
+def cluster(
+    scope: Construct,
+    id: str,
+    *,
+    name: str,
+    namespace: str,
+    storage_class: str,
+    size: str,
+    node_selector: dict[str, str],
+    initdb: ClusterSpecBootstrapInitdb | None = None,
+    instances: int = 2,
+    image_name: str | None = POSTGRES_IMAGE,
+    annotations: dict[str, str] | None = None,
+    managed: ClusterSpecManaged | None = None,
+    postgresql: ClusterSpecPostgresql | None = None,
+    plugins: Sequence[ClusterSpecPlugins] | None = None,
+    resources: ClusterSpecResources | None = None,
+) -> Cluster:
+    """Add a CNPG `Cluster`. Keywords are `ClusterSpec` fields under the same names and
+    types, except `initdb` (`bootstrap.initdb`), `storage_class`/`size` (`storage`) and
+    `node_selector` (the zone or region pin), from which `_affinity` derives placement.
+    Our policy: 2 instances (cluster/docs/cnpg_conventions.md R2) on `POSTGRES_IMAGE`;
+    `image_name=None` runs the operator's default image. Every Cluster disables the
+    liveness isolation check -- CNPG 1.27+ otherwise kills a primary it considers isolated
+    on a transient network blip -- and enables the PodMonitor.
+    """
+    return Cluster(
+        scope,
+        id,
+        name=name,
+        namespace=namespace,
+        storage_class=storage_class,
+        size=size,
+        instances=instances,
+        image_name=image_name,
+        initdb=initdb,
+        affinity=_affinity(node_selector=node_selector, storage_class=storage_class),
+        managed=managed,
+        postgresql=postgresql,
+        plugins=plugins,
+        resources=resources,
+        probes=ClusterSpecProbes(
+            liveness=ClusterSpecProbesLiveness(isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False))
+        ),
+        # TODO: Migrate to manually managed PodMonitors (enablePodMonitor is deprecated).
+        monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
+        annotations=annotations,
+    )

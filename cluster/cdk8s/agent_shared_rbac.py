@@ -1,7 +1,7 @@
-"""Cluster-scoped agent RBAC (cluster/k8s/agents/shared-rbac): the ClusterRoleBinding that
+"""Cluster-scoped agent RBAC (cluster/generated/agents/shared-rbac): the ClusterRoleBinding that
 grants every agent identity the secret-free cluster-diagnostics-reader ClusterRole.
 Namespace-scoped RoleBindings live in per-service agent-rbac/ directories
-(cluster/k8s/agents/agent-rbac-base/README.md).
+(cluster/docs/agent_rbac.md).
 """
 
 from __future__ import annotations
@@ -14,9 +14,10 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "agent-shared-rbac"
-OUTPUT_DIR = "cluster/k8s/agents/shared-rbac"
+OUTPUT_DIR = f"{GENERATED_ROOT}/agents/shared-rbac"
 _RBAC_GROUP = "rbac.authorization.k8s.io"
 
 
@@ -44,7 +45,7 @@ def chart(app: App) -> Chart:
             _group("oidc-ksbx-groups:agent-box-codex"),
             # claude-ai: the principal for Connections enrolled from the Claude.ai MCP connector
             # (cluster/cdk8s/agentplane/actions_staging_policies.py), and every sandbox stamped
-            # for it (agentplane/docs/sandbox_actions.md). Secret-free cluster diagnostics here;
+            # for it (agentplane/action_service/sandbox/README.md). Secret-free cluster diagnostics here;
             # the agent-readable namespace readers (cluster/cdk8s/kyverno/policies.py's
             # generate-agent-diagnostics-readers) add metadata and pod logs where a namespace opts in.
             k8s.Subject(kind="ServiceAccount", name="claude-ai", namespace="agentplane-staging"),

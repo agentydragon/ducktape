@@ -12,7 +12,7 @@ server 401, SYN/ACK); large data transfers timed out.
 `nebula1` MTU was **1300** (Nebula's default). The cluster network stack
 requires `nebula1 = 1420` (see `cluster/docs/network.md`):
 
-```
+```text
 pod 1370 + VXLAN 50 = 1420 fits nebula1   (1420 + 60 Nebula = 1480 fits eno1 1500)
 ```
 
@@ -22,7 +22,7 @@ every cross-node packet of non-trivial size was dropped.
 
 **Confirmed**:
 
-```
+```text
 ping -M do -s 1260 10.42.0.13  →  OK    (1288 bytes < 1300 MTU)
 ping -M do -s 1372 10.42.0.13  →  FAIL  "Message too long" (1400 bytes > 1300)
 ```

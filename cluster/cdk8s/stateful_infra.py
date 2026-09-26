@@ -15,6 +15,7 @@ from cdk8s_plus_34 import k8s
 from constructs import Construct
 
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "stateful-infra"
 # Above ordinary workloads (default 0) so scheduler preemption defers these pods; far below
@@ -55,4 +56,4 @@ def priority_class_chart(app: App) -> Chart:
 
 
 def write_seaweedfs_manifests(root: Path) -> None:
-    write_charts(root, "cluster/k8s/seaweedfs/cluster", priority_class_chart)
+    write_charts(root, f"{HAND_WRITTEN_ROOT}/seaweedfs/cluster", priority_class_chart)

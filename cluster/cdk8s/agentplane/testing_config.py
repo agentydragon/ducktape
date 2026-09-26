@@ -7,14 +7,17 @@ from __future__ import annotations
 
 from agentplane.app.action_federation import ActionFederationSettings
 from cluster.cdk8s.agentplane.app_settings import AppSettingsConfig, settings
-from cluster.cdk8s.litellm.keys import CHEAP_EXPERIMENTS_CLAUDE_MODEL, CHEAP_EXPERIMENTS_CODEX_MODEL
+from cluster.cdk8s.litellm.keys import (
+    CHEAP_EXPERIMENTS_CLAUDE_MODEL,
+    CHEAP_EXPERIMENTS_CODEX_MODEL,
+    OLLAMA_CHAT_CLIENT_MODELS,
+)
 
 _NAMESPACE = "agentplane-testing"
 
-# What the session form offers per harness: the one native model per harness the
-# cheap-experiments key admits (tf/gitops/litellm-keys).
-_HARNESS_CLAUDE = [CHEAP_EXPERIMENTS_CLAUDE_MODEL]
-_HARNESS_CODEX = [CHEAP_EXPERIMENTS_CODEX_MODEL]
+# The cheap-experiments key admits these native models and the local Ollama chat routes.
+_HARNESS_CLAUDE = [CHEAP_EXPERIMENTS_CLAUDE_MODEL, *OLLAMA_CHAT_CLIENT_MODELS]
+_HARNESS_CODEX = [CHEAP_EXPERIMENTS_CODEX_MODEL, *OLLAMA_CHAT_CLIENT_MODELS]
 
 
 def config(action_federation: ActionFederationSettings | None = None) -> AppSettingsConfig:

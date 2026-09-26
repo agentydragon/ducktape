@@ -14,10 +14,7 @@ use super::factorize::{
     DEFAULT_SIZE_CAP_LINES, FactorizeDiagnosticReport, FactorizeProposal, PeelFactorizeOptions,
     PeelFactorizeReport, analyze_peel_factorize, analyze_peel_factorize_on_graph,
 };
-use anonymous_resolution::{
-    AnonymousStatementClaimSet, MemberSelectorClaimSet, resolve_anonymous_statement_claims,
-    resolve_member_selector_claims,
-};
+use anonymous_resolution::{SourceClaimSet, resolve_source_claims, resolve_source_claims_of};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, ValueEnum};
 use serde::Serialize;
@@ -1037,51 +1034,30 @@ fn patch_plan_rows(
         .map(|unit| (unit.id.clone(), unit))
         .collect();
     let patch_sets = load_patch_sets(modules_root)?;
-    // Resolve every patch set's anonymous-statement claims in ONE
-    // batched call. The resolver parses each claimed source file once
-    // per call, so calling it per row re-parsed every source file per
-    // patch set.
-    let anonymous_owners_by_set = {
-        let claim_sets: Vec<AnonymousStatementClaimSet> = patch_sets
+    // Resolve every patch set's source-backed claims in ONE batched call: the
+    // resolver parses each claimed source file once per call.
+    let resolved_by_set = resolve_source_claims(
+        graph,
+        owner_graph_path,
+        modules_root,
+        source_root,
+        &patch_sets
             .iter()
-            .map(|patch_set| AnonymousStatementClaimSet {
+            .map(|patch_set| SourceClaimSet {
                 module_path: &patch_set.file,
-                selectors: &patch_set.anonymous_selectors,
+                source_matches: &patch_set.source_matches,
+                anonymous_selectors: &patch_set.anonymous_selectors,
             })
-            .collect();
-        resolve_anonymous_statement_claims(
-            graph,
-            owner_graph_path,
-            modules_root,
-            source_root,
-            &claim_sets,
-        )?
-    };
-    let member_bindings_by_set = {
-        let claim_sets: Vec<MemberSelectorClaimSet> = patch_sets
-            .iter()
-            .map(|patch_set| MemberSelectorClaimSet {
-                module_path: &patch_set.file,
-                selectors: &patch_set.member_selectors,
-            })
-            .collect();
-        resolve_member_selector_claims(
-            graph,
-            owner_graph_path,
-            modules_root,
-            source_root,
-            &claim_sets,
-        )?
-    };
+            .collect::<Vec<_>>(),
+    )?;
     patch_sets
         .into_iter()
-        .zip(anonymous_owners_by_set)
-        .zip(member_bindings_by_set)
-        .map(|((patch_set, anonymous_owners), member_bindings)| {
+        .zip(resolved_by_set)
+        .map(|(patch_set, resolved)| {
             let claimed_bindings: BTreeSet<String> = patch_set
                 .bindings
                 .iter()
-                .chain(&member_bindings)
+                .chain(&resolved.bindings)
                 .cloned()
                 .collect();
             let mut requested_binding_ids: Vec<String> = claimed_bindings.iter().cloned().collect();
@@ -1096,7 +1072,7 @@ fn patch_plan_rows(
                     unknown_binding_ids.push(binding.clone());
                 }
             }
-            for owner in &anonymous_owners {
+            for owner in &resolved.anonymous_owners {
                 if let Some(node) = graph.nodes.get(owner.0) {
                     requested_owner_ids.insert(node.id.clone());
                 }
@@ -1182,7 +1158,7 @@ struct PatchSet {
     file: PathBuf,
     bindings: BTreeSet<String>,
     anonymous_selectors: BTreeSet<spec::AnonymousStatementSelector>,
-    member_selectors: BTreeSet<spec::AnonymousStatementSelector>,
+    source_matches: Vec<spec::SourceMatchClaim>,
 }
 
 fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
@@ -1198,7 +1174,7 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
             file: binding_patches_path,
             bindings: patch_bindings,
             anonymous_selectors: BTreeSet::new(),
-            member_selectors: BTreeSet::new(),
+            source_matches: Vec::new(),
         });
     }
     for file in collect_module_files(modules_root)? {
@@ -1206,32 +1182,15 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
         if !claims.has_claims() {
             continue;
         }
-        let member_selectors = expanded_member_selectors(&file, &claims)?;
         sets.push(PatchSet {
             path: module_path_from_file(&file, modules_root),
             file,
             bindings: claims.bindings,
             anonymous_selectors: claims.anonymous_selectors,
-            member_selectors,
+            source_matches: claims.source_matches,
         });
     }
     Ok(sets)
-}
-
-fn expanded_member_selectors(
-    module_path: &Path,
-    claims: &spec_modules::ModuleClaims,
-) -> Result<BTreeSet<spec::AnonymousStatementSelector>> {
-    js_ast::with_swc_globals(|| {
-        let mut selectors = BTreeSet::new();
-        let request_id = module_path.to_string_lossy();
-        for claim in &claims.source_matches {
-            for expanded in source_match::source_match_claim_member_selectors(&request_id, claim)? {
-                selectors.insert(expanded.selector);
-            }
-        }
-        Ok(selectors)
-    })
 }
 
 /// Map each declared (minified) binding name to its owner id.
@@ -1525,38 +1484,41 @@ fn resolve_module_path_owner_ids(
             unknown_binding_ids.push(binding.clone());
         }
     }
-    let member_selectors = expanded_member_selectors(&yaml_path, &claims)?;
-    let member_claim_sets = [MemberSelectorClaimSet {
-        module_path: &yaml_path,
-        selectors: &member_selectors,
-    }];
-    let member_bindings = resolve_member_selector_claims(
+    // The module's claims resolve jointly with every other module's, as in
+    // `run`.
+    let module_files = collect_module_files(&common.modules_root)?;
+    let all_claims = module_files
+        .iter()
+        .map(|file| read_module_claims(file))
+        .collect::<Result<Vec<_>>>()?;
+    let index = module_files
+        .iter()
+        .position(|file| module_path_from_file(file, &common.modules_root) == module_path)
+        .with_context(|| format!("module {module_path:?} is not in the modules tree"))?;
+    let resolved = resolve_source_claims_of(
         graph,
         &common.owner_graph_path,
         &common.modules_root,
         source_root,
-        &member_claim_sets,
+        &module_files
+            .iter()
+            .zip(&all_claims)
+            .map(|(file, claims)| SourceClaimSet {
+                module_path: file,
+                source_matches: &claims.source_matches,
+                anonymous_selectors: &claims.anonymous_selectors,
+            })
+            .collect::<Vec<_>>(),
+        index,
     )?;
-    for binding in &member_bindings[0] {
+    for binding in &resolved.bindings {
         if let Some(owner_id) = binding_to_owner.get(binding) {
             owner_ids.insert(owner_id.clone());
         } else {
             unknown_binding_ids.push(binding.clone());
         }
     }
-
-    let claim_sets = [AnonymousStatementClaimSet {
-        module_path: &yaml_path,
-        selectors: &claims.anonymous_selectors,
-    }];
-    let anonymous_owners = resolve_anonymous_statement_claims(
-        graph,
-        &common.owner_graph_path,
-        &common.modules_root,
-        source_root,
-        &claim_sets,
-    )?;
-    for owner in &anonymous_owners[0] {
+    for owner in &resolved.anonymous_owners {
         if let Some(node) = graph.nodes.get(owner.0) {
             owner_ids.insert(node.id.clone());
         }
@@ -1840,25 +1802,6 @@ mod tests {
 
     fn fixture() -> (TempDir, CommonArgs) {
         fixture_with_graph(graph_fixture())
-    }
-
-    #[test]
-    fn expanded_member_selectors_include_canonical_source_matches() {
-        let mut claims = spec_modules::ModuleClaims::default();
-        claims.source_matches.push(
-            serde_yaml::from_str(
-                r#"match: "const local = 1;"
-bindings: [local]
-"#,
-            )
-            .unwrap(),
-        );
-
-        let selectors = expanded_member_selectors(Path::new("ui/widget.yaml"), &claims).unwrap();
-        assert_eq!(selectors.len(), 1);
-        let selector = selectors.iter().next().unwrap();
-        assert_eq!(selector.target_binding.as_deref(), Some("local"));
-        assert_eq!(selector.match_source, "const local = 1;");
     }
 
     #[test]

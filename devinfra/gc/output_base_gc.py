@@ -27,6 +27,8 @@ from pathlib import Path
 import humanize
 from tabulate import tabulate
 
+from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressCategory, ProgressSink
+
 logger = logging.getLogger(__name__)
 
 _HASHED_BASE_RE = re.compile(r"[0-9a-f]{32}")
@@ -339,6 +341,7 @@ def scan_output_user_root(
     uid: int | None = None,
     proc_root: Path = Path("/proc"),
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
+    progress: ProgressSink = NULL_PROGRESS,
 ) -> list[Inspection]:
     uid = os.getuid() if uid is None else uid
     root = root.resolve(strict=True)
@@ -350,6 +353,8 @@ def scan_output_user_root(
         if _HASHED_BASE_RE.fullmatch(base.name) or base.name.startswith(_QUARANTINE_PREFIX)
     ]
     logger.info("Scanning %d output bases in %s", len(candidates), root)
+    if candidates:
+        progress.start_phase("bases", len(candidates))
     for index, base in enumerate(candidates, start=1):
         logger.info("Scanning output base %d/%d %s", index, len(candidates), base.name)
         if _HASHED_BASE_RE.fullmatch(base.name):
@@ -357,6 +362,7 @@ def scan_output_user_root(
         else:
             inspection = ReviewBase(base, "incomplete previous GC quarantine", base.lstat().st_mtime_ns)
         inspections.append(inspection)
+        progress.record("bases", _status(inspection))
         logger.info("Finished output base %d/%d %s", index, len(candidates), base.name)
     return inspections
 
@@ -446,7 +452,7 @@ def _inspection_reason(inspection: Inspection) -> str:
     return inspection.reason
 
 
-def _status(inspection: Inspection) -> str:
+def _status(inspection: Inspection) -> ProgressCategory:
     if isinstance(inspection, PrunableBase):
         return "PRUNE"
     if isinstance(inspection, RetainedBase):

@@ -43,7 +43,7 @@ from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
 from agentplane.app.database import connect
 from agentplane.app.testing.electric_service import ElectricService, electric_service
-from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certificate, http2_proxy
+from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
@@ -95,7 +95,7 @@ class ThreadBrowser:
     content: ContentStore
     opened: Opened
     app: AppProcess
-    browser_url: str
+    ingress: Ingress
 
 
 @pytest.fixture
@@ -159,7 +159,7 @@ async def thread_browser(
     ):
         async with asyncio.timeout(30):
             opened = await source.opened.get()
-            await page.goto(f"{ingress}/#/threads/{thread_id}")
+            await page.goto(f"{ingress.url}/#/threads/{thread_id}")
         yield ThreadBrowser(page, source, store, event_logs, content, opened, app, ingress)
 
 
@@ -187,7 +187,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
-        url = f"{ingress}/#/threads/{thread_id}"
+        url = f"{ingress.url}/#/threads/{thread_id}"
         await page.goto(url)
         await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value("Test archived thread")
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
@@ -254,13 +254,14 @@ async def test_switching_threads_starts_at_each_threads_tail(
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
-        await page.goto(f"{ingress}/#/threads/{threads[0]}")
+        await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
         await expect(page.locator('[data-thread-anchor="161"]')).to_be_visible()
         await expect(page.get_by_text("Thread 0 message 79", exact=True)).to_be_visible()
+        await page.get_by_role("region", name="Thread history", exact=True).hover()
         async with page.expect_request(
             lambda request: request.method == "POST" and "entity_index < $1" in (request.post_data or "")
         ):
-            await page.get_by_role("button", name="Load 30 earlier", exact=True).click()
+            await page.mouse.wheel(0, -10_000)
         for number in (1, 0):
             async with page.expect_request(f"**/threads/{threads[number]}/sync/scope"):
                 await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()
@@ -282,7 +283,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     draft = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
     await draft.fill("Draft survives projection replacement")
-    previous = await page.request.get(f"{thread_browser.browser_url}/threads/{thread}/sync/scope")
+    previous = await page.request.get(f"{thread_browser.ingress.url}/threads/{thread}/sync/scope")
     assert previous.ok
     old_scope = await previous.json()
     ready = asyncio.Event()
@@ -304,7 +305,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
 
     await page.route("**/evidence?*", hold_old_evidence)
     try:
-        await page.locator('[data-thread-anchor="3"] summary', has_text="Evidence").click()
+        await page.locator('[data-thread-anchor="3"]').get_by_role("button", name="Evidence", exact=True).click()
         async with asyncio.timeout(15):
             await ready.wait()
 
@@ -346,7 +347,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
         await expect(page.get_by_text("Test replaced prefix", exact=True)).to_be_visible()
 
         stale = await page.request.get(
-            f"{thread_browser.browser_url}/threads/{thread}/sync/entities",
+            f"{thread_browser.ingress.url}/threads/{thread}/sync/entities",
             params={"projection_epoch": old_scope["projection_epoch"], "offset": "now"},
         )
         assert stale.status == 410
@@ -424,7 +425,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
             ):
                 opened = await source.opened.get()
                 opened.replay.set()
-                await page.goto(f"{ingress}/#/threads/{thread}")
+                await page.goto(f"{ingress.url}/#/threads/{thread}")
                 await expect(page.get_by_text("Projected browser prefix", exact=True)).to_be_visible()
                 await expect(page.get_by_text("A newer browser item", exact=True)).to_be_visible()
                 await expect(page.get_by_text("On-demand reasoning", exact=True)).to_have_count(0)
@@ -441,7 +442,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 ).to_be_visible()
                 assert not any("/evidence" in url for url in requests)
                 first_card = page.locator(f'[data-thread-anchor="{first.cursor}"]')
-                await first_card.locator("summary", has_text="Evidence").click()
+                await first_card.get_by_role("button", name="Evidence", exact=True).click()
                 frame_summary = first_card.locator("summary", has_text=f"Observation {observed.cursor} raw frames")
                 await expect(frame_summary).to_be_visible()
                 assert not any("/frames?" in url for url in requests)
@@ -449,28 +450,31 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 frame = first_card.locator("pre")
                 await expect(frame).to_contain_text("test-text-delta")
                 assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
-                await first_card.locator("summary", has_text="Evidence").click()
+                await first_card.get_by_role("button", name="Evidence", exact=True).click()
                 await expect(frame).to_have_count(0)
-                await first_card.locator("summary", has_text="Evidence").click()
+                await first_card.get_by_role("button", name="Evidence", exact=True).click()
                 await expect(frame).to_contain_text("test-text-delta")
                 assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-evidence-reopened.png")
-                await first_card.locator("summary", has_text="Evidence").click()
-                tool_card = page.locator(f'[data-thread-anchor="{tool.cursor}"]')
-                await tool_card.locator("summary", has_text="Arguments").click()
-                await expect(tool_card.get_by_text("{", exact=True)).to_be_visible()
+                await first_card.get_by_role("button", name="Evidence", exact=True).click()
+                # The reasoning step and the tool call after it are one folded run, anchored at its first step.
+                run = page.locator(f'[data-thread-anchor="{reasoning.cursor}"]')
+                await expect(page.locator(f'[data-thread-anchor="{tool.cursor}"]')).to_have_count(0)
+                await run.get_by_text("1 tool call, 1 reasoning step", exact=True).click()
+                await run.locator("summary", has_text="Arguments").click()
+                await expect(run.get_by_text("{", exact=True)).to_be_visible()
                 source.append(
                     event_pb2.Event(
                         tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool", partial_json='"path":')
                     )
                 )
-                await expect(tool_card.get_by_text('{"path":', exact=True)).to_be_visible()
+                await expect(run.get_by_text('{"path":', exact=True)).to_be_visible()
                 source.append(
                     event_pb2.Event(
                         tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool", partial_json='"value"}')
                     )
                 )
-                await expect(tool_card.get_by_text('{"path":"value"}', exact=True)).to_be_visible()
+                await expect(run.get_by_text('{"path":"value"}', exact=True)).to_be_visible()
                 source.append(
                     event_pb2.Event(
                         item_completed=event_pb2.ItemCompleted(
@@ -478,10 +482,9 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                         )
                     )
                 )
-                await tool_card.locator("summary", has_text="Output").click()
-                await expect(tool_card.get_by_text("On-demand tool output", exact=True)).to_be_visible()
-                reasoning_card = page.locator(f'[data-thread-anchor="{reasoning.cursor}"]')
-                await reasoning_card.locator("summary", has_text="Reasoning").click()
+                await run.locator("summary", has_text="Output").click()
+                await expect(run.get_by_text("On-demand tool output", exact=True)).to_be_visible()
+                await run.get_by_text("Reasoning", exact=True).click()
                 await expect(page.get_by_text("On-demand reasoning", exact=True)).to_be_visible()
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-expanded.png")
 
@@ -497,6 +500,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-reloaded.png")
                 reads_before_disconnect = len(body_reads)
                 await page.context.set_offline(True)
+                await ingress.drop_connections()
                 source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" after reconnect")))
                 async with asyncio.timeout(10):
                     while True:
@@ -504,7 +508,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                         if scope is not None and scope.through_cursor >= source.entries[-1].cursor:
                             break
                         await asyncio.sleep(0.01)
-                # A long poll already open may still deliver the delta; nothing shown is withdrawn.
+                # Whether or not the delta beat the drop, nothing shown is withdrawn.
                 await expect(
                     page.get_by_text("Projected browser prefix and streamed suffix", exact=False)
                 ).to_have_count(1)
@@ -571,7 +575,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
     # Follow the exact semantic observation back into the original archive, including packets
     # that have no item association. The context query ends at the selected observation.
     card = page.locator('[data-thread-anchor="3"]')
-    await card.locator("summary", has_text="Evidence").click()
+    await card.get_by_role("button", name="Evidence", exact=True).click()
     await card.get_by_role("button", name="Inspect chronological context").first.click()
     await expect(observations.last).to_have_attribute("data-debug-observation", "3")
     assert parse_qs(urlsplit([url for url in requests if "/observations" in url][-1]).query)["before_cursor"] == ["4"]
@@ -580,7 +584,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
     await page.keyboard.press("Escape")
     await expect(dialog).to_have_count(0)
     await expect(draft).to_have_value("Draft survives debug inspection")
-    await expect(card.locator("details").first).to_have_attribute("open", "")
+    await expect(card.get_by_role("button", name="Evidence", exact=True)).to_have_attribute("aria-expanded", "true")
 
     # Closing the drawer cancels an in-flight real archive response. A response released
     # afterwards must not repopulate the closed view or disturb the thread draft.
@@ -622,9 +626,28 @@ async def test_browser_replays_streams_and_reloads_one_exact_thread(thread_brows
     source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=" and live suffix")))
     complete_text = "Test retained prefix and live suffix"
     await expect(page.get_by_text(complete_text, exact=True)).to_be_visible()
+    body_reads: list[str] = []
+
+    def observe(request: Request) -> None:
+        if request.method == "POST" and "/sync/chunks/" in request.url:
+            body_reads.append(request.post_data or "")
+
+    page.on("request", observe)
     source.append(
         event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id="test-browser-item", text=complete_text))
     )
+    # The later item's row follows the completion's on the same log, so its body is read after any
+    # read the completion caused.
+    source.append(
+        event_pb2.Event(
+            item_started=event_pb2.ItemStarted(item_id="test-browser-later", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+        )
+    )
+    source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-later", text="Test later item")))
+    await expect(page.get_by_text("Test later item", exact=True)).to_be_visible()
+    assert any('"test-browser-later"' in read for read in body_reads)
+    # Completed with the text that streamed, the body the reader holds is not read again.
+    assert not any('"test-browser-item"' in read for read in body_reads)
     source.attached.active_turn_id = ""
     source.append(
         event_pb2.Event(
@@ -659,7 +682,7 @@ async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thre
     await archived_switch.press("Space")
     await expect(archived_switch).to_be_checked()
     await expect(sidebar.get_by_text("Test rename from another replica", exact=True)).to_be_visible()
-    await expect(page).to_have_url(f"{thread_browser.browser_url}/#/threads/{thread.id}")
+    await expect(page).to_have_url(f"{thread_browser.ingress.url}/#/threads/{thread.id}")
     await page.screenshot(path=undeclared_outputs_dir() / "sidebar-replica-updates.png")
 
 
@@ -916,7 +939,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await expect(error_text).to_have_count(1)
     await expect(error_text).to_be_in_viewport()
     await expect_history_bottom(page)
-    await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(command.submit_input.text)
+    await expect(page.locator(".agentplane-user-bubble .agentplane-verbatim")).to_have_text(command.submit_input.text)
     await expect(page.get_by_role("region", name="Pending commands")).to_have_count(0)
     await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
     await expect(page.get_by_role("img", name="Streaming", exact=True)).to_have_count(0)
@@ -929,17 +952,17 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await page.reload()
     await expect(error_text).to_be_in_viewport()
     await expect(page.get_by_text("Test partial paragraph 29", exact=True)).to_have_count(1)
-    await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(command.submit_input.text)
+    await expect(page.locator(".agentplane-user-bubble .agentplane-verbatim")).to_have_text(command.submit_input.text)
     await expect(page.get_by_role("region", name="Pending commands")).to_have_count(0)
     if raw:
         lifecycle = page.locator(f'[data-thread-anchor="{failed.cursor}"]')
-        await lifecycle.locator("summary", has_text="Evidence").click()
+        await lifecycle.get_by_role("button", name="Evidence", exact=True).click()
         raw_frames = lifecycle.locator("summary", has_text=f"Observation {failed.cursor} raw frames")
         await raw_frames.click()
         frame = raw_frames.locator("..").locator("pre")
         await expect(frame).to_contain_text("unsafe diagnostic")
         assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
-        await lifecycle.locator("summary", has_text="Evidence").click()
+        await lifecycle.get_by_role("button", name="Evidence", exact=True).click()
 
     await composer.fill("Test distinct input after the failed turn")
     await composer.press("Enter")
@@ -979,7 +1002,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await expect(page.get_by_text("Turn failed", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Test later successful reply", exact=True)).to_have_count(1)
     await expect(error_text).to_have_count(1)
-    await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(
+    await expect(page.locator(".agentplane-user-bubble .agentplane-verbatim")).to_have_text(
         [command.submit_input.text, following.submit_input.text]
     )
     await expect(page.get_by_role("region", name="Command outcomes")).to_have_count(0)
@@ -1065,11 +1088,11 @@ async def test_browser_sends_a_command_and_renders_only_the_confirmed_input(thre
             )
         )
     )
-    await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(command.submit_input.text)
+    await expect(page.locator(".agentplane-user-bubble .agentplane-verbatim")).to_have_text(command.submit_input.text)
     await expect(composer).to_have_value("")
 
 
-async def test_reload_retries_an_unsaved_command_with_its_original_identity(thread_browser: ThreadBrowser) -> None:
+async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(thread_browser: ThreadBrowser) -> None:
     page, source = thread_browser.page, thread_browser.source
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
@@ -1093,19 +1116,17 @@ async def test_reload_retries_an_unsaved_command_with_its_original_identity(thre
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries[:4]
 
-    await page.reload()
-    await expect(page.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
-    await expect(page.get_by_text("Saved locally · awaiting admission", exact=True)).to_be_visible()
-    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
-    async with page.expect_request(original.url) as retried:
-        await page.get_by_role("button", name="Retry", exact=True).click()
-    retry = await retried.value
-    assert retry.post_data is not None
-    assert json_format.Parse(retry.post_data, command_pb2.Command()) == command
+    async with page.expect_request(original.url) as redelivered:
+        await page.reload()
+    redelivery = await redelivered.value
+    assert redelivery.post_data is not None
+    assert json_format.Parse(redelivery.post_data, command_pb2.Command()) == command
     async with asyncio.timeout(15):
         assert await source.commands.get() == command
+    await expect(page.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
     await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Saved locally · awaiting admission", exact=True)).to_have_count(0)
+    await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
     await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
     admissions = [
         entry.event.command_admitted.command
@@ -1169,7 +1190,7 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
 
 
 async def expand_item_evidence(page: Page) -> None:
-    await page.locator('[data-thread-anchor="3"]').locator("summary", has_text="Evidence").click()
+    await page.locator('[data-thread-anchor="3"]').get_by_role("button", name="Evidence", exact=True).click()
 
 
 @pytest.mark.parametrize("replay_after", [4])
@@ -1208,14 +1229,18 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await expect(pending.get_by_text("Saved locally · awaiting admission", exact=True)).to_be_visible()
         await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
 
-        # Reload abandons the held Electric response. The new document retains the same
-        # local Command while both metadata and bounded reconciliation remain held.
-        await page.reload()
+        # Reload abandons the held Electric response. The new document delivers the same local
+        # Command again, and the app answers from its archive while replay is still held.
+        async with page.expect_response(response.url) as redelivered:
+            await page.reload()
+        redelivery = await redelivered.value
+        assert redelivery.status == 200
+        assert json_format.Parse(await redelivery.text(), event_log_pb2.EventEntry()) == admission
         async with asyncio.timeout(15):
             assert (await app.replay_held()).cursor >= 5
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
         await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
-        await expect(pending.get_by_text("Saved locally · awaiting admission", exact=True)).to_be_visible()
+        await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
         await expect(page.get_by_text("Catching up thread…", exact=True)).to_be_visible()
         assert source.commands.empty(), "reload must not manufacture a second command"
 
@@ -1233,11 +1258,11 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
                 )
             )
         )
-        await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(
+        await expect(page.locator(".agentplane-user-bubble .agentplane-verbatim")).to_have_text(
             command.submit_input.text
         )
         await expect(pending).to_have_count(0)
-        assert source.commands.empty(), "reload/replay must not automatically send the Command again"
+        assert source.commands.empty(), "the runner must receive the Command once"
         archived = await thread_browser.event_logs.events(thread.id, limit=100)
         assert archived == source.entries
         assert [entry for entry in archived if entry.event.HasField("command_admitted")] == [admission]
@@ -1291,7 +1316,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
             )
         )
     )
-    await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(command.submit_input.text)
+    await expect(page.locator(".agentplane-user-bubble .agentplane-verbatim")).to_have_text(command.submit_input.text)
     await expect(pending).to_have_count(0)
     assert source.commands.empty()
     assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
@@ -1368,7 +1393,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
                 )
             )
         )
-        await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(
+        await expect(page.locator(".agentplane-user-bubble .agentplane-verbatim")).to_have_text(
             command.submit_input.text
         )
         await expect(pending).to_have_count(0)
@@ -1402,11 +1427,11 @@ async def test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_wind
         await route.fulfill(status=400, content_type="text/plain", body="shape rejected")
 
     await page.route("**/sync/entities?*", terminal_shape_error, times=1)
-    # Offline fails the waiting live request; the client's retry is the one the route answers.
-    await page.context.set_offline(True)
     try:
+        # Dropping the connection ends the live SSE response; the client's reconnect is the one the
+        # route answers.
         async with page.expect_response(lambda response: "/sync/entities?" in response.url and response.status == 400):
-            await page.context.set_offline(False)
+            await thread_browser.ingress.drop_connections()
         stopped = page.get_by_role("alert").filter(has_text="Thread synchronization stopped:")
         await expect(stopped).to_be_visible()
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
@@ -1426,13 +1451,41 @@ async def test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_wind
                 )
             )
         )
-        await expect(page.locator(".agentplane-user-bubble .agentplane-markdown")).to_have_text(
+        await expect(page.locator(".agentplane-user-bubble .agentplane-verbatim")).to_have_text(
             command.submit_input.text
         )
         await expect(pending).to_have_count(0)
     finally:
-        await page.context.set_offline(False)
         await page.unroute("**/sync/entities?*", terminal_shape_error)
+
+
+async def test_thread_says_it_is_reconnecting_while_electric_retries_a_dropped_connection(
+    thread_browser: ThreadBrowser,
+) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    dot = page.get_by_role("img", name="Reconnecting…", exact=True)
+    # The sidebar's connection indicator, naming the thread's own stream ("Threads" is the list's).
+    indicator = page.get_by_role("img", name=re.compile(r"\bThread: reconnecting since "))
+    await expect(dot).to_have_count(0)
+    await expect(indicator).to_have_count(0)
+
+    # The drop ends the live reads, and offline, every reconnect fails before an answer: Electric's
+    # client retries those without reporting an error. Both signs wait out the reconnect grace
+    # (`DEGRADED_AFTER_MS` in frontend/stream_status.tsx), which this timeout must exceed.
+    await page.context.set_offline(True)
+    await thread_browser.ingress.drop_connections()
+    await expect(dot).to_be_visible(timeout=15_000)
+    await expect(indicator).to_be_visible()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+
+    await page.context.set_offline(False)
+    # The client's next retry is at most its 32-second backoff cap away.
+    await expect(dot).to_have_count(0, timeout=35_000)
+    await expect(indicator).to_have_count(0)
+    source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=" and reconnected")))
+    await expect(page.get_by_text("Test retained prefix and reconnected", exact=True)).to_be_visible()
 
 
 async def test_ahead_snapshot_is_not_a_thread_or_effective_model(thread_browser: ThreadBrowser) -> None:

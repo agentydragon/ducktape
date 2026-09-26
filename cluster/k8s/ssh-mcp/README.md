@@ -1,7 +1,7 @@
 # Shared SSH MCP backend
 
-The standalone backend serves `haku-console` and `agentplane-staging` only. Each
-consumer owns its approval policy; the backend owns SSH transport and private keys.
+The standalone backend serves `agentplane-staging` only, which owns the approval policy;
+the backend owns SSH transport and private keys.
 `agentplane-testing` has neither an SSH binding nor the backend bearer.
 
 ## Credentials and reconciliation
@@ -15,12 +15,15 @@ hand-written siblings. The component's generator reads the target roster from
 
 The generated manifest includes the Password and ExternalSecret for the bearer,
 Forgejo image credentials, ConfigMap, Deployment, Service, and CiliumNetworkPolicy.
-`CreatedOnce` preserves the generated bearer across ordinary reconciliations.
-Reflector distributes that Secret to exactly `haku-console` and
-`agentplane-staging`; neither consumer invokes a generator. All three deployments
-reload when their bearer Secret changes. Deleting the source Secret recreates the
-bearer and triggers an asynchronous mirror/reload rollout, so rotation can briefly
-interrupt calls.
+`CreatedOnce` preserves the generated bearer across ordinary reconciliations. Gotcha: it
+also means an edit to that ExternalSecret's target template, metadata included, never
+reaches the live Secret; only deleting the Secret re-renders it, with a new bearer.
+`agentplane-staging` copies the Secret into its own `ssh-mcp-client-bearer` with an
+ExternalSecret that invokes no generator, through a store whose Role can read only that
+Secret (`cluster/cdk8s/agentplane/staging.py`), not the private keys beside it. Both
+deployments reload when their bearer Secret changes. Deleting the
+source Secret recreates the bearer, and the copy picks it up on its hourly refresh, so
+rotation interrupts calls until then.
 
 The backend Flux Kustomization depends on its namespace, ESO configuration, and
 Forgejo image credentials. The namespace has its own non-pruning Flux owner.

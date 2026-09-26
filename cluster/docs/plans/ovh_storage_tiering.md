@@ -181,7 +181,7 @@ kubectl get pv -o json | jq -r --arg n "$node" '
 
 CP membership is the per-host `role` in `nebula-mesh.json` (leave `lighthouse`/`relay`/
 `cert_groups` alone): the Talos machine type in `ovh-nodes.tf`, the etcd metrics scrape
-EndpointSlice (`cluster/k8s/monitoring/etcd`, or `ControlPlaneLeasePutLatency` alerts point
+EndpointSlice (`cluster/generated/monitoring/etcd`, or `ControlPlaneLeasePutLatency` alerts point
 nowhere) and the `api.allegedly.works` A records (`tf/gitops/dns-records`) are all derived from
 it — `bb run //cluster/cdk8s:generate_manifests` after the edit. Any CP add/remove (Stage 3's
 `103656` removal + new-box addition) also updates, in the same change:

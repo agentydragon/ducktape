@@ -40,41 +40,19 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpointsBearerTokenSecret,
     ServiceMonitorSpecSelector,
 )
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
 
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.seaweedfs import s3
 
-_OUTPUT_DIR = "cluster/k8s/forgejo/app"
+_OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/app"
 _NAME = "forgejo"
 _NAMESPACE = "forgejo"
-_SEAWEEDFS = "seaweedfs"
-_SEAWEED_GROUP = "seaweed.seaweedfs.com"
 _S3_CREDENTIALS_SECRET = "forgejo-s3-credentials"
 _METRICS_TOKEN = "forgejo-metrics-token"
 _GIT_CLAIM = "forgejo-git-rwx-ssd"
@@ -92,9 +70,10 @@ def _git_storage(scope: Construct) -> None:
     # On the SeaweedFS SSD tier (seaweedfs-ovh-ssd, KS-GAME NVMe) since the 2026-07
     # git-latency migration; the repos were copied here from the original HDD RWX claim
     # (forgejo-git-rwx on seaweedfs-ovh) via a one-time VolSync rsync-TLS cutover, now
-    # retired. SeaweedFS RWX multi-mount and the cross-node git filesystem semantics it
-    # depends on (immediate write visibility, atomic exclusive-create for *.lock, atomic
-    # rename) were verified on this cluster before the HA cutover.
+    # retired. Gotcha: `weed mount` does not make O_EXCL exclusive across mounts, so git's
+    # *.lock files do not serialize ref updates between replicas on different nodes, and a
+    # collision can leave the ref empty:
+    # cluster/docs/lessons_learned/2026_09_23_forgejo_cross_mount_ref_lock_zeroed_main.md.
     k8s.KubePersistentVolumeClaim(
         scope,
         "git-storage",
@@ -112,59 +91,22 @@ def _git_storage(scope: Construct) -> None:
 
 
 def _object_storage(scope: Construct) -> None:
-    Bucket(
+    bucket = s3.Bucket(
         scope,
         "bucket",
-        metadata=metadata(
-            _NAME, _NAMESPACE, annotations={"description": "Forgejo packages, LFS, attachments, and artifacts."}
-        ),
-        spec=BucketSpec(
-            name=_NAME,
-            # The physical bucket is already populated; adopt it instead of treating it
-            # as a conflicting bucket during the Flux ownership handoff.
-            adopt_existing=True,
-            cluster_ref=BucketSpecClusterRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-            access=[
-                BucketSpecAccess(
-                    user=_NAME,
-                    actions=[
-                        BucketSpecAccessActions.READ,
-                        BucketSpecAccessActions.WRITE,
-                        BucketSpecAccessActions.LIST,
-                        BucketSpecAccessActions.TAGGING,
-                    ],
-                )
-            ],
-        ),
+        name=_NAME,
+        namespace=_NAMESPACE,
+        adopt_existing=True,
+        description="Forgejo packages, LFS, attachments, and artifacts.",
     )
-    S3Credentials(
-        scope,
-        "s3-credentials",
-        metadata=metadata(_NAME, _NAMESPACE, annotations={"description": "Forgejo's SeaweedFS S3 credentials."}),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            # The IAM username is cluster-global. Without a same-namespace S3Identity,
-            # the operator treats this as the existing SeaweedFS identity named forgejo.
-            identity_ref=S3CredentialsSpecIdentityRef(name=_NAME),
-            # Same-namespace targets are created and owned by S3Credentials.
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_S3_CREDENTIALS_SECRET, access_key_field="accessKey", secret_key_field="secretKey"
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
-    )
-    ResourceReferenceGrant(
-        scope,
-        "reference-grant",
-        metadata=metadata(_NAME, _SEAWEEDFS),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="Bucket", namespace=_NAMESPACE),
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="S3Credentials", namespace=_NAMESPACE),
-            ],
-            to=[ResourceReferenceGrantSpecTo(group=_SEAWEED_GROUP, kind="Seaweed", name=_SEAWEEDFS)],
-        ),
+    # Declared by the seaweedfs-forgejo-bucket Kustomization.
+    identity = s3.IdentityRef(scope, "identity", name=_NAME)
+    bucket.grant_read_write(identity)
+    identity.credentials(
+        namespace=_NAMESPACE,
+        secret=_S3_CREDENTIALS_SECRET,
+        key_fields=s3.SecretKeyFields(access_key="accessKey", secret_key="secretKey"),
+        description="Forgejo's SeaweedFS S3 credentials.",
     )
 
 
@@ -177,13 +119,13 @@ def _metrics_token(scope: Construct) -> None:
         metadata=metadata(_METRICS_TOKEN, _NAMESPACE),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    add_external_secret(
+    ExternalSecret(
         scope,
         "metrics-token",
         name=_METRICS_TOKEN,
         namespace=_NAMESPACE,
         refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[password_generator(generator.name)],
+        data_from=[DataFrom.from_password_generator(generator.name)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
         template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"token": "{{ .password }}"}),
@@ -198,8 +140,8 @@ def _values() -> dict[str, object]:
     return {
         "global": {"imageRegistry": ""},
         # HA: two replicas sharing the RWX git PVC. Both pods mount the same SeaweedFS
-        # volume concurrently (RWX multi-mount + cross-node git lock/rename semantics
-        # verified 2026-06-28), so a rolling update is safe — the old RWO Recreate-only
+        # volume concurrently (RWX multi-mount; git ref locks do not hold across the two
+        # mounts, see _git_storage), so a rolling update is safe — the old RWO Recreate-only
         # deadlock (RollingUpdate + RWO = stuck init container) no longer applies. Session
         # and issue search live in Postgres, and cache/queue in the shared valkey
         # (../cache), so neither replica holds per-instance state.
@@ -285,7 +227,7 @@ def _values() -> dict[str, object]:
                 # default to per-instance backends (memory / leveldb on the pod's PVC):
                 # with >1 replica each instance would keep its own cache (stale reads) and,
                 # worse, two leveldb queues on one shared volume would corrupt. Both move
-                # to the shared, replicated forgejo-valkey-ovh (cluster/k8s/forgejo/cache)
+                # to the shared, replicated forgejo-valkey-ovh (cluster/generated/forgejo/cache)
                 # so the deployment can scale to 2 replicas. (Switching the queue backend
                 # abandons any in-flight leveldb queue items on the next restart — fine for
                 # this instance's transient queues: webhook deliveries, mirror syncs.)
@@ -299,7 +241,7 @@ def _values() -> dict[str, object]:
                 # replicas and needs no rebuildable filesystem state.
                 "indexer": {"ISSUE_INDEXER_TYPE": "db"},
                 # In-cluster CI (Forgejo Actions). Enables the server-side feature; a
-                # registered act_runner (cluster/k8s/haku-ci) executes workflows. Used so
+                # registered act_runner (cluster/cdk8s/haku_ci) executes workflows. Used so
                 # Haku can build its own UI image from haku-state source entirely
                 # in-cluster — haku-state may hold private operator data, so its builds must
                 # never go to BuildBuddy/RBE or any external CI. See haku/PLAN.md.

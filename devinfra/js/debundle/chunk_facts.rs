@@ -2021,8 +2021,7 @@ fn intrinsic_aliases_of_facts(facts: &ChunkFacts) -> Vec<IntrinsicAliasFact> {
 }
 
 /// Per-top-level-statement coverage of the extractor over a chunk: how many
-/// statements fully extract vs. hit a fail-closed [`Unsupported`]. This is the
-/// instrument that turns P1 growth into a prioritized worklist — run it over a
+/// statements fully extract vs. hit a fail-closed [`Unsupported`]. Run it over a
 /// real chunk and grow the walk to clear the most frequent blocker first.
 #[derive(Debug, Default)]
 pub struct CoverageReport {

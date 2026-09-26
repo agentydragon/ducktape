@@ -22,7 +22,6 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesExclude,
     ClusterPolicySpecRulesExcludeAny,
     ClusterPolicySpecRulesExcludeAnyResources,
-    ClusterPolicySpecRulesExcludeAnyResourcesSelector,
     ClusterPolicySpecRulesExcludeAnySubjects,
     ClusterPolicySpecRulesGenerate,
     ClusterPolicySpecRulesMatch,
@@ -43,8 +42,9 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.kyverno import proxy_injection
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
-OUTPUT_DIR = "cluster/k8s/kyverno/policies"
+OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/policies"
 
 _CREATE = ClusterPolicySpecRulesMatchAnyResourcesOperations.CREATE
 _UPDATE = ClusterPolicySpecRulesMatchAnyResourcesOperations.UPDATE
@@ -86,7 +86,7 @@ def require_gitops_chart(app: App) -> Chart:
         # The haku-state workload pipe: Flux applies Haku's self-authored workloads by
         # impersonating this SA (Kustomization spec.serviceAccountName), so admission
         # attributes the request to it rather than kustomize-controller. It is a GitOps
-        # path, Role-bounded to haku-sandbox (see cluster/k8s/haku/workloads/README.md).
+        # path, Role-bounded to haku-sandbox (see cluster/cdk8s/haku/workloads.md).
         ("haku-state-reconciler", "flux-system"),
         # Kyverno itself (for admission webhooks)
         ("kyverno-admission-controller", "kyverno"),
@@ -237,9 +237,7 @@ def default_disable_service_links_chart(app: App) -> Chart:
 
     Pod-only and CREATE-only deliberately: mutating controller templates would create
     Flux/SSA ownership conflicts, while every Pod (including Pods created by custom
-    operators) still passes through admission. The HA-MCP token provisioner is the
-    intentional exception; its existing pod label excludes it and its manifests retain
-    enableServiceLinks: true.
+    operators) still passes through admission.
     """
     chart = _chart(app, "default-disable-service-links")
     ClusterPolicy(
@@ -255,8 +253,7 @@ def default_disable_service_links_chart(app: App) -> Chart:
                 subject="Pod",
                 description=(
                     "Sets enableServiceLinks to false on newly created Pods to prevent legacy Service environment "
-                    "variables from colliding with application settings. The HA-MCP token provisioner is explicitly "
-                    "excluded because it relies on those variables."
+                    "variables from colliding with application settings."
                 ),
             ),
         ),
@@ -267,18 +264,6 @@ def default_disable_service_links_chart(app: App) -> Chart:
                 ClusterPolicySpecRules(
                     name="default-disable-service-links",
                     match=_match(ClusterPolicySpecRulesMatchAnyResources(kinds=["Pod"], operations=[_CREATE])),
-                    exclude=ClusterPolicySpecRulesExclude(
-                        any=[
-                            ClusterPolicySpecRulesExcludeAny(
-                                resources=ClusterPolicySpecRulesExcludeAnyResources(
-                                    namespaces=["home-assistant"],
-                                    selector=ClusterPolicySpecRulesExcludeAnyResourcesSelector(
-                                        match_labels={"app.kubernetes.io/name": "ha-mcp-token-provisioner"}
-                                    ),
-                                )
-                            )
-                        ]
-                    ),
                     mutate=ClusterPolicySpecRulesMutate(patch_strategic_merge={"spec": {"enableServiceLinks": False}}),
                 )
             ],

@@ -9,16 +9,12 @@ from cdk8s import App, Chart
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import terraform
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "github-secrets-sync"
-OUTPUT_DIR = f"cluster/k8s/{NAME}"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 
 
 def chart(app: App) -> Chart:
@@ -29,7 +25,6 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"]))
 
 
 def github_secrets_sync(

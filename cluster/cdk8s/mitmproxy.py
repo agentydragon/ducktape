@@ -1,6 +1,6 @@
 """agents-mitmproxy: the shared TLS-intercepting proxy that claude-sandbox's external egress is
 forced through, its root CA and the trust bundle its clients read (trust model and CA rotation:
-cluster/k8s/agents/mitmproxy/README.md), and the policies around it. Its own FQDN fence is
+`cluster/cdk8s/mitmproxy.md`), and the policies around it. Its own FQDN fence is
 `egress_fences.mitmproxy_cloud_api`.
 """
 
@@ -32,12 +32,8 @@ from cilium_clusterwide_crds.io.cilium import (
     CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator,
 )
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    Kustomization,
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpecDeletionPolicy
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 from trust_manager_crds.io.cert_manager.trust import (
     Bundle,
     BundleSpec,
@@ -53,11 +49,12 @@ from trust_manager_crds.io.cert_manager.trust import (
 from cluster.cdk8s import cilium, egress_fences
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "mitmproxy"
 NAMESPACE = egress_fences.MITMPROXY_NAMESPACE
-OUTPUT_DIR = "cluster/k8s/agents/mitmproxy"
+OUTPUT_DIR = f"{GENERATED_ROOT}/agents/mitmproxy"
 
 # The namespaces whose external egress is forced through this proxy: the clusterwide policy
 # selects them, the trust bundle lands in them, and the ingress policy admits them. A new one
@@ -343,9 +340,10 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def agents_mitmproxy(flux_chart: Chart, root: Path, cert_manager_trust: Kustomization) -> Kustomization:
-    """Write the directory and return its Flux node, which reads the `flux-system` GitRepository
-    directly rather than an artifact."""
+def agents_mitmproxy(
+    flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path, cert_manager_trust: Kustomization
+) -> Kustomization:
+    """Write the directory and return its Flux node."""
     write_namespace(
         root,
         OUTPUT_DIR,
@@ -361,16 +359,12 @@ def agents_mitmproxy(flux_chart: Chart, root: Path, cert_manager_trust: Kustomiz
         root / OUTPUT_DIR / "kustomization.yaml",
         kustomize_kustomization(resources=["namespace.k8s.yaml", f"{NAME}.k8s.yaml", "cnp-cloud-api-egress.k8s.yaml"]),
     )
-    name = "agents-mitmproxy"
     return flux_kustomization(
         flux_chart,
-        name,
-        KustomizationSpecSourceRef(
-            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="flux-system", namespace="flux-system"
-        ),
+        "agents-mitmproxy",
+        artifact,
         retry_interval=None,
         wait=None,
-        path=f"./{OUTPUT_DIR}",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         timeout="5m",
         # Installs Bundle CRDs and transitively the Certificate CRDs.

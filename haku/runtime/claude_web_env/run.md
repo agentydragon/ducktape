@@ -29,7 +29,7 @@ at `memory/procedures/run.md`.
   pod **in `haku-sandbox`** to query it, as the manual describes (pod command +
   `kubectl logs`, DSN from a secret via `secretKeyRef`). `kubectl exec`/`attach`/
   `port-forward` work too — the `kubeapi-proxy` nginx forwards the WebSocket
-  upgrade (`cluster/k8s/kube-api-proxy`); they were briefly broken until that was
+  upgrade (`cluster/generated/kube-api-proxy`); they were briefly broken until that was
   added. Clean up pods after (20-pod quota).
 - If none of the above holds — `kubectl`/`nix`/`bazel` missing from `PATH`, no
   `~/.kube/config`, `~/haku-state` absent — the background command never ran at
@@ -113,11 +113,14 @@ develop` (per the repo's `AGENTS.md` guidance for a missing devshell):
    background command" step here; proceed once it prints `haku ready: …`.
 
 This harness also carries the claude.ai account's connectors. **Agentplane staging** is the
-route to your sources and to approval-gated external actions — Gmail, Calendar, Drive, Tasks,
-Tana, Grocy, Home Assistant, Coinbase and the Forgejo data repos — as your state's
-`sources/agentplane.md` describes. **Haku** is haku-console: GitHub, SSH, kubectl passthrough, the
-Haku sandbox and grants. If a connector errors (some need one-time interactive OAuth), don't
-retry it — note it and move on.
+route to your sources and to approval-gated external actions — GitHub, Gmail, Calendar, Drive,
+Tasks, Tana, Grocy, Home Assistant, SSH, Kubernetes, Coinbase and the Forgejo data repos — as
+your state's `sources/agentplane.md` describes. **Haku** is haku-console: the Haku sandbox (the
+only place `haku-state` validation and anything needing your own `haku` identity runs — not a
+source-reading substitute, see `AGENTS.md` → _Where your commands run_) and grants. SSH and
+kubectl passthrough were dropped from haku-console 2026-09-24 (ducktape #7710/#7696); both
+backends are agentplane-staging only now. If a connector errors (some need one-time interactive
+OAuth), don't retry it — note it and move on.
 
 ## First: wait for bootstrap to finish (avoid the false "first run")
 

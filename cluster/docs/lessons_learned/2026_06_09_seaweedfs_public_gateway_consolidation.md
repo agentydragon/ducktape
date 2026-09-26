@@ -1,6 +1,6 @@
 # SeaweedFS public-s3 gateway
 
-`cluster/k8s/seaweedfs/public-s3/` is the single public S3 gateway
+`cluster/generated/seaweedfs/public-s3/` is the single public S3 gateway
 (`s3.allegedly.works`). It runs its own `weed s3` process with a curated
 multi-identity config because a gateway authenticates **every** identity in the
 config it loads — there is no per-route scoping. So the all-tenant

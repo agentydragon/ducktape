@@ -27,45 +27,17 @@ from external_secrets_secretstore_crds.io.external_secrets import (
     SecretStoreSpecProviderKubernetesServerCaProvider,
     SecretStoreSpecProviderKubernetesServerCaProviderType,
 )
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
-from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
-    S3Identity,
-    S3IdentitySpec,
-    S3IdentitySpecReclaimPolicy,
-    S3IdentitySpecSeaweedRef,
-)
 
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data, secret_store
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
+from cluster.cdk8s.seaweedfs import s3
 
-_OUTPUT_DIR = "cluster/k8s/home-assistant/backup"
+_OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/home-assistant/backup"
 _NAME = "home-assistant-backups"
 _NAMESPACE = "home-assistant"
-_SEAWEEDFS = "seaweedfs"
-_SEAWEED_GROUP = "seaweed.seaweedfs.com"
 # SOPS-encrypted in credentials-secret.sops.yaml.
 _RESTIC_SECRET = "home-assistant-config-restic"
 # Written by the S3Credentials.
@@ -125,13 +97,13 @@ def _repository(scope: Construct) -> None:
             )
         ),
     )
-    add_external_secret(
+    ExternalSecret(
         scope,
         "repository",
         name=_REPOSITORY_SECRET,
         namespace=_NAMESPACE,
         refresh="1h",
-        store=secret_store(_SECRET_STORE),
+        store=SecretStoreRef.namespaced(_SECRET_STORE),
         data=[
             remote_data(secret, key)
             for key, secret in (
@@ -149,70 +121,21 @@ def _repository(scope: Construct) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    S3Identity(
-        chart,
-        "s3-identity",
-        metadata=metadata(_NAME, _SEAWEEDFS),
-        spec=S3IdentitySpec(
-            seaweed_ref=S3IdentitySpecSeaweedRef(name=_SEAWEEDFS), reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN
-        ),
-    )
-    Bucket(
+    identity = s3.Identity(chart, "identity", name=_NAME)
+    bucket = s3.Bucket(
         chart,
         "bucket",
-        metadata=metadata(
-            _NAME, _NAMESPACE, annotations={"description": "Home Assistant's tenant-local SeaweedFS backup bucket."}
-        ),
-        spec=BucketSpec(
-            name=_NAME,
-            adopt_existing=True,
-            cluster_ref=BucketSpecClusterRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-            access=[
-                BucketSpecAccess(
-                    user=_NAME,
-                    actions=[
-                        BucketSpecAccessActions.READ,
-                        BucketSpecAccessActions.WRITE,
-                        BucketSpecAccessActions.LIST,
-                        BucketSpecAccessActions.TAGGING,
-                    ],
-                )
-            ],
-        ),
+        name=_NAME,
+        namespace=_NAMESPACE,
+        adopt_existing=True,
+        description="Home Assistant's tenant-local SeaweedFS backup bucket.",
     )
-    S3Credentials(
-        chart,
-        "s3-credentials",
-        metadata=metadata(
-            _NAME,
-            _NAMESPACE,
-            annotations={"description": "Home Assistant's tenant-local SeaweedFS backup credentials."},
-        ),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            identity_ref=S3CredentialsSpecIdentityRef(name=_NAME),
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_S3_CREDENTIALS_SECRET,
-                access_key_field="AWS_ACCESS_KEY_ID",
-                secret_key_field="AWS_SECRET_ACCESS_KEY",
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
-    )
-    # Permit only Home Assistant's tenant-local Bucket and S3Credentials to reference the
-    # SeaweedFS cluster in its namespace.
-    ResourceReferenceGrant(
-        chart,
-        "reference-grant",
-        metadata=metadata(_NAME, _SEAWEEDFS),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="Bucket", namespace=_NAMESPACE),
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="S3Credentials", namespace=_NAMESPACE),
-            ],
-            to=[ResourceReferenceGrantSpecTo(group=_SEAWEED_GROUP, kind="Seaweed", name=_SEAWEEDFS)],
-        ),
+    bucket.grant_read_write(identity)
+    identity.credentials(
+        namespace=_NAMESPACE,
+        secret=_S3_CREDENTIALS_SECRET,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
+        description="Home Assistant's tenant-local SeaweedFS backup credentials.",
     )
     _repository(chart)
     return chart

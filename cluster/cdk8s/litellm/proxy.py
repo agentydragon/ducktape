@@ -69,12 +69,13 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.litellm.config import ConfigMapSpec, proxy_configs
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
-APP_DIR = "cluster/k8s/litellm/app"
+APP_DIR = f"{HAND_WRITTEN_ROOT}/litellm/app"
 _CONTAINER_PORT = 4000
 _CONFIG_DIR = "/etc/litellm"
 

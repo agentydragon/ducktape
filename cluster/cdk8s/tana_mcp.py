@@ -32,39 +32,17 @@ from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
     PrometheusRuleSpecGroupsRules,
     PrometheusRuleSpecGroupsRulesExpr,
 )
-from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
-    RedisReplication,
-    RedisReplicationSpec,
-    RedisReplicationSpecAffinity,
-    RedisReplicationSpecAffinityNodeAffinity,
-    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution,
-    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
-    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions,
-    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
-    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
-    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
-    RedisReplicationSpecAffinityPodAntiAffinity,
-    RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution,
-    RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector,
-    RedisReplicationSpecKubernetesConfig,
-    RedisReplicationSpecKubernetesConfigResources,
-    RedisReplicationSpecKubernetesConfigResourcesLimits,
-    RedisReplicationSpecKubernetesConfigResourcesRequests,
-    RedisReplicationSpecStorage,
-    RedisReplicationSpecStorageVolumeClaimTemplate,
-    RedisReplicationSpecStorageVolumeClaimTemplateSpec,
-    RedisReplicationSpecStorageVolumeClaimTemplateSpecResources,
-    RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests,
-)
 
 from cluster.cdk8s import external_creds
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.valkey import valkey_instance
 
-OUTPUT_DIR = "cluster/k8s/agents/tana-mcp"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/tana-mcp"
 _NAMESPACE = "tana-mcp"
 _NAME = "tana-mcp"
 _LABELS = {"app.kubernetes.io/name": _NAME}
@@ -474,86 +452,6 @@ def _facade(chart: Chart) -> None:
     )
 
 
-def _valkey(chart: Chart) -> None:
-    RedisReplication(
-        chart,
-        "valkey",
-        metadata=metadata(
-            _VALKEY, _NAMESPACE, annotations={"description": "Replacement OVH Valkey for Tana MCP facade OAuth state"}
-        ),
-        spec=RedisReplicationSpec(
-            cluster_size=2,
-            kubernetes_config=RedisReplicationSpecKubernetesConfig(
-                image="valkey/valkey:9-alpine",
-                image_pull_policy="IfNotPresent",
-                resources=RedisReplicationSpecKubernetesConfigResources(
-                    requests={
-                        "cpu": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("50m"),
-                        "memory": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("64Mi"),
-                    },
-                    limits={
-                        "cpu": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string("200m"),
-                        "memory": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string("128Mi"),
-                    },
-                ),
-            ),
-            storage=RedisReplicationSpecStorage(
-                volume_claim_template=RedisReplicationSpecStorageVolumeClaimTemplate(
-                    spec=RedisReplicationSpecStorageVolumeClaimTemplateSpec(
-                        access_modes=["ReadWriteOnce"],
-                        storage_class_name="local-path-ovh",
-                        resources=RedisReplicationSpecStorageVolumeClaimTemplateSpecResources(
-                            requests={
-                                "storage": RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests.from_string(
-                                    "1Gi"
-                                )
-                            }
-                        ),
-                    )
-                )
-            ),
-            affinity=RedisReplicationSpecAffinity(
-                node_affinity=RedisReplicationSpecAffinityNodeAffinity(
-                    required_during_scheduling_ignored_during_execution=RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                        node_selector_terms=[
-                            RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                                match_expressions=[
-                                    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                        key="topology.kubernetes.io/zone", operator="In", values=["hil-ovh"]
-                                    )
-                                ]
-                            )
-                        ]
-                    ),
-                    # Prefer ordinary workers when this workload tolerates control planes.
-                    preferred_during_scheduling_ignored_during_execution=[
-                        RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution(
-                            weight=100,
-                            preference=RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference(
-                                match_expressions=[
-                                    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions(
-                                        key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
-                                    )
-                                ]
-                            ),
-                        )
-                    ],
-                ),
-                pod_anti_affinity=RedisReplicationSpecAffinityPodAntiAffinity(
-                    required_during_scheduling_ignored_during_execution=[
-                        RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                            label_selector=RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
-                                match_labels={"app": _VALKEY}
-                            ),
-                            topology_key="kubernetes.io/hostname",
-                        )
-                    ]
-                ),
-            ),
-        ),
-    )
-
-
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     k8s.KubeNamespace(
@@ -578,7 +476,7 @@ def chart(app: App) -> Chart:
         ),
         automount_service_account_token=False,
     )
-    add_external_secret(
+    ExternalSecret(
         chart,
         "tana-pat",
         name=_PAT_SECRET,
@@ -614,7 +512,18 @@ def chart(app: App) -> Chart:
         ),
     )
     _facade(chart)
-    _valkey(chart)
+    valkey_instance(
+        chart,
+        name=_VALKEY,
+        namespace=_NAMESPACE,
+        description="Replacement OVH Valkey for Tana MCP facade OAuth state",
+        memory_request="64Mi",
+        cpu_limit="200m",
+        memory_limit="128Mi",
+        max_memory_percent_of_limit=None,
+        storage_class="local-path-ovh",
+        storage_size="1Gi",
+    )
     return chart
 
 

@@ -31,11 +31,13 @@ from external_secret_store_crds.io.external_secrets import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import external_creds
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "external-secrets-config"
-OUTPUT_DIR = "cluster/k8s/external-secrets/config"
+OUTPUT_DIR = f"{GENERATED_ROOT}/external-secrets/config"
 _ESO_SERVICE_ACCOUNT = ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(
     name="external-secrets", namespace="external-secrets-system"
 )
@@ -108,26 +110,11 @@ def chart(app: App) -> Chart:
     _store(
         chart,
         "kubernetes-external-creds-secret-store",
-        # Source-side RoleBindings remain authoritative. Keep this defense-in-depth
-        # list equal to the namespaces approved by external-creds grants.
-        namespaces=[
-            "agentplane-staging-egress-credentials",
-            "agentplane-staging",
-            "agentplane-testing-egress-credentials",
-            "agents-infra",
-            "cert-manager",
-            "claude-sandbox",
-            "flux-system",
-            "haku-console",
-            "haku-egress-proxy",
-            "haku-sandbox",
-            "litellm",
-            "monitoring",
-            "nix-cache",
-            "public-coder-agent",
-            "tana-mcp",
-        ],
-        remote_namespace="ducktape-flux",
+        # Defense in depth: the source-side RoleBindings remain authoritative.
+        namespaces=sorted(
+            {consumer.namespace for credential in external_creds.CREDENTIALS for consumer in credential.consumers}
+        ),
+        remote_namespace=external_creds.NAMESPACE,
         # Referent authentication resolves this identity in each consuming
         # ExternalSecret's namespace. Access still requires a source-side grant.
         service_account=ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(name="external-creds-reader"),
@@ -167,6 +154,7 @@ def chart(app: App) -> Chart:
         chart,
         "kubernetes-forgejo-images-secret-store",
         namespaces=[
+            # keep-sorted start
             "activitywatch",
             "agent-workspaces",
             "agentplane-index",
@@ -199,19 +187,12 @@ def chart(app: App) -> Chart:
             "ssh-mcp",
             "study-casino",
             "tana-mcp",
+            "thrive-scraper",  # gaffer-private (not cdk8s); ESO lives in that repo's k8s/
             "wayback-cache",
+            # keep-sorted end
         ],
         remote_namespace="forgejo-images",
     )
-    # google-mcp mints its own caller-facing bearer (cluster/cdk8s/google_mcp.py); only
-    # agentplane-staging's Action Service (the only caller) reads a copy.
-    _store(
-        chart, "kubernetes-google-mcp-secret-store", namespaces=["agentplane-staging"], remote_namespace="google-mcp"
-    )
-    # Likewise ha-mcp (cluster/cdk8s/ha_mcp.py). ha-mcp also holds the Home Assistant token,
-    # which a namespace on this list can pull just as well: keep it to agentplane-staging,
-    # whose ExternalSecret names only the bearer.
-    _store(chart, "kubernetes-ha-mcp-secret-store", namespaces=["agentplane-staging"], remote_namespace="ha-mcp")
     return chart
 
 

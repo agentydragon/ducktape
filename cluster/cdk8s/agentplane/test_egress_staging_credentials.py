@@ -30,7 +30,14 @@ def test_forgejo_password_has_one_reader_and_exact_source_access() -> None:
 
     secrets = {obj["metadata"]["name"]: obj for obj in objects if obj["kind"] == "ExternalSecret"}
     assert {obj["metadata"]["namespace"] for obj in secrets.values()} == {STAGING_NAMESPACE}
-    assert set(secrets) == {"agentplane-github-pat", "haku-forgejo-git", "grocy-sf-readonly"}
+    assert set(secrets) == {
+        "agentplane-github-pat",
+        "haku-forgejo-git",
+        "grocy-sf-readonly",
+        "home-assistant-readonly",
+        "activitywatch-read-token",
+        "haku-mail-token",
+    }
     assert secrets["haku-forgejo-git"]["spec"]["data"] == [
         {"secretKey": "password", "remoteRef": {"key": "haku-forgejo-git", "property": "password"}}
     ]

@@ -87,7 +87,6 @@ flowchart TB
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
     MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
     CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>cluster diagnostics and agent-readable reads; reaches Forgejo as haku"]:::future
-    SANDBOX_EXEC_IMAGE["Planned image<br/>a dedicated exec-target image<br/>today an exec box is the runner image, with no python3 or jq"]:::future
     CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>some first need an ActionGroup, a kind, or DENY_LISTS"]:::future
 
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
@@ -103,7 +102,7 @@ flowchart TB
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
     THREAD_VIEW_SYNC["P1 design gate<br/>derived conversation snapshot + updates<br/>on-demand Raw and state ownership"]:::decision
     THREAD_VIEW_PROJECTION["Planned backend<br/>incremental projection and transactional read model"]:::future
-    THREAD_VIEW_ENGINE["Sync evaluation<br/>Electric + TanStack DB<br/>limited subsets and recovery"]:::decision
+    THREAD_VIEW_ENGINE["Sync evaluation<br/>Electric<br/>limited subsets and recovery"]:::decision
     THREAD_VIEW_READ["Planned integration<br/>engine-backed queries and synchronization"]:::future
     THREAD_TAIL_FIRST["Planned performance<br/>recent reduced items, not old token replay<br/>bounded short and long Thread loads"]:::future
     THREAD_VIEW_CATCHUP["Planned reconnect correctness<br/>bounded catch-up after long gaps<br/>refresh state without losing reading position"]:::future
@@ -130,7 +129,6 @@ flowchart TB
     MCPAUTH --> PROD
     ELEVATE --> CONSOLE_POLICIES
     ELEVATE --> MCP_CONSOLE_INTERNAL
-    SANDBOX_EXEC_IMAGE --> MCP_CONSOLE_INTERNAL
     MCP_CONSOLE_INTERNAL --> MCPAGG
     THREAD_OUTLIVES_SANDBOX --> AG
     HOSTED_THREAD_SURFACES --> AG
@@ -342,7 +340,7 @@ chosen credential boundary without exposing privileged credentials in evidence.
 
 **Planned identity:** `agentplane-staging/claude-ai` is the principal a Connection from the
 Claude.ai MCP connector acts as, and now also the account every sandbox this caller creates runs
-as ([sandbox Actions](../docs/sandbox_actions.md)). Its authority accreted from what each smoke
+as ([sandbox Actions](../action_service/sandbox/README.md)). Its authority accreted from what each smoke
 test needed rather than from a decision about what this caller should hold, and the sandbox surface
 changed what that authority reaches: the account is no longer only an Action caller, it is the
 identity of a shell somebody can run arbitrary commands in.
@@ -352,7 +350,7 @@ ServiceAccount with `automountServiceAccountToken: false`, an `EgressBinding` to
 Kubernetes, `forgejo-haku`, `packages`, `google-readonly`, `grocy-sf-readonly` and `coinbase`
 policies, and an `ActionPolicyBinding` auto-approving reviewed GitHub, Home Assistant, Gmail and
 Calendar reads plus the whole `sandbox-self` set. Its Kubernetes authority is the cluster-wide
-`cluster-diagnostics-reader` ClusterRoleBinding (`cluster/k8s/agents/shared-rbac/`), reads of
+`cluster-diagnostics-reader` ClusterRoleBinding (`cluster/generated/agents/shared-rbac/`), reads of
 non-sensitive cluster state, plus the metadata and pod-log readers Kyverno generates in namespaces
 labelled `agent-readable-*`, plus `get` on one Secret: the view-only Coinbase key its sandboxes
 sign with, since the proxy cannot. The verified Kubernetes evidence from a sandbox is still a
@@ -386,32 +384,6 @@ settle).
 **Acceptance:** a stated, reviewed authority for the account, rendered by the generator rather than
 accumulated; a real API request from inside a sandbox succeeds for the intended operations and is
 refused outside them; and removing the account or its label still disables the whole path.
-
-### `SANDBOX_EXEC_IMAGE` — a dedicated exec-target image
-
-**Planned image:** the configured `runner` environment stamps the integration app's runner
-template, which carries the egress sidecar, the interception CA and the proxy environment, so the
-path is real end to end. Its workload container is the runner image, which is both too much and too
-little for a box to run commands in: it brings the harnesses and the state volume, but its only
-tools are `curl`, `git` and `ripgrep`. `python3`, `jq`, `openssl`, `kubectl`, `tea`, `gh` and
-`bazel` are not on `PATH` (checked 2026-09-19 and 2026-09-23). Build the exec target as its own
-image and `SandboxTemplate`, keeping the sidecar, CA and proxy environment that make egress work
-([sandbox Actions](../docs/sandbox_actions.md)), and offer it as a second environment beside
-`runner`.
-
-**Candidate:** the Haku workspace image (`cluster/k8s/haku/workspaces/image/`) already bakes what
-`haku-state`'s tooling calls: `python3`, `jq`, `openssl`, `gh`, `kubectl`, `tea`, `ruff`, Bazel with a
-JRE, and `build-essential`. Its setup script takes the Forgejo login from environment variables fed
-by the `haku-forgejo-git` Secret; in a sandbox the `forgejo-haku` placeholder stands in for it.
-
-**What waits on it:**
-
-- Coinbase reads, whose recipe signs its ES256 JWT with the runner's hermetic interpreter, found by
-  its runfiles path, after installing `cryptography` from PyPI on every run.
-- `haku-state`'s `haku read` and validator, which need Bazel or a Python with their dependencies.
-- Most of a counterpart to the console's `sandbox` server (`MCP_CONSOLE_INTERNAL`): the `sandbox`
-  group already provisions boxes and runs commands in them; what a Haku run lacks there is this
-  environment.
 
 ### `CALLER_GRANT_VIEW` — one grant view for Sandboxes and unmanaged agents
 
@@ -471,9 +443,8 @@ ownership: an account's bindings must not fight a reconciler for the same object
 
 **Deferred migration:** the Haku console's `auto_approval_policies`
 (`cluster/cdk8s/haku/console_config.py`) is the reviewed authority the Action policy model
-replaces; its GitHub policies exist as sets in `cluster/k8s/agentplane-staging/`. What
-remains, each with what it needs; an entry leaves when its set is written or another route
-replaces it.
+replaces. What remains, each with what it needs; an entry leaves when its set is written or
+another route replaces it.
 
 - **`exact_tools` for servers with no ActionGroup**: the console's own in-process `sandbox`
   (`haku_sandbox_control`) and `grants` servers (`kubernetes_reads`, `grants_whoami`,
@@ -498,34 +469,21 @@ replaces it.
   fail the registered tool schema as born-denied. The Action Service refuses such a request at
   admission before persisting anything, so the audit row the console keeps does not exist here;
   matching it needs `DENY_LISTS` and a recorded, denied Decision for the schema miss.
-- **Kubectl passthrough redundancy check** (`kubectl_passthrough_redundancy_check`, commented out
-  in the console): auto-deny a `kubectl-passthrough-mcp` call the caller's own Kubernetes identity
-  already covers by SubjectAccessReview, pointing at the direct path. A kind with an injected
-  authorization service and a caller-to-Kubernetes-identity mapping, on `autoDenyIf`. The console
-  keeps it disabled because direct access is not yet an equivalent substitute (its kubeconfig
-  cannot execute the POST/SPDY transport the passthrough carries); the same condition gates it
-  here.
 
-**The composition layer, which the list above omits.** Four of the console's sixteen entries are
-`any_of` bundles rather than leaves, and they are what is actually bound to an agent:
-`public_coder_github_reads` (four public GitHub read policies), `public_coder_v1`, `haku_v1`
-(six leaves), and `manual_review`, which is `type: never`.
+**The composition layer, which the list above omits.** Three of the console's nine entries are
+what is actually bound to an agent: the `any_of` bundles `public_coder_v1` and `haku_v1`, and
+`manual_review`, which is `type: never`.
 
 These need no kind. `ActionPolicyBinding.policySets` is a list and evaluation unions across every
 set of every binding a subject has, so an `any_of` bundle is one binding naming several sets, and
 `manual_review` is the absence of a binding. What the bundles do is turn the leaf list into
 per-agent progress:
 
-- **`public_coder_v1`** = `public_coder_github_reads` + `github_identity_reads` +
-  `kubernetes_reads` + `grants_self_introspection` + `grants_own_revoke`. The GitHub half is
-  **fully ported** -- all four leaves under `public_coder_github_reads` plus
-  `github_identity_reads` are sets already. What is left is the `grants` trio, which the list
-  above puts behind the Action Service having its own grant surface. That trio is the whole
-  remaining distance for this agent, and it is the same blocker `PC_EGRESS` meets from the other
-  side.
-- **`haku_v1`** = six leaves spanning GitHub, the console's `sandbox` server and the `grants`
-  trio. What is left is `haku_sandbox_control` and the `grants` trio, which makes it the
-  long pole.
+- **`public_coder_v1`** = `kubernetes_reads` + `grants_self_introspection` +
+  `grants_own_revoke`, the `grants` trio, which the list above puts behind the Action Service
+  having its own grant surface. That trio is the whole remaining distance for this agent, and it
+  is the same blocker `PC_EGRESS` meets from the other side.
+- **`haku_v1`** = `haku_sandbox_control` plus the `grants` trio, which makes it the long pole.
 
 Nothing waits on this except `RETIRE_APPROVAL_QUEUE`, which needs policy parity for the
 affordances it retires.
@@ -906,10 +864,10 @@ _Retire, once the production path is proven and rollback is available:_
 _Shared, so not this milestone's to delete:_
 
 - The `iron-proxy` image build — `cluster/images/iron-proxy/`,
-  `.github/workflows/iron-proxy-image.yml`, `cluster/k8s/flux-image-automation-forgejo/iron-proxy-image.yaml`.
+  `.github/workflows/iron-proxy-image.yml`, `cluster/generated/flux-image-automation-forgejo/iron-proxy-image.yaml`.
   It carries a pinned upstream commit for HTTP/2 MITM support and is consumed by
-  `haku-claude-oauth-proxy` and `haku-openclaw-spike-proxy` as well. It was named for public-coder
-  only because this was its first consumer.
+  `haku-openclaw-spike-proxy` as well. It was named for public-coder only because this was its
+  first consumer.
 
 _A second consumer set, on its own retirement clock:_
 
@@ -923,12 +881,10 @@ consumers are listed here rather than discovered later:
   `NO_PROXY` and the CA trust variables to every Pod in that namespace -- so an audit that greps the
   tool's source concludes it has no proxy dependency, and is wrong.
 - **`haku-ci`**, which wires it explicitly instead: `HTTP(S)_PROXY` env in
-  `cluster/k8s/haku-ci/{config,scaledjob}.yaml`, including for dockerd's image pulls.
+  `cluster/cdk8s/haku_ci/runner.py`, including for dockerd's image pulls.
 - **The sandbox image**, `cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh`.
-- **Two more iron-proxy listeners it hosts**: `haku-claude-oauth-proxy`, which alone holds the real
-  Claude subscription token for `haku` access-profile runners in `haku-runtime-sandbox`, and
-  `haku-openclaw-spike-proxy` for `haku-openclaw-spike` -- the second OpenClaw deployment, after
-  public-coder.
+- **One more iron-proxy listener it hosts**: `haku-openclaw-spike-proxy` for
+  `haku-openclaw-spike` -- the second OpenClaw deployment, after public-coder.
 
 `cluster/validation/test_egress_allowlists.py` and `cluster/validation/kyverno/test_proxy_injection.py`
 assert that wiring. Deleting this namespace because this entry says "retire the old proxy" would
@@ -1322,12 +1278,11 @@ batch atomicity and source fencing. No all-history map reconstruction per batch.
 
 ### `THREAD_VIEW_ENGINE` — evaluate existing synchronization
 
-Evaluate Electric with TanStack DB before implementing a custom change journal or browser
-replay protocol. The [integration gates](../docs/thread_view_sync.md#reuse-the-synchronization-engine)
+Evaluate Electric before implementing a custom change journal or browser replay protocol.
+The [integration gates](../docs/thread_view_sync.md#reuse-the-synchronization-engine)
 cover on-demand tail/history, snapshot/live races, reconnect expiry without full-shape
 fallback, content selection, transaction visibility, auth and replica failure. Pin versions
-and exercise the actual engine/client. The merged [collection spike](https://github.com/agentydragon/ducktape/pull/7069)
-is useful library evidence, not proof of this integration.
+and exercise the actual engine/client.
 
 ### `THREAD_VIEW_READ` — integrate the selected engine
 
@@ -1421,10 +1376,12 @@ at every raw-JSON dump site (`actions.tsx`, `actions_history.tsx`, `session.tsx`
 caller/client/issuer/connection lines) collapsed behind one disclosure widget, and styling parity
 between the pending and history cards.
 
-**Remaining, in #6309 (open):** an MCP tool call's `execution.result` is
-`{"content": [<json-encoded string>, ...]}`; recursively parse/pretty-print a JSON string sitting
-inside a `content` array rather than leaving it double-encoded, so it renders as structure instead
-of one escaped-quote wall of text.
+**Remaining, in #6309 (open):** an MCP tool call's `execution.result` is its `CallToolResult`
+(`{"content": [{"type": "text", "text": <json-encoded string>}, ...], "structuredContent": ...,
+"isError": ...}`); recursively parse/pretty-print a JSON string sitting in a text block's `text`
+rather than leaving it double-encoded, so it renders as structure instead of one escaped-quote wall
+of text. #6309 was written against the earlier `{"content": [<json-encoded string>, ...]}` shape and
+needs to follow; image blocks now also arrive and could render as images.
 
 **No dependency** on the UI-shell cluster; ships independently.
 
@@ -1496,8 +1453,8 @@ semantics are settled in the [action policies design](../docs/action_policies.md
 `autoDenyIf` policy is auto-denied, one matching none of the `autoDenyUnless` policies is
 auto-denied, deny wins over approve, and a request matching nothing takes the human path.
 `autoDenyIf` first, when an Action needs it; `autoDenyUnless` later. Nothing waits on this; the
-console policies that need it (schema misses recorded as denied Decisions, the disabled kubectl
-passthrough redundancy check) are under `CONSOLE_POLICIES`.
+console policy that needs it (schema misses recorded as denied Decisions) is under
+`CONSOLE_POLICIES`.
 
 ### `THREAD_BROWSE_PAGINATE` — paginated/searchable all-threads page
 

@@ -22,12 +22,13 @@ from constructs import Construct
 from cluster.cdk8s import cilium
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "public-coder-agent-sshpiper"
-OUTPUT_DIR = "cluster/k8s/agents/public-coder-agent/sshpiper"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/sshpiper"
 _NAMESPACE = "public-coder-agent"
-_LABELS = {"app.kubernetes.io/name": NAME}
+LABELS = {"app.kubernetes.io/name": NAME}
 PORT = 2222
 _HOST_KEY_SECRET_NAME = "public-coder-agent-sshpiper-host-key"
 _RECORDINGS_CLAIM_NAME = "public-coder-agent-sshpiper-recordings"
@@ -163,7 +164,7 @@ def _deployment(scope: Construct) -> None:
         scope,
         "deployment",
         metadata=k8s.ObjectMeta(
-            name=NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
+            name=NAME, namespace=_NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}
         ),
         spec=k8s.DeploymentSpec(
             # One replica, and not only because the recordings PVC is RWO: two pipers would each
@@ -171,9 +172,9 @@ def _deployment(scope: Construct) -> None:
             # from a MITM.
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=LABELS),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=LABELS),
                 spec=k8s.PodSpec(
                     service_account_name=NAME,
                     # Unlike the proxy, this Pod does need its API token: the kubernetes plugin
@@ -221,7 +222,7 @@ def _service(scope: Construct) -> None:
         metadata=k8s.ObjectMeta(
             name=NAME,
             namespace=_NAMESPACE,
-            labels=_LABELS,
+            labels=LABELS,
             annotations={
                 "description": (
                     "ClusterIP for the Agent's SSH route to the devbox. Not published outside the cluster; "
@@ -231,7 +232,7 @@ def _service(scope: Construct) -> None:
         ),
         spec=k8s.ServiceSpec(
             type="ClusterIP",
-            selector=_LABELS,
+            selector=LABELS,
             ports=[
                 k8s.ServicePort(name="ssh", protocol="TCP", port=PORT, target_port=k8s.IntOrString.from_number(PORT))
             ],
@@ -239,7 +240,7 @@ def _service(scope: Construct) -> None:
     )
 
 
-def _network_policies(scope: Construct) -> None:
+def _network_policies(scope: Construct, app_namespace: str, app_labels: dict[str, str]) -> None:
     # The piper holds the key that opens `coder@public-coder-devbox`, so possession of a route to
     # this listener is most of the authority. Only the OpenClaw Agent Pod gets one -- namespace
     # co-tenancy is not authority to use it, the same rule the proxy's ingress policy states. The
@@ -251,10 +252,13 @@ def _network_policies(scope: Construct) -> None:
         scope,
         "ingress",
         metadata=metadata("allow-public-coder-agent-sshpiper-ingress", _NAMESPACE),
-        selector=_LABELS,
+        selector=LABELS,
         ingress=[
             cilium.ingress_from(
-                {"k8s:io.kubernetes.pod.namespace": _NAMESPACE, "k8s:app.kubernetes.io/name": "public-coder-agent"},
+                {
+                    "k8s:io.kubernetes.pod.namespace": app_namespace,
+                    **{f"k8s:{key}": value for key, value in app_labels.items()},
+                },
                 ports=[PORT],
             )
         ],
@@ -266,7 +270,7 @@ def _network_policies(scope: Construct) -> None:
         scope,
         "egress",
         metadata=metadata("allow-public-coder-agent-sshpiper-egress", _NAMESPACE),
-        selector=_LABELS,
+        selector=LABELS,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
             # The kubernetes plugin watches Pipes and resolves the upstream key Secret through the
@@ -281,16 +285,18 @@ def _network_policies(scope: Construct) -> None:
     )
 
 
-def chart(app: App) -> Chart:
+def chart(app: App, *, app_namespace: str, app_labels: dict[str, str]) -> Chart:
+    """`app_namespace` and `app_labels` are the OpenClaw Agent pod's: public_coder_agent_config
+    exports them, and imports this module for the piper's address."""
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     _rbac(chart)
     _recordings_claim(chart)
     _deployment(chart)
     _service(chart)
-    _network_policies(chart)
+    _network_policies(chart, app_namespace, app_labels)
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
+def write_manifests(root: Path, *, app_namespace: str, app_labels: dict[str, str]) -> None:
+    write_charts(root, OUTPUT_DIR, lambda app: chart(app, app_namespace=app_namespace, app_labels=app_labels))
     write_yaml(root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=_RESOURCES))

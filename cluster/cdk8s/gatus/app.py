@@ -12,18 +12,7 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress, CiliumNetworkPolicySpecEgressToEntities
-from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecBootstrap,
-    ClusterSpecBootstrapInitdb,
-    ClusterSpecMonitoring,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecStorage,
-)
+from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -41,14 +30,14 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecSelector,
 )
 
-from cluster.cdk8s import cilium
-from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
+from cluster.cdk8s import cilium, cnpg
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
-_OUTPUT_DIR = "cluster/k8s/gatus"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/gatus"
 _NAME = "gatus"
 _NAMESPACE = "gatus"
 _LABELS = {"app.kubernetes.io/name": _NAME}
@@ -74,29 +63,16 @@ def _namespace(scope: Construct) -> None:
 
 
 def _database(scope: Construct) -> None:
-    Cluster(
+    cnpg.cluster(
         scope,
         "database",
-        metadata=metadata(_DB_NAME, _NAMESPACE),
-        spec=ClusterSpec(
-            instances=2,
-            image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
-                )
-            ),
-            affinity=ClusterSpecAffinity(
-                node_selector={"topology.kubernetes.io/zone": _ZONE},
-                topology_key="kubernetes.io/hostname",
-                # Prefer ordinary workers when this workload tolerates control planes.
-                node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
-            ),
-            storage=ClusterSpecStorage(storage_class="local-path-ovh", size="1Gi"),
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-            # CNPG auto-generates credentials in secret gatus-db-app
-            bootstrap=ClusterSpecBootstrap(initdb=ClusterSpecBootstrapInitdb(database="gatus", owner="gatus")),
-        ),
+        name=_DB_NAME,
+        namespace=_NAMESPACE,
+        node_selector={"topology.kubernetes.io/zone": _ZONE},
+        storage_class="local-path-ovh",
+        size="1Gi",
+        # CNPG auto-generates credentials in secret gatus-db-app
+        initdb=ClusterSpecBootstrapInitdb(database="gatus", owner="gatus"),
     )
 
 
@@ -248,4 +224,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, _OUTPUT_DIR, chart)
+    write_charts(root, OUTPUT_DIR, chart)

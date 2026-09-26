@@ -65,7 +65,7 @@ since there's no first-class Forgejo provider in OpenHands.
 
 ## Proxmox drift watch
 
-`cluster/k8s/infra-drift/` plans the OVH half of `cluster/terraform/main` and
+`cluster/generated/infra-drift/` plans the OVH half of `cluster/terraform/main` and
 deliberately leaves the Proxmox resources out: the `proxmox` provider
 authenticates as `root@pam!tofu`, a full-root API token, and putting that in a
 tf-runner pod is a bigger step than the scoped OVH credentials the CR already
@@ -223,7 +223,7 @@ staying closed is closed. What's left is the gateway-layer belt-and-suspenders:
 
 ## Haku `haku-ui` / workloads pipe — hardening follow-ups
 
-The `cluster/k8s/haku/workloads/` Flux pipe and the `haku-ui.allegedly.works`
+The `cluster/generated/haku/workloads/` Flux pipe and the `haku-ui.allegedly.works`
 Authentik route work; these tighten them (operator-approved as follow-ups):
 
 - [ ] **Read-only deploy key for the `haku-state` GitRepository.** The pipe's
@@ -342,19 +342,20 @@ and clearing the spurious token fixes coredns. Three consumers of
 kube-prometheus-stack values cannot reach it.
 
 The alternative is `allow_arbitrary_file_access = true` on
-`prometheus.operator.servicemonitors`, which fixes all three at once but grants
+`prometheus.operator.servicemonitors`, which fixes the token rejection for all three (though
+the control-plane two are now loopback-only, below) but grants
 file access to every ServiceMonitor in the cluster rather than to named jobs.
 Today that is close to free — only `monitoring-operator`, `kubevirt-operator`
 and `seaweedfs-operator-manager-role` can write ServiceMonitors, and Alloy
 mounts nothing but its own ConfigMap and service-account token — so the flag
 would hand a hostile author only a credential they could already obtain.
 
-- [ ] Decide between extending the native scrapes to controller-manager and
-      scheduler (needs their endpoints reachable on 10257/10259, unverified
-      since the metrics have been absent since 2026-08-07) versus enabling the
-      flag for the remainder. Whichever wins, `volsync` needs an answer: a
-      `postRenderers` patch on its HelmRelease, an upstream values knob, or the
-      flag.
+- [ ] controller-manager and scheduler: since the #7918 fix they bind to
+      loopback only, so neither a native scrape nor the flag reaches 10257/10259
+      over the network. Either a host-network scraper on each control-plane node
+      reads `localhost`, or their ServiceMonitors (`monitoring/stack.py`) go.
+- [ ] `volsync`: a `postRenderers` patch on its HelmRelease, an upstream values
+      knob, or the flag.
 - [ ] Re-evaluate if Alloy ever mounts a Secret. The flag's low cost rests on
       it having nothing worth reading; that assumption is the tripwire.
 
@@ -375,9 +376,8 @@ as of 2026-08-04 (operator-facing summary: `haku/docs/security.md`):
       `--ignore-hosts` raw TLS passthrough for `api.anthropic.com` (interception breaks
       the Managed Agents HTTP/2 session stream).
 - [ ] Enforce at two layers. The mitmproxy fences confine only via Cilium `toFQDNs` —
-      the container has no allowlist; the iron fences confine only in app config — the
-      spike's policy opens `toEntities: [world, remote-node, host]` on 443 and
-      `claude-iron.yaml` carries no `allowlist` transform.
+      the container has no allowlist; the iron fence confines only in app config — the
+      spike's policy opens `toEntities: [world, remote-node, host]` on 443.
 - [ ] Route cluster-internal traffic through the proxies too. The Kyverno injection
       (`cluster/cdk8s/kyverno/proxy_injection.py`) sets `NO_PROXY` to
       `*.allegedly.works`, `.svc`, `.svc.cluster.local` and `10.0.0.0/8`, so anything

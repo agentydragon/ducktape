@@ -20,7 +20,7 @@ from agentplane.action_service.mcp_linkage import McpOAuthServer
 from agentplane.action_service.operator_oidc import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.app.action_federation import DirectFederationSettings
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import actions, dex, rbac, testing_config
+from cluster.cdk8s.agentplane import actions, app as app_component, dex, egress, rbac, testing_config
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
     MCP_EVERYTHING_NAME,
     MCP_EVERYTHING_PORT,
@@ -42,6 +42,7 @@ from cluster.cdk8s.agentplane.environment import (
 )
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
+from cluster.cdk8s.metadata import metadata
 
 _NAMESPACE = "agentplane-testing"
 _HOSTNAME = "agentplane-testing.allegedly.works"
@@ -124,7 +125,7 @@ ENV = Environment(
     extra_resources=(_LITELLM_CREDENTIALS_DIR,),
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
     app_config=testing_config.config(action_federation=_ACTION_FEDERATION),
-    db=DbProps(instances=1, pod_anti_affinity=False),
+    db=DbProps(instances=1),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
     egress=EgressProps(ca_secret_name="agentplane-testing-egress-ca", credentials_namespace=TESTING_NAMESPACE),
     app=AppProps(hostname=_HOSTNAME, oidc_issuer=_DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None),
@@ -148,6 +149,20 @@ def chart(app: App) -> Chart:
     # Only this environment's chart gets the agent-operator Role/RoleBinding -- see
     # `rbac.AgentRbac`'s own docstring for why it must not be in staging's.
     rbac.AgentRbac(chart, "rbac", ENV)
+    rbac.AcceptanceToken(chart, "acceptance-token", ENV)
+    # claude-ai's boxes reach this app through staging's egress proxy, by its Service rather than its
+    # public name, which would hairpin out through the Gateway and back.
+    cilium.network_policy(
+        chart,
+        "networkpolicy-app-from-staging-egress",
+        metadata=metadata(f"{app_component.NAME}-from-staging-egress", ENV.namespace),
+        selector={"app.kubernetes.io/name": app_component.NAME},
+        ingress=[
+            cilium.ingress_from(
+                cilium.endpoint_labels("agentplane-staging", egress.NAME), ports=[app_component.CONTAINER_PORT]
+            )
+        ],
+    )
     add_testing_fixtures(chart)
     dex.Dex(chart, "dex")
     EgressCredentials(

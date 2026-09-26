@@ -35,8 +35,9 @@ resource "authentik_provider_oauth2" "study_casino" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://casino.allegedly.works/auth/callback"
+      matching_mode     = "strict"
+      url               = "https://casino.allegedly.works/auth/callback"
+      redirect_uri_type = "authorization"
     }
   ]
 }

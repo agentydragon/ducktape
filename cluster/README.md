@@ -52,7 +52,7 @@ join/leave the cluster frequently. `rugged` has taint
 require persistent availability on roaming nodes.
 
 Changing how many roaming nodes exist also requires raising `maxUnavailable` on
-the DaemonSets that schedule onto them — `//cluster/validation:test_roaming_daemonset_capacity`
+the DaemonSets that schedule onto them — `//cluster/cdk8s/monitoring:test_roaming_daemonset_capacity`
 fails with the details when it doesn't. See <docs/mesh_membership.md> § Roaming
 k8s nodes.
 
@@ -146,8 +146,9 @@ cluster/
 ├── cdk8s/                  # cdk8s Python generators for converted Kustomization directories
 ├── terraform/
 │   └── main/               # Single TF root (PG backend, all resources)
-├── k8s/                    # Flux-managed manifests (config only — source lives in rotators/, provisioners/, proxies/)
-│   ├── agents/             # Agent infra (public-coder-agent, airlock, agent-rbac-base, tana-mcp, ...)
+├── generated/              # Flux Kustomization directories cdk8s writes in full (same sub-paths as k8s/; never edit)
+├── k8s/                    # Flux-managed manifests with a hand-written file (config only — source lives in rotators/, provisioners/, proxies/)
+│   ├── agents/             # Agent infra (public-coder-agent, airlock, tana-mcp, ...)
 │   ├── authentik/          # SSO (app, blueprints, db, secrets, proxy-routes, ...)
 │   ├── monitoring/         # Observability (stack, loki, alloy, tempo, ...)
 │   ├── <service>/          # Grouped: subdirs per flux-kustomization (namespace, secrets, app, db)

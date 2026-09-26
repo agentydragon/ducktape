@@ -14,11 +14,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "node-feature-discovery"
 NAMESPACE = "node-feature-discovery"
-OUTPUT_DIR = "cluster/k8s/node-feature-discovery"
+OUTPUT_DIR = f"{GENERATED_ROOT}/node-feature-discovery"
 
 
 def chart(app: App) -> Chart:
@@ -53,7 +54,7 @@ def chart(app: App) -> Chart:
             "worker": {
                 "tolerations": [{"effect": "NoSchedule", "operator": "Exists"}],
                 # Must exceed the roaming-node count, as for promtail (cluster/cdk8s/monitoring/loki.py);
-                # enforced by //cluster/validation:test_roaming_daemonset_capacity.
+                # enforced by //cluster/cdk8s/monitoring:test_roaming_daemonset_capacity.
                 "updateStrategy": {"type": "RollingUpdate", "rollingUpdate": {"maxUnavailable": 3}},
                 "config": {"sources": {"pci": {"deviceClassWhitelist": ["02", "03"], "deviceLabelFields": ["vendor"]}}},
             }

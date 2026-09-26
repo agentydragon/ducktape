@@ -1,19 +1,17 @@
 """Tests for the auto-approval policy graph: registry composition and each policy kind's outcomes.
 
-The config here spans every policy kind on purpose -- several tests (e.g. the multi-actor GitHub
-searches) exist specifically to verify a policy composes correctly through `any_of` from more than
-one access profile, which a per-evaluator unit test wouldn't cover."""
+Some tests (e.g. `revoke_grants` under both Agent roots) exist specifically to verify a policy
+composes correctly through `any_of` from more than one access profile, which a per-evaluator unit
+test wouldn't cover."""
 
 from typing import Any
 from unittest.mock import Mock
 from uuid import UUID
 
-import httpx
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from github_policy.visibility import RepositoryVisibilityService
 from gmail_api.labels import GmailLabel, LabelType
 from haku.console.auto_approval.registry import (
     AGENT_AUTO_APPROVAL_ID,
@@ -58,29 +56,9 @@ _EXACT_TOOLS = {
     "grocy-sf": ["products_list"],
 }
 _SERVER_CONFIGS: dict[str, dict[str, Any]] = {
-    server_id.replace("-", "_"): {
-        "id": server_id,
-        "backend": {"kind": "remote_mcp", "url": f"https://{server_id}.test/mcp", "auth": {"kind": "none"}},
-    }
+    server_id.replace("-", "_"): {"id": server_id, "backend": {"kind": "in_process", "credential": {"kind": "none"}}}
     for server_id in _EXACT_TOOLS
-} | {
-    "github": {
-        "id": "github",
-        "backend": {"kind": "remote_mcp", "url": "https://github.test/mcp", "auth": {"kind": "none"}},
-    }
 }
-_GITHUB_TOOL_ARGUMENTS: dict[str, dict[str, object]] = {
-    "actions_get": {"method": "list_workflow_runs"},
-    "actions_list": {"method": "list_workflow_runs"},
-    "get_file_contents": {"path": "README.md"},
-    "get_job_logs": {"run_id": 789, "failed_only": True},
-    "issue_read": {"issue_number": 123},
-    "list_issues": {},
-    "list_pull_requests": {},
-    "pull_request_read": {"pullNumber": 456, "method": "get"},
-    "search_pull_requests": {"query": "is:open"},
-}
-_GITHUB_TOOLS = [*_GITHUB_TOOL_ARGUMENTS, "search_code"]
 _MANUAL_AUTHORITY_CONFIG = {
     "auto_approval_policies": [{"id": "manual", "type": "never"}],
     "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
@@ -91,56 +69,12 @@ _CONFIG = ConsoleConfigFile.model_validate(
         "mcp": {"servers": _SERVER_CONFIGS},
         "auto_approval_policies": [
             {"id": "safe_tools", "type": "exact_tools", "tools": _EXACT_TOOLS},
-            {"id": "github_identity_reads", "type": "exact_tools", "tools": {"github": ["get_me"]}},
             {"id": "managed_gmail_labels", "type": "gmail_label_namespace", "server": "gmail", "label_prefix": "haku/"},
-            {
-                "id": "public_ducktape_reads",
-                "type": "github_repository",
-                "server": "github",
-                "owner": "agentydragon",
-                "repository": "ducktape",
-                "tools": _GITHUB_TOOLS,
-            },
-            {
-                "id": "public_gaffer_private_reads",
-                "type": "github_repository",
-                "server": "github",
-                "owner": "agentydragon",
-                "repository": "gaffer-private",
-                "tools": _GITHUB_TOOLS,
-            },
-            {
-                "id": "haku_v1",
-                "type": "any_of",
-                "policies": [
-                    "safe_tools",
-                    "github_identity_reads",
-                    "managed_gmail_labels",
-                    "public_ducktape_reads",
-                    "public_gaffer_private_reads",
-                ],
-            },
-            {
-                "id": "public_github_reads",
-                "type": "github_public_repository",
-                "server": "github",
-                "tools": _GITHUB_TOOLS,
-            },
-            {
-                "id": "public_coder_github_reads",
-                "type": "any_of",
-                "policies": [
-                    "public_ducktape_reads",
-                    "public_gaffer_private_reads",
-                    "public_github_reads",
-                    "github_identity_reads",
-                ],
-            },
+            {"id": "haku_v1", "type": "any_of", "policies": ["safe_tools", "managed_gmail_labels"]},
             {"id": "none", "type": "never"},
         ],
         "access_profiles": [
             {"id": "haku", "auto_approval_policy": "haku_v1"},
-            {"id": "public-coder", "auto_approval_policy": "public_coder_github_reads"},
             {"id": "manual", "auto_approval_policy": "none"},
         ],
         "default_access_profile_id": "manual",
@@ -480,10 +414,10 @@ def test_access_profile_recall_index_ids_are_a_set() -> None:
     assert profile.recall_index_ids == {"ducktape-public"}
 
 
-async def _remote_decision(
+async def _schemaless_decision(
     server_id: str, tool_name: str, arguments: dict, *, actor: RuntimeActor = AGENT_ACTOR
 ) -> tuple[str | None, str | None]:
-    # Remote (operator_oauth) servers have no in-process schema, so `mcp` is None.
+    # No registered server builder, so no schema to validate against: `mcp` is None.
     return _approval(
         await auto_approve_tool_call(
             policies=_POLICIES,
@@ -497,230 +431,15 @@ async def _remote_decision(
     )
 
 
-@pytest.mark.parametrize(
-    ("tool_name", "arguments"),
-    [
-        ("issue_read", {"owner": "agentydragon", "repo": "ducktape", "issue_number": 123}),
-        ("pull_request_read", {"owner": "agentydragon", "repo": "ducktape", "pullNumber": 456, "method": "get"}),
-        ("actions_list", {"owner": "agentydragon", "repo": "ducktape", "method": "list_workflow_runs"}),
-        ("get_job_logs", {"owner": "agentydragon", "repo": "ducktape", "run_id": 789, "failed_only": True}),
-    ],
-)
-async def test_public_ducktape_reads_auto_approve(tool_name: str, arguments: dict) -> None:
-    policy_id, evaluation = await _remote_decision("github", tool_name, arguments)
-    assert policy_id == AGENT_AUTO_APPROVAL_ID
-    assert evaluation is not None
-    assert "reviewed read targets repository agentydragon/ducktape" in evaluation
-
-
-@pytest.mark.parametrize("actor", [AGENT_ACTOR, PUBLIC_CODER_ACTOR], ids=["haku", "public-coder"])
-async def test_configured_agents_auto_approve_github_identity_read(actor: AgentActor) -> None:
-    policy_id, evaluation = await _remote_decision("github", "get_me", {}, actor=actor)
-    assert policy_id == AGENT_AUTO_APPROVAL_ID
-    assert evaluation is not None
-    assert "exact tool github/get_me is listed" in evaluation
-
-
-@pytest.mark.parametrize(("tool_name", "tool_arguments"), list(_GITHUB_TOOL_ARGUMENTS.items()))
-async def test_private_gaffer_reads_auto_approve(tool_name: str, tool_arguments: dict[str, object]) -> None:
-    arguments = {"owner": "agentydragon", "repo": "gaffer-private", **tool_arguments}
-    policy_id, evaluation = await _remote_decision("github", tool_name, arguments)
-    assert policy_id == AGENT_AUTO_APPROVAL_ID
-    assert evaluation is not None
-    assert "reviewed read targets repository agentydragon/gaffer-private" in evaluation
-
-
-@pytest.mark.parametrize("actor", [AGENT_ACTOR, PUBLIC_CODER_ACTOR], ids=["haku", "public-coder"])
-@pytest.mark.parametrize("repository", ["ducktape", "gaffer-private"])
-async def test_approved_agents_can_search_pull_requests_in_reviewed_repositories(
-    actor: AgentActor, repository: str
-) -> None:
-    policy_id, evaluation = await _remote_decision(
-        "github",
-        "search_pull_requests",
-        {"owner": "agentydragon", "repo": repository, "query": "is:open author:agentydragon-agent"},
-        actor=actor,
-    )
-    assert policy_id == AGENT_AUTO_APPROVAL_ID
-    assert evaluation is not None
-    assert f"reviewed read targets repository agentydragon/{repository}" in evaluation
-
-
-@pytest.mark.parametrize("actor", [AGENT_ACTOR, PUBLIC_CODER_ACTOR], ids=["haku", "public-coder"])
-@pytest.mark.parametrize("repository", ["ducktape", "gaffer-private"])
-async def test_approved_agents_can_search_code_in_reviewed_repositories(actor: AgentActor, repository: str) -> None:
-    policy_id, evaluation = await _remote_decision(
-        "github", "search_code", {"query": f"repo:agentydragon/{repository} language:python authorization"}, actor=actor
-    )
-    assert policy_id == AGENT_AUTO_APPROVAL_ID
-    assert evaluation is not None
-    assert f"reviewed code search targets repository agentydragon/{repository}" in evaluation
-
-
-@pytest.mark.parametrize(
-    "query", ["repo:agentydragon/other is:open", "-repo:agentydragon/other is:open", "Repo:agentydragon/other is:open"]
-)
-async def test_public_coder_pr_search_with_repository_qualifier_stays_manual(query: str) -> None:
-    policy_id, evaluation = await _remote_decision(
-        "github",
-        "search_pull_requests",
-        {"owner": "agentydragon", "repo": "ducktape", "query": query},
-        actor=PUBLIC_CODER_ACTOR,
-    )
-    assert policy_id is None
-    assert evaluation is not None
-    assert "repository qualifier" in evaluation
-
-
-@pytest.mark.parametrize(
-    "query",
-    [
-        "authorization",
-        "repo:agentydragon/other authorization",
-        "repo:agentydragon/ducktape repo:agentydragon/other authorization",
-        '"repo:agentydragon/ducktape" authorization',
-        "-repo:agentydragon/ducktape authorization",
-    ],
-)
-async def test_public_coder_code_search_without_exact_repository_scope_stays_manual(query: str) -> None:
-    policy_id, evaluation = await _remote_decision("github", "search_code", {"query": query}, actor=PUBLIC_CODER_ACTOR)
-    assert policy_id is None
-    assert evaluation is not None
-    assert "code search" in evaluation or "repository agentydragon/other is outside" in evaluation
-
-
-@pytest.mark.parametrize(
-    ("tool_name", "arguments"),
-    [
-        ("issue_read", {"owner": "agentydragon", "repo": "private", "issue_number": 123}),
-        ("get_job_logs", {"owner": "someone", "repo": "ducktape", "run_id": 789}),
-        ("get_file_contents", {"owner": "agentydragon", "path": "README.md"}),
-    ],
-)
-async def test_other_or_unprovable_github_reads_stay_manual(tool_name: str, arguments: dict) -> None:
-    policy_id, evaluation = await _remote_decision("github", tool_name, arguments)
-    assert policy_id is None
-    assert evaluation is not None
-
-
-async def test_github_write_stays_manual() -> None:
-    assert await _remote_decision(
-        "github", "create_issue", {"owner": "agentydragon", "repo": "ducktape", "title": "No"}
-    ) == (None, "manual: Agent policy 'haku_v1' did not auto-approve github/create_issue")
-
-
-def _github_visibility_handler(*public_repositories: tuple[str, str], unavailable: bool = False):
-    """A MockTransport handler standing in for GitHub's unauthenticated repo-visibility endpoint."""
-    confirmed_public = {(owner.casefold(), repo.casefold()) for owner, repo in public_repositories}
-
-    def handle(request: httpx.Request) -> httpx.Response:
-        if unavailable:
-            return httpx.Response(500)
-        _, _, owner, repository = request.url.path.split("/", 3)
-        if (owner.casefold(), repository.casefold()) in confirmed_public:
-            return httpx.Response(200, json={"private": False})
-        return httpx.Response(404)
-
-    return handle
-
-
-def _policies_with_visibility(handler) -> AutoApprovalPolicyRegistry:
-    http_client = httpx.AsyncClient(base_url="https://api.github.com", transport=httpx.MockTransport(handler))
-    return AutoApprovalPolicyRegistry(
-        _CONFIG, github_repository_visibility=RepositoryVisibilityService(http_client, ttl_seconds=3600.0)
-    )
-
-
-async def _public_repo_decision(
-    tool_name: str, arguments: dict, *, handler, actor: RuntimeActor = PUBLIC_CODER_ACTOR
-) -> tuple[str | None, str | None]:
-    return _approval(
-        await auto_approve_tool_call(
-            policies=_policies_with_visibility(handler),
-            actor=actor,
-            server_id="github",
-            tool_name=tool_name,
-            arguments=arguments,
-            gmail=None,
-            mcp=None,
-        )
-    )
-
-
-async def test_confirmed_public_third_party_repo_auto_approves() -> None:
-    handler = _github_visibility_handler(("redpanda-data", "ducktape"))
-
-    policy_id, evaluation = await _public_repo_decision(
-        "get_file_contents", {"owner": "redpanda-data", "repo": "ducktape", "path": "README.md"}, handler=handler
-    )
-
-    assert policy_id == AGENT_AUTO_APPROVAL_ID
-    assert evaluation is not None
-    assert "confirmed-public repository redpanda-data/ducktape" in evaluation
-
-
-async def test_unconfirmed_repo_stays_manual() -> None:
-    handler = _github_visibility_handler()  # nothing is confirmed public
-
-    policy_id, evaluation = await _public_repo_decision(
-        "issue_read", {"owner": "someone", "repo": "private-thing", "issue_number": 1}, handler=handler
-    )
-
-    assert policy_id is None
-    assert evaluation is not None
-    assert "not confirmed public" in evaluation
-
-
-async def test_visibility_check_failure_stays_manual() -> None:
-    """A GitHub-side outage must fail closed, never silently approve."""
-    handler = _github_visibility_handler(("redpanda-data", "ducktape"), unavailable=True)
-
-    policy_id, evaluation = await _public_repo_decision(
-        "get_file_contents", {"owner": "redpanda-data", "repo": "ducktape", "path": "README.md"}, handler=handler
-    )
-
-    assert policy_id is None
-    assert evaluation is not None
-    assert "could not confirm" in evaluation
-
-
-async def test_public_repo_code_search_confirms_the_qualifier_repository() -> None:
-    handler = _github_visibility_handler(("redpanda-data", "ducktape"))
-
-    policy_id, evaluation = await _public_repo_decision(
-        "search_code", {"query": "repo:redpanda-data/ducktape language:python"}, handler=handler
-    )
-
-    assert policy_id == AGENT_AUTO_APPROVAL_ID
-    assert evaluation is not None
-    assert "confirmed-public repository redpanda-data/ducktape" in evaluation
-
-
-async def test_public_repo_pull_request_search_still_rejects_a_smuggled_qualifier() -> None:
-    """The same anti-smuggling boundary as the fixed-repo policies: owner/repo names a confirmed-
-    public repository, but the query's own repo: qualifier would actually target a different one."""
-    handler = _github_visibility_handler(("redpanda-data", "ducktape"))
-
-    policy_id, evaluation = await _public_repo_decision(
-        "search_pull_requests",
-        {"owner": "redpanda-data", "repo": "ducktape", "query": "repo:someone/private-thing is:open"},
-        handler=handler,
-    )
-
-    assert policy_id is None
-    assert evaluation is not None
-    assert "repository qualifier" in evaluation
-
-
 async def test_grocy_reads_auto_approve() -> None:
-    policy_id, evaluation = await _remote_decision("grocy-sf", "products_list", {"detail": "brief"})
+    policy_id, evaluation = await _schemaless_decision("grocy-sf", "products_list", {"detail": "brief"})
     assert policy_id == AGENT_AUTO_APPROVAL_ID
     assert evaluation is not None
     assert "exact tool" in evaluation
 
 
 async def test_grocy_writes_stay_manual() -> None:
-    assert await _remote_decision("grocy-sf", "products_create", {"name": "Milk"}) == (
+    assert await _schemaless_decision("grocy-sf", "products_create", {"name": "Milk"}) == (
         None,
         "manual: Agent policy 'haku_v1' did not auto-approve grocy-sf/products_create",
     )

@@ -108,6 +108,9 @@ def _env_and_mount_rule(
     """Appends the proxy env vars and the CA mount to every entry of `spec.<field>`,
     skipping an entry that already mounts the CA (the reinvocation guard)."""
     ca_file = f"{mount_path}/ca-certificates.crt"
+    # Four CA variables because four client stacks each read only their own (OpenSSL/Python
+    # ssl, curl, `requests`, Node); a missing one passes admission and fails TLS later, in
+    # whichever runtime uses that client.
     env = [
         ("HTTP_PROXY", f'"{proxy_url}"'),
         ("HTTPS_PROXY", f'"{proxy_url}"'),

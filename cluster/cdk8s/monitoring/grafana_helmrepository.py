@@ -11,9 +11,10 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_repository_source_ref
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
-OUTPUT_DIR = "cluster/k8s/monitoring/grafana-helmrepository"
+OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/grafana-helmrepository"
 _NAME = "grafana"
 _NAMESPACE = "flux-system"
 # The releases installing from this repository live in other charts.

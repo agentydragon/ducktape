@@ -29,11 +29,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "volsync"
 NAMESPACE = "volsync-system"
-OUTPUT_DIR = "cluster/k8s/volsync"
+OUTPUT_DIR = f"{GENERATED_ROOT}/volsync"
 _METRICS_ACCOUNT = "volsync-metrics"
 _METRICS_TOKEN = "volsync-metrics-token"
 _SERVICE_MONITOR_AUTH_PATCH = f"""\

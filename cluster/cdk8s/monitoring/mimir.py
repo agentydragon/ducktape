@@ -8,47 +8,18 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
-from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
-    S3Identity,
-    S3IdentitySpec,
-    S3IdentitySpecReclaimPolicy,
-    S3IdentitySpecSeaweedRef,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
+from cluster.cdk8s.seaweedfs import s3
 
 NAME = "mimir"
-OUTPUT_DIR = "cluster/k8s/monitoring/mimir"
+OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/mimir"
 _NAMESPACE = "monitoring"
-_SEAWEEDFS = "seaweedfs"
-_SEAWEED_GROUP = "seaweed.seaweedfs.com"
 _CREDENTIALS_SECRET = "mimir-seaweedfs-credentials"
 _S3_ENDPOINT = "seaweedfs-s3.seaweedfs.svc:8333"
 _ZONE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh"}
@@ -92,60 +63,24 @@ def _storage(chart: Chart) -> None:
     # Tenant-local ownership for Mimir's existing Seaweed buckets and credentials.
     # The old seaweedfs-namespace resources remain until the consumer cutover and
     # data-path verification are complete.
+    identity = s3.Identity(chart, "identity", name=NAME)
     for bucket, description in (("mimir-blocks", "Mimir blocks."), ("mimir-ruler", "Mimir ruler state.")):
-        Bucket(
+        s3.Bucket(
             chart,
             bucket,
-            metadata=metadata(bucket, _NAMESPACE, annotations={"description": description}),
-            spec=BucketSpec(
-                name=bucket,
-                adopt_existing=True,
-                cluster_ref=BucketSpecClusterRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-                reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-                access=[
-                    BucketSpecAccess(
-                        user=NAME,
-                        actions=[
-                            BucketSpecAccessActions.READ,
-                            BucketSpecAccessActions.WRITE,
-                            BucketSpecAccessActions.LIST,
-                            BucketSpecAccessActions.TAGGING,
-                        ],
-                    )
-                ],
-            ),
-        )
-    S3Credentials(
-        chart,
-        "credentials",
-        metadata=metadata(NAME, _NAMESPACE, annotations={"description": "Mimir's tenant-local SeaweedFS credentials."}),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            # The IAM identity name is cluster-global. Without a same-namespace
-            # S3Identity, the operator uses the existing identity named mimir.
-            identity_ref=S3CredentialsSpecIdentityRef(name=NAME),
-            # Use a new Secret during the staged handoff. The existing Secret is
-            # populated by the old cross-namespace S3Credentials object and cannot be
-            # adopted here.
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_CREDENTIALS_SECRET, access_key_field="AWS_ACCESS_KEY_ID", secret_key_field="AWS_SECRET_ACCESS_KEY"
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
-    )
-    # Permit only Mimir's tenant-local Buckets and S3Credentials to reference the
-    # SeaweedFS cluster in its namespace.
-    ResourceReferenceGrant(
-        chart,
-        "seaweed-grant",
-        metadata=metadata(NAME, _SEAWEEDFS),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="Bucket", namespace=_NAMESPACE),
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="S3Credentials", namespace=_NAMESPACE),
-            ],
-            to=[ResourceReferenceGrantSpecTo(group=_SEAWEED_GROUP, kind="Seaweed", name=_SEAWEEDFS)],
-        ),
+            name=bucket,
+            namespace=_NAMESPACE,
+            adopt_existing=True,
+            description=description,
+            grant_name=NAME,
+        ).grant_read_write(identity)
+    identity.credentials(
+        namespace=_NAMESPACE,
+        # A new Secret during the staged handoff: the existing one is populated by the old
+        # cross-namespace S3Credentials object and cannot be adopted here.
+        secret=_CREDENTIALS_SECRET,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
+        description="Mimir's tenant-local SeaweedFS credentials.",
     )
     # Retain the previous credential Secret during the staged handoff. The old
     # S3Credentials resource is retired separately; revoking its retained key and
@@ -157,14 +92,6 @@ def _storage(chart: Chart) -> None:
             name="mimir-s3-credentials", namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"}
         ),
         type="Opaque",
-    )
-    S3Identity(
-        chart,
-        "identity",
-        metadata=metadata(NAME, _SEAWEEDFS),
-        spec=S3IdentitySpec(
-            seaweed_ref=S3IdentitySpecSeaweedRef(name=_SEAWEEDFS), reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN
-        ),
     )
 
 

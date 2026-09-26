@@ -7,9 +7,9 @@ py_library(
     srcs = ["event_log.py"],
     deps = [
         ":debug",
+        "//agentplane/app:database_updates",
         "//agentplane/app:presets",
         "//agentplane/app/agent_runtime:models",
-        "//agentplane/app/agent_runtime:updates",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:protocol_pb2",
         "@pypi//protobuf",

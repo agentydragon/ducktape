@@ -43,11 +43,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 _OPENCLAW = "openclaw"
 NAMESPACE = "flux-system"
-OUTPUT_DIR = "cluster/k8s/flux-image-automation-ghcr"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux-image-automation-ghcr"
 
 
 _BRANCH = "devel"
@@ -72,7 +73,7 @@ def automation_chart(app: App) -> Chart:
             provider=GitRepositorySpecProvider.GITHUB,
             ref=GitRepositorySpecRef(branch=_BRANCH),
             secret_ref=GitRepositorySpecSecretRef(name="ducktape-automation-github-app"),
-            sparse_checkout=["cluster/k8s/"],
+            sparse_checkout=[f"{HAND_WRITTEN_ROOT}/"],
             url="https://github.com/agentydragon/ducktape.git",
         ),
     )
@@ -106,7 +107,7 @@ def automation_chart(app: App) -> Chart:
                 push=ImageUpdateAutomationSpecGitPush(branch=_BRANCH),
             ),
             update=ImageUpdateAutomationSpecUpdate(
-                strategy=ImageUpdateAutomationSpecUpdateStrategy.SETTERS, path="./cluster/k8s"
+                strategy=ImageUpdateAutomationSpecUpdateStrategy.SETTERS, path=f"./{HAND_WRITTEN_ROOT}"
             ),
         ),
     )

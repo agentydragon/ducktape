@@ -97,7 +97,7 @@ in
   # modeset=1 after it, last-wins), so =1 + the other mitigations is the
   # empirically host-stable config. modeset=1 is REQUIRED for the
   # direct-display gaming plan (5090 → monitor DP needs NVIDIA KMS) — see
-  # debug/atlas/gpu-strategy.md "Plan: direct display output". A brief
+  # debug/atlas/gpu_strategy.md "Plan: direct display output". A brief
   # deliberate modeset=0 experiment ran 2026-07-02 (guest-lockup hypothesis),
   # abandoned in favor of the display.
   boot.kernelParams = [
@@ -199,7 +199,7 @@ in
   # retires the whole multi-seat-DM problem: GDM cannot complete a *non*-seat0 user
   # login (gdm!291 unmerged, blocked on systemd#42247), which is exactly the wall
   # the old `seatphysical` seat hit. Full analysis + the retracted multi-seat
-  # decision: debug/atlas/direct_display_bringup/README.md (full multiseat saga archived under archive/).
+  # decision: nix/debug/wyrm2/direct_display_bringup/README.md (full multiseat saga archived under archive/).
 
   # seat0 defaults to GNOME. mutter is what honours `mutter-device-ignore` (see the
   # udev rules below), so the single-display isolation only works under
@@ -214,7 +214,7 @@ in
   # verbose logging on through the GRD bring-up (the nixpkgs#504490 handover fix is
   # already in gsd 50.1, but the NVIDIA-headless GRD path is untested here).
   # Recovery for the leaked-session zombie this can expose:
-  # debug/atlas/direct_display_bringup/login_zombie_recovery.md.
+  # nix/debug/wyrm2/direct_display_bringup/login_zombie_recovery.md.
   services.displayManager.gdm.debug = true;
 
   # Remote access = a *session, not a seat*: gnome-remote-desktop "Remote Login"
@@ -226,13 +226,13 @@ in
   # the gates, the RDP password is just the login step. RDP is enabled declaratively:
   # the TLS pair is a SOPS secret (below) and grd.conf (grdConf above) is symlinked
   # into place by tmpfiles — no grdctl, no runtime bootstrap. See the GRD bring-up
-  # notes in debug/atlas/direct_display_bringup/README.md.
+  # notes in nix/debug/wyrm2/direct_display_bringup/README.md.
   services.gnome.gnome-remote-desktop.enable = true;
 
   # ACTUAL remote desktop: xrdp + Xfce. gnome-remote-desktop system "Remote Login"
   # above is the GNOME-native headless path but is BLOCKED on NixOS (`grdctl enable`
   # self-systemd-enables into read-only /etc → EROFS; GDM handover broken — nixpkgs
-  # #504490/#535360; see debug/atlas/remote-desktop-wyrm2.md), so it never listens and
+  # #504490/#535360; see nix/debug/wyrm2/remote_desktop_wyrm2.md), so it never listens and
   # stays dormant. xrdp spawns its own X session on connect (PAM auth with your system
   # password — no stored creds), which works pre-login WITHOUT auto-login. Tunnel-only:
   # services.xrdp.openFirewall defaults false, so 3389 is not exposed on nebula — reach
@@ -273,7 +273,7 @@ in
   # keep the DP output awake so the FV43U KVM would not revert to USB-C before the
   # seatphysical keyboard could wake it. Re-establish that no-blank guarantee for
   # the GDM greeter if the KVM reverts again — see
-  # debug/atlas/direct_display_bringup/README.md.
+  # nix/debug/wyrm2/direct_display_bringup/README.md.
 
   # Sway kept as an OPTIONAL seat0 session (NOT the default — GNOME is, because only
   # mutter honours the mutter-device-ignore isolation). A real WM to game/debug from,
@@ -307,7 +307,7 @@ in
   # streamed to atlas via Sunshine/Moonlight).
   # Games run directly in the sway session on seatphysical (the display GPU is
   # 01:00.0 = the same GPU DXVK renders on, so no gamescope GPU-pinning is
-  # needed — see debug/atlas/direct_display_bringup/README.md). No gamescope kiosk
+  # needed — see nix/debug/wyrm2/direct_display_bringup/README.md). No gamescope kiosk
   # session: on this 2-identical-5090 box gamescope can't disambiguate the
   # GPUs and its greeter session crashed opening the wrong (seat0-owned) card.
   programs.steam.enable = true;
@@ -346,7 +346,7 @@ in
 
   # Game streaming host: Moonlight client on atlas connects here; games render
   # + NVENC-encode on a 5090. capSysAdmin for KMS capture under Wayland.
-  # See <debug/atlas/gpu-strategy.md>.
+  # See <debug/atlas/gpu_strategy.md>.
   services.sunshine = {
     enable = true;
     # Default package has no CUDA → only software x264. NVENC on the 5090s
@@ -389,7 +389,7 @@ in
 
   # SPICE audio: increase PipeWire quantum to 2048 to eliminate xruns on the
   # virtual ich9-intel-hda device. Adds ~42ms audio latency (vs ~21ms default),
-  # acceptable for media playback. See <debug/atlas/spice_audio/README.md>.
+  # acceptable for media playback. See <nix/debug/wyrm2/spice_audio/README.md>.
   services.pipewire.extraConfig.pipewire."10-spice-quantum" = {
     "context.properties" = {
       "default.clock.quantum" = 2048;
@@ -410,7 +410,7 @@ in
   # /dev/vdb (virtio1): 500GB SSD (local-zfs) — Steam library for the gaming seat.
   # Repurposed from the decommissioned Longhorn disk. Games + Proton prefixes must be
   # on SSD: the small-file prefix I/O crawls on the tank-hdd virtiofs share
-  # (/mnt/tankshare). See debug/atlas/direct_display_bringup/README.md.
+  # (/mnt/tankshare). See nix/debug/wyrm2/direct_display_bringup/README.md.
   fileSystems."/games" = {
     device = "/dev/vdb";
     fsType = "ext4";
@@ -448,8 +448,8 @@ in
       "x-systemd.device-timeout=10s"
     ];
   };
-  fileSystems."/var/lib/colibri" = {
-    device = "/dev/vdi"; # 500G SSD (local-zfs) — disk-streamed model storage
+  fileSystems."/var/lib/llm-models-ssd" = {
+    device = "/dev/vdi"; # 1 TiB SSD (local-zfs) — model storage
     fsType = "ext4";
     autoFormat = true;
     autoResize = true;
@@ -541,9 +541,8 @@ in
     # Steam library mount (/dev/vdb) must be user-writable; the fresh ext4 root
     # is created root:root, so chown it after the mount lands.
     "d /games 0755 agentydragon users -"
-    # The Colibri host experiment runs as agentydragon and stores only
-    # reproducible model artifacts on this dedicated SSD.
-    "d /var/lib/colibri 0755 agentydragon users -"
+    # Host inference experiments store reproducible model artifacts here.
+    "d /var/lib/llm-models-ssd 0755 agentydragon users -"
     # gnome-remote-desktop system daemon reads $XDG_DATA_HOME/gnome-remote-desktop/grd.conf
     # (= /var/lib/gnome-remote-desktop/.local/share/gnome-remote-desktop/grd.conf); symlink
     # grdConf there so it enables RDP at startup. tmpfiles runs before graphical.target,

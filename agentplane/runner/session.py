@@ -7,7 +7,7 @@ import json
 import logging
 from collections import deque
 from collections.abc import Callable, Sequence
-from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -31,7 +31,13 @@ _INTERRUPT_GRACE_S = 15
 
 
 class HarnessGoneError(RuntimeError):
-    """The harness ended while a native response was still awaited."""
+    """The harness ended before a frame could be written to it, or while its response was awaited."""
+
+
+@dataclass(frozen=True)
+class _Request:
+    matches: FrameMatcher
+    reply: asyncio.Future[NativeReceipt]
 
 
 class Session:
@@ -54,6 +60,8 @@ class Session:
         self.make_adapter = make_adapter
         self.directory = store.directory(session_id)
         self.journal = journal
+        # The writer's view, including the stdout reader's batch before it commits. What a client
+        # may be told is the published log's, `journal.recovery_state`.
         self.harness_running = journal.recovery_state.harness_running
         self.active_turn_id = journal.recovery_state.active_turn_id
         # Per-process only. A restarted runner consults the durable journal and intentionally
@@ -70,8 +78,9 @@ class Session:
         self.process: HarnessProcess | None = None
         self.adapter: HarnessAdapter | None = None
         self._tasks: list[asyncio.Task[None]] = []
-        self._waiters: list[tuple[FrameMatcher, asyncio.Future[NativeReceipt]]] = []
-        self._translating: ContextVar[int] = ContextVar("native_source", default=0)
+        self._waiters: list[_Request] = []
+        # Replies the stdout reader has matched, held until the batch recording them commits.
+        self._replies: list[tuple[_Request, NativeReceipt]] = []
         self._stopping = False
         self._lock = asyncio.Lock()
         self._shutdown_lock = asyncio.Lock()
@@ -80,13 +89,12 @@ class Session:
         self,
         observation: Observation,
         *,
-        sources: Sequence[int] | None = None,
+        sources: Sequence[int],
         terminal_command_ids: Sequence[str] = (),
         native_correlation: dict[str, str] | None = None,
     ) -> event_log_pb2.EventEntry:
-        """Append to the log. Inside frame translation, the frame's Native event is the default source."""
-        if sources is None:
-            sources = [source] if (source := self._translating.get()) else []
+        """Append to the log. `sources` are the Native Events the observation was derived from; one
+        the runner originates has none."""
         entry = await self.journal.append(
             observation,
             sources=sources,
@@ -110,12 +118,13 @@ class Session:
         """The runner that wrote the log is gone, and so is any harness it was running."""
         if not self.harness_running:
             return
-        await self.emit(event_pb2.HarnessLost())
+        await self.emit(event_pb2.HarnessLost(), sources=[])
         if self.active_turn_id:
             await self._record_turn_completed(
                 self.active_turn_id,
                 event_pb2.TURN_STATUS_PROCESS_LOST,
                 "the runner restarted while the turn was active",
+                sources=[],
             )
 
     @property
@@ -145,12 +154,15 @@ class Session:
             resumed = self.record.native_session_id is not None
             try:
                 native_session_id = await adapter.handshake()
-            except BaseException:  # cleanup, then the failure reaches Open
+            except BaseException as error:  # cleanup, then the failure reaches Open
                 self._stopping = True
                 await process.stop()
                 await asyncio.gather(*self._tasks, return_exceptions=True)
                 self.process, self.adapter = None, None
-                raise
+                if not isinstance(error, Exception):
+                    raise
+                # A harness that died mid-handshake surfaces here as HarnessGoneError; its exit says why.
+                raise RuntimeError(f"harness handshake failed: {error!r}; {process.describe_exit()}") from error
             if self.record.native_session_id != native_session_id:
                 self.record.native_session_id = native_session_id
                 self.store.write(self.session_id, self.record)
@@ -217,7 +229,7 @@ class Session:
         if operation == "submit_input":
             text = command.submit_input.text
             if not text:
-                await self._fail(command_id, "submit_input.text is required")
+                await self._fail(command_id, "submit_input.text is required", sources=[])
                 return
             await self.journal.dispatch_planned(command_id)
             self._dispatched_commands.add(command_id)
@@ -226,15 +238,15 @@ class Session:
                 await self.adapter.submit(command_id, text)
             except (HarnessGoneError, RuntimeError) as error:
                 self._dispatched_commands.discard(command_id)
-                await self._fail(command_id, str(error))
+                await self._fail(command_id, str(error), sources=[])
             return
         if operation == "change_model":
             model = command.change_model.model
             if not model:
-                await self._fail(command_id, "change_model.model is required")
+                await self._fail(command_id, "change_model.model is required", sources=[])
                 return
             if model == self.record.model:
-                await self._noop(command_id, "the requested model is already active")
+                await self._noop(command_id, "the requested model is already active", sources=[])
                 return
             await self.journal.dispatch_planned(command_id)
             self._dispatched_commands.add(command_id)
@@ -242,15 +254,15 @@ class Session:
                 await self.adapter.change_model(command_id, model)
             except (HarnessGoneError, RuntimeError) as error:
                 self._dispatched_commands.discard(command_id)
-                await self._fail(command_id, str(error))
+                await self._fail(command_id, str(error), sources=[])
             return
         if operation == "interrupt_turn":
             target = command.interrupt_turn.turn_id
             if not target:
-                await self._fail(command_id, "interrupt_turn.turn_id is required")
+                await self._fail(command_id, "interrupt_turn.turn_id is required", sources=[])
                 return
             if target != self.active_turn_id:
-                await self._noop(command_id, f"turn {target!r} is no longer active")
+                await self._noop(command_id, f"turn {target!r} is no longer active", sources=[])
                 return
             await self.journal.dispatch_planned(command_id, native_correlation={"turn_id": target})
             self._dispatched_commands.add(command_id)
@@ -260,7 +272,7 @@ class Session:
             except (HarnessGoneError, RuntimeError) as error:
                 self._interrupt_commands.pop(target, None)
                 self._dispatched_commands.discard(command_id)
-                await self._fail(command_id, str(error))
+                await self._fail(command_id, str(error), sources=[])
             return
         if operation == "stop_runner_session":
             await self.journal.dispatch_planned(command_id)
@@ -268,17 +280,17 @@ class Session:
             self._stop_command_id = command_id
             await self._shutdown()
             return
-        await self._fail(command_id, f"unrecognized command operation {operation!r}")
+        await self._fail(command_id, f"unrecognized command operation {operation!r}", sources=[])
 
-    async def _fail(self, command_id: str, reason: str) -> None:
+    async def _fail(self, command_id: str, reason: str, *, sources: Sequence[int]) -> None:
         observation = event_pb2.CommandFailed(command_id=command_id, reason=reason)
-        await self.emit(observation, sources=[], terminal_command_ids=[command_id])
+        await self.emit(observation, sources=sources, terminal_command_ids=[command_id])
 
-    async def _noop(self, command_id: str, reason: str) -> None:
+    async def _noop(self, command_id: str, reason: str, *, sources: Sequence[int]) -> None:
         observation = event_pb2.CommandNoop(command_id=command_id, reason=reason)
-        await self.emit(observation, sources=[], terminal_command_ids=[command_id])
+        await self.emit(observation, sources=sources, terminal_command_ids=[command_id])
 
-    async def model_changed(self, command_id: str, model: str, *, sources: Sequence[int] | None = None) -> None:
+    async def model_changed(self, command_id: str, model: str, *, sources: Sequence[int]) -> None:
         """Record a harness's causal model-selection effect, after it has really selected it."""
         stored = await self.journal.get(command_id)
         if stored is not None and stored.terminal_cursor is not None:
@@ -299,7 +311,7 @@ class Session:
         text: str,
         origin_command_ids: Sequence[str],
         turn_id: str,
-        sources: Sequence[int] | None = None,
+        sources: Sequence[int],
     ) -> None:
         """Record one confirmed harness message, preserving all application command origins."""
         observation = event_pb2.HarnessUserMessageConfirmed(
@@ -331,15 +343,22 @@ class Session:
         ):
             return
         await self.emit(event_pb2.DebugCheckpoint(name=name, command_id=command_id), sources=[])
+        await self._commit_batch()
         await asyncio.Event().wait()
 
-    async def turn_completed(self, turn_id: str, status: event_pb2.TurnStatus, error: str = "") -> None:
+    async def turn_completed(
+        self, turn_id: str, status: event_pb2.TurnStatus, error: str = "", *, sources: Sequence[int]
+    ) -> None:
         """Translate one native terminal turn result and release commands waiting on it."""
+        # The session lock's holder may be waiting for the journal, which the reader's batch holds.
+        await self._commit_batch()
         async with self._lock:
-            await self._record_turn_completed(turn_id, status, error)
+            await self._record_turn_completed(turn_id, status, error, sources=sources)
             await self._reconcile_commands()
 
-    async def _record_turn_completed(self, turn_id: str, status: event_pb2.TurnStatus, error: str = "") -> None:
+    async def _record_turn_completed(
+        self, turn_id: str, status: event_pb2.TurnStatus, error: str = "", *, sources: Sequence[int]
+    ) -> None:
         interrupt_command_id = self._interrupt_commands.pop(turn_id, "")
         observation = event_pb2.TurnCompleted(
             turn_id=turn_id,
@@ -349,13 +368,16 @@ class Session:
         )
         await self.emit(
             observation,
+            sources=sources,
             terminal_command_ids=[interrupt_command_id]
             if interrupt_command_id and status == event_pb2.TURN_STATUS_INTERRUPTED
             else [],
             native_correlation={"turn_id": turn_id},
         )
         if interrupt_command_id and status != event_pb2.TURN_STATUS_INTERRUPTED:
-            await self._noop(interrupt_command_id, "the turn completed before interruption took effect")
+            await self._noop(
+                interrupt_command_id, "the turn completed before interruption took effect", sources=sources
+            )
 
     async def shutdown(self) -> None:
         """Stop the harness; the session stays resumable. HarnessExited is in the log on return."""
@@ -365,7 +387,7 @@ class Session:
         async with self._shutdown_lock:
             if self.process is None or self.adapter is None or not self.running:
                 if self._stop_command_id:
-                    await self._noop(self._stop_command_id, "the harness is already stopped")
+                    await self._noop(self._stop_command_id, "the harness is already stopped", sources=[])
                     self._stop_command_id = ""
                 return
             self._stopping = True
@@ -393,42 +415,37 @@ class Session:
             raise HarnessGoneError("the harness is not running")
         line = frame.model_dump_json(by_alias=True)
         await self.emit(event_pb2.Native(direction=event_pb2.DIRECTION_TO_HARNESS, line=line), sources=[])
-        await self.process.write_line(line)
+        await self._commit_batch()
+        try:
+            await self.process.write_line(line)
+        except (BrokenPipeError, ConnectionResetError) as error:
+            # The harness died after the check above; the stdout reader reports its exit.
+            raise HarnessGoneError(f"the harness closed its stdin: {error!r}") from error
 
     async def request(self, frame: BaseModel, *, matches: FrameMatcher, timeout_s: float = 60) -> NativeReceipt:
-        """Write a frame and return the first later frame `matches` accepts."""
-        waiter: asyncio.Future[NativeReceipt] = asyncio.get_running_loop().create_future()
-        self._waiters.append((matches, waiter))
+        """Write a frame and return the first later frame `matches` accepts, once that is committed
+        together with the Events the adapter translated from it."""
+        request = _Request(matches, asyncio.get_running_loop().create_future())
+        self._waiters.append(request)
         try:
             await self.send(frame)
-            return await asyncio.wait_for(waiter, timeout=timeout_s)
+            return await asyncio.wait_for(request.reply, timeout=timeout_s)
         finally:
-            self._waiters = [entry for entry in self._waiters if entry[1] is not waiter]
+            self._waiters = [waiting for waiting in self._waiters if waiting is not request]
+            # When the send fails on a dead harness's pipe, nothing awaits the HarnessGoneError the
+            # stdout reader then sets; HarnessExited reports that exit either way.
+            if request.reply.done() and not request.reply.cancelled():
+                request.reply.exception()
 
     async def _read_stdout(self, process: HarnessProcess, adapter: HarnessAdapter) -> None:
         try:
-            async for line in process.lines():
-                entry = await self.emit(
-                    event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line=line), sources=[]
-                )
-                try:
-                    frame = json.loads(line)
-                except ValueError:
-                    logger.warning("session %s: non-JSON line on the harness stdout: %r", self.session_id, line[:200])
-                    continue
-                if not isinstance(frame, dict):
-                    logger.warning("session %s: non-object frame on the harness stdout", self.session_id)
-                    continue
-                self._resolve_waiters(frame, entry.origin.sequence)
-                token = self._translating.set(entry.origin.sequence)
-                try:
-                    await adapter.on_frame(frame, entry.origin.sequence)
-                except OSError:
-                    raise
-                except Exception:  # a frame the adapter cannot translate must not stop the reader
-                    logger.exception("session %s: frame %d not translated", self.session_id, entry.origin.sequence)
-                finally:
-                    self._translating.reset(token)
+            async for lines in process.line_batches():
+                # The lines one read delivered and the Events derived from them share a transaction,
+                # unless `_commit_batch` ends it early.
+                async with self.journal.batch():
+                    for line in lines:
+                        await self._receive(line, adapter)
+                self._deliver_replies()
         except OSError:
             await process.stop()
             raise
@@ -436,11 +453,44 @@ class Session:
             exit_code = await process.wait()
             await self._harness_ended(exit_code)
 
+    async def _receive(self, line: str, adapter: HarnessAdapter) -> None:
+        entry = await self.emit(event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line=line), sources=[])
+        try:
+            frame = json.loads(line)
+        except ValueError:
+            logger.warning("session %s: non-JSON line on the harness stdout: %r", self.session_id, line[:200])
+            return
+        if not isinstance(frame, dict):
+            logger.warning("session %s: non-object frame on the harness stdout", self.session_id)
+            return
+        try:
+            await adapter.on_frame(frame, entry.origin.sequence)
+        except OSError:
+            raise
+        except Exception:  # a frame the adapter cannot translate must not stop the reader
+            logger.exception("session %s: frame %d not translated", self.session_id, entry.origin.sequence)
+        # After translation, so a commit during it cannot hand over this reply before what it proves.
+        self._match_replies(frame, entry.origin.sequence)
+
+    async def _commit_batch(self) -> None:
+        """In the stdout reader, commit its batch so far and hand over the replies it holds: before a
+        native write, which must follow its record, and before waiting on anything a task blocked on
+        the journal may hold."""
+        if self.journal.batching():
+            await self.journal.commit_batch()
+            self._deliver_replies()
+
+    def _deliver_replies(self) -> None:
+        replies, self._replies = self._replies, []
+        for request, receipt in replies:
+            if not request.reply.done():
+                request.reply.set_result(receipt)
+
     async def _harness_ended(self, exit_code: int) -> None:
-        for _, waiter in self._waiters:
-            if not waiter.done():
-                waiter.set_exception(HarnessGoneError(f"the harness exited with {exit_code=}"))
-        self._waiters = []
+        for request in [*self._waiters, *(request for request, _ in self._replies)]:
+            if not request.reply.done():
+                request.reply.set_exception(HarnessGoneError(f"the harness exited with {exit_code=}"))
+        self._waiters, self._replies = [], []
         stop_command_id = self._stop_command_id if self._stopping else ""
         if stop_command_id:
             observation = event_pb2.HarnessExited(
@@ -457,12 +507,18 @@ class Session:
                 self.active_turn_id,
                 event_pb2.TURN_STATUS_PROCESS_LOST,
                 f"the harness exited with {exit_code=} during the turn",
+                sources=[],
             )
 
-    def _resolve_waiters(self, frame: Frame, sequence: int) -> None:
-        for matches, waiter in self._waiters:
-            if not waiter.done() and matches(frame):
-                waiter.set_result(NativeReceipt(frame, sequence))
+    def _match_replies(self, frame: Frame, sequence: int) -> None:
+        """Take the requests `frame` answers, so a later frame cannot, and hold their reply until it commits."""
+        waiting = []
+        for request in self._waiters:
+            if not request.reply.done() and request.matches(frame):
+                self._replies.append((request, NativeReceipt(frame, sequence)))
+            else:
+                waiting.append(request)
+        self._waiters = waiting
 
     async def _read_stderr(self, process: HarnessProcess) -> None:
         try:

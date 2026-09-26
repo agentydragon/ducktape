@@ -11,44 +11,40 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ServiceAccount, k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecAffinityTolerations,
-    ClusterSpecBootstrap,
     ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesEnsure,
     ClusterSpecManagedRolesPasswordSecret,
-    ClusterSpecMonitoring,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecStorage,
 )
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
+    ExternalSecretSpecTargetCreationPolicy,
+    ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
-    ExternalSecretSpecTargetTemplateMetadata,
 )
 
-from cluster.cdk8s import cilium
-from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
+from cluster.cdk8s import cilium, cnpg
+from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.plaid_mcp.app import NAMESPACE
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 
-OUTPUT_DIR = "cluster/k8s/agents/plaid-mcp/db"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/db"
 _CLUSTER = "plaid-mcp-db"
 _DATABASE = "plaidmcp"
 _READONLY_ROLE = "plaid_ro"
 _READONLY_SECRET = "plaid-mcp-db-readonly"
 _READONLY_GENERATOR = "plaid-mcp-db-readonly-generator"
+# The namespace holding a copy of the read-only credentials, for Haku's ad-hoc queries, and the
+# identity that copy is read with.
+_READONLY_CONSUMER = "haku-sandbox"
+_READONLY_READER = "plaid-mcp-db-readonly-reader"
 _PROVISIONER = "plaid-mcp-db-readonly-provisioner"
 _PROVISIONER_LABELS = {"app": _PROVISIONER}
 _SQL_CONFIG_MAP = "plaid-mcp-db-readonly-sql"
@@ -58,59 +54,36 @@ _ZONE = "hil-ovh"
 
 
 def _cluster(chart: Chart) -> None:
-    Cluster(
+    cnpg.cluster(
         chart,
         "cluster",
-        metadata=metadata(
-            _CLUSTER,
-            NAMESPACE,
-            annotations={
-                "description": (
-                    "CNPG Postgres mirror for Plaid link metadata, full-refresh sync state, and Plaid-shaped"
-                    " financial data."
+        name=_CLUSTER,
+        namespace=NAMESPACE,
+        annotations={
+            "description": (
+                "CNPG Postgres mirror for Plaid link metadata, full-refresh sync state, and Plaid-shaped"
+                " financial data."
+            )
+        },
+        node_selector={"topology.kubernetes.io/zone": _ZONE},
+        storage_class="local-path-ovh",
+        size="5Gi",
+        managed=ClusterSpecManaged(
+            roles=[
+                ClusterSpecManagedRoles(
+                    name=_READONLY_ROLE,
+                    ensure=ClusterSpecManagedRolesEnsure.PRESENT,
+                    login=True,
+                    password_secret=ClusterSpecManagedRolesPasswordSecret(name=_READONLY_SECRET),
+                    comment=(
+                        "Read-only SQL access for the Plaid Postgres MCP facade; ESO copies the secret into the"
+                        " haku-sandbox namespace."
+                    ),
                 )
-            },
+            ]
         ),
-        spec=ClusterSpec(
-            instances=2,
-            image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
-                )
-            ),
-            affinity=ClusterSpecAffinity(
-                node_selector={"topology.kubernetes.io/zone": _ZONE},
-                # This instance currently has a local PV on a control plane. Keep it
-                # restartable there until its replica migration, but prefer workers for any
-                # placement not constrained by that PV.
-                tolerations=[
-                    ClusterSpecAffinityTolerations(
-                        key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                    )
-                ],
-                topology_key="kubernetes.io/hostname",
-                node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
-            ),
-            storage=ClusterSpecStorage(storage_class="local-path-ovh", size="5Gi"),
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-            managed=ClusterSpecManaged(
-                roles=[
-                    ClusterSpecManagedRoles(
-                        name=_READONLY_ROLE,
-                        ensure=ClusterSpecManagedRolesEnsure.PRESENT,
-                        login=True,
-                        password_secret=ClusterSpecManagedRolesPasswordSecret(name=_READONLY_SECRET),
-                        comment=(
-                            "Read-only SQL access for the Plaid Postgres MCP facade; the secret is reflected to the"
-                            " augur and haku-sandbox namespaces."
-                        ),
-                    )
-                ]
-            ),
-            # CNPG auto-generates credentials in secret plaid-mcp-db-app.
-            bootstrap=ClusterSpecBootstrap(initdb=ClusterSpecBootstrapInitdb(database=_DATABASE, owner=_DATABASE)),
-        ),
+        # CNPG auto-generates credentials in secret plaid-mcp-db-app.
+        initdb=ClusterSpecBootstrapInitdb(database=_DATABASE, owner=_DATABASE),
     )
 
 
@@ -123,23 +96,14 @@ def _readonly_credentials(chart: Chart) -> None:
         metadata=metadata(_READONLY_GENERATOR, NAMESPACE),
         spec=PasswordSpec(length=40, digits=8, symbols=0, no_upper=False, allow_repeat=True),
     )
-    reflected_to = "augur,haku-sandbox"
-    add_external_secret(
+    ExternalSecret(
         chart,
         "readonly-external-secret",
         name=_READONLY_SECRET,
         namespace=NAMESPACE,
         refresh="8760h",
-        data_from=[password_generator(_READONLY_GENERATOR)],
+        data_from=[DataFrom.from_password_generator(_READONLY_GENERATOR)],
         template=ExternalSecretSpecTargetTemplate(
-            metadata=ExternalSecretSpecTargetTemplateMetadata(
-                annotations={
-                    "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                    "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": reflected_to,
-                    "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                    "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": reflected_to,
-                }
-            ),
             data={
                 "username": _READONLY_ROLE,
                 "password": "{{ .password }}",
@@ -147,8 +111,36 @@ def _readonly_credentials(chart: Chart) -> None:
                 "port": "5432",
                 "dbname": _DATABASE,
                 "DATABASE_URL": f"postgresql://{_READONLY_ROLE}:{{{{ .password }}}}@{_PRIMARY_HOST}:5432/{_DATABASE}",
-            },
+            }
         ),
+    )
+
+
+def _readonly_copy(chart: Chart) -> None:
+    """The consumer namespace's copy of the read-only credentials, read through a store that
+    reaches only that one Secret here. ESO polls the source, so a new password reaches the copy
+    within the refresh interval."""
+    reader = ServiceAccount(
+        chart, "consumer-reader", metadata=metadata(_READONLY_READER, _READONLY_CONSUMER), automount_token=False
+    )
+    store = single_secret_store(
+        chart,
+        f"{_READONLY_CONSUMER}-{_READONLY_SECRET}",
+        reader=reader,
+        source_namespace=NAMESPACE,
+        source_secret=_READONLY_SECRET,
+        consumer_namespace=_READONLY_CONSUMER,
+    )
+    ExternalSecret(
+        chart,
+        "consumer-copy",
+        name=_READONLY_SECRET,
+        namespace=_READONLY_CONSUMER,
+        refresh="10m",
+        store=SecretStoreRef.cluster(store),
+        data_from=[DataFrom.from_extract(_READONLY_SECRET)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
 
 
@@ -225,6 +217,7 @@ def _readonly_provisioner(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, _CLUSTER, disable_resource_name_hashes=True)
     _readonly_credentials(chart)
+    _readonly_copy(chart)
     _cluster(chart)
     _readonly_provisioner(chart)
     return chart

@@ -1,50 +1,15 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_test")
-
-exports_files(
-    [
-        "kustomization.yaml",
-        "litellm.k8s.yaml",
-    ],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-)
-
-py_test(
-    name = "test_litellm_config",
-    srcs = ["test_litellm_config.py"],
-    deps = [
-        "//cluster/cdk8s:model_rosters",
-        "//cluster/cdk8s/litellm:config",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_openclaw_models",
-    srcs = ["test_openclaw_models.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        "//cluster/cdk8s:haku_openclaw_spike_config",
-        "//cluster/cdk8s:model_rosters",
-        "//cluster/cdk8s:public_coder_agent_config",
-        "//cluster/cdk8s/litellm:config",
-        "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-# Cluster manifests for cluster/validation's flux-build test (the
-# //cluster/k8s:cluster_all_files glob stops at this package boundary).
+# Cluster manifests for cluster/validation's flux-build test and the generator's parity
+# test (the //cluster/k8s:cluster_all_files glob stops at this package boundary).
 filegroup(
     name = "manifests",
     srcs = glob(
         ["**"],
-        exclude = [
-            "BUILD.bazel",
-            "test_*.py",
-        ],
+        exclude = ["BUILD.bazel"],
     ),
-    visibility = ["//cluster/validation:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
 )

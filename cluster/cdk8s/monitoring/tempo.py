@@ -7,101 +7,37 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
-from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
-    S3Identity,
-    S3IdentitySpec,
-    S3IdentitySpecReclaimPolicy,
-    S3IdentitySpecSeaweedRef,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
+from cluster.cdk8s.seaweedfs import s3
 
 NAME = "tempo"
-OUTPUT_DIR = "cluster/k8s/monitoring/tempo"
+OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/tempo"
 _NAMESPACE = "monitoring"
-_SEAWEEDFS = "seaweedfs"
-_SEAWEED_GROUP = "seaweed.seaweedfs.com"
 _CREDENTIALS_SECRET = "tempo-seaweedfs-credentials"
 
 
 def _storage(chart: Chart) -> None:
-    Bucket(
+    bucket = s3.Bucket(
         chart,
         "bucket",
-        metadata=metadata(
-            NAME, _NAMESPACE, annotations={"description": "Tempo's tenant-local SeaweedFS trace bucket."}
-        ),
-        spec=BucketSpec(
-            name=NAME,
-            adopt_existing=True,
-            cluster_ref=BucketSpecClusterRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-            access=[
-                BucketSpecAccess(
-                    user=NAME,
-                    actions=[
-                        BucketSpecAccessActions.READ,
-                        BucketSpecAccessActions.WRITE,
-                        BucketSpecAccessActions.LIST,
-                        BucketSpecAccessActions.TAGGING,
-                    ],
-                )
-            ],
-        ),
+        name=NAME,
+        namespace=_NAMESPACE,
+        adopt_existing=True,
+        description="Tempo's tenant-local SeaweedFS trace bucket.",
     )
-    S3Credentials(
-        chart,
-        "credentials",
-        metadata=metadata(NAME, _NAMESPACE, annotations={"description": "Tempo's tenant-local SeaweedFS credentials."}),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            identity_ref=S3CredentialsSpecIdentityRef(name=NAME),
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_CREDENTIALS_SECRET, access_key_field="AWS_ACCESS_KEY_ID", secret_key_field="AWS_SECRET_ACCESS_KEY"
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
-    )
-    # Permit only Tempo's tenant-local Bucket and S3Credentials to reference the
-    # SeaweedFS cluster in its namespace.
-    ResourceReferenceGrant(
-        chart,
-        "seaweed-grant",
-        metadata=metadata(NAME, _SEAWEEDFS),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="Bucket", namespace=_NAMESPACE),
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="S3Credentials", namespace=_NAMESPACE),
-            ],
-            to=[ResourceReferenceGrantSpecTo(group=_SEAWEED_GROUP, kind="Seaweed", name=_SEAWEEDFS)],
-        ),
+    identity = s3.Identity(chart, "identity", name=NAME)
+    bucket.grant_read_write(identity)
+    identity.credentials(
+        namespace=_NAMESPACE,
+        secret=_CREDENTIALS_SECRET,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
+        description="Tempo's tenant-local SeaweedFS credentials.",
     )
     # Retain the previous credential Secret during the staged handoff. The old
     # S3Credentials resource is retired separately; revoking its retained key and
@@ -113,14 +49,6 @@ def _storage(chart: Chart) -> None:
             name="tempo-s3-credentials", namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"}
         ),
         type="Opaque",
-    )
-    S3Identity(
-        chart,
-        "identity",
-        metadata=metadata(NAME, _SEAWEEDFS),
-        spec=S3IdentitySpec(
-            seaweed_ref=S3IdentitySpecSeaweedRef(name=_SEAWEEDFS), reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN
-        ),
     )
 
 

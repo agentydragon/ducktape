@@ -28,11 +28,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import namespace
 
 NAME = "seaweedfs-monitoring"
-OUTPUT_DIR = "cluster/k8s/seaweedfs/monitoring"
+OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs/monitoring"
 
 
 def chart(app: App) -> Chart:

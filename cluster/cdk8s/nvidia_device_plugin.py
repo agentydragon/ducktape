@@ -12,11 +12,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "nvidia-device-plugin"
 NAMESPACE = "nvidia-device-plugin"
-OUTPUT_DIR = "cluster/k8s/nvidia-device-plugin"
+OUTPUT_DIR = f"{GENERATED_ROOT}/nvidia-device-plugin"
 
 
 def chart(app: App) -> Chart:

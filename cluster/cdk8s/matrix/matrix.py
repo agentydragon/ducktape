@@ -13,18 +13,7 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecBootstrap,
-    ClusterSpecBootstrapInitdb,
-    ClusterSpecMonitoring,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecStorage,
-)
+from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -49,7 +38,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
+from cluster.cdk8s import cnpg
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -60,9 +49,10 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
-OUTPUT_DIR = "cluster/k8s/matrix"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/matrix"
 NAMESPACE = "matrix"
 SYNAPSE = "matrix-synapse"
 _NAME = "matrix"
@@ -118,35 +108,21 @@ def _namespace(scope: Construct) -> None:
 
 
 def _database(scope: Construct) -> None:
-    Cluster(
+    cnpg.cluster(
         scope,
         "database",
-        metadata=metadata(_DB_NAME, NAMESPACE),
-        spec=ClusterSpec(
-            # OVH-HA profile (docs/cnpg_conventions.md R2/R3), replacing the Proxmox-single
-            # shape this had before the namespace was parked: Synapse's media store is on
-            # SeaweedFS now, whose CSI node plugin only runs on the OVH nodes, so the app
-            # moved there and R5 requires the database to follow it.
-            instances=2,
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
-                )
-            ),
-            affinity=ClusterSpecAffinity(
-                node_selector={"topology.kubernetes.io/zone": _ZONE},
-                topology_key="kubernetes.io/hostname",
-                node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
-            ),
-            storage=ClusterSpecStorage(storage_class="local-path-ovh", size="10Gi"),
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-            # CNPG auto-generates credentials in secret matrix-db-app
-            bootstrap=ClusterSpecBootstrap(
-                initdb=ClusterSpecBootstrapInitdb(
-                    database="synapse", owner="synapse", locale_c_type="C", locale_collate="C"
-                )
-            ),
-        ),
+        name=_DB_NAME,
+        namespace=NAMESPACE,
+        image_name=None,
+        # OVH-HA profile (docs/cnpg_conventions.md R2/R3), replacing the Proxmox-single
+        # shape this had before the namespace was parked: Synapse's media store is on
+        # SeaweedFS now, whose CSI node plugin only runs on the OVH nodes, so the app
+        # moved there and R5 requires the database to follow it.
+        node_selector={"topology.kubernetes.io/zone": _ZONE},
+        storage_class="local-path-ovh",
+        size="10Gi",
+        # CNPG auto-generates credentials in secret matrix-db-app
+        initdb=ClusterSpecBootstrapInitdb(database="synapse", owner="synapse", locale_c_type="C", locale_collate="C"),
     )
 
 

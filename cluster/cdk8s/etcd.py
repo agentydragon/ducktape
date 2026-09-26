@@ -25,14 +25,14 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.scripts import nebula_mesh
 from cluster.scripts.nebula_mesh import Mesh
 
 NAMESPACE = "monitoring"
-OUTPUT_DIR = "cluster/k8s/monitoring/etcd"
+OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/etcd"
 _NAME = "talos-etcd-metrics"
 _LABELS = {"app.kubernetes.io/name": _NAME, "app.kubernetes.io/part-of": NAMESPACE}
 _PORT_NAME = "metrics"
@@ -113,7 +113,7 @@ def etcd_monitoring(
     add_fleet_rules(chart)
     app.synth()
 
-    kustomization = flux_kustomization(
+    return flux_kustomization(
         flux_chart,
         name,
         artifact,
@@ -121,7 +121,3 @@ def etcd_monitoring(
         # the ServiceMonitor CRD
         depends_on=[flux_kustomization_depends_on(monitoring_crds)],
     )
-    write_yaml(
-        out_dir / "kustomization.yaml", kustomize_kustomization(namespace=NAMESPACE, resources=[f"{name}.k8s.yaml"])
-    )
-    return kustomization

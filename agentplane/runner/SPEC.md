@@ -33,7 +33,8 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 - `Open` with an unknown id creates the session from `spec`; with a known id it attaches, and a
   supplied `spec` must equal the stored one. Open with a spec starts the harness when it is not running,
   resuming the native conversation when the session has one, and creates `spec.cwd`, which must
-  be absolute, when it does not exist yet.
+  be absolute, when it does not exist yet. A harness that does not survive its launch and
+  handshake ends the stream with an error naming its exit status and the end of its stderr.
 - `Open` without a spec observes an existing session without starting its harness. A stopped
   session replays its log and ends the stream; resuming requires an explicit spec.
 - `spec.instructions` are the session's standing instructions: what the session is for, and the
@@ -48,8 +49,8 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 ## Attachments
 
 - One `Attach` stream is one attachment. The first client message is `Open`; the first server
-  message is `Attached`, carrying the spec, the harness state, the active turn id, and
-  `last_cursor`, the log position at attach time.
+  message is `Attached`, carrying the spec, the harness state, `last_cursor`, the log position at
+  attach time, and the active turn id as of that position.
 - The runner then replays every `EventEntry` with a cursor greater than `Open.follow.after_cursor`,
   in order, and continues with live entries. A client that passes the last cursor it processed sees
   neither a gap nor a duplicate; a cursor beyond `last_cursor` ends the stream with an error.

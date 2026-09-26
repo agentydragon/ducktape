@@ -10,11 +10,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecPostBuild,
-    KustomizationSpecPostBuildSubstituteFrom,
-    KustomizationSpecPostBuildSubstituteFromKind,
-)
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
@@ -24,14 +19,20 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import (
+    CERT_MANAGER_ISSUER_SUBSTITUTION,
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "cert-manager"
 NAMESPACE = "cert-manager"
-OUTPUT_DIR = "cluster/k8s/cert-manager/app"
+OUTPUT_DIR = f"{GENERATED_ROOT}/cert-manager/app"
 _CONTROL_PLANE_TOLERATION = {
     "key": "node-role.kubernetes.io/control-plane",
     "effect": "NoSchedule",
@@ -161,13 +162,7 @@ def cert_manager(
         NAME,
         artifact,
         timeout="5m",
-        post_build=KustomizationSpecPostBuild(
-            substitute_from=[
-                KustomizationSpecPostBuildSubstituteFrom(
-                    kind=KustomizationSpecPostBuildSubstituteFromKind.CONFIG_MAP, name="cert-manager-issuer-config"
-                )
-            ]
-        ),
+        post_build=CERT_MANAGER_ISSUER_SUBSTITUTION,
         depends_on=flux_kustomization_depends_on_many(
             cert_manager_issuer_config,
             # Produces the namespace-local ConfigMap that postBuild reads.

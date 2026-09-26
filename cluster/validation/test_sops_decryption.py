@@ -38,14 +38,13 @@ def _plain_secret() -> dict:
 def _cluster(tmp_path: Path, secret_doc: dict, spec: FluxKustomizationSpec) -> ParsedCluster:
     """Build a ParsedCluster whose single flux kustomization renders `secret_doc`.
 
-    `spec.local_dir(k8s_dir)` must resolve to the build result's kustomization dir:
-    path `./cluster/k8s/synthetic` strips the `cluster/k8s/` prefix → `<k8s_dir>/synthetic`,
-    so the build result lives at `<tmp_path>/synthetic/kustomization.yaml`."""
+    `spec.local_dir(tmp_path)` must resolve to the build result's kustomization dir, so the
+    build result lives at `<tmp_path>/cluster/k8s/synthetic/kustomization.yaml`."""
     return ParsedCluster(
         flux_kustomizations={_NAME: spec},
         build_results=[
             KustomizeBuildResult(
-                kustomization_path=tmp_path / "synthetic" / "kustomization.yaml",
+                kustomization_path=tmp_path / "cluster/k8s/synthetic/kustomization.yaml",
                 resources=parse_k8s_resources([secret_doc]),
             )
         ],

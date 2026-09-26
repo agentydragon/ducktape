@@ -34,10 +34,10 @@ from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, create_app
 from agentplane.app.database import connect
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
@@ -298,8 +298,8 @@ async def async_main(settings: Settings) -> None:
             resync_seconds=settings.resync_seconds,
         )
         engine = connect(settings.database_url)
-        thread_updates = ThreadUpdates(engine.url)
-        await thread_updates.start()
+        database_updates = DatabaseUpdates(engine.url)
+        await database_updates.start()
         store = ThreadStore(engine)
         event_logs = EventLogStore(engine)
         content = ContentStore(engine)
@@ -310,7 +310,7 @@ async def async_main(settings: Settings) -> None:
             event_logs=event_logs,
             content=content,
             ingester=ingester,
-            thread_changes=thread_updates.changes,
+            thread_changes=database_updates.changes[Channel.THREADS],
         )
 
         operator_actions = (
@@ -331,7 +331,16 @@ async def async_main(settings: Settings) -> None:
             oidc,
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
             operator_actions=operator_actions,
-            electric=(ElectricProxy(electric_http, content) if settings.electric_url is not None else None),
+            electric=(
+                ElectricProxy(
+                    electric_http,
+                    content,
+                    event_logs=event_logs,
+                    thread_changes=database_updates.changes[Channel.THREADS],
+                )
+                if settings.electric_url is not None
+                else None
+            ),
             presets=PresetCatalog(
                 sandboxes=settings.sandbox_presets,
                 threads=settings.thread_presets,
@@ -343,7 +352,7 @@ async def async_main(settings: Settings) -> None:
             ),
             event_logs=event_logs,
             content=content,
-            thread_updates=thread_updates,
+            database_updates=database_updates,
             operator_sessions=OperatorSessionStore(engine),
         )
         worker = await asyncio.to_thread(Path(get_required_path(SERVICE_WORKER)).read_bytes)
@@ -369,7 +378,7 @@ async def async_main(settings: Settings) -> None:
                 ),
                 ingester=ingester,
                 runners=runners,
-                thread_updates=thread_updates,
+                database_updates=database_updates,
                 engine=engine,
             )
         finally:
@@ -378,7 +387,12 @@ async def async_main(settings: Settings) -> None:
 
 
 async def serve_then_close(
-    server: uvicorn.Server, *, ingester: Ingester, runners: Runners, thread_updates: ThreadUpdates, engine: AsyncEngine
+    server: uvicorn.Server,
+    *,
+    ingester: Ingester,
+    runners: Runners,
+    database_updates: DatabaseUpdates,
+    engine: AsyncEngine,
 ) -> None:
     """Serve until told to exit, then let go in the order the budgets assume: Uvicorn's graceful-shutdown
     timeout bounds the requests and streams still open, and the ingester's lease release and closing the
@@ -389,7 +403,7 @@ async def serve_then_close(
     finally:
         await ingester.close()
         await runners.close()
-        await thread_updates.close()
+        await database_updates.close()
         await engine.dispose()
 
 

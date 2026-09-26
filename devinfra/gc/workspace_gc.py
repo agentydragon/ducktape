@@ -25,6 +25,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Annotated, Any
@@ -41,6 +42,7 @@ from devinfra.gc.branch_gc import BranchClassification, FailedBranch, PrunableBr
 from devinfra.gc.git_repo import GitError
 from devinfra.gc.output_base_gc import DeletedBase, FailedBase, PrunableBase, SkippedBase, default_output_user_root
 from devinfra.gc.pull_request import PrInfo, PrState
+from devinfra.gc.scan_progress import ProgressCategory, ProgressSink
 from devinfra.gc.workspace_scan import WorkspaceScan
 from devinfra.gc.worktree_gc import (
     Classification,
@@ -262,24 +264,45 @@ class _ProgressReporter:
             transient=True,
         )
         self._tasks: dict[str, TaskID] = {}
+        self._counts: dict[str, dict[ProgressCategory, int]] = {}
+        self._totals: dict[str, int] = {}
+        self._done: dict[str, int] = {}
+        self._lock = threading.Lock()
 
     def __enter__(self) -> _ProgressReporter:
+        for task in self._tasks.values():
+            self._progress.update(task, visible=False)
         self._progress.start()
         return self
 
     def __exit__(self, *exc_info: object) -> None:
         self._progress.stop()
 
-    def __call__(self, phase: str, done: int, total: int) -> None:
-        task = self._tasks.get(phase)
-        if task is None:
-            task = self._progress.add_task(phase, total=total)
-            self._tasks[phase] = task
-        self._progress.update(task, completed=done)
+    def start_phase(self, phase: str, total: int) -> None:
+        with self._lock:
+            self._counts[phase] = {"PRUNE": 0, "KEEP": 0, "REVIEW": 0}
+            self._totals[phase] = total
+            self._done[phase] = 0
+            description = f"{phase} PRUNE 0 KEEP 0 REVIEW 0"
+            task = self._tasks.get(phase)
+            if task is None:
+                task = self._progress.add_task(description, total=total)
+                self._tasks[phase] = task
+            self._progress.update(task, total=total, completed=0, description=description, visible=True)
+
+    def record(self, phase: str, category: ProgressCategory) -> None:
+        with self._lock:
+            counts = self._counts[phase]
+            counts[category] += 1
+            self._done[phase] += 1
+            description = f"{phase} PRUNE {counts['PRUNE']} KEEP {counts['KEEP']} REVIEW {counts['REVIEW']}"
+            self._progress.update(
+                self._tasks[phase], total=self._totals[phase], completed=self._done[phase], description=description
+            )
 
 
 def _scan(
-    repo: Path, *, prs: dict[str, PrInfo], output_user_root: Path | None, progress: workspace_scan.ProgressFn
+    repo: Path, *, prs: dict[str, PrInfo], output_user_root: Path | None, progress: ProgressSink
 ) -> WorkspaceScan:
     return workspace_scan.scan_workspace(
         repo,
@@ -383,7 +406,8 @@ def run_bases(repo: Path, *, output_user_root: Path, show_all: bool, no_prs: boo
     # worktrees that are actually a base's workspace — so the PR query is scoped to their
     # branches instead of all of them, and no branch is ever classified.
     try:
-        bases = list(output_base_gc.scan_output_user_root(output_user_root))
+        with _ProgressReporter() as progress:
+            bases = list(output_base_gc.scan_output_user_root(output_user_root, progress=progress))
         prs = {} if no_prs else pr_states(repo, workspace_scan.base_workspace_branches(repo, bases))
         with _ProgressReporter() as progress:
             bases = workspace_scan.annotate_bases(

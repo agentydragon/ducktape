@@ -69,7 +69,6 @@ from cluster.cdk8s.haku import console_config, database
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME
 from haku.console.config import CONFIG_FILE_ENV
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.settings import Settings
@@ -217,7 +216,7 @@ class Console(Construct):
             Group.from_name(self, "group-haku", "oidc-ksbx-groups:haku"),
             Group.from_name(self, "group-profile-haku", "haku:access-profile:haku"),
             ServiceAccount.from_service_account_name(self, "sa-haku", "haku", namespace_name="haku-sandbox"),
-            Group.from_name(self, "group-profile-public-coder", "haku:access-profile:public-coder"),
+            Group.from_name(self, "group-profile-public-coder", console_config.PUBLIC_CODER_GROUP),
         )
         # Consumer-owned referent identity for source-approved external credentials.
         ServiceAccount(
@@ -275,16 +274,6 @@ class Console(Construct):
                     env_name(Settings, "max_wait_for_result_ms"),
                     EnvValue.from_value(str(checked_value(Settings, "max_wait_for_result_ms", 60_000))),
                 ),
-                (
-                    env_name(Settings, "mcp_operator_oauth_token_timeout_seconds"),
-                    EnvValue.from_value(str(checked_value(Settings, "mcp_operator_oauth_token_timeout_seconds", 30))),
-                ),
-                # The static bearer for the cluster-internal ssh-mcp backend, delivered into this
-                # namespace by ssh-mcp. Resolved only while the console calls the backend; never
-                # mounted into the inner workload.
-                self._from_secret(
-                    BEARER_SECRET_NAME, BEARER_SECRET_KEY, "mcp", "servers", "ssh", "backend", "auth", "token"
-                ),
                 *database_env(self).items(),
                 # The static Agents' bearers; the durable Agent UUIDs and display names are in
                 # the config file.
@@ -292,36 +281,9 @@ class Console(Construct):
                 # public-coder-agent's bearer reaches only its iron-proxy; the OpenClaw
                 # container sees a non-secret placeholder.
                 self._from_secret("haku-console-public-coder-agent", "token", "static_agents", "public_coder", "token"),
-                # GitHub's hosted MCP has no Dynamic Client Registration; its organization-owned
-                # GitHub App is this pre-registered confidential client. Optional so the console
-                # deploys while the App is being registered.
-                self._from_secret(
-                    "haku-console-github-mcp-client-credentials",
-                    "client_id",
-                    "mcp",
-                    "servers",
-                    "github",
-                    "backend",
-                    "auth",
-                    "client_registration",
-                    "client_id",
-                    optional=True,
-                ),
-                self._from_secret(
-                    "haku-console-github-mcp-client-credentials",
-                    "client_secret",
-                    "mcp",
-                    "servers",
-                    "github",
-                    "backend",
-                    "auth",
-                    "client_registration",
-                    "client_secret",
-                    optional=True,
-                ),
-                # The Operator each static Agent acts as when it reaches an operator_oauth
-                # server: the controller-fed Authentik user id, resolved through the identity
-                # trust domain to a canonical Operator UUID and never live request authority.
+                # The Operator each static Agent acts as: the controller-fed Authentik user id,
+                # resolved through the identity trust domain to a canonical Operator UUID and never
+                # live request authority.
                 self._from_secret(oidc, "operator_subject", "static_agents", "haku", "operator_subject"),
                 self._from_secret(oidc, "operator_subject", "static_agents", "public_coder", "operator_subject"),
                 # Agent-facing MCP OAuth: an Authentik-backed OIDCProxy (DCR + PKCE) on /mcp,

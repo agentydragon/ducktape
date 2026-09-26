@@ -16,7 +16,7 @@ The mesh host roster is a single JSON file at the repo root,
 - `cluster/terraform/main/persistent-auth.tf` — reads persisted per-host Nebula
   certificate material for every tofu-managed entry
 - `cluster/cdk8s/generate_manifests.py` — renders the etcd metrics scrape
-  targets (`cluster/k8s/monitoring/etcd`, every control plane's Nebula IP) and
+  targets (`cluster/generated/monitoring/etcd`, every control plane's Nebula IP) and
   the dns-records Terraform CR's `public_nodes` var (every public k8s node, for
   the Route 53 records); regenerate after any roster edit, CI fails on drift
 - `ansible/roles/nebula` — renders Atlas's config and peer MTU routes
@@ -31,7 +31,7 @@ A `role: "laptop"` entry is also a roaming Kubernetes node, and its count sets
 the floor for `maxUnavailable` on every DaemonSet that schedules there — an
 offline node's pod holds the unavailable budget forever, deadlocking the rollout
 while Helm and Flux report success.
-`//cluster/validation:test_roaming_daemonset_capacity` derives the count from
+`//cluster/cdk8s/monitoring:test_roaming_daemonset_capacity` derives the count from
 this roster and fails with the files to fix; the incident is in
 <lessons_learned/2026_07_31_promtail_daemonset_roaming_deadlock.md>.
 

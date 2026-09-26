@@ -5,8 +5,6 @@ root whichever issuer is active.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_clusterissuer_crds.io.cert_manager import (
@@ -22,11 +20,8 @@ from cert_manager_clusterissuer_crds.io.cert_manager import (
     ClusterIssuerSpecAcmeSolversSelector,
 )
 
-from cluster.cdk8s.generation import write_charts
-
 NAME = "letsencrypt-root-cas"
 ISSUERS_NAME = "letsencrypt-issuers"
-OUTPUT_DIR = "cluster/k8s/cert-manager/config/base"
 
 # Let's Encrypt Production Root CA (ISRG Root X1). Redundant with system trust stores but
 # included for symmetry with staging.
@@ -153,7 +148,3 @@ def issuers_chart(app: App) -> Chart:
             ),
         )
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart, issuers_chart)

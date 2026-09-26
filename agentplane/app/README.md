@@ -49,8 +49,7 @@ bbr test //agentplane/app/...
   sessions into the event log: the `Ingester` holds one lease per sandbox across replicas and runs a
   `Feed` per session, which batches the runner's events for `Ingestion` to record, the event log's
   and the fold's writes in one transaction under the lease; each transaction folds only the batch
-  and its touched entities, then commits all projection writes and checkpoint. `updates.py` turns
-  committed PostgreSQL notifications into replica-local wakeups.
+  and its touched entities, then commits all projection writes and checkpoint.
 - `agent_runtime/runner/`: `bridge.py` (runner-first sessions and commands) and `runners.py` (the
   runner in each sandbox as the cluster index shows it: which sandboxes run one, and a client to
   reach each).
@@ -68,6 +67,9 @@ bbr test //agentplane/app/...
   Service, and the SSE streams that push a snapshot of it to every open tab.
 - `changes.py`: the payload-free wake-up a reader of the cluster index or the thread store waits
   on; a burst of changes coalesces into one re-read.
+- `database_updates.py`: the replica's one PostgreSQL `LISTEN` connection, turning each channel's
+  committed notifications (thread writes, deleted operator sessions) into that channel's
+  `changes.py` wake-up, and waking every channel after a reconnect.
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
 - `agent_runtime/view/`: the conversation view projected from a thread's events. `fold.py` (the
@@ -77,12 +79,12 @@ bbr test //agentplane/app/...
   assembled).
 - `electric.py`: authenticated, scope-checked metadata, selected-command, and payload shape proxy.
   The private Electric service reads PostgreSQL logical replication; app replicas do not retain
-  per-listener thread copies.
+  per-listener thread copies. The scope read is a long poll held until the thread's first fold.
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
 - `consent.py`: browser-session-bound enrollment BFF; the Action Service owns consent and grants.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
 - `database.py`: the declarative `Base` every table maps onto, and the app's one connection pool;
-  `main.py` builds the pool and hands it to each store and to the thread update listener.
+  `main.py` builds the pool and hands it to each store and to the database update listener.
 - `database_migrate.py` and `migrations/`: the Alembic history covering the tables of
   `operator_sessions.py` and `agent_runtime/models.py`. Migrations run separately through
   `:migrate`; the server itself never creates or checks tables at startup.
@@ -131,14 +133,15 @@ are hints and the database cursor remains authoritative.
 `/#/threads/{id}` loads metadata and the thread's tail independently of runner discovery. The
 browser follows one Electric shape over the thread's rows and one per payload field it shows, each
 pinned by `/threads/{id}/sync/*` to the thread and its projection epoch, and loads its window as
-subset snapshots of them: the latest 30 positions, the page before the oldest row it holds each
-time the reader scrolls up, the view state, pending commands, and the commands this browser sent,
+subset snapshots of them: the latest 30 positions, the page before the oldest row it holds whenever
+the top of what it holds is in view, the view state, pending commands, and the commands this browser sent,
 by ID, so an outcome stays visible however far the thread has moved on. Every later change to a
-held row arrives on the shape's live log. Text and tool arguments render as far as their
-references' chunk counts, while reasoning, tool output and associated debug frames are read on
-demand. Local authored intent, unsent drafts and viewport/disclosure state remain separate from
-the synchronized rows. See [the sync design](../docs/thread_view_sync.md) for query, revision and
-memory contracts and the remaining acceptance gates.
+held row arrives on the shape's live log, which the browser follows over SSE. Text and tool
+arguments render as far as their references' chunk counts, while reasoning, tool output and
+associated debug frames are read on demand. Local authored intent, unsent drafts and
+viewport/disclosure state remain separate from the synchronized rows. See
+[the sync design](../docs/thread_view_sync.md) for query, revision and memory contracts and the
+remaining acceptance gates.
 
 Sidebar entries remain navigable after Sandbox deletion. Availability comes from the separate
 live inventory snapshot; suspended/deleted Sandboxes disable runner controls. Unfinished
@@ -290,6 +293,8 @@ with the existing exact-Origin check and per-request federation. The BFF stores 
 browser binding, CSRF token, original version, and decision retry key in the persistent
 operator session. The binding never leaves the server-side app/Actions channel. Distinct
 interactions have distinct bindings; replicas share them, while logout/re-login does not.
+Each step changes the stored interactions under the session row's lock, never held across an
+Actions call, so concurrent previews lose none and two of one handle share its binding.
 At most 32 unexpired interactions are retained per session. The Actions authority binds
 the first preview to that browser and authenticated operator, owns expiry, and consumes
 one decision. The BFF preserves the exact attempted decision for retry after a lost
@@ -429,8 +434,8 @@ one. Which lists the service enforces is its contract
 - **Connection direction:** the app dials the runner Pod's address directly, re-resolving on
   reconnect; Pod replacement changes the address and the session log makes the cursor valid across
   it. A Service per sandbox is not needed until something outside the cluster must reach a runner.
-- **Model credentials:** staging uses a dedicated OpenAI/Claude subscription key; testing uses
-  the `cheap-experiments` LiteLLM key. The Pod holds no
+- **Model credentials:** staging uses a dedicated key for OpenAI/Claude subscription and local
+  Ollama chat routes; testing uses the `cheap-experiments` LiteLLM key. The Pod holds no
   key or workload token: a harness sends the inert placeholder the `agentplane-workload`
   EgressCredential derives from its name, central substitutes the sidecar-only Pod-bound token,
   and the authenticated LLM ingress replaces it with its one server-held key after resolving the
@@ -464,9 +469,15 @@ one. Which lists the service enforces is its contract
 
 `/#/actions` follows the Action Service's operator SSE stream through `/actions/stream`, replacing
 its old two-second timer poll. Streams provide fresh snapshots after reconnect, and an unavailable
-stream is shown as disconnected rather than silently presenting stale state as live. The BFF
-bounds stream lifetime to 30 seconds so each reconnect checks current browser-session state,
-including logout in another replica. These reconnects are authentication checks, not state polling.
+stream is shown as disconnected rather than silently presenting stale state as live. The BFF keeps
+the stream open for as long as its browser session. Deleting a session row (logout, a login's
+rotation, expiry cleanup) sends a transactional `NOTIFY` every replica hears; the stream then
+re-reads its own row, as it also does after a listener reconnect and at the row's `expires_at`, and
+ends once the row is gone or expired. The Action Service ends its side when the one-minute token it
+was opened with expires; the BFF exchanges a fresh one and reopens the upstream behind the same
+browser response. That response forwards whole SSE frames and drops a `snapshot` identical to the
+last one it forwarded, so the snapshot each new upstream opens with reaches the tab only if the
+list changed. An upstream that ends before its first frame ends the browser stream instead.
 
 The Settings modal's Notifications tab (`/#/notifications`, see [Settings](#settings)) registers the
 current browser, lists registered browsers, identifies this one, and forgets registrations. Forgetting the current browser also unsubscribes locally. The stable

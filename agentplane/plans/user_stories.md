@@ -185,7 +185,7 @@ Standing under it:
   `<agentplane-event>` in a user-message envelope, batched with whatever else arrived.
 - Haku already owns a deployed UI: it authors the `haku/ui` repository on Forgejo, the image is
   published from it, and Flux applies the workload under the constrained `haku-state` reconciler
-  ([`cluster/k8s/haku/ui-image-webhook`](../../cluster/k8s/haku/ui-image-webhook/README.md)).
+  ([`cluster/generated/haku/ui-image-webhook`](../../cluster/cdk8s/haku/ui_image_webhook.md)).
   The page Haku writes is a solved problem; the pipe from the page back to Haku is not.
 - Haku-authored workloads keep running under Haku's Kubernetes identity, deployed by Flux from
   `haku-state`, and Haku the agent manipulates them by committing; Agentplane hosts none of it

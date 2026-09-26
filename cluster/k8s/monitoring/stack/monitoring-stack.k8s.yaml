@@ -166,7 +166,7 @@ spec:
         KubeletInstanceUnreachable: true
         TargetDown: true
       node:
-        fsSelector: fstype!="",mountpoint!="/var/lib/colibri"
+        fsSelector: fstype!="",mountpoint!="/var/lib/llm-models-ssd"
       rules:
         alertmanager: true
         configReloaders: true

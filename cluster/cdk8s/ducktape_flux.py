@@ -16,9 +16,13 @@ from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitR
 
 from cluster.cdk8s.flux import NAMESPACE
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.haku import console_config
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
-OUTPUT_DIR = "cluster/k8s/flux/ducktape-flux"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux/ducktape-flux"
+SOURCE_NAME = "ducktape"
+TF_GITOPS_ROOT = "tf/gitops"  # tofu-controller Terraform modules (terraform.py)
 _READER = "ducktape-flux-reader"
 
 
@@ -41,18 +45,19 @@ def chart(app: App) -> Chart:
     GitRepository(
         chart,
         "source",
-        metadata=metadata("ducktape", NAMESPACE),
+        metadata=metadata(SOURCE_NAME, NAMESPACE),
         spec=GitRepositorySpec(
             interval="1m",
             ref=GitRepositorySpecRef(branch="devel"),
             sparse_checkout=[
-                "cluster/k8s/",
+                f"{HAND_WRITTEN_ROOT}/",
+                f"{GENERATED_ROOT}/",
                 "cluster/charts/browsertrix/",
                 "haku/x/dispatch/deploy/",
                 "haku/runtime/managed_agent/self_hosted/deploy/",
                 "loom/wayback/deploy/",
                 "props/deploy/",
-                "tf/gitops/",
+                f"{TF_GITOPS_ROOT}/",
             ],
             url="https://github.com/agentydragon/ducktape.git",
         ),
@@ -81,7 +86,7 @@ def chart(app: App) -> Chart:
         "public-coder-agent-ducktape-flux-reader",
         description="Binds the public-coder access profile to public Ducktape Flux diagnostics.",
         subjects=[
-            k8s.Subject(kind="Group", name="haku:access-profile:public-coder", api_group="rbac.authorization.k8s.io")
+            k8s.Subject(kind="Group", name=console_config.PUBLIC_CODER_GROUP, api_group="rbac.authorization.k8s.io")
         ],
     )
     _reader_binding(

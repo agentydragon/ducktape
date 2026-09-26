@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import socket
 from collections.abc import AsyncIterator, Iterator
 from datetime import timedelta
@@ -17,11 +18,11 @@ from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.recording import THREAD_FOLD_EPOCH
 from agentplane.app.api import create_app, upstream_http_error
 from agentplane.app.conftest import AGENT_AUTH
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
@@ -44,6 +45,7 @@ from agentplane.app.testing.kubernetes import (
 )
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
+from agentplane.runner.testing.unanswering_runner import UnansweringRunner
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -104,12 +106,16 @@ TEST_PRESETS = PresetCatalog(
 
 
 @pytest.fixture
-async def electric(content: ContentStore) -> AsyncIterator[ElectricProxy]:
+async def electric(
+    content: ContentStore, event_logs: EventLogStore, database_updates: DatabaseUpdates
+) -> AsyncIterator[ElectricProxy]:
     async def unexpected(request: httpx.Request) -> httpx.Response:
         raise AssertionError(f"API contract tests must not dispatch Electric requests: {request.url}")
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(unexpected), base_url="http://electric") as client:
-        yield ElectricProxy(client, content)
+        yield ElectricProxy(
+            client, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]
+        )
 
 
 @pytest.fixture
@@ -117,7 +123,7 @@ def client(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: ThreadStore,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
@@ -168,7 +174,7 @@ def client(
         electric=electric,
         event_logs=event_logs,
         content=content,
-        thread_updates=thread_updates,
+        database_updates=database_updates,
         operator_sessions=operator_sessions,
     )
     with TestClient(app, headers=AGENT_AUTH) as test_client:
@@ -495,7 +501,7 @@ def test_shared_instructions_are_also_added_to_direct_session_launches(
 def test_a_runner_that_does_not_answer_is_a_503(
     inventory: SandboxInventory,
     store: ThreadStore,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
@@ -521,7 +527,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
                 event_logs=event_logs,
                 content=content,
                 ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion),
-                thread_changes=thread_updates.changes,
+                thread_changes=database_updates.changes[Channel.THREADS],
             ),
             store,
             TEST_MODELS,
@@ -532,13 +538,79 @@ def test_a_runner_that_does_not_answer_is_a_503(
             reviewer=reviewer,
             event_logs=event_logs,
             content=content,
-            thread_updates=thread_updates,
+            database_updates=database_updates,
             operator_sessions=operator_sessions,
         )
         with TestClient(app, headers=AGENT_AUTH) as client:
             response = client.get("/sandboxes/live/sessions")
     assert response.status_code == 503
     assert "not answering" in response.json()["detail"]
+
+
+async def test_a_runner_that_never_answers_open_is_a_504_naming_the_session(
+    monkeypatch: pytest.MonkeyPatch,
+    inventory: SandboxInventory,
+    store: ThreadStore,
+    database_updates: DatabaseUpdates,
+    operator_sessions: OperatorSessionStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    reviewer: TokenReviewer,
+    event_logs: EventLogStore,
+    content: ContentStore,
+    ingestion: Ingestion,
+) -> None:
+    """A runner that takes the command's Attach but never answers its Open, as a wedged one: the
+    route answers rather than holding the request, and lets go of the runner's stream."""
+    monkeypatch.setattr("agentplane.runner.client.OBSERVE_ANSWER_S", 1)
+    live_index.sandboxes["live"] = sandbox("live")
+    live_index.pods["live"] = pod("live", phase="Running", ready=True, ip="127.0.0.1")
+    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
+    thread_id = await event_logs.open("live", "test-unanswered", spec)
+    wedged = UnansweringRunner()
+    async with wedged.serve() as port:
+        runners = Runners(live_index, port)
+        ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
+        app = create_app(
+            inventory,
+            RunnerBridge(
+                runners=runners,
+                event_logs=event_logs,
+                content=content,
+                ingester=ingester,
+                thread_changes=database_updates.changes[Channel.THREADS],
+            ),
+            store,
+            TEST_MODELS,
+            egress,
+            decisions,
+            live_index,
+            action_policy,
+            reviewer=reviewer,
+            event_logs=event_logs,
+            content=content,
+            database_updates=database_updates,
+            operator_sessions=operator_sessions,
+        )
+        try:
+            async with (
+                httpx.AsyncClient(
+                    transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+                ) as http,
+                asyncio.timeout(10),
+            ):
+                response = await http.post(
+                    f"/threads/{thread_id}/commands",
+                    json={"commandId": "test-unanswered-command", "submitInput": {"text": "never admitted"}},
+                )
+                assert response.status_code == 504, response.text
+                assert "'test-unanswered'" in response.json()["detail"]
+                assert await wedged.cancelled.get() == "test-unanswered"
+        finally:
+            await ingester.close()
+            await runners.close()
 
 
 def test_egress_lists_the_bindings_naming_the_sandbox(client: TestClient) -> None:
@@ -705,7 +777,7 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: EventLogStore,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
@@ -731,7 +803,7 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
         reviewer=reviewer,
         event_logs=event_logs,
         content=content,
-        thread_updates=thread_updates,
+        database_updates=database_updates,
         operator_sessions=operator_sessions,
     )
     async with httpx.AsyncClient(
@@ -759,7 +831,7 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
     store: ThreadStore,
     event_logs: EventLogStore,
     ingestion: Ingestion,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
@@ -808,7 +880,7 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
         reviewer=reviewer,
         event_logs=event_logs,
         content=content,
-        thread_updates=thread_updates,
+        database_updates=database_updates,
         operator_sessions=operator_sessions,
     )
     body = {"projection_epoch": THREAD_FOLD_EPOCH, "command_ids": ["failed", "pending", "absent", "failed"]}
@@ -842,7 +914,7 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: EventLogStore,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
@@ -865,7 +937,7 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
         reviewer=reviewer,
         event_logs=event_logs,
         content=content,
-        thread_updates=thread_updates,
+        database_updates=database_updates,
         operator_sessions=operator_sessions,
     )
     async with httpx.AsyncClient(
@@ -890,7 +962,7 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: EventLogStore,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
@@ -923,7 +995,7 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
         reviewer=reviewer,
         event_logs=event_logs,
         content=content,
-        thread_updates=thread_updates,
+        database_updates=database_updates,
         operator_sessions=operator_sessions,
     )
     async with httpx.AsyncClient(

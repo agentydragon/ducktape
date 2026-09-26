@@ -25,7 +25,7 @@ from agentplane.egress.informer import Informer
 from agentplane.egress.policy import Index
 from agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from agentplane.egress.rules_api import RulesProjection, create_rules_app, serve_rules_api
-from agentplane.egress.upstream import UpstreamResolver
+from agentplane.egress.upstream import PinnedDialEventLoop, UpstreamResolver
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -121,7 +121,7 @@ class Settings(BaseSettings):
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    asyncio.run(async_main(Settings()))
+    asyncio.run(async_main(Settings()), loop_factory=PinnedDialEventLoop)
 
 
 async def async_main(settings: Settings) -> None:

@@ -8,7 +8,8 @@ import { act, type JSX, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { CommandSelection, PayloadBody, ThreadCollection, type ThreadEntity, type ThreadHistory } from "./thread_store";
+import { electricThreadSync } from "./thread_store";
+import { type PayloadRef, type ThreadEntity, type ThreadWindow } from "./thread_sync";
 
 type Json = Record<string, unknown>;
 
@@ -53,20 +54,18 @@ function change(relation: string, operation: "insert" | "update" | "delete", row
   return { key: key(relation, row), value: row, headers: { relation: ["public", relation], operation } };
 }
 
-function headers(relation: string, handle: string): HeadersInit {
+function headers(relation: string, handle: string, offset = "0_0"): HeadersInit {
   return {
     "content-type": "application/json",
     "electric-handle": handle,
-    "electric-offset": "0_0",
+    "electric-offset": offset,
     "electric-cursor": "1",
     "electric-schema": JSON.stringify(SCHEMAS[relation]),
   };
 }
 
-function log(relation: string, handle: string, messages: Json[]): Response {
-  return new Response(JSON.stringify([...messages, { headers: { control: "up-to-date" } }]), {
-    headers: { ...headers(relation, handle), "electric-up-to-date": "" },
-  });
+function relationOf(path: string): string {
+  return path === "entities" ? "thread_entity" : "thread_payload_chunk";
 }
 
 function item(index: number, epoch = "epoch-1", extra: Json = {}): Json {
@@ -143,14 +142,40 @@ interface Subset {
   limit?: number;
 }
 
-/** The proxy's routes over in-memory rows, one Electric shape per path. */
+/** A live read's SSE connection: what it asked for, and where its events go. */
+interface Connection {
+  query: URLSearchParams;
+  events: ReadableStreamDefaultController<Uint8Array>;
+}
+
+/**
+ * The proxy's routes over in-memory rows, one Electric shape per path. A live read is an SSE
+ * connection, open until the reader leaves or a test ends it.
+ */
 class FakeSync {
   epoch = "epoch-1";
   through = "70";
+  /** Whether the thread has a fold: a scope read before it has one is held, as the proxy holds it. */
+  folded = true;
   entities: Json[] = [];
   chunks: Json[] = [];
+  /** Settles before a page before the tail answers: with a response to answer instead, or with none. */
+  olderPage: (() => Promise<Response | undefined>) | null = null;
+  /** Whether the shapes are out of reach, as over a dropped network: every read of one fails unanswered. */
+  unreachable = false;
+  /** Whether the reader's login has expired: every read of a shape is refused 401. */
+  loggedOut = false;
+  /** Whether a live read goes unanswered, as one does until its connection opens: only its reader's
+   * abort ends it. */
+  liveUnanswered = false;
+  /** How many live reads are waiting for an answer. */
+  waiting = 0;
   readonly requests: { method: string; path: string; query: URLSearchParams; subset: Subset | null }[] = [];
-  readonly #live = new Map<string, { query: URLSearchParams; resolve: (response: Response) => void }>();
+  readonly #live = new Map<string, Connection>();
+  // The held scope read, answered by `respond`.
+  #held: ((response: Response) => void) | null = null;
+  // Handles Electric has rotated away from, each with the one its 409 names instead.
+  readonly #rotated = new Map<string, string>();
   // Each subset answers from further along the log than any stream has read.
   #snapshots = 0;
 
@@ -160,11 +185,17 @@ class FakeSync {
     const subset = typeof init?.body === "string" ? (JSON.parse(init.body) as Subset) : null;
     const path = url.pathname.split("/sync/")[1];
     this.requests.push({ method, path, query: url.searchParams, subset });
-    if (path === "scope") return Response.json({ projection_epoch: this.epoch, through_cursor: this.through });
+    if (path === "scope") return this.folded ? this.scope() : this.#hold(init?.signal);
+    if (this.loggedOut) return Response.json({ detail: "test session expired" }, { status: 401 });
+    if (this.unreachable) throw new TypeError("Failed to fetch");
     if (url.searchParams.get("projection_epoch") !== this.epoch) return Response.json({}, { status: 410 });
-    const relation = path === "entities" ? "thread_entity" : "thread_payload_chunk";
+    const relation = relationOf(path);
     // Electric resolves a shape's handle from its definition.
     const handle = url.searchParams.get("handle") ?? `${path}-1`;
+    const successor = this.#rotated.get(handle);
+    if (successor !== undefined) return Response.json([], { status: 409, headers: headers(relation, successor) });
+    const instead = subset?.where === "entity_index < $1" ? await this.olderPage?.() : undefined;
+    if (instead !== undefined) return instead;
     if (subset !== null) {
       const rows = relation === "thread_entity" ? this.#entitySubset(subset) : this.#bodySubset(subset);
       return new Response(
@@ -172,37 +203,98 @@ class FakeSync {
           data: rows.map((row) => change(relation, "insert", row)),
           metadata: { snapshot_mark: 1, database_lsn: "1", xip_list: [], xmin: "1", xmax: "1" },
         }),
-        { headers: { ...headers(relation, handle), "electric-offset": `${++this.#snapshots}00_0` } }
+        { headers: headers(relation, handle, `${++this.#snapshots}00_0`) }
       );
     }
-    if (url.searchParams.get("live") !== "true") return log(relation, handle, []);
-    return new Promise((resolve, reject) => {
-      this.#live.set(path, { query: url.searchParams, resolve });
-      init?.signal?.addEventListener("abort", () => {
-        this.#live.delete(path);
-        reject(new DOMException("aborted", "AbortError"));
+    const offset = url.searchParams.get("offset") ?? "now";
+    // Nothing has changed since any offset a reader names, so a catch-up read hands it back.
+    const position = offset === "now" || offset === "-1" ? "0_0" : offset;
+    if (url.searchParams.get("live") !== "true")
+      return Response.json([{ headers: { control: "up-to-date" } }], {
+        headers: { ...headers(relation, handle, position), "electric-up-to-date": "" },
       });
+    if (url.searchParams.get("live_sse") !== "true")
+      return Response.json({ message: "the store follows shapes over SSE" }, { status: 400 });
+    if (this.liveUnanswered) {
+      this.waiting++;
+      return new Promise((_, reject) =>
+        init?.signal?.addEventListener("abort", () => {
+          this.waiting--;
+          reject(new DOMException("aborted", "AbortError"));
+        })
+      );
+    }
+    const body = new ReadableStream<Uint8Array>({
+      start: (events) => {
+        this.#live.set(path, { query: url.searchParams, events });
+        init?.signal?.addEventListener("abort", () => {
+          if (this.#live.get(path)?.events === events) this.#live.delete(path);
+          events.error(new DOMException("aborted", "AbortError"));
+        });
+      },
+    });
+    return new Response(body, {
+      headers: { ...headers(relation, handle, position), "content-type": "text/event-stream" },
     });
   };
 
-  /** The offset the shape's waiting live request reads from. */
-  async liveOffset(path: string): Promise<string | null> {
-    await vi.waitFor(() => expect(this.#live.has(path)).toBe(true));
-    return this.#live.get(path)!.query.get("offset");
+  scope(): Response {
+    return Response.json({ projection_epoch: this.epoch, through_cursor: this.through });
   }
 
-  /** Answer the shape's waiting live request. */
-  async respond(path: string, response: (relation: string) => Response): Promise<void> {
-    await vi.waitFor(() => expect(this.#live.has(path)).toBe(true));
-    const { resolve } = this.#live.get(path)!;
+  #hold(signal?: AbortSignal | null): Promise<Response> {
+    return new Promise((resolve, reject) => {
+      this.#held = resolve;
+      signal?.addEventListener("abort", () => {
+        this.#held = null;
+        reject(new DOMException("aborted", "AbortError"));
+      });
+    });
+  }
+
+  /** Answer the held scope read. */
+  async respond(response: () => Response): Promise<void> {
+    await vi.waitFor(() => expect(this.#held).not.toBeNull());
+    const resolve = this.#held!;
+    this.#held = null;
+    await act(async () => resolve(response()));
+  }
+
+  /** The offset the shape's open SSE connection reads from. */
+  async liveOffset(path: string): Promise<string | null> {
+    return (await this.#connection(path)).query.get("offset");
+  }
+
+  /** Deliver changes on the shape's SSE connection as Electric does: an event each, then up-to-date. */
+  async send(path: string, messages: (relation: string) => Json[]): Promise<void> {
+    const { events } = await this.#connection(path);
+    const batch = [...messages(relationOf(path)), { headers: { control: "up-to-date" } }];
+    const stream = batch.map((message) => `data: ${JSON.stringify(message)}\n\n`).join("");
+    await act(async () => events.enqueue(new TextEncoder().encode(stream)));
+  }
+
+  /** End the shape's SSE connection, as Electric does once it has been open a minute. */
+  async close(path: string): Promise<void> {
+    const { events } = await this.#connection(path);
     this.#live.delete(path);
-    await act(async () => resolve(response(path === "entities" ? "thread_entity" : "thread_payload_chunk")));
+    await act(async () => events.close());
+  }
+
+  /** Rotate the shape to `successor`, as Electric does when it retires a log: the reconnect gets 409. */
+  async rotate(path: string, successor: string): Promise<void> {
+    this.#rotated.set((await this.#connection(path)).query.get("handle")!, successor);
+    await this.close(path);
   }
 
   posted(path: string): Subset[] {
     return this.requests
       .filter((request) => request.method === "POST" && request.path === path)
       .map((request) => request.subset!);
+  }
+
+  async #connection(path: string): Promise<Connection> {
+    await vi.waitFor(() => expect(this.#live.has(path)).toBe(true));
+    return this.#live.get(path)!;
   }
 
   #entitySubset(subset: Subset): Json[] {
@@ -261,20 +353,46 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-function Rows({ rows, history }: { rows: ThreadEntity[]; history: ThreadHistory }): JSX.Element {
+function renderThread(children: ReactNode): Promise<HTMLDivElement> {
+  return render(<electricThreadSync.Thread threadId="thread">{children}</electricThreadSync.Thread>);
+}
+
+/** What a view shows of the thread: nothing until its window opens, and no rows until that has caught up. */
+function Shown({ children }: { children: (rows: ThreadEntity[], history: ThreadWindow) => JSX.Element }): JSX.Element {
+  const { window: shown } = electricThreadSync.useThread();
+  return shown === null ? <></> : children(shown.caughtUp ? shown.rows : [], shown);
+}
+
+function Rows({ rows, history }: { rows: ThreadEntity[]; history: ThreadWindow }): JSX.Element {
   const items = rows.filter((row) => row.entityKind === "item");
   return (
     <>
       <p data-testid="items">{items.map((row) => `${row.entityId}@${row.revisionCursor.toString()}`).join(" ")}</p>
-      <button disabled={!history.olderAvailable} onClick={history.loadOlder}>
+      <button disabled={!history.olderAvailable} aria-busy={history.loadingOlder} onClick={history.loadOlder}>
         older
       </button>
+      {history.error && <p role="alert">{history.error}</p>}
+      {history.connection.phase === "reconnecting" && <p role="status">{history.connection.lastError}</p>}
     </>
   );
 }
 
+function Body({ id, reference }: { id: string; reference: PayloadRef }): JSX.Element {
+  const { body } = electricThreadSync.usePayload(reference);
+  return <p data-body={id}>{body ?? "loading"}</p>;
+}
+
+function Commands({ ids }: { ids: readonly string[] }): JSX.Element {
+  const rows = electricThreadSync.useCommandRows(ids);
+  return <p data-testid="commands">{rows.map((row) => row.entityId).join(",")}</p>;
+}
+
 function itemsShown(container: HTMLElement): string[] {
   return (container.querySelector('[data-testid="items"]')?.textContent ?? "").split(" ").filter(Boolean);
+}
+
+function reconnecting(container: HTMLElement): boolean {
+  return container.querySelector('[role="status"]') !== null;
 }
 
 function thread(sync: FakeSync, count: number, epoch = "epoch-1"): void {
@@ -284,9 +402,7 @@ function thread(sync: FakeSync, count: number, epoch = "epoch-1"): void {
 it("opens one shape on the tail and pages older rows into it", async () => {
   const sync = stubSync();
   thread(sync, 70);
-  const container = await render(
-    <ThreadCollection threadId="thread">{(rows, history) => <Rows rows={rows} history={history} />}</ThreadCollection>
-  );
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
   expect(itemsShown(container)).toContain("item-41@41");
 
@@ -311,21 +427,93 @@ it("opens one shape on the tail and pages older rows into it", async () => {
   );
 });
 
+function olderPages(sync: FakeSync): Subset[] {
+  return sync.posted("entities").filter((subset) => subset.where === "entity_index < $1");
+}
+
+it("shows a page before the tail as loading until it lands, and asks for it once however often asked", async () => {
+  const sync = stubSync();
+  thread(sync, 70);
+  let land: () => void = () => undefined;
+  sync.olderPage = () => new Promise((resolve) => (land = () => resolve(undefined)));
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
+  const older = container.querySelector("button")!;
+
+  await act(async () => older.click());
+  await vi.waitFor(() => expect(olderPages(sync)).toHaveLength(1));
+  expect(older.getAttribute("aria-busy")).toBe("true");
+  await act(async () => older.click());
+
+  await act(async () => land());
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(60));
+  expect(older.getAttribute("aria-busy")).toBe("false");
+  expect(olderPages(sync)).toHaveLength(1);
+});
+
+it("asks for no page before the tail after one stopped the window", async () => {
+  const sync = stubSync();
+  thread(sync, 70);
+  sync.olderPage = async () => Response.json({ message: "test refusal" }, { status: 400 });
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
+  const older = container.querySelector("button")!;
+
+  await act(async () => older.click());
+  await vi.waitFor(() => expect(container.querySelector('[role="alert"]')).not.toBeNull());
+  await vi.waitFor(() => expect(older.getAttribute("aria-busy")).toBe("false"));
+  await act(async () => older.click());
+  expect(older.getAttribute("aria-busy")).toBe("false");
+  expect(olderPages(sync)).toHaveLength(1);
+});
+
+it("asks for no page before the tail after one found the window's epoch gone", async () => {
+  const sync = stubSync();
+  thread(sync, 70);
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
+  // The scope read the 410 prompts is held, so the retired window stays on screen.
+  sync.folded = false;
+  sync.epoch = "epoch-2";
+  const older = container.querySelector("button")!;
+
+  await act(async () => older.click());
+  await vi.waitFor(() => expect(sync.requests.filter((request) => request.path === "scope").length).toBeGreaterThan(1));
+  await vi.waitFor(() => expect(older.getAttribute("aria-busy")).toBe("false"));
+  await act(async () => older.click());
+  expect(older.getAttribute("aria-busy")).toBe("false");
+  expect(olderPages(sync)).toHaveLength(1);
+});
+
+it("re-issues a scope read the server answered without a fold at once, and opens the thread once it has one", async () => {
+  const sync = stubSync();
+  thread(sync, 3);
+  sync.folded = false;
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+
+  await sync.respond(() => new Response(null, { status: 204 }));
+  // Already held again, before any timer could have fired.
+  expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(2);
+  // No window has opened: the view has nothing to show yet.
+  expect(container.textContent).toBe("");
+
+  sync.folded = true;
+  await sync.respond(() => sync.scope());
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
+  expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(2);
+});
+
 it("applies live changes to the rows it holds, and new rows, but not rows it has not loaded", async () => {
   const sync = stubSync();
   thread(sync, 70);
-  const container = await render(
-    <ThreadCollection threadId="thread">{(rows, history) => <Rows rows={rows} history={history} />}</ThreadCollection>
-  );
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
 
-  await sync.respond("entities", (relation) =>
-    log(relation, "entities-1", [
-      change(relation, "update", item(70, "epoch-1", { revision_cursor: "71" })),
-      change(relation, "update", item(5, "epoch-1", { revision_cursor: "72" })),
-      change(relation, "insert", item(71)),
-    ])
-  );
+  await sync.send("entities", (relation) => [
+    change(relation, "update", item(70, "epoch-1", { revision_cursor: "71" })),
+    change(relation, "update", item(5, "epoch-1", { revision_cursor: "72" })),
+    change(relation, "insert", item(71)),
+  ]);
 
   await vi.waitFor(() => expect(itemsShown(container)).toContain("item-71@71"));
   expect(itemsShown(container)).toContain("item-70@71");
@@ -335,9 +523,7 @@ it("applies live changes to the rows it holds, and new rows, but not rows it has
 it("keeps reading the live log from where it was when a subset answers from further along", async () => {
   const sync = stubSync();
   thread(sync, 70);
-  const container = await render(
-    <ThreadCollection threadId="thread">{(rows, history) => <Rows rows={rows} history={history} />}</ThreadCollection>
-  );
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
   const reading = await sync.liveOffset("entities");
 
@@ -346,51 +532,122 @@ it("keeps reading the live log from where it was when a subset answers from furt
 
   // The stream reads on from where it was, so what the subset's position is past still reaches it.
   expect(await sync.liveOffset("entities")).toBe(reading);
-  await sync.respond("entities", (relation) =>
-    log(relation, "entities-1", [change(relation, "update", item(70, "epoch-1", { revision_cursor: "71" }))])
-  );
+  await sync.send("entities", (relation) => [
+    change(relation, "update", item(70, "epoch-1", { revision_cursor: "71" })),
+  ]);
   await vi.waitFor(() => expect(itemsShown(container)).toContain("item-70@71"));
+});
+
+it("says it is reconnecting while Electric's client retries a failed read, until one succeeds", async () => {
+  const sync = stubSync();
+  thread(sync, 3);
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
+  expect(reconnecting(container)).toBe(false);
+
+  sync.unreachable = true;
+  // The live read ends, as a dropped connection ends it, and its reconnect finds no network.
+  await sync.close("entities");
+  await vi.waitFor(() => expect(reconnecting(container)).toBe(true));
+  expect(container.querySelector('[role="status"]')?.textContent).toBe("Failed to fetch");
+  expect(itemsShown(container)).toHaveLength(3);
+
+  sync.unreachable = false;
+  // The client's first retry follows the failure within a second.
+  await vi.waitFor(() => expect(reconnecting(container)).toBe(false), { timeout: 2_000 });
+  await sync.send("entities", (relation) => [change(relation, "insert", item(4))]);
+  await vi.waitFor(() => expect(itemsShown(container)).toContain("item-4@4"));
+});
+
+it("sends the browser to log in when a shape read finds the login expired, and shows the thread no error", async () => {
+  const replace = vi.fn();
+  vi.stubGlobal("location", { href: window.location.href, pathname: "/", hash: "#/threads/thread", replace });
+  const sync = stubSync();
+  thread(sync, 3);
+  sync.loggedOut = true;
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+
+  await vi.waitFor(() => expect(replace.mock.calls).toEqual([["/auth/login"]]));
+  // Refused reads never reach Electric's client, which would stop the window on them.
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(reconnecting(container)).toBe(false);
+});
+
+it("does not take a live read it abandoned for a subset as a failed one", async () => {
+  const sync = stubSync();
+  thread(sync, 70);
+  sync.liveUnanswered = true;
+  let land: () => void = () => undefined;
+  sync.olderPage = () => new Promise((resolve) => (land = () => resolve(undefined)));
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
+  await vi.waitFor(() => expect(sync.waiting).toBe(1));
+
+  // The page's subset aborts the live read still awaiting its answer, and holds the stream until it lands.
+  await act(async () => container.querySelector("button")!.click());
+  await vi.waitFor(() => expect(olderPages(sync)).toHaveLength(1));
+  expect(sync.waiting).toBe(0);
+  expect(reconnecting(container)).toBe(false);
+  await act(async () => land());
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(60));
+  expect(reconnecting(container)).toBe(false);
 });
 
 it("re-reads a retired epoch's scope and swaps windows under the same children", async () => {
   const sync = stubSync();
   thread(sync, 3);
-  const container = await render(
-    <ThreadCollection threadId="thread">
+  const container = await renderThread(
+    <Shown>
       {(rows, history) => (
         <>
           <input aria-label="draft" />
           <Rows rows={rows} history={history} />
         </>
       )}
-    </ThreadCollection>
+    </Shown>
   );
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
   const draft = container.querySelector("input")!;
 
   sync.epoch = "epoch-2";
   thread(sync, 4, "epoch-2");
-  await sync.respond("entities", () => Response.json({}, { status: 410 }));
+  // The proxy refuses the reconnect for the old epoch.
+  await sync.close("entities");
 
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(4));
   expect(container.querySelector("input")).toBe(draft);
   expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(2);
 });
 
+it("re-reads the scope as soon as the live log retires its epoch", async () => {
+  const sync = stubSync();
+  thread(sync, 3);
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
+  const retired = sync.entities;
+  const asked = sync.requests.length;
+
+  sync.epoch = "epoch-2";
+  thread(sync, 4, "epoch-2");
+  // A rebuild moves every row out of the old epoch's shape, whose SSE connection stays open.
+  await sync.send("entities", (relation) => retired.map((row) => change(relation, "delete", row)));
+
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(4));
+  expect(sync.requests.slice(asked).filter((request) => request.query.get("projection_epoch") === "epoch-1")).toEqual(
+    []
+  );
+});
+
 it("reloads as many rows as it held when Electric retires the shape's log, dropping deleted ones", async () => {
   const sync = stubSync();
   thread(sync, 70);
-  const container = await render(
-    <ThreadCollection threadId="thread">{(rows, history) => <Rows rows={rows} history={history} />}</ThreadCollection>
-  );
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
   await act(async () => container.querySelector("button")!.click());
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(60));
 
   sync.entities = sync.entities.filter((row) => row.entity_id !== "item-50");
-  await sync.respond("entities", (relation) =>
-    Response.json([], { status: 409, headers: { ...headers(relation, "entities-2") } })
-  );
+  await sync.rotate("entities", "entities-2");
 
   await vi.waitFor(() => expect(itemsShown(container)).not.toContain("item-50@50"));
   expect(itemsShown(container)).toHaveLength(60);
@@ -406,20 +663,16 @@ it("loads the bodies in view in one read, as far as each reference spans, and fo
     item(2, "epoch-1", { text_ref: textRef("b", 1) }),
   ];
   sync.chunks = [chunk("a", 0, "Hel"), chunk("a", 1, "lo"), chunk("a", 2, " there"), chunk("b", 0, "Bye")];
-  const container = await render(
-    <ThreadCollection threadId="thread">
+  const container = await renderThread(
+    <Shown>
       {(rows) => (
         <>
           {rows.map((row) =>
-            row.textRef ? (
-              <PayloadBody key={row.entityId} reference={row.textRef}>
-                {(body) => <p data-body={row.entityId}>{body ?? "loading"}</p>}
-              </PayloadBody>
-            ) : null
+            row.textRef ? <Body key={row.entityId} id={row.entityId} reference={row.textRef} /> : null
           )}
         </>
       )}
-    </ThreadCollection>
+    </Shown>
   );
   const body = (id: string) => container.querySelector(`[data-body="${id}"]`)?.textContent;
   await vi.waitFor(() => expect([body("item-1"), body("item-2")]).toEqual(["Hello", "Bye"]));
@@ -429,12 +682,10 @@ it("loads the bodies in view in one read, as far as each reference spans, and fo
   const params = read.params!;
   expect(new Set([`${params["1"]}@${params["2"]}`, `${params["3"]}@${params["4"]}`])).toEqual(new Set(["a@1", "b@1"]));
 
-  await sync.respond("chunks/text", (relation) =>
-    log(relation, "chunks/text-1", [change(relation, "insert", chunk("a", 3, "!"))])
-  );
-  await sync.respond("entities", (relation) =>
-    log(relation, "entities-1", [change(relation, "update", item(1, "epoch-1", { text_ref: textRef("a", 4) }))])
-  );
+  await sync.send("chunks/text", (relation) => [change(relation, "insert", chunk("a", 3, "!"))]);
+  await sync.send("entities", (relation) => [
+    change(relation, "update", item(1, "epoch-1", { text_ref: textRef("a", 4) })),
+  ]);
   await vi.waitFor(() => expect(body("item-1")).toBe("Hello there!"));
 });
 
@@ -447,15 +698,7 @@ it("loads commands by id as a quoted array", async () => {
     if (row.entity_kind === "item") row.entity_index = String(Number(row.entity_index) + 2);
   sync.entities.find((row) => row.entity_id === 'say "hi"')!.entity_index = "1";
   sync.entities.find((row) => row.entity_id === "other")!.entity_index = "2";
-  const container = await render(
-    <ThreadCollection threadId="thread">
-      {() => (
-        <CommandSelection commandIds={['say "hi"', "missing"]}>
-          {(rows) => <p data-testid="commands">{rows.map((row) => row.entityId).join(",")}</p>}
-        </CommandSelection>
-      )}
-    </ThreadCollection>
-  );
+  const container = await renderThread(<Shown>{() => <Commands ids={['say "hi"', "missing"]} />}</Shown>);
   await vi.waitFor(() => expect(container.querySelector('[data-testid="commands"]')?.textContent).toBe('say "hi"'));
   expect(sync.posted("entities")).toContainEqual({
     where: "entity_kind = 'command' AND entity_id = ANY($1)",

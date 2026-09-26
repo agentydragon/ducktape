@@ -1,16 +1,33 @@
-"""The Kubernetes exec backend's diagnosis of a rejected `pods/exec` upgrade.
+"""The Kubernetes exec backend: the command it sends, and its diagnosis of a failed `pods/exec`.
 
-The handshake is where this fails in practice and where aiohttp says least: a bare
-``WSServerHandshakeError`` reading "invalid response status" with the API server's own reason
-dropped. These pin that each status still names the cause an operator can act on.
+Both ends are where a library says least. aiohttp reports a rejected handshake as a bare
+``WSServerHandshakeError`` reading "invalid response status", with the API server's own reason
+dropped; kubernetes_asyncio reads a command that never started as a malformed exit code. These pin
+that each still names the cause an operator can act on.
 """
 
 from __future__ import annotations
 
+import json
+from typing import Any
+
 import pytest
 import pytest_bazel
 
-from mcp_infra.exec.kubernetes import _handshake_error
+from mcp_infra.exec.kubernetes import PodExecError, _command, _exit_code, _handshake_error
+
+
+@pytest.mark.parametrize(
+    ("cwd", "shell_script"),
+    [
+        # No directory of its own: the script starts where the runtime starts every exec, which
+        # is the working directory the container's template or image sets.
+        (None, "pwd"),
+        ("/srv/work dir", "cd -- '/srv/work dir'\npwd"),
+    ],
+)
+def test_a_script_changes_directory_only_when_asked(cwd: str | None, shell_script: str) -> None:
+    assert _command("pwd", cwd=cwd, timeout_seconds=5)[-3:] == ["bash", "-lc", shell_script]
 
 
 @pytest.mark.parametrize(
@@ -26,6 +43,47 @@ def test_handshake_error_names_likely_cause(status: int, needle: str) -> None:
     message = _handshake_error(status, "Forbidden")
     assert f"HTTP {status}" in message
     assert needle in message
+
+
+# The Status frames the kubelet ends an exec with (ServeExec in its remotecommand server).
+@pytest.mark.parametrize(
+    ("frame", "exit_code"),
+    [
+        ({"metadata": {}, "status": "Success"}, 0),
+        (
+            {
+                "metadata": {},
+                "status": "Failure",
+                "message": "command terminated with non-zero exit code: exit status 3",
+                "reason": "NonZeroExitCode",
+                "details": {"causes": [{"reason": "ExitCode", "message": "3"}]},
+            },
+            3,
+        ),
+    ],
+)
+def test_exit_code_from_status_frame(frame: dict[str, Any], exit_code: int) -> None:
+    assert _exit_code(json.dumps(frame).encode()) == exit_code
+
+
+def test_command_that_never_started_names_the_runtime_error() -> None:
+    # An executable missing from the image: an InternalError whose one cause holds the runtime's
+    # error text where a NonZeroExitCode's cause holds the code.
+    error = (
+        'error executing command in container: failed to exec in container: failed to start exec "test-exec": '
+        'OCI runtime exec failed: exec failed: unable to start container process: exec: "/opt/test/missing": '
+        "stat /opt/test/missing: no such file or directory: unknown"
+    )
+    frame = {
+        "metadata": {},
+        "status": "Failure",
+        "message": f"Internal error occurred: {error}",
+        "reason": "InternalError",
+        "details": {"causes": [{"message": error}]},
+        "code": 500,
+    }
+    with pytest.raises(PodExecError, match=r"could not run the command: .*/opt/test/missing: no such file"):
+        _exit_code(json.dumps(frame).encode())
 
 
 if __name__ == "__main__":

@@ -18,9 +18,10 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
-OUTPUT_DIR = "cluster/k8s/website"
+OUTPUT_DIR = f"{GENERATED_ROOT}/website"
 _NAME = "website"
 _NAMESPACE = "website"
 _LABELS = {"app.kubernetes.io/name": _NAME}

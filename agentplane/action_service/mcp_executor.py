@@ -26,7 +26,7 @@ import mcp.types
 from fastmcp.client import Client, ClientTransport
 from fastmcp.client.messages import MessageHandler
 from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, field_validator
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
 from tenacity import RetryCallState, Retrying, wait_random_exponential
 
 from agentplane.action_service.catalog import (
@@ -48,6 +48,7 @@ DEFAULT_CATALOG_REFRESH_INTERVAL = timedelta(minutes=5)
 LIFECYCLE_TIMEOUT = timedelta(seconds=15)
 CLEANUP_TIMEOUT = timedelta(seconds=5)
 STABLE_SUCCESS = timedelta(seconds=30)
+_DETAIL_LIMIT = 2000
 _KEY_ADAPTER = TypeAdapter(Key)
 
 
@@ -266,12 +267,15 @@ class McpActionGroupExecutor(Executor):
         self._supervisor.add_done_callback(self._supervisor_done)
 
     def _supervisor_done(self, task: asyncio.Task[None]) -> None:
+        # Retrieved, so asyncio never logs the secret-bearing text; only the operator's view carries it.
+        error = None if task.cancelled() else task.exception()
         if not self._draining:
-            self._mark_unavailable(McpUnavailableReason.SUPERVISOR_STOPPED)
+            self._mark_unavailable(
+                McpUnavailableReason.SUPERVISOR_STOPPED,
+                "the supervisor task was cancelled" if error is None else self._failure_detail(error),
+            )
             self._health.state = McpLifecycle.STOPPED
             logger.error("MCP supervisor stopped unexpectedly for %s", self._group_key)
-        if not task.cancelled():
-            task.exception()  # Retrieve without logging secret-bearing exception text.
 
     def begin_drain(self) -> None:
         if self._draining:
@@ -355,9 +359,9 @@ class McpActionGroupExecutor(Executor):
             self._health.retry_at = None
             try:
                 async with asyncio.timeout(self._lifecycle_timeout.total_seconds()):
-                    ready = not self._requires_linkage or await self._linkage_is_ready()
-                if not ready:
-                    self._mark_unavailable(McpUnavailableReason.LINKAGE_UNAVAILABLE)
+                    linkage_problem = await self._linkage_problem() if self._requires_linkage else None
+                if linkage_problem is not None:
+                    self._mark_unavailable(McpUnavailableReason.LINKAGE_UNAVAILABLE, linkage_problem)
                     self._retire_current()
                 else:
                     if self._connection is not None and self._connection.failed:
@@ -367,8 +371,8 @@ class McpActionGroupExecutor(Executor):
                     await self.refresh_catalog()
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                self._mark_unavailable(McpUnavailableReason.CONNECT_FAILED)
+            except Exception as error:
+                self._mark_unavailable(McpUnavailableReason.CONNECT_FAILED, self._failure_detail(error))
                 self._retire_current()
             if self._group.available:
                 await self._wait_for_wakeup(self._catalog_refresh_interval)
@@ -380,15 +384,26 @@ class McpActionGroupExecutor(Executor):
                 logger.warning("MCP group %s unavailable: %s; retry scheduled", self._group_key, self._health.reason)
                 await self._wait_for_wakeup(delay)
 
-    async def _linkage_is_ready(self) -> bool:
+    async def _linkage_problem(self) -> str | None:
+        """Why the OAuth linkage cannot authorize a connection now; None when it can."""
         if self._linkage is None or self._linkage_server_id is None:
-            return False
+            return "no OAuth linkage is configured for this group"
         try:
-            status = await self._linkage.status(self._linkage_server_id)
-        except Exception:
+            linkage = await self._linkage.status(self._linkage_server_id)
+        except Exception as error:
             logger.warning("MCP OAuth linkage status failed; %s remains unavailable", self._group_key)
-            return False
-        return status.status is McpLinkageStatus.LINKED
+            return f"reading the OAuth linkage failed: {self._failure_detail(error)}"
+        match linkage.status:
+            case McpLinkageStatus.LINKED:
+                return None
+            case McpLinkageStatus.UNLINKED:
+                return "no account is linked"
+            case McpLinkageStatus.EXPIRED:
+                return (
+                    f"the access token expired at {linkage.expires_at:%Y-%m-%d %H:%M:%S %Z} and has not been refreshed"
+                )
+            case McpLinkageStatus.DEGRADED:
+                return "refreshing the token failed in a way retrying cannot fix; link the account again"
 
     async def _wait_for_wakeup(self, delay: timedelta) -> None:
         events = [self._tool_list_changed]
@@ -427,8 +442,10 @@ class McpActionGroupExecutor(Executor):
                 actions[key] = ActionDefinition(
                     description=tool.description or f"MCP tool {tool.name}", input_schema=tool.input_schema
                 )
-            except (jsonschema.SchemaError, ValueError) as error:
-                raise _InvalidMcpCatalogError from error
+            except jsonschema.SchemaError as error:
+                raise _InvalidMcpCatalogError(f"tool {tool.name!r} input schema: {error.message}") from error
+            except ValueError as error:
+                raise _InvalidMcpCatalogError(f"tool {tool.name!r}: {error}") from error
         return actions
 
     def _publish_catalog(self, actions: dict[str, ActionDefinition]) -> None:
@@ -438,6 +455,7 @@ class McpActionGroupExecutor(Executor):
         self._group.available = True
         self._health.state = McpLifecycle.AVAILABLE
         self._health.reason = None
+        self._health.detail = None
         self._health.retry_at = None
         self._health.last_discovery_at = datetime.now(UTC)
         now = asyncio.get_running_loop().time()
@@ -446,7 +464,7 @@ class McpActionGroupExecutor(Executor):
         if now - self._available_since >= STABLE_SUCCESS.total_seconds():
             self._health.failures = 0
 
-    def _mark_unavailable(self, reason: McpUnavailableReason | None = None) -> None:
+    def _mark_unavailable(self, reason: McpUnavailableReason | None = None, detail: str | None = None) -> None:
         if (
             self._available_since is not None
             and asyncio.get_running_loop().time() - self._available_since >= STABLE_SUCCESS.total_seconds()
@@ -456,14 +474,22 @@ class McpActionGroupExecutor(Executor):
         self._group.actions = {}
         self._health.state = McpLifecycle.DISCONNECTED
         self._health.reason = reason
+        # Bounded: a backend chooses this text.
+        self._health.detail = None if detail is None else detail[:_DETAIL_LIMIT]
         self._available_since = None
 
-    def _session_failed(self, connection: _Connection) -> None:
+    def _session_failed(self, connection: _Connection, error: BaseException) -> None:
         connection.failed = True
         if self._connection is connection:
-            self._mark_unavailable(McpUnavailableReason.SESSION_FAILED)
+            self._mark_unavailable(McpUnavailableReason.SESSION_FAILED, self._failure_detail(error))
             if asyncio.current_task() is not self._supervisor:
                 self._tool_list_changed.set()
+
+    def _failure_detail(self, error: BaseException) -> str:
+        # `asyncio.timeout` raises a bare TimeoutError; every such deadline here is the lifecycle one.
+        if isinstance(error, TimeoutError) and not str(error):
+            return f"no answer within {self._lifecycle_timeout.total_seconds():g}s"
+        return _describe(error)
 
     async def refresh_catalog(self) -> None:
         connection = self._connection
@@ -473,13 +499,13 @@ class McpActionGroupExecutor(Executor):
         try:
             async with asyncio.timeout(self._lifecycle_timeout.total_seconds()):
                 actions = await self._discover_catalog(connection.client)
-        except _InvalidMcpCatalogError, ValidationError:
+        except (_InvalidMcpCatalogError, ValidationError) as error:
             # A legacy-protocol peer's tool list is parsed against that era's stricter wire
             # model (e.g. input_schema requiring type: "object" at the root); a schema that
             # violates it fails there, before our own jsonschema check ever runs.
-            self._mark_unavailable(McpUnavailableReason.INVALID_CATALOG)
-        except Exception:
-            self._session_failed(connection)
+            self._mark_unavailable(McpUnavailableReason.INVALID_CATALOG, self._failure_detail(error))
+        except Exception as error:
+            self._session_failed(connection, error)
             self._health.reason = McpUnavailableReason.DISCOVERY_FAILED
         else:
             if self._connection is connection and not connection.failed:
@@ -532,20 +558,20 @@ class McpActionGroupExecutor(Executor):
             async with asyncio.timeout(self._lifecycle_timeout.total_seconds()):
                 tools = await client.list_tools()
             actions = self._catalog_from_tools(tools)
-        except _InvalidMcpCatalogError, ValidationError:
+        except (_InvalidMcpCatalogError, ValidationError) as error:
             # A legacy-protocol peer's tool list is parsed against that era's stricter wire
             # model (e.g. input_schema requiring type: "object" at the root); a schema that
             # violates it fails inside list_tools() itself, before our own jsonschema check
             # ever runs -- both mean the same thing: the backend's schema is unusable.
             if self._connection is connection:
-                self._mark_unavailable(McpUnavailableReason.INVALID_CATALOG)
+                self._mark_unavailable(McpUnavailableReason.INVALID_CATALOG, self._failure_detail(error))
                 self._tool_list_changed.set()
             return ExecutionResult(
                 state=ExecutionState.FAILED,
                 error={"kind": "mcp_invalid_schema", "message": "backend tool schema is invalid"},
             )
-        except Exception:
-            self._session_failed(connection)
+        except Exception as error:
+            self._session_failed(connection, error)
             return self._unavailable_result()
         tool = actions.get(name)
         if tool is None:
@@ -569,34 +595,34 @@ class McpActionGroupExecutor(Executor):
         if connection.failed or self._connection is not connection:
             return self._unavailable_result()
         try:
-            result = await client.call_tool(name, request.arguments, raise_on_error=False)
-        except Exception:
-            self._session_failed(connection)
+            result = await client.call_tool_mcp(name, request.arguments)
+        except Exception as error:
+            self._session_failed(connection, error)
             raise ExecutionOutcomeUnknownError(f"MCP tools/call transport failure for {name}") from None
 
         if result.is_error and _mcp_error_kind(result) == "execution_unknown":
             raise ExecutionOutcomeUnknownError("MCP backend reported an unknown execution outcome")
         # A tool's error output is one of its two valid answers, not an execution failure: the
         # backend ran the call and replied. Only transport and outcome uncertainty fail here.
-        return ExecutionResult(state=ExecutionState.SUCCEEDED, result=_safe_result(result))
+        # The upstream answer is kept whole in its MCP wire shape -- every content block (images,
+        # audio, resources), structured content, `isError` and `_meta` -- so it can be relayed
+        # unchanged. `resultType` describes the JSON-RPC exchange, not the tool's answer.
+        return ExecutionResult(
+            state=ExecutionState.SUCCEEDED,
+            result=result.model_dump(mode="json", by_alias=True, exclude_none=True, exclude={"result_type"}),
+        )
 
 
-def _safe_result(result: Any) -> JsonValue:
-    if result.is_error:
-        payload: dict[str, JsonValue] = {"is_error": True, "content": _texts(result)}
-        if result.structured_content is not None:
-            payload["structured_content"] = cast(JsonValue, result.structured_content)
-        return payload
-    if result.structured_content is not None:
-        return cast(JsonValue, result.structured_content)
-    return {"content": _texts(result)}
+def _describe(error: BaseException) -> str:
+    """Each leaf failure with its type: an exception group's members, or the cause of a bare wrapper."""
+    if isinstance(error, BaseExceptionGroup):
+        return "; ".join(_describe(member) for member in error.exceptions)
+    if not str(error) and error.__cause__ is not None:
+        return _describe(error.__cause__)
+    return f"{type(error).__name__}: {error}" if str(error) else type(error).__name__
 
 
-def _texts(result: Any) -> list[JsonValue]:
-    return [block.text for block in result.content if isinstance(block, mcp.types.TextContent)]
-
-
-def _mcp_error_kind(result: Any) -> str | None:
+def _mcp_error_kind(result: mcp.types.CallToolResult) -> str | None:
     """Read only the bounded machine-readable kind used for backend unknown outcomes."""
     for block in result.content:
         if not isinstance(block, mcp.types.TextContent):

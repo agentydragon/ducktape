@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "flux_kustomizations",
@@ -21,9 +21,9 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:cilium",
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/cert_manager:certificate",
         "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
@@ -34,5 +34,25 @@ py_library(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_proxy",
+    srcs = ["test_proxy.py"],
+    data = [
+        "testdata/github_proxy_rules.yaml",
+        "@multitool//tools/promtool",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":proxy",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )

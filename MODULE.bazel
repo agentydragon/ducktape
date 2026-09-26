@@ -96,8 +96,8 @@ single_version_override(
 
 # or-tools@9.15 pulls pybind11_abseil for wrapper targets even when we only
 # build the C++ CP-SAT backend. Its module creates a dev-only pip hub named
-# "pypi", which collides with Ducktape's root pip hub during module extension
-# resolution. Keep pybind11_abseil's apparent @pypi mapping inside that module,
+# "pypi", the name rules_python reserves for its generated unified hub. Keep
+# pybind11_abseil's apparent @pypi mapping inside that module,
 # but give its generated hub a module-specific name. Upstream PR #73 is merged, but
 # the fix is not in a released version yet; remove this override only after a
 # release containing that PR and a successful OR-Tools consumer build.
@@ -543,22 +543,7 @@ apt.install(
         "trixie-security",
     ],
 )
-
-# Agentplane runner image: git, ripgrep, and curl on debian:trixie-slim beside the runner and both
-# native harnesses.
-apt.install(
-    dependency_set = "trixie_agentplane_runner",
-    packages = [
-        "curl",
-        "git",
-        "ripgrep",
-    ],
-    suites = [
-        "trixie",
-        "trixie-security",
-    ],
-)
-use_repo(apt, "github_relay_squid", "gnome_shell_test", "trixie_agentplane_runner", "trixie_attic_rotation", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_wayback_cache")
+use_repo(apt, "github_relay_squid", "gnome_shell_test", "trixie_attic_rotation", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_wayback_cache")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
@@ -679,8 +664,11 @@ pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 # session-start hook on Claude Code web. No hardcoded proxy here - this file
 # should work both on local dev machines and on CC web.
 
+# Hub names are shared by every module using the pip extension, and rules_python
+# reserves "pypi" for its generated unified hub, so this hub carries the module
+# name. use_repo maps it back to the @pypi that BUILD files use.
 pip.parse(
-    hub_name = "pypi",
+    hub_name = "ducktape_pypi",
     python_version = "3.14",
     requirements_lock = "//:requirements_bazel.txt",
 )
@@ -701,7 +689,7 @@ pip.parse(
     python_version = "3.14",
     requirements_lock = "//tana/litellm_proxy:requirements.txt",
 )
-use_repo(pip, "pypi", "pypi_homeassistant", "pypi_tana_litellm_proxy")
+use_repo(pip, "pypi_homeassistant", "pypi_tana_litellm_proxy", pypi = "ducktape_pypi")
 
 # Type stubs for mypy - extracts types-* and *-stubs packages from requirements
 # and provides them to the mypy aspect for per-target stub inclusion.
@@ -711,7 +699,7 @@ types.requirements(
     # Exclusions prevent rules_mypy from generating requirement("X") mappings
     # for type stubs whose runtime package isn't in the pip hub (or has a
     # different name). Without exclusion, Bazel fails at analysis time with
-    # "no such package '@@rules_python++pip+pypi//X'".
+    # "no such package '@@rules_python++pip+ducktape_pypi//X'".
     #
     # Cleaned-up stubs (no longer need exclusion):
     # - sqlalchemy-stubs, types-sqlalchemy: removed from pyproject.toml
@@ -770,13 +758,10 @@ register_toolchains("@rust_toolchains//:all")
 # Keep this extension visible to downstream modules. Ducktape BUILD files use
 # apparent labels such as `@crates//:anyhow`, and those labels are resolved in
 # Ducktape's own repository mapping when another workspace consumes Ducktape via
-# `bazel_dep` + `archive_override`. A downstream workspace's root `@crates`
-# repository cannot satisfy those labels.
-#
-# Do not attach Ducktape's `Cargo.Bazel.lock` here. rules_rust's rendered-lock
-# checksum is not portable across root-module and dependency-module path
-# contexts, which makes downstream consumers fail analysis even though
-# `Cargo.lock` is pinned. Let crate_universe render from the Cargo lock instead.
+# `bazel_dep` + `git_override`. A downstream workspace's root `@crates`
+# repository cannot satisfy those labels. crate_universe refuses a non-root
+# `from_cargo` without a `lockfile` (it never repins across module boundaries
+# and skips the digest check there), so the lockfile is what dependents render.
 crate = use_extension(
     "@rules_rust//crate_universe:extensions.bzl",
     "crate",
@@ -786,6 +771,7 @@ crate = use_extension(
 crate.from_cargo(
     name = "crates",  # this becomes the repo name
     cargo_lockfile = "//:Cargo.lock",
+    lockfile = "//:Cargo.Bazel.lock",
     manifests = ["//:Cargo.toml"],
 )
 

@@ -85,7 +85,7 @@ resource "kubernetes_secret" "cheap_experiments" {
 
 resource "litellm_key" "agentplane_staging" {
   key_alias       = "agentplane-staging"
-  models          = concat(var.model_allowlists.oai_lane_models, var.model_allowlists.claude_client_models)
+  models          = concat(var.model_allowlists.oai_lane_models, var.model_allowlists.claude_client_models, var.model_allowlists.ollama_chat_client_models)
   max_budget      = 50
   budget_duration = "30d"
   metadata = {
@@ -104,7 +104,7 @@ resource "kubernetes_secret" "agentplane_staging" {
     name      = "litellm-key-agentplane-staging"
     namespace = "agentplane-staging"
     annotations = {
-      description = "Server-held OpenAI and Claude subscription key for Agentplane staging; never mounted into runner Pods"
+      description = "Server-held key for OpenAI/Claude subscription and local Ollama chat routes in Agentplane staging; never mounted into runner Pods"
     }
   }
 
@@ -195,44 +195,6 @@ resource "kubernetes_secret" "public_coder_agent" {
 }
 
 # ============================================================================
-# haku-console-claude — Console-launched Claude runner, via the colocated egress fence
-# ============================================================================
-# Claude Code's inference runs on the flat-rate Claude subscription models on the Anthropic Messages
-# surface (anthropic-max20/ant-messages/*, #5086), fronted by CLIProxyAPI's Claude OAuth session -- the same
-# /v1/messages passthrough as the codex lane but a different upstream session. The Console colocated
-# egress fence (#4670) substitutes this key for the runner's inert placeholder on the internal
-# LiteLLM origin; the runner never holds it. Scoped to only the anthropic-max20/ant-messages lane.
-# The direct-API lane is separately exposed as anthropic-api/ant-messages/* (model_rosters.py). The
-# key does not admit the Codex, Gemini, or embedding models. Deleting this key is the runner's
-# provider kill switch. Reflected into haku-console, where the Console pod resolves it for substitution.
-
-resource "litellm_key" "haku_console_claude" {
-  key_alias = "haku-console-claude"
-  models    = var.model_allowlists.claude_client_models
-  metadata = {
-    consumer = "haku-console-claude"
-  }
-}
-
-resource "kubernetes_secret" "haku_console_claude" {
-  metadata {
-    name      = "litellm-key-haku-console-claude"
-    namespace = "litellm"
-    annotations = {
-      description                                                     = "LiteLLM virtual key for the Console-launched Claude runner (anthropic-max20/ant-messages/* Claude-subscription models via CLIProxyAPI); reflected into haku-console, substituted by the colocated egress fence for the runner's inert placeholder"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-console"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-console"
-    }
-  }
-
-  data = {
-    api-key = litellm_key.haku_console_claude.key
-  }
-}
-
-# ============================================================================
 # tana-clients — scoped key for laptop tana-claude (Tana-UI models via LiteLLM)
 # ============================================================================
 # Pattern-B pinned key: value in a git SOPS file in this module dir, decrypted with the
@@ -284,8 +246,7 @@ resource "litellm_key" "tana_clients" {
 #
 # One deliberate difference from its sibling client keys: no team, so no `model = "*"`
 # fallback. Those exist on the tana/codex/gemini lanes because Claude Code names Claude
-# models a non-Claude lane cannot serve, which cannot happen here -- the in-cluster
-# haku_console_claude key runs Claude Code on exactly this roster with no fallback at all.
+# models a non-Claude lane cannot serve, which cannot happen here.
 
 data "sops_file" "claude_subscription_clients_key" {
   source_file = "${path.module}/litellm-claude-subscription-clients-key.yaml"
@@ -318,7 +279,7 @@ resource "litellm_team" "codex_clients" {
     fallbacks = [
       {
         model           = "*"
-        fallback_models = ["chatgpt/ant-messages/gpt-5.6-luna"]
+        fallback_models = ["chatgpt/ant-messages/gpt-6-luna"]
       }
     ]
   }

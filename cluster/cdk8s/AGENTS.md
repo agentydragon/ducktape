@@ -126,6 +126,12 @@ its parameters. `generate_manifests.py` is the topological order, written out by
   conversion. No interim flattening of those packages.
 - **Output routing is by `spec.path`**, with the handful of Kustomizations whose `path`
   is not their own directory listed explicitly in the writer. Keep those explicit.
+- **A directory's root is written once**: its module's `OUTPUT_DIR` (or a named constant
+  like `BASE_DIR`) is `f"{GENERATED_ROOT}/..."` or `f"{HAND_WRITTEN_ROOT}/..."`
+  (`manifest_roots.py`), and the artifact in `generate_manifests.py` takes that constant,
+  never the path spelled again. Moving a directory between roots is that one edit, plus
+  the committed files; `GENERATED_ROOT` is right exactly when the generator writes every
+  file the directory holds.
 
 The worked edge, `monitoring-crds -> cilium-monitoring`:
 
@@ -176,9 +182,10 @@ indirection, stop and ask before changing the design.
 ## Testing a generator
 
 - **The snapshot is the only pin.** `//cluster/cdk8s:test_generate_manifests`
-  regenerates every generated file in memory and asserts equality with the committed
-  files, including the single `cluster/k8s/flux/kustomizations.k8s.yaml` chart; a change
-  to generated output is a diff in the PR that makes it.
+  regenerates in memory and asserts every written file equals the committed one at its
+  path, including the single `cluster/k8s/flux/kustomizations.k8s.yaml` chart, and that
+  `cluster/generated` holds nothing else; a change to generated output is a diff in the
+  PR that makes it. No list of files to keep: the data deps carry both whole trees.
 - **Invariants live beside the generator**: tests over the in-memory synth
   (`agentplane/conftest.py`'s `agentplane_manifests`), or
   **fleet rules** (`fleet_rules.py`, run by every synth through
@@ -284,12 +291,27 @@ typed alternative exists. Three tiers, in order:
 3. **CRD type** (own `apiVersion` group, e.g. `external-secrets.io`,
    `monitoring.coreos.com`): generate real bindings via `cdk8s_import`
    (`devinfra/js/cdk8s_import.bzl`;
-   `//cluster/cdk8s/crd_bindings/{flux,prometheus_operator,gateway_api,external_secrets,cilium}` are
-   the examples) — this is the same generator tier 2 already ran for you on the core
-   API, just pointed at the CRD's own schema instead.
+   `//cluster/cdk8s/crd_bindings/{flux,prometheus_operator,gateway_api,cilium}` and
+   `//cluster/cdk8s/providers/{external_secrets,keda,cnpg}` are the examples) — this is the same
+   generator tier 2 already ran for you on the core API, just pointed at the CRD's own
+   schema instead. `providers/<name>/` is the target layout for every provider
+   (`cluster/cdk8s/PLAN.md` item A): the `cdk8s_import` declarations colocated with that
+   CRD's generic, cluster-topology-free wrapper functions, once it has one.
+
+   `providers/<name>/` holds only what the CRD schema itself defines — real typed
+   fields and their real variant shapes. It never holds a ducktape namespace, secret
+   name, hostname, or topology fact, nor one caller's specific use of a field the
+   schema leaves untyped (a plugin system's freeform `metadata: map[string]string`);
+   those stay in the ducktape-specific module that already knows them, passed in as a
+   parameter. Confirmed the hard way: `providers/keda`'s first draft wrapped the
+   `forgejo-runner` KEDA scaler's own `metadata` shape as if it were CRD structure —
+   it wasn't, that's haku-ci's own integration choice, and the fix moved it back to
+   `haku_ci/runner.py` (agentydragon/ducktape#7952). The skill's own conventions
+   (class shape, factories, references) are repo-agnostic; this placement rule is not
+   — it belongs here, not in the skill.
 
    Put each `cdk8s_import` declaration and any import smoke test in
-   `cluster/cdk8s/crd_bindings/<provider>/BUILD.bazel`. Keep pinned upstream CRD
+   `cluster/cdk8s/providers/<provider>/BUILD.bazel`. Keep pinned upstream CRD
    schemas in `MODULE.bazel`; generated Python bindings are Bazel outputs and are
    never checked in.
 

@@ -167,14 +167,19 @@
       "target": "//cluster/rotators/attic_jwt_rotation:image",
       "registry": "forgejo"
     },
-    "ha-mcp-token-provisioner": {
-      "target": "//cluster/provisioners/ha_mcp_token_provisioner:image",
-      "test": "//cluster/provisioners/ha_mcp_token_provisioner/...",
+    "homeassistant-component-installer": {
+      "target": "//homeassistant/provisioner/components:image",
+      "test": "//homeassistant/provisioner/components/...",
       "registry": "forgejo"
     },
-    "homeassistant-provisioner": {
-      "target": "//homeassistant/provisioner:image",
-      "test": "//homeassistant/provisioner/...",
+    "homeassistant-onboarding": {
+      "target": "//homeassistant/provisioner/onboarding:image",
+      "test": "//homeassistant/provisioner/onboarding/...",
+      "registry": "forgejo"
+    },
+    "homeassistant-token-provisioner": {
+      "target": "//homeassistant/provisioner/tokens:image",
+      "test": "//homeassistant/provisioner/tokens/...",
       "registry": "forgejo"
     },
     "grocy-user-perms-provisioner": {
@@ -203,11 +208,6 @@
     },
     "cpap-sync": {
       "target": "//cpap:image",
-      "registry": "forgejo"
-    },
-    "agentplane-runner": {
-      "target": "//agentplane/runner:image",
-      "test": "//agentplane/runner/...",
       "registry": "forgejo"
     },
     "agentplane-app": {

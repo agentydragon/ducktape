@@ -65,13 +65,13 @@ from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
 )
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
-_IDENTITY_DIR = "cluster/k8s/github-api-proxy/identity"
-_APP_DIR = "cluster/k8s/github-api-proxy/app"
+_IDENTITY_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/identity"
+_APP_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/app"
 _NAME = "github-api-proxy"
 _NAMESPACE = "github-api-proxy"
 _LABELS = {"app.kubernetes.io/name": _NAME}
@@ -450,6 +450,7 @@ def _network_policy(scope: Construct) -> None:
         egress_deny=[
             CiliumNetworkPolicySpecEgressDeny(
                 to_cidr=[
+                    # keep-sorted start
                     "0.0.0.0/8",
                     "10.0.0.0/8",
                     "100.64.0.0/10",
@@ -461,6 +462,7 @@ def _network_policy(scope: Construct) -> None:
                     "::1/128",
                     "fc00::/7",
                     "fe80::/10",
+                    # keep-sorted end
                 ],
                 to_ports=[
                     CiliumNetworkPolicySpecEgressDenyToPorts(
@@ -554,7 +556,4 @@ def app_chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, _IDENTITY_DIR, identity_chart)
-    write_yaml(
-        root / _IDENTITY_DIR / "kustomization.yaml", kustomize_kustomization(resources=[f"{_NAME}-identity.k8s.yaml"])
-    )
     write_charts(root, _APP_DIR, app_chart)

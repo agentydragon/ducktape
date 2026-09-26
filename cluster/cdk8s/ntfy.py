@@ -32,18 +32,7 @@ from cdk8s_plus_34 import (
     Service,
     ServicePort,
 )
-from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecBootstrap,
-    ClusterSpecBootstrapInitdb,
-    ClusterSpecMonitoring,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecStorage,
-)
+from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from external_secret_store_crds.io.external_secrets import (
     ClusterSecretStore,
@@ -73,19 +62,19 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import fleet_rules
+from cluster.cdk8s import cnpg, fleet_rules
 from cluster.cdk8s.agentplane import node_scheduling
-from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import sops_decryption, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
 NAME = "ntfy"
-OUTPUT_DIR = "cluster/k8s/ntfy"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ntfy"
 NAMESPACE = NAME
 HOSTNAME = "ntfy.allegedly.works"
 PORT = 2586
@@ -137,13 +126,13 @@ def _secret_store(scope: Construct) -> None:
 
 def _auth_external_secret(scope: Construct) -> None:
     """Derive stable-on-change ntfy auth inputs from the SOPS source Secret."""
-    add_external_secret(
+    ExternalSecret(
         scope,
         "auth-external-secret",
         name=_AUTH_SECRET,
         namespace=NAMESPACE,
         refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
-        store=cluster_secret_store(SECRET_STORE),
+        store=SecretStoreRef.cluster(SECRET_STORE),
         data=[
             remote_data(_AUTH_SOURCE_SECRET, "alertmanager-password", secret_key="alertmanager_password"),
             remote_data(_AUTH_SOURCE_SECRET, "alertmanager-token", secret_key="alertmanager_token"),
@@ -177,13 +166,13 @@ def _auth_external_secret(scope: Construct) -> None:
 
 def _alertmanager_webhook_secret(scope: Construct) -> None:
     """Publish the ntfy bearer credential as Alertmanager's webhook Secret."""
-    add_external_secret(
+    ExternalSecret(
         scope,
         "alertmanager-webhook-external-secret",
         name="alertmanager-ntfy-webhook",
         namespace="monitoring",
         refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
-        store=cluster_secret_store(SECRET_STORE),
+        store=SecretStoreRef.cluster(SECRET_STORE),
         data=[remote_data(_AUTH_SOURCE_SECRET, "alertmanager-token", secret_key="alertmanager_token")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
@@ -200,29 +189,15 @@ def _alertmanager_webhook_secret(scope: Construct) -> None:
 
 
 def _database(scope: Construct) -> None:
-    Cluster(
+    cnpg.cluster(
         scope,
         "database",
-        metadata=metadata(_DATABASE_CLUSTER, NAMESPACE),
-        spec=ClusterSpec(
-            instances=2,
-            image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
-                )
-            ),
-            affinity=ClusterSpecAffinity(
-                enable_pod_anti_affinity=True,
-                pod_anti_affinity_type="required",
-                node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
-                topology_key="kubernetes.io/hostname",
-                node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
-            ),
-            storage=ClusterSpecStorage(storage_class="local-path-ovh-hdd", size="2Gi"),
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-            bootstrap=ClusterSpecBootstrap(initdb=ClusterSpecBootstrapInitdb(database=NAME, owner=NAME)),
-        ),
+        name=_DATABASE_CLUSTER,
+        namespace=NAMESPACE,
+        node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
+        storage_class="local-path-ovh-hdd",
+        size="2Gi",
+        initdb=ClusterSpecBootstrapInitdb(database=NAME, owner=NAME),
     )
 
 

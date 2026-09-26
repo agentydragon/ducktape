@@ -1,6 +1,7 @@
-"""Grocy itself: the household-independent `app-base` (Deployment, Service, settings
-overrides, ingress NetworkPolicy) and each household's `<household>/app` (Namespace,
-config PVC, and the VolSync backup, migration and verification objects around it).
+"""Grocy itself, rendered into each household's `<household>/app`: the household-independent
+`grocy.k8s.yaml` (Deployment, Service, settings overrides, ingress NetworkPolicy), namespaced
+by the household's kustomization, and `grocy-<household>.k8s.yaml` (Namespace, config PVC,
+and the VolSync backup, migration and verification objects around it).
 
 Hand-written beside the generated output: each household's `app/kustomization.yaml`, whose
 patch moves the Deployment onto the hil-ovh zone.
@@ -41,11 +42,10 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
-from cluster.cdk8s.flux import kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
-BASE_DIR = "cluster/k8s/grocy/app-base"
 _NAME = "grocy"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _IMAGE = "lscr.io/linuxserver/grocy:v4.6.0-ls318"
@@ -373,15 +373,15 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, BASE_DIR, base_chart)
-    write_yaml(root / BASE_DIR / "kustomization.yaml", kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml"]))
     write_charts(
         root,
-        "cluster/k8s/grocy/sf/app",
+        f"{HAND_WRITTEN_ROOT}/grocy/sf/app",
+        base_chart,
         lambda app: household_chart(app, household="sf", backup_schedule="23 */6 * * *"),
     )
     write_charts(
         root,
-        "cluster/k8s/grocy/vallejo/app",
+        f"{HAND_WRITTEN_ROOT}/grocy/vallejo/app",
+        base_chart,
         lambda app: household_chart(app, household="vallejo", backup_schedule="29 */6 * * *"),
     )

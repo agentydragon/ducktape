@@ -5,7 +5,7 @@ FUSE-backed) was stood up to evaluate whether `seaweedfs-ovh` is suitable
 storage for a Chromium-profile workload (`tana-mcp`'s `~/.config/tana`,
 ~200 MB, heavy small writes + sync from SQLite/IndexedDB).
 
-The companion install lives at <../k8s/seaweedfs-csi/>; see
+The companion install lives at <../generated/seaweedfs-csi/>; see
 <seaweedfs_trial_baseline.md> for SeaweedFS hardware/topology.
 
 ## Test setup (2026-05-23)

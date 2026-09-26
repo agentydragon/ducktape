@@ -15,7 +15,7 @@ from cluster.validation.kustomize import KustomizeBuildResult
 
 
 def _make_cluster(
-    k8s_dir: Path,
+    repo_root: Path,
     *,
     resource_kind: str = "HelmRelease",
     resource_api_version: str = "helm.toolkit.fluxcd.io/v2",
@@ -23,7 +23,7 @@ def _make_cluster(
     wait: bool = False,
 ) -> ParsedCluster:
     """Build a minimal ParsedCluster with one resource and optional healthCheck."""
-    kust_file = k8s_dir / "test-app" / "kustomization.yaml"
+    kust_file = repo_root / "cluster/k8s/test-app/kustomization.yaml"
 
     return ParsedCluster(
         flux_kustomizations={
@@ -45,12 +45,6 @@ def _make_cluster(
 
 
 class TestControllerResourceHealthChecks:
-    @pytest.fixture
-    def k8s_dir(self, tmp_path: Path) -> Path:
-        k8s_dir = tmp_path / "cluster" / "k8s"
-        k8s_dir.mkdir(parents=True)
-        return k8s_dir
-
     @pytest.mark.parametrize(
         ("resource_kind", "resource_api_version", "health_check_kind"),
         [
@@ -59,33 +53,33 @@ class TestControllerResourceHealthChecks:
         ],
     )
     def test_no_error_with_matching_healthcheck(
-        self, k8s_dir: Path, resource_kind: str, resource_api_version: str, health_check_kind: str
+        self, tmp_path: Path, resource_kind: str, resource_api_version: str, health_check_kind: str
     ) -> None:
         cluster = _make_cluster(
-            k8s_dir,
+            tmp_path,
             resource_kind=resource_kind,
             resource_api_version=resource_api_version,
             health_check_kind=health_check_kind,
         )
-        assert check_controller_health_checks(cluster, k8s_dir) == []
+        assert check_controller_health_checks(cluster, tmp_path) == []
 
     @pytest.mark.parametrize(
         ("resource_kind", "resource_api_version"),
         [("HelmRelease", "helm.toolkit.fluxcd.io/v2"), ("Terraform", "infra.contrib.fluxcd.io/v1alpha2")],
     )
-    def test_error_without_healthcheck(self, k8s_dir: Path, resource_kind: str, resource_api_version: str) -> None:
-        cluster = _make_cluster(k8s_dir, resource_kind=resource_kind, resource_api_version=resource_api_version)
-        errors = check_controller_health_checks(cluster, k8s_dir)
+    def test_error_without_healthcheck(self, tmp_path: Path, resource_kind: str, resource_api_version: str) -> None:
+        cluster = _make_cluster(tmp_path, resource_kind=resource_kind, resource_api_version=resource_api_version)
+        errors = check_controller_health_checks(cluster, tmp_path)
         assert len(errors) == 1
         assert resource_kind in errors[0]
 
-    def test_wait_covers_controller_resources(self, k8s_dir: Path) -> None:
+    def test_wait_covers_controller_resources(self, tmp_path: Path) -> None:
         """wait: true health-checks every applied object, the HelmRelease included."""
-        assert check_controller_health_checks(_make_cluster(k8s_dir, wait=True), k8s_dir) == []
+        assert check_controller_health_checks(_make_cluster(tmp_path, wait=True), tmp_path) == []
 
-    def test_no_error_for_plain_resources(self, k8s_dir: Path) -> None:
-        cluster = _make_cluster(k8s_dir, resource_kind="ConfigMap", resource_api_version="v1")
-        assert check_controller_health_checks(cluster, k8s_dir) == []
+    def test_no_error_for_plain_resources(self, tmp_path: Path) -> None:
+        cluster = _make_cluster(tmp_path, resource_kind="ConfigMap", resource_api_version="v1")
+        assert check_controller_health_checks(cluster, tmp_path) == []
 
 
 class TestRetryPolicy:

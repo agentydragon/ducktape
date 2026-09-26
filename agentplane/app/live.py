@@ -46,9 +46,9 @@ from agentplane.app.action_policy import (
     ActionPolicyView,
 )
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.views import ThreadView
 from agentplane.app.changes import Changes
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.egress import (
     BINDINGS_PLURAL,
     CREDENTIALS_PLURAL,
@@ -365,16 +365,16 @@ def _store(request: Request) -> ThreadStore:
     return store
 
 
-def _thread_updates(request: Request) -> ThreadUpdates:
-    updates = request.app.state.thread_updates
-    if not isinstance(updates, ThreadUpdates):
-        raise TypeError(f"app.state.thread_updates is {type(updates).__name__}, not ThreadUpdates")
+def _database_updates(request: Request) -> DatabaseUpdates:
+    updates = request.app.state.database_updates
+    if not isinstance(updates, DatabaseUpdates):
+        raise TypeError(f"app.state.database_updates is {type(updates).__name__}, not DatabaseUpdates")
     return updates
 
 
 Index = Annotated[LiveIndex, Depends(_index)]
 Store = Annotated[ThreadStore, Depends(_store)]
-Updates = Annotated[ThreadUpdates, Depends(_thread_updates)]
+Updates = Annotated[DatabaseUpdates, Depends(_database_updates)]
 ActionPolicy = Annotated[ActionPolicyInventory, Depends(_action_policy)]
 Caller = Annotated[CallerIdentity, Depends(require_caller)]
 
@@ -423,7 +423,9 @@ async def live_threads(index: Index, store: Store, updates: Updates, shutdown: S
             watch=_health(index),
         )
 
-    return _stream(shutdown.until(frames(snapshot, lambda: _health(index), index.changes, updates.changes)))
+    return _stream(
+        shutdown.until(frames(snapshot, lambda: _health(index), index.changes, updates.changes[Channel.THREADS]))
+    )
 
 
 @router.get("/sandboxes/{name}", responses=_SANDBOX_FRAMES)
@@ -457,4 +459,6 @@ async def live_sandbox(
             watch=_health(index),
         )
 
-    return _stream(shutdown.until(frames(snapshot, lambda: _health(index), index.changes, updates.changes)))
+    return _stream(
+        shutdown.until(frames(snapshot, lambda: _health(index), index.changes, updates.changes[Channel.THREADS]))
+    )

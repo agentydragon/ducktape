@@ -279,17 +279,10 @@ class ServiceMappingResolver(UpstreamResolver):
             return [ip_address("127.0.0.1")]
         return await super()._resolve(host, port)
 
-    def redirect(self, server: connection.Server) -> None:
-        assert server.address is not None
-        host, port = server.address[:2]
-        if host.lower() == RULES_HOST and port == 80:
-            pin = self.pinned(host, port)
-            if pin is None:
-                server.error = f"no pinned address for {host}:{port}"
-                return
-            server.address = (str(pin.address), self.agent_api_port)
-            return
-        super().redirect(server)
+    def _target(self, pin: Pin) -> tuple[str, int]:
+        if (pin.host, pin.port) == (RULES_HOST, 80):
+            return str(pin.address), self.agent_api_port
+        return super()._target(pin)
 
 
 @pytest.fixture
@@ -1006,6 +999,31 @@ async def test_existing_tls_connection_rechecks_every_admission(
         rows = await decision_log.store.recent(SUBJECT_A)
         assert len({row.connection_id for row in rows}) == 1
         assert sum(row.phase is Phase.CONNECT for row in rows) == 1
+
+
+async def test_one_tls_connection_carries_every_admitted_request(
+    proxy: ProxyUnderTest, decision_log: DecisionLog
+) -> None:
+    """Every admitted request on a kept-open tunnel is answered, however many came before it: Bazel's
+    downloader, pip, and curl given several URLs all send theirs down one."""
+    paths = [f"/public/{n}" for n in range(12)]
+    # One context for the session: aiohttp pools connections per context, and reuse is the point.
+    tls = client_tls_context(proxy.interception_ca)
+    async with aiohttp.ClientSession() as session:
+        for path in paths:
+            async with (
+                asyncio.timeout(10),
+                session.get(
+                    proxy.url(path),
+                    proxy=f"http://127.0.0.1:{proxy.proxy_port}",
+                    proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+                    ssl=tls,
+                ) as response,
+            ):
+                assert (response.status, await response.read()) == (200, b"upstream ok")
+    assert [path for _, path, _ in proxy.upstream.requests] == paths
+    await decision_log.flush()
+    assert len({row.connection_id for row in await decision_log.store.recent(SUBJECT_A)}) == 1
 
 
 async def test_health_reports_ready_only_once_the_tunnel_accepts(tmp_path: Path, history_db_url: str) -> None:

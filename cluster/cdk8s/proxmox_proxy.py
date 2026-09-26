@@ -1,9 +1,9 @@
 """An nginx reverse proxy on the Proxmox node in front of the Proxmox web UI (TLS to the host,
-WebSocket for the noVNC/xterm.js consoles). Its `nginx.conf` stays a hand-written
-`configMapGenerator` input beside the output."""
+WebSocket for the noVNC/xterm.js consoles)."""
 
 from __future__ import annotations
 
+import textwrap
 from pathlib import Path
 
 from cdk8s import App, Chart
@@ -18,13 +18,54 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.scripts import nebula_mesh
 
 NAME = "proxmox-proxy"
 NAMESPACE = "proxmox-proxy"
-OUTPUT_DIR = "cluster/k8s/proxmox-proxy"
+OUTPUT_DIR = f"{GENERATED_ROOT}/proxmox-proxy"
 _PORT = 8080
 _LABELS = {"app.kubernetes.io/name": NAME}
-_CONFIG_MAP = ConfigMapArgs(name="proxmox-proxy-config", namespace=NAMESPACE, files=["config/nginx.conf"])
+_CONFIG_MAP_NAME = "proxmox-proxy-config"
+_PROXMOX_HOST = "atlas"
+_PROXMOX_UI_PORT = 8006
+
+
+def _config_map(mesh: nebula_mesh.Mesh) -> ConfigMapArgs:
+    nginx_conf = textwrap.dedent(f"""\
+        worker_processes auto;
+        error_log /dev/stderr warn;
+
+        events {{
+            worker_connections 128;
+        }}
+
+        http {{
+            upstream proxmox {{
+                server {mesh.hosts[_PROXMOX_HOST].nebula_ip}:{_PROXMOX_UI_PORT};
+            }}
+
+            server {{
+                listen {_PORT};
+
+                location / {{
+                    proxy_pass https://proxmox;
+                    proxy_ssl_verify off;
+
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto $scheme;
+
+                    # WebSocket support (noVNC/xterm.js console)
+                    proxy_http_version 1.1;
+                    proxy_set_header Upgrade $http_upgrade;
+                    proxy_set_header Connection "upgrade";
+                }}
+            }}
+        }}
+        """)
+    return ConfigMapArgs(name=_CONFIG_MAP_NAME, namespace=NAMESPACE, literals=[f"nginx.conf={nginx_conf}"])
 
 
 def _tcp_probe(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
@@ -88,7 +129,7 @@ def chart(app: App) -> Chart:
                             readiness_probe=_tcp_probe(initial_delay_seconds=2, period_seconds=5),
                         )
                     ],
-                    volumes=[k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP.name))],
+                    volumes=[k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP_NAME))],
                 ),
             ),
         ),
@@ -107,11 +148,11 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
+def write_manifests(root: Path, mesh: nebula_mesh.Mesh) -> None:
     write_charts(root, OUTPUT_DIR, chart)
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"], config_map_generator=[_CONFIG_MAP]),
+        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"], config_map_generator=[_config_map(mesh)]),
     )
 
 
