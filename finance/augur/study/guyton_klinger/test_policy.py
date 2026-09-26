@@ -2,26 +2,53 @@
 
 Settled paths open at 100 units of cash, 250 of bonds and 650 of equity, each priced 100 quanta
 per whole unit: opening wealth 100_000, w0 = 5%, so year 0 withdraws 5000 from cash and leaves a
-95_000 post-withdrawal book. Prices and CPI are per year and held within it.
+95_000 post-withdrawal book. Prices and CPI are per year and held within it. A path with bond
+payouts or a prior-year tax also gets the taxed composition's accounts, paid each December or on
+the tax authority's schedule; its jurisdictions tax nothing here, since no year's income reaches
+a standard deduction.
 """
 
 from dataclasses import dataclass
+from decimal import Decimal
 from fractions import Fraction
 from itertools import chain
 
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.actions import Action, Buy, Consume, LotSale, Sell
+from finance.augur.sim.actions import Action, Buy, Consume, LotSale, PayClaim, Sell, Transfer
 from finance.augur.sim.books import AccountRef
+from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.ids import AssetId, LotId
+from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot, PreparedSeries
+from finance.augur.sim.prepared import (
+    PreparedAccount,
+    PreparedDistribution,
+    PreparedDistributionSlice,
+    PreparedHoldingPool,
+    PreparedJurisdiction,
+    PreparedLot,
+    PreparedSeries,
+)
 from finance.augur.sim.results import Executed, Finished, Receipt, Rejected, RejectedAction, Rollout
+from finance.augur.sim.runtime import load_jurisdictions_for
+from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, TaxProfile
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.world import World
 from finance.augur.study.guyton_klinger.panel import Sleeve
-from finance.augur.study.guyton_klinger.paths import BROKERAGE, CHECKING, RETIREE, WORLD
+from finance.augur.study.guyton_klinger.paths import (
+    BROKERAGE,
+    CALIFORNIA,
+    CHECKING,
+    FEDERAL,
+    INCOME,
+    RETIREE,
+    TAX_AUTHORITY,
+    TAX_RESERVE,
+    WORLD,
+)
 from finance.augur.study.guyton_klinger.policy import (
     Cell,
     Guardrail,
@@ -50,6 +77,14 @@ class Path:
     bonds: list[int]
     # Equity lots as (lot, units), oldest first.
     equity_lots: tuple[tuple[str, int], ...] = (("equity", 650),)
+    # Quanta each bond unit pays every December.
+    bond_payout: int = 0
+    # The tax profile's estimate base: a quarter of it falls due in April, June and September.
+    prior_year_tax: int = 0
+
+    @property
+    def taxed(self) -> bool:
+        return bool(self.bond_payout or self.prior_year_tax)
 
 
 def monthly(annual: list[int]) -> tuple[int, ...]:
@@ -64,33 +99,80 @@ def world(paths: list[Path], rollout_id: int) -> World:
         f"security:{Sleeve.BONDS}": [path.bonds for path in paths],
         f"security:{Sleeve.EQUITY}": [path.equity for path in paths],
     }
-    result = World(
-        MarketPath(
-            [
-                PreparedSeries(
-                    series_id=series_id,
-                    snapshots=12 * years + 1,
-                    values=tuple(chain.from_iterable(monthly(row) for row in rows)),
-                )
-                for series_id, rows in levels.items()
-            ],
-            rollout_id,
-            rollout_count=len(paths),
-        ),
-        horizon_months=12 * years,
-    )
-    for agent_id in (RETIREE, WORLD):
-        result.declare_account(
-            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
+    series = [
+        PreparedSeries(
+            series_id=series_id,
+            snapshots=12 * years + 1,
+            values=tuple(chain.from_iterable(monthly(row) for row in rows)),
         )
+        for series_id, rows in levels.items()
+    ]
+    path = paths[rollout_id]
+    if path.taxed:
+        series.append(
+            PreparedSeries(
+                series_id=f"security_distribution:{Sleeve.BONDS}",
+                snapshots=12 * years + 1,
+                values=tuple(
+                    path.bond_payout * 10**9 if month % 12 == 11 else 0
+                    for path in paths
+                    for month in range(12 * years + 1)
+                ),
+            )
+        )
+    result = World(
+        MarketPath(series, rollout_id, rollout_count=len(paths)),
+        horizon_months=12 * years,
+        income_sources=(ORDINARY_INCOME, InterestIncome(issuer_jurisdiction_id=FEDERAL)) if path.taxed else (),
+        jurisdictions=(
+            PreparedJurisdiction(jurisdiction_id=FEDERAL, level=JurisdictionLevel.FEDERAL),
+            PreparedJurisdiction(jurisdiction_id=CALIFORNIA, level=JurisdictionLevel.STATE),
+        )
+        if path.taxed
+        else (),
+    )
+    accounts = [
+        AccountRef(agent_id=RETIREE, account_id=CHECKING),
+        AccountRef(agent_id=WORLD, account_id=CHECKING),
+        *(
+            AccountRef(agent_id=agent_id, account_id=account_id)
+            for agent_id, account_id in (
+                (RETIREE, TAX_RESERVE),
+                *((RETIREE, account_id) for account_id in INCOME.values()),
+                (TAX_AUTHORITY, CHECKING),
+            )
+            if path.taxed
+        ),
+    ]
+    for account in accounts:
+        result.declare_account(PreparedAccount(account=account, opening_balance=0))
     for sleeve in Sleeve:
         result.declare_pool(
             PreparedHoldingPool(agent_id=RETIREE, account_id=BROKERAGE, asset_id=AssetId(sleeve), quantity_scale=1)
         )
+    if path.taxed:
+        profile = TaxProfile(
+            agent_id=RETIREE,
+            jurisdiction_ids=[FEDERAL, CALIFORNIA],
+            tax_authority_agent_id=TAX_AUTHORITY,
+            payment_account_id=TAX_RESERVE,
+            tax_authority_account_id=CHECKING,
+            prior_year_tax=Decimal(path.prior_year_tax),
+        )
+        result.track(TaxAuthority(compile_profile(profile, load_jurisdictions_for([profile]), quantum=Decimal(1))))
+        result.declare_distribution(
+            PreparedDistribution(
+                agent_id=RETIREE,
+                holding_account_id=BROKERAGE,
+                asset_id=AssetId(Sleeve.BONDS),
+                to_account_id=INCOME[Sleeve.BONDS],
+                tax_character=(PreparedDistributionSlice(fraction_ppb=10**9, issuer_jurisdiction_id=FEDERAL),),
+            )
+        )
     lots = [
         (Sleeve.CASH, "cash", OPENING_UNITS[Sleeve.CASH]),
         (Sleeve.BONDS, "bonds", OPENING_UNITS[Sleeve.BONDS]),
-        *((Sleeve.EQUITY, lot, units) for lot, units in paths[rollout_id].equity_lots),
+        *((Sleeve.EQUITY, lot, units) for lot, units in path.equity_lots),
     ]
     for index, (sleeve, lot, units) in enumerate(lots):
         result.hold(
@@ -343,6 +425,48 @@ def test_unfunded_withdrawal_stops_after_its_sales_settle() -> None:
     summary = rollout.summary
     assert [series.values[-1] for series in summary.cash] == [95_000]
     assert [series.values[-1] for series in summary.public_holdings] == [0, 0, 0]
+
+
+def test_a_bond_sleeve_whose_price_fell_is_rising_when_its_coupon_made_the_year_positive() -> None:
+    # Bonds 100 -> 99 but pay 3 per unit: 250 * -1 + 750 = +500 over the year, so they count as
+    # rising. Year 1 opens at 5000 cash + 24_750 + 750 payouts + 65_000 = 95_500; bonds at 25_500
+    # are 1625 over their 23_875 target. The 750 of payouts fund first, then 9 units (891); cash
+    # funds the other 3359 as 34 units (3400). On price alone the bonds fell, and cash would fund all.
+    rollout, records = settle(Path(cpi=[100, 100, 100], equity=FLAT[:3], bonds=[100, 99, 99], bond_payout=3))
+    assert (records[1].opening_wealth, records[1].funding) == (
+        95_500,
+        ((Stage.OVERWEIGHT_BONDS, 1641), (Stage.CASH, 3400)),
+    )
+    assert [type(action) for action in actions(rollout, 12)] == [Transfer, Sell, Sell, Consume]
+    assert sold(rollout, 12) == [
+        (AssetId(Sleeve.BONDS), (sale("bonds", 9),)),
+        (AssetId(Sleeve.CASH), (sale("cash", 34),)),
+    ]
+    assert paid(rollout) == [(0, 5000), (12, 5000)]
+
+
+def test_estimated_tax_between_reviews_is_advanced_by_the_stages_and_repaid_from_the_next_withdrawal() -> None:
+    # A 400 prior-year tax asks 100 in months 3, 5 and 8. Year 0 has no reserve yet, so each is
+    # advanced from the portfolio: checking is empty, so one cash unit each. The year's income is
+    # nil and its tax 0, so January owes nothing more; the 300 paid stays an unrefunded prepayment.
+    rollout, records = settle(Path(cpi=[100, 104, 104], equity=FLAT[:3], bonds=FLAT[:3], prior_year_tax=400))
+    assert paid(rollout) == [(0, 5000), (3, 100), (5, 100), (8, 100), (12, 4900), (15, 100), (17, 100), (20, 100)]
+    assert [type(action) for action in actions(rollout, 3)] == [Sell, Transfer, PayClaim]
+    assert sold(rollout, 3) == [(AssetId(Sleeve.CASH), (sale("cash", 1),))]
+    # Year 1 opens at 94_700, below the 95_000 book only by the 300 advanced: not a loss, so the
+    # 4% CPI rise applies (a loss would freeze 5200, which exceeds 5% of 94_700). 5200 first repays
+    # the 300 and reserves nothing, since year 0's tax was 0; 4900 is spent, from the 47 cash
+    # units left and 2 bond units.
+    assert (records[1].opening_wealth, records[1].spending.inflation, records[1].requested) == (
+        94_700,
+        Inflation.APPLIED,
+        5200,
+    )
+    assert (records[1].repaid, records[1].reserved, records[1].funding) == (
+        300,
+        0,
+        ((Stage.CASH, 4700), (Stage.BONDS, 200)),
+    )
 
 
 def test_selected_replay_with_fresh_memory_reproduces_the_path() -> None:

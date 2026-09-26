@@ -67,7 +67,10 @@ statutory variations are covered. Source paths below are relative to Augur.
 ### Later
 
 - [ ] Consider indexing brackets and thresholds to the simulated CPI in the
-      calendar/law-year slice (judged low significance).
+      calendar/law-year slice (judged low significance). Historical replays need it
+      more: the Guyton–Klinger taxable variant holds today's nominal tables over
+      1928–2025, so decades of inflation push constant real income into higher
+      brackets and early start years face thresholds far above their price level.
 - [ ] Charitable gifts: out of scope for now; scope their federal/California
       deduction before any experiment that includes them.
 - [ ] Trading fees and fund expense ratios: out of scope for now; model them
