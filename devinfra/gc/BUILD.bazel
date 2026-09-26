@@ -216,6 +216,7 @@ py_test(
         ":git_repo",
         "//:conftest",
         "@pypi//pygit2",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
