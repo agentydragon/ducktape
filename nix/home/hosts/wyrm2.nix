@@ -16,6 +16,7 @@
     ../modules/kubeconfig.nix
     ../modules/talosconfig.nix
     ../modules/discord-minimized-autostart.nix
+    ./wyrm2-opencode.nix
   ];
 
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/wyrm2-forgejo.sops.key;
