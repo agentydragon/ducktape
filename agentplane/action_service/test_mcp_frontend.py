@@ -368,7 +368,9 @@ async def test_receipts_and_policy_view_are_compact_by_default_and_widen_via_inc
             "action": {"group": "test-group", "name": "alpha"},
             "arguments": {"message": "test-compact"},
         }
-        compact = (await client.call_tool("request_action", {"request": envelope})).structured_content
+        compact = (
+            await client.call_tool("request_action", {"request": envelope, "respond_with": "receipt"})
+        ).structured_content
         assert compact is not None
         assert set(compact) == always_receipt_fields
         request_id = compact["id"]
@@ -433,7 +435,9 @@ async def test_submission_wait_receipts_events_and_owner_scope(frontend: Fronten
             "action": {"group": "test-group", "name": "alpha"},
             "arguments": {"message": "test-message"},
         }
-        result = await caller.call_tool("request_action", {"request": envelope, "include_fields": ALL_REQUEST_FIELDS})
+        result = await caller.call_tool(
+            "request_action", {"request": envelope, "include_fields": ALL_REQUEST_FIELDS, "respond_with": "receipt"}
+        )
         receipt = Receipt.model_validate(result.structured_content)
         assert receipt.state is ActionState.DECISION_PENDING
         assert receipt.id is not None
@@ -604,7 +608,8 @@ async def test_tools_act_as_the_identity_the_transport_verified(frontend: Fronte
                         "title": "test title for test-identity",
                         "action": {"group": "test-group", "name": "alpha"},
                         "arguments": {"message": "test-identity"},
-                    }
+                    },
+                    "respond_with": "receipt",
                 },
             )
             assert result.structured_content is not None
@@ -674,7 +679,9 @@ async def test_submission_deadline_and_wait_validation(frontend: Frontend) -> No
             "arguments": {"message": "test-wait"},
         }
         submitted = (
-            await client.call_tool("request_action", {"request": request, "wait": {"wait_seconds": 0.001}})
+            await client.call_tool(
+                "request_action", {"request": request, "wait": {"wait_seconds": 0.001}, "respond_with": "receipt"}
+            )
         ).structured_content
         assert submitted is not None
         assert submitted["state"] == ActionState.DECISION_PENDING
@@ -699,7 +706,8 @@ async def test_allowed_action_executes_and_returns_canonical_result(frontend: Fr
                     "title": "test title for test-execute",
                     "action": {"group": "test-group", "name": "alpha"},
                     "arguments": {"message": "test-result"},
-                }
+                },
+                "respond_with": "receipt",
             },
         )
         assert result.structured_content is not None
@@ -726,8 +734,7 @@ class WaitSignals:
     released: asyncio.Event
 
 
-@pytest.fixture
-def subscription_signals(frontend: Frontend, monkeypatch: pytest.MonkeyPatch) -> WaitSignals:
+def _observed_subscriptions(frontend: Frontend, monkeypatch: pytest.MonkeyPatch) -> WaitSignals:
     signals = WaitSignals(asyncio.Event(), asyncio.Event())
     subscribe = frontend.updates.subscribe
 
@@ -742,6 +749,16 @@ def subscription_signals(frontend: Frontend, monkeypatch: pytest.MonkeyPatch) ->
 
     monkeypatch.setattr(frontend.updates, "subscribe", observed_subscription)
     return signals
+
+
+@pytest.fixture
+def subscription_signals(frontend: Frontend, monkeypatch: pytest.MonkeyPatch) -> WaitSignals:
+    return _observed_subscriptions(frontend, monkeypatch)
+
+
+@pytest.fixture
+def result_subscription_signals(results_frontend: Frontend, monkeypatch: pytest.MonkeyPatch) -> WaitSignals:
+    return _observed_subscriptions(results_frontend, monkeypatch)
 
 
 async def test_http_disconnect_releases_wait_without_cancelling_action(
@@ -823,7 +840,9 @@ async def test_cancellation_preserves_canonical_cutoff_ownership_and_retry(
             "action": {"group": "test-group", "name": "alpha"},
             "arguments": {"message": "test-cancel"},
         }
-        submitted = (await caller.call_tool("request_action", {"request": request})).structured_content
+        submitted = (
+            await caller.call_tool("request_action", {"request": request, "respond_with": "receipt"})
+        ).structured_content
         assert submitted is not None
         request_id, version = UUID(submitted["id"]), submitted["version"]
         if state is not ActionState.DECISION_PENDING:
@@ -881,7 +900,8 @@ async def test_cancellation_wakes_mcp_receipt_wait(frontend: Frontend, subscript
                         "title": "test title for test-cancel-wake",
                         "action": {"group": "test-group", "name": "alpha"},
                         "arguments": {"message": "test-cancel-wake"},
-                    }
+                    },
+                    "respond_with": "receipt",
                 },
             )
         ).structured_content
@@ -982,6 +1002,67 @@ async def test_action_result_of_a_failed_execution_carries_its_reason(
         )
     assert result.is_error
     assert "sandbox_unavailable" in _text(result.content)
+
+
+def _act_request(key: str) -> dict[str, object]:
+    """request_action arguments for test-mcp's act, leaving what it answers with at the default."""
+    return {
+        "request": {
+            "idempotency_key": key,
+            "title": f"test title for {key}",
+            "action": {"group": "test-mcp", "name": "act"},
+            "arguments": {},
+        }
+    }
+
+
+async def test_request_action_can_answer_with_the_result_as_its_tool_did(
+    results_frontend: Frontend, scripted: ScriptedExecutor, result_subscription_signals: WaitSignals
+) -> None:
+    answer = CallToolResult(
+        content=[ImageContent(type="image", data=base64.b64encode(b"test-image").decode(), mime_type="image/png")],
+        structured_content={"width": 1},
+    )
+    scripted.results[ActionIdentity(group="test-mcp", name="act")] = ExecutionResult(
+        state=ExecutionState.SUCCEEDED, result=answer.model_dump(mode="json", by_alias=True, exclude_none=True)
+    )
+    async with results_frontend.client() as client:
+        call = asyncio.create_task(
+            client.call_tool("request_action", {**_act_request("test-answered"), "wait": {"wait_seconds": 10}})
+        )
+        # Decided only once the call is waiting, so its one answer has to come after the Action ran.
+        await result_subscription_signals.registered.wait()
+        request = one(
+            await results_frontend.store.list_requests(
+                CallerPrincipal(account=workload("a")), idempotency_key="test-answered"
+            )
+        )
+        await _decide(results_frontend, request, Verdict.ALLOW)
+        result = await call
+    assert result.content == answer.content
+    assert result.structured_content == {"width": 1}
+    assert not result.is_error
+
+
+async def test_request_action_answering_with_its_result_says_what_it_waits_on(results_frontend: Frontend) -> None:
+    async with results_frontend.client() as client:
+        pending = await client.call_tool("request_action", _act_request("test-waiting"))
+    assert not pending.is_error
+    assert pending.structured_content is not None
+    assert pending.structured_content["state"] == ActionState.DECISION_PENDING
+    assert "get_action_result" in _text(pending.content)
+
+
+async def test_request_action_refuses_receipt_fields_without_a_receipt(results_frontend: Frontend) -> None:
+    async with results_frontend.client() as client:
+        refused = await client.call_tool(
+            "request_action", {**_act_request("test-fields"), "include_fields": ["decision"]}, raise_on_error=False
+        )
+    # Refused before submission: the caller asked for receipt fields the answer would silently drop.
+    assert refused.is_error
+    assert 'respond_with="receipt"' in _text(refused.content)
+    principal = CallerPrincipal(account=workload("a"))
+    assert await results_frontend.store.list_requests(principal, idempotency_key="test-fields") == []
 
 
 if __name__ == "__main__":

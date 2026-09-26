@@ -86,6 +86,13 @@ class RequestField(StrEnum):
     EXECUTION = "execution"
 
 
+class ResponseForm(StrEnum):
+    """What request_action answers with once its wait ends."""
+
+    RECEIPT = "receipt"
+    RESULT = "result"
+
+
 DEFAULT_RECEIPT_FIELDS: Final[list[RequestField]] = [
     RequestField.ID,
     RequestField.STATE,
@@ -474,19 +481,24 @@ def create_server(
         request: ActionRequestInput,
         wait: WaitOptions = DEFAULT_WAIT,
         include_fields: list[RequestField] = DEFAULT_RECEIPT_FIELDS,
+        respond_with: ResponseForm = ResponseForm.RESULT,
         caller: Caller = CALLER,
     ) -> ToolResult:
         """Submit one Action for policy evaluation, human decision if needed, and single-shot execution.
         Supply a stable idempotency_key with structured action group/name, validated arguments, and a title the deciding operator reads.
-        Returns a compact receipt (id, state, version, created_at, updated_at) immediately by default; wait.wait_seconds (0-30) optionally waits for wait.wait_until ("decision" or "terminal", default terminal).
-        include_fields is a pure allowlist: input (the submitted idempotency_key/action/arguments/title/description as one unit), origin, correlation, caller, external_grant, decision, and execution widen it.
-        Pending is not success. A key this caller already used is refused; after response loss read the request with get_action_request(idempotency_key=...), never submit a new key.
+        Answers once wait ends as get_action_result would: a finished Action's own result exactly as its tool answered, otherwise what it waits on or why it has none. wait.wait_seconds (0-30, default 0) optionally waits for wait.wait_until ("decision" or "terminal", default terminal).
+        respond_with="receipt" answers with a compact receipt (id, state, version, created_at, updated_at) instead. include_fields, for a receipt only, is a pure allowlist: input (the submitted idempotency_key/action/arguments/title/description as one unit), origin, correlation, caller, external_grant, decision, and execution widen it.
+        Pending is not success. A key this caller already used is refused; after response loss read the request with get_action_request or get_action_result(idempotency_key=...), never submit a new key.
         """
+        if respond_with is ResponseForm.RESULT and set(include_fields) != set(DEFAULT_RECEIPT_FIELDS):
+            raise ToolError('include_fields shapes a receipt; pass respond_with="receipt" to get one.')
         principal = caller.principal
         view = await service.submit(request, principal, external_grant=caller.external_grant)
         if wait.wait_seconds:
             view = await wait_for_receipt(view.id, principal, wait)
             await revalidate(principal)
+        if respond_with is ResponseForm.RESULT:
+            return tool_result(view, catalog.groups[view.action.group].executor)
         return _result(_receipt(view, set(include_fields)), exclude_unset=True)
 
     @server.tool(annotations={"readOnlyHint": True})

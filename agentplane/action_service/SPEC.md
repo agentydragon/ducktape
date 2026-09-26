@@ -142,7 +142,8 @@ The Action Service serves a generic MCP frontend in the same process, with the s
 admission, Decision, Execution, and receipt authority as its HTTP interface. Its fixed tools
 discover Actions, submit/cancel requests, read receipts and results, and page durable events. A result
 reads as the tool that ran answered, an MCP backend's own result exactly with every content block, and a
-request without one says what it is waiting on or why it has none. Catalog responses omit input schemas
+request without one says what it is waiting on or why it has none. A submission answers the same way once
+its bounded wait ends, unless its caller asks for the receipt. Catalog responses omit input schemas
 and full descriptions unless explicitly requested. Lists and wait durations are bounded, and backend
 configuration is never exposed.
 
