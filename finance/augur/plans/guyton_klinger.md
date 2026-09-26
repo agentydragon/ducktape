@@ -1,20 +1,18 @@
 # Guyton–Klinger experiment implementation
 
 Proposed STUDY consumer, not an implemented reproduction. The
-[source contract](../docs/guyton_klinger.md) owns primary evidence, study versions
-and remaining convention decisions. This plan owns the proposed code and leaves
-as its slices land; the [roadmap](roadmap.md) owns cross-component dependencies.
+[source contract](../docs/guyton_klinger.md) owns primary evidence, study versions,
+the declared three-sleeve adaptation and remaining convention decisions. This plan
+owns the proposed code and leaves as its slices land; the [roadmap](roadmap.md) owns
+cross-component dependencies.
 
 ## Composition on current Augur primitives
 
-- <../study/trinity/replay.py> demonstrates materialize-once paths, annual cadence,
-  worlds composed per path, `ActionSession`, original-ID replay and CLI artifacts.
-  Its sales-only funding, coupon cash, success boundary and monthly windows are
-  **not** GK defaults.
-- <../sim/external_series.py> accepts typed multi-asset level blocks directly.
-  The current <../model/historical_windows.py> macro/product composition has one
-  equity index; do not force six equity histories into it or synthesize bonds
-  from yields when the study source is an observed total-return series.
+- <../study/guyton_klinger/run.py> drives the annual windows of
+  <../study/guyton_klinger/paths.py> through one caller-supplied batch policy
+  (`BatchPolicy = Callable[[list[Decision]], list[DecisionActions]]`); its fixed
+  nominal withdrawal is a plumbing placeholder. Trinity's sales-only funding,
+  coupon cash and success boundary are **not** GK defaults.
 - <../sim/observations.py> supplies current lots/prices/basis, cash, CPI and typed
   receipts; exact sell/buy/consume actions own canonical settlement. Policies
   see observations, never the prepared future path arrays.
@@ -27,24 +25,17 @@ as its slices land; the [roadmap](roadmap.md) owns cross-component dependencies.
   receipts/books. <../x/joint_spending_allocation/policy.py> demonstrates separate
   author-owned intention records; study measurements must not replay accounting.
 
-## Desired experiment shell
+## Desired annual policy
 
-**Sketch only.** Imports below exist; `load_history`, `annual_paths`,
-`compose_world`, `annual_actions` and `Memory` are proposed ordinary study-local
-code, not new library APIs. The small module split is evidence/path preparation,
-annual policy, and run/report. Configuration names the resolved conventions.
+**Sketch only.** `annual_actions` and `Memory` are proposed ordinary study-local
+code, not new library APIs. Configuration names the resolved conventions.
 
 ```python
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.session import ActionSession
-from finance.augur.sim.results import Finished
-
-history = load_history(source_files)  # Named, validated annual returns and CPI.
-paths = annual_paths(history, start_years=start_years, years=years)
+from finance.augur.study.guyton_klinger.run import run
 
 for cell in cells:
-    worlds = {rollout_id: compose_world(cell, paths[rollout_id]) for rollout_id in selected_ids}
     memory = {rollout_id: Memory(cell) for rollout_id in selected_ids}
 
     def policy(batch: list[Decision]) -> list[DecisionActions]:
@@ -57,23 +48,9 @@ for cell in cells:
             for decision in batch
         ]
 
-    session = ActionSession(worlds, "retiree", capture="summary")
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(policy(batch))
-        # Analyze typed batch.rollouts plus this cell's decision records.
-    finally:
-        session.close()
+    rollouts = run(windows, policy, wealth=cell.wealth, weights=cell.weights, rollout_ids=selected_ids)
+    # Analyze typed rollouts plus this cell's decision records.
 ```
-
-For an annual-only control, the proposed path embedding holds prices/CPI within
-the year and applies the annual move at month `12, 24, …`. Consumption occurs
-only at `0, 12, …, 12*(years-1)`; the terminal `12*years` mark earns the final
-return without another withdrawal. This is explicit annual arithmetic, not a
-claimed monthly market path. Represent all sleeves, including earning cash, as
-tax-free total-return proxy units; checking is only settlement cash/dust. Do not
-add dividends again or imply the proxies support taxable stock simulation.
 
 `annual_actions` returns an empty list between reviews but can record the next
 month's canonical post-withdrawal book as the investment-return denominator.
@@ -85,31 +62,16 @@ the executor adds nothing. Fresh memory and the same paths drive selected replay
 
 ## Next independently reviewable slices
 
-1. **Annual evidence/path consumer:** named panel loader and explicit windows;
-   same CLI accepts a generated placeholder panel in CI. Hand-check one full
-   year, final-year mark and earning cash. No published-rate assertion yet.
-2. **Complete annual policy:** settle ORDER/PORTFOLIO/OPENING, add spending and
+1. **Complete annual policy:** settle ORDER/PORTFOLIO/OPENING, add spending and
    PMR together with actual session receipts. If split, label the spending-only
    control as such. Reuse/extract only the proposal pieces this consumer needs.
-3. **Historical report:** retain original/reordered path identity, source and
-   unconditional spending metrics; run the pinned sourced panel and explain
-   substitutions/discrepancies. Keep source acquisition separate from offline CI.
-4. **Optional 2006 stochastic comparison:** reconstruct the explicit joint annual
+2. **Historical report:** retain original/reordered path identity, source and
+   unconditional spending metrics; run a pinned sourced panel for the declared
+   adaptation and explain substitutions/discrepancies. Keep source acquisition
+   separate from offline CI.
+3. **Optional 2006 stochastic comparison:** reconstruct the explicit joint annual
    model and compare the named tables with sampling uncertainty. Different random
    paths are acceptable; silently different distributions/rules are not.
-
-The first slice's actual CLI can use three generated paths with flat CPI and
-annual withdrawal 10, starting wealth 100:
-
-| Path | Returns                        | Independently calculated control                                                                                                                                                         |
-| ---- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | +10%, then 0%                  | Post-withdrawal wealth 90; next opening 99; terminal 89 after the second withdrawal. No third withdrawal. The first investment return is positive despite wealth falling from 100 to 99. |
-| 1    | +5%, then 0%, cash sleeve only | First year closes at 94.5 and the second at 84.5; cash is earning, not zero-return checking.                                                                                             |
-| 2    | 0%, then 0%                    | Terminal 80. Selected replay `[2, 0]` returns these original paths, not rematerialized columns.                                                                                          |
-
-Use a fine declared quantity scale and currency quantum; bound/report proxy
-rounding rather than altering these independent arithmetic expectations. All
-three are explicit annual controls, not claims of GK rule/table reproduction.
 
 Later policy controls: strict equality and
 just-over/under guardrails; negative investment return versus withdrawal-induced
@@ -118,6 +80,6 @@ the 15-year cutoff; overweight positive/negative sleeves and funding-source orde
 nonoverlapping lot reservations; cash return and no double-counted payouts;
 unfunded consumption retaining successful sales; exact exhaustion versus $1
 terminal success; failed-path exclusion from source medians but inclusion of
-known paid zeros in observed populations; and the real
-CLI on the same tiny panel. Use independently calculated amounts, not snapshots
-copied from the implementation. None requires a separate financial simulator.
+known paid zeros in observed populations; and the real CLI on a tiny hand-checked
+panel. Use independently calculated amounts, not snapshots copied from the
+implementation. None requires a separate financial simulator.
