@@ -13,6 +13,9 @@ from cdk8s import Duration
 from cdk8s_plus_34 import DeploymentStrategy
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
+from agentplane.action_service.main import ActionServiceDeploymentSettings
+from agentplane.app.main import AppSettingsConfig
+
 
 @dataclass(frozen=True)
 class ReplicaProfile:
@@ -74,8 +77,8 @@ class BearerMcpMount:
 @dataclass(frozen=True)
 class ActionsProps:
     hostname: str
-    # agentplane/action_service `Settings`, the settings ConfigMap; `operator_oidc` included.
-    settings: dict
+    # Deployment-authored portion of agentplane/action_service `Settings`; runtime secrets arrive separately.
+    settings: ActionServiceDeploymentSettings
     # Secrets whose rotation should roll the Deployment, beyond agentplane-mcp-oauth
     # (always reloaded).
     extra_reload_secrets: Sequence[str] = ()
@@ -99,8 +102,8 @@ class Environment:
     # Hand-written files the root Kustomization lists beside the generated one.
     extra_resources: Sequence[str]
     replicas: ReplicaProfile
-    # agentplane/app/main.py's `Settings`, the `agentplane-app-config` ConfigMap.
-    app_config: dict
+    # The ConfigMap-authored portion of agentplane/app/main.py's `Settings`.
+    app_config: AppSettingsConfig
     db: DbProps
     llm_ingress: LlmIngressProps
     egress: EgressProps

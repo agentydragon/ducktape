@@ -78,6 +78,10 @@ py_library(
 py_library(
     name = "presets",
     srcs = ["presets.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = ["@pypi//pydantic"],
 )
 
@@ -721,6 +725,10 @@ py_library(
 py_library(
     name = "action_federation",
     srcs = ["action_federation.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         ":identity",
         ":oidc",

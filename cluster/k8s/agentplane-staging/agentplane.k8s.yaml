@@ -2410,9 +2410,9 @@ data:
           description: Stamped and exec'd by this service, as the caller, in its own namespace.
           namespace: agentplane-staging
           templates:
+            - agentplane-runner
             - agentplane-sandbox
             - agentplane-sandbox-build
-            - agentplane-runner
         direct_tools:
           - create
           - dispose

@@ -5,7 +5,8 @@ model_rosters.py for the model-name scheme.
 
 from __future__ import annotations
 
-from cluster.cdk8s.agentplane.app_settings import settings
+from agentplane.app.action_federation import ActionFederationSettings
+from cluster.cdk8s.agentplane.app_settings import AppSettingsConfig, settings
 from cluster.cdk8s.litellm.keys import CLAUDE_CLIENT_MODELS, OAI_LANE_MODELS, OLLAMA_CHAT_CLIENT_MODELS
 from cluster.cdk8s.model_rosters import codex_responses_name
 
@@ -25,12 +26,13 @@ PUBLIC_CODER_ACTION_POLICY_SETS = (
 )
 
 
-def config() -> dict:
+def config(action_federation: ActionFederationSettings | None = None) -> AppSettingsConfig:
     return settings(
         namespace=_NAMESPACE,
         # The staging key admits the subscription lanes and local Ollama chat routes.
         harness_claude=[*CLAUDE_CLIENT_MODELS, *OLLAMA_CHAT_CLIENT_MODELS],
         harness_codex=[*OAI_LANE_MODELS, *OLLAMA_CHAT_CLIENT_MODELS],
         thread_preset_codex_model=codex_responses_name("gpt-6-luna"),
+        action_federation=action_federation,
         action_policy_sets=list(PUBLIC_CODER_ACTION_POLICY_SETS),
     )

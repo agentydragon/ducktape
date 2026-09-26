@@ -22,7 +22,12 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.app.action_federation import ActionFederationSettings, FederatedOperatorActions
+from agentplane.app.action_federation import (
+    ActionFederationSettings,
+    DirectFederationSettings,
+    ExchangeFederationSettings,
+    FederatedOperatorActions,
+)
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
@@ -103,15 +108,75 @@ class AppServer(uvicorn.Server):
 CONFIG_FILE_ENV = "AGENTPLANE_CONFIG_FILE"
 
 
-class Settings(BaseSettings):
-    """The app's configuration.
+class AppSettingsConfig(BaseSettings):
+    """Deployment-authored app settings, before runtime-only inputs arrive.
+
+    The runtime `Settings` model extends this, so cdk8s can construct this typed fragment
+    without fabricating the app's namespace, runner port, or database URL.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_", cli_parse_args=True, cli_kebab_case=True)
+
+    models: ModelCatalog = Field(
+        description='The models each agent harness may run, as JSON: {"HARNESS_CLAUDE": ["..."], "HARNESS_CODEX": ["..."]}.'
+    )
+    agent_egress_api_url: str | None = Field(
+        default=None,
+        description="Root of the egress proxy's agent-facing API, rendered into the image-owned agent-instruction template.",
+    )
+    agent_actions_service_url: str | None = Field(
+        default=None,
+        description="Root of the Actions Service, rendered into the image-owned agent-instruction template.",
+    )
+    thread_presets: dict[str, ThreadPreset] = Field(
+        default_factory=dict, description="App-owned ThreadPreset definitions keyed by stable name."
+    )
+    sandbox_presets: dict[str, SandboxPreset] = Field(
+        default_factory=dict, description="App-owned Sandbox launch-form presets keyed by displayable name."
+    )
+    agent_instructions: str | None = Field(
+        default=None,
+        description="Operational instructions prepended to every Agentplane-launched session; omitted uses the image default.",
+    )
+    default_policies: list[str] = Field(
+        default_factory=list,
+        description="EgressPolicy names every new sandbox is granted before the caller's own picks: "
+        "what no sandbox works without, the model endpoint above all.",
+    )
+    egress_admin_url: str = Field(description="The egress proxy's admin port, serving /decisions.")
+    # Last to retain the app config file's historical top-level key order.
+    action_federation: ActionFederationSettings | None = None
+
+    def to_config_file(self) -> dict[str, Any]:
+        """Serialize this fragment at the ConfigMap boundary, preserving historical key order."""
+        values = self.model_dump(mode="json", exclude_unset=True, exclude={"action_federation"})
+        if federation := self.action_federation:
+            # These subclasses declare `mode` (and exchange's token_endpoint) after the
+            # shared fields. Keep the rendered YAML's established inner key order too.
+            if isinstance(federation, ExchangeFederationSettings):
+                values["action_federation"] = {
+                    "mode": federation.mode,
+                    "service_url": federation.service_url,
+                    "token_endpoint": federation.token_endpoint,
+                    **federation.model_dump(
+                        mode="json", exclude_unset=True, exclude={"mode", "service_url", "token_endpoint"}
+                    ),
+                }
+            elif isinstance(federation, DirectFederationSettings):
+                values["action_federation"] = {
+                    "mode": federation.mode,
+                    **federation.model_dump(mode="json", exclude_unset=True, exclude={"mode"}),
+                }
+        return values
+
+
+class Settings(AppSettingsConfig):
+    """The app's complete runtime configuration.
 
     Each field is a `--flag`, an `AGENTPLANE_*` environment variable, and a key of the YAML file
     `AGENTPLANE_CONFIG_FILE` names, in that order of precedence; the staging Deployment keeps the model
     catalog in that file.
     """
-
-    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_", cli_parse_args=True, cli_kebab_case=True)
 
     namespace: str = Field(description="The app's own namespace, holding the egress policies and bindings.")
     sandbox_namespace: str = Field(
@@ -122,38 +187,10 @@ class Settings(BaseSettings):
     host: str = Field(default="127.0.0.1", description="Bind address.")
     port: int = Field(default=8080, description="Bind port.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
-    action_federation: ActionFederationSettings | None = None
     database_url: str = Field(description="SQLAlchemy asyncpg URL of the thread store.")
     electric_url: str | None = Field(
         default=None, description="Cluster-internal Electric root URL; omitted leaves thread sync routes disabled."
     )
-    models: ModelCatalog = Field(
-        description='The models each agent harness may run, as JSON: {"HARNESS_CLAUDE": ["..."], "HARNESS_CODEX": ["..."]}.'
-    )
-    sandbox_presets: dict[str, SandboxPreset] = Field(
-        default_factory=dict, description="App-owned Sandbox launch-form presets keyed by displayable name."
-    )
-    thread_presets: dict[str, ThreadPreset] = Field(
-        default_factory=dict, description="App-owned ThreadPreset definitions keyed by stable name."
-    )
-    agent_instructions: str | None = Field(
-        default=None,
-        description="Operational instructions prepended to every Agentplane-launched session; omitted uses the image default.",
-    )
-    agent_egress_api_url: str | None = Field(
-        default=None,
-        description="Root of the egress proxy's agent-facing API, rendered into the image-owned agent-instruction template.",
-    )
-    agent_actions_service_url: str | None = Field(
-        default=None,
-        description="Root of the Actions Service, rendered into the image-owned agent-instruction template.",
-    )
-    default_policies: list[str] = Field(
-        default_factory=list,
-        description="EgressPolicy names every new sandbox is granted before the caller's own picks: "
-        "what no sandbox works without, the model endpoint above all.",
-    )
-    egress_admin_url: str = Field(description="The egress proxy's admin port, serving /decisions.")
     egress_admin_timeout: float = Field(
         default=5, description="Seconds to wait for the proxy before showing rules only."
     )

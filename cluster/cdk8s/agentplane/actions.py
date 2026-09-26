@@ -151,11 +151,23 @@ class Actions(Construct):
         ).add_subjects(service_account)
 
     def _add_settings(self) -> ConfigMap:
+        # These values are supplied by container environment variables, not the ConfigMap.
+        supplied: list[tuple[str, ...]] = [("database_url",)]
+        if self.env.actions.web_push_secret_name is not None:
+            supplied.append(("web_push", "private_key_pem"))
         return ConfigMap(
             self,
             "settings",
             metadata=metadata("agentplane-actions-settings", self.env.namespace),
-            data={"settings.yaml": yaml_config(settings_file(Settings, self.env.actions.settings))},
+            data={
+                "settings.yaml": yaml_config(
+                    settings_file(
+                        Settings,
+                        self.env.actions.settings.model_dump(mode="json", exclude_unset=True),
+                        supplied=supplied,
+                    )
+                )
+            },
         )
 
     def _database_env(self) -> dict[str, EnvValue]:

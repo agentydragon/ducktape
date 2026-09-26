@@ -11,7 +11,7 @@ from enum import StrEnum
 from typing import Annotated, Literal
 
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, field_serializer, model_validator
 
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 
@@ -128,6 +128,12 @@ class ActionGroup(BaseModel):
         description="Actions of this group external Connections also see as MCP tools of their own, named "
         f"`<group>{DIRECT_TOOL_SEPARATOR}<action>`. Only these: a new upstream tool is never exposed unreviewed.",
     )
+
+    @field_serializer("direct_tools")
+    def _sorted_direct_tools(self, direct_tools: frozenset[str] | None) -> list[str] | None:
+        # A set's iteration order follows per-process string hashing, and the manifest generator
+        # writes this group into a ConfigMap that has to come out the same on every run.
+        return None if direct_tools is None else sorted(direct_tools)
 
 
 class ActionView(BaseModel):

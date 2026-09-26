@@ -40,7 +40,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         chart,
         "config",
         metadata=metadata("agentplane-app-config", env.namespace),
-        data={"config.yaml": yaml_config(settings_file(app_main.Settings, env.app_config))},
+        data={"config.yaml": yaml_config(settings_file(app_main.Settings, env.app_config.to_config_file()))},
     )
     database.Db(chart, "db", env)
     electric.Electric(chart, "electric", env)
