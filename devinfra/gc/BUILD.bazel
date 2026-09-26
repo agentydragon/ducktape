@@ -59,6 +59,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":branch_gc",
+        ":foreign_clone_gc",
         ":git_repo",
         ":output_base_gc",
         ":pull_request",
@@ -74,6 +75,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":branch_gc",
+        ":foreign_clone_gc",
         ":git_repo",
         ":output_base_gc",
         ":pull_request",
@@ -82,6 +84,7 @@ py_library(
         ":worktree_gc",
         "@pypi//httpx",
         "@pypi//humanize",
+        "@pypi//pygit2",
         "@pypi//rich",
         "@pypi//tabulate",
         "@pypi//typer",
@@ -179,5 +182,41 @@ py_library(
     deps = [
         "@pypi//pygit2",
         "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "foreign_clone_gc",
+    srcs = ["foreign_clone_gc.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":git_repo",
+        ":pull_request",
+        ":worktree_gc",
+    ],
+)
+
+py_test(
+    name = "test_foreign_clone_gc",
+    srcs = ["test_foreign_clone_gc.py"],
+    deps = [
+        ":conftest",
+        ":foreign_clone_gc",
+        ":pull_request",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_git_repo",
+    srcs = ["test_git_repo.py"],
+    deps = [
+        ":conftest",
+        ":git_repo",
+        "//:conftest",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
