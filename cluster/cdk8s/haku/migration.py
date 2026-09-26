@@ -34,7 +34,7 @@ from cluster.cdk8s.agentplane import container_security, node_scheduling
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.haku import console
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
+from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 
 NAME = "haku-console-migration"
 
@@ -83,7 +83,7 @@ class Migration(Construct):
             security_context=container_security.WRITABLE_ROOT,
         )
         node_scheduling.attract_to_zone(job)
-        ApiObject.of(job).add_json_patch(runtime_default_seccomp_patch())
+        apply_pod_spec_patches(job)
         ApiObject.of(job).add_json_patch(
             JsonPatch.add("/spec/template/spec/containers/0/terminationMessagePolicy", "FallbackToLogsOnError")
         )

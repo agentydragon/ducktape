@@ -11,7 +11,7 @@ to an https server -- against plain HTTP kubectl sends every request unauthentic
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     Capability,
     ContainerPort,
@@ -48,7 +48,7 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
+from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -213,7 +213,7 @@ class KubeApiProxy(Construct):
         )
         tls = Secret.from_secret_name(self, "tls-secret", _TLS_SECRET)
         container.mount(_TLS_DIR, Volume.from_secret(self, "tls-volume", tls), read_only=True)
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
+        apply_pod_spec_patches(deployment)
 
     def _add_network_policy(self) -> None:
         # Selecting the proxy makes both directions default-deny: ingress from the Gateway on

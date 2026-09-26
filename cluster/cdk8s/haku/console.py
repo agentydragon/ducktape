@@ -61,7 +61,7 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console_config, database
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
+from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches, runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from haku.console.config import CONFIG_FILE_ENV
@@ -464,7 +464,7 @@ class Console(Construct):
         )
         # The entrypoint writes the envsubst-rendered config here before nginx starts.
         container.mount("/etc/nginx/conf.d", Volume.from_empty_dir(self, "nginx-conf-volume", "nginx-conf"))
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
+        apply_pod_spec_patches(deployment)
         Service(
             self,
             "static-service",
@@ -541,7 +541,7 @@ class Console(Construct):
         sql = ConfigMap.from_config_map_name(self, "indexer-sql-ref", INDEXER_SQL_CONFIG_MAP)
         container.mount(_INDEXER_SQL_DIR, Volume.from_config_map(self, "indexer-sql-volume", sql), read_only=True)
         node_scheduling.attract_to_zone(job)
-        ApiObject.of(job).add_json_patch(runtime_default_seccomp_patch())
+        apply_pod_spec_patches(job)
         ApiObject.of(job).add_json_patch(
             JsonPatch.add("/spec/template/spec/containers/0/terminationMessagePolicy", "FallbackToLogsOnError")
         )
