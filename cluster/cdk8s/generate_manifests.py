@@ -194,6 +194,7 @@ from cluster.cdk8s.monitoring import (
     alloy_otlp_bearer_token,
     cilium_monitoring,
     flux_kustomizations as monitoring_flux_kustomizations,
+    gateway_probe,
     grafana_helmrepository,
     grafana_instance,
     grafana_operator,
@@ -345,6 +346,7 @@ def generate_manifests(root: Path) -> None:
     vm_images_publisher_publisher.write_manifests(root)
     grafana_operator.write_manifests(root)
     cilium_monitoring.write_manifests(root)
+    gateway_probe.write_manifests(root, mesh)
     monitoring_rules.write_manifests(root)
     monitoring_stack.write_manifests(root)
     alloy.write_manifests(root)
@@ -798,13 +800,17 @@ def generate_manifests(root: Path) -> None:
         github_secrets_sync_secrets_kustomization,
     )
     monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
-    monitoring_stack.monitoring_stack(
+    monitoring_stack_kustomization = monitoring_stack.monitoring_stack(
         flux_chart,
         monitoring_stack_artifact,
         monitoring_namespace_kustomization,
         monitoring_crds_kustomization,
         ntfy_kustomization,
         external_secrets_config_kustomization,
+    )
+    monitoring_gateway_probe_artifact = artifact("monitoring-gateway-probe", gateway_probe.OUTPUT_DIR)
+    gateway_probe.gateway_probe(
+        flux_chart, monitoring_gateway_probe_artifact, monitoring_crds_kustomization, monitoring_stack_kustomization
     )
     claude_sandbox_secrets_artifact = artifact("claude-sandbox-secrets", claude_sandbox_secrets.OUTPUT_DIR)
     claude_sandbox_secrets.claude_sandbox_secrets(
@@ -1616,6 +1622,7 @@ def generate_manifests(root: Path) -> None:
             monitoring_alloy_otlp_bearer_token_tf_artifact,
             monitoring_cilium_artifact,
             monitoring_etcd_artifact,
+            monitoring_gateway_probe_artifact,
             monitoring_loki_artifact,
             monitoring_mimir_artifact,
             monitoring_rules_artifact,

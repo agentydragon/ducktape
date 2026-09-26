@@ -1,0 +1,213 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  annotations:
+    description: Per-node blackbox_exporter dialling its own node's Gateway listener (gateway_probe.py).
+  name: gateway-probe
+  namespace: monitoring
+spec:
+  chart:
+    spec:
+      chart: prometheus-blackbox-exporter
+      interval: 12h
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: flux-system
+      version: 11.19.1
+  install:
+    remediation:
+      retries: 3
+  interval: 30m
+  values:
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: kubernetes.io/hostname
+                  operator: In
+                  values:
+                    - ovh-ns1001419
+                    - ovh-ns102453
+                    - ovh-ns103656
+                    - ovh-ns103711
+                    - ovh-ns104952
+                    - ovh-ns104963
+    config:
+      modules:
+        gateway_tls:
+          prober: tcp
+          tcp:
+            preferred_ip_protocol: ip4
+            tls: true
+            tls_config:
+              insecure_skip_verify: true
+              server_name: www.allegedly.works
+          timeout: 5s
+    fullnameOverride: gateway-probe
+    kind: DaemonSet
+    nameOverride: gateway-probe
+    podSecurityContext:
+      seccompProfile:
+        type: RuntimeDefault
+    resources:
+      limits:
+        memory: 64Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: gateway-probe
+  namespace: monitoring
+spec:
+  podMetricsEndpoints:
+    - interval: 30s
+      params:
+        module:
+          - gateway_tls
+      path: /probe
+      port: http
+      relabelings:
+        - regex: ovh-ns1001419
+          replacement: 51.81.245.180:443
+          sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: __param_target
+        - regex: ovh-ns102453
+          replacement: 147.135.37.175:443
+          sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: __param_target
+        - regex: ovh-ns103656
+          replacement: 147.135.39.162:443
+          sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: __param_target
+        - regex: ovh-ns103711
+          replacement: 147.135.39.176:443
+          sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: __param_target
+        - regex: ovh-ns104952
+          replacement: 147.135.104.5:443
+          sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: __param_target
+        - regex: ovh-ns104963
+          replacement: 147.135.104.16:443
+          sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: __param_target
+        - sourceLabels:
+            - __param_target
+          targetLabel: instance
+        - sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: node
+        - replacement: own_public
+          targetLabel: dial
+      scrapeTimeout: 10s
+    - interval: 30s
+      params:
+        module:
+          - gateway_tls
+      path: /probe
+      port: http
+      relabelings:
+        - regex: ovh-ns1001419
+          replacement: 10.42.0.19:443
+          sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: __param_target
+        - regex: ovh-ns102453
+          replacement: 10.42.0.15:443
+          sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: __param_target
+        - regex: ovh-ns103656
+          replacement: 10.42.0.13:443
+          sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: __param_target
+        - regex: ovh-ns103711
+          replacement: 10.42.0.14:443
+          sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: __param_target
+        - regex: ovh-ns104952
+          replacement: 10.42.0.16:443
+          sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: __param_target
+        - regex: ovh-ns104963
+          replacement: 10.42.0.17:443
+          sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: __param_target
+        - sourceLabels:
+            - __param_target
+          targetLabel: instance
+        - sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: node
+        - replacement: own_nebula
+          targetLabel: dial
+      scrapeTimeout: 10s
+    - interval: 30s
+      params:
+        module:
+          - gateway_tls
+        target:
+          - cilium-gateway-cluster-gateway.gateway-system.svc.cluster.local:443
+      path: /probe
+      port: http
+      relabelings:
+        - sourceLabels:
+            - __param_target
+          targetLabel: instance
+        - sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: node
+        - replacement: gateway_service
+          targetLabel: dial
+      scrapeTimeout: 10s
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: gateway-probe
+      app.kubernetes.io/name: gateway-probe
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    release: kube-prometheus-stack
+  name: gateway-probe
+  namespace: monitoring
+spec:
+  groups:
+    - name: gateway-probe
+      rules:
+        - alert: OwnNodeGatewayHandshakeFailing
+          annotations:
+            description: The {{ $labels.dial }} dial to {{ $labels.instance }} has failed for 5 minutes. Pods on {{ $labels.node }} that resolve an *.allegedly.works name to this node hang (#7918). If the same node's gateway_service dial fails too, the Gateway or the probe Pod's own network is down instead.
+            summary: A Pod on {{ $labels.node }} cannot complete a TLS handshake with its own node's Gateway
+          expr: probe_success{job="monitoring/gateway-probe", dial=~"own_public|own_nebula"} == 0
+          for: 5m
+          labels:
+            severity: warning
+        - alert: OwnNodeGatewayProbeMissing
+          annotations:
+            description: "{{ $labels.node }} is in public DNS but has reported no gateway-probe result for 15 minutes, so a broken own-node Gateway path there would go unnoticed. Check the gateway-probe DaemonSet Pod on that node (a new taint keeps it off) and its scrape."
+            summary: No own-node Gateway probe results from {{ $labels.node }}
+          expr: group by (node) (kube_node_info{job="kube-state-metrics", node=~"ovh-ns1001419|ovh-ns102453|ovh-ns103656|ovh-ns103711|ovh-ns104952|ovh-ns104963"}) unless on (node) group by (node) (probe_success{job="monitoring/gateway-probe", dial=~"own_public|own_nebula"})
+          for: 15m
+          labels:
+            severity: warning

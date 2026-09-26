@@ -30,7 +30,7 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, helm_repository_source_ref
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
@@ -38,6 +38,8 @@ NAME = "monitoring-stack"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/stack"
 _NAMESPACE = "monitoring"
 _HELM_REPOSITORY = "prometheus-community"
+# For releases in other charts that install from the repository this chart declares.
+HELM_REPOSITORY_SOURCE_REF = helm_repository_source_ref(_HELM_REPOSITORY, "flux-system")
 _CONTROL_PLANE_TOKEN = "alloy-control-plane-token"
 _PROMETHEUS_PORT = 9090
 
