@@ -100,12 +100,26 @@ ts_library(
 )
 
 ts_library(
-    name = "actions",
-    srcs = ["actions.tsx"],
+    name = "action_call",
+    srcs = ["action_call.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
         ":json_view",
+        ":raw_switch",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "actions",
+    srcs = ["actions.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":action_call",
+        ":client",
         ":live_stream",
         ":stream_status",
         "//:node_modules/@mantine/core",
@@ -130,27 +144,16 @@ ts_library(
     ],
 )
 
-# actions_history.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
-js_library(
-    name = "actions_history_css",
-    srcs = ["actions_history.css"],
-)
-
 ts_library(
     name = "actions_history",
-    srcs = [
-        "actions_history.tsx",
-        # `declare module "*.css"` for the stylesheet import above.
-        "css.d.ts",
-    ],
+    srcs = ["actions_history.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":action_call",
         ":actions",
-        ":actions_history_css",
         ":call_tool_result",
         ":client",
         ":json_view",
-        ":raw_switch",
         ":stream_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",

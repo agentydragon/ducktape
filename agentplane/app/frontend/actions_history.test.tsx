@@ -116,20 +116,14 @@ describe("ActionHistory", () => {
     }
     expect(container.textContent).toContain("Result");
     expect(container.textContent).toContain("Execution error");
-    // Arguments stay in the DOM (Mantine's Collapse animates height rather than unmounting) but
-    // start folded, per the disclosure convention shared with the session transcript.
-    expect(container.textContent).toContain("test-exact-token");
   });
 
-  it("folds Arguments behind the shared disclosure convention until expanded", async () => {
+  it("shows the exact arguments open, as the pending card does", async () => {
     const container = await render({ list: async () => [request("succeeded", 1)], decide: vi.fn() }, withoutGroups);
-    const control = [...container.querySelectorAll("button")].find((candidate) =>
-      candidate.textContent?.includes("Arguments")
-    );
-    if (!control) throw new Error("missing Arguments disclosure control");
-    expect(control.getAttribute("aria-expanded")).toBe("false");
-    await act(async () => control.click());
-    expect(control.getAttribute("aria-expanded")).toBe("true");
+    expect(container.textContent).toContain("Exact arguments (unredacted)");
+    const block = [...container.querySelectorAll("pre")].find((pre) => pre.textContent?.includes("test-exact-token"));
+    if (!block) throw new Error("missing the arguments");
+    expect(block.closest("details, [aria-hidden='true'], [hidden]")).toBeNull();
   });
 
   it("renders the auto-approving policy when the Decision carries policy evidence", async () => {
