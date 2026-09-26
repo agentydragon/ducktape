@@ -1,8 +1,9 @@
 """Asset identity shared by market models, scenario holdings and result consumers.
 
 Security keys identify price series; private-equity keys identify issuers in a
-typed bundle. Frame/wire boundaries serialize these keys through `wire_id` and
-`parse_asset_key`; identity does not depend on the app or an execution strategy.
+typed bundle. The simulator and its frames address a holding by the flat `AssetId`
+instead (`sim.holdings.asset_key` recovers the key); identity does not depend on the
+app or an execution strategy.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from finance.augur.model.schemas import FrozenModel
-from finance.augur.model.series import AssetPriceKey, IssuerId, SecurityKey, SecuritySymbol
+from finance.augur.model.series import AssetPriceKey, IssuerId, SecurityKey
 
 
 class AssetKind(StrEnum):
@@ -48,20 +49,6 @@ An INCLUSION, not a parallel hierarchy: `AssetKey` is `AssetPriceKey` plus priva
 The tradable member is literally the model's `SecurityKey`, so the conversion that used to
 sit between the two vocabularies is now just the PE narrowing.
 """
-
-
-def parse_asset_key(wire_id: str) -> AssetKey:
-    """Recover a typed `AssetKey` from its wire form. Raises `ValueError` if unrecognized."""
-
-    prefix, sep, suffix = wire_id.partition(":")
-    if not sep:
-        raise ValueError(f"unrecognized asset wire id {wire_id!r}")
-    match prefix:
-        case "security":
-            return SecurityKey(symbol=SecuritySymbol(suffix))
-        case "private_equity":
-            return PrivateEquityAssetKey(issuer_id=IssuerId(suffix))
-    raise ValueError(f"unrecognized asset wire id {wire_id!r}")
 
 
 def asset_price_key(asset: AssetKey) -> AssetPriceKey:

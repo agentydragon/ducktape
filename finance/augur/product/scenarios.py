@@ -12,7 +12,7 @@ from more_itertools import duplicates_everseen, one
 from finance.augur.api.config import Config, LocationConfig, SecurityDistributionConfig
 from finance.augur.api.portfolio import PortfolioConfig
 from finance.augur.api.wire import ActorRole, Property
-from finance.augur.model.asset_key import PrivateEquityAssetKey
+from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.model.series import InflationKey, IssuerId, LevelSeriesKey, LocationId, RentKey, SecurityKey
 from finance.augur.policy.cash_band_household import (
     BandBound,
@@ -239,12 +239,10 @@ def security_distributions_from_portfolio(
     return distributions
 
 
-def asset_label_by_series_id(portfolio: PortfolioConfig) -> dict[str, str]:
-    # Keyed by the sim-frame wire id (matching the `asset_id` column on decoded sim event
-    # frames) so sim events can be labeled; the wire id is derived from the typed `asset`.
+def asset_labels(portfolio: PortfolioConfig) -> dict[AssetKey, str]:
     # TLH portfolios need no entry: their events name the portfolio, never an asset.
     return {
-        position.asset.wire_id: f"{position.label or position.display_symbol} ({position.display_symbol})"
+        position.asset: f"{position.label or position.display_symbol} ({position.display_symbol})"
         for position in portfolio.holdings
     }
 

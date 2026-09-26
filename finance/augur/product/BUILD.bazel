@@ -57,6 +57,7 @@ py_library(
         ":wire",
         "//finance/augur/model:asset_key",
         "//finance/augur/sim:events",
+        "//finance/augur/sim:holdings",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:scenario",
         "@pypi//numpy",
@@ -340,7 +341,7 @@ py_library(
     deps = [
         ":metric_composition",
         ":metrics",
-        "//finance/augur/model:asset_key",
+        "//finance/augur/sim:holdings",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:results",
         "@pypi//numpy",

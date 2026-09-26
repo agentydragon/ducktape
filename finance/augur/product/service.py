@@ -38,7 +38,7 @@ from finance.augur.product.metrics import (
 from finance.augur.product.projection import project_product_rollout
 from finance.augur.product.scenarios import (
     Situation,
-    asset_label_by_series_id,
+    asset_labels,
     build_situation,
     compose,
     initial_bonds_from_portfolio,
@@ -106,7 +106,7 @@ class ProductService:
             portfolio, security_distributions, tlh_portfolios=tlh_portfolios, primary_agent_id=primary_agent_id
         )
         self._tlh_portfolios = tlh_portfolios
-        self._asset_label_by_id = asset_label_by_series_id(portfolio)
+        self._asset_labels = asset_labels(portfolio)
         # Keep one product projection in flight per API process. A dense rollout batch is
         # memory-heavy enough that overlapping fan + terminal requests can exceed the pod limit.
         self._projection_lock = threading.Lock()
@@ -180,7 +180,7 @@ class ProductService:
             project_product_metrics(completed, horizon_months=situation.horizon_months, currency=situation.currency),
             rollout_id=0,
             primary_agent_id=self._primary_agent_id,
-            asset_label_by_id=self._asset_label_by_id,
+            asset_labels=self._asset_labels,
         )
         monthly_arrays = projection.monthly_metric_arrays
         terminal = _ending_metrics_from_arrays(monthly_arrays, failed_month_index=projection.failed_month_index)
