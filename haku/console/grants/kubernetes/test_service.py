@@ -30,12 +30,17 @@ _NOW = datetime(2026, 8, 20, 0, 0, tzinfo=UTC)
 _AGENT = UUID("10000000-0000-4000-8000-000000000001")
 _OTHER_AGENT = UUID("10000000-0000-4000-8000-000000000002")
 _GRANT_PRINCIPAL = AgentGrantPrincipal(agent_id=_AGENT)
-_SCOPE = NamespacesGrantScope(namespaces=("default", "diagnostics"))
-_DEFAULT_SCOPE = NamespacesGrantScope(namespaces=("default",))
+_SCOPE = NamespacesGrantScope(namespaces=frozenset({"default", "diagnostics"}))
+_DEFAULT_SCOPE = NamespacesGrantScope(namespaces=frozenset({"default"}))
 
 
-def _rule(verb: str = "get", **kwargs: object) -> Rule:
-    return Rule(api_groups=("",), resources=("pods",), verbs=(verb,), **kwargs)
+def _rule(verb: str = "get", resource_names: frozenset[str] = frozenset()) -> Rule:
+    return Rule(
+        api_groups=frozenset({""}),
+        resources=frozenset({"pods"}),
+        verbs=frozenset({verb}),
+        resource_names=resource_names,
+    )
 
 
 class FakeRepository:
@@ -390,9 +395,9 @@ async def test_match_returns_the_earliest_expiration_bound() -> None:
 
 
 def test_scope_supports_exact_or_all_namespaces_without_implying_cluster_scope() -> None:
-    exact = NamespacesGrantScope(namespaces=("diagnostics", "public-coder-agent"))
-    requested = NamespacesGrantScope(namespaces=("diagnostics",))
-    other = NamespacesGrantScope(namespaces=("default",))
+    exact = NamespacesGrantScope(namespaces=frozenset({"diagnostics", "public-coder-agent"}))
+    requested = NamespacesGrantScope(namespaces=frozenset({"diagnostics"}))
+    other = NamespacesGrantScope(namespaces=frozenset({"default"}))
     all_namespaces = AllNamespacesGrantScope()
     cluster = ClusterGrantScope()
 
@@ -404,8 +409,8 @@ def test_scope_supports_exact_or_all_namespaces_without_implying_cluster_scope()
 
 def test_matching_is_conservative_about_resource_names() -> None:
     all_pods = _rule()
-    one_pod = _rule(resource_names=("pod-a",))
-    other_pod = _rule(resource_names=("pod-b",))
+    one_pod = _rule(resource_names=frozenset({"pod-a"}))
+    other_pod = _rule(resource_names=frozenset({"pod-b"}))
 
     assert rule_covers(all_pods, one_pod)
     assert not rule_covers(one_pod, other_pod)
@@ -413,23 +418,28 @@ def test_matching_is_conservative_about_resource_names() -> None:
 
 
 def test_matching_allows_only_explicit_wildcards() -> None:
-    granted = Rule(api_groups=("*",), resources=("*",), verbs=("*",))
-    requested = Rule(api_groups=("apps",), resources=("deployments/status",), verbs=("patch",))
+    granted = Rule(api_groups=frozenset({"*"}), resources=frozenset({"*"}), verbs=frozenset({"*"}))
+    requested = Rule(
+        api_groups=frozenset({"apps"}), resources=frozenset({"deployments/status"}), verbs=frozenset({"patch"})
+    )
 
     assert rule_covers(granted, requested)
-    assert not rule_covers(Rule(api_groups=("apps",), resources=("deployments",), verbs=("patch",)), requested)
+    assert not rule_covers(
+        Rule(api_groups=frozenset({"apps"}), resources=frozenset({"deployments"}), verbs=frozenset({"patch"})),
+        requested,
+    )
 
 
 def test_non_resource_urls_use_exact_or_terminal_prefix_matching() -> None:
-    granted = Rule(verbs=("get",), non_resource_urls=("/version", "/api/*"))
+    granted = Rule(verbs=frozenset({"get"}), non_resource_urls=frozenset({"/version", "/api/*"}))
 
-    assert rule_covers(granted, Rule(verbs=("get",), non_resource_urls=("/version", "/api/v1")))
-    assert not rule_covers(granted, Rule(verbs=("get",), non_resource_urls=("/apis",)))
+    assert rule_covers(granted, Rule(verbs=frozenset({"get"}), non_resource_urls=frozenset({"/version", "/api/v1"})))
+    assert not rule_covers(granted, Rule(verbs=frozenset({"get"}), non_resource_urls=frozenset({"/apis"})))
 
 
 def test_rules_cover_requires_every_request_rule() -> None:
     granted = (_rule(),)
-    requested = (_rule(), Rule(verbs=("list",), api_groups=("",), resources=("pods",)))
+    requested = (_rule(), Rule(verbs=frozenset({"list"}), api_groups=frozenset({""}), resources=frozenset({"pods"})))
 
     assert not rules_cover(granted, requested)
 

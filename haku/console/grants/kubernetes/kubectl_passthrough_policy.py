@@ -16,7 +16,7 @@ def _make_req(
     api_group: str,
     version: str,
     resource: str,
-    namespace: str | None = None,
+    namespace: str = "",
     name: str | None = None,
     cluster_scoped: bool = False,
     subresource: str | None = None,
@@ -24,7 +24,7 @@ def _make_req(
     scope = (
         ClusterGrantScope()
         if cluster_scoped
-        else (NamespacesGrantScope(namespaces=(namespace,)) if namespace else AllNamespacesGrantScope())
+        else (NamespacesGrantScope(namespaces=frozenset({namespace})) if namespace else AllNamespacesGrantScope())
     )
     attributes = RequestAttributes(
         resource_request=True,
