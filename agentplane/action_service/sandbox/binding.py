@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # The sandbox Actions' own namespace, for the labels they stamp and the annotation they read.
 PREFIX = "sandbox-actions.agentplane.allegedly.works"
@@ -36,3 +36,15 @@ class SandboxExecutorBinding(BaseModel):
     )
     max_timeout_seconds: int = Field(default=1800, gt=0, le=3600)
     max_output_bytes: int = Field(default=200_000, ge=0, le=1_000_000)
+    initial_ttl_seconds: int = Field(
+        default=8 * 3600, gt=0, description="How long after `create` the controller deletes a box nobody runs in."
+    )
+    exec_ttl_extension_seconds: int = Field(
+        default=2 * 3600, gt=0, description="How long past its start every `exec` keeps the box, at least."
+    )
+
+    @model_validator(mode="after")
+    def _box_outlasts_any_exec(self) -> SandboxExecutorBinding:
+        if self.exec_ttl_extension_seconds < self.max_timeout_seconds:
+            raise ValueError("exec_ttl_extension_seconds must be at least max_timeout_seconds")
+        return self

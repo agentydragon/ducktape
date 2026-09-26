@@ -134,9 +134,10 @@ class Actions(Construct):
                 RolePolicyRule(
                     resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get"]
                 ),
+                # `patch` is for `exec`, which pushes a box's `shutdownTime` forward before it runs.
                 RolePolicyRule(
                     resources=[custom_resource("agents.x-k8s.io", "sandboxes")],
-                    verbs=["create", "get", "list", "watch", "delete"],
+                    verbs=["create", "get", "list", "watch", "patch", "delete"],
                 ),
                 # `get` alone: the Pod backing a Sandbox is named by the controller's
                 # `agents.x-k8s.io/pod-name` annotation and read by name, never searched for.
