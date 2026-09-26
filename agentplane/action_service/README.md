@@ -306,7 +306,7 @@ streamable-HTTP config below, whose `tools/list` refreshes child Actions and who
 rechecks the live schema. A `SandboxExecutorBinding` becomes a `SandboxExecutor`, code-owned rather
 than supervised: its roster is its own models, so it is offered from the moment configuration
 validates rather than after a handshake, and it needs Kubernetes access or startup fails
-([sandbox Actions](../docs/sandbox_actions.md)). Echo is only an explicitly injected test executor,
+([sandbox Actions](sandbox/README.md)). Echo is only an explicitly injected test executor,
 never a production default or factory option.
 
 An empty catalog starts with no offered actions. An explicitly configured missing/non-file YAML
