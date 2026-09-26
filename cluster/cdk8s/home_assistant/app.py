@@ -21,11 +21,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecRefreshPolicy,
     ExternalSecretSpecTargetCreationPolicy,
 )
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecEndpointsAuthorization,
-    ServiceMonitorSpecEndpointsAuthorizationCredentials,
-)
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecRestic,
     ReplicationSourceSpecResticCacheCapacity,
@@ -53,7 +48,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 
 # Aliased: each provisioner names its model `Settings`, in a module named `settings`.
@@ -543,15 +538,8 @@ def _monitoring(scope: Construct) -> None:
         metadata=metadata(_NAME, _NAMESPACE),
         selector=_LABELS,
         endpoints=[
-            ServiceMonitorSpecEndpoints(
-                port="http",
-                path="/api/prometheus",
-                authorization=ServiceMonitorSpecEndpointsAuthorization(
-                    type="Bearer",
-                    credentials=ServiceMonitorSpecEndpointsAuthorizationCredentials(
-                        name=_METRICS_TOKEN, key="password"
-                    ),
-                ),
+            Endpoint.bearer_authorization(
+                port="http", path="/api/prometheus", secret_name=_METRICS_TOKEN, key="password"
             )
         ],
     )
