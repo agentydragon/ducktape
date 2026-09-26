@@ -517,14 +517,22 @@ GEMINI_MAX_OUTPUT_TOKENS = 65_536
 # entries stay distinct.
 #
 # qwen3.8-flash-next-q4: 125B-total/6B-active MoE, Unsloth Dynamic UD-Q4_K_XL quant
-# (metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL, 112GB), native 256K context. Only the
-# 128K variant is listed until ollama's own GPU-offload heuristics are verified against
-# it on wyrm2's 2 GPUs (setup-gpt-oss-v2.sh TODO) -- add larger variants once confirmed.
+# (metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL, 112GB), native 256K context. Disabled
+# (2026-09-26): does not fit in wyrm2's combined GPU VRAM (87GB resident vs. ~61GB usable
+# across 2x RTX 5090), forcing most MoE-expert weight paging onto the HDD-backed
+# `llm-models` PVC; measured 0.056-1.44 tokens/sec generation depending on warm-up state
+# (~20-1000x too slow to be usable), on both Ollama 0.34.0 and 0.34.4. Tool-call parsing
+# itself works correctly, and the same GGUF served directly via a current llama-server
+# build off SSD-backed storage on this same hardware reached ~30 tokens/sec -- so the
+# model and hardware are capable, this specific Ollama-on-HDD path is not. Re-enable only
+# once served from SSD-backed storage or with the full CPU-resident working set reliably
+# page-cache-hot; see agentplane/debug/agentplane_ollama_live_smoke_2026_09_24.md for the
+# full investigation.
 OLLAMA_CHAT_MODELS: list[tuple[str, str, tuple[int, ...]]] = [
     ("gpt-oss-20b", "gpt-oss:20b", (128 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024)),
     ("gpt-oss-120b", "gpt-oss:120b", (128 * 1024,)),
     ("gemma4-31b-it-q8_0", "gemma4:31b-it-q8_0", (128 * 1024,)),
-    ("qwen3.8-flash-next-q4", "metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL", (128 * 1024,)),
+    # ("qwen3.8-flash-next-q4", "metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL", (128 * 1024,)),
 ]
 
 
