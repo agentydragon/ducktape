@@ -50,6 +50,7 @@ from finance.augur.product.simulation import execute, project_events, project_pr
 from finance.augur.product.wire import (
     EndingMetrics,
     MetricFanResponse,
+    MetricName,
     ProductProjectionRequest,
     ProductProjectionResponse,
     ProjectionSamplingRequest,
@@ -186,7 +187,7 @@ class ProductService:
         terminal = _ending_metrics_from_arrays(monthly_arrays, failed_month_index=projection.failed_month_index)
         # `monthly_metrics` ships as `Frame = dict[str, list[...]]`; build directly from numpy
         # instead of round-tripping through polars.
-        monthly_metrics_frame = {
+        monthly_metrics_frame: Frame = {
             name: arr.tolist() if name == "month_index" else [_quanta(value) for value in arr]
             for name, arr in monthly_arrays.items()
         }
@@ -333,7 +334,7 @@ def _monthly_fan_frame(summary: ProductMetricFanSummary) -> Frame:
     }
 
 
-def _metric_fan_response(summary: ProductMetricFanSummary, *, model_id: str, metric: str) -> MetricFanResponse:
+def _metric_fan_response(summary: ProductMetricFanSummary, *, model_id: str, metric: MetricName) -> MetricFanResponse:
     return MetricFanResponse(
         basis=summary.basis,
         model_id=model_id,
@@ -353,7 +354,7 @@ def _terminal_distribution_response(
     summary: ProductTerminalSummary,
     *,
     model_id: str,
-    metric: str,
+    metric: MetricName,
     percentiles: tuple[float, ...],
     seeds: tuple[int, ...],
 ) -> TerminalDistributionResponse:

@@ -28,13 +28,19 @@ from finance.augur.model.bond_fund import BondFundSpec
 from finance.augur.model.equity import EquitySpec
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from finance.augur.model.historical_windows import MACRO_HISTORY_SOURCES, HistoricalWindowsProviderConfig
-from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityDistributionKey, SecurityKey
+from finance.augur.model.series import (
+    InflationKey,
+    LevelSeriesKey,
+    SecurityDistributionKey,
+    SecurityKey,
+    SecuritySymbol,
+)
 from finance.augur.model.structural_macro import EquityProcess, StructuralMacroProviderConfig
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
 
 HORIZON_MONTHS = 360
-EQUITY = EquitySpec(symbol="VOO", initial_price_usd=520.0)
-BONDS = BondFundSpec(symbol="CMF", maturity_years=5.5, initial_price_usd=56.0, spread=-0.012)
+EQUITY = EquitySpec(symbol=SecuritySymbol("VOO"), initial_price_usd=520.0)
+BONDS = BondFundSpec(symbol=SecuritySymbol("CMF"), maturity_years=5.5, initial_price_usd=56.0, spread=-0.012)
 # The record's own start decides how many windows exist; the fitted arm is given the same count
 # so the two percentile tables are read off the same number of paths.
 EQUITY_WEIGHTS = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)

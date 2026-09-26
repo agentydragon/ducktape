@@ -798,7 +798,7 @@ def _surfaced_row(
 def mark_fan(
     bundle: PrivateEquityBundle,
     *,
-    issuer: IssuerId | str,
+    issuer: IssuerId,
     rollout_count: int,
     horizon_months: int,
     percentiles: tuple[float, ...],
@@ -815,7 +815,7 @@ def mark_fan(
         MonthBand(month_index=month, values={str(p): float(bands[i, month]) for i, p in enumerate(percentiles)})
         for month in range(horizon_months + 1)
     ]
-    return MarkFan(issuer=str(issuer), channel=channel, percentiles=list(percentiles), months=months)
+    return MarkFan(issuer=issuer, channel=channel, percentiles=list(percentiles), months=months)
 
 
 def sample_private_equity_bundle(

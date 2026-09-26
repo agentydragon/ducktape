@@ -13,14 +13,14 @@ from typing import Literal
 
 import numpy as np
 
-from finance.augur.model.series import SecurityKey
+from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -42,9 +42,9 @@ QUANTUM = Decimal("0.01")
 HOUSEHOLD = AgentId("example-household")
 CREDITOR = AgentId("example-creditor")
 TAX_AUTHORITY = AgentId("example-tax")
-STOCK = SecurityKey(symbol="example-stock")
+STOCK = SecurityKey(symbol=SecuritySymbol("example-stock"))
 _FLAT_TAX = Jurisdiction(
-    jurisdiction_id="example-flat-tax",
+    jurisdiction_id=JurisdictionId("example-flat-tax"),
     level=JurisdictionLevel.FEDERAL,
     ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.20)]},
     ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.10)]},

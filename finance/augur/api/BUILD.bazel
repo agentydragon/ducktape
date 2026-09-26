@@ -143,6 +143,7 @@ py_test(
         "//finance/augur/model:series",
         "//finance/augur/model:state_space",
         "//finance/augur/model:trained_private_equity",
+        "//finance/augur/sim:ids",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -162,6 +163,7 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:tlh",
         "//finance/plaid/db:read_model",
         "@pypi//pydantic",
@@ -249,6 +251,7 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/sim:ids",
         "@pypi//more_itertools",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -269,6 +272,7 @@ py_library(
         "//finance/augur/model:provider_config",
         "//finance/augur/model:series",
         "//finance/augur/model:testing",
+        "//finance/augur/sim:ids",
         "@pypi//fastapi",
         "@pypi//httpx",  # keep: fastapi.testclient requires httpx at runtime
         "@pypi//pytest",
@@ -482,6 +486,8 @@ py_library(
         ":server",
         ":wire",
         "//finance/augur/model:independent",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:ids",
     ],
 )
 

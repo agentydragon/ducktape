@@ -69,7 +69,7 @@ class StateSpaceModelArtifact(FrozenModel):
     monthly_log_return_mu: dict[str, float] = Field(min_length=1)
     monthly_log_return_cov: tuple[tuple[float, ...], ...]
     private_equity_event_priors: dict[IssuerId, StateSpacePrivateEquityEventPrior] = Field(default_factory=dict)
-    private_equity_scale_priors: dict[str, TrainedPrivateEquityScalePrior] = Field(default_factory=dict)
+    private_equity_scale_priors: dict[IssuerId, TrainedPrivateEquityScalePrior] = Field(default_factory=dict)
     source_manifest: dict[str, Any] = Field(default_factory=dict)
     prior_manifest: dict[str, Any] = Field(default_factory=dict)
 
@@ -85,7 +85,7 @@ class StateSpaceModelArtifact(FrozenModel):
         _require_square_matrix(self.monthly_log_return_cov, n, "monthly_log_return_cov")
         if any(point.value <= 0 for point in self.latest_observations.values()):
             raise ValueError("latest_observations values must be positive for log-level factors")
-        private_equity_issuers = {str(issuer) for issuer in self.private_equity_factor_issuers}
+        private_equity_issuers = set(self.private_equity_factor_issuers)
         missing_scale_priors = private_equity_issuers - set(self.private_equity_scale_priors)
         if missing_scale_priors:
             raise ValueError(
@@ -196,8 +196,8 @@ class StateSpaceModel:
         factor_names = list(base_factor_names)
         observations = {factor: latest_observations[factor] for factor in base_factor_names}
         mean_by_factor = {factor: float(mean[idx]) for idx, factor in enumerate(base_factor_names)}
-        event_priors: dict[str, StateSpacePrivateEquityEventPrior] = {}
-        scale_priors: dict[str, TrainedPrivateEquityScalePrior] = {}
+        event_priors: dict[IssuerId, StateSpacePrivateEquityEventPrior] = {}
+        scale_priors: dict[IssuerId, TrainedPrivateEquityScalePrior] = {}
         covariance = cov
 
         for extra in additional_factors:
@@ -447,7 +447,7 @@ class StateSpaceModel:
         factor_index = {factor: idx for idx, factor in enumerate(self.artifact.factor_names)}
         indexes: list[tuple[int, TrainedPrivateEquityScalePrior]] = []
         for issuer_id, scale_prior in self.artifact.private_equity_scale_priors.items():
-            factor_name = PrivateEquityAssetKey(issuer_id=IssuerId(issuer_id)).wire_id
+            factor_name = PrivateEquityAssetKey(issuer_id=issuer_id).wire_id
             if factor_name in factor_index:
                 indexes.append((factor_index[factor_name], scale_prior))
         return tuple(indexes)

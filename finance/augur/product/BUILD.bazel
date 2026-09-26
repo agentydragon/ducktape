@@ -127,6 +127,7 @@ py_test(
         "//finance/augur/api:finance",
         "//finance/augur/api:portfolio",
         "//finance/augur/model:series",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim:tlh",
         "@pypi//pytest_bazel",

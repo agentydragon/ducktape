@@ -62,7 +62,7 @@ from finance.augur.sim.compiler.series import level_series_demand
 from finance.augur.sim.compiler.tax import PreparedTaxProfile, compile_income_sources, compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, round_currency_amount
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, PropertyId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -161,7 +161,7 @@ def sim_locations_from_config(locations: tuple[LocationConfig, ...]) -> dict[Loc
         loc.location_id: Location(
             location_id=loc.location_id,
             display_name=loc.label,
-            jurisdiction_ids=[str(r) for r in loc.local_regulation.default_tax_regimes],
+            jurisdiction_ids=[JurisdictionId(r) for r in loc.local_regulation.default_tax_regimes],
             annual_property_tax_rate=float(loc.local_regulation.property_tax_annual_pct) / 100.0,
             annual_special_assessment=_amount(loc.local_regulation.special_assessment_annual),
         )
@@ -304,8 +304,8 @@ def build_situation(
 
     initial_balances = [
         InitialAccountBalance(agent_id=primary_agent_id, account_id=PRIMARY_ACCOUNT_ID, balance=initial_cash),
-        InitialAccountBalance(agent_id=SPEND_SINK_AGENT_ID, account_id=SPEND_SINK_ACCOUNT_ID, balance=0),
-        InitialAccountBalance(agent_id=TAX_AUTHORITY_AGENT_ID, account_id=TAX_AUTHORITY_ACCOUNT_ID, balance=0),
+        InitialAccountBalance(agent_id=SPEND_SINK_AGENT_ID, account_id=SPEND_SINK_ACCOUNT_ID, balance=Decimal(0)),
+        InitialAccountBalance(agent_id=TAX_AUTHORITY_AGENT_ID, account_id=TAX_AUTHORITY_ACCOUNT_ID, balance=Decimal(0)),
     ]
     recurring_obligations = [
         RecurringObligation(
@@ -324,7 +324,7 @@ def build_situation(
     if scenario_key.monthly_rent > 0:
         assert scenario_key.rental_location_id is not None  # wire validator guarantees
         initial_balances.append(
-            InitialAccountBalance(agent_id=LANDLORD_AGENT_ID, account_id=LANDLORD_ACCOUNT_ID, balance=0)
+            InitialAccountBalance(agent_id=LANDLORD_AGENT_ID, account_id=LANDLORD_ACCOUNT_ID, balance=Decimal(0))
         )
         recurring_obligations.append(
             RecurringObligation(
@@ -351,14 +351,16 @@ def build_situation(
     if scenario_key.property_purchase is not None:
         property_ = properties_by_id[scenario_key.property_purchase.property_id]
         initial_balances.append(
-            InitialAccountBalance(agent_id=PROPERTY_SELLER_AGENT_ID, account_id=PROPERTY_SELLER_ACCOUNT_ID, balance=0)
+            InitialAccountBalance(
+                agent_id=PROPERTY_SELLER_AGENT_ID, account_id=PROPERTY_SELLER_ACCOUNT_ID, balance=Decimal(0)
+            )
         )
         mortgage = _sim_mortgage_for(scenario_key.property_purchase, property_, currency_quantum=currency_quantum)
         interest_deduction = None
         if mortgage is not None:
             initial_balances.append(
                 InitialAccountBalance(
-                    agent_id=MORTGAGE_LENDER_AGENT_ID, account_id=MORTGAGE_LENDER_ACCOUNT_ID, balance=0
+                    agent_id=MORTGAGE_LENDER_AGENT_ID, account_id=MORTGAGE_LENDER_ACCOUNT_ID, balance=Decimal(0)
                 )
             )
             if scenario_key.property_purchase.is_primary_residence:
@@ -464,7 +466,7 @@ def build_situation(
     profile = TaxProfile(
         agent_id=primary_agent_id,
         filing_status=FilingStatus.SINGLE,
-        jurisdiction_ids=["federal_us", "california"],
+        jurisdiction_ids=[JurisdictionId("federal_us"), JurisdictionId("california")],
         tax_authority_agent_id=TAX_AUTHORITY_AGENT_ID,
         payment_account_id=PRIMARY_ACCOUNT_ID,
         tax_authority_account_id=TAX_AUTHORITY_ACCOUNT_ID,
@@ -678,7 +680,7 @@ def _wire_property_expenses(
     initial_cash: list[InitialAccountBalance] = []
     recurring_obligations: list[RecurringObligation] = []
     if property_.hoa_monthly > 0:
-        initial_cash.append(InitialAccountBalance(agent_id=HOA_AGENT_ID, account_id=HOA_ACCOUNT_ID, balance=0))
+        initial_cash.append(InitialAccountBalance(agent_id=HOA_AGENT_ID, account_id=HOA_ACCOUNT_ID, balance=Decimal(0)))
         recurring_obligations.append(
             RecurringObligation(
                 start_month=0,
@@ -698,7 +700,9 @@ def _wire_property_expenses(
             )
         )
     if scenario_key.annual_insurance_pct > 0:
-        initial_cash.append(InitialAccountBalance(agent_id=INSURER_AGENT_ID, account_id=INSURER_ACCOUNT_ID, balance=0))
+        initial_cash.append(
+            InitialAccountBalance(agent_id=INSURER_AGENT_ID, account_id=INSURER_ACCOUNT_ID, balance=Decimal(0))
+        )
         effective_insurance_pct = insurance_rate(
             base_annual_pct=float(scenario_key.annual_insurance_pct),
             occupancy_mode=initial_occupancy_mode,
@@ -728,7 +732,7 @@ def _wire_property_expenses(
     if scenario_key.annual_maintenance_pct > 0:
         initial_cash.append(
             InitialAccountBalance(
-                agent_id=MAINTENANCE_VENDOR_AGENT_ID, account_id=MAINTENANCE_VENDOR_ACCOUNT_ID, balance=0
+                agent_id=MAINTENANCE_VENDOR_AGENT_ID, account_id=MAINTENANCE_VENDOR_ACCOUNT_ID, balance=Decimal(0)
             )
         )
         effective_maintenance_pct = maintenance_rate(
@@ -819,7 +823,7 @@ def _wire_landlord_rental(
         return _EMPTY_LANDLORD_RENTAL_WIRING
 
     initial_cash: list[InitialAccountBalance] = [
-        InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id=TENANT_ACCOUNT_ID, balance=0)
+        InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id=TENANT_ACCOUNT_ID, balance=Decimal(0))
     ]
     recurring_property_cashflows: list[RecurringPropertyCashflow] = []
     scheduled_property_cashflows: list[ScheduledPropertyCashflow] = []
@@ -851,7 +855,7 @@ def _wire_landlord_rental(
     if management is not None:
         initial_cash.append(
             InitialAccountBalance(
-                agent_id=PROPERTY_MANAGEMENT_AGENT_ID, account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID, balance=0
+                agent_id=PROPERTY_MANAGEMENT_AGENT_ID, account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID, balance=Decimal(0)
             )
         )
         management_fee_fraction = Decimal(str(management.management_fee_pct)) / Decimal(100)
@@ -988,7 +992,7 @@ def _sim_mortgage_for(
         return None
     assert isinstance(purchase.financing, MortgageFinancing)
     return SimMortgageFinancing(
-        liability_id=f"{property_.id}_mortgage",
+        liability_id=LiabilityId(f"{property_.id}_mortgage"),
         lender_agent_id=MORTGAGE_LENDER_AGENT_ID,
         lender_account_id=MORTGAGE_LENDER_ACCOUNT_ID,
         # Derived from the rounded down payment rather than rounded independently from the
@@ -1009,7 +1013,7 @@ def _sim_property_purchase(
     currency_quantum: Decimal,
 ) -> ScheduledPropertyPurchase:
     purchase_price = _amount(property_.price)
-    rented_fraction = _initial_rented_fraction(purchase)
+    _, rented_fraction = _initial_occupancy(purchase)
     return ScheduledPropertyPurchase(
         month=0,
         cause_id=f"{property_.id}_purchase",

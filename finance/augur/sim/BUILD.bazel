@@ -179,6 +179,7 @@ py_test(
     name = "scenario_test",
     srcs = ["scenario_test.py"],
     deps = [
+        ":ids",
         ":scenario",
         "//:conftest",
         "//finance/augur:conftest",
