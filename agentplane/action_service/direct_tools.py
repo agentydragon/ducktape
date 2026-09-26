@@ -29,11 +29,6 @@ from agentplane.action_service.service import ActionService
 DIRECT_WAIT_SECONDS = 30
 # What an operator reading the history sees for a request no caller wrote a title for.
 DIRECT_CALL_TITLE = "Direct tool call"
-_DIRECT_CALL_NOTE = (
-    "Runs as an Agentplane Action under your policy: a call it does not approve automatically is refused "
-    f"without running, and one still running after {DIRECT_WAIT_SECONDS}s answers with a request id to wait "
-    "on with get_action_result."
-)
 
 type DirectCall = Callable[[ActionIdentity, dict[str, JsonValue]], Awaitable[ToolResult]]
 
@@ -57,12 +52,18 @@ class DirectToolProvider(Provider):
         service: ActionService,
         external_caller: Callable[[], CallerPrincipal | None],
         call: DirectCall,
+        wait_seconds: float,
     ) -> None:
         super().__init__()
         self._catalog = catalog
         self._service = service
         self._external_caller = external_caller
         self._call = call
+        self._note = (
+            "Runs as an Agentplane Action under your policy: a call it does not approve automatically is refused "
+            f"without running, and one still running after {wait_seconds:g}s answers with a request id to wait on "
+            "with get_action_result."
+        )
 
     async def _list_tools(self) -> Sequence[Tool]:
         principal = self._external_caller()
@@ -104,7 +105,7 @@ class DirectToolProvider(Provider):
         return DirectTool(
             name=f"{action.group}{DIRECT_TOOL_SEPARATOR}{action.name}",
             title=f"{group.title}: {definition.title}" if definition.title is not None else None,
-            description=f"{definition.description}\n\n{_DIRECT_CALL_NOTE}",
+            description=f"{definition.description}\n\n{self._note}",
             parameters=definition.input_schema or {"type": "object"},
             annotations=definition.annotations,
             # A refusal or an unfinished call answers too, and neither matches the tool's own output.
