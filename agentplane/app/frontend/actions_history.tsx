@@ -12,28 +12,28 @@ import {
   type ActionService,
 } from "./client";
 import { JsonView } from "./json_view";
-import { type Presentation, PresentationControl } from "./presentation";
+import { RawSwitch } from "./raw_switch";
 import { StaleNotice } from "./stream_status";
 
 import "./actions_history.css";
 
-/** The stored result: pretty, drawn as the tool answered when `call` holds it decoded, and otherwise
- * its stored JSON, which is also what raw shows. */
+/** The stored result: drawn as the tool answered when `call` holds it decoded and the card is not
+ * showing raw JSON, and otherwise its stored JSON. */
 function ExecutionResult({
   result,
   call,
-  presentation,
+  raw,
 }: {
   result: unknown;
   call: CallToolResult | null;
-  presentation: Presentation;
+  raw: boolean;
 }): JSX.Element {
   return (
     <div>
       <Text size="sm" fw={600} mb={4}>
         Result
       </Text>
-      {call !== null && presentation === "pretty" ? <CallToolResultView result={call} /> : <JsonView value={result} />}
+      {call !== null && !raw ? <CallToolResultView result={call} /> : <JsonView value={result} />}
     </div>
   );
 }
@@ -44,7 +44,7 @@ function ExecutionResult({
 function HistoryCard({ request, mcp }: { request: ActionRequestView; mcp: boolean }): JSX.Element {
   const decision = request.decision;
   const policySet = decision?.policy_evidence?.matched.policy_set;
-  const [presentation, setPresentation] = useState<Presentation>("pretty");
+  const [raw, setRaw] = useState(false);
   const result = request.execution?.result;
   // An MCP group's result is its stored CallToolResult, drawn as the tool answered, the same authority
   // the Action Service answers MCP callers by (`agentplane/action_service/tool_results.py`). Anything
@@ -66,7 +66,7 @@ function HistoryCard({ request, mcp }: { request: ActionRequestView; mcp: boolea
                 {decision.verdict === "allow" ? "Allowed" : "Denied"}
               </Badge>
             )}
-            {call !== null && <PresentationControl value={presentation} onChange={setPresentation} />}
+            {call !== null && <RawSwitch raw={raw} onChange={setRaw} />}
           </Group>
           <ActionContext request={request} />
           <Text size="xs" c="dimmed">
@@ -89,9 +89,7 @@ function HistoryCard({ request, mcp }: { request: ActionRequestView; mcp: boolea
             </Accordion.Panel>
           </Accordion.Item>
         </Accordion>
-        {result !== null && result !== undefined && (
-          <ExecutionResult result={result} call={call} presentation={presentation} />
-        )}
+        {result !== null && result !== undefined && <ExecutionResult result={result} call={call} raw={raw} />}
         {request.execution?.error && (
           <div>
             <Text size="sm" fw={600} mb={4}>

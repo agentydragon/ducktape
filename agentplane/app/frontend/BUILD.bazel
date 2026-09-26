@@ -150,7 +150,7 @@ ts_library(
         ":call_tool_result",
         ":client",
         ":json_view",
-        ":presentation",
+        ":raw_switch",
         ":stream_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -159,8 +159,8 @@ ts_library(
 )
 
 ts_library(
-    name = "presentation",
-    srcs = ["presentation.tsx"],
+    name = "raw_switch",
+    srcs = ["raw_switch.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@mantine/core",
@@ -636,6 +636,7 @@ ts_library(
         ":launch_presets",
         ":lifecycle",
         ":live",
+        ":raw_switch",
         ":stream_status",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",

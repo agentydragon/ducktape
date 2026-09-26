@@ -208,19 +208,19 @@ describe("ActionHistory", () => {
       { list: async () => [succeeded("test_mcp", IMAGE_RESULT)], decide: vi.fn() },
       historyOver(async () => [group("test_mcp", "mcp")])
     );
-    const raw = container.querySelector<HTMLInputElement>('input[value="raw"]');
+    const raw = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
     expect(raw).not.toBeNull();
     await act(async () => raw!.click());
     expect(container.querySelector("img")).toBeNull();
     expect(container.textContent).toContain('"mimeType": "image/png"');
   });
 
-  it("offers no Pretty/Raw switch where the stored JSON is the only rendering", async () => {
+  it("offers no Raw switch where the stored JSON is the only rendering", async () => {
     const container = await render(
       { list: async () => [succeeded("test_sandbox", IMAGE_RESULT)], decide: vi.fn() },
       historyOver(async () => [group("test_sandbox", "sandbox")])
     );
-    expect(container.querySelector('input[value="raw"]')).toBeNull();
+    expect(container.querySelector('input[type="checkbox"]')).toBeNull();
   });
 
   it("keeps a sandbox group's result as its stored JSON, even one shaped like a CallToolResult", async () => {
