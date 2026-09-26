@@ -252,6 +252,7 @@ kind: Job
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/force: enabled
+    reloader.stakater.com/auto: "false"
   name: home-assistant-onboarding
   namespace: home-assistant
 spec:
@@ -260,6 +261,7 @@ spec:
     metadata:
       annotations:
         home-assistant.allegedly.works/bootstrap-revision: "5"
+        home-assistant.allegedly.works/settings-sha256: 042e6ed6cdcdec3a3ece36ed770ac9969b7273ce59b0119d598a0d3f19047547
       labels:
         app.kubernetes.io/name: home-assistant-onboarding
     spec:

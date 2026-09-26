@@ -11,6 +11,8 @@ output: the `configMapGenerator` inputs, the SOPS break-glass Secret and the `ku
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 from cdk8s import App, Chart
@@ -151,7 +153,8 @@ _BREAK_GLASS_PASSWORD = k8s.EnvVarSource(
 )
 # The home zone's `latitude` and `longitude`, kept out of this public repository: the operator
 # creates it, as a SOPS file beside break-glass-credentials.sops.yaml. Optional, so onboarding leaves
-# the location as set in the UI until it exists.
+# the location as set in the UI until it exists. Adding or changing it re-runs nothing by itself:
+# bump the onboarding Job's bootstrap-revision in the same change.
 _LOCATION_SECRET = "home-assistant-location"
 
 
@@ -187,6 +190,10 @@ def _settings_mount(volume: str) -> k8s.VolumeMount:
 
 def _config_map_volume(name: str, config_map: str) -> k8s.Volume:
     return k8s.Volume(name=name, config_map=k8s.ConfigMapVolumeSource(name=config_map))
+
+
+def _data_sha256(config_map: k8s.KubeConfigMap) -> str:
+    return hashlib.sha256(json.dumps(config_map.to_json()["data"], sort_keys=True).encode()).hexdigest()
 
 
 def _backend_probe(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
@@ -344,14 +351,26 @@ def _onboarding_job(scope: Construct) -> None:
         scope,
         "onboarding",
         metadata=k8s.ObjectMeta(
-            name=_ONBOARDING, namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"}
+            name=_ONBOARDING,
+            namespace=_NAMESPACE,
+            annotations={
+                # Flux re-runs this Job, replacing it whenever its template changes. Reloader's
+                # cluster-wide reload would also recreate it when a ConfigMap or Secret it reads
+                # changes, and in an apply that changes both, the two replacements race.
+                "kustomize.toolkit.fluxcd.io/force": "enabled",
+                "reloader.stakater.com/auto": "false",
+            },
         ),
         spec=k8s.JobSpec(
             backoff_limit=3,
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(
-                    # Bump when bootstrap behavior changes so Flux replaces the immutable Job.
-                    annotations={"home-assistant.allegedly.works/bootstrap-revision": "5"},
+                    annotations={
+                        # Bump to re-run the Job when nothing else in this template changed.
+                        "home-assistant.allegedly.works/bootstrap-revision": "5",
+                        # Makes a settings change a template change, so Flux re-runs the Job for it.
+                        "home-assistant.allegedly.works/settings-sha256": _data_sha256(settings),
+                    },
                     labels={"app.kubernetes.io/name": _ONBOARDING},
                 ),
                 spec=k8s.PodSpec(
