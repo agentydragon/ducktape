@@ -73,6 +73,7 @@ class Provider(StrEnum):
     CHATGPT = "chatgpt"
     ANTHROPIC_API = "anthropic-api"
     ANTHROPIC_MAX20 = "anthropic-max20"
+    ANTIGRAVITY = "antigravity"
     TANA = "tana"
     GOOGLE = "google"
     MISTRAL = "mistral"
@@ -272,6 +273,42 @@ TANA_MODELS: list[tuple[str, str]] = [
 # subscription and the direct API serve the same current models, and sharing one list
 # keeps them in sync ("newest group only", as with the Gemini roster).
 ANTHROPIC_MODELS: list[str] = ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5-20251001"]
+
+# Google's Antigravity OAuth session in CLIProxyAPI (agentydragon@gmail.com, added
+# 2026-09-25) -- a personal-account "Google AI Plus" subscription, structurally
+# unrelated to the AI-Studio GEMINI_API_KEY below: CLIProxyAPI's own AI Providers page
+# carries zero configured API-key providers, so this OAuth session is its only
+# Google-model credential. Verified against the vendored source
+# (third_party/cli_proxy_api, github.com/router-for-me/CLIProxyAPI):
+# `internal/runtime/executor/antigravity_executor.go` calls Google's internal Cloud Code
+# API (cloudcode-pa.googleapis.com), not the public Gemini Developer API, and
+# `internal/translator/antigravity/claude/` is a dedicated Anthropic-Messages
+# translator for it -- the same wire mechanism already used for the chatgpt/
+# anthropic-max20 routes below. The account bundles three unrelated model families
+# under one weekly-refreshing quota (two buckets: "Gemini models" and "Claude and GPT
+# models"; confirmed live via the management UI's quota refresh, 2026-09-25):
+# non-current-generation Claude, Google's own Gemini lineup under Antigravity-specific
+# slugs that don't match the public API names (reasoning-tier suffixes baked into the
+# slug: -high/-low/-lite/-agent), and the open-weight (Apache-2.0) gpt-oss-120b, which
+# Google can self-host like anyone else. Full catalog exposed as discovered; unlike
+# ANTHROPIC_MODELS/GEMINI_MODELS above, there is no "current generation only" curation
+# here yet.
+ANTIGRAVITY_MODELS: list[str] = [
+    "claude-opus-4-6-thinking",  # Claude Opus 4.6 (Thinking)
+    "claude-sonnet-4-6",  # Claude Sonnet 4.6 (Thinking)
+    "gemini-3.6-flash-high",  # Gemini 3.6 Flash
+    "gemini-3.7-flash-high",  # Gemini 3.7 Flash
+    "gemini-3.8-flash-high",  # Gemini 3.8 Flash
+    "gemini-3-flash",  # Gemini 3 Flash
+    "gemini-3.1-flash-image",  # Gemini 3.1 Flash Image
+    "gemini-pro-agent",  # Gemini 3.1 Pro (High)
+    "gemini-3.1-pro-low",  # Gemini 3.1 Pro (Low)
+    "gpt-oss-120b-medium",  # GPT-OSS 120B (Medium)
+    "gemini-3.1-flash-lite",  # Gemini 3.1 Flash Lite
+    "gemini-3.5-flash-lite",  # Gemini 3.5 Flash Lite -- same slug as a GEMINI_MODELS
+    # entry but a different backend entirely; no collision since the two live under
+    # different exposed-name providers (antigravity/* vs google/*).
+]
 
 
 @dataclass(frozen=True)
