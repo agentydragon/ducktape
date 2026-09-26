@@ -38,6 +38,8 @@ _DIRECT_TOKEN = "ollama-direct-token"
 # Both rendered by the hand-written kustomization.yaml's configMapGenerator.
 _AUTH_PROXY_CONFIG_MAP = "ollama-auth-proxy"
 _SCRIPTS_CONFIG_MAP = "gpt-oss-scripts"
+# Host inference experiments own the GPUs; retain models and routing for resumption.
+_PAUSED_FOR_HOST_EXPERIMENTS = True
 
 
 def _namespace(scope: Construct) -> None:
@@ -140,7 +142,7 @@ def _deployment(scope: Construct) -> None:
             name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
         ),
         spec=k8s.DeploymentSpec(
-            replicas=1,
+            replicas=0 if _PAUSED_FOR_HOST_EXPERIMENTS else 1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             selector=k8s.LabelSelector(match_labels=_LABELS),
             template=k8s.PodTemplateSpec(
@@ -325,7 +327,8 @@ def chart(app: App) -> Chart:
         listener=None,
     )
     _rbac(chart)
-    _setup_job(chart)
+    if not _PAUSED_FOR_HOST_EXPERIMENTS:
+        _setup_job(chart)
     _direct_token(chart)
     return chart
 
