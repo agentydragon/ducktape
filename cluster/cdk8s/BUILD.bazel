@@ -157,24 +157,10 @@ py_library(
     srcs = ["cilium.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
         "@pypi//constructs",
-    ],
-)
-
-py_test(
-    name = "test_cilium",
-    srcs = ["test_cilium.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":cilium",
-        "//:conftest",
-        "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
-        "@pypi//cdk8s",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -575,7 +561,7 @@ py_library(
         ":generation",
         ":manifest_roots",
         ":metadata",
-        "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/external_secrets:clusterexternalsecret",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -599,7 +585,7 @@ py_library(
         ":metadata",
         "//cluster/cdk8s/crd_bindings/cert_manager:bundle",
         "//cluster/cdk8s/crd_bindings/cert_manager:certificate",
-        "//cluster/cdk8s/crd_bindings/cilium:ciliumclusterwidenetworkpolicy",
+        "//cluster/cdk8s/providers/cilium:ciliumclusterwidenetworkpolicy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "@pypi//cdk8s",
@@ -759,7 +745,7 @@ py_library(
         ":generation",
         ":manifest_roots",
         ":metadata",
-        "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "@pypi//cdk8s",
     ],
 )
@@ -953,9 +939,9 @@ py_library(
         ":metadata",
         "//cluster/cdk8s/crd_bindings/cert_manager:bundle",
         "//cluster/cdk8s/crd_bindings/cert_manager:certificate",
-        "//cluster/cdk8s/crd_bindings/cilium:ciliumclusterwidenetworkpolicy",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/providers/cilium:ciliumclusterwidenetworkpolicy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
