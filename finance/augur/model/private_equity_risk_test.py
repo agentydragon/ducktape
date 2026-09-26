@@ -263,14 +263,14 @@ def test_private_equity_risk_tender_cancellation_default_zero_preserves_tender()
     assert tenders[0, 2]
 
 
-def test_private_equity_risk_legal_event_severity_matches_plan_80_15_5_split() -> None:
-    """Umbrella legal_event probability splits into 80%/15%/5% per the realization-risk plan.
+def test_private_equity_risk_legal_event_severity_matches_80_15_5_split() -> None:
+    """Umbrella legal_event probability splits into 80%/15%/5% severities.
 
     With `annual_legal_event_probability=1.0` every eligible rollout fires a legal
     event on month 1. Severity is then a function of u_legal_severity uniform draws.
     Over many rollouts the 5% severe branch (which emits LEGAL_IMPAIRMENT) and the
     80% temporary branch (NONE event_kind, suspended for at least the firing month)
-    should land within sampling tolerance of the plan-specified shares.
+    should land within sampling tolerance of those shares.
     """
 
     rollout_count = 4096
@@ -335,7 +335,7 @@ def test_private_equity_risk_legal_impairment_severe_indefinite_blocks_at_firing
     severe_count = int(severe_mask.sum())
     assert severe_count >= 150, f"too few severe rollouts ({severe_count}) for a reliable subdistribution test"
     indefinite_share = float(blocked[severe_mask, 1].mean())
-    # Plan's severe sub-split: 50% indefinite (blocked), 30% near-zero cap + 20% small recovery (not blocked).
+    # Severe sub-split: 50% indefinite (blocked), 30% near-zero cap + 20% small recovery (not blocked).
     assert 0.40 <= indefinite_share <= 0.60
 
 

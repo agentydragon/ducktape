@@ -844,7 +844,7 @@ def _wire_landlord_rental(
                     base_amount=base_monthly_collected, series=rent_series, adjustment_period_months=12
                 ),
                 # Rental income is ordinary income (taxed at owner's marginal bracket).
-                # §469 passive-loss limitation is explicitly deferred per the plan.
+                # §469 passive-loss limitation is not modeled.
                 income_category=ORDINARY_INCOME,
             )
         )
