@@ -8,7 +8,6 @@ import "./network";
 import "@mantine/core/styles.css";
 
 import { create, toJson } from "@bufbuild/protobuf";
-import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
 import App from "../app";
@@ -31,7 +30,7 @@ import { electricLive, electricShape, electricSubset, routes, UNANSWERED } from 
 import { SCENARIOS, type Scenario } from "./scenarios";
 import { LocalCommands } from "../local_commands";
 import { streamRegistry } from "../stream_status";
-import { theme } from "../theme";
+import { ThemeProvider } from "../theme";
 
 /** Resolved before any fixture is built: the scenario's fields are what the fixtures vary on. */
 function resolveScenario(): Scenario {
@@ -1838,7 +1837,7 @@ window.location.hash = scenario.route;
 const container = document.getElementById("app");
 if (!container) throw new Error("missing #app");
 createRoot(container).render(
-  <MantineProvider theme={theme} defaultColorScheme="auto">
+  <ThemeProvider>
     <App />
-  </MantineProvider>
+  </ThemeProvider>
 );

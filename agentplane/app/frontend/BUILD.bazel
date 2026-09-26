@@ -1181,9 +1181,13 @@ ts_library(
 
 ts_library(
     name = "theme",
-    srcs = ["theme.ts"],
+    srcs = ["theme.tsx"],
     tsconfig = TSCONFIG,
-    deps = ["//:node_modules/@mantine/core"],
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
 )
 
 ts_library(
