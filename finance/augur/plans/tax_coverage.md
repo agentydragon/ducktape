@@ -24,17 +24,19 @@ this PR. Record private facts downstream; publish generic supported cases here.
       taxable fund.
 - [ ] **Account treatment for these products.** Specify account tax treatment,
       reinvestment, sale-lot selection and fees.
-- [ ] **Other material income/deductions.** Decide which outside income,
-      mortgage/itemization, charitable gifts, property gains and special equity
-      treatments actually enter the first experiment. Declare exclusions explicitly;
-      do not approximate an applicable rule by omitting it.
-- [x] **Law years.** Current law held flat for future years: an explicit, labeled
+- [x] **Other material income/deductions.** The federal and California
+      mortgage-interest deduction is in scope for a plausible mortgage: itemized
+      versus standard deduction, the SALT cap interaction and federal/California
+      acquisition-debt limits. Charitable gifts are out of scope for now (see
+      [Later](#later)). No other outside income or deduction enters.
+- [x] **Law years.** Current law held flat for future years, brackets and
+      thresholds fixed in nominal dollars (no CPI indexing): an explicit, labeled
       assumption, not a forecast. "Current law" means the current tax year's
       tables; updating the bundled 2024 tables belongs to the calendar/law-year
       slice.
-- [ ] **Payment timing.** Distinguish annual liability from when cash leaves;
-      decide whether underpayment penalties and refund timing matter before
-      excluding them.
+- [x] **Payment timing.** Model annual liability, quarterly estimated payments
+      and the year-end true-up. Obligations are paid on schedule (an explicit
+      assumption): no late payment, underpayment penalties or refund timing.
 - [x] **Backstop boundary.** Domestic only; no cross-border model. Another
       jurisdiction (e.g. the Czech Republic) is out of scope and not planned soon;
       a Europe arm needs its own residency, FX and cross-border-tax scope under GX.
@@ -46,18 +48,25 @@ this PR. Record private facts downstream; publish generic supported cases here.
 “Present” means there is code and a relevant acceptance suite, not that all
 statutory variations are covered. Source paths below are relative to Augur.
 
-| Area                              | Current evidence / limitation                                                                                                                                                                                                                            | Case needed for the selected scope                                                                                                                                                                                                                                                                              |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Calendar and annual rules         | `sim/data/jurisdictions/{federal_us,california}.yaml` explicitly use 2024 brackets. A world has a month count, not a dated tax calendar; `Jurisdiction` is not a law-year schedule. SALT has a separate year-indexed cap mechanism.                      | A start at the current month of the current tax year, its first year-end, later years under current law held flat, and a partial final year. Update the 2024 tables to the current tax year; never label them current law.                                                                                      |
-| Opening tax state                 | `TaxProfile` supplies an aggregate `prior_year_tax`; `TaxBook.enroll` (`sim/tax_year.py`) starts income, gain/carryover and payment state empty. No opening YTD/carryover import surface.                                                                | The current year's year-to-date income, realized gains and estimated/withheld payments, so the coming true-up is a cash claim within the horizon. Same continuation started before versus after a synthetic taxable sale, including a brought-forward loss; no tax reset or duplicated sale.                    |
-| Ordinary income, gains and losses | `sim/tax.py` and `sim/public_sales_test.py` cover ordinary/LTCG stacking, deduction interaction, netting and carryforward. Lot dates/classification are monthly; capital-loss state is shared across jurisdictions.                                      | Compare statutory holding-period boundaries, mixed short/long gains/losses, multi-year loss use, and different federal/state opening carryovers where applicable. A test of the engine against itself is insufficient.                                                                                          |
-| Equity/fund distributions         | `SecurityDistribution` routes issuer-character slices as interest; income is `OrdinaryIncome` or `InterestIncome`. Equity samplers emit total-return prices. Qualified dividends and distinct fund capital-gain/return-of-capital processing are absent. | Compatible price-return plus payout amounts for the equity funds in scope, qualification/holding-period cases, federal qualified-dividend versus California ordinary treatment, reinvestment basis and no double-counted return. Either implement other payout kinds these funds need or reject those products. |
-| Treasury/muni interest            | Direct interest and configured distribution slices apply issuer exemptions; `sim/{income_sources,security_distributions,bond}_test.py` exercise them.                                                                                                    | Federal, California and out-of-state treatment for the muni funds and bonds actually held. Fund-level eligibility and annual tax reporting are not derivable solely from a constituent issuer's name.                                                                                                           |
-| High-income taxes                 | `PreparedTaxRules` has no NIIT fields; the California YAML explicitly defers its additional high-income tax.                                                                                                                                             | Single-filer NIIT below/across/above the threshold, with muni interest excluded; California's 1% surcharge above $1M (current California law). These are acceptance blockers for affected reports, not optional “later refinements.”                                                                            |
-| Payments versus liabilities       | `sim/tax_authority.py` emits equal first-three installments from one aggregate prior-year target, then Q4/true-up after the year closes. This is functioning payment machinery, not full federal/CA safe-harbor support.                                 | Separate jurisdictions, applicable prior/current-year safe-harbor rules, installment fractions/dates, withholding, large one-off gains, annualized-income option if selected, overpayments/refunds and payments funded by further taxable sales.                                                                |
-| Itemization and housing           | Mortgage interest, SALT cap schedules, rental deductions/depreciation and sale exclusions/recapture have existing code/tests. Their presence does not establish complete current-year eligibility, phase-outs or passive-loss treatment.                 | Only the household's selected mortgage/rental/gift cases, including federal/state differences and purchase/sale dates. Preserve working housing mechanics while adding missing rules.                                                                                                                           |
-| Direct bonds                      | Existing nominal/TIPS slice is initial, par-held and nontradable, with coupon/redemption and indexed-principal processing.                                                                                                                               | Retain its controls. Before tradable/off-par arms: coupon dates, clean/dirty price, accrued interest, premium/discount/OID, basis and tax character at sale/redemption. Do not infer full TIPS coverage from indexed principal alone.                                                                           |
-| Other accounts/residencies        | No general retirement-account withdrawal/tax regime or cross-border residency transition contract.                                                                                                                                                       | US residency throughout; reject other residencies and filing statuses. Add an independent branch for any other account type the account-treatment decision requires. Changing a currency label or jurisdiction list is not a residency model.                                                                   |
+| Area                              | Current evidence / limitation                                                                                                                                                                                                                            | Case needed for the selected scope                                                                                                                                                                                                                                                                                                                                        |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Calendar and annual rules         | `sim/data/jurisdictions/{federal_us,california}.yaml` explicitly use 2024 brackets. A world has a month count, not a dated tax calendar; `Jurisdiction` is not a law-year schedule. SALT has a separate year-indexed cap mechanism.                      | A start at the current month of the current tax year, its first year-end, later years under current law held flat in nominal dollars, and a partial final year. Update the 2024 tables to the current tax year; never label them current law.                                                                                                                             |
+| Opening tax state                 | `TaxProfile` supplies an aggregate `prior_year_tax`; `TaxBook.enroll` (`sim/tax_year.py`) starts income, gain/carryover and payment state empty. No opening YTD/carryover import surface.                                                                | The current year's year-to-date income, realized gains and estimated/withheld payments, so the coming true-up is a cash claim within the horizon. Same continuation started before versus after a synthetic taxable sale, including a brought-forward loss; no tax reset or duplicated sale.                                                                              |
+| Ordinary income, gains and losses | `sim/tax.py` and `sim/public_sales_test.py` cover ordinary/LTCG stacking, deduction interaction, netting and carryforward. Lot dates/classification are monthly; capital-loss state is shared across jurisdictions.                                      | Compare statutory holding-period boundaries, mixed short/long gains/losses, multi-year loss use, and different federal/state opening carryovers where applicable. A test of the engine against itself is insufficient.                                                                                                                                                    |
+| Equity/fund distributions         | `SecurityDistribution` routes issuer-character slices as interest; income is `OrdinaryIncome` or `InterestIncome`. Equity samplers emit total-return prices. Qualified dividends and distinct fund capital-gain/return-of-capital processing are absent. | Compatible price-return plus payout amounts for the equity funds in scope, qualification/holding-period cases, federal qualified-dividend versus California ordinary treatment, reinvestment basis and no double-counted return. Either implement other payout kinds these funds need or reject those products.                                                           |
+| Treasury/muni interest            | Direct interest and configured distribution slices apply issuer exemptions; `sim/{income_sources,security_distributions,bond}_test.py` exercise them.                                                                                                    | Federal, California and out-of-state treatment for the muni funds and bonds actually held. Fund-level eligibility and annual tax reporting are not derivable solely from a constituent issuer's name.                                                                                                                                                                     |
+| High-income taxes                 | `PreparedTaxRules` has no NIIT fields; the California YAML explicitly defers its additional high-income tax.                                                                                                                                             | Single-filer NIIT below/across/above the threshold, with muni interest excluded; California's 1% surcharge above $1M (current California law). These are acceptance blockers for affected reports, not optional “later refinements.”                                                                                                                                      |
+| Payments versus liabilities       | `sim/tax_authority.py` emits equal first-three installments from one aggregate prior-year target, then Q4/true-up after the year closes. This is functioning payment machinery, not full federal/CA safe-harbor support.                                 | Per-jurisdiction estimated-payment schedules (federal equal quarters, California's unequal installment proportions) and the true-up, with the selected safe-harbor rule only as it sets the estimate amounts, including large one-off gains and payments funded by further taxable sales. No penalty or interest modeling.                                                |
+| Itemization and housing           | Mortgage interest, SALT cap schedules, rental deductions/depreciation and sale exclusions/recapture have existing code/tests. Their presence does not establish complete current-year eligibility, phase-outs or passive-loss treatment.                 | Required: a single filer's federal and California mortgage-interest deduction, itemized versus standard, with the SALT cap (including its current-law income phase-out) and each jurisdiction's acquisition-debt limit, plus the existing rental cases, purchase/sale dates and federal/state differences. Preserve working housing mechanics while adding missing rules. |
+| Direct bonds                      | Existing nominal/TIPS slice is initial, par-held and nontradable, with coupon/redemption and indexed-principal processing.                                                                                                                               | Retain its controls. Before tradable/off-par arms: coupon dates, clean/dirty price, accrued interest, premium/discount/OID, basis and tax character at sale/redemption. Do not infer full TIPS coverage from indexed principal alone.                                                                                                                                     |
+| Other accounts/residencies        | No general retirement-account withdrawal/tax regime or cross-border residency transition contract.                                                                                                                                                       | US residency throughout; reject other residencies and filing statuses. Add an independent branch for any other account type the account-treatment decision requires. Changing a currency label or jurisdiction list is not a residency model.                                                                                                                             |
+
+### Later
+
+- [ ] Consider indexing brackets and thresholds to the simulated CPI in the
+      calendar/law-year slice (judged low significance).
+- [ ] Charitable gifts: out of scope for now; scope their federal/California
+      deduction before any experiment that includes them.
 
 ### Existing indexed-bond coverage check
 
@@ -110,24 +119,27 @@ expected values. No personal return is being calculated here.
 
 1. **Calendar/opening-state slice:** start at the current month with the current
    tax year's tables and year-to-date facts, later years at current law held
-   flat, and explicit final-year treatment.
+   flat in nominal dollars, and explicit final-year treatment.
 2. **Distribution slice:** supported price/payout construction plus tax character,
    qualified dividends (ordinary income in California) and basis after
    reinvestment. Coordinate with BIND; the tax-free proxy remains useful only
    under its declared assumption.
 3. **High-income slice:** independently test NIIT and California's 1%
    surcharge. It need not wait for the whole instrument refactor.
-4. **Payment slice:** jurisdiction-specific schedules and selected safe-harbor,
-   withholding and true-up/refund semantics. Annual liability and cash timing
-   must each have an oracle. Waits on the open payment-timing item.
+4. **Payment slice:** per-jurisdiction estimated-payment schedules and the
+   true-up, with the selected safe-harbor rule only as it sets the estimates; no
+   penalty or interest modeling. Annual liability and cash timing must each have
+   an oracle.
+5. **Mortgage-interest slice:** independently test the single-filer federal and
+   California deduction, itemized versus standard, with the SALT cap's income
+   phase-out and each jurisdiction's acquisition-debt limit.
 
-These are separate review units, not a four-step serial dependency chain. Existing
+These are separate review units, not a serial dependency chain. Existing
 statute cases remain controls. Recheck the prior tax-engine evaluation's current
 coverage/licensing before choosing an external oracle; do not select a new runtime
 backend merely because an annual calculator is useful for comparison.
 
-GT's core scope is recorded above; its open items are account treatment, other
-income/deductions, payment timing and BOND's conventions. GT closes when those
-are decided, every relevant gap maps to a bounded implementation/acceptance
-case, and exclusions are explicit. TAX closes only when those cases pass through
-canonical execution.
+GT's scope is recorded above; account treatment and BOND's conventions remain
+open. GT closes when they are decided, every relevant gap maps to a bounded
+implementation/acceptance case, and exclusions are explicit. TAX closes only when
+those cases pass through canonical execution.
