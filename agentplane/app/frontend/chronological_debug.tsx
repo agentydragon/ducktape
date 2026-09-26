@@ -158,9 +158,16 @@ export function ChronologicalDebugProvider({
   );
 }
 
-export function ChronologicalDebugLink({ observationCursor }: { observationCursor?: string }): JSX.Element {
+/** Opens the chronological debug drawer, at `cursor` if given. Throws outside a
+ * `ChronologicalDebugProvider` subtree. */
+export function useOpenChronologicalDebug(): (cursor?: string) => void {
   const open = useContext(OpenDebug);
-  if (open === null) throw new Error("ChronologicalDebugLink requires ChronologicalDebugProvider");
+  if (open === null) throw new Error("useOpenChronologicalDebug requires ChronologicalDebugProvider");
+  return open;
+}
+
+export function ChronologicalDebugLink({ observationCursor }: { observationCursor?: string }): JSX.Element {
+  const open = useOpenChronologicalDebug();
   return (
     <Button variant="subtle" size="compact-xs" onClick={() => open(observationCursor)}>
       {observationCursor === undefined ? "Debug history" : "Inspect chronological context"}
