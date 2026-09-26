@@ -95,7 +95,7 @@ class ConstantFrameModel:
 
 
 def _pe_bundle_from_channels(
-    issuer_id: str, channels: PrivateEquityChannels, request: ExogenousSamplingRequest
+    issuer_id: IssuerId, channels: PrivateEquityChannels, request: ExogenousSamplingRequest
 ) -> PrivateEquityBundle:
     return PrivateEquityBundle.from_issuer_arrays(
         issuer_id,

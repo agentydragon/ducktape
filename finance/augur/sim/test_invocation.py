@@ -10,6 +10,7 @@ from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedObligation
 from finance.augur.sim.results import Finished
@@ -24,9 +25,11 @@ HORIZON = 13
 def _retiree(market: MarketPath) -> World:
     """A retiree with USD 100 and the world she spends into; nothing taxed."""
     world = World(market, horizon_months=HORIZON, income_sources=(ORDINARY_INCOME,))
-    for name, balance in (("retiree", 10_000), ("world", 0)):
+    for name, balance in ((AgentId("retiree"), 10_000), (AgentId("world"), 0)):
         world.declare_account(
-            PreparedAccount(account=AccountRef(agent_id=name, account_id="checking"), opening_balance=balance)
+            PreparedAccount(
+                account=AccountRef(agent_id=name, account_id=AccountId("checking")), opening_balance=balance
+            )
         )
     return world
 
@@ -60,8 +63,8 @@ def test_an_experiment_defined_claim_label_reaches_the_policy() -> None:
                 month=0,
                 obligation_id="test-outflow",
                 obligation_type="experiment:annual-outflow",
-                from_account=AccountRef(agent_id="retiree", account_id="checking"),
-                to_account=AccountRef(agent_id="world", account_id="checking"),
+                from_account=AccountRef(agent_id=AgentId("retiree"), account_id=AccountId("checking")),
+                to_account=AccountRef(agent_id=AgentId("world"), account_id=AccountId("checking")),
                 amount_due=15_000,
                 property_id=None,
                 deduction_category=None,
@@ -69,7 +72,7 @@ def test_an_experiment_defined_claim_label_reaches_the_policy() -> None:
             )
         )
     )
-    session = ActionSession({0: world}, "retiree")
+    session = ActionSession({0: world}, AgentId("retiree"))
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)

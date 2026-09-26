@@ -85,6 +85,7 @@ from finance.augur.product.wire import (
     SleeveWeight,
 )
 from finance.augur.sim.books import AccountRef
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, PortfolioId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -302,11 +303,18 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled(
 def test_a_holding_no_series_prices_is_refused_where_its_pool_is_declared() -> None:
     world = World(MarketPath((), 0, rollout_count=1), horizon_months=1)
     world.declare_account(
-        PreparedAccount(account=AccountRef(agent_id="agent_a", account_id="checking"), opening_balance=0)
+        PreparedAccount(
+            account=AccountRef(agent_id=AgentId("agent_a"), account_id=AccountId("checking")), opening_balance=0
+        )
     )
     with pytest.raises(ValueError, match="missing public security series for 'missing'"):
         world.declare_pool(
-            PreparedHoldingPool(agent_id="agent_a", account_id="checking", asset_id="missing", quantity_scale=1_000_000)
+            PreparedHoldingPool(
+                agent_id=AgentId("agent_a"),
+                account_id=AccountId("checking"),
+                asset_id=AssetId("missing"),
+                quantity_scale=1_000_000,
+            )
         )
 
 
@@ -1176,7 +1184,7 @@ def test_a_managed_sleeve_weight_lowers_to_its_portfolio_and_draws_on_its_accoun
     assert lot.lot_id == ordinary.lot_id
     assert isinstance(household, CashBandHousehold)
     assert household.sleeves == (
-        ManagedSleeve(portfolio_id="test-managed", weight=3),
+        ManagedSleeve(portfolio_id=PortfolioId("test-managed"), weight=3),
         SecuritySleeve(asset_id=lot.asset_id, weight=1),
     )
     assert household.source_account_ids == ("test_ordinary_brokerage", "test_managed_brokerage")

@@ -20,7 +20,7 @@ from finance.augur.sim.actions import Action, Buy, Contribute, Liquidate, Sell, 
 from finance.augur.sim.agent import EconomicAgent
 from finance.augur.sim.fixed_point import quantity_for_value
 from finance.augur.sim.holdings import private_issuer
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
 from finance.augur.sim.money import checked_count, mul_div, position_value
 from finance.augur.sim.observations import Observation, PublicPosition, TlhPortfolioObservation
 from finance.augur.sim.world import World
@@ -30,7 +30,7 @@ from finance.augur.sim.world import World
 class SecuritySleeve:
     """Lots of one public security across the source accounts, traded in whole units at its quote."""
 
-    asset_id: str
+    asset_id: AssetId
     weight: int
 
 
@@ -38,7 +38,7 @@ class SecuritySleeve:
 class ManagedSleeve:
     """One managed portfolio, sized in money: it has a value but no units and no unit price."""
 
-    portfolio_id: str
+    portfolio_id: PortfolioId
     weight: int
 
 
@@ -70,7 +70,7 @@ class Reinvest:
 @dataclass(frozen=True, kw_only=True)
 class PendingBuy:
     sleeve_index: int
-    asset_id: str
+    asset_id: AssetId
     wanted_units: int
     price: int
     quantity_scale: int
@@ -80,7 +80,7 @@ class PendingBuy:
 class PendingContribution:
     """Money for a managed sleeve: the portfolio takes exactly this amount, no unit grid."""
 
-    portfolio_id: str
+    portfolio_id: PortfolioId
     wanted_amount: int
 
 
@@ -143,11 +143,11 @@ class CashBandHousehold(EconomicAgent):
         self,
         agent_id: AgentId,
         *,
-        cash_account_id: str,
+        cash_account_id: AccountId,
         floor: BandBound,
         ceiling: BandBound,
         sleeves: tuple[Sleeve, ...],
-        source_account_ids: tuple[str, ...],
+        source_account_ids: tuple[AccountId, ...],
         reinvest: Reinvest | None,
         cause_id_prefix: str,
     ) -> None:
@@ -339,7 +339,7 @@ class CashBandHousehold(EconomicAgent):
             cash_account_id=self.cash_account_id,
             holding_account_id=self.source_account_ids[0],
             asset_id=pending.asset_id,
-            lot_id=f"{self._lot_prefix(pending.sleeve_index)}{sequence}",
+            lot_id=LotId(f"{self._lot_prefix(pending.sleeve_index)}{sequence}"),
             units=units,
             quantity_scale=pending.quantity_scale,
         )
@@ -453,7 +453,7 @@ def settle(
     return actions
 
 
-def _proceeds(action: Action, observation: Observation) -> tuple[str, int]:
+def _proceeds(action: Action, observation: Observation) -> tuple[AccountId, int]:
     """The cash a proposed sale lands in its account, on the prices the observation quotes."""
     if isinstance(action, Sell):
         quoted = {position.lot_id: position for position in observation.public_positions}

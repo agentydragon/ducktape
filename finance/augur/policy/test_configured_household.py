@@ -9,7 +9,7 @@ from finance.augur.policy.configured_household import ConfiguredHousehold
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, SecurityLotState
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -26,10 +26,10 @@ from finance.augur.sim.prepared import (
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
-ALICE = "alice"
-CREDITOR = "creditor"
-CASH = "cash-account"
-HOLDINGS = "holdings-account"
+ALICE = AgentId("alice")
+CREDITOR = AgentId("creditor")
+CASH = AccountId("cash-account")
+HOLDINGS = AccountId("holdings-account")
 # No modeled harvest: the managed sleeve's value moves only with contributions here.
 QUIET = TlhAssumptions(
     peak_annual_yield=0, floor_annual_yield=0, maturity_decay_exponent=1, drawdown_sensitivity=0, short_term_fraction=1
@@ -49,7 +49,7 @@ class Situation:
     horizon_months: int = 1
 
 
-def sleeve(asset_id: str, weight: int) -> _SecuritySleeveTarget:
+def sleeve(asset_id: AssetId, weight: int) -> _SecuritySleeveTarget:
     return _SecuritySleeveTarget(asset_id=asset_id, weight=weight, quantity_scale=1)
 
 
@@ -67,7 +67,7 @@ def policy(*sleeves: _SleeveTarget, ceiling: int, tolerance: int | None) -> _All
     )
 
 
-def lot(lot_id: str, asset_id: str, *, units: int, basis: int) -> PreparedLot:
+def lot(lot_id: LotId, asset_id: AssetId, *, units: int, basis: int) -> PreparedLot:
     return PreparedLot(
         lot_id=lot_id,
         agent_id=ALICE,
@@ -134,13 +134,13 @@ def run(case: Situation) -> FinancialOutput:
     return output
 
 
-def balance(book: Book, agent_id: str, account_id: str = CASH) -> int:
+def balance(book: Book, agent_id: AgentId, account_id: AccountId = CASH) -> int:
     return one(
         row.balance for row in book.balances if (row.account.agent_id, row.account.account_id) == (agent_id, account_id)
     )
 
 
-def holding(book: Book, lot_id: str) -> SecurityLotState:
+def holding(book: Book, lot_id: LotId) -> SecurityLotState:
     return one(row for row in book.lots if row.lot_id == lot_id)
 
 
@@ -157,19 +157,19 @@ def test_a_purchase_is_sized_to_what_the_months_claim_payment_leaves() -> None:
     output = run(
         Situation(
             prices={"coarse": 100, "fine": 1},
-            policy=policy(sleeve("coarse", 1), sleeve("fine", 1), ceiling=1_000, tolerance=0),
+            policy=policy(sleeve(AssetId("coarse"), 1), sleeve(AssetId("fine"), 1), ceiling=1_000, tolerance=0),
             opening_cash=50,
             lots=(
-                lot("opening-coarse", "coarse", units=5, basis=500),
-                lot("opening-fine", "fine", units=102, basis=102),
+                lot(LotId("opening-coarse"), AssetId("coarse"), units=5, basis=500),
+                lot(LotId("opening-fine"), AssetId("fine"), units=102, basis=102),
             ),
             claims=(claim(50),),
         )
     )
     closed = output.months[1]
-    bought = holding(closed, "fund_buy_s1_0")
+    bought = holding(closed, LotId("fund_buy_s1_0"))
     assert (bought.units_remaining, bought.basis_remaining, bought.purchase_month) == (100, 100, 0)
-    assert holding(closed, "opening-coarse").units_remaining == 4
+    assert holding(closed, LotId("opening-coarse")).units_remaining == 4
     assert (balance(closed, ALICE), balance(closed, CREDITOR)) == (0, 50)
     # Exactness is the point: nothing this batch requested was trimmed or refused.
     assert [disposition.units for disposition in output.dispositions] == [1]
@@ -177,10 +177,10 @@ def test_a_purchase_is_sized_to_what_the_months_claim_payment_leaves() -> None:
 
 def managed_portfolio(opening: TlhOpeningCohort) -> PreparedTlhPortfolio:
     return PreparedTlhPortfolio(
-        portfolio_id="managed",
+        portfolio_id=PortfolioId("managed"),
         owner_agent_id=ALICE,
         account_id=HOLDINGS,
-        asset_id="index",
+        asset_id=AssetId("index"),
         initial_cohorts=(opening,),
         assumptions=QUIET,
     )
@@ -196,7 +196,9 @@ def test_a_projected_purchase_into_a_managed_sleeve_contributes_what_is_left() -
     output = run(
         Situation(
             prices={"index": 7},
-            policy=policy(_ManagedSleeveTarget(portfolio_id="managed", weight=1), ceiling=0, tolerance=None),
+            policy=policy(
+                _ManagedSleeveTarget(portfolio_id=PortfolioId("managed"), weight=1), ceiling=0, tolerance=None
+            ),
             opening_cash=1_000,
             portfolios=(managed_portfolio(TlhOpeningCohort(value=100, cost_basis=100, purchase_month_index=-24)),),
             claims=(claim(400),),
@@ -219,7 +221,9 @@ def test_a_portfolio_at_a_zero_index_mark_is_not_offered_the_surplus() -> None:
     output = run(
         Situation(
             prices={"index": 0},
-            policy=policy(_ManagedSleeveTarget(portfolio_id="managed", weight=1), ceiling=0, tolerance=None),
+            policy=policy(
+                _ManagedSleeveTarget(portfolio_id=PortfolioId("managed"), weight=1), ceiling=0, tolerance=None
+            ),
             opening_cash=1_000,
             portfolios=(managed_portfolio(TlhOpeningCohort(value=0, cost_basis=100, purchase_month_index=-24)),),
             claims=(claim(400),),

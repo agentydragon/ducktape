@@ -23,14 +23,14 @@ class _StaticSampler:
     """Test fixture: emit a constant level frame + (optionally) one PE issuer bundle."""
 
     levels: dict[LevelSeriesKey, float] = field(default_factory=dict)
-    pe_issuer_marks: dict[str, float] = field(default_factory=dict)
+    pe_issuer_marks: dict[IssuerId, float] = field(default_factory=dict)
     sample_requests: list[ExogenousSamplingRequest] = field(default_factory=list)
 
     def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
         return frozenset(self.levels)
 
     def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
-        return frozenset(IssuerId(issuer_id) for issuer_id in self.pe_issuer_marks)
+        return frozenset(self.pe_issuer_marks)
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         self.sample_requests.append(request)
@@ -61,7 +61,7 @@ class _StaticSampler:
 
 def test_composite_merges_macro_and_private_equity_series() -> None:
     macro = _StaticSampler(levels={InflationKey(): 1.0})
-    private_equity = _StaticSampler(pe_issuer_marks={"private_company_a": 687.69})
+    private_equity = _StaticSampler(pe_issuer_marks={IssuerId("private_company_a"): 687.69})
     model = CompositeModel(macro=macro, private_equity=private_equity)
     request = ExogenousSamplingRequest(
         horizon_months=3,
@@ -85,7 +85,7 @@ def test_composite_merges_macro_and_private_equity_series() -> None:
 def test_composite_rejects_missing_required_private_equity_issuer() -> None:
     model = CompositeModel(
         macro=_StaticSampler(levels={InflationKey(): 1.0}),
-        private_equity=_StaticSampler(pe_issuer_marks={"private_company_a": 687.69}),
+        private_equity=_StaticSampler(pe_issuer_marks={IssuerId("private_company_a"): 687.69}),
     )
 
     with pytest.raises(ValueError, match=r"missing required private-equity issuer\(s\): \['different_issuer'\]"):

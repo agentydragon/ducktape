@@ -30,6 +30,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from finance.augur.calibration.platform import Direction
+from finance.augur.model.series import IssuerId
 from finance.evidence.markets import Platform
 
 
@@ -183,7 +184,7 @@ class IpoByDateMapping(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     kind: Literal["ipo_by_date"] = "ipo_by_date"
-    issuer: str = Field(pattern=_ISSUER_PATTERN)
+    issuer: IssuerId = Field(pattern=_ISSUER_PATTERN)
     by_date: date
 
 
@@ -192,7 +193,7 @@ class PreIpoFailureMapping(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     kind: Literal["pre_ipo_failure"] = "pre_ipo_failure"
-    issuer: str = Field(pattern=_ISSUER_PATTERN)
+    issuer: IssuerId = Field(pattern=_ISSUER_PATTERN)
 
 
 class ValuationByDateMapping(BaseModel):
@@ -200,7 +201,7 @@ class ValuationByDateMapping(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     kind: Literal["valuation_by_date"] = "valuation_by_date"
-    issuer: str = Field(pattern=_ISSUER_PATTERN)
+    issuer: IssuerId = Field(pattern=_ISSUER_PATTERN)
     threshold_usd: float
     by_date: date
 
@@ -270,7 +271,7 @@ class CorrelateMarket(_MarketBase):
     reason: str | None = None
     # The PE issuer whose signal to surface (e.g. for `correlate_of: ipo_by_date`, P(IPO by
     # deadline) for this issuer). None when the correlate has no per-issuer signal.
-    issuer: str | None = Field(default=None, pattern=_ISSUER_PATTERN)
+    issuer: IssuerId | None = Field(default=None, pattern=_ISSUER_PATTERN)
 
 
 class UnmappableMarket(_MarketBase):
@@ -393,7 +394,7 @@ class DateLadderFamily(BaseModel):
     question: str
     platform: Platform
     kind: Literal["ipo_by_date"] = "ipo_by_date"
-    issuer: str = Field(pattern=_ISSUER_PATTERN)
+    issuer: IssuerId = Field(pattern=_ISSUER_PATTERN)
     dates: list[DateLadderMember] = Field(min_length=2)
 
 
@@ -447,7 +448,7 @@ class MarketCatalog(BaseModel):
                 series.add(market.mapping.series)
         return series
 
-    def referenced_issuers(self) -> set[str]:
+    def referenced_issuers(self) -> set[IssuerId]:
         """Every PE issuer the catalog's exact PE markets score (and correlate signals reference)."""
         issuers = {
             market.mapping.issuer for market in self.exact_markets() if isinstance(market.mapping, PeEventMapping)

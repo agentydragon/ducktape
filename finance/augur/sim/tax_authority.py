@@ -8,6 +8,7 @@ from finance.augur.sim.books import AccountRef, JournalEntry, Posting, TaxAccrua
 from finance.augur.sim.claims import Demand, TaxPayment, TaxTrueUp
 from finance.augur.sim.compiler.tax import PreparedTaxProfile
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
+from finance.augur.sim.ids import AccountId, JurisdictionId
 from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
 from finance.augur.sim.mortgage import Mortgage
 from finance.augur.sim.prepared import PreparedJurisdiction, _MortgageInterestDeduction, _SaltDeduction
@@ -232,12 +233,14 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement, Assessment]):
                     cause_id=row.cause_id,
                     postings=[
                         Posting(
-                            account=AccountRef(agent_id=row.agent_id, account_id=f"expense:tax:{row.jurisdiction_id}"),
+                            account=AccountRef(
+                                agent_id=row.agent_id, account_id=AccountId(f"expense:tax:{row.jurisdiction_id}")
+                            ),
                             amount=row.total_tax,
                         ),
                         Posting(
                             account=AccountRef(
-                                agent_id=row.agent_id, account_id=f"liability:tax:{row.jurisdiction_id}"
+                                agent_id=row.agent_id, account_id=AccountId(f"liability:tax:{row.jurisdiction_id}")
                             ),
                             amount=checked_count(-row.total_tax, "money negation"),
                         ),
@@ -262,7 +265,7 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement, Assessment]):
 
 
 def mortgage_interest_deduction(
-    policies: Sequence[_MortgageInterestDeduction], mortgages: Sequence[Mortgage], jurisdiction: str
+    policies: Sequence[_MortgageInterestDeduction], mortgages: Sequence[Mortgage], jurisdiction: JurisdictionId
 ) -> int:
     """The owner-occupied share of the interest paid this year on each claimed loan, capped per jurisdiction."""
     numerator = 0

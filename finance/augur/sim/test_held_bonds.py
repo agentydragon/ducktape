@@ -7,6 +7,7 @@ import pytest_bazel
 
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.held_bonds import HeldBonds
+from finance.augur.sim.ids import AccountId, BondId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedBond, PreparedFixedAmount, PreparedIndexedCoupon, PreparedSeries
 from finance.augur.sim.scenario import InterestIncome
@@ -16,9 +17,9 @@ from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, accounting
 @pytest.fixture
 def nominal() -> PreparedBond:
     return PreparedBond(
-        bond_id="test_bond",
+        bond_id=BondId("test_bond"),
         agent_id=HOUSEHOLD,
-        account_id="checking",
+        account_id=AccountId("checking"),
         issuer_jurisdiction_id=None,
         face_value=1000,
         purchase_price=1000,

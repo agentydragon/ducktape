@@ -68,7 +68,7 @@ class StateSpaceModelArtifact(FrozenModel):
     latest_observations: dict[str, ExogenousObservedPoint] = Field(min_length=1)
     monthly_log_return_mu: dict[str, float] = Field(min_length=1)
     monthly_log_return_cov: tuple[tuple[float, ...], ...]
-    private_equity_event_priors: dict[str, StateSpacePrivateEquityEventPrior] = Field(default_factory=dict)
+    private_equity_event_priors: dict[IssuerId, StateSpacePrivateEquityEventPrior] = Field(default_factory=dict)
     private_equity_scale_priors: dict[str, TrainedPrivateEquityScalePrior] = Field(default_factory=dict)
     source_manifest: dict[str, Any] = Field(default_factory=dict)
     prior_manifest: dict[str, Any] = Field(default_factory=dict)
@@ -128,7 +128,7 @@ class StateSpaceAdditionalFactor:
     monthly_log_return_sigma: float
     covariance_with_factors: Mapping[str, float] = field(default_factory=dict)
     source_ids: tuple[str, ...] = ()
-    private_equity_issuer_id: str | None = None
+    private_equity_issuer_id: IssuerId | None = None
     private_equity_event_prior: StateSpacePrivateEquityEventPrior | None = None
     private_equity_scale_prior: TrainedPrivateEquityScalePrior | None = None
 
@@ -279,13 +279,13 @@ class StateSpaceModel:
         # FactorKey; post-collapse a level factor *is* its level key, so it routes straight
         # into the right role with no source-name indirection.
         level_by_key: dict[LevelSeriesKey, np.ndarray] = {}
-        observed_mark_by_issuer: dict[str, np.ndarray] = {}
+        observed_mark_by_issuer: dict[IssuerId, np.ndarray] = {}
         for factor_name, classification in zip(
             self.artifact.factor_names, self.artifact.factor_classifications, strict=True
         ):
             levels = path_by_factor[factor_name]
             if isinstance(classification, PrivateEquityMarkKey):
-                issuer = str(classification.issuer_id)
+                issuer = classification.issuer_id
                 if issuer in event_by_issuer:
                     observed_mark_by_issuer[issuer] = observed_private_equity_mark_matrix(
                         levels, event_by_issuer[issuer]
@@ -413,7 +413,7 @@ class StateSpaceModel:
         # artifact's factors — no source-name indirection.
         return {factor: factor for factor in self.artifact.factor_names}
 
-    def _private_equity_event_series(self, issuer_id: str, request: ExogenousSamplingRequest) -> np.ndarray:
+    def _private_equity_event_series(self, issuer_id: IssuerId, request: ExogenousSamplingRequest) -> np.ndarray:
         prior = self.artifact.private_equity_event_priors[issuer_id]
         events = np.zeros((request.rollout_count, request.horizon_months + 1), dtype=np.bool_)
         if request.rollout_count == 0:

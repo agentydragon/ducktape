@@ -14,6 +14,7 @@ from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -29,7 +30,7 @@ from finance.augur.sim.world import World
 
 RENT = RentKey(location_id=LocationId("san_francisco_ca"))
 QUANTUM = Decimal("0.01")
-CHECKING = "checking"
+CHECKING = AccountId("checking")
 
 
 def _series(levels: list[list[float]], *, horizon_months: int) -> tuple[PreparedSeries, ...]:
@@ -50,7 +51,7 @@ def _indexed(base_amount: Decimal, *, base_month_index: int, adjustment_period_m
     )
 
 
-def _account(agent_id: str, balance: Decimal) -> PreparedAccount:
+def _account(agent_id: AgentId, balance: Decimal) -> PreparedAccount:
     return PreparedAccount(
         account=AccountRef(agent_id=agent_id, account_id=CHECKING),
         opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
@@ -65,8 +66,8 @@ def _rent_obligation(amount: PreparedIndexedAmount) -> PreparedRecurringObligati
         end_month=None,
         obligation_id="outside_rent",
         obligation_type=ObligationType.OUTSIDE_RENT,
-        from_account=AccountRef(agent_id="alice", account_id=CHECKING),
-        to_account=AccountRef(agent_id="landlord", account_id=CHECKING),
+        from_account=AccountRef(agent_id=AgentId("alice"), account_id=CHECKING),
+        to_account=AccountRef(agent_id=AgentId("landlord"), account_id=CHECKING),
         amount_due=amount,
         property_id=None,
         deduction_category=None,
@@ -81,8 +82,8 @@ def _tenant_rent(amount: PreparedIndexedAmount) -> PreparedRecurringTransfer:
         start_month=0,
         end_month=None,
         cause_id="tenant_rent",
-        from_account=AccountRef(agent_id="tenant", account_id=CHECKING),
-        to_account=AccountRef(agent_id="alice", account_id=CHECKING),
+        from_account=AccountRef(agent_id=AgentId("tenant"), account_id=CHECKING),
+        to_account=AccountRef(agent_id=AgentId("alice"), account_id=CHECKING),
         amount=amount,
         income_category=None,
         deduction_category=None,
@@ -117,7 +118,7 @@ def _compose(
 
 def _rent_worlds(amount: PreparedIndexedAmount, levels: list[list[float]], *, horizon_months: int) -> dict[int, World]:
     series = _series(levels, horizon_months=horizon_months)
-    accounts = (_account("alice", Decimal(20_000)), _account("landlord", Decimal(0)))
+    accounts = (_account(AgentId("alice"), Decimal(20_000)), _account(AgentId("landlord"), Decimal(0)))
     return {
         rollout_id: _compose(
             series,
@@ -132,7 +133,7 @@ def _rent_worlds(amount: PreparedIndexedAmount, levels: list[list[float]], *, ho
 
 
 def _run(worlds: dict[int, World]) -> list[Rollout]:
-    session = ActionSession(worlds, "alice", capture="forensic")
+    session = ActionSession(worlds, AgentId("alice"), capture="forensic")
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -161,7 +162,7 @@ def _run(worlds: dict[int, World]) -> list[Rollout]:
         session.close()
 
 
-def _cash(book: Book, agent_id: str) -> int:
+def _cash(book: Book, agent_id: AgentId) -> int:
     [balance] = [
         row.balance for row in book.balances if (row.account.agent_id, row.account.account_id) == (agent_id, CHECKING)
     ]
@@ -200,8 +201,13 @@ def test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> 
         assert [payment.month for payment in result.summary.payments] == list(range(13))
         assert [payment.receipt.amount_requested for payment in result.summary.payments] == [100000] * 12 + [reset]
         assert all(isinstance(payment.receipt.outcome, Paid) for payment in result.summary.payments)
-        assert tuple(_cash(result.summary.ending_book, actor) for actor in ("alice", "landlord")) == ending_cash
-        assert [_cash(book, "alice") + _cash(book, "landlord") for book in result.trace.books] == [2000000] * 14
+        assert (
+            tuple(_cash(result.summary.ending_book, actor) for actor in (AgentId("alice"), AgentId("landlord")))
+            == ending_cash
+        )
+        assert [_cash(book, AgentId("alice")) + _cash(book, AgentId("landlord")) for book in result.trace.books] == [
+            2000000
+        ] * 14
         assert result.trace.events.rollout_failures.is_empty()
 
 
@@ -215,7 +221,7 @@ def test_series_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
                 0,
                 rollout_count=1,
                 horizon_months=13,
-                accounts=(_account("tenant", Decimal(20_000)), _account("alice", Decimal(0))),
+                accounts=(_account(AgentId("tenant"), Decimal(20_000)), _account(AgentId("alice"), Decimal(0))),
                 transfer=_tenant_rent(amount),
             )
         }
@@ -223,7 +229,10 @@ def test_series_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
     assert result.trace is not None
     assert result.trace.events.transfers.get_column("month_index").to_list() == list(range(13))
     assert result.trace.events.transfers.get_column("amount_quanta").to_list() == [150000] * 12 + [180000]
-    assert [_cash(result.summary.ending_book, actor) for actor in ("alice", "tenant")] == [1980000, 20000]
+    assert [_cash(result.summary.ending_book, actor) for actor in (AgentId("alice"), AgentId("tenant"))] == [
+        1980000,
+        20000,
+    ]
 
 
 def test_half_quantum_indexing_funds_same_month_claim_without_losing_cash() -> None:
@@ -238,9 +247,9 @@ def test_half_quantum_indexing_funds_same_month_claim_without_losing_cash() -> N
                 rollout_count=1,
                 horizon_months=3,
                 accounts=(
-                    _account("alice", Decimal(0)),
-                    _account("landlord", Decimal(0)),
-                    _account("tenant", Decimal(1)),
+                    _account(AgentId("alice"), Decimal(0)),
+                    _account(AgentId("landlord"), Decimal(0)),
+                    _account(AgentId("tenant"), Decimal(1)),
                 ),
                 obligation=_rent_obligation(amount),
                 transfer=_tenant_rent(amount),
@@ -254,12 +263,13 @@ def test_half_quantum_indexing_funds_same_month_claim_without_losing_cash() -> N
         if transfer["from_agent_id"] == "tenant"
     ] == [1, 2, 3]
     assert [payment.receipt.amount_paid for payment in result.summary.payments] == [1, 2, 3]
-    assert [_cash(book, "alice") for book in result.trace.books] == [0] * 4
-    assert [_cash(book, "tenant") for book in result.trace.books] == [100, 99, 97, 94]
-    assert [_cash(book, "landlord") for book in result.trace.books] == [0, 1, 3, 6]
-    assert [sum(_cash(book, actor) for actor in ("alice", "tenant", "landlord")) for book in result.trace.books] == [
-        100
-    ] * 4
+    assert [_cash(book, AgentId("alice")) for book in result.trace.books] == [0] * 4
+    assert [_cash(book, AgentId("tenant")) for book in result.trace.books] == [100, 99, 97, 94]
+    assert [_cash(book, AgentId("landlord")) for book in result.trace.books] == [0, 1, 3, 6]
+    assert [
+        sum(_cash(book, actor) for actor in (AgentId("alice"), AgentId("tenant"), AgentId("landlord")))
+        for book in result.trace.books
+    ] == [100] * 4
 
 
 if __name__ == "__main__":

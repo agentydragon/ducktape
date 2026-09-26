@@ -21,6 +21,7 @@ import yaml
 from pydantic import BaseModel, BeforeValidator, Field
 
 from finance.augur.sim.fixed_point import validate_currency_amount
+from finance.augur.sim.ids import JurisdictionId
 
 
 class JurisdictionLevel(StrEnum):
@@ -70,7 +71,7 @@ class Jurisdiction(BaseModel):
     long-term capital gains at the ordinary-income rate
     (California-style)."""
 
-    jurisdiction_id: str
+    jurisdiction_id: JurisdictionId
     ordinary_income_brackets: dict[str, list[TaxBracket]]
     ltcg_brackets: dict[str, list[TaxBracket]] | None = Field(default=None)
     standard_deduction: dict[str, CurrencyAmount]
@@ -100,7 +101,9 @@ class Jurisdiction(BaseModel):
         ),
     )
 
-    def taxes_interest_from(self, issuer_jurisdiction_id: str | None, issuer_level: JurisdictionLevel | None) -> bool:
+    def taxes_interest_from(
+        self, issuer_jurisdiction_id: JurisdictionId | None, issuer_level: JurisdictionLevel | None
+    ) -> bool:
         """Whether interest issued by `issuer_jurisdiction_id` is taxable HERE.
 
         `None` issuer means a non-governmental issuer (a corporate bond), which no jurisdiction
@@ -114,7 +117,7 @@ class Jurisdiction(BaseModel):
         return issuer_level not in self.exempt_interest_from_levels
 
 
-def load_jurisdiction(jurisdiction_id: str) -> Jurisdiction:
+def load_jurisdiction(jurisdiction_id: JurisdictionId) -> Jurisdiction:
     """Load and validate the YAML for `jurisdiction_id`. Raises
     `FileNotFoundError` if the file is missing and Pydantic's
     `ValidationError` if the schema doesn't match."""

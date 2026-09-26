@@ -12,6 +12,7 @@ from finance.augur.sim.actions import ClaimId, Consume, PayClaim
 from finance.augur.sim.actor import MonthOpened
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import Claim, Claims
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.payments import execute
 from finance.augur.sim.scenario import ORDINARY_INCOME
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -92,7 +93,7 @@ def test_claim_occurrences_are_not_labels_and_consumption_is_not_a_claim(books: 
         ({"claim": ClaimId(month=0, index=1)}, "UnknownClaim"),
         ({"amount": 50}, "InvalidAmount"),
         ({"from_account": RECIPIENT}, "WrongActor"),
-        ({"from_account": AccountRef(agent_id=HOUSEHOLD, account_id="undeclared")}, "UnknownAccount"),
+        ({"from_account": AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("undeclared"))}, "UnknownAccount"),
         ({"cause_id": ""}, "EmptyIdentifier"),
         ({}, "InsufficientCash"),
     ],
@@ -119,7 +120,7 @@ def test_rejected_payments_change_neither_books_nor_capture(
         (RECIPIENT, -1, "budget", "InvalidAmount"),
         (RECIPIENT, 101, "budget", "InsufficientCash"),
         (RECIPIENT, 1, "", "EmptyIdentifier"),
-        (AccountRef(agent_id="test_other", account_id="undeclared"), 1, "budget", "UnknownAccount"),
+        (AccountRef(agent_id=AgentId("test_other"), account_id=AccountId("undeclared")), 1, "budget", "UnknownAccount"),
     ],
 )
 def test_consumption_admission_preserves_all_books(
@@ -216,7 +217,7 @@ def test_estimates_and_true_up_settle_the_same_annual_liability() -> None:
     assert books.tax_liabilities[0].amount_owed == 0
     assert books.tax_liabilities[0].active
     assert books.tax_settlements[0].amount == 1000
-    assert books.ledger.balance(AccountRef(agent_id=HOUSEHOLD, account_id="asset:tax-prepayments")) == 0
+    assert books.ledger.balance(AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("asset:tax-prepayments"))) == 0
     assert books.ledger.trial_balance() == 0
 
 

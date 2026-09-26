@@ -13,6 +13,7 @@ py_library(
     deps = [
         "//finance/augur/sim:actions",
         "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:observations",
     ],
 )
@@ -39,6 +40,7 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:books",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:market_path",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:results",
@@ -57,6 +59,7 @@ py_library(
         ":sleeves",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:agent",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:observations",
     ],
 )

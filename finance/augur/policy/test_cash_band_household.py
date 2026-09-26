@@ -15,7 +15,7 @@ from finance.augur.policy.cash_band_household import (
 )
 from finance.augur.sim.actions import Liquidate, Sell, Withdraw
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
 from finance.augur.sim.observations import Claim, HoldingPool, Observation, PublicPosition, TlhPortfolioObservation
 
 
@@ -31,17 +31,17 @@ def _household(
 ) -> CashBandHousehold:
     """Sleeve `i` holds `asset-i`; with `managed`, sleeve 0 is the managed portfolio instead."""
     default: list[Sleeve] = [
-        SecuritySleeve(asset_id=f"asset-{index}", weight=weight) for index, weight in enumerate(weights)
+        SecuritySleeve(asset_id=AssetId(f"asset-{index}"), weight=weight) for index, weight in enumerate(weights)
     ]
     if managed:
-        default[0] = ManagedSleeve(portfolio_id="managed", weight=weights[0])
+        default[0] = ManagedSleeve(portfolio_id=PortfolioId("managed"), weight=weights[0])
     return CashBandHousehold(
         AgentId("owner"),
-        cash_account_id="cash",
+        cash_account_id=AccountId("cash"),
         floor=floor,
         ceiling=ceiling,
         sleeves=tuple(default) if targets is None else targets,
-        source_account_ids=("first", "second"),
+        source_account_ids=(AccountId("first"), AccountId("second")),
         reinvest=Reinvest(rebalance_tolerance_ppb=drift) if reinvest else None,
         cause_id_prefix="fund",
     )
@@ -58,14 +58,14 @@ def _observation(
 ) -> Observation:
     """`prices` quotes each asset's pool in the first source account, on the `scale` grid."""
     return Observation(
-        agent_id="owner",
+        agent_id=AgentId("owner"),
         month=0,
         cpi=None,
         cash=cash,
         public_holdings=sum(lot.value for lot in lots),
-        accounts=(("cash", cash),),
+        accounts=((AccountId("cash"), cash),),
         holding_pools=tuple(
-            HoldingPool(account_id="first", asset_id=asset_id, quantity_scale=scale, price=price)
+            HoldingPool(account_id=AccountId("first"), asset_id=AssetId(asset_id), quantity_scale=scale, price=price)
             for asset_id, price in (prices or {}).items()
         ),
         public_positions=lots,
@@ -77,8 +77,8 @@ def _observation(
                 index=0,
                 cause_id="bill",
                 obligation_type="spending",
-                from_account=AccountRef(agent_id="owner", account_id="cash"),
-                to_account=AccountRef(agent_id="world", account_id="cash"),
+                from_account=AccountRef(agent_id=AgentId("owner"), account_id=AccountId("cash")),
+                to_account=AccountRef(agent_id=AgentId("world"), account_id=AccountId("cash")),
                 amount_due=due,
             ),
         )
@@ -99,9 +99,9 @@ def _lot(
     month: int = -1,
 ) -> PublicPosition:
     return PublicPosition(
-        account_id=account,
-        asset_id=asset,
-        lot_id=lot,
+        account_id=AccountId(account),
+        asset_id=AssetId(asset),
+        lot_id=LotId(lot),
         purchase_month=month,
         units=units,
         quantity_scale=scale,
@@ -114,10 +114,10 @@ def _lot(
 def _managed(value: int, *, accepts_contributions: bool = True) -> TlhPortfolioObservation:
     """A portfolio in the first source account, pegged to the index `asset-0` also names."""
     return TlhPortfolioObservation(
-        portfolio_id="managed",
-        owner_agent_id="owner",
-        account_id="first",
-        asset_id="asset-0",
+        portfolio_id=PortfolioId("managed"),
+        owner_agent_id=AgentId("owner"),
+        account_id=AccountId("first"),
+        asset_id=AssetId("asset-0"),
         value=value,
         reported_tax_basis=80,
         accepts_contributions=accepts_contributions,
@@ -236,7 +236,10 @@ def test_lots_of_an_index_and_a_portfolio_pegged_to_it_are_separate_sleeves() ->
     household = _household(
         floor=200,
         ceiling=200,
-        targets=(ManagedSleeve(portfolio_id="managed", weight=1), SecuritySleeve(asset_id="asset-0", weight=1)),
+        targets=(
+            ManagedSleeve(portfolio_id=PortfolioId("managed"), weight=1),
+            SecuritySleeve(asset_id=AssetId("asset-0"), weight=1),
+        ),
     )
     [sale] = household.propose(
         _observation(cash=100, lots=(_lot(),), portfolios=(_managed(500),), prices={"asset-0": 3})

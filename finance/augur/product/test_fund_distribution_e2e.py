@@ -38,6 +38,7 @@ from finance.augur.product.scenarios import (
 )
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import RolloutRequest, ScenarioKey
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.scenario import TlhCohort, TlhPortfolioSpec
 from finance.augur.sim.tlh import TlhAssumptions
 
@@ -240,7 +241,7 @@ def test_the_tax_character_fractions_reach_the_scenario(augur_config: Config) ->
         config.portfolio_sources.fixed.portfolio,
         config.security_distributions,
         tlh_portfolios=(),
-        primary_agent_id="agent_a",
+        primary_agent_id=AgentId("agent_a"),
     )
 
     assert [(slice_.fraction, slice_.issuer_jurisdiction_id) for slice_ in one(distributions).tax_character] == [
@@ -260,7 +261,7 @@ def test_the_payout_is_scoped_to_the_pool_that_holds_it(augur_config: Config) ->
             config.portfolio_sources.fixed.portfolio,
             config.security_distributions,
             tlh_portfolios=(),
-            primary_agent_id="agent_a",
+            primary_agent_id=AgentId("agent_a"),
         )
     )
 
@@ -284,7 +285,7 @@ def test_a_declared_security_nobody_holds_contributes_nothing(augur_config: Conf
             config.portfolio_sources.fixed.portfolio,
             config.security_distributions,
             tlh_portfolios=(),
-            primary_agent_id="agent_a",
+            primary_agent_id=AgentId("agent_a"),
         )
         == ()
     )

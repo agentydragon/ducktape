@@ -34,7 +34,7 @@ from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import _ScheduledSale
@@ -51,7 +51,7 @@ from finance.augur.sim.scenario import (
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.world import Capture, World
 
-AGENT = "alice"
+AGENT = AgentId("alice")
 CURRENCY = Currency()
 HORIZON_MONTHS = 30
 SALE_MONTH = 14
@@ -60,8 +60,8 @@ LOT_BASIS = Decimal(10_000)
 SALE_PRICE = Decimal(60_000)
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 
-LOCATION = "acceptance-town"
-HOME_VALUE = HomeValueKey(location_id=LocationId(LOCATION))
+LOCATION = LocationId("acceptance-town")
+HOME_VALUE = HomeValueKey(location_id=LOCATION)
 PROPERTY_SALE_MONTH = 12
 # Sampled levels that are not a whole number of cents. A level already on a cent reads the same
 # out of either representation, which is exactly what the property assertion has to rule out.
@@ -101,10 +101,10 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
         month=SALE_MONTH,
         cause_id="sell-vti",
         agent_id=AGENT,
-        account_id="checking",
-        asset_id=str(VTI.symbol),
+        account_id=AccountId("checking"),
+        asset_id=AssetId(VTI.symbol),
         units=int(quantity_to_quanta(UNITS, scale=quantity_scale_for_asset(VTI))),
-        proceeds_account_id="checking",
+        proceeds_account_id=AccountId("checking"),
     )
     profile = TaxProfile(agent_id=AGENT, jurisdiction_ids=["federal_us"], tax_authority_agent_id="irs")
     jurisdictions = load_jurisdictions_for([profile])

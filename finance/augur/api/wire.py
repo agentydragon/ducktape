@@ -15,7 +15,9 @@ from pydantic import Field, PositiveInt
 
 from finance.augur.api.local_regulation import LocalRegulation
 from finance.augur.api.schemas import ApiModel, NonNegativeCurrencyAmount, PositiveCurrencyAmount
+from finance.augur.model.series import IssuerId, LocationId
 from finance.augur.product.wire import SpendIndex
+from finance.augur.sim.ids import PropertyId
 
 
 class ActorRole(StrEnum):
@@ -26,7 +28,9 @@ class ActorRole(StrEnum):
 
 
 class Location(ApiModel):
-    id: str = Field(description="Stable relational location identity used by config, storage, and scenario joins.")
+    id: LocationId = Field(
+        description="Stable relational location identity used by config, storage, and scenario joins."
+    )
     label: str
     city: str
     state: str
@@ -37,10 +41,12 @@ class Location(ApiModel):
 class Property(ApiModel):
     """Persistence-shaped property row; join to `CatalogResponse.locations` by `location_id`."""
 
-    id: str = Field(description="Stable relational property identity used by selection, saved scenarios, and storage.")
+    id: PropertyId = Field(
+        description="Stable relational property identity used by selection, saved scenarios, and storage."
+    )
     source_catalog_id: str
     source_property_id: str
-    location_id: str = Field(description="Foreign key for the property's canonical location row.")
+    location_id: LocationId = Field(description="Foreign key for the property's canonical location row.")
     address: str
     neighborhood: str
     type: str
@@ -83,8 +89,8 @@ class ProductInputDefaults(ApiModel):
     pe_lnw_floor: NonNegativeCurrencyAmount | None = None
     pe_index_floor_to_inflation: bool | None = None
     monthly_rent: NonNegativeCurrencyAmount | None = None
-    rental_location_id: str | None = None
-    property_id: str | None = None
+    rental_location_id: LocationId | None = None
+    property_id: PropertyId | None = None
     lives_here: bool | None = None
     financing_kind: Literal["cash", "mortgage"] | None = None
     down_payment_pct: float | None = None
@@ -108,7 +114,7 @@ class CalibrationInfo(ApiModel):
     picker; the catalog itself is fixed (no picker), so this carries no catalog id."""
 
     label: str = Field(description="Human label for the catalog (falls back to the scored issuers when unset).")
-    issuers: list[str] = Field(
+    issuers: list[IssuerId] = Field(
         default_factory=list, description="Private-equity issuer ids the catalog scores (e.g. `openai`)."
     )
 
@@ -125,11 +131,11 @@ class CatalogResponse(ApiModel):
     # Lookups the server/sim build off the catalog. Plain `@property` (not a serialized field), so
     # they stay off the wire while giving every caller one spelling of the derivation.
     @property
-    def properties_by_id(self) -> dict[str, Property]:
+    def properties_by_id(self) -> dict[PropertyId, Property]:
         return {property_.id: property_ for property_ in self.properties}
 
     @property
-    def location_ids(self) -> frozenset[str]:
+    def location_ids(self) -> frozenset[LocationId]:
         return frozenset(location.id for location in self.locations)
 
 

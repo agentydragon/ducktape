@@ -32,6 +32,7 @@ from finance.augur.api.server import ApiServerConfig, create_app, static_price_c
 from finance.augur.api.wire import ActorRole
 from finance.augur.model.independent import IndependentProviderConfig
 from finance.augur.model.provider_config import ProviderConfig
+from finance.augur.model.series import LocationId
 from finance.augur.model.testing import ConstantFrameModel
 
 # Factories the fixtures below hand tests: build a Config (`minimal_config` overrides any field;
@@ -179,7 +180,7 @@ def make_catalog_config(fixture_locations: tuple[LocationConfig, ...]) -> MakeCa
     def _make(
         properties_path: Path,
         *,
-        location_selection: tuple[str, ...] | None = None,
+        location_selection: tuple[LocationId, ...] | None = None,
         property_assets: tuple[PropertyAssetConfig, ...] = (),
     ) -> Config:
         models: dict[str, ProviderConfig] = {"current_model": IndependentProviderConfig()}

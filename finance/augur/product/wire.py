@@ -25,10 +25,11 @@ from finance.augur.api.schemas import (
     PositiveCurrencyAmount,
 )
 from finance.augur.model.asset_key import AssetKey
-from finance.augur.model.series import SecuritySymbol
+from finance.augur.model.series import IssuerId, LocationId, SecuritySymbol
 from finance.augur.product.metrics import OutcomeBasis
 from finance.augur.sim.events import TlhOperation
 from finance.augur.sim.fixed_point import validate_currency_quantum
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, PortfolioId, PropertyId
 
 
 class SpendIndex(StrEnum):
@@ -90,7 +91,7 @@ class ManagedSleeveWeight(ApiModel):
     """
 
     kind: Literal["managed_portfolio"] = "managed_portfolio"
-    portfolio_id: str
+    portfolio_id: PortfolioId
     weight: NonNegativeInt
 
 
@@ -255,7 +256,7 @@ type PropertyLifecycleEventWire = Annotated[
 
 
 class PropertyPurchase(ApiModel):
-    property_id: str
+    property_id: PropertyId
     closing_cost_pct: NonNegativeFloat = 1.5
     financing: PropertyFinancing
     # Owner-occupied: gates the federal/CA mortgage interest deduction (§163(h)(3)). When false,
@@ -311,7 +312,7 @@ class ScenarioKey(ApiModel):
     funding_policy: FundingPolicy = Field(default_factory=FundingPolicy)
     pe_tender_policy: PrivateEquityTenderPolicyWire = Field(default_factory=PrivateEquityTenderPolicyWire)
     monthly_rent: NonNegativeCurrencyAmount = Decimal(0)
-    rental_location_id: str | None = None
+    rental_location_id: LocationId | None = None
     property_purchase: PropertyPurchase | None = None
     annual_insurance_pct: NonNegativeFloat = DEFAULT_ANNUAL_INSURANCE_PCT
     annual_maintenance_pct: NonNegativeFloat = DEFAULT_ANNUAL_MAINTENANCE_PCT
@@ -417,9 +418,9 @@ class TlhFinancialEffectEvent(_RolloutEventBase):
     kind: Literal["tlh_financial_effect"] = "tlh_financial_effect"
     amount_quanta: CurrencyQuanta = Field(description="Signed cash into household cash; contributions are negative.")
     cause_id: str
-    portfolio_id: str
-    account_id: str
-    cash_account_id: str | None = None
+    portfolio_id: PortfolioId
+    account_id: AccountId
+    cash_account_id: AccountId | None = None
     operation: TlhOperation
     short_term_gain_quanta: CurrencyQuanta
     long_term_gain_quanta: CurrencyQuanta
@@ -429,7 +430,7 @@ class TlhFinancialEffectEvent(_RolloutEventBase):
 
 class PrivateEquityMarkerEvent(_RolloutEventBase):
     kind: Literal["private_equity_event"] = "private_equity_event"
-    issuer_id: str
+    issuer_id: IssuerId
     asset: AssetKey
     asset_label: str | None = None
     event_kind: PrivateEquityEventKind
@@ -444,7 +445,7 @@ class PrivateEquityMarkerEvent(_RolloutEventBase):
 
 class PrivateEquityOpportunityEvent(_RolloutEventBase):
     kind: Literal["private_equity_opportunity"] = "private_equity_opportunity"
-    issuer_id: str
+    issuer_id: IssuerId
     asset: AssetKey
     asset_label: str | None = None
     event_kind: PrivateEquityEventKind
@@ -481,7 +482,7 @@ class OutsideRentPaymentEvent(_RolloutEventBase):
 
 class PropertyPurchaseEvent(_RolloutEventBase):
     kind: Literal["property_purchase"] = "property_purchase"
-    property_id: str
+    property_id: PropertyId
     purchase_price_quanta: CurrencyQuanta
     down_payment_quanta: CurrencyQuanta
     mortgage_principal_quanta: CurrencyQuanta
@@ -489,7 +490,7 @@ class PropertyPurchaseEvent(_RolloutEventBase):
 
 class ClosingCostPaymentEvent(_RolloutEventBase):
     kind: Literal["closing_cost_payment"] = "closing_cost_payment"
-    property_id: str
+    property_id: PropertyId
 
 
 class MortgagePaymentEvent(_RolloutEventBase):
@@ -528,7 +529,7 @@ class PropertyMaintenancePaymentEvent(_RolloutEventBase):
 
 class TaxAccrualEvent(_RolloutEventBase):
     kind: Literal["tax_accrual"] = "tax_accrual"
-    jurisdiction_id: str
+    jurisdiction_id: JurisdictionId
     tax_year_end_month: NonNegativeInt
     ordinary_income_quanta: CurrencyQuanta
     ltcg_quanta: CurrencyQuanta
@@ -564,7 +565,7 @@ class SetRentedFractionMarkerEvent(_RolloutEventBase):
     property's rented_fraction changed (start renting, stop renting, change %)."""
 
     kind: Literal["set_rented_fraction"] = "set_rented_fraction"
-    property_id: str
+    property_id: PropertyId
     rented_fraction: float
 
 
@@ -572,8 +573,8 @@ class SetPrimaryResidenceMarkerEvent(_RolloutEventBase):
     """A primary-residence assignment event fired this month."""
 
     kind: Literal["set_primary_residence"] = "set_primary_residence"
-    agent_id: str
-    property_id: str | None
+    agent_id: AgentId
+    property_id: PropertyId | None
     is_primary_residence: bool
 
 
@@ -582,7 +583,7 @@ class CapitalImprovementMarkerEvent(_RolloutEventBase):
     bump on the named property."""
 
     kind: Literal["capital_improvement"] = "capital_improvement"
-    property_id: str
+    property_id: PropertyId
 
 
 class PropertySaleMarkerEvent(_RolloutEventBase):
@@ -590,7 +591,7 @@ class PropertySaleMarkerEvent(_RolloutEventBase):
     with full closing-cost, recapture, §121 exclusion, and LTCG breakdown."""
 
     kind: Literal["property_sale"] = "property_sale"
-    property_id: str
+    property_id: PropertyId
     gross_proceeds_quanta: CurrencyQuanta
     mortgage_payoff_quanta: CurrencyQuanta
     net_cash_to_owner_quanta: CurrencyQuanta

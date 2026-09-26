@@ -7,6 +7,7 @@ the Trinity experiment.
 
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import rate_to_ppb
+from finance.augur.sim.ids import AssetId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -53,7 +54,7 @@ def compose(case: Situation, rollout_id: int, *, equity_share: float) -> World:
             PreparedDistribution(
                 agent_id=RETIREE,
                 holding_account_id=BROKERAGE,
-                asset_id=str(BONDS),
+                asset_id=AssetId(BONDS),
                 to_account_id=CHECKING,
                 tax_character=(PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), issuer_jurisdiction_id=None),),
             )

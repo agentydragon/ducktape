@@ -40,7 +40,7 @@ def _bound(amount: PreparedAmount) -> BandBound:
 
 def _household(policy: _AllocationPolicy) -> CashBandHousehold:
     return CashBandHousehold(
-        AgentId(policy.agent_id),
+        policy.agent_id,
         cash_account_id=policy.account_id,
         floor=_bound(policy.cash_floor),
         ceiling=_bound(policy.cash_ceiling),

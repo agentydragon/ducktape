@@ -151,7 +151,7 @@ from finance.augur.sim.fixed_point import (
     quantity_to_quanta,
     rate_to_ppb,
 )
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -183,9 +183,9 @@ STUDY_LAST_MONTH = date(1995, 12, 1)
 
 QUANTUM = Decimal("0.01")
 RETIREE = AgentId("retiree")
-WORLD = "world"
-BROKERAGE = "brokerage"
-CHECKING = "checking"
+WORLD = AgentId("world")
+BROKERAGE = AccountId("brokerage")
+CHECKING = AccountId("checking")
 
 INITIAL_PORTFOLIO = Decimal(1_000_000)
 EQUITY = SecuritySymbol("STOCKS")
@@ -259,13 +259,13 @@ only as an unattributable disagreement in the output.
 """
 
 
-def sleeve_targets(equity_share: float) -> dict[tuple[str, str], int]:
+def sleeve_targets(equity_share: float) -> dict[tuple[AccountId, AssetId], int]:
     """Study sales weights: whole percentage points, with absent sleeves excluded."""
     if not 0 <= equity_share <= 1:
         raise ValueError("equity_share must be finite and in [0, 1]")
     equity_points = round(equity_share * 100)
     return {
-        (BROKERAGE, str(symbol)): points
+        (BROKERAGE, AssetId(symbol)): points
         for symbol, points in ((EQUITY, equity_points), (BONDS, 100 - equity_points))
         if points > 0
     }
@@ -308,10 +308,10 @@ def opening_lots(equity_share: float, *, portfolio: Decimal = INITIAL_PORTFOLIO)
         scale = quantity_scale_for_asset(SecurityKey(symbol=symbol))
         lots.append(
             PreparedLot(
-                lot_id=f"{symbol}_initial",
+                lot_id=LotId(f"{symbol}_initial"),
                 agent_id=RETIREE,
                 account_id=BROKERAGE,
-                asset_id=str(symbol),
+                asset_id=AssetId(symbol),
                 purchase_month=-1,
                 quantity_scale=scale,
                 units=int(quantity_to_quanta(float(value / UNIT_PRICE), scale=scale)),
@@ -382,7 +382,7 @@ def compose(case: Situation, rollout_id: int, *, lots: Sequence[PreparedLot], an
             PreparedDistribution(
                 agent_id=RETIREE,
                 holding_account_id=BROKERAGE,
-                asset_id=str(BONDS),
+                asset_id=AssetId(BONDS),
                 to_account_id=CHECKING,
                 # Nobody is taxed here, so the character is inert; it is required because a
                 # payout that allocates less than all of itself would pay out less than the
@@ -396,7 +396,7 @@ def compose(case: Situation, rollout_id: int, *, lots: Sequence[PreparedLot], an
 def drive(
     worlds: Mapping[int, World],
     *,
-    targets: dict[tuple[str, str], int],
+    targets: dict[tuple[AccountId, AssetId], int],
     capture: Literal["summary", "dense", "forensic"] = "summary",
 ) -> list[Rollout]:
     """Python owns the monthly batch loop; the worlds own every financial effect."""

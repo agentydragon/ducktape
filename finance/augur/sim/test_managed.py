@@ -7,8 +7,9 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.actions import Withdraw
-from finance.augur.sim.books import AccountRef
+from finance.augur.sim.books import EXTERNAL_BOUNDARY
 from finance.augur.sim.holdings import gain_account
+from finance.augur.sim.ids import AccountId, AssetId, JurisdictionId, PortfolioId
 from finance.augur.sim.managed import ComponentEffects, InterestCredit, ManagedPortfolios, basis_account
 from finance.augur.sim.money import MIN_COUNT
 from finance.augur.sim.observations import TlhPortfolioObservation
@@ -23,10 +24,10 @@ PRICES = PreparedSeries(series_id="security:test_fund", snapshots=3, values=(100
 @pytest.fixture
 def spec() -> PreparedTlhPortfolio:
     return PreparedTlhPortfolio(
-        portfolio_id="managed",
+        portfolio_id=PortfolioId("managed"),
         owner_agent_id=HOUSEHOLD,
-        account_id="custody",
-        asset_id="test_fund",
+        account_id=AccountId("custody"),
+        asset_id=AssetId("test_fund"),
         initial_cohorts=(TlhOpeningCohort(value=100, cost_basis=80, purchase_month_index=-1),),
         assumptions=TlhAssumptions(
             peak_annual_yield=0,
@@ -41,10 +42,10 @@ def spec() -> PreparedTlhPortfolio:
 @pytest.fixture
 def opening() -> TlhPortfolioObservation:
     return TlhPortfolioObservation(
-        portfolio_id="managed",
+        portfolio_id=PortfolioId("managed"),
         owner_agent_id=HOUSEHOLD,
-        account_id="custody",
-        asset_id="test_fund",
+        account_id=AccountId("custody"),
+        asset_id=AssetId("test_fund"),
         value=100,
         reported_tax_basis=80,
         accepts_contributions=True,
@@ -90,7 +91,7 @@ def test_basis_statement_cash_and_tax_reconcile_without_ordinary_lots(
         world.accounting, 0, HOUSEHOLD, "manager", harvest(opening), operation="modeled_realization"
     )
     contribution = ComponentEffects(
-        opening.model_copy(update={"value": 120, "reported_tax_basis": 90}), "checking", -20, 0, 0
+        opening.model_copy(update={"value": 120, "reported_tax_basis": 90}), AccountId("checking"), -20, 0, 0
     )
     world.managed_portfolios().settle(
         world.accounting, 0, HOUSEHOLD, "contribution", contribution, operation="contribution"
@@ -119,11 +120,18 @@ def test_invalid_effects_and_overflow_leave_every_financial_book_unchanged(
     elif case == 4:
         world.accounting.tax.years[HOUSEHOLD].short_term_gain = MIN_COUNT
     elif case == 5:
-        effects = ComponentEffects(opening.model_copy(update={"reported_tax_basis": 181}), "checking", -101, 0, 0)
+        effects = ComponentEffects(
+            opening.model_copy(update={"reported_tax_basis": 181}), AccountId("checking"), -101, 0, 0
+        )
     else:
         amount = 10 if case == 6 else -10
         effects = ComponentEffects(
-            opening, "checking", amount, 0, 0, (InterestCredit("undeclared" if case == 6 else None, amount),)
+            opening,
+            AccountId("checking"),
+            amount,
+            0,
+            0,
+            (InterestCredit(JurisdictionId("undeclared") if case == 6 else None, amount),),
         )
     before = fingerprint(world)
     with pytest.raises(
@@ -138,16 +146,16 @@ def test_invalid_effects_and_overflow_leave_every_financial_book_unchanged(
 def test_distribution_cash_uses_interest_source_not_capital_gain_journal_account(
     world: World, opening: TlhPortfolioObservation
 ) -> None:
-    effects = ComponentEffects(opening, "checking", 5, 0, 0, (InterestCredit(None, 5),))
+    effects = ComponentEffects(opening, AccountId("checking"), 5, 0, 0, (InterestCredit(None, 5),))
     world.managed_portfolios().settle(world.accounting, 0, HOUSEHOLD, "distribution", effects, operation="distribution")
     assert world.accounting.ledger.balance(CASH) == 105
     assert world.accounting.ledger.balance(gain_account(HOUSEHOLD)) == 0
-    assert world.accounting.ledger.balance(AccountRef(agent_id="__external__", account_id="boundary")) == -5
+    assert world.accounting.ledger.balance(EXTERNAL_BOUNDARY) == -5
     assert (
         world.accounting.tax.years[HOUSEHOLD].short_term_gain,
         world.accounting.tax.years[HOUSEHOLD].long_term_gain,
     ) == (0, 0)
-    assert world.managed_portfolios().marks["managed"].reported_tax_basis == 80
+    assert world.managed_portfolios().marks[PortfolioId("managed")].reported_tax_basis == 80
 
 
 def test_withdrawal_receipt_does_not_recalculate_component_rounded_value(
@@ -156,12 +164,18 @@ def test_withdrawal_receipt_does_not_recalculate_component_rounded_value(
     books = accounting()
     managed = ManagedPortfolios(INCOME_SOURCES, ())
     managed.open(books, spec, opening.model_copy(update={"value": 2, "reported_tax_basis": 2}))
-    effects = ComponentEffects(opening.model_copy(update={"value": 0, "reported_tax_basis": 0}), "checking", 1, 0, -1)
+    effects = ComponentEffects(
+        opening.model_copy(update={"value": 0, "reported_tax_basis": 0}), AccountId("checking"), 1, 0, -1
+    )
     action = Withdraw(
-        cause_id="redemption", agent_id=HOUSEHOLD, portfolio_id="managed", cash_account_id="checking", amount=1
+        cause_id="redemption",
+        agent_id=HOUSEHOLD,
+        portfolio_id=PortfolioId("managed"),
+        cash_account_id=AccountId("checking"),
+        amount=1,
     )
     managed.settle(books, 0, HOUSEHOLD, "redemption", effects, operation="redemption", action=action)
-    assert managed.marks["managed"].value == 0
+    assert managed.marks[PortfolioId("managed")].value == 0
     assert books.ledger.balance(CASH) == 101
     assert books.tax.years[HOUSEHOLD].long_term_gain == -1
     assert books.ledger.trial_balance() == 0

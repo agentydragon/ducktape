@@ -52,7 +52,7 @@ from finance.augur.model.series import SP500_SYMBOL, InflationKey, IssuerId, Pri
 from finance.augur.model.testing import ConstantFrameModel, PrivateEquityChannels
 from finance.evidence.markets import Platform
 
-_ISSUER = "issuer_x"
+_ISSUER = IssuerId("issuer_x")
 _HORIZON = 120
 
 

@@ -14,6 +14,7 @@ from finance.augur.api.portfolio import (
     SecurityHoldingConfig,
 )
 from finance.augur.model.series import SecurityKey, SecuritySymbol
+from finance.augur.sim.ids import AccountId
 
 
 def test_holding_tax_lots_expand_to_sim_initial_lots() -> None:
@@ -206,7 +207,7 @@ def test_a_bond_converts_both_months_relative_to_month_zero() -> None:
     and never a calendar date, so the two conversions are where a sign error would hide. A bond
     held 24 months is `purchase_month_index=-24`, in the PAST."""
 
-    [bond] = _bond_portfolio().to_initial_bonds(coupon_account_id="checking")
+    [bond] = _bond_portfolio().to_initial_bonds(coupon_account_id=AccountId("checking"))
 
     assert bond.purchase_month_index == -24
     assert bond.maturity_month_index == 96
@@ -215,7 +216,7 @@ def test_a_bond_converts_both_months_relative_to_month_zero() -> None:
 def test_a_bonds_owner_comes_through_its_custody_account() -> None:
     """Like a lot: the account is the owner-bearing object, and the bond names no agent."""
 
-    [bond] = _bond_portfolio().to_initial_bonds(coupon_account_id="checking")
+    [bond] = _bond_portfolio().to_initial_bonds(coupon_account_id=AccountId("checking"))
 
     assert bond.agent_id == "alice"
 
@@ -225,7 +226,7 @@ def test_coupons_land_in_the_named_cash_account_not_the_custody_account() -> Non
     account is custody (`brokerage`) and carries no cash row, so a coupon paid into one would
     have nowhere to go — the caller names the destination because it knows its cash topology."""
 
-    [bond] = _bond_portfolio().to_initial_bonds(coupon_account_id="checking")
+    [bond] = _bond_portfolio().to_initial_bonds(coupon_account_id=AccountId("checking"))
 
     assert bond.account_id == "checking"
 
@@ -275,7 +276,7 @@ def test_a_non_par_purchase_survives_config_to_be_rejected_by_the_sim() -> None:
     portfolio = _bond_portfolio(purchase_price=98_500)
 
     with pytest.raises(ValidationError, match="bought away from par"):
-        portfolio.to_initial_bonds(coupon_account_id="checking")
+        portfolio.to_initial_bonds(coupon_account_id=AccountId("checking"))
 
 
 def test_bond_face_is_kept_out_of_the_holdings_value_total() -> None:

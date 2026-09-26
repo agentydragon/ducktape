@@ -19,6 +19,7 @@ from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.prepared import (
@@ -45,12 +46,13 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
-CHECKING_TARGET = {("checking", "vti"): 1}
+CHECKING_TARGET = {(AccountId("checking"), AssetId("vti")): 1}
 QUANTUM = Decimal("0.01")
 SCALE = quantity_scale_for_asset(VTI)
+CHECKING = AccountId("checking")
 
 
-def ref(agent_id: str, account_id: str = "checking") -> AccountRef:
+def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=account_id)
 
 
@@ -58,18 +60,20 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(amount, quantum=QUANTUM))
 
 
-def account(agent_id: str, account_id: str = "checking", balance: Decimal | int = 0) -> PreparedAccount:
+def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> PreparedAccount:
     return PreparedAccount(account=ref(agent_id, account_id), opening_balance=money(balance))
 
 
-def pool(agent_id: str, account_id: str) -> PreparedHoldingPool:
-    return PreparedHoldingPool(agent_id=agent_id, account_id=account_id, asset_id=str(VTI.symbol), quantity_scale=SCALE)
+def pool(agent_id: AgentId, account_id: AccountId) -> PreparedHoldingPool:
+    return PreparedHoldingPool(
+        agent_id=agent_id, account_id=account_id, asset_id=AssetId(VTI.symbol), quantity_scale=SCALE
+    )
 
 
 def lot(
-    lot_id: str,
-    agent_id: str,
-    account_id: str,
+    lot_id: LotId,
+    agent_id: AgentId,
+    account_id: AccountId,
     *,
     quantity: Decimal | int,
     cost_basis: Decimal | int,
@@ -79,7 +83,7 @@ def lot(
         lot_id=lot_id,
         agent_id=agent_id,
         account_id=account_id,
-        asset_id=str(VTI.symbol),
+        asset_id=AssetId(VTI.symbol),
         purchase_month=purchase_month,
         quantity_scale=SCALE,
         units=int(quantity_to_quanta(quantity, scale=SCALE)),
@@ -167,10 +171,10 @@ def compose(case: Situation, rollout_id: int, *, series: tuple[PreparedSeries, .
 def rent() -> Situation:
     return Situation(
         horizon_months=1,
-        accounts=[account("alice", balance=Decimal(100)), account("landlord")],
-        pools=[pool("alice", "checking")],
-        lots=[lot("alice_vti", "alice", "checking", quantity=10, cost_basis=Decimal(500))],
-        claims=[bill("rent_due", "rent", ref("alice"), ref("landlord"), Decimal(500))],
+        accounts=[account(AgentId("alice"), balance=Decimal(100)), account(AgentId("landlord"))],
+        pools=[pool(AgentId("alice"), AccountId("checking"))],
+        lots=[lot(LotId("alice_vti"), AgentId("alice"), AccountId("checking"), quantity=10, cost_basis=Decimal(500))],
+        claims=[bill("rent_due", "rent", ref(AgentId("alice")), ref(AgentId("landlord")), Decimal(500))],
     )
 
 
@@ -189,7 +193,7 @@ def _run(
     )
     session = ActionSession(
         {id_: compose(case, id_, series=series, rollout_count=rollout_count) for id_ in range(rollout_count)},
-        "alice",
+        AgentId("alice"),
         capture="forensic",
     )
     calls: list[tuple[int, int]] = []
@@ -203,7 +207,7 @@ def _run(
         session.close()
 
 
-def _cash(book: Book, agent_id: str, account_id: str = "checking") -> int:
+def _cash(book: Book, agent_id: AgentId, account_id: AccountId = CHECKING) -> int:
     [balance] = [
         row.balance for row in book.balances if (row.account.agent_id, row.account.account_id) == (agent_id, account_id)
     ]
@@ -235,7 +239,7 @@ def _band_funding(batch: list[Decision]) -> list[DecisionActions]:
     for decision, payment in zip(batch, _pay_claims(batch), strict=True):
         observation = decision.observation
         proposal = cash_band(
-            projected_cash=dict(observation.accounts)["checking"]
+            projected_cash=dict(observation.accounts)[AccountId("checking")]
             - sum(claim.amount_due for claim in observation.claims),
             floor=200_000,
             ceiling=650_000,
@@ -244,7 +248,7 @@ def _band_funding(batch: list[Decision]) -> list[DecisionActions]:
             withdraw(
                 observation,
                 targets=CHECKING_TARGET,
-                cash_account_id="checking",
+                cash_account_id=AccountId("checking"),
                 amount=proposal.amount,
                 cause_id="cash-band-raise",
             )
@@ -273,7 +277,7 @@ def _assert_rejected_payment(result: Rollout, *, action_index: int, claim_index:
 
 
 def test_due_now_obligation_sells_assets_and_settles(rent: Situation) -> None:
-    [result], calls = _run(rent, partial(fund_claims, targets=CHECKING_TARGET, cash_account_id="checking"))
+    [result], calls = _run(rent, partial(fund_claims, targets=CHECKING_TARGET, cash_account_id=AccountId("checking")))
     assert result.stop is None
     assert calls == [(0, 0)]
     assert result.trace is not None
@@ -284,7 +288,10 @@ def test_due_now_obligation_sells_assets_and_settles(rent: Situation) -> None:
     assert payment.receipt.amount_paid == 50_000
     assert isinstance(payment.receipt.outcome, Paid)
     assert [receipt.action.kind for receipt in result.trace.receipts] == ["Sell", "PayClaim"]
-    assert [_cash(result.summary.ending_book, actor) for actor in ("alice", "landlord")] == [0, 50_000]
+    assert [_cash(result.summary.ending_book, actor) for actor in (AgentId("alice"), AgentId("landlord"))] == [
+        0,
+        50_000,
+    ]
 
 
 def test_due_now_obligation_failure_aborts_payment(rent: Situation) -> None:
@@ -298,13 +305,18 @@ def test_due_now_obligation_failure_aborts_payment(rent: Situation) -> None:
     assert [entry.cause_id for entry in result.trace.journal] == ["opening:alice:checking"]
     opening = result.trace.books[0]
     assert result.summary.ending_book.model_copy(update={"month": opening.month, "failed": False}) == opening
-    assert [_cash(result.summary.ending_book, actor) for actor in ("alice", "landlord")] == [10_000, 0]
+    assert [_cash(result.summary.ending_book, actor) for actor in (AgentId("alice"), AgentId("landlord"))] == [
+        10_000,
+        0,
+    ]
 
 
 def test_funding_uses_rollout_specific_prices(rent: Situation) -> None:
-    rent.accounts[0] = account("alice")
+    rent.accounts[0] = account(AgentId("alice"))
     results, _ = _run(
-        rent, partial(fund_claims, targets=CHECKING_TARGET, cash_account_id="checking"), prices=((100, 100), (200, 200))
+        rent,
+        partial(fund_claims, targets=CHECKING_TARGET, cash_account_id=AccountId("checking")),
+        prices=((100, 100), (200, 200)),
     )
     assert [result.rollout_id for result in results] == [0, 1]
     for result, units in zip(results, [5, 2.5], strict=True):
@@ -314,50 +326,70 @@ def test_funding_uses_rollout_specific_prices(rent: Situation) -> None:
         [held] = result.summary.ending_book.lots
         assert held.units_remaining * 2 == int((10 - units) * 2) * held.quantity_scale
         assert result.summary.payments[0].receipt.amount_paid == 50_000
-        assert _cash(result.summary.ending_book, "alice") == 0
+        assert _cash(result.summary.ending_book, AgentId("alice")) == 0
 
 
 def test_funding_consumes_only_selected_account_fifo_pool(rent: Situation) -> None:
-    rent.accounts[0] = account("alice", "taxable")
-    rent.claims[0] = replace(rent.claims[0], from_account=ref("alice", "taxable"), amount_due=money(Decimal(400)))
-    rent.lots[0] = lot("alice_vti", "alice", "taxable", quantity=5, cost_basis=Decimal(250))
-    rent.lots.append(lot("ira_vti", "alice", "ira", quantity=100, cost_basis=Decimal(5000)))
-    rent.pools = [pool("alice", "taxable"), pool("alice", "ira")]
-    [result], _ = _run(rent, partial(fund_claims, targets={("taxable", "vti"): 1}, cash_account_id="taxable"))
+    rent.accounts[0] = account(AgentId("alice"), AccountId("taxable"))
+    rent.claims[0] = replace(
+        rent.claims[0], from_account=ref(AgentId("alice"), AccountId("taxable")), amount_due=money(Decimal(400))
+    )
+    rent.lots[0] = lot(LotId("alice_vti"), AgentId("alice"), AccountId("taxable"), quantity=5, cost_basis=Decimal(250))
+    rent.lots.append(lot(LotId("ira_vti"), AgentId("alice"), AccountId("ira"), quantity=100, cost_basis=Decimal(5000)))
+    rent.pools = [pool(AgentId("alice"), AccountId("taxable")), pool(AgentId("alice"), AccountId("ira"))]
+    [result], _ = _run(
+        rent,
+        partial(fund_claims, targets={(AccountId("taxable"), AssetId("vti")): 1}, cash_account_id=AccountId("taxable")),
+    )
     assert result.stop is None
     assert result.trace is not None
     assert result.trace.events.lot_dispositions.select("lot_id", "units_sold", "proceeds_quanta").rows() == [
         ("alice_vti", 4, 40_000)
     ]
     lots = {held.account_id: held for held in result.summary.ending_book.lots}
-    assert lots["taxable"].units_remaining == lots["taxable"].quantity_scale
-    assert lots["taxable"].basis_remaining == 5000
-    assert lots["ira"].units_remaining == 100 * lots["ira"].quantity_scale
-    assert lots["ira"].basis_remaining == 500_000
+    assert lots[AccountId("taxable")].units_remaining == lots[AccountId("taxable")].quantity_scale
+    assert lots[AccountId("taxable")].basis_remaining == 5000
+    assert lots[AccountId("ira")].units_remaining == 100 * lots[AccountId("ira")].quantity_scale
+    assert lots[AccountId("ira")].basis_remaining == 500_000
 
 
 def test_funding_sells_from_source_account_into_cash_account(rent: Situation) -> None:
-    rent.accounts[0] = account("alice")
-    rent.lots[0] = lot("alice_vti", "alice", "taxable", quantity=5, cost_basis=Decimal(250))
-    rent.pools = [pool("alice", "taxable")]
+    rent.accounts[0] = account(AgentId("alice"))
+    rent.lots[0] = lot(LotId("alice_vti"), AgentId("alice"), AccountId("taxable"), quantity=5, cost_basis=Decimal(250))
+    rent.pools = [pool(AgentId("alice"), AccountId("taxable"))]
     rent.claims[0] = replace(rent.claims[0], amount_due=money(Decimal(400)))
-    [result], _ = _run(rent, partial(fund_claims, targets={("taxable", "vti"): 1}, cash_account_id="checking"))
+    [result], _ = _run(
+        rent,
+        partial(
+            fund_claims, targets={(AccountId("taxable"), AssetId("vti")): 1}, cash_account_id=AccountId("checking")
+        ),
+    )
     assert result.stop is None
     assert result.trace is not None
     assert result.trace.events.lot_dispositions.select("units_sold", "proceeds_quanta").rows() == [(4, 40_000)]
     [held] = result.summary.ending_book.lots
     assert held.account_id == "taxable"
     assert held.units_remaining == held.quantity_scale
-    assert [_cash(result.summary.ending_book, actor) for actor in ("alice", "landlord")] == [0, 40_000]
+    assert [_cash(result.summary.ending_book, actor) for actor in (AgentId("alice"), AgentId("landlord"))] == [
+        0,
+        40_000,
+    ]
 
 
 def test_funding_covers_monthly_spend_deficit(rent: Situation) -> None:
-    rent.accounts[0] = account("alice", balance=Decimal(1000))
-    rent.lots[0] = lot("alice_vti", "alice", "checking", quantity=200, cost_basis=Decimal(10000), purchase_month=-1)
-    rent.claims = [monthly_bill("alice_rent", "rent", ref("alice"), ref("landlord"), Decimal(5000))]
+    rent.accounts[0] = account(AgentId("alice"), balance=Decimal(1000))
+    rent.lots[0] = lot(
+        LotId("alice_vti"),
+        AgentId("alice"),
+        AccountId("checking"),
+        quantity=200,
+        cost_basis=Decimal(10000),
+        purchase_month=-1,
+    )
+    rent.claims = [monthly_bill("alice_rent", "rent", ref(AgentId("alice")), ref(AgentId("landlord")), Decimal(5000))]
     rent.horizon_months = 3
     [result], calls = _run(
-        rent, partial(fund_claims, targets=CHECKING_TARGET, cash_account_id="checking"), prices=((100,) * 4,)
+        rent, partial(fund_claims, targets=CHECKING_TARGET, cash_account_id=AccountId("checking")), prices=((100,) * 4,)
     )
     assert result.stop is None
     assert calls == [(0, 0), (0, 1), (0, 2)]
@@ -368,13 +400,13 @@ def test_funding_covers_monthly_spend_deficit(rent: Situation) -> None:
         (50, 500_000),
     ]
     assert [payment.receipt.amount_paid for payment in result.summary.payments] == [500_000] * 3
-    assert [_cash(book, "alice") for book in result.trace.books] == [100_000, 0, 0, 0]
+    assert [_cash(book, AgentId("alice")) for book in result.trace.books] == [100_000, 0, 0, 0]
     [held] = result.summary.ending_book.lots
     assert held.units_remaining == 60 * held.quantity_scale
 
 
 def test_policy_without_sales_fails_even_with_assets(rent: Situation) -> None:
-    rent.accounts[0] = account("alice")
+    rent.accounts[0] = account(AgentId("alice"))
     [result], _ = _run(rent, _pay_claims)
     _assert_rejected_payment(result, action_index=0, claim_index=0, due=50_000, cash=0)
     assert result.trace is not None
@@ -387,19 +419,21 @@ def test_policy_without_sales_fails_even_with_assets(rent: Situation) -> None:
 def test_cash_band_uses_balance_after_planned_claims(
     rent: Situation, cash: int, ending_cash: int, sales: list[tuple[int, int]]
 ) -> None:
-    rent.accounts[0] = account("alice", balance=Decimal(cash))
-    rent.lots[0] = lot("alice_vti", "alice", "checking", quantity=100, cost_basis=Decimal(5000))
+    rent.accounts[0] = account(AgentId("alice"), balance=Decimal(cash))
+    rent.lots[0] = lot(
+        LotId("alice_vti"), AgentId("alice"), AccountId("checking"), quantity=100, cost_basis=Decimal(5000)
+    )
     rent.claims[0] = replace(rent.claims[0], amount_due=money(Decimal(1000)))
     [result], _ = _run(rent, _band_funding)
     assert result.stop is None
     assert result.trace is not None
     assert result.trace.events.lot_dispositions.select("units_sold", "proceeds_quanta").rows() == sales
     assert result.summary.payments[0].receipt.amount_paid == 100_000
-    assert _cash(result.summary.ending_book, "alice") == ending_cash
+    assert _cash(result.summary.ending_book, AgentId("alice")) == ending_cash
 
 
 def test_unfundable_optional_cash_band_is_not_a_claim(rent: Situation) -> None:
-    rent.accounts[0] = account("alice", balance=Decimal(1000))
+    rent.accounts[0] = account(AgentId("alice"), balance=Decimal(1000))
     rent.lots = []
     rent.claims = []
     [result], _ = _run(rent, _band_funding)
@@ -407,16 +441,18 @@ def test_unfundable_optional_cash_band_is_not_a_claim(rent: Situation) -> None:
     assert result.trace is not None
     assert result.trace.receipts == []
     assert result.summary.unpaid_claims == []
-    assert _cash(result.summary.ending_book, "alice") == 100_000
+    assert _cash(result.summary.ending_book, AgentId("alice")) == 100_000
 
 
 def test_first_payment_survives_later_rejection_and_subsequent_action_is_skipped(rent: Situation) -> None:
     """Two $500 claims against $600 are paid in order: the first settles, the second is rejected."""
-    rent.accounts[0] = account("alice", balance=Decimal(600))
+    rent.accounts[0] = account(AgentId("alice"), balance=Decimal(600))
     rent.lots = []
-    rent.accounts.append(account("utility"))
+    rent.accounts.append(account(AgentId("utility")))
     rent.claims.append(
-        replace(rent.claims[0], obligation_id="utility_due", obligation_type="utility", to_account=ref("utility"))
+        replace(
+            rent.claims[0], obligation_id="utility_due", obligation_type="utility", to_account=ref(AgentId("utility"))
+        )
     )
 
     def pay_then_transfer(batch: list[Decision]) -> list[DecisionActions]:
@@ -428,8 +464,8 @@ def test_first_payment_survives_later_rejection_and_subsequent_action_is_skipped
                     *response.actions,
                     Transfer(
                         cause_id="must-not-run",
-                        from_account=AccountRef(agent_id="alice", account_id="checking"),
-                        to_account=AccountRef(agent_id="utility", account_id="checking"),
+                        from_account=AccountRef(agent_id=AgentId("alice"), account_id=AccountId("checking")),
+                        to_account=AccountRef(agent_id=AgentId("utility"), account_id=AccountId("checking")),
                         amount=1,
                     ),
                 ],
@@ -441,11 +477,10 @@ def test_first_payment_survives_later_rejection_and_subsequent_action_is_skipped
     _assert_rejected_payment(result, action_index=1, claim_index=1, due=50_000, cash=10_000)
     assert result.summary.unpaid_claims[0].cause_id == "utility_due_m0"
     assert [payment.receipt.amount_paid for payment in result.summary.payments] == [50_000, 0]
-    assert [_cash(result.summary.ending_book, actor) for actor in ("alice", "landlord", "utility")] == [
-        10_000,
-        50_000,
-        0,
-    ]
+    assert [
+        _cash(result.summary.ending_book, actor)
+        for actor in (AgentId("alice"), AgentId("landlord"), AgentId("utility"))
+    ] == [10_000, 50_000, 0]
     assert result.trace is not None
     assert len(result.trace.receipts) == 2
     assert isinstance(result.trace.receipts[0].outcome, Executed)
@@ -454,14 +489,21 @@ def test_first_payment_survives_later_rejection_and_subsequent_action_is_skipped
 
 @pytest.fixture
 def exhaustion(rent: Situation) -> Situation:
-    rent.accounts[0] = account("alice")
-    rent.lots[0] = lot("alice_vti", "alice", "checking", quantity=5, cost_basis=Decimal(400), purchase_month=-1)
-    rent.claims = [monthly_bill("alice_rent", "rent", ref("alice"), ref("landlord"), Decimal(1000))]
+    rent.accounts[0] = account(AgentId("alice"))
+    rent.lots[0] = lot(
+        LotId("alice_vti"),
+        AgentId("alice"),
+        AccountId("checking"),
+        quantity=5,
+        cost_basis=Decimal(400),
+        purchase_month=-1,
+    )
+    rent.claims = [monthly_bill("alice_rent", "rent", ref(AgentId("alice")), ref(AgentId("landlord")), Decimal(1000))]
     return rent
 
 
 def test_asset_exhaustion_keeps_successful_sale_and_rejects_full_payment(exhaustion: Situation) -> None:
-    [result], _ = _run(exhaustion, partial(fund_claims, targets=CHECKING_TARGET, cash_account_id="checking"))
+    [result], _ = _run(exhaustion, partial(fund_claims, targets=CHECKING_TARGET, cash_account_id=AccountId("checking")))
     _assert_rejected_payment(result, action_index=1, claim_index=0, due=100_000, cash=50_000)
     assert result.trace is not None
     assert [receipt.action.kind for receipt in result.trace.receipts] == ["Sell", "PayClaim"]
@@ -472,19 +514,29 @@ def test_asset_exhaustion_keeps_successful_sale_and_rejects_full_payment(exhaust
     assert result.trace.events.transfers.is_empty()
     [held] = result.summary.ending_book.lots
     assert held.units_remaining == held.basis_remaining == 0
-    assert [_cash(result.summary.ending_book, actor) for actor in ("alice", "landlord")] == [50_000, 0]
+    assert [_cash(result.summary.ending_book, actor) for actor in (AgentId("alice"), AgentId("landlord"))] == [
+        50_000,
+        0,
+    ]
 
 
 def test_failed_path_skips_future_transfers_and_policy_calls_while_other_path_continues(exhaustion: Situation) -> None:
-    exhaustion.lots[0] = lot("alice_vti", "alice", "checking", quantity=1, cost_basis=Decimal(80), purchase_month=-1)
-    exhaustion.accounts.append(account("employer"))
+    exhaustion.lots[0] = lot(
+        LotId("alice_vti"),
+        AgentId("alice"),
+        AccountId("checking"),
+        quantity=1,
+        cost_basis=Decimal(80),
+        purchase_month=-1,
+    )
+    exhaustion.accounts.append(account(AgentId("employer")))
     exhaustion.recurring_transfers = (
         PreparedRecurringTransfer(
             start_month=1,
             end_month=None,
             cause_id="future_paycheck",
-            from_account=ref("employer"),
-            to_account=ref("alice"),
+            from_account=ref(AgentId("employer")),
+            to_account=ref(AgentId("alice")),
             amount=money(Decimal(10000)),
             income_category=ORDINARY_INCOME,
             deduction_category=None,
@@ -493,7 +545,7 @@ def test_failed_path_skips_future_transfers_and_policy_calls_while_other_path_co
     exhaustion.horizon_months = 2
     [stopped, continuing], calls = _run(
         exhaustion,
-        partial(fund_claims, targets=CHECKING_TARGET, cash_account_id="checking"),
+        partial(fund_claims, targets=CHECKING_TARGET, cash_account_id=AccountId("checking")),
         prices=((100, 100, 100), (1000, 1000, 1000)),
     )
     assert [stopped.rollout_id, continuing.rollout_id] == [0, 1]
@@ -506,15 +558,17 @@ def test_failed_path_skips_future_transfers_and_policy_calls_while_other_path_co
     assert {receipt.month for receipt in stopped.trace.receipts} == {0}
     assert {entry.month for entry in stopped.trace.journal} == {0}
     assert len(stopped.trace.books) == 2
-    assert [_cash(stopped.summary.ending_book, actor) for actor in ("alice", "employer", "landlord")] == [10_000, 0, 0]
+    assert [
+        _cash(stopped.summary.ending_book, actor)
+        for actor in (AgentId("alice"), AgentId("employer"), AgentId("landlord"))
+    ] == [10_000, 0, 0]
     assert continuing.stop is None
     assert continuing.summary.ending_mark_month == 2
     assert [payment.receipt.amount_paid for payment in continuing.summary.payments] == [100_000, 100_000]
-    assert [_cash(continuing.summary.ending_book, actor) for actor in ("alice", "employer", "landlord")] == [
-        900_000,
-        -1_000_000,
-        200_000,
-    ]
+    assert [
+        _cash(continuing.summary.ending_book, actor)
+        for actor in (AgentId("alice"), AgentId("employer"), AgentId("landlord"))
+    ] == [900_000, -1_000_000, 200_000]
 
 
 if __name__ == "__main__":

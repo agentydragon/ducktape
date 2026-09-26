@@ -15,6 +15,7 @@ from pydantic import TypeAdapter
 from finance.augur.api.config import CalibrationCatalogConfig, Config, LocationConfig, PropertyAssetConfig
 from finance.augur.api.wire import ActorRole, CalibrationInfo, CatalogResponse, Location, Property, SettingsResponse
 from finance.augur.calibration.catalog import MarketCatalog
+from finance.augur.model.series import LocationId
 
 PROPERTY_ROWS_ADAPTER = TypeAdapter(tuple[Property, ...])
 
@@ -39,7 +40,7 @@ def _locations_for_config(config: Config) -> tuple[Location, ...]:
     return locations
 
 
-def _validate_property_location(property_: Property, *, location_by_id: dict[str, Location]) -> None:
+def _validate_property_location(property_: Property, *, location_by_id: dict[LocationId, Location]) -> None:
     if property_.location_id not in location_by_id:
         raise ValueError(f"property {property_.id!r} references unknown location {property_.location_id!r}")
 
@@ -75,7 +76,7 @@ def _validate_primary_agent_exists(config: Config) -> None:
     one(agent for agent in config.agents if agent.role is ActorRole.PRIMARY_OWNER)
 
 
-def _load_properties(config: Config, *, location_by_id: dict[str, Location]) -> tuple[Property, ...]:
+def _load_properties(config: Config, *, location_by_id: dict[LocationId, Location]) -> tuple[Property, ...]:
     path = config.property_source.properties_path
     # `yaml.safe_load` reads both YAML and JSON (JSON is a YAML subset), so either
     # extension is supported; deployments pick whichever is more ergonomic.

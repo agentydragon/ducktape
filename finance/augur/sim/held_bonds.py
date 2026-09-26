@@ -5,8 +5,9 @@ from copy import deepcopy
 
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actor import Statement
-from finance.augur.sim.books import AccountRef, BondCashflowOutcome, BondState
+from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, BondCashflowOutcome, BondState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.observations import FixedCoupon, HeldBond, IndexedCoupon
@@ -48,7 +49,7 @@ class HeldBonds:
             return None
         return self.principal(bond, valuation_month)
 
-    def statement(self, actor: str, month: int) -> BondStatement:
+    def statement(self, actor: AgentId, month: int) -> BondStatement:
         bonds = []
         for bond in self.terms:
             if bond.agent_id != actor:
@@ -125,7 +126,7 @@ class HeldBonds:
                 accounting.move(
                     month,
                     cause,
-                    AccountRef(agent_id="__external__", account_id="boundary"),
+                    EXTERNAL_BOUNDARY,
                     AccountRef(agent_id=bond.agent_id, account_id=bond.account_id),
                     paid,
                 )

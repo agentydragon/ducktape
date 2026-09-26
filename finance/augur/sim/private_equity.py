@@ -3,11 +3,12 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from finance.augur.model.series import PrivateEquityEventKindCode, PrivateEquityRegimeCode
+from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Sell
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, quantity_for_value
 from finance.augur.sim.holdings import Holdings, private_issuer
+from finance.augur.sim.ids import AgentId, AssetId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, mul_div, mul_div_wide, position_value
 from finance.augur.sim.observations import TlhPortfolioObservation
@@ -32,8 +33,8 @@ CHANNEL_RANGES = {
 @dataclass(frozen=True)
 class ProtocolEvent:
     month: int
-    issuer_id: str
-    asset_id: str
+    issuer_id: IssuerId
+    asset_id: AssetId
     event_kind: str
     regime: str
     mark: int
@@ -48,8 +49,8 @@ class ProtocolEvent:
 class Opportunity:
     month: int
     cause_id: str
-    issuer_id: str
-    asset_id: str
+    issuer_id: IssuerId
+    asset_id: AssetId
     event_kind: str
     regime: str
     outcome: str
@@ -86,7 +87,7 @@ def liquid_net_worth(
     holdings: Holdings,
     market: MarketPath,
     marks: Sequence[TlhPortfolioObservation],
-    actor: str,
+    actor: AgentId,
     month: int,
 ) -> int:
     total = 0
@@ -131,7 +132,7 @@ class PrivateEquity:
     ) -> None:
         issuers = sorted({issuer for lot in holdings.lots if (issuer := private_issuer(lot.spec.asset_id)) is not None})
         for issuer in issuers:
-            asset = f"private_equity:{issuer}"
+            asset = AssetId(f"private_equity:{issuer}")
             candidates = sorted(
                 (index for index, lot in enumerate(holdings.lots) if lot.spec.asset_id == asset),
                 key=lambda index: (holdings.lots[index].spec.purchase_month, holdings.lots[index].spec.lot_id),
