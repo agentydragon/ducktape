@@ -1,0 +1,154 @@
+{
+  "dataset": "terminal-bench/terminal-bench",
+  "dataset_revision": "sha256:39d9f44b40420cde8fdcc087579c0d72a7e14fa3656d603c3f0d22fb35e27732",
+  "dataset_trial_count": 66,
+  "cached_tasks_matched": 66,
+  "cpu_compatible_count": 63,
+  "gpu_excluded_count": 3,
+  "gpu_excluded_names": ["math-eval-grader", "fp8-rmsnorm-gemm", "jax-speedrun-gpu"],
+  "selection_rule": {
+    "filter": "both environment.gpus and verifier.environment.gpus equal 0 in cached task.toml",
+    "ranking": "ascending SHA256(seed + NUL + task name), tie-break ascending task name",
+    "take": 12,
+    "seed": "qwen3.8-flash-next-q4-tb4-2026-09-26-cpu12"
+  },
+  "tasks": [
+    {
+      "name": "interleaved-vigenere",
+      "digest": "sha256:238a75a32aad5e60b33a22ac53087790e95b752c6272f41d724407f198df4a14",
+      "task_toml_sha256": "d2b9b4f98304d5458ccde463b9670a9ddd89cd4c01bbd03e93a4b92860bcab8a",
+      "source_path": "/home/agentydragon/.cache/harbor/tasks/packages/terminal-bench/interleaved-vigenere/238a75a32aad5e60b33a22ac53087790e95b752c6272f41d724407f198df4a14",
+      "gpu_requirements": {
+        "environment": 0,
+        "verifier": 0
+      },
+      "cpu_compatible": true
+    },
+    {
+      "name": "pretrain-shard-corruption",
+      "digest": "sha256:0f17568e65b9e8b79480e474a457811a65815cdaf7272660efffd1bc690021a0",
+      "task_toml_sha256": "4539f00ded49dfaf6d33c38bbec34ebe23c6f16a77f33ec80c176bacf972d6b0",
+      "source_path": "/home/agentydragon/.cache/harbor/tasks/packages/terminal-bench/pretrain-shard-corruption/0f17568e65b9e8b79480e474a457811a65815cdaf7272660efffd1bc690021a0",
+      "gpu_requirements": {
+        "environment": 0,
+        "verifier": 0
+      },
+      "cpu_compatible": true
+    },
+    {
+      "name": "freight-dispatch-shift",
+      "digest": "sha256:9c27972688139fce999058386bd381ca194c9f4ba76161a52bb8560aee9ceb2c",
+      "task_toml_sha256": "0754ed59ee84fc6ab1516a46c7fcfb2c92bc75143feeaebf8ffa63c5a2014f94",
+      "source_path": "/home/agentydragon/.cache/harbor/tasks/packages/terminal-bench/freight-dispatch-shift/9c27972688139fce999058386bd381ca194c9f4ba76161a52bb8560aee9ceb2c",
+      "gpu_requirements": {
+        "environment": 0,
+        "verifier": 0
+      },
+      "cpu_compatible": true
+    },
+    {
+      "name": "vf2-speedup-networkx",
+      "digest": "sha256:cdbad1f303f57856199aae757bdbc6363111e8ad60d31db49c61d01706da63ab",
+      "task_toml_sha256": "c13ae3ece11474fa4f9944b23d94dd4406974f509b20ceed94614572c377beff",
+      "source_path": "/home/agentydragon/.cache/harbor/tasks/packages/terminal-bench/vf2-speedup-networkx/cdbad1f303f57856199aae757bdbc6363111e8ad60d31db49c61d01706da63ab",
+      "gpu_requirements": {
+        "environment": 0,
+        "verifier": 0
+      },
+      "cpu_compatible": true
+    },
+    {
+      "name": "hof-topology-interpenetration",
+      "digest": "sha256:2534e62c5ab3c8592f4e0de3dee14ff07a5c1c9434164e7f80e2f564273de014",
+      "task_toml_sha256": "0708a0b74bcb3dbeadd6697792aea8d52f7a9f65785bdcd63cac497d411d54b7",
+      "source_path": "/home/agentydragon/.cache/harbor/tasks/packages/terminal-bench/hof-topology-interpenetration/2534e62c5ab3c8592f4e0de3dee14ff07a5c1c9434164e7f80e2f564273de014",
+      "gpu_requirements": {
+        "environment": 0,
+        "verifier": 0
+      },
+      "cpu_compatible": true
+    },
+    {
+      "name": "foodstuff-beta-activity",
+      "digest": "sha256:52adca169e97e15fe8692986470b6556f478e7348a37c58739a5bdb3f02cc45a",
+      "task_toml_sha256": "a22d5f8e7b94d02c142a697133a2edb7b9dcb46c10273d33309e446ceb127c4a",
+      "source_path": "/home/agentydragon/.cache/harbor/tasks/packages/terminal-bench/foodstuff-beta-activity/52adca169e97e15fe8692986470b6556f478e7348a37c58739a5bdb3f02cc45a",
+      "gpu_requirements": {
+        "environment": 0,
+        "verifier": 0
+      },
+      "cpu_compatible": true
+    },
+    {
+      "name": "lake-temp-glm",
+      "digest": "sha256:4ccec50699de5de3b1bcdedf1189a56d72520220da27306c10d93419a3316a0c",
+      "task_toml_sha256": "2824ccacaa135072cf74eb538b8064d2e25081aec415803d0c45ba089091b053",
+      "source_path": "/home/agentydragon/.cache/harbor/tasks/packages/terminal-bench/lake-temp-glm/4ccec50699de5de3b1bcdedf1189a56d72520220da27306c10d93419a3316a0c",
+      "gpu_requirements": {
+        "environment": 0,
+        "verifier": 0
+      },
+      "cpu_compatible": true
+    },
+    {
+      "name": "embedding-drift-monitor",
+      "digest": "sha256:6907ffce9ad5c8a8b41fe9c0a076a9aeb9754a2f8083c52f9aede5481a4f4c59",
+      "task_toml_sha256": "2be93dceb5217e078f01c38d127ce8beee83c6d092940eeef8d4798561c0a4d4",
+      "source_path": "/home/agentydragon/.cache/harbor/tasks/packages/terminal-bench/embedding-drift-monitor/6907ffce9ad5c8a8b41fe9c0a076a9aeb9754a2f8083c52f9aede5481a4f4c59",
+      "gpu_requirements": {
+        "environment": 0,
+        "verifier": 0
+      },
+      "cpu_compatible": true
+    },
+    {
+      "name": "ctr-optimization",
+      "digest": "sha256:df8b7d99e23ad23ac9c92da35ff0a2714d78781e9424edd63143cc86860e096b",
+      "task_toml_sha256": "31e838d5595f458c416e42ca66187c43aff9eb40417f732d5e0d8a72354c1e7a",
+      "source_path": "/home/agentydragon/.cache/harbor/tasks/packages/terminal-bench/ctr-optimization/df8b7d99e23ad23ac9c92da35ff0a2714d78781e9424edd63143cc86860e096b",
+      "gpu_requirements": {
+        "environment": 0,
+        "verifier": 0
+      },
+      "cpu_compatible": true
+    },
+    {
+      "name": "legacy-utility-triage",
+      "digest": "sha256:d9954d3b78c8440a5927bc9826bfd9a61827391bf47f0885575fc7f27c4c8b6e",
+      "task_toml_sha256": "001affbe4954c94ce9bda2496654b059040f0ddc1628fd386616cc239415e581",
+      "source_path": "/home/agentydragon/.cache/harbor/tasks/packages/terminal-bench/legacy-utility-triage/d9954d3b78c8440a5927bc9826bfd9a61827391bf47f0885575fc7f27c4c8b6e",
+      "gpu_requirements": {
+        "environment": 0,
+        "verifier": 0
+      },
+      "cpu_compatible": true
+    },
+    {
+      "name": "cumulative-layout-shift",
+      "digest": "sha256:d9805202ade29c603a55f5aa5af27a794a2ed3897e05e8ff0a484b4a84a0ed8a",
+      "task_toml_sha256": "9d37a59a733d2ca59ab3bc61cbbb7d432a2a42744ec97302d856a1dcf63f918d",
+      "source_path": "/home/agentydragon/.cache/harbor/tasks/packages/terminal-bench/cumulative-layout-shift/d9805202ade29c603a55f5aa5af27a794a2ed3897e05e8ff0a484b4a84a0ed8a",
+      "gpu_requirements": {
+        "environment": 0,
+        "verifier": 0
+      },
+      "cpu_compatible": true
+    },
+    {
+      "name": "freecad-impeller",
+      "digest": "sha256:40d322e979d30dd53c0a9330445b8799cf5c02099b0718a3b3ad15231b366dba",
+      "task_toml_sha256": "ca1e2e58ba7fcc283a53ca677a17cf23ed56b5d20f355a7fa8e64f517ab7c1f1",
+      "source_path": "/home/agentydragon/.cache/harbor/tasks/packages/terminal-bench/freecad-impeller/40d322e979d30dd53c0a9330445b8799cf5c02099b0718a3b3ad15231b366dba",
+      "gpu_requirements": {
+        "environment": 0,
+        "verifier": 0
+      },
+      "cpu_compatible": true
+    }
+  ],
+  "notes": [
+    "Task digests are from the previous Harbor lock.json and match cache directory digests.",
+    "task_toml_sha256 independently fingerprints each cached task metadata file.",
+    "CPU filter concerns declared task/verifier GPU requirements; it does not claim representative population equivalence to full Terminal-Bench 4.0."
+  ]
+}

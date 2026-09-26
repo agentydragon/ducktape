@@ -9,7 +9,9 @@ changed by this review. The original logs remain outside Git in
 ## Successful OpenCode reference supplied by the operator
 
 The operator reports that this model completed a long knowledge-management task
-reasonably in OpenCode, with no obvious bugs or breakages. This is a real useful
+reasonably in OpenCode, with no obvious bugs or breakages, exceeding 128K
+cumulatively with at least one compaction and about four subagent calls. This does
+not mean that more than 128K tokens were resident in one server request. This is a real useful
 agent outcome; it is not an independently scored coding benchmark. The concrete
 OpenCode configuration supplied in the conversation is preserved in
 [opencode.json](opencode.json). With the corresponding server running:
@@ -57,7 +59,8 @@ All six recorded `NonZeroAgentExitCodeError` exceptions end in
 These errors are context exhaustion, not Harbor's total-task timeout. They do not
 establish that a compactor ran and failed. Before another eval, check the installed
 agent's compaction support/configuration, context trigger, output reserve and error
-policy, and exercise it on a disposable short trajectory. Harbor orchestration and
+policy. If testing a compaction-enabled track, exercise it on a disposable short
+trajectory before the expensive tasks. Harbor orchestration and
 the selected agent's history-management policy are different layers.
 
 Installed Harbor is **0.23.0**; the representative trial records Mini-SWE **2.4.6**.
@@ -143,3 +146,34 @@ This is model positioning from external evaluations; our local Q4 precision/runt
 is not independently scored by those rows. The relevant neighbor depends on the
 metric. Context capacity and concurrency must be measured on wyrm2, while deployment
 integration can follow once those more interesting questions are answered.
+
+## Trust and per-evaluation differences
+
+The September 26 public AA data provides a useful lead, not an independent local
+replication. Selected scalar fields are retained in [aa_eval_breakdown.json](aa_eval_breakdown.json).
+All entries below are percentages; the intelligence index is a separate aggregate.
+Opus entries use the default-fallback variants.
+
+| Model / effort      | Terminal-Bench 4.0 | SciCode |   HLE | Omniscience accuracy |   LCR |
+| ------------------- | -----------------: | ------: | ----: | -------------------: | ----: |
+| Qwen3.8-Flash-Next  |              25.25 |   50.58 | 38.04 |                24.50 | 79.67 |
+| GPT-6 Luna max      |              12.63 |   54.63 | 38.51 |                43.78 | 83.33 |
+| Claude Opus 5.5 low |              31.31 |   58.56 | 48.33 |                63.53 | 80.67 |
+| Claude Opus 5.5 max |              59.60 |   66.90 | 61.35 |                66.22 | 84.67 |
+
+Qwen's higher aggregate than Luna max does not hold across these individual tests.
+Opus max is substantially ahead; proximity to its low-effort entry does not establish
+proximity to its strongest configuration. None of these rows score our local Q4.
+The exact tested checkpoint, precision, reasoning budget and context must be matched
+before making a replication claim. AA's [model page](https://artificialanalysis.ai/models/qwen3-8-flash-next)
+lists 256K context while its [provider page](https://artificialanalysis.ai/models/qwen3-8-flash-next/providers)
+lists 1M for Alibaba Cloud; neither establishes the context actually used on each
+Terminal-Bench trial. Larger context is a hypothesis to test, not an established
+explanation for the local gap.
+
+The early local completion prefix is small, incomplete and not randomly sampled.
+It cannot distinguish a true 10% rate from 25% reliably, especially with different
+configurations. Conversely, six context failures are real operational failures;
+excluding them would overstate this deployment's success. The successful OpenCode
+workflow and the failed uncompacted runs answer different practical questions.
+See [NEXT_RUN.md](NEXT_RUN.md) for the bounded serial validation plan.

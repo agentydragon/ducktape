@@ -139,19 +139,27 @@ does not recover the nominal size as physical space.
 
 ## September 26 checkpoint and decision
 
-**Treat Qwen3.8-Flash-Next as the leading candidate for regular use; do not rerun
-the full Terminal-Bench suite as the next experiment.** Use the successful OpenCode/SSD setup to measure context and concurrency first;
-consult published evals for capability positioning. Published quality
-is a useful prior; deployment-specific failures and slow trajectories are the
-questions this machine can answer. Preserve the capability-ceiling lane rather than
-spending the whole program optimizing one candidate.
+**Treat Qwen3.8-Flash-Next as the working baseline and validate its local quality
+with a bounded, meaningful Terminal-Bench subset.** Published scores justify
+investigation, not local Q4 equivalence to a GPT/Claude effort level. Pair Q4 and
+Q5 on the same tasks after checking context handling and safe placement; retain
+single-session capacity measurements and exploration of alternative models.
 
+**All inference experiments are strictly serial at the operator's request:** one
+active task, one model configuration, one server slot, and no competing inference
+requests. This includes preflight probes, subagent model calls and alternative-model
+experiments. Verify exclusive use before starting; defer if interactive usage would
+compete. Simultaneous-generation tests are deferred because they change KV-cache
+pressure and would confound this evaluation.
 The operator reports that Flash-Next **completed a long, real knowledge-management
-task reasonably in OpenCode, without obvious bugs or breakages**. This is a useful
+task reasonably in OpenCode, without obvious bugs or breakages, across more than
+128K cumulative context, at least one compaction and about four subagent calls**. This is a useful
 end-to-end agent outcome, not just a favorable impression. It is operator-reported,
 not an independently scored coding task. The operator-supplied
 [OpenCode and server recipes](runs/2026-09-26_harbor_review/README.md) are captured;
-effective client defaults and compaction behavior still need checking. Preserve OpenCode as the reference client and prioritize making that
+effective client defaults and compaction trigger/reserve still need capture.
+The reported compaction is evidence of working history management in that client;
+it does not establish that Mini-SWE uses the same policy. Preserve OpenCode as the reference client and prioritize making that
 working everyday/overnight workflow reliable. Use small checks to investigate
 regressions and choose improvements. The interrupted Harbor benchmark is not a
 reason to reject a model that already did useful work. The operator also finds it
@@ -220,15 +228,14 @@ either equivalence or collapse from 1/11.
 
 ## Two complementary tracks
 
-Improve the working Qwen configuration and explore other promising models in
-parallel as research priorities (GPU runs remain resource-coordinated). Do one
-bounded Qwen capacity/quantization batch, then give the strongest credible alternative
+Maintain both Qwen improvement and alternative-model research, executing every
+inference run serially. Do one bounded Qwen quality/capacity batch, then give the strongest credible alternative
 a feasibility pass; do not exhaust Qwen's tuning space before exploring. This is
 an experiment-allocation policy, not a claim that either model will win.
 
 ## Improve the working Qwen configuration
 
-### 1. Measure usable context and simultaneous sessions
+### 1. Measure usable context for one session
 
 Reuse the demonstrated SSD/llama.cpp/OpenCode configuration for these measurements.
 Capture effective settings and do only enough startup/tool checking to establish
@@ -239,24 +246,20 @@ The [official model card](https://huggingface.co/Qwen/Qwen3.8-Flash-Next) specif
 262,144 native total tokens, with extension to 1M using supported scaling. Test
 native context first; advertising 1M is not proof of allocation or useful recall.
 
-| Experiment           | Per-conversation total context |    Simultaneous sequences | Purpose                                           |
-| -------------------- | -----------------------------: | ------------------------: | ------------------------------------------------- |
-| Reference            |                            32K |                         1 | Repeat the existing filled-context result         |
-| Working agent        |                           128K |                         1 | Establish useful single-agent capacity            |
-| Native ceiling       |                           256K |                         1 | Test capacity and retained task facts             |
-| Parallel worker pair |                 64K, then 128K |                         2 | Measure aggregate gain and per-task slowdown      |
-| Short-task pool      |                            32K | 4, only if two slots help | Test batch work without claiming four long agents |
+| Experiment     | Per-conversation total context | Simultaneous sequences | Purpose                                   |
+| -------------- | -----------------------------: | ---------------------: | ----------------------------------------- |
+| Reference      |                            32K |                      1 | Repeat the existing filled-context result |
+| Working agent  |                           128K |                      1 | Establish useful single-agent capacity    |
+| Native ceiling |                           256K |                      1 | Test capacity and retained task facts     |
 
 At each size fill most of the window, reserve output, and test retrieval at multiple
 depths plus a multi-turn edit depending on earlier facts. Report advertised,
 allocated, and effective context separately. Measure fresh and cached prefill,
 per-request decode, aggregate throughput, peak memory and completed tasks/hour.
-Verify actual `n_ctx_slot` and overflow behavior from logs: increasing `--parallel`
-may divide a shared context allocation. Account for KV, recurrent state, checkpoints,
-and prompt-cache RAM; do not project maximum slots from weights alone. No promise
-yet that 2×128K fits with desktop headroom. Stop increasing concurrency if useful
-throughput falls or it causes memory pressure. Large agents sharing one model across
-both GPUs are different from one independent model on each GPU.
+Verify actual `n_ctx_slot` and overflow behavior from logs with `--parallel 1`.
+Account for KV, recurrent state, checkpoints and prompt-cache RAM. Multiple-context
+capacity remains an open question, but concurrent generation is outside the current
+run plan. Allocation arithmetic alone would not prove useful simultaneous capacity.
 
 Only after native 256K is useful, try a bounded 512K/1M extension if the runtime
 supports this architecture's scaling correctly. Longer context can increase prefill
@@ -270,11 +273,11 @@ version and explicit effort level; preserve served-model/provider and precision
 caveats. The [September 26 neighbor snapshot](runs/2026-09-26_harbor_review/aa_neighbours.json)
 extends the table above to Sonnet/Opus and adjacent GPT effort levels. Qwen is close
 to Sol medium on the aggregate index and close to Sol high on this Terminal-Bench
-score; neither means interchangeability across tasks. Published results are the
-cheap first answer to model positioning. Running the whole suite locally is not
-necessary to answer that question.
+score; neither means interchangeability across tasks. The [per-evaluation breakdown](runs/2026-09-26_harbor_review/README.md#trust-and-per-evaluation-differences)
+shows substantial reversals across metrics. Neither aggregate positioning nor
+provider scores establish the quality retained by the local quantization.
 
-### 3. Trade precision and reasoning against context and concurrency
+### 3. Trade precision and reasoning against context and latency
 
 Vary one axis at a time. 'Lower quant' can mean either fewer bits (smaller/faster)
 or less quantization (more precision); these address different hypotheses.
@@ -283,12 +286,12 @@ IQ4_XS 93.7 GB, Q3_K_XL 90.0 GB, Q5_K_XL 158.3 GB. These are file sizes,
 not required VRAM, and the large embedding tables complicate simple bits/parameter
 intuition.
 
-- Keep Q4 as control. IQ4_XS is the first smaller candidate if reducing CPU/offload
-  traffic could free context or improve parallel throughput; assess quality on the
-  same tasks. Do not jump directly to a very low-bit checkpoint.
-- Try Q5 if local quality remains suspicious after harness/runtime correctness.
-  Its larger working set may cost speed or page-cache capacity; more bits do not
-  guarantee a better completed task within the available budget.
+- Keep Q4 as control and try Q5 first to test quality retention, once safe placement
+  is established. Its larger working set may cost speed or page-cache capacity;
+  more bits do not guarantee a better completed task within the available budget.
+- IQ4_XS is the subsequent smaller candidate if reducing CPU/offload traffic could
+  free context or improve latency. Assess it on the same tasks; do not jump directly
+  to a very low-bit checkpoint.
 - Set reasoning explicitly. The official default is xhigh; our initial probes used
   medium. Compare medium and xhigh under an adequate, explicit output allowance.
   Short-output protocol probes cannot establish the model's reasoning ceiling.
@@ -296,46 +299,27 @@ intuition.
   Test MTP/speculation last, measuring accepted draft tokens and end-to-end gains;
   faster token loops that increase SSD reads need not improve agent completion.
 
-### 4. Targeted local quality checks only when a decision needs them
+### 4. Bounded local capability validation
 
-Published evals and the successful OpenCode task are the starting quality evidence.
-A new local task screen is conditional: use it when a quant/runtime change needs
-checking, a regression appears, or external results do not answer the question.
-When warranted, use 6–10 predetermined tasks representative of desired use: bug fix, multi-file
-change, testing, debugging, and review. Keep task definitions/scoring in
-`x/local_llm/eval`, records here; Agentplane is at most an optional execution backend.
-The two tiny tasks in #7910 are smoke gates, not sufficient evidence of capability.
-Use existing isolated task runners rather than building another evaluation framework.
+Terminal-Bench 4.0 is a substantial agent evaluation, worth a carefully controlled
+rerun. Reserve 24–48 hours for a serial Q4/Q5 comparison on a predetermined CPU-only
+subset, preserving original task verifiers and deadlines. This is a compute budget,
+not a promise to finish every selected task. Record unfinished work explicitly.
 
-Harbor is worth retaining only if the bounded audit points to a cheap fix and a
-small CPU-only subset completes cleanly. Preflight environments before loading a
-model. GPU-requiring benchmark tasks compete with inference for these same two
-GPUs; do not silently drop their GPU requirement and call that an official score.
-An explicitly labeled CPU-only subset is suitable for screening, not leaderboard
-comparison. Native 256K may defer the observed 128K overflow, but cannot bound an
-unlimited transcript. Before the next eval, explicitly check the **installed**
-Harbor/agent version for
-compaction support, configuration, trigger threshold, output-token reserve and
-failure handling; exercise one forced compaction on a short disposable trajectory.
-Distinguish Harbor orchestration from the selected agent's history policy.
-For practical agent use, test explicit context budgeting and
-compaction before overflow; this is a separate configuration from AA's uncompacted
-benchmark protocol, and must be labeled accordingly. If Harbor remains expensive to
-repair, use small isolated repo tasks and fixed verification instead.
+The [next-run protocol](runs/2026-09-26_harbor_review/NEXT_RUN.md) specifies preflight,
+matched settings, scheduling and reporting. Check the installed agent's context
+policy before spending the budget. Keep an uncompacted Mini-SWE track distinct from
+practical OpenCode compaction; a larger window alone cannot bound a growing transcript.
+Do not launch another full 66-task suite until the smaller run establishes that the
+configuration is usable and the result would answer a remaining question.
 
-Compare Flash Q4 with the dense Q8 control on identical tasks, harness, reasoning
-policy and output budget. Start single concurrency. Include explicit per-request,
-per-tool and total-task deadlines, no-progress handling, and bounded retries;
-make the time promised in the prompt agree with the enforced agent deadline.
-For slow runs, also compare a more generous wall budget while keeping token budget
-fixed. Report infrastructure errors, budget exhaustion, model failures and successes
-separately, including the full attempted denominator. Never score a broken launch
-as evidence of the model's reasoning ability or silently remove failures.
-
-If Flash solves useful tasks without frequent rescue, try a real overnight
-issue-to-patch job and a second-opinion review. Expand the benchmark only when the
-result would decide deployment or separate close candidates. A full 66-task run is
-not currently the highest-value use of this workstation.
+Keep task/scoring implementation in `x/local_llm/eval`, with records here; Agentplane
+is optional. The two tasks in #7910 are smoke gates, not evidence of hard-task quality.
+A selected CPU-only subset cannot establish equivalence to AA's full-suite score.
+Context failures still count as failures of the local configuration; report their
+cause rather than removing them from the denominator. A matched cloud control would
+be more informative than comparing headline percentages, but requires an available,
+authorized API budget; no paid comparison is scheduled here.
 
 ### 5. Deployment follow-up after the interesting measurements
 
@@ -376,7 +360,7 @@ host changes or full NixOS activation remain separate decisions requiring approv
 | Does GLM IQ3 retain an advantage over Qwen Q4/dense FP8? | Unknown; model cards cannot settle quantized local quality             | Matched coding tasks                            |
 | Does V4.1 remain useful with a smaller host cache?       | Plausible external evidence, unmeasured here                           | Cache sweep under current RAM allocation        |
 | Is GPU instability resolved?                             | Both responsive, no errors in queried log; sustained stability unknown | Bounded load plus kernel monitoring             |
-| Can 128K context support productive multi-turn work?     | Flash partial trajectories hit 128K; reliable long tasks still unknown | Filled-context tool trajectories                |
+| Can 128K context support productive multi-turn work?     | OpenCode success across compaction; uncompacted Mini-SWE hit 128K      | Filled-context tool trajectories                |
 | Will changing expert demand erase warm-cache speed?      | Known risk for streaming                                               | Diverse sequential tasks, not repeated prompts  |
 | Which runtime best uses two non-P2P GPUs?                | Dense tensor split helps decode; Flash concurrency unmeasured          | Same checkpoint, matched placement and workload |
 
@@ -397,7 +381,8 @@ No numerical probabilities or future speed estimates are justified by this revie
 
 ## Planning assumptions
 
-Candidate ordering and the 6–10-task screen are judgment calls, to be revised after first results.
+Candidate ordering and the bounded subset size are planning choices. Freeze task
+selection before observing new outcomes; expand only under a declared budget.
 No promised tokens/s for new models; no claimed IQ2/IQ3 capability retention; no hardware-purchase recommendation yet.
 Illustrative decode-only arithmetic: 10,000 output tokens take ~56 minutes at 3 tok/s or ~17 minutes at 10 tok/s,
 before prefill, tools, retries, and additional turns. Actual agent jobs can generate far more tokens.
