@@ -195,6 +195,63 @@ def base_chart(app: App) -> Chart:
     return chart
 
 
+_MOVER_UID = 1000  # Matches the linuxserver.io image's PUID/PGID, so movers own the files they copy.
+
+
+def _destination_mover_security_context() -> ReplicationDestinationSpecRsyncTlsMoverSecurityContext:
+    return ReplicationDestinationSpecRsyncTlsMoverSecurityContext(
+        run_as_user=_MOVER_UID,
+        run_as_group=_MOVER_UID,
+        fs_group=_MOVER_UID,
+        seccomp_profile=ReplicationDestinationSpecRsyncTlsMoverSecurityContextSeccompProfile(type="RuntimeDefault"),
+    )
+
+
+def _source_mover_security_context() -> ReplicationSourceSpecRsyncTlsMoverSecurityContext:
+    return ReplicationSourceSpecRsyncTlsMoverSecurityContext(
+        run_as_user=_MOVER_UID,
+        run_as_group=_MOVER_UID,
+        fs_group=_MOVER_UID,
+        seccomp_profile=ReplicationSourceSpecRsyncTlsMoverSecurityContextSeccompProfile(type="RuntimeDefault"),
+    )
+
+
+def _destination_mover_zone_affinity() -> ReplicationDestinationSpecRsyncTlsMoverAffinity:
+    return ReplicationDestinationSpecRsyncTlsMoverAffinity(
+        node_affinity=ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinity(
+            required_during_scheduling_ignored_during_execution=ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                node_selector_terms=[
+                    ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
+                        match_expressions=[
+                            ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
+                                key=_ZONE_KEY, operator="In", values=[_ZONE]
+                            )
+                        ]
+                    )
+                ]
+            )
+        )
+    )
+
+
+def _source_mover_zone_affinity() -> ReplicationSourceSpecRsyncTlsMoverAffinity:
+    return ReplicationSourceSpecRsyncTlsMoverAffinity(
+        node_affinity=ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinity(
+            required_during_scheduling_ignored_during_execution=ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                node_selector_terms=[
+                    ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
+                        match_expressions=[
+                            ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
+                                key=_ZONE_KEY, operator="In", values=[_ZONE]
+                            )
+                        ]
+                    )
+                ]
+            )
+        )
+    )
+
+
 def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
     namespace = f"grocy-{household}"
     chart = Chart(app, namespace, disable_resource_name_hashes=True)
@@ -263,14 +320,7 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
             destination_pvc=_CONFIG_CLAIM,
             copy_method=ReplicationDestinationSpecRsyncTlsCopyMethod.DIRECT,
             service_type="ClusterIP",
-            mover_security_context=ReplicationDestinationSpecRsyncTlsMoverSecurityContext(
-                run_as_user=1000,
-                run_as_group=1000,
-                fs_group=1000,
-                seccomp_profile=ReplicationDestinationSpecRsyncTlsMoverSecurityContextSeccompProfile(
-                    type="RuntimeDefault"
-                ),
-            ),
+            mover_security_context=_destination_mover_security_context(),
         ),
     )
     # Periodic backup of the grocy-config-ovh PVC into a SeaweedFS-backed PVC.
@@ -300,29 +350,8 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
             destination_pvc=_BACKUP,
             copy_method=ReplicationDestinationSpecRsyncTlsCopyMethod.DIRECT,
             service_type="ClusterIP",
-            mover_security_context=ReplicationDestinationSpecRsyncTlsMoverSecurityContext(
-                run_as_user=1000,
-                run_as_group=1000,
-                fs_group=1000,
-                seccomp_profile=ReplicationDestinationSpecRsyncTlsMoverSecurityContextSeccompProfile(
-                    type="RuntimeDefault"
-                ),
-            ),
-            mover_affinity=ReplicationDestinationSpecRsyncTlsMoverAffinity(
-                node_affinity=ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinity(
-                    required_during_scheduling_ignored_during_execution=ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                        node_selector_terms=[
-                            ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                                match_expressions=[
-                                    ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                        key=_ZONE_KEY, operator="In", values=[_ZONE]
-                                    )
-                                ]
-                            )
-                        ]
-                    )
-                )
-            ),
+            mover_security_context=_destination_mover_security_context(),
+            mover_affinity=_destination_mover_zone_affinity(),
         ),
     )
     ReplicationSource(
@@ -336,27 +365,8 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
             key_secret=f"volsync-rsync-tls-{_BACKUP}",
             address=f"volsync-rsync-tls-dst-{_BACKUP}.{namespace}.svc",
             port=8000,
-            mover_security_context=ReplicationSourceSpecRsyncTlsMoverSecurityContext(
-                run_as_user=1000,
-                run_as_group=1000,
-                fs_group=1000,
-                seccomp_profile=ReplicationSourceSpecRsyncTlsMoverSecurityContextSeccompProfile(type="RuntimeDefault"),
-            ),
-            mover_affinity=ReplicationSourceSpecRsyncTlsMoverAffinity(
-                node_affinity=ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinity(
-                    required_during_scheduling_ignored_during_execution=ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                        node_selector_terms=[
-                            ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                                match_expressions=[
-                                    ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                        key=_ZONE_KEY, operator="In", values=[_ZONE]
-                                    )
-                                ]
-                            )
-                        ]
-                    )
-                )
-            ),
+            mover_security_context=_source_mover_security_context(),
+            mover_affinity=_source_mover_zone_affinity(),
         ),
     )
     return chart
