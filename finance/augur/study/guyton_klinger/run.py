@@ -13,7 +13,7 @@ import argparse
 import json
 import statistics
 from collections.abc import Mapping, Sequence
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from fractions import Fraction
 from math import floor
 from pathlib import Path
@@ -126,7 +126,7 @@ def _half_up(amount: Fraction) -> int:
 
 
 def _dollars(quanta: float) -> str:
-    return str((Decimal(quanta) * QUANTUM).quantize(Decimal("0.01")))
+    return str((Decimal(quanta) * QUANTUM).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
 def _amounts(withdrawal: int, taxes: Mapping[str, int] | None, deflator: Fraction) -> YearAmounts:

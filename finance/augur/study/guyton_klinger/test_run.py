@@ -272,52 +272,53 @@ def test_cli_pays_each_years_federal_and_california_tax_out_of_its_withdrawal(tm
     [control] = Finished.model_validate_json((tmp_path / "untaxed" / "outcomes.json").read_text()).rollouts
     year_0, year_1 = path.years
     # Year 0 spends $50k of the $100k bills. December pays $2000 bill interest and a $12,500
-    # coupon, Treasury interest California exempts, and a $26,000 dividend, still ordinary.
-    # Federal: 40,500 - 14,600 = 25,900 taxable; 10% of 11,600 + 12% of 14,300 = 2876.
-    # California: 26,000 - 5363 = 20,637; 1% of 10,412 + 2% of 10,225 = 308.62.
+    # coupon, Treasury interest California exempts, and a $26,000 qualified dividend. Federal:
+    # the $14,500 of interest falls within the $14,600 deduction, and the dividend's $25,900 of
+    # taxable income sits in the 0% bracket. California taxes the dividend as ordinary income:
+    # 26,000 - 5363 = 20,637; 1% of 10,412 + 2% of 10,225 = 308.62.
     assert year_0.nominal == YearAmounts(
         withdrawal=quanta("50000"),
-        federal_tax=quanta("2876"),
+        federal_tax=0,
         california_tax=quanta("308.62"),
-        tax=quanta("3184.62"),
-        spendable=quanta("46815.38"),
+        tax=quanta("308.62"),
+        spendable=quanta("49691.38"),
     )
     # Year 1 opens at 52,000 bills + 312,500 bonds + 838,500 equity, payouts included:
     # 1,203,000, so $50k stays between the guardrails. Equity is 56,550 over target: its
     # $26,000 dividend and 19,200 units ($24,000, a $4800 gain) fund the withdrawal. No
-    # reserve covered year 0's tax, so the stages raise it too and $3184.62 of the $50k repays
-    # the portfolio; another $3184.62, year 0's tax, is reserved, and $43,630.76 is spent.
+    # reserve covered year 0's tax, so the stages raise it too and $308.62 of the $50k repays
+    # the portfolio; another $308.62, year 0's tax, is reserved, and $49,382.76 is spent.
     assert (year_1.opening_wealth, year_1.funding) == (quanta("1203000"), {Stage.OVERWEIGHT_EQUITY: quanta("50000")})
-    assert (year_1.repaid, year_1.reserved, year_1.settled) == (quanta("3184.62"), quanta("3184.62"), 0)
+    assert (year_1.repaid, year_1.reserved, year_1.settled) == (quanta("308.62"), quanta("308.62"), 0)
     assert [(row.month, row.cause_id, row.receipt.amount_paid) for row in taxed.summary.payments] == [
         (0, "gk-y0-withdrawal", quanta("50000")),
-        (12, "retiree_tax_true_up_y0", quanta("3184.62")),
-        (12, "gk-y1-withdrawal", quanta("43630.76")),
+        (12, "retiree_tax_true_up_y0", quanta("308.62")),
+        (12, "gk-y1-withdrawal", quanta("49382.76")),
     ]
-    # Year 0 left $50,000 - $3184.62 to spend: paid in January, less what year 1 withheld.
+    # Year 0 left $50,000 - $308.62 to spend: paid in January, less what year 1 withheld.
     assert quanta("50000") - year_1.repaid == year_0.nominal.spendable
     # The sweep sells the other 5240 equity units ($6550, a $1310 gain) and draws $11,750 of the
     # bond coupon, then buys bills with them and the bill interest; the coupon's last $750 buys
     # bonds. 2002 pays $1406 bill interest, a $15,037.50 coupon and a $46,917 dividend, and the
-    # year realized $6110 of long-term gain. Federal: 63,360.50 - 14,600 = 48,760.50 ordinary,
-    # taxed 1160 + 4266 + 22% of 1610.50 = 5780.31; the gain stacks above $47,025, all at 15%:
-    # 916.50. California taxes the dividend and gain, 53,027 - 5363 = 47,664: 104.12 + 285.44 +
-    # 571 + 6% of 8705 = 1482.86.
+    # year realized $6110 of long-term gain. Federal: the $16,443.50 of interest leaves 1843.50
+    # over the deduction, 10%: 184.35; the dividend and gain stack from there to 54,870.50,
+    # the 7845.50 above $47,025 at 15%: 1176.825. California taxes the dividend and gain as
+    # ordinary income, 53,027 - 5363 = 47,664: 104.12 + 285.44 + 571 + 6% of 8705 = 1482.86.
     assert year_1.nominal == YearAmounts(
         withdrawal=quanta("50000"),
-        federal_tax=quanta("6696.81"),
+        federal_tax=quanta("1361.175"),
         california_tax=quanta("1482.86"),
-        tax=quanta("8179.67"),
-        spendable=quanta("41820.33"),
+        tax=quanta("2844.035"),
+        spendable=quanta("47155.965"),
     )
     # The withdrawals are gross, so the portfolio matches the untaxed run's $1,216,360.50, less
-    # the $4995.05 of year 1's tax its $3184.62 reserve leaves to the next January.
+    # the $2535.415 of year 1's tax its $308.62 reserve leaves to the next January.
     assert wealth(control, 24) == dollars("1216360.50")
-    assert (path.terminal_wealth, path.real_terminal_wealth) == (quanta("1211365.45"), quanta("1211365.45"))
+    assert (path.terminal_wealth, path.real_terminal_wealth) == (quanta("1213825.085"), quanta("1213825.085"))
     headline = json.loads((tmp_path / "taxed" / "study.json").read_text())["headline"]
     assert (headline["median_real_lifetime_spendable"], headline["min_real_annual_spendable"]) == (
-        "88635.71",
-        "41820.33",
+        "96847.35",
+        "47155.97",
     )
 
 

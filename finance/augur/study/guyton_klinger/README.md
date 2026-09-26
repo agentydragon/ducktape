@@ -122,9 +122,9 @@ sleeve is a tax-free total-return proxy unit, with no investor taxes or added fe
 
 - **Split returns.** Units move by price return; each year's income is paid in its
   December into the sleeve's income account. Bill and bond interest is Treasury
-  interest, federally taxable and California-exempt; dividends are taxed as ordinary
-  income until qualified-dividend character lands. Sales realize FIFO lot gains, long
-  term from 12 months as the engine counts them (statute: more than a year).
+  interest, federally taxable and California-exempt; dividends are qualified, at the
+  federal long-term rates and California's ordinary ones. Sales realize FIFO lot gains,
+  long term from 12 months as the engine counts them (statute: more than a year).
 - **W is gross.** The withdrawal leaves the portfolio and its year's tax is paid out of
   it: spendable = W − tax. Guardrails test W / V as in the paper. The TAXES reading
   below schedules the payments.
@@ -151,9 +151,9 @@ guardrail triggers. What this adaptation cannot claim:
 - The 10-year Treasury stands in for the aggregate bond index; duration and credit
   differ.
 - Overlapping January-start windows share years; they are not independent trials.
-- Taxed, it omits qualified dividends, CPI-indexed brackets, estimated instalments,
-  wash sales, the SALT deduction and fund expense ratios or fees; the bond coupon is the
-  prior year-end yield on the unit's value, not a held bond's par.
+- Taxed, it omits CPI-indexed brackets, estimated instalments, the qualified-dividend
+  holding period, wash sales, the SALT deduction and fund expense ratios or fees; the
+  bond coupon is the prior year-end yield on the unit's value, not a held bond's par.
 
 ## Decisions still needed before a faithful label
 

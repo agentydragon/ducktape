@@ -166,7 +166,11 @@ def world(paths: list[Path], rollout_id: int) -> World:
                 holding_account_id=BROKERAGE,
                 asset_id=AssetId(Sleeve.BONDS),
                 to_account_id=INCOME[Sleeve.BONDS],
-                tax_character=(PreparedDistributionSlice(fraction_ppb=10**9, issuer_jurisdiction_id=FEDERAL),),
+                tax_character=(
+                    PreparedDistributionSlice(
+                        fraction_ppb=10**9, income_category=InterestIncome(issuer_jurisdiction_id=FEDERAL)
+                    ),
+                ),
             )
         )
     lots = [

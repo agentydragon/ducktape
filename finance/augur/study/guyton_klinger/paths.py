@@ -46,7 +46,14 @@ from finance.augur.sim.prepared import (
     PreparedSeries,
 )
 from finance.augur.sim.runtime import load_jurisdictions_for
-from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, InterestIncome, TaxProfile
+from finance.augur.sim.scenario import (
+    ORDINARY_INCOME,
+    FilingStatus,
+    InterestIncome,
+    QualifiedDividendIncome,
+    TaxProfile,
+    TransferIncomeCategory,
+)
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.world import World
 from finance.augur.study.guyton_klinger.panel import PRICED, AnnualPanel, Sleeve
@@ -80,10 +87,13 @@ class Taxes(StrEnum):
     FEDERAL_CA = "federal-ca"
 
 
-# Treasury bonds and bills pay interest the federal government issued: federally taxable,
-# state-exempt. The S&P dividend has no issuer exemption.
-# CLEANUP(added 2026-09-26): declare as qualified dividends once augur/tax-qualified-dividends merges.
-PAYOUT_ISSUER: dict[Sleeve, JurisdictionId | None] = {Sleeve.CASH: FEDERAL, Sleeve.BONDS: FEDERAL, Sleeve.EQUITY: None}
+PAYOUT_INCOME: dict[Sleeve, TransferIncomeCategory] = {
+    Sleeve.CASH: InterestIncome(issuer_jurisdiction_id=FEDERAL),
+    Sleeve.BONDS: InterestIncome(issuer_jurisdiction_id=FEDERAL),
+    Sleeve.EQUITY: QualifiedDividendIncome(),
+}
+"""Treasury bills and bonds pay interest the federal government issued: federally taxable,
+California-exempt. S&P dividends are declared qualified; their holding period is not checked."""
 
 
 @dataclass(frozen=True)
@@ -204,9 +214,7 @@ def _declare_taxes(world: World) -> None:
                 asset_id=AssetId(sleeve),
                 to_account_id=INCOME[sleeve],
                 tax_character=(
-                    PreparedDistributionSlice(
-                        fraction_ppb=rate_to_ppb(1.0), issuer_jurisdiction_id=PAYOUT_ISSUER[sleeve]
-                    ),
+                    PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), income_category=PAYOUT_INCOME[sleeve]),
                 ),
             )
         )
@@ -226,9 +234,7 @@ def compose_world(windows: AnnualWindows, rollout_id: int, *, wealth: Decimal, w
     world = World(
         MarketPath(windows.series, rollout_id, rollout_count=len(windows.start_years)),
         horizon_months=windows.horizon_months,
-        income_sources=(ORDINARY_INCOME, *(InterestIncome(issuer_jurisdiction_id=i) for i in (None, FEDERAL)))
-        if taxed
-        else (),
+        income_sources=(ORDINARY_INCOME, *dict.fromkeys(PAYOUT_INCOME.values())) if taxed else (),
         jurisdictions=(
             PreparedJurisdiction(jurisdiction_id=FEDERAL, level=JurisdictionLevel.FEDERAL),
             PreparedJurisdiction(jurisdiction_id=CALIFORNIA, level=JurisdictionLevel.STATE),
