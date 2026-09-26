@@ -50,8 +50,8 @@ from haku.console.tools.kubernetes import KubernetesAccessCheck, KubernetesTools
 from haku.grants.authorization import GrantSourceKind
 
 _NOW = datetime(2026, 8, 20, tzinfo=UTC)
-_SCOPE = NamespacesGrantScope(namespaces=frozenset({"demo"}))
-_RULE = Rule(api_groups=frozenset({""}), resources=frozenset({"pods"}), verbs=frozenset({"get"}))
+_SCOPE = NamespacesGrantScope(namespaces={"demo"})
+_RULE = Rule(api_groups={""}, resources={"pods"}, verbs={"get"})
 _REQUEST = RequestAttributes(
     resource_request=True,
     verb="get",
@@ -236,10 +236,7 @@ def test_can_i_inferred_cluster_scope_matches_cluster_grants(console: _Console) 
     async def exercise() -> None:
         await console.seed_grant(
             context,
-            GrantSpec(
-                scope=ClusterGrantScope(),
-                rules=(Rule(api_groups=frozenset({""}), resources=frozenset({"nodes"}), verbs=frozenset({"list"})),),
-            ),
+            GrantSpec(scope=ClusterGrantScope(), rules=(Rule(api_groups={""}, resources={"nodes"}, verbs={"list"}),)),
         )
         (allowed,) = await console.service.can_i(
             context=context, requests=[KubernetesAccessCheck(attributes=attributes)]

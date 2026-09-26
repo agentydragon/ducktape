@@ -95,7 +95,7 @@ class AuthorizationRequest(BaseModel):
             if scope.kind is not GrantScopeKind.NON_RESOURCE:
                 raise ValueError("a non-resource request requires non_resource scope")
         elif attributes.namespace:
-            expected = NamespacesGrantScope(namespaces=frozenset({attributes.namespace}))
+            expected = NamespacesGrantScope(namespaces={attributes.namespace})
             if scope != expected:
                 raise ValueError("a named-namespace request requires its exact namespace scope")
         elif scope.kind not in {GrantScopeKind.ALL_NAMESPACES, GrantScopeKind.CLUSTER}:
@@ -196,15 +196,15 @@ def required_rule(attributes: RequestAttributes) -> Rule:
     """Build the minimal RBAC rule; Kubernetes spells subresources as ``resource/subresource``."""
 
     if not attributes.resource_request:
-        return Rule(verbs=frozenset({attributes.verb}), non_resource_urls=frozenset({attributes.path}))
+        return Rule(verbs={attributes.verb}, non_resource_urls={attributes.path})
     resource = attributes.resource
     if attributes.subresource:
         resource = f"{resource}/{attributes.subresource}"
     return Rule(
-        api_groups=frozenset({attributes.api_group}),
-        resources=frozenset({resource}),
-        verbs=frozenset({attributes.verb}),
-        resource_names=frozenset({attributes.name}) if attributes.name else frozenset(),
+        api_groups={attributes.api_group},
+        resources={resource},
+        verbs={attributes.verb},
+        resource_names={attributes.name} if attributes.name else set(),
     )
 
 
@@ -250,7 +250,7 @@ def required_scope(
     if attributes.namespace:
         if unnamespaced_resource_kind is not None:
             raise ValueError("a named-namespace request cannot declare an unnamespaced resource scope kind")
-        return NamespacesGrantScope(namespaces=frozenset({attributes.namespace}))
+        return NamespacesGrantScope(namespaces={attributes.namespace})
     if unnamespaced_resource_kind is GrantScopeKind.ALL_NAMESPACES:
         return AllNamespacesGrantScope()
     if unnamespaced_resource_kind is GrantScopeKind.CLUSTER:

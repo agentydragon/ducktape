@@ -174,7 +174,9 @@ bug.
   they do; organize by domain, not by role. **Flat over nested**: a subdirectory with
   <3 files gets flattened.
 - **Sets for unordered collections** (`set[T]`); lists only when order or duplicates
-  matter.
+  matter. A Pydantic field that holds one is typed `collections.abc.Set[T]`, so
+  callers pass `{"a", "b"}` rather than `frozenset({"a", "b"})`; Pydantic still
+  stores it as a hashable `frozenset`.
 - **Don't reinvent the wheel**: a solved problem uses the library the repo already
   carries, never hand-rolled arithmetic — retry/backoff is `tenacity`; iteration
   shapes are `more_itertools` (`one()` when more than one match is a bug, `first()`

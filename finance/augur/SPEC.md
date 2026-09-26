@@ -173,6 +173,20 @@ statutory coverage. Managed-account heuristics, unsupported distribution charact
 law-year/residency gaps and housing-basis limitations must not be presented as
 validated fidelity. Adding a jurisdiction can require mechanics, not merely data.
 
+The supported tax scope is US federal plus California for a single filer resident
+in the US, holding equity funds, US Treasury and municipal bond funds, municipal
+and direct bonds and managed tax-loss-harvesting portfolios in taxable accounts. Qualified-dividend character, the net
+investment income tax and the mortgage-interest deduction (itemized against the
+standard deduction, with the SALT cap) belong to it; charitable deductions do not.
+Future years hold current law flat, with brackets and thresholds fixed in nominal
+dollars, and estimated tax and the true-up are paid on schedule without penalties:
+explicit assumptions, not forecasts. The code does not yet cover this scope: fund
+distributions are taxed as interest, with no qualified-dividend character; neither
+NIIT nor California's surcharge above $1M is assessed; the bundled tables are 2024
+law; a taxpayer starts with no year-to-date income, gains or payments; the SALT
+cap has no income phase-out; and estimated payments are equal quarters of one
+aggregate prior-year amount rather than per-jurisdiction schedules.
+
 ## Outputs and observation boundaries
 
 Typed common results retain original path IDs, request/claim/component/account

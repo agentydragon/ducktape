@@ -92,8 +92,6 @@ spec:
           - ollama/olm-chat/gpt-oss-120b-128k
           - ollama/oai-chat/gemma4-31b-it-q8_0-128k
           - ollama/olm-chat/gemma4-31b-it-q8_0-128k
-          - ollama/oai-chat/qwen3.8-flash-next-q4-128k
-          - ollama/olm-chat/qwen3.8-flash-next-q4-128k
           - anthropic-api/ant-messages/claude-haiku-4-5-20251001
           - chatgpt/ant-messages/gpt-6-luna
           - chatgpt/oai-responses/gpt-6-luna
@@ -141,8 +139,6 @@ spec:
           - ollama/olm-chat/gpt-oss-120b-128k
           - ollama/oai-chat/gemma4-31b-it-q8_0-128k
           - ollama/olm-chat/gemma4-31b-it-q8_0-128k
-          - ollama/oai-chat/qwen3.8-flash-next-q4-128k
-          - ollama/olm-chat/qwen3.8-flash-next-q4-128k
         tana_client_models:
           - tana/ant-messages/claude-sonnet-4-6
           - tana/ant-messages/claude-opus-4-6

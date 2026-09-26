@@ -100,8 +100,8 @@ def _seed_grant(console: _Console) -> Grant:
             owner_agent_id=console.agent_id,
             grant_principal=AgentGrantPrincipal(agent_id=console.agent_id),
             source_tool_call_id=source_tool_call_id,
-            scope=NamespacesGrantScope(namespaces=frozenset({"public-coder-agent"})),
-            rules=(Rule(api_groups=frozenset({""}), resources=frozenset({"pods/log"}), verbs=frozenset({"get"})),),
+            scope=NamespacesGrantScope(namespaces={"public-coder-agent"}),
+            rules=(Rule(api_groups={""}, resources={"pods/log"}, verbs={"get"}),),
             expires_at=datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=25),
         )
 

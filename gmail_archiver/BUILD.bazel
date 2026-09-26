@@ -190,6 +190,7 @@ py_test(
     srcs = ["test_filter_sync.py"],
     deps = [
         ":filter_sync",
+        ":gmail_api_models",
         ":gmail_yaml_filters_models",
         "//:conftest",
         "//gmail_api:labels",

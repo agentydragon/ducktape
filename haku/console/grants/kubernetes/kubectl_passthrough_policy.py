@@ -24,7 +24,7 @@ def _make_req(
     scope = (
         ClusterGrantScope()
         if cluster_scoped
-        else (NamespacesGrantScope(namespaces=frozenset({namespace})) if namespace else AllNamespacesGrantScope())
+        else (NamespacesGrantScope(namespaces={namespace}) if namespace else AllNamespacesGrantScope())
     )
     attributes = RequestAttributes(
         resource_request=True,

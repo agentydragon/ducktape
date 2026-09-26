@@ -21,7 +21,7 @@ from haku.console.grants.principal import AgentGrantPrincipal
 
 
 def resource_rule() -> Rule:
-    return Rule(verbs=frozenset({"get"}), api_groups=frozenset({""}), resources=frozenset({"pods"}))
+    return Rule(verbs={"get"}, api_groups={""}, resources={"pods"})
 
 
 def test_resource_rule_canonicalizes_values() -> None:
@@ -41,11 +41,7 @@ def test_rule_rejects_kubernetes_wire_names_inside_the_domain() -> None:
 
 
 def test_rule_models_rbac_collections_as_sets_and_serializes_stably() -> None:
-    rule = Rule(
-        api_groups=frozenset({"apps", ""}),
-        resources=frozenset({"pods", "deployments"}),
-        verbs=frozenset({"list", "get"}),
-    )
+    rule = Rule(api_groups={"apps", ""}, resources={"pods", "deployments"}, verbs={"list", "get"})
 
     assert rule.verbs == frozenset({"get", "list"})
     assert rule.model_dump(mode="json")["verbs"] == ["get", "list"]
@@ -61,20 +57,15 @@ def test_rule_rejects_scalar_strings_for_collection_fields() -> None:
 
 def test_rule_rejects_mixed_or_empty_shape() -> None:
     with pytest.raises(ValidationError, match="must contain resources"):
-        Rule(verbs=frozenset({"get"}))
+        Rule(verbs={"get"})
     with pytest.raises(ValidationError, match="must contain resources"):
-        Rule(api_groups=frozenset({"apps"}), verbs=frozenset({"get"}))
+        Rule(api_groups={"apps"}, verbs={"get"})
     with pytest.raises(ValidationError, match="must contain resources"):
-        Rule(resource_names=frozenset({"pod-a"}), verbs=frozenset({"get"}))
+        Rule(resource_names={"pod-a"}, verbs={"get"})
     with pytest.raises(ValidationError, match="at least 1 item"):
-        Rule(api_groups=frozenset({""}), resources=frozenset({"pods"}), verbs=frozenset())
+        Rule(api_groups={""}, resources={"pods"}, verbs=frozenset())
     with pytest.raises(ValidationError, match="cannot mix"):
-        Rule(
-            api_groups=frozenset({""}),
-            resources=frozenset({"pods"}),
-            verbs=frozenset({"get"}),
-            non_resource_urls=frozenset({"/healthz"}),
-        )
+        Rule(api_groups={""}, resources={"pods"}, verbs={"get"}, non_resource_urls={"/healthz"})
 
 
 def test_scope_is_a_discriminated_union_consistent_with_rule_kind() -> None:
@@ -84,7 +75,7 @@ def test_scope_is_a_discriminated_union_consistent_with_rule_kind() -> None:
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         adapter.validate_python({"kind": "cluster", "namespaces": ["default"]})
     with pytest.raises(ValidationError, match="use all_namespaces"):
-        NamespacesGrantScope(namespaces=frozenset({"*"}))
+        NamespacesGrantScope(namespaces={"*"})
     with pytest.raises(ValueError, match="requires only non-resource"):
         validate_grant_scope_rules(NonResourceGrantScope(), (resource_rule(),))
 
@@ -95,7 +86,7 @@ def test_agent_grant_principal_may_differ_from_lifecycle_owner() -> None:
         owner_agent_id=UUID(int=2),
         principal=AgentGrantPrincipal(agent_id=UUID(int=3)),
         source_tool_call_id="tc_source",
-        scope=NamespacesGrantScope(namespaces=frozenset({"demo"})),
+        scope=NamespacesGrantScope(namespaces={"demo"}),
         rules=(resource_rule(),),
         created_at=datetime.datetime(2026, 8, 21, tzinfo=datetime.UTC),
         expires_at=datetime.datetime(2026, 8, 21, 1, tzinfo=datetime.UTC),

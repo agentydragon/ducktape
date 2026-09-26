@@ -52,8 +52,8 @@ pull gpt-oss:20b        # 13.8 GB
 pull gpt-oss:120b       # 65.4 GB
 pull gemma4:31b-it-q8_0 # 33.8 GB
 pull qwen3-embedding:4b # 2.5 GB
-# TODO: verify once up — tested standalone via a hand-tuned llama.cpp docker container
-# (same Unsloth UD-Q4_K_XL GGUF, --fit-target/--cache-type-*/--split-mode flags) but not
-# yet confirmed to load/serve correctly through ollama's automatic GPU-offload heuristics
-# for this MoE architecture (125B total / 6B active params).
-pull metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL # 112 GB
+# Disabled (2026-09-26): does not fit in wyrm2's combined GPU VRAM (87GB resident vs.
+# ~61GB usable across 2x RTX 5090s); measured 0.056-1.44 tokens/sec, ~20-1000x too slow
+# to be usable, on both Ollama 0.34.0 and 0.34.4. See
+# agentplane/debug/agentplane_ollama_live_smoke_2026_09_24.md.
+# pull metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL # 112 GB
