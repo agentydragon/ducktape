@@ -11,8 +11,9 @@ There is no native extension, backend selector, or alternate financial evaluator
   half-away-from-zero rounding. <../ledger.py> owns balanced postings.
 - <../accounting.py>, <../holdings.py>, <../payments.py>, and <../claims.py> own
   income recording, lot basis, trade/payment settlement, and due claims.
-- <../tax.py> and <../tax_year.py> assess the supplied rules, record liabilities,
-  and carry/reset annual state. Existing supported tax scope is unchanged.
+- <../tax_year.py> holds each taxpayer's annual facts; <../tax_authority.py> closes
+  the year under the supplied rules (<../tax.py>), records liabilities, and resets
+  annual state to its carryover. Existing supported tax scope is unchanged.
 - <../held_bonds.py>, <../property.py>, and <../private_equity.py> preserve the
   existing contract cashflows and lifecycle mechanics.
 - <../tlh.py> owns private TLH cohorts and basis; <../mortgage.py> owns servicing

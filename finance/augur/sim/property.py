@@ -316,7 +316,12 @@ class Properties:
             self.residences.append(Residence(month, event.agent_id, event.property_id, event.property_id is not None))
 
     def lifecycle(
-        self, accounting: Accounting, market: MarketPath, month: int, mortgages: Mapping[LiabilityId, Mortgage]
+        self,
+        accounting: Accounting,
+        market: MarketPath,
+        month: int,
+        mortgages: Mapping[LiabilityId, Mortgage],
+        section_121_exclusions: Mapping[AgentId, int],
     ) -> list[LiabilityId]:
         ids = sorted(
             {event.property_id for event in self.housing.rented_fraction_events if event.month == month}
@@ -363,7 +368,7 @@ class Properties:
                 self.improvements.append(CapitalImprovement(month, id_, improvement.amount, ""))
             for sale in self.housing.sales:
                 if sale.month == month and sale.property_id == id_ and property_.state.active:
-                    payoff = self.sell(accounting, market, purchases[id_], sale, mortgages)
+                    payoff = self.sell(accounting, market, purchases[id_], sale, mortgages, section_121_exclusions)
                     if payoff is not None:
                         paid_off.append(payoff)
         return paid_off
@@ -375,6 +380,7 @@ class Properties:
         purchase: _PropertyPurchase,
         sale: _PropertySale,
         mortgages: Mapping[LiabilityId, Mortgage],
+        section_121_exclusions: Mapping[AgentId, int],
     ) -> LiabilityId | None:
         property_ = self.properties[sale.property_id]
         state = property_.state
@@ -404,10 +410,7 @@ class Properties:
         gain = checked_count(gross - adjusted, "money subtraction")
         recapture = min(max(0, gain), state.cumulative_depreciation)
         remainder = max(0, checked_count(gain - recapture, "money subtraction"))
-        profile = next(
-            (profile for profile in accounting.tax.profiles if profile.agent_id == purchase.buyer_agent_id), None
-        )
-        cap = 0 if profile is None else profile.section_121_exclusion
+        cap = section_121_exclusions.get(purchase.buyer_agent_id, 0)
         exclusion = min(remainder, cap) if sum(property_.occupied_window) >= 24 else 0
         long_gain = checked_count(remainder - exclusion, "money subtraction")
         property_basis = checked_count(state.adjusted_basis + capex, "money addition")

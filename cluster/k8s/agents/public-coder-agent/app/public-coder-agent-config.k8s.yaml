@@ -232,6 +232,116 @@ data:
                 "maxTokens": 65536,
                 "name": "Gemini 3.5 Flash-Lite (Google AI via LiteLLM)",
                 "reasoning": false
+              },
+              {
+                "contextWindow": 200000,
+                "id": "antigravity/ant-messages/claude-opus-4-6-thinking",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 64000,
+                "name": "Claude Opus 4.6 (Thinking) (Google Antigravity via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 200000,
+                "id": "antigravity/ant-messages/claude-sonnet-4-6",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 64000,
+                "name": "Claude Sonnet 4.6 (Thinking) (Google Antigravity via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 1048576,
+                "id": "antigravity/ant-messages/gemini-3.6-flash-high",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 65536,
+                "name": "Gemini 3.6 Flash (Google Antigravity via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 1048576,
+                "id": "antigravity/ant-messages/gemini-3.7-flash-high",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 65536,
+                "name": "Gemini 3.7 Flash (Google Antigravity via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 1048576,
+                "id": "antigravity/ant-messages/gemini-3.8-flash-high",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 65536,
+                "name": "Gemini 3.8 Flash (Google Antigravity via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 1048576,
+                "id": "antigravity/ant-messages/gemini-3-flash",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 65536,
+                "name": "Gemini 3 Flash (Google Antigravity via LiteLLM)",
+                "reasoning": false
+              },
+              {
+                "contextWindow": 1048576,
+                "id": "antigravity/ant-messages/gemini-pro-agent",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 65535,
+                "name": "Gemini 3.1 Pro (High) (Google Antigravity via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 1048576,
+                "id": "antigravity/ant-messages/gemini-3.1-pro-low",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 65535,
+                "name": "Gemini 3.1 Pro (Low) (Google Antigravity via LiteLLM)",
+                "reasoning": false
+              },
+              {
+                "contextWindow": 114000,
+                "id": "antigravity/ant-messages/gpt-oss-120b-medium",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 32768,
+                "name": "GPT-OSS 120B (Medium) (Google Antigravity via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 1048576,
+                "id": "antigravity/ant-messages/gemini-3.1-flash-lite",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 65535,
+                "name": "Gemini 3.1 Flash Lite (Google Antigravity via LiteLLM)",
+                "reasoning": false
               }
             ],
             "request": {

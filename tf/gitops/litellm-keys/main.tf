@@ -85,7 +85,7 @@ resource "kubernetes_secret" "cheap_experiments" {
 
 resource "litellm_key" "agentplane_staging" {
   key_alias       = "agentplane-staging"
-  models          = concat(var.model_allowlists.oai_lane_models, var.model_allowlists.claude_client_models, var.model_allowlists.ollama_chat_client_models)
+  models          = concat(var.model_allowlists.oai_lane_models, var.model_allowlists.claude_client_models, var.model_allowlists.antigravity_client_models, var.model_allowlists.ollama_chat_client_models)
   max_budget      = 50
   budget_duration = "30d"
   metadata = {
@@ -162,15 +162,16 @@ resource "kubernetes_secret" "codex_pod" {
 resource "litellm_key" "public_coder_agent" {
   key_alias = "public-coder-agent"
   # Codex subscription models on both wire surfaces, the Gemini chat lineup,
-  # plus embeddings. Both subscription wire surfaces remain allowlisted because
-  # this shared key serves Responses-lane OpenClaw/Console consumers and clients
-  # that still use the Anthropic Messages lane.
+  # the full Antigravity lineup, plus embeddings. Both subscription wire surfaces
+  # remain allowlisted because this shared key serves Responses-lane
+  # OpenClaw/Console consumers and clients that still use the Anthropic Messages lane.
   # Embeddings ride along because OpenClaw's memory index needs a backend and
   # this agent has no route to api.openai.com -- its egress allowlist is git
   # hosting plus package indexes, and it should not gain one merely to embed.
   # Gemini reaches Google through LiteLLM's own in-cluster GEMINI_API_KEY, so
-  # this key never carries that credential either.
-  models = concat(var.model_allowlists.codex_client_models, var.model_allowlists.oai_lane_models, var.model_allowlists.gemini_client_models, var.model_allowlists.embedding_client_models)
+  # this key never carries that credential either; Antigravity reaches CLIProxyAPI's
+  # OAuth session the same way the Codex lanes do.
+  models = concat(var.model_allowlists.codex_client_models, var.model_allowlists.oai_lane_models, var.model_allowlists.gemini_client_models, var.model_allowlists.antigravity_client_models, var.model_allowlists.embedding_client_models)
   metadata = {
     consumer = "public-coder-agent"
   }
