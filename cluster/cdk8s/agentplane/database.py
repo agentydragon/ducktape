@@ -23,8 +23,7 @@ from cnpg_database_crds.io.cnpg.postgresql import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import cnpg
-from cluster.cdk8s.agentplane import node_scheduling
+from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 

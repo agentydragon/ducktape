@@ -425,7 +425,7 @@ def chart(app: App) -> Chart:
         chart,
         "route",
         metadata=metadata(_NAME, _NAMESPACE),
-        hostname="git.allegedly.works",
+        hostnames=["git.allegedly.works"],
         backend="forgejo-http",
         port=3000,
         hsts=False,

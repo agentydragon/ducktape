@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     Capability,
     ConfigMap,
@@ -63,7 +63,7 @@ from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.home_assistant.app import HA_MCP_TOKEN
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
+from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -199,7 +199,7 @@ class HaMcpApp(Construct):
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
             automount_service_account_token=False,
         )
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
+        apply_pod_spec_patches(deployment)
 
         tmp_volume = Volume.from_empty_dir(self, "tmp-volume", "tmp")
         data_volume = Volume.from_empty_dir(self, "data-volume", "data")

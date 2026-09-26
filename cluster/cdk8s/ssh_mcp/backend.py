@@ -35,7 +35,7 @@ from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
+from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.ssh_mcp.config import (
@@ -130,7 +130,7 @@ class SshMcp(Construct):
         )
         # The Deployment selector is immutable; retain its existing labels for Flux adoption.
         deployment.select(LabelSelector.of(labels=LABELS))
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
+        apply_pod_spec_patches(deployment)
         bearer = Secret.from_secret_name(self, "bearer-secret-ref", BEARER_SECRET_NAME)
         deployment.add_container(
             name="server",
@@ -150,7 +150,6 @@ class SshMcp(Construct):
             readiness=http_probe("/healthz", port=HTTP_PORT, initial_delay_seconds=3),
             liveness=http_probe("/healthz", port=HTTP_PORT, initial_delay_seconds=15, period_seconds=20),
             security_context=ContainerSecurityContextProps(
-                allow_privilege_escalation=False,
                 capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
                 ensure_non_root=True,
                 user=1000,

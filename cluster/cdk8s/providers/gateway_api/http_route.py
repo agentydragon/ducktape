@@ -26,8 +26,8 @@ from gateway_api_crds.io.k8s.networking.gateway import (
 
 class RouteMatch:
     """One `HTTPRouteMatch`. Gateway API discriminates three real path-match variants
-    (`Exact`, `PathPrefix`, `RegularExpression`); only exact-path matching is wrapped
-    here -- add another factory the day a second one is needed.
+    (`Exact`, `PathPrefix`, `RegularExpression`); only the two this repo builds today are
+    wrapped -- add another factory the day a third one is needed.
     """
 
     def __init__(self, spec: HttpRouteSpecRulesMatches) -> None:
@@ -41,6 +41,14 @@ class RouteMatch:
         return cls(
             HttpRouteSpecRulesMatches(
                 path=HttpRouteSpecRulesMatchesPath(type=HttpRouteSpecRulesMatchesPathType.EXACT, value=value)
+            )
+        )
+
+    @classmethod
+    def path_prefix(cls, value: str) -> RouteMatch:
+        return cls(
+            HttpRouteSpecRulesMatches(
+                path=HttpRouteSpecRulesMatchesPath(type=HttpRouteSpecRulesMatchesPathType.PATH_PREFIX, value=value)
             )
         )
 

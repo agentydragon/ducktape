@@ -304,7 +304,7 @@ def chart(app: App) -> Chart:
         chart,
         "route",
         metadata=metadata(_NAME, _NAMESPACE),
-        hostname="ollama.allegedly.works",
+        hostnames=["ollama.allegedly.works"],
         backend=_NAME,
         port=_AUTH_PROXY_PORT,
         timeout="600s",

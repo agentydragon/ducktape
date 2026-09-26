@@ -25,8 +25,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cnpg
-from cluster.cdk8s.agentplane import node_scheduling
+from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
