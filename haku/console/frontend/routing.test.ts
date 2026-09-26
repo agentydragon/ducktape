@@ -6,8 +6,6 @@ import {
   APPROVALS_EMBED_PATH,
   CONSOLE_ROOT_PATH,
   HOME_PATH,
-  OAUTH_RESULT_PATH_PREFIX,
-  oauthResultIdForPathname,
   rememberedEmbedPath,
   rememberEmbedPath,
   SETTINGS_PATH,
@@ -25,7 +23,6 @@ describe("viewForPathname", () => {
       "agentEnrollment"
     );
     expect(viewForPathname(TOOL_CALLS_PATH)).toBe("toolCalls");
-    expect(viewForPathname(`${OAUTH_RESULT_PATH_PREFIX}/8de5eb42-a3ce-4c83-9b13-59678c399ba3`)).toBe("oauthResult");
     expect(viewForPathname(`${CONSOLE_ROOT_PATH}/unknown`)).toBe("notFound");
     expect(viewForPathname(CONSOLE_ROOT_PATH)).toBe("embed");
   });
@@ -41,13 +38,6 @@ describe("viewForPathname", () => {
     expect(toolCallIdForPathname(`${TOOL_CALLS_PATH}/8de5eb42-a3ce-4c83-9b13-59678c399ba3`)).toBeNull();
     expect(toolCallIdForPathname(`${TOOL_CALLS_PATH}/tc_short`)).toBeNull();
     expect(viewForPathname(`${TOOL_CALLS_PATH}/tc_short`)).toBe("notFound");
-  });
-
-  it("accepts only canonical UUIDv4 OAuth result routes", () => {
-    const id = "8de5eb42-a3ce-4c83-9b13-59678c399ba3";
-    expect(oauthResultIdForPathname(`${OAUTH_RESULT_PATH_PREFIX}/${id}`)).toBe(id);
-    expect(oauthResultIdForPathname(`${OAUTH_RESULT_PATH_PREFIX}/not-a-result`)).toBeNull();
-    expect(viewForPathname(`${OAUTH_RESULT_PATH_PREFIX}/not-a-result`)).toBe("notFound");
   });
 
   it("accepts only canonical UUIDv4 Agent enrollment routes", () => {

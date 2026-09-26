@@ -72,7 +72,6 @@ from haku.console.mcp.catalog_reconciler import OperatorCatalogReconciler
 from haku.console.mcp.guidance import SERVER_INSTRUCTIONS, approval_request_preamble
 from haku.console.mcp.tool_call_service import (
     AgentActorRequiredError,
-    BackendAccountNotConnectedError,
     ToolCallApplicationService,
     ToolCallNotFoundError,
     ToolCallStateConflictError,
@@ -81,11 +80,9 @@ from haku.console.mcp_config import (
     InProcessCredential,
     McpServerEntry,
     McpServerNotFoundError,
-    OperatorConnectionCredential,
     _load_servers,
     server_tool_prefix,
 )
-from haku.console.oauth.provider_connection import PostgresProviderConnectionStore, ProviderConnectionStatus
 from haku.console.settings import Settings
 from haku.console.tool_call_actor import OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
@@ -133,7 +130,6 @@ class ConsoleMcpContext:
 
     settings: Settings
     tool_calls: ToolCallApplicationService
-    provider_store: PostgresProviderConnectionStore
     dispatcher: McpServerDispatcher
     catalogs: OperatorCatalogReconciler
 
@@ -193,13 +189,6 @@ class McpServerConnectionStatus(BaseModel):
 
     server_id: str
     backend: InProcessBackendStatus
-    connection: ProviderConnectionStatus | None = Field(
-        description=(
-            "The persisted, non-secret operator connection status. This uses the same safe status "
-            "shape as the console's provider-connection API, including connection and token-expiry "
-            "times. It is null when this credential kind has no separately linked operator connection."
-        )
-    )
 
 
 class McpServerConnectionStatusResponse(BaseModel):
@@ -264,24 +253,12 @@ def _tool_call_url(settings: Settings, tool_call_id: str) -> str:
     return tool_call_console_url(settings.public_base_url, tool_call_id)
 
 
-async def _passive_server_connection_statuses(
-    context: ConsoleMcpContext, actor: RuntimeActor
-) -> McpServerConnectionStatusResponse:
-    """Read connection rows without refreshing tokens or contacting a provider endpoint."""
-    provider_statuses = {
-        status.connection: status
-        for status in (await context.provider_store.list_statuses(operator_id=actor.operator_id)).connections
-    }
+def _passive_server_connection_statuses(context: ConsoleMcpContext) -> McpServerConnectionStatusResponse:
+    """Read persisted server backend configuration without contacting a provider endpoint."""
     return McpServerConnectionStatusResponse(
         servers=[
             McpServerConnectionStatus(
-                server_id=server.id,
-                backend=InProcessBackendStatus(credential=server.backend.credential),
-                connection=(
-                    provider_statuses.get(credential.connection)
-                    if isinstance(credential := server.backend.credential, OperatorConnectionCredential)
-                    else None
-                ),
+                server_id=server.id, backend=InProcessBackendStatus(credential=server.backend.credential)
             )
             for server in _load_servers(context.settings)
         ]
@@ -474,12 +451,7 @@ async def _dispatch(
         if isinstance(actor, OperatorActor):
             return _direct_to_result(await context.tool_calls.execute_direct(req=req, actor=actor))
         record = await context.tool_calls.submit_and_wait(req=req, actor=actor)
-    except (
-        BackendAccountNotConnectedError,
-        McpServerNotFoundError,
-        ToolCallNotFoundError,
-        ToolCallStateConflictError,
-    ) as error:
+    except (McpServerNotFoundError, ToolCallNotFoundError, ToolCallStateConflictError) as error:
         raise ToolError(str(error)) from error
     return _record_to_result(record, context.settings)
 
@@ -731,16 +703,14 @@ def build_console_mcp(
 
     @mcp.tool(annotations=_READ_ONLY_META)
     async def list_mcp_servers(actor: RuntimeActor = current_actor_dependency) -> McpServerConnectionStatusResponse:
-        """List configured MCP servers and their persisted connection state.
+        """List configured MCP servers and their persisted backend configuration.
 
         This is a passive status read: it never refreshes a token, contacts an authorization server,
-        or reflects a server. Provider connection objects mirror the console's persisted non-secret
-        status structures, including connection and token-expiry times; the nested backend object
-        names the server's credential kind. A real execution attempt may refresh an expired token or
-        prove that reconnect is needed. Cataloged provider accounts whose OAuth client is absent remain
-        visible as ``unprovisioned``.
+        or reflects a server; the nested backend object names the server's credential kind. A real
+        execution attempt may still fail (e.g. an unlinked login identity).
         """
-        return await _passive_server_connection_statuses(context, actor)
+        del actor
+        return _passive_server_connection_statuses(context)
 
     @mcp.tool(annotations=_READ_ONLY_META)
     async def get_mcp_server_status(
@@ -757,16 +727,9 @@ def build_console_mcp(
         if server is None:
             raise ToolError(f"unknown configured MCP server {server_id!r}")
         connection = next(
-            status
-            for status in (await _passive_server_connection_statuses(context, actor)).servers
-            if status.server_id == server_id
+            status for status in _passive_server_connection_statuses(context).servers if status.server_id == server_id
         )
-        reflection = await metadata_for_operator(
-            operator_id=actor.operator_id,
-            server=server,
-            dispatcher=context.dispatcher,
-            provider_store=context.provider_store,
-        )
+        reflection = await metadata_for_operator(server=server, dispatcher=context.dispatcher)
         return McpServerProbeResponse(
             connection=connection,
             server=_exposed_metadata(

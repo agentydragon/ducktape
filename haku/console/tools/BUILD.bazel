@@ -15,89 +15,6 @@ package(default_visibility = ["//haku/console:__subpackages__"])
 # it is a loud `fixture 'x' not found`, and the parent conftest defines no autouse fixtures or
 # hooks, so its absence changes nothing else.
 
-# `gmail_client`, `google_calendar_client`, `google_service`, `gmail`, `google_calendar`, and
-# `google_discovery` below are also visible to `//x/google_mcp_server`, which reuses these
-# generic tool definitions as-is (a bearer-token parameter, no haku-console coupling) to serve
-# agentplane's own Gmail/Calendar ActionGroups against a separate Google credential.
-py_library(
-    name = "gmail_client",
-    srcs = ["gmail_client.py"],
-    visibility = [
-        "//haku/console:__subpackages__",
-        "//x/google_mcp_server:__pkg__",
-    ],
-    deps = [
-        "//gmail_api:filters",
-        "//gmail_api:labels",
-        "//gmail_api:messages",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "google_calendar_client",
-    srcs = ["google_calendar_client.py"],
-    visibility = [
-        "//haku/console:__subpackages__",
-        "//x/google_mcp_server:__pkg__",
-    ],
-    deps = [
-        "@pypi//pydantic",
-        "@pypi//python_dateutil",
-    ],
-)
-
-py_library(
-    name = "google_service",
-    srcs = ["google_service.py"],
-    visibility = [
-        "//haku/console:__subpackages__",
-        "//x/google_mcp_server:__pkg__",
-    ],
-    deps = [
-        "@pypi//google_api_python_client",
-        "@pypi//google_auth",
-    ],
-)
-
-py_library(
-    name = "gmail",
-    srcs = ["gmail.py"],
-    visibility = [
-        "//haku/console:__subpackages__",
-        "//x/google_mcp_server:__pkg__",
-    ],
-    deps = [
-        ":gmail_client",
-        ":google_discovery",
-        ":google_service",
-        "//gmail_api:filters",
-        "//gmail_api:labels",
-        "//gmail_api:messages",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "google_calendar",
-    srcs = ["google_calendar.py"],
-    visibility = [
-        "//haku/console:__subpackages__",
-        "//x/google_mcp_server:__pkg__",
-    ],
-    deps = [
-        ":google_calendar_client",
-        ":google_service",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//pydantic",
-    ],
-)
-
 py_library(
     name = "recall_index",
     srcs = ["recall_index.py"],
@@ -268,70 +185,6 @@ py_library(
 )
 
 py_test(
-    name = "test_gmail",
-    # Imports, not tests: the 14 cases here drive mocks and take about a second all told
-    # (`--durations` puts every one at ~0.03s). The rest of the wall time is interpreter start
-    # plus this package's import graph — still ~8s of it, four fifths under `fastmcp`, once the
-    # parent conftest is out of the runfiles (it was ~13s with). The 60s `small` default left no
-    # room for that once CI was loaded: it timed out twice in three runs while passing at 29s here.
-    size = "medium",
-    srcs = ["test_gmail.py"],
-    deps = [
-        ":gmail",
-        ":gmail_client",
-        "//:conftest",
-        "//gmail_api:filters",
-        "//gmail_api:labels",
-        "//gmail_api:messages",
-        "//haku/console:conftest",
-        "@pypi//fastmcp_slim",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_gmail_client",
-    srcs = ["test_gmail_client.py"],
-    deps = [
-        ":gmail_client",
-        "//:conftest",
-        "//gmail_api:filters",
-        "//gmail_api:labels",
-        "//gmail_api:messages",
-        "//haku/console:conftest",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_google_calendar",
-    srcs = ["test_google_calendar.py"],
-    deps = [
-        ":google_calendar",
-        ":google_calendar_client",
-        "//:conftest",
-        "//haku/console:conftest",
-        "@pypi//fastmcp_slim",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_google_calendar_client",
-    srcs = ["test_google_calendar_client.py"],
-    deps = [
-        ":google_calendar_client",
-        "//:conftest",
-        "//haku/console:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_routine",
     srcs = ["test_routine.py"],
     deps = [
@@ -345,33 +198,5 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//respx",
-    ],
-)
-
-py_library(
-    name = "google_discovery",
-    srcs = ["google_discovery.py"],
-    visibility = [
-        "//haku/console:__subpackages__",
-        "//x/google_mcp_server:__pkg__",
-    ],
-    deps = [
-        "@pypi//fastmcp_slim",
-        "@pypi//google_api_python_client",  # keep: discovery docs loaded via importlib.resources (no import stmt)
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_google_discovery",
-    srcs = ["test_google_discovery.py"],
-    deps = [
-        ":google_discovery",
-        "//:conftest",
-        "//haku/console:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

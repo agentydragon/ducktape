@@ -192,9 +192,6 @@ const SCENES = [
     clicks: ['[aria-label="Session expiring soon"]'],
     expectVisible: '[aria-label="Console session"]',
   },
-  { name: "oauth-success", viewport: { width: 900, height: 700 } },
-  { name: "oauth-error", viewport: { width: 900, height: 700 } },
-  { name: "oauth-success-mobile", viewport: { width: 390, height: 760 } },
 ];
 const COLOR_SCHEMES = ["light", "dark"];
 

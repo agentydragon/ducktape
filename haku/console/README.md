@@ -64,9 +64,7 @@ without conflating their authorship. `auto_approval_evaluation` retains the poli
 
 The browser reads pending calls and the audit ledger through `/api/approvals/pending` and
 `/api/tool-calls`; `POST /api/tool-calls/{tool_call_id}/decision` is exact-Origin-gated. The event
-WebSocket is only a lossy invalidation channel: REST remains authoritative. Operator provider
-associations are managed by `oauth/provider_connection.py`; browser rendering and callback-result
-handling are specified in <docs/oauth_browser_surfaces.md>.
+WebSocket is only a lossy invalidation channel: REST remains authoritative.
 
 ### MCP server (`/mcp`)
 
@@ -138,10 +136,11 @@ execution. Startup rejects a credential kind the implementation did not declare.
 
 Built-ins are assembled in `mcp/in_process_servers.py`:
 
-- `gmail` and `google_calendar` execute as the acting Operator's separately linked Google grants.
-  Their tool schemas/descriptions are the API contract; `TODO.md` inventories intentionally
-  unexposed provider affordances. Auto-approval policy lives in the reviewed deployment config.
 - `haku_routine` launches the reviewed routine through ordinary approval.
+
+Gmail and Google Calendar are no longer in-process servers here: agents reach them through
+Agentplane's own `google-mcp` ActionGroup, which reuses the same tool implementations (now under
+`x/google_mcp_server/`) against a separately Airlock-minted Google credential.
 
 Recall indexing is currently disabled in deployment. The `recall_index` database schema and data
 remain available for a future re-enable, but the deployed catalog registers no `haku_index` server,

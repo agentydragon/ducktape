@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from gmail_api.filters import FilterAction, FilterCriteria
 from gmail_api.labels import CreateLabelRequest, GmailLabel, LabelType, PatchLabelRequest
 from gmail_api.messages import Draft, Message
-from haku.console.tools.gmail_client import (
+from x.google_mcp_server.gmail_client import (
     CreateGmailDraftArgs,
     GmailLabelRef,
     GmailToolsClient,

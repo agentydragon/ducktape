@@ -1,32 +1,21 @@
-import { ActionIcon, Badge, Button, Group, Loader, Select, Stack, Table, Tabs, Text } from "@mantine/core";
+import { Badge, Button, Group, Loader, Select, Stack, Table, Tabs, Text } from "@mantine/core";
 import { type JSX, useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { useAsyncResource, type AsyncResource, type AsyncResourceLoader } from "./async_resource";
 import {
-  connectOperatorConnection,
-  disconnectOperatorConnection,
   fetchDeploymentInfo,
   displayableError,
   listAgents,
   updateAgentAccessProfile,
   type AgentView,
   type DeploymentInfo,
-  type OperatorConnectionName,
 } from "./client";
 import { useConsoleEvents } from "./console_events";
 import { GrantsPanel } from "./grants_panel";
-import { DisconnectIcon } from "./icons";
 import { ExternalLink } from "./link";
 import { usePushNotifications, type PushState } from "./push_subscription";
 import { shortDate } from "./time";
-import {
-  getMcpServerStatus,
-  listMcpServers,
-  type McpServerConnection,
-  type McpServerProbe,
-  type ProviderConnectionDegraded,
-} from "./mcp_status_client";
-import { openExternal, POPUP_HINT } from "./open_external";
+import { getMcpServerStatus, listMcpServers, type McpServerConnection, type McpServerProbe } from "./mcp_status_client";
 import { toastError, toastSuccess } from "./toast";
 
 type DeploymentVersion = {
@@ -153,65 +142,17 @@ type McpServerView = {
   error: string | null;
 };
 
-function refreshFailureSummary({
-  initial,
-  latest,
-  attempts,
-  resolution,
-}: ProviderConnectionDegraded["refresh_failure"]): string {
-  const failure =
-    attempts > 1 && latest.message !== initial.message
-      ? `${initial.message}; latest after ${attempts} attempts: ${latest.message}`
-      : initial.message;
-  return `${failure} · ${resolution}`;
-}
-
-function connectionSummary(server: McpServerConnection): string {
-  const connection = server.connection;
-  if (connection === null) return "No operator-linked account";
-  const until = shortDate(typeof connection.token_expires_at === "string" ? connection.token_expires_at : null);
-  switch (connection.status) {
-    case "unprovisioned":
-      return `${connection.display_name} OAuth client is not provisioned`;
-    case "unconnected":
-      return `${connection.display_name} is not connected`;
-    case "degraded":
-      return `${connection.display_name} refresh failing${until ? ` · token until ${until}` : ""}`;
-    case "connected":
-      return `${connection.display_name} connected${until ? ` · token until ${until}` : ""}`;
-  }
-}
-
-function McpServerRow({
-  view,
-  onConnectProvider,
-  onDisconnectProvider,
-}: {
-  view: McpServerView;
-  onConnectProvider: (connection: OperatorConnectionName) => void;
-  onDisconnectProvider: (connection: OperatorConnectionName) => void;
-}) {
-  const linkage = view.connection.connection;
-  const linkageStatus = linkage?.status;
-  const unconnected = linkageStatus === "unconnected";
-  const unprovisioned = linkageStatus === "unprovisioned";
-  const degraded = linkageStatus === "degraded";
-  const state = unprovisioned
-    ? { label: "Unprovisioned", color: "orange" }
-    : unconnected
-      ? { label: "Unconnected", color: "gray" }
-      : degraded || view.error || view.probe?.server.state.status === "degraded"
-        ? { label: "Unavailable", color: "red" }
-        : view.probe?.server.state.status === "alive"
-          ? { label: "Available", color: "teal" }
-          : { label: "Checking", color: "blue" };
+function McpServerRow({ view }: { view: McpServerView }) {
+  const state =
+    view.error || view.probe?.server.state.status === "degraded"
+      ? { label: "Unavailable", color: "red" }
+      : view.probe?.server.state.status === "alive"
+        ? { label: "Available", color: "teal" }
+        : { label: "Checking", color: "blue" };
   const reason =
-    (linkage?.status === "unprovisioned" ? linkage.detail : null) ??
-    (linkage?.status === "degraded" ? refreshFailureSummary(linkage.refresh_failure) : null) ??
-    view.error ??
-    (view.probe?.server.state.status === "degraded" ? view.probe.server.state.degraded_reason : null);
+    view.error ?? (view.probe?.server.state.status === "degraded" ? view.probe.server.state.degraded_reason : null);
   const statusMarker = view.checking ? (
-    <Loader size={12} aria-label="Checking connection status" />
+    <Loader size={12} aria-label="Checking server status" />
   ) : (
     <span
       className="haku-status-dot"
@@ -235,36 +176,12 @@ function McpServerRow({
         </Group>
       </Table.Td>
       <Table.Td data-slot="secondary" className="haku-dense-secondary">
-        <Text size="sm">{connectionSummary(view.connection)}</Text>
+        <Text size="sm">{state.label}</Text>
         {reason && (
           <Text size="xs" c="red">
             {reason}
           </Text>
         )}
-      </Table.Td>
-      <Table.Td data-slot="action" className="haku-dense-action">
-        {linkage &&
-          !unprovisioned &&
-          (linkageStatus === "connected" || linkageStatus === "degraded" ? (
-            <ActionIcon
-              size="sm"
-              variant="subtle"
-              color="red"
-              aria-label="Disconnect account"
-              title="Disconnect account"
-              onClick={() => onDisconnectProvider(linkage.connection as OperatorConnectionName)}
-            >
-              <DisconnectIcon size={16} />
-            </ActionIcon>
-          ) : (
-            <Button
-              size="compact-sm"
-              variant="light"
-              onClick={() => onConnectProvider(linkage.connection as OperatorConnectionName)}
-            >
-              Connect
-            </Button>
-          ))}
       </Table.Td>
     </Table.Tr>
   );
@@ -559,7 +476,6 @@ export function SettingsPanel(): JSX.Element {
   }, []);
   useConsoleEvents((event) => {
     if (event.event_type === "sync") refreshActiveTab();
-    if (activeTab === "mcp" && event.event_type === "operator_connection_changed") refreshMcp();
   });
   function selectTab(value: string | null) {
     if (!value || !SETTINGS_TABS.includes(value as SettingsTab)) return;
@@ -569,27 +485,6 @@ export function SettingsPanel(): JSX.Element {
     if (tab === "mcp") url.searchParams.delete("tab");
     else url.searchParams.set("tab", tab);
     window.history.replaceState(null, "", url);
-  }
-  function connectProvider(connection: OperatorConnectionName) {
-    connectOperatorConnection(connection).then(
-      (started) => {
-        if (!openExternal(started.authorization_url)) {
-          toastError("Pop-up blocked", POPUP_HINT);
-          return;
-        }
-        toastSuccess("Account connection started", "Finish the authorization in the new tab.");
-      },
-      (e: unknown) => toastError("Couldn't start account connection", e)
-    );
-  }
-  function disconnectProvider(connection: OperatorConnectionName) {
-    disconnectOperatorConnection(connection).then(
-      (status) => {
-        toastSuccess("Account disconnected", status.display_name);
-        refreshMcp();
-      },
-      (e: unknown) => toastError("Couldn't disconnect account", e)
-    );
   }
   function changeAgentAccessProfile(agent: AgentView, accessProfileId: string) {
     setSavingAgentId(agent.agent_id);
@@ -673,18 +568,12 @@ export function SettingsPanel(): JSX.Element {
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Server</Table.Th>
-                    <Table.Th>Connection</Table.Th>
-                    <Table.Th />
+                    <Table.Th>Status</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
                   {views.map((view) => (
-                    <McpServerRow
-                      key={view.connection.server_id}
-                      view={view}
-                      onConnectProvider={connectProvider}
-                      onDisconnectProvider={disconnectProvider}
-                    />
+                    <McpServerRow key={view.connection.server_id} view={view} />
                   ))}
                 </Table.Tbody>
               </DenseTable>

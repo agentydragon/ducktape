@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import Mock
 from uuid import UUID
 
 import pytest
@@ -15,7 +15,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastmcp import FastMCP
 from mcp import types as mcp_types
-from pydantic import ValidationError
 from sqlalchemy import event, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from starlette.websockets import WebSocketDisconnect
@@ -41,21 +40,17 @@ from haku.console.mcp.approval import (
     PostgresToolCallLedger,
     ToolCallRecord,
     _mcp_result_to_json,
-    metadata_for_operator,
 )
 from haku.console.mcp.execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext, OperatorMcpExecutionCaller
 from haku.console.mcp.reflection_cache import ReflectedCatalog
 from haku.console.mcp.tool_call_service import ToolCallApplicationService, backend_auth_for_operator
 from haku.console.mcp_config import (
-    ConsoleConfigFile,
     InProcessBackend,
     InProcessCredentialKind,
     InProcessServerRegistration,
     McpServerEntry,
     NoCredential,
-    OperatorConnectionCredential,
     const_in_process_server,
-    validate_in_process_server_bindings,
 )
 from haku.console.notifications import console_events
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
@@ -66,7 +61,6 @@ from haku.console.tool_calls import (
     ToolCallPayloadField,
     ToolCallStatus,
 )
-from haku.console.tools.gmail import build_mcp as build_gmail_mcp
 
 
 def _build_test_mcp_server() -> FastMCP:
@@ -227,36 +221,6 @@ def _in_process_server(server_id: str, credential: dict[str, Any]) -> dict[str, 
     return {"id": server_id, "backend": {"kind": "in_process", "credential": credential}}
 
 
-def _build_gmail_shaped_mcp() -> FastMCP:
-    """A real MCP server standing in for the `gmail` upstream.
-
-    These tests are about the auto-approval policy and the approve-then-execute path, not about
-    Gmail: the policy keys on `gmail/<tool>`, so the server id and tool names must match, but what
-    sits behind them is a separate service. A real in-process MCP server is the honest double —
-    it exercises tool dispatch, schema validation, and result marshalling, where an executor stub
-    replaced all three.
-    """
-    server = FastMCP("gmail-stand-in")
-
-    @server.tool()
-    async def labels_list() -> str:
-        """List the user's labels."""
-        return "labels_list:ok"
-
-    @server.tool()
-    async def drafts_create(to: list[str], subject: str, body: str) -> str:
-        """Create a draft message."""
-        return f"drafts_create:{subject}"
-
-    return server
-
-
-def _operator_connection_server(mcp: FastMCP) -> InProcessServerRegistration:
-    return InProcessServerRegistration(
-        builder=lambda _context: mcp, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
-    )
-
-
 def _test_servers(*server_ids: str) -> dict[str, InProcessServerRegistration]:
     return {server_id: const_in_process_server(_build_test_mcp_server()) for server_id in server_ids}
 
@@ -279,34 +243,6 @@ def operator_client(make_operator_client: Callable[..., Any], console_app: dict[
     (or `make_client`) directly instead."""
     with make_operator_client(**console_app) as client:
         yield client
-
-
-@pytest.fixture
-def gmail_config_file(tmp_path: Path) -> Path:
-    config = _config([_in_process_server("gmail", {"kind": "operator_connection", "connection": "google_mail"})])
-    config["static_agents"] = {"haku": {**_STATIC_AGENTS["haku"], "access_profile_id": "haku"}}
-    config["auto_approval_policies"] = [
-        {"id": "manual_review", "type": "never"},
-        {"id": "gmail_reads", "type": "exact_tools", "tools": {"gmail": ["labels_list"]}},
-        {"id": "managed_gmail_labels", "type": "gmail_label_namespace", "server": "gmail", "label_prefix": "haku/"},
-        {"id": "haku_v1", "type": "any_of", "policies": ["gmail_reads", "managed_gmail_labels"]},
-    ]
-    config["access_profiles"] = [
-        {"id": "manual-review", "auto_approval_policy": "manual_review"},
-        {"id": "haku", "auto_approval_policy": "haku_v1"},
-    ]
-    config["default_access_profile_id"] = "manual-review"
-    config["operator_connection_providers"] = {
-        "google_mail": {"kind": "google", "client_id": "google-mail-client", "client_secret": "google-mail-secret"}
-    }
-    config["operator_connections"] = {
-        "google_mail": {
-            "display_name": "Google Mail",
-            "provider": "google_mail",
-            "scopes": ["https://www.googleapis.com/auth/gmail.modify"],
-        }
-    }
-    return write_config(tmp_path / "haku_console_gmail.yaml", config)
 
 
 def _submit(client: TestClient, *, amount: int = 1) -> dict[str, Any]:
@@ -386,33 +322,21 @@ def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
 def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID]:
     operator_ids: list[UUID] = []
 
-    async def recording_service_auth(
-        *, server: McpServerEntry, operator_id: UUID, provider_store: Any = None
-    ) -> str | None:
+    async def recording_service_auth(*, server: McpServerEntry, operator_id: UUID) -> str | None:
         operator_ids.append(operator_id)
-        return await backend_auth_for_operator(server=server, operator_id=operator_id, provider_store=provider_store)
+        return await backend_auth_for_operator(server=server, operator_id=operator_id)
 
     monkeypatch.setattr("haku.console.mcp.tool_call_service.backend_auth_for_operator", recording_service_auth)
     return operator_ids
 
 
-@pytest.fixture
-def gmail_client() -> Mock:
-    return Mock()
-
-
-@pytest.mark.parametrize(
-    ("method", "path", "json"),
-    [
-        ("POST", "/api/operator-connections/google_mail/connect", None),
-        ("DELETE", "/api/operator-connections/google_mail", None),
-        ("POST", "/api/tool-calls/not-a-call/decision", {"decision": "approve"}),
-    ],
-)
-def test_operator_mutations_reject_untrusted_origin(
-    operator_client: TestClient, method: str, path: str, json: dict[str, str] | None
-) -> None:
-    response = operator_client.request(method, path, headers={"Origin": "https://haku-ui.test"}, json=json)
+def test_operator_mutations_reject_untrusted_origin(operator_client: TestClient) -> None:
+    response = operator_client.request(
+        "POST",
+        "/api/tool-calls/not-a-call/decision",
+        headers={"Origin": "https://haku-ui.test"},
+        json={"decision": "approve"},
+    )
 
     assert response.status_code == 403
     assert response.json()["detail"] == "operator mutations require the console's exact Origin"
@@ -454,91 +378,6 @@ async def test_rest_submission_route_is_retired(operator_client: TestClient) -> 
         json={"server_id": "smoke", "tool_name": "echo", "arguments": {}, "wait_for_ms": 0},
     )
     assert response.status_code == 405
-
-
-async def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
-    make_client, make_operator_client, gmail_config_file: Path, gmail_client: Mock
-) -> None:
-    with (
-        make_client(
-            config_file=gmail_config_file,
-            gmail_client=gmail_client,
-            in_process_servers={"gmail": _operator_connection_server(_build_gmail_shaped_mcp())},
-        ) as client,
-        make_operator_client(config_file=gmail_config_file, operator_external_user_key="op-haku") as operator,
-    ):
-        client.app.state.provider_connection_store.access_token_for = AsyncMock(return_value="operator-token")
-        record = _submit_request(
-            client,
-            SubmitToolCallRequest(server_id="gmail", tool_name="labels_list", arguments={}, wait_for_ms=0),
-            actor=_static_agent_actor(client, "tool-token"),
-        )
-        pending = operator.get("/api/approvals/pending").json()
-
-    assert record["status"] == "ok"
-    assert record["approval_policy_id"] == "agent_policy_v1"
-    assert record["auto_approval_evaluation"] == (
-        "approved: Agent policy 'haku_v1' matched haku_v1 -> gmail_reads: exact tool gmail/labels_list is listed"
-    )
-    assert record["approved_at"] is not None
-    assert record["result"]["content"][0]["text"] == "labels_list:ok"
-    assert pending["approvals"] == []
-
-
-async def test_operator_gmail_labels_list_stays_pending(
-    make_operator_client, gmail_config_file: Path, gmail_client: Mock
-) -> None:
-    with make_operator_client(
-        config_file=gmail_config_file,
-        gmail_client=gmail_client,
-        # Matching a configured agent id must not turn an operator into an auto-approved agent.
-        operator_username="haku",
-    ) as client:
-        record = _submit_request(
-            client, SubmitToolCallRequest(server_id="gmail", tool_name="labels_list", arguments={}, wait_for_ms=0)
-        )
-
-    assert record["status"] == "pending_approval"
-    assert record["approval_policy_id"] is None
-    assert record["auto_approval_evaluation"] is None
-
-
-async def test_list_tool_calls_filters_by_auto_approved(
-    make_client, make_operator_client, gmail_config_file: Path, gmail_client: Mock
-) -> None:
-    with (
-        make_client(
-            config_file=gmail_config_file,
-            gmail_client=gmail_client,
-            in_process_servers={"gmail": _operator_connection_server(_build_gmail_shaped_mcp())},
-        ) as client,
-        make_operator_client(config_file=gmail_config_file, operator_external_user_key="op-haku") as operator,
-    ):
-        client.app.state.provider_connection_store.access_token_for = AsyncMock(return_value="operator-token")
-        agent = _static_agent_actor(client, "tool-token")
-        auto = _submit_request(
-            client,
-            SubmitToolCallRequest(server_id="gmail", tool_name="labels_list", arguments={}, wait_for_ms=0),
-            actor=agent,
-        )
-        manual = _submit_request(
-            client,
-            SubmitToolCallRequest(
-                server_id="gmail",
-                tool_name="drafts_create",
-                arguments={"to": ["a@b.test"], "subject": "s", "body": "b"},
-                wait_for_ms=0,
-            ),
-            actor=agent,
-        )
-
-        hidden = operator.get("/api/tool-calls", params={"auto_approved": "false"}).json()["tool_calls"]
-        shown_only = operator.get("/api/tool-calls", params={"auto_approved": "true"}).json()["tool_calls"]
-        unfiltered = operator.get("/api/tool-calls").json()["tool_calls"]
-
-    assert [c["tool_call_id"] for c in hidden] == [manual["tool_call_id"]]
-    assert [c["tool_call_id"] for c in shown_only] == [auto["tool_call_id"]]
-    assert {c["tool_call_id"] for c in unfiltered} == {manual["tool_call_id"], auto["tool_call_id"]}
 
 
 async def test_list_tool_calls_pages_by_cursor(operator_client: TestClient) -> None:
@@ -628,38 +467,6 @@ async def test_websocket_receives_agent_withdrawal_invalidation(
     assert event == {"event_type": "tool_calls_changed", "tool_call_id": pending["tool_call_id"]}
 
 
-async def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(
-    make_client, make_operator_client, gmail_config_file: Path, gmail_client: Mock
-) -> None:
-    with (
-        make_client(
-            config_file=gmail_config_file,
-            gmail_client=gmail_client,
-            in_process_servers={"gmail": _operator_connection_server(build_gmail_mcp(gmail_client))},
-        ) as client,
-        make_operator_client(config_file=gmail_config_file, operator_external_user_key="op-haku") as operator,
-    ):
-        record = _submit_request(
-            client,
-            SubmitToolCallRequest(
-                server_id="gmail",
-                tool_name="threads_modify_labels",
-                arguments={"thread_ids": ["t1"], "add": ["INBOX"]},
-                wait_for_ms=0,
-            ),
-            actor=_static_agent_actor(client, "tool-token"),
-        )
-        pending = operator.get("/api/approvals/pending").json()["approvals"]
-
-    assert record["status"] == "pending_approval"
-    assert record["approval_policy_id"] is None
-    assert record["auto_approval_evaluation"] == (
-        "manual: Agent policy 'haku_v1' did not auto-approve gmail/threads_modify_labels "
-        "(managed_gmail_labels: at least one label name is outside 'haku/')"
-    )
-    assert pending[0]["auto_approval_evaluation"] == record["auto_approval_evaluation"]
-
-
 async def _join_executions(service: ToolCallApplicationService) -> None:
     await service.join_executions()
 
@@ -707,7 +514,12 @@ async def test_approval_resolves_credentials_for_the_canonical_operator_id(
 
 
 async def test_routing_executes_each_agent_as_its_own_operator(
-    *, make_client, tmp_path: Path, migrated_db_url: str, migrated_sessions: async_sessionmaker[AsyncSession]
+    *,
+    make_client,
+    tmp_path: Path,
+    migrated_db_url: str,
+    migrated_sessions: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Two static agents bound to two operators: each agent's auto-approved call on an
     operator-linked server executes with *its* operator's token, with no crosstalk."""
@@ -724,11 +536,13 @@ async def test_routing_executes_each_agent_as_its_own_operator(
             built_with.append(token)
         return _build_test_mcp_server()
 
-    config = _config([_in_process_server("grocy-sf", {"kind": "operator_connection", "connection": "grocy_account"})])
-    config["operator_connection_providers"] = {"grocy_provider": {"kind": "google"}}
-    config["operator_connections"] = {
-        "grocy_account": {"display_name": "Grocy", "provider": "grocy_provider", "scopes": ["scope"]}
-    }
+    async def operator_token(*, server: McpServerEntry, operator_id: UUID) -> str:
+        del server
+        return tokens[operator_id]
+
+    monkeypatch.setattr("haku.console.mcp.tool_call_service.backend_auth_for_operator", operator_token)
+
+    config = _config([_in_process_server("grocy-sf", {"kind": "none"})])
     config["auto_approval_policies"] = [
         {"id": "manual_review", "type": "never"},
         {"id": "grocy_reads", "type": "exact_tools", "tools": {"grocy-sf": ["products_list"]}},
@@ -751,17 +565,9 @@ async def test_routing_executes_each_agent_as_its_own_operator(
     with make_client(
         config_file=write_config(tmp_path / "routing.yaml", config),
         in_process_servers={
-            "grocy-sf": InProcessServerRegistration(
-                builder=build, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
-            )
+            "grocy-sf": InProcessServerRegistration(builder=build, credential_kind=InProcessCredentialKind.NONE)
         },
     ) as client:
-
-        async def operator_token(*, connection: str, operator_id: UUID) -> str:
-            assert connection == "grocy_account"
-            return tokens[operator_id]
-
-        client.app.state.provider_connection_store.access_token_for = operator_token
         # products_list is an unconditionally auto-approved grocy read, so each call runs immediately.
         call_ids: list[str] = []
         for bearer in ("tool-token", "ops-token"):
@@ -1232,8 +1038,6 @@ async def test_postgres_store_runs_alembic_and_persists_typed_ledger(
         "authorization_grants",
         "static_credentials",
         "mcp_tool_call_principals",
-        "provider_connections",
-        "provider_connection_flows",
     } <= tables
     assert {
         "mcp_agent_operator",
@@ -1242,6 +1046,9 @@ async def test_postgres_store_runs_alembic_and_persists_typed_ledger(
         "mcp_tool_call_events_legacy_unowned",
         "mcp_operator_oauth_associations",
         "mcp_operator_oauth_flows",
+        "provider_connections",
+        "provider_connection_flows",
+        "oauth_connection_results",
     }.isdisjoint(tables)
     assert columns == {column.name for column in McpToolCall.__table__.columns}
     assert principal_columns == {column.name for column in McpToolCallPrincipal.__table__.columns}
@@ -1275,85 +1082,15 @@ async def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> Non
 
 def test_server_entry_allows_in_process_backend() -> None:
     McpServerEntry(
-        id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
+        id="google", backend=InProcessBackend(credential=NoCredential())
     )  # ok: resolved via the in-process registry at runtime, not this model
-
-
-async def test_config_rejects_unknown_operator_connection() -> None:
-    with pytest.raises(ValidationError, match="unknown operator connection 'missing'"):
-        ConsoleConfigFile.model_validate(
-            {
-                **_config([]),
-                "mcp": {
-                    "servers": {
-                        "google": _in_process_server("google", {"kind": "operator_connection", "connection": "missing"})
-                    }
-                },
-            }
-        )
-
-
-async def test_config_allows_distinct_provider_instances_of_one_kind() -> None:
-    config = ConsoleConfigFile.model_validate(
-        {
-            **_config([]),
-            "operator_connection_providers": {
-                "google_mail": {"kind": "google", "client_id": "mail-client", "client_secret": "mail-secret"},
-                "google_calendar": {
-                    "kind": "google",
-                    "client_id": "calendar-client",
-                    "client_secret": "calendar-secret",
-                },
-            },
-            "operator_connections": {
-                "google_mail": {"display_name": "Google Mail", "provider": "google_mail", "scopes": ["gmail"]},
-                "google_calendar": {
-                    "display_name": "Google Calendar",
-                    "provider": "google_calendar",
-                    "scopes": ["calendar"],
-                },
-            },
-        }
-    )
-    assert list(config.operator_connections) == ["google_mail", "google_calendar"]
-
-
-async def test_config_rejects_incompatible_registered_credential_kind() -> None:
-    config = ConsoleConfigFile.model_validate(
-        {
-            **_config([]),
-            "operator_connection_providers": {
-                "google": {"kind": "google", "client_id": "google-client", "client_secret": "google-secret"}
-            },
-            "operator_connections": {
-                "google_workspace": {"display_name": "Google Workspace", "provider": "google", "scopes": ["scope"]}
-            },
-            "mcp": {
-                "servers": {
-                    "google": _in_process_server(
-                        "google", {"kind": "operator_connection", "connection": "google_workspace"}
-                    )
-                }
-            },
-        }
-    )
-    registration = InProcessServerRegistration(
-        builder=lambda _context: _build_test_mcp_server(), credential_kind=InProcessCredentialKind.NONE
-    )
-
-    with pytest.raises(ValueError, match="requires 'none' credential, got 'operator_connection'"):
-        validate_in_process_server_bindings(config, {"google": registration})
 
 
 async def test_executor_dispatches_to_registered_in_process_server() -> None:
     builder = Mock(return_value=_build_test_mcp_server())
-    registration = InProcessServerRegistration(
-        builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
-    )
+    registration = InProcessServerRegistration(builder=builder, credential_kind=InProcessCredentialKind.NONE)
     executor = McpServerDispatcher({"google": registration}, catalog_cache_ttl_seconds=0.0)
-    server = McpServerEntry(
-        id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
-    )
+    server = McpServerEntry(id="google", backend=InProcessBackend(credential=NoCredential()))
     context = McpExecutionContext(
         caller=OperatorMcpExecutionCaller(operator_id=UUID(int=42)),
         tool_call_id="tc_test",
@@ -1394,9 +1131,7 @@ async def test_executor_injects_trusted_context_into_a_stable_in_process_server(
 
 async def test_executor_raises_when_in_process_backend_is_not_registered() -> None:
     executor = McpServerDispatcher({}, catalog_cache_ttl_seconds=0.0)
-    server = McpServerEntry(
-        id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
-    )
+    server = McpServerEntry(id="google", backend=InProcessBackend(credential=NoCredential()))
     with pytest.raises(RuntimeError, match="no in-process registration"):
         await executor.execute(
             server,
@@ -1414,13 +1149,9 @@ async def test_executor_raises_when_in_process_backend_is_not_registered() -> No
 
 async def test_dispatcher_reflects_in_process_server_tools() -> None:
     builder = Mock(return_value=_build_test_mcp_server())
-    registration = InProcessServerRegistration(
-        builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
-    )
+    registration = InProcessServerRegistration(builder=builder, credential_kind=InProcessCredentialKind.NONE)
     dispatcher = McpServerDispatcher({"google": registration}, catalog_cache_ttl_seconds=0.0)
-    server = McpServerEntry(
-        id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
-    )
+    server = McpServerEntry(id="google", backend=InProcessBackend(credential=NoCredential()))
     metadata = await dispatcher.metadata(server)
     assert isinstance(metadata, ReflectedCatalog)
     assert {tool.name for tool in metadata.tools} == {
@@ -1436,44 +1167,11 @@ async def test_dispatcher_reflects_in_process_server_tools() -> None:
     builder.assert_called_once_with(None)
 
 
-async def test_operator_connection_reflection_checks_presence_without_resolving_token() -> None:
-    provider_store = AsyncMock()
-    provider_store.is_provisioned.return_value = True
-    provider_store.is_connected.return_value = True
-    builder = Mock(return_value=_build_test_mcp_server())
-    dispatcher = McpServerDispatcher(
-        {
-            "google": InProcessServerRegistration(
-                builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
-            )
-        },
-        catalog_cache_ttl_seconds=0.0,
-    )
-    operator = UUID(int=42)
-    server = McpServerEntry(
-        id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
-    )
-
-    metadata = await metadata_for_operator(
-        operator_id=operator, server=server, dispatcher=dispatcher, provider_store=provider_store
-    )
-
-    assert isinstance(metadata, ReflectedCatalog)
-    builder.assert_called_once_with(None)
-    provider_store.is_provisioned.assert_awaited_once_with(connection="google_workspace")
-    provider_store.is_connected.assert_awaited_once_with(connection="google_workspace", operator_id=operator)
-    provider_store.access_token_for.assert_not_called()
-
-
 async def test_dispatcher_reuses_a_reflected_catalog_within_the_ttl() -> None:
     builder = Mock(return_value=_build_test_mcp_server())
-    registration = InProcessServerRegistration(
-        builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
-    )
+    registration = InProcessServerRegistration(builder=builder, credential_kind=InProcessCredentialKind.NONE)
     dispatcher = McpServerDispatcher({"google": registration}, catalog_cache_ttl_seconds=3600.0)
-    server = McpServerEntry(
-        id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
-    )
+    server = McpServerEntry(id="google", backend=InProcessBackend(credential=NoCredential()))
 
     first = await dispatcher.metadata(server)
     second = await dispatcher.metadata(server)
@@ -1487,17 +1185,14 @@ async def test_dispatcher_reuses_a_reflected_catalog_within_the_ttl() -> None:
 async def test_dispatcher_does_not_cache_a_degraded_reflection() -> None:
     """A server that failed must be retried on the next listing, not held degraded for the TTL."""
     dispatcher = McpServerDispatcher({}, catalog_cache_ttl_seconds=3600.0)
-    server = McpServerEntry(
-        id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
-    )
+    server = McpServerEntry(id="google", backend=InProcessBackend(credential=NoCredential()))
 
     assert isinstance(await dispatcher.metadata(server), DegradedReflection)
 
     registered = McpServerDispatcher(
         {
             "google": InProcessServerRegistration(
-                builder=Mock(return_value=_build_test_mcp_server()),
-                credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION,
+                builder=Mock(return_value=_build_test_mcp_server()), credential_kind=InProcessCredentialKind.NONE
             )
         },
         catalog_cache_ttl_seconds=3600.0,
@@ -1507,9 +1202,7 @@ async def test_dispatcher_does_not_cache_a_degraded_reflection() -> None:
 
 async def test_dispatcher_degrades_when_in_process_backend_is_not_registered() -> None:
     dispatcher = McpServerDispatcher({}, catalog_cache_ttl_seconds=0.0)
-    server = McpServerEntry(
-        id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
-    )
+    server = McpServerEntry(id="google", backend=InProcessBackend(credential=NoCredential()))
     metadata = await dispatcher.metadata(server)
     assert isinstance(metadata, DegradedReflection)
 

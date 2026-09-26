@@ -26,7 +26,6 @@ from haku.console.mcp.approval import PostgresToolCallLedger
 from haku.console.mcp.execution import AgentMcpExecutionCaller, McpExecutionContext
 from haku.console.mcp.tool_call_service import (
     AgentActorRequiredError,
-    BackendAccountNotConnectedError,
     OperatorActorRequiredError,
     ToolCallApplicationService,
     ToolCallNotFoundError,
@@ -176,28 +175,6 @@ class _BlockingExecutor(_RecordingExecutor):
         raise AssertionError("unreachable: blocking executor is only released by cancellation")
 
 
-_BACKEND_ACCOUNT = "backend_account"
-
-
-class _OperatorTokens:
-    """The operator-linked account behind `operator-backend`, one token per Operator."""
-
-    def __init__(self, tokens: dict[UUID, str]) -> None:
-        self.tokens = tokens
-        self.lookups: list[UUID] = []
-
-    async def access_token_for(self, *, connection: str, operator_id: UUID) -> str | None:
-        assert connection == _BACKEND_ACCOUNT
-        self.lookups.append(operator_id)
-        return self.tokens.get(operator_id)
-
-    async def is_connected(self, *, connection: str, operator_id: UUID) -> bool:
-        return operator_id in self.tokens
-
-    async def is_provisioned(self, *, connection: str) -> bool:
-        return True
-
-
 class _RecordingLedger(PostgresToolCallLedger):
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         super().__init__(sessions)
@@ -306,14 +283,6 @@ def notifier() -> _RecordingApprovalNotifier:
     return _RecordingApprovalNotifier()
 
 
-@pytest.fixture
-def tokens(actors: dict[str, RuntimeActor]) -> _OperatorTokens:
-    return _OperatorTokens({actors["oa"].operator_id: "token-a", actors["ob"].operator_id: "token-b"})
-
-
-async def _no_gmail_client(_operator_id: UUID) -> None: ...
-
-
 def _service(
     *,
     database_url: str,
@@ -321,19 +290,12 @@ def _service(
     ledger: PostgresToolCallLedger,
     publisher: _RecordingInvalidationPublisher,
     executor: _RecordingExecutor,
-    tokens: _OperatorTokens,
     notifier: _RecordingApprovalNotifier,
     servers: list[dict[str, Any]] | None = None,
     in_process_servers: InProcessServers | None = None,
 ) -> ToolCallApplicationService:
     configured_servers = servers or [
-        {
-            "id": "operator-backend",
-            "backend": {
-                "kind": "in_process",
-                "credential": {"kind": "operator_connection", "connection": _BACKEND_ACCOUNT},
-            },
-        }
+        {"id": "operator-backend", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}
     ]
     config_file = write_config(
         tmp_path / "tool-call-service.yaml",
@@ -341,10 +303,6 @@ def _service(
             "auto_approval_policies": [{"id": "manual", "type": "never"}],
             "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
             "default_access_profile_id": "manual",
-            "operator_connection_providers": {"backend_provider": {"kind": "google"}},
-            "operator_connections": {
-                _BACKEND_ACCOUNT: {"display_name": "Backend", "provider": "backend_provider", "scopes": ["scope"]}
-            },
             "mcp": {"servers": {server["id"].replace("-", "_"): server for server in configured_servers}},
         },
     )
@@ -354,9 +312,7 @@ def _service(
         invalidation_publisher=publisher,
         executor=executor,
         in_process_servers=in_process_servers or {},
-        provider_store=tokens,
         approval_notifier=notifier,
-        gmail_client_provider=_no_gmail_client,
     )
 
 
@@ -368,7 +324,6 @@ def service(
     ledger: _RecordingLedger,
     publisher: _RecordingInvalidationPublisher,
     executor: _RecordingExecutor,
-    tokens: _OperatorTokens,
     notifier: _RecordingApprovalNotifier,
 ) -> ToolCallApplicationService:
     return _service(
@@ -377,7 +332,6 @@ def service(
         ledger=ledger,
         publisher=publisher,
         executor=executor,
-        tokens=tokens,
         notifier=notifier,
     )
 
@@ -400,7 +354,6 @@ async def test_operator_direct_execution_has_no_ledger_or_invalidation_side_effe
     actors: dict[str, RuntimeActor],
     publisher: _RecordingInvalidationPublisher,
     executor: _RecordingExecutor,
-    tokens: _OperatorTokens,
     service: ToolCallApplicationService,
 ) -> None:
     operator = actors["oa"]
@@ -411,9 +364,8 @@ async def test_operator_direct_execution_has_no_ledger_or_invalidation_side_effe
     assert result["content"][0]["text"] == "operator-backend:mutate"
     assert len(executor.executions) == 1
     server_id, tool_name, arguments, token, execution_context = executor.executions[0]
-    assert (server_id, tool_name, arguments, token) == ("operator-backend", "mutate", {"owner": "browser"}, "token-a")
+    assert (server_id, tool_name, arguments, token) == ("operator-backend", "mutate", {"owner": "browser"}, None)
     assert execution_context.tool_call_id is None
-    assert tokens.lookups == [operator.operator_id]
     assert await service.list_tool_calls(actor=operator) == []
     assert publisher.publications == []
 
@@ -430,7 +382,6 @@ async def test_recall_index_authorizer_denies_argument_escalation_before_submiss
     notifier: _RecordingApprovalNotifier,
     publisher: _RecordingInvalidationPublisher,
     tmp_path: Path,
-    tokens: _OperatorTokens,
 ) -> None:
     """The caller identity is trusted; an MCP argument can never add another logical index."""
     stored_agent = actors["aa1"]
@@ -450,7 +401,6 @@ async def test_recall_index_authorizer_denies_argument_escalation_before_submiss
         ledger=ledger,
         publisher=publisher,
         executor=executor,
-        tokens=tokens,
         notifier=notifier,
         servers=[{"id": "haku_index", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}],
         in_process_servers={
@@ -488,7 +438,6 @@ async def test_two_operator_two_agent_authorization_matrix(
     publisher: _RecordingInvalidationPublisher,
     executor: _RecordingExecutor,
     ledger: _RecordingLedger,
-    tokens: _OperatorTokens,
     service: ToolCallApplicationService,
 ) -> None:
     """Every service read and lifecycle transition is scoped from the authenticated actor."""
@@ -549,14 +498,14 @@ async def test_two_operator_two_agent_authorization_matrix(
             )
 
     # A foreign decision is indistinguishable from a missing call and has no side effects.
-    baseline = (list(tokens.lookups), list(executor.executions), list(publisher.publications))
+    baseline = (list(executor.executions), list(publisher.publications))
     with pytest.raises(ToolCallNotFoundError, match="tool call not found"):
         await service.decide(
             tool_call_id=records["ab2"].tool_call_id,
             decision=ApprovalDecisionRequest(decision=ApprovalDecision.APPROVE),
             actor=actors["oa"],
         )
-    assert (tokens.lookups, executor.executions, publisher.publications) == baseline
+    assert (executor.executions, publisher.publications) == baseline
 
     approved_a = await service.decide(
         tool_call_id=records["aa1"].tool_call_id,
@@ -579,15 +528,10 @@ async def test_two_operator_two_agent_authorization_matrix(
         ToolCallStatus.RUNNING,
         ToolCallStatus.DENIED,
     ]
-    # Backend auth is resolved synchronously inside decide (before dispatch), so lookups are ordered
-    # even before the background executions run.
-    assert tokens.lookups == [actors["oa"].operator_id, actors["ob"].operator_id]
     await service.join_executions()
-    # Sorted, not in decision order: `decide()` dispatches each execution as a background task, so
-    # which one reaches the executor first is a race. What matters is that each ran under its own
-    # Operator's token — the ordering intent is already covered by the `tokens.lookups` assertion
-    # above, which is deterministic because auth resolves synchronously inside `decide()`.
-    assert sorted(execution[3] or "" for execution in executor.executions) == ["token-a", "token-b"]
+    # Every registered server declares `NoCredential`, so backend auth resolves to None regardless
+    # of which Operator approved.
+    assert [execution[3] for execution in executor.executions] == [None, None]
     # Approval belongs to an Operator, but actor-scoped in-process tools must execute as the
     # original Agent rather than gaining the approving Operator's broader access.
     expected_agent_ids = {actor.agent_id for actor in (actors["aa1"], actors["ab1"]) if isinstance(actor, AgentActor)}
@@ -635,7 +579,6 @@ async def test_pending_wait_rereads_after_subscribing_before_waiting(
     actors: dict[str, RuntimeActor],
     ledger: _RecordingLedger,
     executor: _RecordingExecutor,
-    tokens: _OperatorTokens,
     notifier: _RecordingApprovalNotifier,
 ) -> None:
     agent = actors["aa1"]
@@ -647,7 +590,6 @@ async def test_pending_wait_rereads_after_subscribing_before_waiting(
         ledger=ledger,
         publisher=publisher,
         executor=executor,
-        tokens=tokens,
         notifier=notifier,
     )
 
@@ -673,12 +615,11 @@ async def test_pending_wait_rereads_after_subscribing_before_waiting(
     assert publisher._waiters == {}
 
 
-async def test_auto_approval_resolves_auth_before_persistence_and_finishes_as_agent(
+async def test_auto_approval_finishes_as_agent(
     *,
     actors: dict[str, RuntimeActor],
     ledger: _RecordingLedger,
     executor: _RecordingExecutor,
-    tokens: _OperatorTokens,
     service: ToolCallApplicationService,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -690,7 +631,7 @@ async def test_auto_approval_resolves_auth_before_persistence_and_finishes_as_ag
         for index, actor in enumerate(submitted_actors)
     ]
     assert [record.status for record in completed] == [ToolCallStatus.OK, ToolCallStatus.OK]
-    assert [execution[3] for execution in executor.executions] == ["token-a", "token-b"]
+    assert [execution[3] for execution in executor.executions] == [None, None]
     for execution, actor in zip(executor.executions, submitted_actors, strict=True):
         assert isinstance(actor, AgentActor)
         context = execution[4]
@@ -701,14 +642,6 @@ async def test_auto_approval_resolves_auth_before_persistence_and_finishes_as_ag
         assert context.approving_operator_id is None
         assert context.approval_policy_id == "policy:test"
     assert ledger.finish_actors == submitted_actors
-
-    missing_auth_actor = actors["aa2"]
-    tokens.tokens.pop(missing_auth_actor.operator_id)
-    before = {record.tool_call_id for record in await service.list_tool_calls(actor=actors["oa"])}
-    with pytest.raises(BackendAccountNotConnectedError):
-        await service.submit_and_wait(req=_request(owner="missing-auth"), actor=missing_auth_actor)
-    after = {record.tool_call_id for record in await service.list_tool_calls(actor=actors["oa"])}
-    assert after == before
 
 
 async def test_withdraw_retracts_the_agents_own_pending_call(
@@ -955,7 +888,6 @@ async def test_auto_execution_finishes_before_best_effort_invalidation_publicati
     actors: dict[str, RuntimeActor],
     ledger: _RecordingLedger,
     executor: _RecordingExecutor,
-    tokens: _OperatorTokens,
     monkeypatch: pytest.MonkeyPatch,
     notifier: _RecordingApprovalNotifier,
 ) -> None:
@@ -968,7 +900,6 @@ async def test_auto_execution_finishes_before_best_effort_invalidation_publicati
         ledger=ledger,
         publisher=publisher,
         executor=executor,
-        tokens=tokens,
         notifier=notifier,
     )
 
@@ -988,7 +919,6 @@ async def test_executor_cancellation_terminalizes_before_reraising(
     actors: dict[str, RuntimeActor],
     ledger: _RecordingLedger,
     publisher: _RecordingInvalidationPublisher,
-    tokens: _OperatorTokens,
     monkeypatch: pytest.MonkeyPatch,
     notifier: _RecordingApprovalNotifier,
 ) -> None:
@@ -1001,7 +931,6 @@ async def test_executor_cancellation_terminalizes_before_reraising(
         ledger=ledger,
         publisher=publisher,
         executor=executor,
-        tokens=tokens,
         notifier=notifier,
     )
 
@@ -1022,7 +951,6 @@ async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
     actors: dict[str, RuntimeActor],
     ledger: _RecordingLedger,
     publisher: _RecordingInvalidationPublisher,
-    tokens: _OperatorTokens,
     notifier: _RecordingApprovalNotifier,
 ) -> None:
     executor = _BlockingExecutor()
@@ -1032,7 +960,6 @@ async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
         ledger=ledger,
         publisher=publisher,
         executor=executor,
-        tokens=tokens,
         notifier=notifier,
     )
     pending = await service.submit_and_wait(req=_request(owner="aa1"), actor=actors["aa1"])
