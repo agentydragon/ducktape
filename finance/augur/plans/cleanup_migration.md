@@ -31,9 +31,6 @@ experiment consumers are added meanwhile.
 
 ## Gaps on the app's configured path
 
-- An ordinary lot on a TLH portfolio's (owner, account, asset) slot is refused, but
-  with the world's vague `lot ... references no declared holding pool`:
-  `compile_holding_pools` drops the managed slot's pool before the world sees it.
 - The product lowering sets `allow_purchases=False`, so the app never buys or
   contributes, and the zero-mark contribution refusal
   (`TlhPortfolioObservation.accepts_contributions`) is reachable only from household

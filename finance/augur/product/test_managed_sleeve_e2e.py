@@ -38,8 +38,8 @@ _PORTFOLIO_ID = "test-managed"
 _ACCOUNT_ID = "test_managed_brokerage"
 
 
-def _product(augur_config: Config, catalog: CatalogResponse, *, index: str) -> ProductService:
-    """The fixture portfolio plus a $100k TLH portfolio pegged to `index`, harvesting nothing."""
+def _product(augur_config: Config, catalog: CatalogResponse, *, index: str, account_id: str) -> ProductService:
+    """The fixture portfolio plus a $100k TLH portfolio pegged to `index` in `account_id`, harvesting nothing."""
     owner = resolve_primary_agent_id(augur_config)
     return ProductService(
         portfolio=augur_config.portfolio_sources.fixed.portfolio,
@@ -49,7 +49,7 @@ def _product(augur_config: Config, catalog: CatalogResponse, *, index: str) -> P
             TlhPortfolioSpec(
                 portfolio_id=_PORTFOLIO_ID,
                 owner_agent_id=owner,
-                account_id=_ACCOUNT_ID,
+                account_id=account_id,
                 asset=SecurityKey(symbol=SecuritySymbol(index)),
                 initial_cohorts=[
                     TlhCohort(value=Decimal(100_000), cost_basis=Decimal(100_000), purchase_month_index=-24)
@@ -113,7 +113,8 @@ def test_a_managed_sleeve_funds_the_band_in_money_from_its_portfolio(
     <service_test.py> sells in VOO.
     """
     detail = _rollout(
-        _product(augur_config, catalog, index="SPY"), ManagedSleeveWeight(portfolio_id=_PORTFOLIO_ID, weight=1)
+        _product(augur_config, catalog, index="SPY", account_id=_ACCOUNT_ID),
+        ManagedSleeveWeight(portfolio_id=_PORTFOLIO_ID, weight=1),
     )
 
     assert detail.rollout.failed is False
@@ -149,7 +150,7 @@ def test_lots_of_an_index_and_a_portfolio_pegged_to_it_stay_separate_sleeves(
     A VOO sleeve sells the lots and leaves the portfolio alone; excluding the VOO lots and naming the
     portfolio redeems the portfolio and sells no lot.
     """
-    detail = _rollout(_product(augur_config, catalog, index="VOO"), *sleeves)
+    detail = _rollout(_product(augur_config, catalog, index="VOO", account_id=_ACCOUNT_ID), *sleeves)
 
     assert detail.rollout.failed is False
     assert detail.rollout.ending_metrics.cash_quanta == _usd_quanta(280_000)
@@ -164,7 +165,17 @@ def test_a_managed_sleeve_naming_an_unknown_portfolio_is_refused(
 ) -> None:
     with pytest.raises(ValueError, match="unknown TLH portfolio 'test-absent'"):
         _rollout(
-            _product(augur_config, catalog, index="SPY"), ManagedSleeveWeight(portfolio_id="test-absent", weight=1)
+            _product(augur_config, catalog, index="SPY", account_id=_ACCOUNT_ID),
+            ManagedSleeveWeight(portfolio_id="test-absent", weight=1),
+        )
+
+
+def test_a_portfolio_on_the_slot_of_ordinary_lots_is_refused(augur_config: Config, catalog: CatalogResponse) -> None:
+    """The fixture's VOO lots sit in `taxable_brokerage`, the very slot this portfolio would own."""
+    with pytest.raises(ValueError, match=r"TLH pool .*'taxable_brokerage', 'VOO'.* no ordinary holdings"):
+        _rollout(
+            _product(augur_config, catalog, index="VOO", account_id="taxable_brokerage"),
+            ManagedSleeveWeight(portfolio_id=_PORTFOLIO_ID, weight=1),
         )
 
 
