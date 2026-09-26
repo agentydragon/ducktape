@@ -606,8 +606,7 @@ class Egress(Construct):
                     FORGEJO_PORT,
                 ),
                 EgressRule.to_entities(Entity.REMOTE_NODE, Entity.HOST, ports=[HOME_ASSISTANT_PORT]),
-                # dns_egress above already covers this policy's resolution needs; take only
-                # cilium.open_internet_egress's entities half here to avoid a duplicate DNS rule.
-                cilium.open_internet_egress(ports=[443, 80])[1],
+                # dns_egress above already covers this policy's resolution needs.
+                *cilium.open_internet_egress(ports=[443, 80], include_dns=False),
             ],
         )
