@@ -83,6 +83,108 @@ def test_fp_occ_round_trip(synced_test_session: Session):
     assert pydantic_occ.relevant_files == {Path("subtract.py")}
 
 
+def test_tp_occ_none_file_anchor_round_trip(synced_test_session: Session):
+    """TP occurrence with None file anchor (unspecified anchor) round-trips correctly."""
+    existing = synced_test_session.query(TruePositive).filter_by(snapshot_slug=SLUG, tp_id="tp-001").one()
+    yaml_issue = _tp_issue_from_orm(existing)
+    occ = TruePositiveOccurrence(
+        occurrence_id="occ-none-anchor",
+        files={Path("add.py"): None},
+        note="File-level anchor without lines",
+        critic_scopes_expected_to_recall={frozenset({Path("add.py")})},
+        match_file_restriction=None,
+    )
+    yaml_issue.occurrences.append(occ)
+
+    changed = _sync_tp_issue(synced_test_session, existing, yaml_issue)
+    synced_test_session.flush()
+    assert changed
+
+    db_occ = (
+        synced_test_session.query(TruePositiveOccurrenceORM)
+        .filter_by(snapshot_slug=SLUG, tp_id="tp-001", occurrence_id="occ-none-anchor")
+        .one()
+    )
+    pydantic_occ = _tp_occ_from_orm(db_occ)
+    assert pydantic_occ.occurrence_id == "occ-none-anchor"
+    assert pydantic_occ.files == {Path("add.py"): None}
+
+    # Re-sync must detect no changes
+    changed_resync = _sync_tp_issue(synced_test_session, existing, yaml_issue)
+    synced_test_session.flush()
+    assert not changed_resync
+
+
+def test_tp_occ_none_end_line_round_trip(synced_test_session: Session):
+    """TP occurrence with LineRange.end_line = None round-trips correctly."""
+    existing = synced_test_session.query(TruePositive).filter_by(snapshot_slug=SLUG, tp_id="tp-001").one()
+    yaml_issue = _tp_issue_from_orm(existing)
+    occ = TruePositiveOccurrence(
+        occurrence_id="occ-single-line",
+        files={Path("add.py"): [LineRange(start_line=2, end_line=None, note="single line anchor")]},
+        note="Single-line anchor",
+        critic_scopes_expected_to_recall={frozenset({Path("add.py")})},
+        match_file_restriction=None,
+    )
+    yaml_issue.occurrences.append(occ)
+
+    changed = _sync_tp_issue(synced_test_session, existing, yaml_issue)
+    synced_test_session.flush()
+    assert changed
+
+    db_occ = (
+        synced_test_session.query(TruePositiveOccurrenceORM)
+        .filter_by(snapshot_slug=SLUG, tp_id="tp-001", occurrence_id="occ-single-line")
+        .one()
+    )
+    pydantic_occ = _tp_occ_from_orm(db_occ)
+    assert pydantic_occ.occurrence_id == "occ-single-line"
+    assert pydantic_occ.files == {Path("add.py"): [LineRange(start_line=2, end_line=None, note="single line anchor")]}
+
+    # Re-sync must detect no changes
+    changed_resync = _sync_tp_issue(synced_test_session, existing, yaml_issue)
+    synced_test_session.flush()
+    assert not changed_resync
+
+
+def test_fp_occ_unspecified_and_single_line_anchors_round_trip(synced_test_session: Session):
+    """FP occurrence with mixed None file anchor and None end_line round-trips correctly."""
+    existing = synced_test_session.query(FalsePositive).filter_by(snapshot_slug=SLUG, fp_id="fp-001").one()
+    yaml_fp = _fp_issue_from_orm(existing)
+    occ = FalsePositiveOccurrence(
+        occurrence_id="fp-occ-mixed",
+        files={
+            Path("add.py"): None,
+            Path("subtract.py"): [LineRange(start_line=3, end_line=None, note=None)],
+        },
+        note="Mixed anchors",
+        relevant_files={Path("add.py"), Path("subtract.py")},
+        match_file_restriction=None,
+    )
+    yaml_fp.occurrences.append(occ)
+
+    changed = _sync_fp_issue(synced_test_session, existing, yaml_fp)
+    synced_test_session.flush()
+    assert changed
+
+    db_occ = (
+        synced_test_session.query(FalsePositiveOccurrenceORM)
+        .filter_by(snapshot_slug=SLUG, fp_id="fp-001", occurrence_id="fp-occ-mixed")
+        .one()
+    )
+    pydantic_occ = _fp_occ_from_orm(db_occ)
+    assert pydantic_occ.occurrence_id == "fp-occ-mixed"
+    assert pydantic_occ.files == {
+        Path("add.py"): None,
+        Path("subtract.py"): [LineRange(start_line=3, end_line=None, note=None)],
+    }
+
+    # Re-sync must detect no changes
+    changed_resync = _sync_fp_issue(synced_test_session, existing, yaml_fp)
+    synced_test_session.flush()
+    assert not changed_resync
+
+
 # ---------------------------------------------------------------------------
 # No-change re-sync preserves rows (created_at unchanged)
 # ---------------------------------------------------------------------------
