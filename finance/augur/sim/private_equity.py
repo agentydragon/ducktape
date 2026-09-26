@@ -13,19 +13,20 @@ from finance.augur.sim.money import checked_count, mul_div, mul_div_wide, positi
 from finance.augur.sim.observations import TlhPortfolioObservation
 from finance.augur.sim.prepared import _TenderPolicy
 
-# The issuer protocol's per-issuer series on a path, `private_equity_<channel>:<issuer>`.
-CHANNELS = (
-    "mark",
-    "regime",
-    "event_kind",
-    "sale_opportunity",
-    "sale_capacity",
-    "eligible",
-    "forced_sale",
-    "liquidity_blocked",
-    "forced_recovery",
-    "company_valuation",
-)
+# The issuer protocol's per-issuer series on a path, `private_equity_<channel>:<issuer>`, with the
+# closed range of each channel's integer values.
+CHANNEL_RANGES = {
+    "mark": (0, (1 << 63) - 1),
+    "regime": (min(PrivateEquityRegimeCode), max(PrivateEquityRegimeCode)),
+    "event_kind": (min(PrivateEquityEventKindCode), max(PrivateEquityEventKindCode)),
+    "sale_opportunity": (0, 1),
+    "sale_capacity": (0, MONEY_FACTOR_SCALE),
+    "eligible": (0, MONEY_FACTOR_SCALE),
+    "forced_sale": (0, MONEY_FACTOR_SCALE),
+    "liquidity_blocked": (0, 1),
+    "forced_recovery": (0, (1 << 63) - 1),
+    "company_valuation": (0, (1 << 63) - 1),
+}
 
 
 @dataclass(frozen=True)

@@ -150,6 +150,84 @@ class Housing:
             capital_improvements=scenario._capital_improvement_events,
         )
 
+    def check(self, horizon_months: int) -> None:
+        """One purchase per property inside the horizon; its lifecycle strictly after it and frozen
+        by its sale; a primary residence only on property its agent bought and still holds."""
+        purchases: dict[str, _PropertyPurchase] = {}
+        liabilities: set[str] = set()
+        for purchase in self.purchases:
+            if purchase.property_id in purchases:
+                raise ValueError(f"duplicate property purchase {purchase.property_id!r}")
+            if not 0 <= purchase.month < horizon_months:
+                raise ValueError(
+                    f"property purchase {purchase.cause_id!r} has month {purchase.month}, "
+                    f"outside the horizon [0, {horizon_months})"
+                )
+            if purchase.mortgage is not None:
+                if purchase.mortgage.liability_id in liabilities:
+                    raise ValueError(f"duplicate mortgage liability {purchase.mortgage.liability_id!r}")
+                liabilities.add(purchase.mortgage.liability_id)
+            purchases[purchase.property_id] = purchase
+        sold: dict[str, int] = {}
+        for sale in self.sales:
+            if sale.property_id in sold:
+                raise ValueError(
+                    f"multiple sales of {sale.property_id!r}: months {sold[sale.property_id]} and {sale.month}"
+                )
+            sold[sale.property_id] = sale.month
+        lifecycle: tuple[_PropertySale | _RentedFraction | _CapitalImprovement, ...] = (
+            *self.sales,
+            *self.rented_fraction_events,
+            *self.capital_improvements,
+        )
+        for event in lifecycle:
+            bought = purchases.get(event.property_id)
+            if bought is None:
+                raise ValueError(
+                    f"lifecycle event at month {event.month} references unknown property {event.property_id!r}"
+                )
+            if not bought.month < event.month < horizon_months:
+                raise ValueError(
+                    f"lifecycle event for {event.property_id!r} at month {event.month} must fire strictly after "
+                    f"its purchase month {bought.month} and inside the horizon [0, {horizon_months})"
+                )
+            sale_month = sold.get(event.property_id)
+            if not isinstance(event, _PropertySale) and sale_month is not None and event.month >= sale_month:
+                raise ValueError(
+                    f"lifecycle event for {event.property_id!r} at month {event.month} does not precede its sale "
+                    f"at month {sale_month}; the property is frozen after sale"
+                )
+        initial: set[str] = set()
+        for residence in self.initial_residences:
+            if residence.agent_id in initial:
+                raise ValueError(f"multiple initial primary residences for {residence.agent_id!r}")
+            initial.add(residence.agent_id)
+            _check_residence(residence.agent_id, residence.property_id, 0, purchases, sold)
+        assigned: set[tuple[str, int]] = set()
+        for change in self.residence_events:
+            if not 0 <= change.month < horizon_months:
+                raise ValueError(
+                    f"primary residence event for {change.agent_id!r} has month {change.month}, "
+                    f"outside the horizon [0, {horizon_months})"
+                )
+            if (change.agent_id, change.month) in assigned:
+                raise ValueError(f"multiple primary residence events for {change.agent_id!r} at month {change.month}")
+            assigned.add((change.agent_id, change.month))
+            if change.property_id is not None:
+                _check_residence(change.agent_id, change.property_id, change.month, purchases, sold)
+
+
+def _check_residence(
+    agent_id: str, property_id: str, month: int, purchases: Mapping[str, _PropertyPurchase], sold: Mapping[str, int]
+) -> None:
+    purchase = purchases.get(property_id)
+    if purchase is None:
+        raise ValueError(f"primary residence references unknown property {property_id!r}")
+    if purchase.buyer_agent_id != agent_id:
+        raise ValueError(f"primary residence assigns {property_id!r} to {agent_id!r}, who did not buy it")
+    if month < purchase.month or (property_id in sold and month > sold[property_id]):
+        raise ValueError(f"primary residence assigns {property_id!r} at month {month}, while it is not held")
+
 
 class PropertyStatement(Statement):
     """What a property tells the contracts attached to it: whether it is held and how much is let."""

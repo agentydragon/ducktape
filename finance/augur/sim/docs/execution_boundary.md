@@ -3,7 +3,10 @@
 `sim.compiler.execution.compile_run` prepares a typed `sim.prepared.CompiledRun`
 from an authored scenario, materialized paths, jurisdiction rules, and locations.
 Preparation does not fetch evidence, fit models, or reinterpret tax law.
-`sim.validation` validates supported financial inputs before world construction.
+`sim.validation` validates a compiled run's financial inputs before world construction;
+a composed world's declarations refuse the same inputs where each is declared. The
+per-table lowerings `compile_run` is built from are exposed beside it, so a caller
+composing a world without a `Scenario` lowers its records the same way.
 
 `sim.session` and `product.simulation` call `sim.world.World` directly with Python
 records. Actions, claims, observations, mortgage servicing facts, and completed

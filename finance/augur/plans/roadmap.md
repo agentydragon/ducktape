@@ -468,10 +468,10 @@ mixed-scale raw-quantity PE selection to a generic helper contract.
 Current legacy readers make that retirement concrete:
 
 - `policy/configured_allocation.py` proposes sales and purchases for
-  `policy/configured_household.py`; retire its prepared-run reader
-  (`validate_prepared`) with the last compiled-run caller, not the shared sleeve
-  calculations. The compiler's strategy-derived pool and first-source-account
-  lowering retires with that input.
+  `policy/configured_household.py` and checks its policies against the composed
+  world (`check_policies`); retire those with the configured household, not the shared
+  sleeve calculations. The compiler's strategy-derived pool and first-source-account
+  lowering (`compile_holding_pools`) retires with that input.
 - `sim/holdings.py::Holdings.scheduled_sale` serves
   `sim/holdings.py` scheduled sales and
   `sim/private_equity.py` recovery/forced/tender flows: their respective

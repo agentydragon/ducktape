@@ -170,8 +170,8 @@ def rent(amount: Decimal | int, *, end_month: int) -> PreparedRecurringObligatio
 def test_transfers_only_month_loop() -> None:
     # Recurring paycheck for a year + a one-off gift: transfers and nothing else.
     world = world_for(account("payroll"), account(ALICE, 100), account("bob", 500), horizon_months=12)
-    world.recurring_transfers = (paycheck(1000, end_month=11),)
-    world.scheduled_transfers = (
+    world.declare_flow(paycheck(1000, end_month=11))
+    world.declare_flow(
         PreparedTransfer(
             month=6,
             cause_id="bob_gifts_alice",
@@ -180,7 +180,7 @@ def test_transfers_only_month_loop() -> None:
             amount=money(250),
             income_category=None,
             deduction_category=None,
-        ),
+        )
     )
     books = run(world)
 
@@ -195,7 +195,7 @@ def test_transfers_only_month_loop() -> None:
 def test_declared_bill_settles_beside_the_paycheck() -> None:
     # Paycheck (transfer) + monthly rent (a tracked biller's claim). Always funded, so nothing stops.
     world = world_for(account("payroll"), account(ALICE, 1000), account("landlord"), horizon_months=12)
-    world.recurring_transfers = (paycheck(5000, end_month=11),)
+    world.declare_flow(paycheck(5000, end_month=11))
     world.track(Biller(rent(2000, end_month=11)))
     books = run(world)
 
@@ -395,7 +395,7 @@ def test_year_end_tax_accrues_and_the_following_year_settles_it() -> None:
         horizon_months=horizon,
         jurisdiction_ids=(FEDERAL, CALIFORNIA),
     )
-    world.recurring_transfers = (
+    world.declare_flow(
         PreparedRecurringTransfer(
             start_month=0,
             end_month=35,
@@ -405,7 +405,7 @@ def test_year_end_tax_accrues_and_the_following_year_settles_it() -> None:
             amount=money(Decimal(120_000) / Decimal(12)),
             income_category=ORDINARY_INCOME,
             deduction_category=None,
-        ),
+        )
     )
     # > 0 -> quarterly estimated-tax claims the next year.
     taxed_by(world, FEDERAL, CALIFORNIA, prior_year_tax=Decimal(15_000))

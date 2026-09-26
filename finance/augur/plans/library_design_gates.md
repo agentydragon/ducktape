@@ -216,7 +216,7 @@ which callers each slice moves.
 | Counterparties as tracked actors — **landed**: `bills.Biller`, `property_tax.PropertyTaxAuthority` and `tax_authority.TaxAuthority` emit typed demands on `MonthOpened` from the statements they are posted (`PropertyStatement`, `TaxLiabilityStatement`); the world registers demands as claims in tier order and `claims.assemble` is gone. `World.track(biller)` takes a bill that exists at month zero. The world still constructs the scenario's counterparties itself until the constructor slice; a property-linked bill needs the property tracked, which waits for GHOUSE. | `sim/test_payments.py` assesses through `TaxAuthority`; the acceptance suites are unchanged because registration order matches the old assembly order.                                                                                                                                |
 | Constructor over tracked actors — **landed**: `World(market, horizon_months=…, income_sources=…, jurisdictions=…)` starts empty; the caller declares accounts, pools, lots, bonds and TLH portfolios and tracks agents, contracts, bills and tax authorities. Every component owns the facts it reads. `World.from_run` is the import adapter over the prepared scenario, and `compile_series`/`compile_profile` are the compiler pieces a composed world still needs. `x/joint_spending_allocation` is composed with no `Scenario`.                                                 | Every experiment and study is composed onto `World` and `ActionSession(worlds, actor)`: `x/{joint_spending_allocation,allocation_glide,monthly_actions,bounded_spending,bond_policies}` and `study/trinity`; none writes an execution-input artifact any more, the situation is code. |
 | Untracked domains absent — **landed**: `World.properties`, `bonds`, `managed`, `private_equity` and `distributions` are `None` until something is declared, held, tracked or attached, and the month loop, statements, book and capture skip an absent domain. `Book.bonds`, `properties` and `tlh_portfolios`, the `FinancialOutput` channels (property and private-equity outcomes grouped per domain) and `Trace.bond_cashflows`/`distributions` are `None` for an absent domain; `event_log` still emits every frame, empty, so the app's wire is unchanged.                     | `capture.FinancialCapture`, `ActionSession`'s record and `product.metrics.product_row` guard the absent domains; the acceptance decoders and `product/action_projection.py` read `None` where a domain is absent.                                                                     |
-| Offers: `Issuer` emits `TenderOffer` and `ForcedRecovery`; the household replies with `Accept` or `Decline` inside the month. **Landed short of the actor shape**: holding a private lot brings the issuer protocol onto a composed world (its series checked on the path), `declare_tender_policy` is the owner's standing answer, and `close_month` runs the protocol after settlement for every driver.                                                                                                                                                                           | The configured PE tender path (`sim/private_equity.py`, `product/scenarios.py`); this is the GPE boundary and waits for it.                                                                                                                                                           |
+| Offers: `Issuer` emits `TenderOffer` and `ForcedRecovery`; the household replies with `Accept` or `Decline` inside the month. **Landed short of the actor shape**: holding a private lot brings the issuer protocol onto a composed world (its series checked on the path), `declare_tender_policy` is the owner's standing answer, and `close_month` runs the protocol after settlement for every driver.                                                                                                                                                                           | The configured PE tender path (`sim/private_equity.py`, the app's declared tender policy); this is the GPE boundary and waits for it.                                                                                                                                                 |
 
 Callers by surface today, so the burn-down can be checked off:
 
@@ -228,18 +228,17 @@ Callers by surface today, so the burn-down can be checked off:
   the product projection suites.
   These stay on the batch API; the batch layer already drives N worlds through
   delegate agents, and a vectorised policy layer replaces the delegates later.
-- **App (`product/service.py`) — landed on `product/simulation.py`:** one world per
-  path, the `ConfiguredHousehold` tracked on it and `step()` to the horizon; it
-  consults `configured_allocation.plan` for its sales, pays claims all or none
-  per account and sizes exact purchases from what those leave.
+- **App (`product/service.py`) — composes its worlds:** `product/scenarios.py` lowers a
+  request once through the compiler's per-table pieces into prepared declarations and
+  declares them onto one world per path, the `ConfiguredHousehold` tracked on it and
+  `step()` to the horizon; it consults `configured_allocation.plan` for its sales, pays
+  claims all or none per account and sizes exact purchases from what those leave.
 - **Configured runner — gone:** every configured acceptance suite composes its
   worlds in `sim/*_test.py`; `sim/configured.py` and the legacy result
   adapters are deleted.
-- **`Scenario`/`compile_run` authoring:** `product/scenarios.py` with the app's
-  `product/simulation.py`, `configured_allocation.validate_prepared` and the product
-  tests built on them (`funding_test`, `test_simulation`, `service_test`); on the sim
-  side only the tests of `compile_run` itself, of the prepared-input file and of
-  `validate_prepared`. Every sim, policy and experiment suite composes its worlds.
+- **`Scenario`/`compile_run` authoring:** on the sim side only the tests of `compile_run`
+  itself and of the prepared-input file. Every sim, policy, product and experiment suite
+  composes its worlds, and the app lowers through the compiler's per-table pieces.
   Leaves with RUN.
 - **Recording between steps:** the app's `WorldResult` and `product_row` slab live in
   `product/simulation.py` and `product/metrics.py`; `sim/capture.py::FinancialCapture`
@@ -254,7 +253,6 @@ parallel. Each node leaves this section when it lands.
 
 ```mermaid
 graph TD
-    APP_COMPOSE["APP-COMPOSE: product/scenarios.py declares worlds, no authored Scenario"]
     RUN_GONE["RUN: delete CompiledRun, compile_run, from_run, validation.py"]
     OFFERS["OFFERS: Issuer, TenderOffer, Accept/Decline (GPE gate)"]
     DRAIN["DRAIN: emit/accept check on track(), per-month drain budget"]
@@ -262,31 +260,22 @@ graph TD
     SEASONED["SEASONED: tracked contracts originated before month zero (GHOUSE)"]
     PROPERTY["PROPERTY: a tracked property component; rented share on tracked loans (GHOUSE)"]
     VECTOR["VECTOR: World gains a rollout axis; ActionSession and its delegates go"]
-    APP_COMPOSE --> RUN_GONE
     OFFERS --> DRAIN
     RUN_GONE --> VECTOR
 ```
 
-- **APP-COMPOSE.** `product/scenarios.py` builds an authored `Scenario` that
-  `compile_run` lowers; instead it declares accounts, pools, lots, bonds, housing,
-  distributions, tender and funding policies on each `World` through the compiler's
-  per-table pieces (`compile_series`, `compile_profile`, and the property, bond and
-  distribution lowerings still inside `compile_run`), and tracks its household,
-  billers and authorities. `scheduled_transfers` and the property cashflow tables
-  become tracked emitters or declarations on the way. `product/funding_test`,
-  `test_simulation` and `service_test` compose through what it declares.
 - **RUN.** `CompiledRun`, `PreparedScenario`, `compile_run`, `World.from_run`,
   `ActionSession.from_run`, `MarketPath.from_run`, `sim/validation.py` and the
   prepared-input file (`sim/artifacts.py`) are deleted with the tests whose subject
-  they are (`compiler/execution_test`'s `compile_run` cases, `artifacts_test`); the
-  prepared record types stay as the declaration vocabulary.
-  `configured_allocation.validate_prepared` and `prepared_allocation_test` go too:
-  its guards on the funding policies move to a check against the composed world,
-  called where APP-COMPOSE tracks the household. With the authored `scenario.TlhCohort`
-  gone, `sim/tlh.py`'s `TlhOpeningCohort` takes the name `TlhCohort` as the one public
-  cohort (value at a mark, cost basis, purchase month), which the Plaid source builds
-  directly; `_Cohort` stays private and uses the same `purchase_month_index` name.
-  `SCHEMA` closes here.
+  they are (`compiler/execution_test`'s `compile_run` cases, `artifacts_test`), and
+  with them the `Scenario` adapters over the compiler's per-table pieces
+  (`compile_tax`, `scenario_level_series_keys`, `collect_level_series_keys`,
+  `validate_series_indexed_amounts`); the prepared record types stay as the
+  declaration vocabulary. With the authored `scenario.TlhCohort` gone, `sim/tlh.py`'s
+  `TlhOpeningCohort` takes the name `TlhCohort` as the one public cohort (value at a
+  mark, cost basis, purchase month), which the Plaid source builds directly;
+  `_Cohort` stays private and uses the same `purchase_month_index` name. `SCHEMA`
+  closes here.
 - **OFFERS.** Gated on GPE: which compulsory events run without a tender policy, and
   when forced proceeds become spendable. Then `Issuer` emits `TenderOffer` and
   `ForcedRecovery` from the path's series, the household answers inside the month,

@@ -70,6 +70,7 @@ py_library(
         "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:observations",
         "//finance/augur/sim:prepared",
+        "//finance/augur/sim:world",
         "@pypi//more_itertools",
     ],
 )
@@ -98,10 +99,12 @@ py_library(
         ":configured_allocation",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:agent",
+        "//finance/augur/sim:books",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:money",
         "//finance/augur/sim:observations",
         "//finance/augur/sim:prepared",
+        "//finance/augur/sim:world",
     ],
 )
 
@@ -121,6 +124,23 @@ py_test(
         "//finance/augur/sim:tlh",
         "//finance/augur/sim:world",
         "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_configured_policy_guards",
+    srcs = ["test_configured_policy_guards.py"],
+    deps = [
+        ":configured_household",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:world",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
