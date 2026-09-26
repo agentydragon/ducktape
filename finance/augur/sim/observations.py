@@ -69,12 +69,18 @@ class Claim(ClaimId):
 
 
 class TlhPortfolioObservation(Record):
+    """A managed portfolio at its mark: money and basis, no units or unit price."""
+
     portfolio_id: str
     owner_agent_id: str
     account_id: str
+    # The index whose level moves `value`; the portfolio is not a holding of it.
     asset_id: str
     value: int
     reported_tax_basis: int
+    # False at a zero index mark, where the portfolio refuses a contribution. Value and basis
+    # cannot say this: a worthless portfolio and an empty one can both show 0 and 0.
+    accepts_contributions: bool
 
 
 class Observation(Record):

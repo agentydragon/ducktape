@@ -41,7 +41,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s:valkey",
-        "//cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor",
+        "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

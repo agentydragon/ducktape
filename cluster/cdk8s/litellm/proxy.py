@@ -48,13 +48,6 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpecDeletionPolicy
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecEndpointsBearerTokenSecret,
-    ServiceMonitorSpecSelector,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.config_format import yaml_config
@@ -73,6 +66,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 APP_DIR = f"{HAND_WRITTEN_ROOT}/litellm/app"
@@ -396,19 +390,12 @@ class LiteLLMServiceMonitor(Construct):
             self,
             "servicemonitor",
             metadata=metadata("litellm", "litellm"),
-            spec=ServiceMonitorSpec(
-                selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": "litellm"}),
-                endpoints=[
-                    ServiceMonitorSpecEndpoints(
-                        port="http",
-                        path="/metrics",
-                        scrape_timeout="10s",
-                        bearer_token_secret=ServiceMonitorSpecEndpointsBearerTokenSecret(
-                            name="litellm-master-key", key="api-key"
-                        ),
-                    )
-                ],
-            ),
+            selector={"app.kubernetes.io/name": "litellm"},
+            endpoints=[
+                Endpoint.bearer_token_secret(
+                    port="http", secret_name="litellm-master-key", key="api-key", scrape_timeout="10s"
+                )
+            ],
         )
 
 

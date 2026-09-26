@@ -21,7 +21,7 @@ from finance.augur.sim.prepared import (
     PreparedLot,
     PreparedSeries,
     _AllocationPolicy,
-    _SleeveTarget,
+    _SecuritySleeveTarget,
 )
 from finance.augur.sim.world import World
 
@@ -33,7 +33,7 @@ POLICY = _AllocationPolicy(
     agent_id=ALICE,
     account_id="checking",
     source_account_ids=("brokerage",),
-    sleeves=(_SleeveTarget(asset_id=STOCK, weight=1, quantity_scale=SCALE),),
+    sleeves=(_SecuritySleeveTarget(asset_id=STOCK, weight=1, quantity_scale=SCALE),),
     cash_floor=0,
     cash_ceiling=0,
     cause_id_prefix="fund",
@@ -88,11 +88,11 @@ def test_generated_purchase_namespace_is_reserved() -> None:
         ((replace(POLICY, source_account_ids=("brokerage", "brokerage")),), "source accounts must be unique"),
         ((replace(POLICY, source_account_ids=("undeclared",)),), "purchase pool is not declared"),
         (
-            (replace(POLICY, sleeves=(_SleeveTarget(asset_id=STOCK, weight=1, quantity_scale=10),)),),
+            (replace(POLICY, sleeves=(_SecuritySleeveTarget(asset_id=STOCK, weight=1, quantity_scale=10),)),),
             "quantity grid disagrees",
         ),
         (
-            (replace(POLICY, sleeves=(_SleeveTarget(asset_id=STOCK, weight=1, quantity_scale=3),)),),
+            (replace(POLICY, sleeves=(_SecuritySleeveTarget(asset_id=STOCK, weight=1, quantity_scale=3),)),),
             "power-of-ten quantity grid",
         ),
         ((replace(POLICY, account_id="undeclared"),), "declared funding account"),
@@ -100,10 +100,13 @@ def test_generated_purchase_namespace_is_reserved() -> None:
         ((POLICY, POLICY), "duplicate allocation funding account"),
         ((replace(POLICY, sleeves=POLICY.sleeves * 2),), "duplicate allocation sleeve"),
         (
-            (replace(POLICY, sleeves=(_SleeveTarget(asset_id=STOCK, weight=0, quantity_scale=SCALE),)),),
+            (replace(POLICY, sleeves=(_SecuritySleeveTarget(asset_id=STOCK, weight=0, quantity_scale=SCALE),)),),
             "positive target",
         ),
-        ((replace(POLICY, sleeves=(_SleeveTarget(asset_id=STOCK, weight=-1, quantity_scale=SCALE),)),), "nonnegative"),
+        (
+            (replace(POLICY, sleeves=(_SecuritySleeveTarget(asset_id=STOCK, weight=-1, quantity_scale=SCALE),)),),
+            "nonnegative",
+        ),
         ((replace(POLICY, allow_purchases=False, rebalance_tolerance_ppb=0),), "drift requires purchases"),
         ((replace(POLICY, cash_floor=1),), "must not exceed"),
         ((replace(POLICY, cash_ceiling=replace(INDEX, adjustment_period_months=0)),), "invalid base month or reset"),

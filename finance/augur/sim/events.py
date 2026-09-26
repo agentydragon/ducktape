@@ -72,7 +72,7 @@ TAX_BREAKDOWN_EVENT_SCHEMA = pl.Schema(
         # Federal SALT deduction allowed this year: property tax paid this calendar year + state
         # income tax accrued this year for the profile's non-federal jurisdictions, capped per
         # the federal SALT schedule. Zero on state-jurisdiction links (SALT is a federal-only
-        # Schedule A concept) and on federal links without a FederalSaltDeductionPolicy.
+        # Schedule A concept) and on federal links with no SALT deduction declared.
         "salt_deduction_quanta": pl.Int64(),
         # Total itemized deductions used after comparing against the standard: MID + SALT today,
         # plus other Schedule A lines once we model them. Equals MID + SALT when itemized >

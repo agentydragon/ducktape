@@ -7,14 +7,12 @@ submit ordered actions for many paths at once.
 
 ## Preparation and dependencies
 
-`Scenario` describes actors, accounts, holdings, contracts and path bindings.
-`compile_run` in <compiler/execution.py> resolves those inputs into the typed `CompiledRun`
-defined in <prepared.py>.
-It does not fetch market evidence, fit a model or load tax law independently.
-Prepared records own exact monetary terms, quantized market paths and variable-length
-resolved tax rules. Sessions and metadata readers consume these facts directly;
-the file boundary privately serializes them without retaining a parallel
-document or original authoring objects. File decoding returns the same typed records.
+The authored records in <scenario.py> describe holdings, contracts, cashflows and
+policies in exact decimals. The compiler's per-table pieces in <compiler/> lower them
+into the records defined in <prepared.py>; preparation does not fetch market evidence,
+fit a model or load tax law independently. Prepared records own exact monetary terms,
+quantized market paths and variable-length resolved tax rules; a world declares them
+directly and keeps no authoring objects.
 
 `sim/` owns declarations, execution, and common books/results. Preparation does not depend on the executor.
 `model/` and `fit/` sample and fit; `policy/` contains proposal helpers.
@@ -37,10 +35,7 @@ Each declaration refuses what it cannot execute where it is declared: an unknown
 account, a missing or unusable series, a cashflow outside the horizon, a lifecycle
 event before its purchase. The compiler's per-table pieces (`compile_lots`,
 `compile_housing`, `compile_recurring_obligation`, …) lower authored records into
-the prepared records these declarations take. An authored `Scenario` reaches the
-same world through the import adapter, `compile_run` then
-`World.from_run(run, rollout_id)`, which declares and tracks what the prepared
-scenario describes.
+the prepared records these declarations take.
 
 The batch form drives one such world per selected path:
 
@@ -104,7 +99,10 @@ whatever settlement leaves" is a policy's intent, which it realises as a combina
 exact orders sized from what it observes; no position, managed portfolio or ledger sizes
 an order on a policy's behalf, and an order the account cannot fund is rejected, not
 trimmed. A managed portfolio is denominated in money, so it takes or pays exactly the
-amount ordered, with no unit grid (<tlh.py>). `observations.py` owns frozen current facts and private claim authority. There is
+amount ordered, with no unit grid (<tlh.py>); a funding policy's sleeve names it by its
+portfolio id, never by the index it tracks, so it has no quote to size against, and
+lots of that index are a sleeve of their own. `TlhStatement` says whether each portfolio
+accepts a contribution at its current mark, which value and basis alone cannot. `observations.py` owns frozen current facts and private claim authority. There is
 no second public native action/observation representation or native session driver.
 Configured allocators are not silently enabled through this API. The issuer
 protocol on a private holding (`sim/private_equity.py`) is a world phase: `close_month`

@@ -10,8 +10,8 @@ import {
   fmtUsd,
   fmtQuantity,
 } from "./lib/format";
-import { LIFECYCLE_KINDS, defaultLifecycleEvent, resolveSleeveWeights } from "./input_helpers";
-import { sellableSecurities, isPrivateSecurityPosition } from "./data_helpers";
+import { LIFECYCLE_KINDS, defaultLifecycleEvent, resolveSleeveWeights, sleeveKey } from "./input_helpers";
+import { sellableSleeves, isPrivateSecurityPosition } from "./data_helpers";
 
 function firstSaleMonth(events) {
   let earliest = null;
@@ -201,7 +201,7 @@ export function SleeveWeightsControl({
   label = "Target allocation (relative weights)",
   compact = false,
 }) {
-  // One row per sellable holding with an integer weight. Only RATIOS matter, so the row also
+  // One row per sellable sleeve (a held security, or a TLH portfolio) with an integer weight. Only RATIOS matter, so the row also
   // shows each weight as a percentage of their sum — that is the number a person actually reasons
   // about, while the stored value stays an integer and needs no sum-to-one validator to defend it.
   //
@@ -209,20 +209,20 @@ export function SleeveWeightsControl({
   // so opening this and changing nothing leaves the target matching today's portfolio. Weight 0 is
   // meaningful rather than empty: it puts the holding OUTSIDE the target, never sold to fund the
   // band and not counted when measuring what is overweight.
-  const sellable = sellableSecurities(portfolio);
+  const sellable = sellableSleeves(portfolio);
   if (sellable.length === 0) return null;
   const resolved = resolveSleeveWeights(sleeveWeights, sellable);
   // The type argument is load-bearing. `resolveSleeveWeights` is untyped, so `resolved` is `any`
   // and the callback's return type is discarded — leaving `Map<unknown, unknown>`, which makes
   // every arithmetic use of a weight below a compile error.
-  const weightBySymbol = new Map<string, number>(resolved.map((sleeve) => [sleeve.symbol, sleeve.weight]));
-  const total = sellable.reduce((sum, row) => sum + (weightBySymbol.get(row.symbol) ?? 0), 0);
+  const weightByKey = new Map<string, number>(resolved.map((sleeve) => [sleeveKey(sleeve), sleeve.weight]));
+  const total = sellable.reduce((sum, row) => sum + (weightByKey.get(row.key) ?? 0), 0);
 
-  const emit = (symbol, weight) =>
+  const emit = (key, weight) =>
     onChange(
       sellable.map((row) => ({
-        symbol: row.symbol,
-        weight: row.symbol === symbol ? weight : (weightBySymbol.get(row.symbol) ?? 0),
+        ...row.sleeve,
+        weight: row.key === key ? weight : (weightByKey.get(row.key) ?? 0),
       }))
     );
 
@@ -231,11 +231,11 @@ export function SleeveWeightsControl({
       {label && <div className="augur-field-label mb-2">{label}</div>}
       <ul className="overflow-hidden rounded border border-slate-200 divide-y divide-slate-200 dark:border-slate-700 dark:divide-slate-700">
         {sellable.map((row) => {
-          const weight = weightBySymbol.get(row.symbol) ?? 0;
+          const weight = weightByKey.get(row.key) ?? 0;
           const share = total > 0 ? Math.round((100 * weight) / total) : 0;
           return (
             <li
-              key={row.symbol}
+              key={row.key}
               className={`flex items-center gap-2 px-2 py-1 ${weight > 0 ? "" : "bg-slate-50 opacity-80 dark:bg-slate-900/40"}`}
             >
               <span className="flex-1 text-sm font-semibold augur-strong">{row.label}</span>
@@ -245,7 +245,7 @@ export function SleeveWeightsControl({
                 step={1}
                 value={weight}
                 aria-label={`Target weight for ${row.label}`}
-                onChange={(event) => emit(row.symbol, Math.max(0, Math.trunc(Number(event.target.value) || 0)))}
+                onChange={(event) => emit(row.key, Math.max(0, Math.trunc(Number(event.target.value) || 0)))}
                 className="augur-input w-20 text-right augur-tabular"
               />
               <span className="w-12 text-right text-xs augur-muted augur-tabular">

@@ -15,12 +15,8 @@ from cdk8s_plus_34 import Protocol, Service, ServicePort, k8s
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsRelabelings,
-    ServiceMonitorSpecNamespaceSelector,
-    ServiceMonitorSpecSelector,
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -28,6 +24,7 @@ from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 from cluster.scripts import nebula_mesh
 from cluster.scripts.nebula_mesh import Mesh
 
@@ -78,22 +75,20 @@ class TalosEtcdMetrics(Construct):
             self,
             "servicemonitor",
             metadata=metadata("talos-etcd", NAMESPACE, labels=_LABELS),
-            spec=ServiceMonitorSpec(
-                namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=[NAMESPACE]),
-                selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": _NAME}),
-                endpoints=[
-                    ServiceMonitorSpecEndpoints(
-                        port=_PORT_NAME,
-                        path="/metrics",
-                        scrape_timeout="10s",
-                        relabelings=[
-                            ServiceMonitorSpecEndpointsRelabelings(
-                                source_labels=["__meta_kubernetes_endpointslice_endpoint_hostname"], target_label="node"
-                            )
-                        ],
-                    )
-                ],
-            ),
+            namespace_selector=[NAMESPACE],
+            selector={"app.kubernetes.io/name": _NAME},
+            endpoints=[
+                ServiceMonitorSpecEndpoints(
+                    port=_PORT_NAME,
+                    path="/metrics",
+                    scrape_timeout="10s",
+                    relabelings=[
+                        ServiceMonitorSpecEndpointsRelabelings(
+                            source_labels=["__meta_kubernetes_endpointslice_endpoint_hostname"], target_label="node"
+                        )
+                    ],
+                )
+            ],
         )
 
 

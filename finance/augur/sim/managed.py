@@ -70,7 +70,7 @@ def _validate_against(spec: PreparedTlhPortfolio, row: TlhPortfolioObservation) 
 
 
 class TlhStatement(Statement):
-    """The owner's managed portfolios at their current marks."""
+    """The owner's managed portfolios at their current marks, each saying whether it takes a contribution."""
 
     portfolios: tuple[TlhPortfolioObservation, ...]
 

@@ -1,8 +1,7 @@
 """A due bill funded by a batch-authored sell -> pay action list.
 
 Two stipulated prices and a synthetic tax schedule, not a forecast or statutory
-tax example. No `Scenario`: the situation is declared straight onto the world,
-one world per path.
+tax example. The situation is declared straight onto the world, one world per path.
 """
 
 import argparse

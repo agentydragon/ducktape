@@ -17,11 +17,10 @@ already supplied paths. Forecast-only evaluation does not require simulator
 instrument declarations. Sharing a model does not imply it supports every
 instrument or that its forecasts are adequate for a particular decision.
 
-Preparation resolves the authored scenario, rules and supplied paths into one
-self-contained typed value of exact monetary terms, resolved tax rules and paths.
-Sessions and reports consume these facts directly; file serialization is
-private, not a parallel mutable domain API. Execution does not reread the original
-scenario or load evidence/tax configuration. Missing or non-finite required paths reject;
+Preparation lowers authored declarations, rules and supplied paths into typed
+records of exact monetary terms, resolved tax rules and integer paths, which a
+composed world declares. Execution does not reread the authored declarations or
+load evidence/tax configuration. Missing or non-finite required paths reject;
 they are not synthesized as zero observations. Ordinary public-security and
 home-value prices are positive. Prices used exclusively by reduced-form TLH
 portfolios may be zero, allowing worthless exposure to be liquidated; negative
@@ -134,9 +133,13 @@ loss adjustments. Component value is counted once in household wealth.
 Canonical accounting settles its financial effects and determines household tax.
 The approximation does not reconstruct constituent trades or establish statutory
 TLH fidelity. A month's harvest stands even if a later payment that month fails.
+Its statement also says whether it accepts a contribution at the current mark: at a
+zero index mark it does not, though its value and basis need not tell it from an empty
+portfolio.
 The app reports such a portfolio by value, basis and holding-period cohorts, never
-as a holding with units or a unit price; a funding target names it by the index it
-tracks and draws on it in money.
+as a holding with units or a unit price. A funding target names it by its portfolio id,
+as a sleeve of its own apart from any lots of the index it tracks, and draws on it in
+money.
 Model and numerical conventions: <sim/tlh.py>.
 
 ## Declared housing and private-equity capabilities and limits

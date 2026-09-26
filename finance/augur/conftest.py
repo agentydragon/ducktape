@@ -19,7 +19,6 @@ from finance.augur.model.testing import (
 )
 from finance.augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS
 from finance.augur.sim.locations import Location
-from finance.augur.sim.scenario import Agent, InitialAccountBalance, Scenario, ScheduledTransfer
 from util.bazel.runfiles import get_required_path
 
 _PRIVATE_HOLDING_A = IssuerId("private_holding_a")
@@ -141,28 +140,4 @@ def vallejo_mare_island_location() -> Location:
         jurisdiction_ids=["federal_us", "california"],
         annual_property_tax_rate=0.0115,
         annual_special_assessment=2300,
-    )
-
-
-@pytest.fixture
-def alice_bob_scenario() -> Scenario:
-    return Scenario(
-        agents=[Agent(agent_id="alice"), Agent(agent_id="bob")],
-        initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance=10),
-            InitialAccountBalance(agent_id="bob", account_id="checking", balance=20),
-        ],
-        scheduled_transfers=[
-            ScheduledTransfer(
-                month=0,
-                cause_id="bob_gives_alice_5",
-                from_agent_id="bob",
-                from_account_id="checking",
-                to_agent_id="alice",
-                to_account_id="checking",
-                amount=5,
-            )
-        ],
-        tax_profiles=[],
-        horizon_months=1,
     )

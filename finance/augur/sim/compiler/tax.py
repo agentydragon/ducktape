@@ -15,10 +15,7 @@ from finance.augur.sim.scenario import (
     InterestIncome,
     OrdinaryIncome,
     RecurringPropertyCashflow,
-    RecurringTransfer,
-    Scenario,
     ScheduledPropertyCashflow,
-    ScheduledTransfer,
     SecurityDistribution,
     TaxProfile,
     TransferIncomeCategory,
@@ -77,17 +74,9 @@ class PreparedTaxProfile:
     jurisdictions: tuple[PreparedTaxRules, ...]
 
 
-@dataclass(frozen=True)
-class TaxCompileOutput:
-    """Authoritative prepared profiles and income categories in their declared reporting order."""
-
-    profiles: tuple[PreparedTaxProfile, ...]
-    income_sources: tuple[TransferIncomeCategory, ...]
-
-
 def compile_income_sources(
     *,
-    flows: Iterable[ScheduledTransfer | RecurringTransfer | ScheduledPropertyCashflow | RecurringPropertyCashflow],
+    flows: Iterable[ScheduledPropertyCashflow | RecurringPropertyCashflow],
     bonds: Iterable[BondHolding],
     distributions: Iterable[SecurityDistribution],
 ) -> tuple[TransferIncomeCategory, ...]:
@@ -141,7 +130,7 @@ def _brackets(brackets: Sequence[TaxBracket], *, quantum: Decimal) -> tuple[Prep
 def compile_profile(
     profile: TaxProfile, jurisdictions: Mapping[str, Jurisdiction], *, quantum: Decimal
 ) -> PreparedTaxProfile:
-    """One taxpayer's routing and quantized rules; what a composed world enrolls without a `Scenario`."""
+    """One taxpayer's routing and quantized rules, as a composed world enrolls them."""
     offset_cap = _agreed_capital_loss_offset_cap(profile, jurisdictions, quantum=quantum)
     rules = []
     for jurisdiction_id in profile.jurisdiction_ids:
@@ -178,21 +167,4 @@ def compile_profile(
             currency_amount_to_quanta(section_121_exclusion_for(profile.filing_status), quantum=quantum)
         ),
         jurisdictions=tuple(rules),
-    )
-
-
-def compile_tax(scenario: Scenario, jurisdictions: Mapping[str, Jurisdiction]) -> TaxCompileOutput:
-    quantum = scenario.currency.quantum
-    return TaxCompileOutput(
-        profiles=tuple(compile_profile(profile, jurisdictions, quantum=quantum) for profile in scenario.tax_profiles),
-        income_sources=compile_income_sources(
-            flows=(
-                *scenario.scheduled_transfers,
-                *scenario.recurring_transfers,
-                *scenario.scheduled_property_cashflows,
-                *scenario.recurring_property_cashflows,
-            ),
-            bonds=scenario.initial_bonds,
-            distributions=scenario.security_distributions,
-        ),
     )

@@ -22,12 +22,9 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
 )
 from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsAuthorization,
     ServiceMonitorSpecEndpointsAuthorizationCredentials,
-    ServiceMonitorSpecSelector,
 )
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
     PrometheusRule,
@@ -64,6 +61,7 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 
 # Aliased: each provisioner names its model `Settings`, in a module named `settings`.
 from homeassistant.provisioner.components import settings as components
@@ -550,21 +548,19 @@ def _monitoring(scope: Construct) -> None:
         scope,
         "service-monitor",
         metadata=metadata(_NAME, _NAMESPACE),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-            endpoints=[
-                ServiceMonitorSpecEndpoints(
-                    port="http",
-                    path="/api/prometheus",
-                    authorization=ServiceMonitorSpecEndpointsAuthorization(
-                        type="Bearer",
-                        credentials=ServiceMonitorSpecEndpointsAuthorizationCredentials(
-                            name=_METRICS_TOKEN, key="password"
-                        ),
+        selector=_LABELS,
+        endpoints=[
+            ServiceMonitorSpecEndpoints(
+                port="http",
+                path="/api/prometheus",
+                authorization=ServiceMonitorSpecEndpointsAuthorization(
+                    type="Bearer",
+                    credentials=ServiceMonitorSpecEndpointsAuthorizationCredentials(
+                        name=_METRICS_TOKEN, key="password"
                     ),
-                )
-            ],
-        ),
+                ),
+            )
+        ],
     )
     PrometheusRule(
         scope,

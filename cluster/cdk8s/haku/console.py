@@ -54,12 +54,6 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecSelector,
-)
 
 from cluster.cdk8s.agentplane import container_security, node_scheduling
 from cluster.cdk8s.config_format import yaml_config
@@ -69,6 +63,7 @@ from cluster.cdk8s.haku import console_config, database
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from haku.console.config import CONFIG_FILE_ENV
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.settings import Settings
@@ -424,10 +419,8 @@ class Console(Construct):
             self,
             "servicemonitor",
             metadata=metadata(NAME, NAMESPACE),
-            spec=ServiceMonitorSpec(
-                selector=ServiceMonitorSpecSelector(match_labels=LABELS),
-                endpoints=[ServiceMonitorSpecEndpoints(port="metrics", path="/metrics")],
-            ),
+            selector=LABELS,
+            endpoints=[Endpoint.plain(port="metrics")],
         )
 
     def _add_static(self) -> None:

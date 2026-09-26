@@ -19,11 +19,8 @@ import yaml
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
-    PodMonitor,
-    PodMonitorSpec,
     PodMonitorSpecPodMetricsEndpoints,
     PodMonitorSpecPodMetricsEndpointsRelabelings,
-    PodMonitorSpecSelector,
 )
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
     PrometheusRule,
@@ -45,6 +42,7 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.prometheus_operator.pod_monitor import PodMonitor
 from cluster.scripts.nebula_mesh import Mesh
 
 NAMESPACE = "monitoring"
@@ -250,18 +248,16 @@ def chart(app: App, mesh: Mesh) -> Chart:
         chart,
         "pod-monitor",
         metadata=metadata(_NAME, NAMESPACE),
-        spec=PodMonitorSpec(
-            selector=PodMonitorSpecSelector(match_labels=_LABELS),
-            pod_metrics_endpoints=[
-                _own_node_endpoint(
-                    Dial.OWN_PUBLIC, {name: f"{h.public_ip}:{_GATEWAY_PORT}" for name, h in public_nodes.items()}
-                ),
-                _own_node_endpoint(
-                    Dial.OWN_NEBULA, {name: f"{h.nebula_ip}:{_GATEWAY_PORT}" for name, h in public_nodes.items()}
-                ),
-                _endpoint(Dial.GATEWAY_SERVICE, [], {"target": [f"{_GATEWAY_SERVICE}:{_GATEWAY_PORT}"]}),
-            ],
-        ),
+        selector=_LABELS,
+        pod_metrics_endpoints=[
+            _own_node_endpoint(
+                Dial.OWN_PUBLIC, {name: f"{h.public_ip}:{_GATEWAY_PORT}" for name, h in public_nodes.items()}
+            ),
+            _own_node_endpoint(
+                Dial.OWN_NEBULA, {name: f"{h.nebula_ip}:{_GATEWAY_PORT}" for name, h in public_nodes.items()}
+            ),
+            _endpoint(Dial.GATEWAY_SERVICE, [], {"target": [f"{_GATEWAY_SERVICE}:{_GATEWAY_PORT}"]}),
+        ],
     )
     PrometheusRule(
         chart,

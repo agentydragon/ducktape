@@ -47,7 +47,6 @@ from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, is_quantity_scale, position_value
 from finance.augur.sim.mortgage import InstallmentPaid, Mortgage, MortgagePayment, ServicingStatement
 from finance.augur.sim.prepared import (
-    CompiledRun,
     PreparedAccount,
     PreparedAmount,
     PreparedBond,
@@ -76,7 +75,7 @@ from finance.augur.sim.property import Housing, Properties, mortgage_terms
 from finance.augur.sim.property_tax import PropertyTaxAuthority, PropertyTaxBill
 from finance.augur.sim.scenario import InterestIncome, TransferIncomeCategory
 from finance.augur.sim.tax_authority import Assessment, TaxAuthority
-from finance.augur.sim.tlh import ModeledRealizations, TlhMarketUpdate, TlhObservation, TlhOpening, TlhPortfolio
+from finance.augur.sim.tlh import ModeledRealizations, TlhMarketUpdate, TlhOpening, TlhPortfolio
 
 type Capture = Literal["summary", "dense", "forensic"]
 
@@ -88,36 +87,6 @@ def acting_agent(action: Action) -> str:
     if isinstance(action, Transfer | PayClaim | Consume):
         return action.from_account.agent_id
     return action.agent_id
-
-
-def validate_actor(run: CompiledRun, actor: str) -> None:
-    """Reject prepared input whose configured strategies or unsupported domains overlap actor decisions."""
-    scenario = run.scenario
-    if scenario._target_allocation_policies or scenario._private_equity_tender_policies or scenario._scheduled_sales:
-        raise ValueError("configured allocation, tender policies and scheduled sales overlap actor decisions")
-    if (
-        scenario._scheduled_property_purchases
-        or scenario.scheduled_property_cashflows
-        or scenario.recurring_property_cashflows
-        or scenario._initial_primary_residences
-        or scenario._primary_residence_events
-        or scenario._property_rented_fraction_events
-        or scenario._capital_improvement_events
-        or scenario._property_sales
-        or scenario._mortgage_interest_deduction_policies
-        or scenario._property_tax_policies
-        or scenario._federal_salt_deduction_policies
-        or any(pool.asset_id.startswith("private_equity:") for pool in scenario.holding_pools)
-    ):
-        raise ValueError(
-            "the scoped actor control supports public securities, cash and due claims, not housing or private equity"
-        )
-    if any(
-        claim.from_account.agent_id != actor for claim in (*scenario.obligations, *scenario.recurring_obligations)
-    ) or any(profile.agent_id != actor for profile in scenario.tax_profiles):
-        raise ValueError(
-            "only the decision-making household may have payment claims; counterparties use scheduled cashflows"
-        )
 
 
 class World:
@@ -157,7 +126,6 @@ class World:
         self.market = market
         self.rollout_id = market.rollout_id
         self.horizon_months = horizon_months
-        # Set by `from_run`; a composed world has no prepared input for `track` to check an agent against.
         self.agents: list[EconomicAgent] = []
         self.specs: dict[str, PreparedTlhPortfolio] = {}
         self.portfolios: dict[str, TlhPortfolio] = {}
@@ -195,55 +163,6 @@ class World:
         self.started = False
         self.opened = False
         self.finished = False
-
-    @classmethod
-    def from_run(cls, run: CompiledRun, rollout_id: int) -> World:
-        """The import adapter: declare and track everything the prepared scenario describes."""
-        if not isinstance(run, CompiledRun):
-            raise TypeError("execution requires a CompiledRun, not serialized input")
-        scenario = run.scenario
-        world = cls(
-            MarketPath.from_run(run, rollout_id),
-            horizon_months=scenario.horizon_months,
-            income_sources=scenario.income_sources,
-            jurisdictions=scenario.jurisdictions,
-        )
-        for account in scenario.accounts:
-            world.declare_account(account)
-        for profile in scenario.tax_profiles:
-            world.track(TaxAuthority(profile))
-        for salt in scenario._federal_salt_deduction_policies:
-            world.declare_deduction(salt)
-        for interest in scenario._mortgage_interest_deduction_policies:
-            world.declare_deduction(interest)
-        for pool in scenario.holding_pools:
-            world.declare_pool(pool)
-        for lot in scenario.initial_lots:
-            world.hold(lot)
-        for spec in scenario.tlh_portfolios:
-            world.declare_portfolio(spec)
-        for bond in scenario.initial_bonds:
-            world.hold(bond)
-        housing = Housing.from_scenario(scenario)
-        if housing != Housing() or scenario._property_tax_policies:
-            world.declare_housing(housing, scenario._property_tax_policies, scenario.locations)
-        for distribution in scenario.distributions:
-            world.declare_distribution(distribution)
-        for policy in scenario._private_equity_tender_policies:
-            world.declare_tender_policy(policy)
-        flows: tuple[PreparedTransfer | PreparedRecurringTransfer, ...] = (
-            *scenario.scheduled_transfers,
-            *scenario.recurring_transfers,
-            *scenario.scheduled_property_cashflows,
-            *scenario.recurring_property_cashflows,
-        )
-        for flow in flows:
-            world.declare_flow(flow)
-        for obligation in scenario.obligations:
-            world.billers.append(Biller(obligation))
-        for recurring in scenario.recurring_obligations:
-            world.billers.append(Biller(recurring))
-        return world
 
     def _composing(self) -> None:
         if self.started:
@@ -416,13 +335,19 @@ class World:
             raise ValueError(f"TLH pool {(spec.owner_agent_id, spec.account_id, spec.asset_id)!r} has another manager")
         if f"security:{spec.asset_id}" not in self.market.series:
             raise ValueError(f"missing security series for TLH portfolio {spec.portfolio_id!r}")
+        # A managed index may be marked at zero (see `declare_pool`), never below it.
+        for month, price in enumerate(self.market.path(f"security:{spec.asset_id}")):
+            if price < 0:
+                raise ValueError(
+                    f"TLH portfolio {spec.portfolio_id!r}: index price must be nonnegative, got {price} at month {month}"
+                )
         portfolio = TlhPortfolio(
             spec.assumptions,
             TlhOpening(month=-1, price=self.market.value(f"security:{spec.asset_id}", 0), cohorts=spec.initial_cohorts),
         )
         if self.managed is None:
             self.managed = ManagedPortfolios(self.income_sources, self.jurisdictions)
-        self.managed.open(self.accounting, spec, self.statement(spec, portfolio.observe()))
+        self.managed.open(self.accounting, spec, self.statement(spec, portfolio, 0))
         self.holdings.reserve(spec.owner_agent_id, spec.account_id, spec.asset_id)
         if self.distributions is not None:
             self.distributions.managed_slots.add((spec.owner_agent_id, spec.account_id, spec.asset_id))
@@ -591,8 +516,12 @@ class World:
                 f"series {amount.series_id!r} has zero base level at month {amount.base_month_index} for {label}"
             )
 
-    @staticmethod
-    def statement(spec: PreparedTlhPortfolio, value: TlhObservation) -> observations.TlhPortfolioObservation:
+    def statement(
+        self, spec: PreparedTlhPortfolio, portfolio: TlhPortfolio, month: int
+    ) -> observations.TlhPortfolioObservation:
+        """`portfolio` marked at `month`'s index level, which also decides whether it takes a contribution."""
+        price = self.market.value(f"security:{spec.asset_id}", month)
+        value = portfolio._observe_at_price(price)
         return observations.TlhPortfolioObservation(
             portfolio_id=spec.portfolio_id,
             owner_agent_id=spec.owner_agent_id,
@@ -600,6 +529,7 @@ class World:
             asset_id=spec.asset_id,
             value=value.value,
             reported_tax_basis=value.reported_tax_basis,
+            accepts_contributions=price > 0,
         )
 
     def effects(
@@ -611,7 +541,7 @@ class World:
         realizations: ModeledRealizations = _NO_REALIZATIONS,
     ) -> ComponentEffects:
         return ComponentEffects(
-            observation=self.statement(spec, candidate.observe()),
+            observation=self.statement(spec, candidate, self.month),
             cash_account_id=cash_account_id,
             cash_amount=cash_amount,
             short_term_gain=realizations.short_term_gain,
@@ -914,12 +844,7 @@ class World:
         if not self.failed and self.private_equity is not None:
             self.private_equity.advance(self.accounting, self.holdings, self.market, self.marks(), self.month)
         marks = [
-            self.statement(
-                spec,
-                self.portfolios[spec.portfolio_id]._observe_at_price(
-                    self.market.value(f"security:{spec.asset_id}", self.month + (not self.failed))
-                ),
-            )
+            self.statement(spec, self.portfolios[spec.portfolio_id], self.month + (not self.failed))
             for spec in self.specs.values()
         ]
         if self.managed is not None:

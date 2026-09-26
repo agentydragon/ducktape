@@ -23,12 +23,9 @@ from external_secrets_crds.io.external_secrets import (
 )
 from grafana_grafanadashboard_crds.org.integreatly.grafana import GrafanaDashboardSpecConfigMapRef
 from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsRelabelings,
     ServiceMonitorSpecEndpointsScheme,
-    ServiceMonitorSpecSelector,
 )
 
 from cluster.cdk8s import external_creds, forgejo_images
@@ -37,6 +34,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/github-exporter"
 _NAMESPACE = "monitoring"
@@ -222,12 +220,8 @@ def _service_monitor(chart: Chart, app: str, endpoint: ServiceMonitorSpecEndpoin
         chart,
         f"{app}-monitor",
         metadata=metadata(app, _NAMESPACE),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(
-                match_labels={"app.kubernetes.io/name": app, "app.kubernetes.io/component": "quota"}
-            ),
-            endpoints=[endpoint],
-        ),
+        selector={"app.kubernetes.io/name": app, "app.kubernetes.io/component": "quota"},
+        endpoints=[endpoint],
     )
 
 

@@ -46,7 +46,7 @@ py_library(
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s/agentplane:container_security",
         "//cluster/cdk8s/agentplane:node_scheduling",
-        "//cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor",
+        "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//haku/console:config",
         "//haku/console:mcp_config",
         "//haku/console:settings",

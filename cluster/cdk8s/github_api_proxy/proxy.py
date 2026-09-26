@@ -48,12 +48,6 @@ from gateway_api_tlsroute_crds.io.k8s.networking.gateway import (
     TlsRouteSpecRules,
     TlsRouteSpecRulesBackendRefs,
 )
-from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
-    PodMonitor,
-    PodMonitorSpec,
-    PodMonitorSpecPodMetricsEndpoints,
-    PodMonitorSpecSelector,
-)
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
     PrometheusRule,
     PrometheusRuleSpec,
@@ -69,6 +63,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 
 _IDENTITY_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/identity"
 _APP_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/app"
@@ -522,12 +517,8 @@ def _monitoring(scope: Construct) -> None:
         scope,
         "pod-monitor",
         metadata=metadata(_NAME, _NAMESPACE),
-        spec=PodMonitorSpec(
-            selector=PodMonitorSpecSelector(match_labels=_LABELS),
-            pod_metrics_endpoints=[
-                PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", scrape_timeout="10s")
-            ],
-        ),
+        selector=_LABELS,
+        pod_metrics_endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
     PrometheusRule(
         scope,

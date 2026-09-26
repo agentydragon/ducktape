@@ -52,12 +52,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecSelector,
-)
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecEndpoints
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
@@ -77,6 +72,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import (
     SecretStoreRef,
     remote_data,
 )
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 
 _NAMESPACE = "ha-mcp"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/ha-mcp/app"
@@ -335,10 +331,8 @@ class HaMcpApp(Construct):
             self,
             "servicemonitor",
             metadata=metadata(_APP_NAME, _NAMESPACE),
-            spec=ServiceMonitorSpec(
-                selector=ServiceMonitorSpecSelector(match_labels=_APP_LABELS),
-                endpoints=[ServiceMonitorSpecEndpoints(port="metrics")],
-            ),
+            selector=_APP_LABELS,
+            endpoints=[ServiceMonitorSpecEndpoints(port="metrics")],
         )
 
 
