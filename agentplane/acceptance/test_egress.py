@@ -41,8 +41,8 @@ from agentplane.runner import protocol_pb2
 # gazelle:include_dep @pypi//protobuf
 
 # Staging's seeded policy and the credential it substitutes
-# (cluster/k8s/agentplane-staging/agentplane.k8s.yaml, EgressPolicy "github-public").
-GITHUB_PUBLIC = "github-public"
+# (cluster/k8s/agentplane-staging/agentplane.k8s.yaml, EgressPolicy "github-agentydragon-agent").
+GITHUB_AGENTYDRAGON_AGENT = "github-agentydragon-agent"
 GITHUB_HOST = "github.com"
 GITHUB_API_HOST = "api.github.com"
 PUBLIC_REPO = "https://github.com/agentydragon/ducktape"
@@ -135,7 +135,7 @@ async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
 
     Nothing here tells the agent the placeholder. If it comes back as the bot, discovery worked.
     """
-    view = await sandbox(f"accept-probe-{harness}", policies=[GITHUB_PUBLIC])
+    view = await sandbox(f"accept-probe-{harness}", policies=[GITHUB_AGENTYDRAGON_AGENT])
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
     turn = await agent.run(PROBE)
     probe = turn.report(Probe)
@@ -150,7 +150,7 @@ async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
 
     admitted = await _decision_for(client, view.name, GITHUB_API_HOST)
     assert admitted.outcome is Outcome.ALLOW, f"{admitted!r}"
-    assert admitted.policy == GITHUB_PUBLIC, f"{admitted!r}"
+    assert admitted.policy == GITHUB_AGENTYDRAGON_AGENT, f"{admitted!r}"
     assert admitted.substituted, f"the API call was admitted with no credential substituted: {admitted!r}"
 
     refused = await _decision_for(client, view.name, UNLISTED_HOST)
@@ -202,7 +202,7 @@ async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(
     refused = await _decision_for(client, view.name, GITHUB_HOST)
     assert refused.outcome is Outcome.DENY, f"an unbound sandbox reached GitHub: {refused!r}"
 
-    await client.grant_egress(view.name, [GITHUB_PUBLIC])
+    await client.grant_egress(view.name, [GITHUB_AGENTYDRAGON_AGENT])
     # Observe the read-only request, not one replica's acknowledgement of the binding.
     async for attempt in AsyncRetrying(stop=stop_after_delay(BINDING_SECONDS), wait=wait_fixed(1), reraise=True):
         with attempt:

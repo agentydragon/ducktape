@@ -474,7 +474,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         ],
     )
     # GitHub downloads with nothing substituted: a release asset or a tag archive, which is what a
-    # Bazel `http_archive` fetches, without the write-capable PAT `github-public` carries.
+    # Bazel `http_archive` fetches, without the write-capable PAT `github-agentydragon-agent` carries.
     EgressPolicy(
         scope,
         "egresspolicy-github-downloads",
@@ -522,11 +522,11 @@ def add_staging_action_policies(scope: Construct) -> None:
     # `agentplane-testing` presents nothing either: the acceptance suite brings its own app token.
     # `github-downloads` presents nothing either: public GitHub downloads, GET and HEAD only.
     #
-    # TODO(github-egress): consider binding `github-public` here too. The ActionPolicyBinding below
+    # TODO(github-egress): consider binding `github-agentydragon-agent` here too. The ActionPolicyBinding below
     # auto-approves GitHub *reads through the Action Service*, while a sandbox of the same caller
     # has only `github-downloads`: GET and HEAD with no credential, so `git clone`, whose fetch
     # POSTs to `git-upload-pack`, fails for a repository its caller can read through an Action.
-    # What stands in the way is `github-public`'s credential: the `agentydragon-agent` PAT is
+    # What stands in the way is `github-agentydragon-agent`'s credential: the `agentydragon-agent` PAT is
     # write-capable and substituted on GET and POST with no path limit, so binding it lets a
     # sandbox push as that bot.
     EgressBinding(

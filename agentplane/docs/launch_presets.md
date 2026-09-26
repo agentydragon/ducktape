@@ -11,7 +11,7 @@ hand, while retaining the existing free-form controls. Selecting a preset fills 
 lock them or grant capabilities beyond the caller's authority.
 
 The first concrete preset is `public-coder`: a Codex runner Sandbox composing the `basic` and
-`github-public` egress policies, a runner-owned workspace initialization script, and a Codex Thread
+`github-agentydragon-agent` egress policies, a runner-owned workspace initialization script, and a Codex Thread
 default.
 
 ## Split and ownership

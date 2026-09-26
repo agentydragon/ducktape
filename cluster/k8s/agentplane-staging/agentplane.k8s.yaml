@@ -114,7 +114,7 @@ data:
         template: agentplane-runner
         policies:
           - basic
-          - github-public
+          - github-agentydragon-agent
         action_policy_sets:
           - public-github-reads
           - public-ducktape-reads
@@ -1373,7 +1373,7 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
-  name: github-public
+  name: github-agentydragon-agent
   namespace: agentplane-staging
 spec:
   rules:
