@@ -40,7 +40,13 @@ from finance.augur.model.testing import (
 )
 from finance.augur.product import service
 from finance.augur.product.conftest import MakeProductService
-from finance.augur.product.scenarios import build_scenario, resolve_primary_agent_id
+from finance.augur.product.scenarios import (
+    Home,
+    Situation,
+    build_situation,
+    resolve_primary_agent_id,
+    sim_locations_from_config,
+)
 from finance.augur.product.simulation import simulate_product_metrics
 from finance.augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS
 from finance.augur.product.wire import (
@@ -73,11 +79,18 @@ from finance.augur.product.wire import (
     SetRentedFractionEventWire,
     SleeveWeight,
 )
-from finance.augur.sim.compiler.execution import compile_run
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.books import AccountRef
+from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.prepared import (
+    PreparedAccount,
+    PreparedHoldingPool,
+    PreparedIndexedAmount,
+    PreparedPropertyCashflow,
+    PreparedRecurringPropertyCashflow,
+)
 from finance.augur.sim.product_metrics import ProductMetricFanSummary, ProductTerminalSummary
 from finance.augur.sim.quantiles import currency_quantiles
-from finance.augur.sim.scenario import Agent, InitialAccountBalance, InitialLot, Scenario, SeriesIndexedAmount
+from finance.augur.sim.world import World
 
 
 @dataclass
@@ -144,6 +157,11 @@ def _quanta_int(value: object) -> int:
 
     assert isinstance(value, str)
     return int(value)
+
+
+def _home(situation: Situation) -> Home:
+    assert situation.home is not None
+    return situation.home
 
 
 def _with_fixed_cash(config: Config, cash: Decimal | int | str) -> Config:
@@ -275,29 +293,14 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled(
         product.rollout(_rollout_request(scenario_key))
 
 
-def test_product_metrics_fail_when_holding_price_series_is_missing() -> None:
-    scenario = Scenario(
-        agents=[Agent(agent_id="agent_a")],
-        initial_cash=[InitialAccountBalance(agent_id="agent_a", account_id="checking", balance=0)],
-        initial_lots=[
-            InitialLot(
-                lot_id="unpriced_lot",
-                agent_id="agent_a",
-                asset=SecurityKey(symbol=SecuritySymbol("missing")),
-                purchase_month_index=-1,
-                quantity=2.0,
-                cost_basis=2,
-            )
-        ],
-        tax_profiles=[],
-        horizon_months=1,
+def test_a_holding_no_series_prices_is_refused_where_its_pool_is_declared() -> None:
+    world = World(MarketPath((), 0, rollout_count=1), horizon_months=1)
+    world.declare_account(
+        PreparedAccount(account=AccountRef(agent_id="agent_a", account_id="checking"), opening_balance=0)
     )
-    with pytest.raises(ValueError, match="security:missing"):
-        simulate_product_metrics(
-            compile_run(
-                scenario, rollout_count=1, external_series=ExternalSeriesContext(), jurisdictions={}, locations={}
-            ),
-            primary_agent_id="agent_a",
+    with pytest.raises(ValueError, match="missing public security series for 'missing'"):
+        world.declare_pool(
+            PreparedHoldingPool(agent_id="agent_a", account_id="checking", asset_id="missing", quantity_scale=1_000_000)
         )
 
 
@@ -423,8 +426,13 @@ def test_fan_and_selected_rollout_metrics_share_one_reducer(
     product: service.ProductService, scenario_key: ScenarioKey
 ) -> None:
     seeds = (7, 8)
-    run, _model_id = product._compile_product_run(scenario_key, seeds)
-    metrics = simulate_product_metrics(run, primary_agent_id=product._primary_agent_id)
+    situation, worlds, _model_id = product._worlds(scenario_key, seeds)
+    metrics = simulate_product_metrics(
+        worlds,
+        horizon_months=situation.horizon_months,
+        currency=situation.currency,
+        primary_agent_id=product._primary_agent_id,
+    )
     expected_metrics = metrics.metric_arrays()
     expected_failed = metrics.failed_month
     percentiles = (0.0, 25.0, 50.0, 75.0, 100.0)
@@ -1300,7 +1308,7 @@ def test_property_purchase_emits_purchase_mortgage_and_property_tax_events(
         assert tax_event.shortfall_quanta == _usd_quanta(0.0)
 
 
-def test_product_lowers_primary_residence_assignments_to_sim_scenario(
+def test_product_lowers_primary_residence_assignments_to_housing(
     augur_config: Config, catalog: CatalogResponse
 ) -> None:
     primary_agent_id = resolve_primary_agent_id(augur_config)
@@ -1321,18 +1329,21 @@ def test_product_lowers_primary_residence_assignments_to_sim_scenario(
         ),
     )
 
-    sim_scenario = build_scenario(
-        scenario,
-        primary_agent_id=primary_agent_id,
-        initial_cash=Decimal(1200000),
-        initial_lots=(),
-        properties_by_id=catalog.properties_by_id,
+    home = _home(
+        build_situation(
+            scenario,
+            primary_agent_id=primary_agent_id,
+            initial_cash=Decimal(1200000),
+            initial_lots=(),
+            properties_by_id=catalog.properties_by_id,
+            locations=sim_locations_from_config(augur_config.locations),
+        )
     )
 
-    assert [(row.agent_id, row.property_id) for row in sim_scenario.initial_primary_residences] == [
+    assert [(row.agent_id, row.property_id) for row in home.housing.initial_residences] == [
         (primary_agent_id, "location_a_property")
     ]
-    assert [(row.month, row.agent_id, row.property_id) for row in sim_scenario.primary_residence_events] == [
+    assert [(row.month, row.agent_id, row.property_id) for row in home.housing.residence_events] == [
         (12, primary_agent_id, None),
         (24, primary_agent_id, "location_a_property"),
     ]
@@ -1357,41 +1368,46 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
         ),
     )
 
-    sim_scenario = build_scenario(
-        scenario,
-        primary_agent_id=primary_agent_id,
-        initial_cash=Decimal(1200000),
-        initial_lots=(),
-        properties_by_id=catalog.properties_by_id,
+    home = _home(
+        build_situation(
+            scenario,
+            primary_agent_id=primary_agent_id,
+            initial_cash=Decimal(1200000),
+            initial_lots=(),
+            properties_by_id=catalog.properties_by_id,
+            locations=sim_locations_from_config(augur_config.locations),
+        )
     )
 
     rent_transfer = one(
         transfer
-        for transfer in sim_scenario.recurring_property_cashflows
-        if transfer.cause_id == "rental_income:location_a_property"
+        for transfer in home.cashflows
+        if isinstance(transfer, PreparedRecurringPropertyCashflow)
+        and transfer.cause_id == "rental_income:location_a_property"
     )
     assert rent_transfer.property_id == "location_a_property"
-    assert isinstance(rent_transfer.amount, SeriesIndexedAmount)
-    assert rent_transfer.amount.base_amount == pytest.approx(6_000.0 * 0.5 * 0.90)
-    assert rent_transfer.amount.series == RentKey(location_id=LocationId("location_a"))
+    assert isinstance(rent_transfer.amount, PreparedIndexedAmount)
+    assert rent_transfer.amount.base_amount == _quanta_int(_usd_quanta(6_000.0 * 0.5 * 0.90))
+    assert rent_transfer.amount.series_id == RentKey(location_id=LocationId("location_a")).wire_id
 
     management_fee = one(
         transfer
-        for transfer in sim_scenario.recurring_property_cashflows
-        if transfer.cause_id == "management_fee:location_a_property"
+        for transfer in home.cashflows
+        if isinstance(transfer, PreparedRecurringPropertyCashflow)
+        and transfer.cause_id == "management_fee:location_a_property"
     )
     assert management_fee.property_id == "location_a_property"
-    assert isinstance(management_fee.amount, SeriesIndexedAmount)
-    assert management_fee.amount.base_amount == pytest.approx(6_000.0 * 0.5 * 0.90 * 0.08)
+    assert isinstance(management_fee.amount, PreparedIndexedAmount)
+    assert management_fee.amount.base_amount == _quanta_int(_usd_quanta(6_000.0 * 0.5 * 0.90 * 0.08))
 
     leasing_fee = one(
         transfer
-        for transfer in sim_scenario.scheduled_property_cashflows
-        if transfer.cause_id == "leasing_fee:location_a_property:m0"
+        for transfer in home.cashflows
+        if isinstance(transfer, PreparedPropertyCashflow) and transfer.cause_id == "leasing_fee:location_a_property:m0"
     )
     assert leasing_fee.property_id == "location_a_property"
-    assert isinstance(leasing_fee.amount, SeriesIndexedAmount)
-    assert leasing_fee.amount.base_amount == pytest.approx(6_000.0 * 0.5)
+    assert isinstance(leasing_fee.amount, PreparedIndexedAmount)
+    assert leasing_fee.amount.base_amount == _quanta_int(_usd_quanta(6_000.0 * 0.5))
 
 
 def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
@@ -1418,48 +1434,58 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
         ),
     )
 
-    sim_scenario = build_scenario(
-        scenario,
-        primary_agent_id=primary_agent_id,
-        initial_cash=Decimal(1200000),
-        initial_lots=(),
-        properties_by_id=catalog.properties_by_id,
+    home = _home(
+        build_situation(
+            scenario,
+            primary_agent_id=primary_agent_id,
+            initial_cash=Decimal(1200000),
+            initial_lots=(),
+            properties_by_id=catalog.properties_by_id,
+            locations=sim_locations_from_config(augur_config.locations),
+        )
     )
 
     rent_transfers = [
         transfer
-        for transfer in sim_scenario.recurring_property_cashflows
-        if transfer.cause_id == "rental_income:location_a_property"
+        for transfer in home.cashflows
+        if isinstance(transfer, PreparedRecurringPropertyCashflow)
+        and transfer.cause_id == "rental_income:location_a_property"
     ]
     assert {transfer.property_id for transfer in rent_transfers} == {"location_a_property"}
     assert [(transfer.start_month, transfer.end_month) for transfer in rent_transfers] == [(0, 2), (3, 5), (8, 11)]
     rent_amounts = []
     for rent_transfer in rent_transfers:
-        assert isinstance(rent_transfer.amount, SeriesIndexedAmount)
+        assert isinstance(rent_transfer.amount, PreparedIndexedAmount)
         rent_amounts.append(rent_transfer.amount.base_amount)
-        assert rent_transfer.amount.series == RentKey(location_id=LocationId("location_a"))
-    assert rent_amounts == pytest.approx([6_000.0 * 0.25 * 0.90, 6_000.0 * 0.75 * 0.90, 6_000.0 * 0.5 * 0.90])
+        assert rent_transfer.amount.series_id == RentKey(location_id=LocationId("location_a")).wire_id
+    assert rent_amounts == [
+        _quanta_int(_usd_quanta(amount))
+        for amount in (6_000.0 * 0.25 * 0.90, 6_000.0 * 0.75 * 0.90, 6_000.0 * 0.5 * 0.90)
+    ]
 
     management_fees = [
         transfer
-        for transfer in sim_scenario.recurring_property_cashflows
-        if transfer.cause_id == "management_fee:location_a_property"
+        for transfer in home.cashflows
+        if isinstance(transfer, PreparedRecurringPropertyCashflow)
+        and transfer.cause_id == "management_fee:location_a_property"
     ]
     assert {transfer.property_id for transfer in management_fees} == {"location_a_property"}
     assert [(transfer.start_month, transfer.end_month) for transfer in management_fees] == [(0, 2), (3, 5), (8, 11)]
     fee_amounts = []
     for management_fee in management_fees:
-        assert isinstance(management_fee.amount, SeriesIndexedAmount)
+        assert isinstance(management_fee.amount, PreparedIndexedAmount)
         fee_amounts.append(management_fee.amount.base_amount)
-    assert fee_amounts == pytest.approx(
-        [6_000.0 * 0.25 * 0.90 * 0.08, 6_000.0 * 0.75 * 0.90 * 0.08, 6_000.0 * 0.5 * 0.90 * 0.08]
-    )
+    assert fee_amounts == [
+        _quanta_int(_usd_quanta(amount))
+        for amount in (6_000.0 * 0.25 * 0.90 * 0.08, 6_000.0 * 0.75 * 0.90 * 0.08, 6_000.0 * 0.5 * 0.90 * 0.08)
+    ]
 
     leasing_fees = sorted(
         (
             transfer
-            for transfer in sim_scenario.scheduled_property_cashflows
-            if transfer.cause_id.startswith("leasing_fee:location_a_property:")
+            for transfer in home.cashflows
+            if isinstance(transfer, PreparedPropertyCashflow)
+            and transfer.cause_id.startswith("leasing_fee:location_a_property:")
         ),
         key=lambda transfer: transfer.month,
     )
@@ -1467,9 +1493,11 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
     assert [transfer.month for transfer in leasing_fees] == [0, 3, 8]
     leasing_amounts = []
     for leasing_fee in leasing_fees:
-        assert isinstance(leasing_fee.amount, SeriesIndexedAmount)
+        assert isinstance(leasing_fee.amount, PreparedIndexedAmount)
         leasing_amounts.append(leasing_fee.amount.base_amount)
-    assert leasing_amounts == pytest.approx([6_000.0 * 0.25, 6_000.0 * 0.75, 6_000.0 * 0.5])
+    assert leasing_amounts == [
+        _quanta_int(_usd_quanta(amount)) for amount in (6_000.0 * 0.25, 6_000.0 * 0.75, 6_000.0 * 0.5)
+    ]
 
 
 def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_rental(
@@ -1490,24 +1518,28 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
         ),
     )
 
-    sim_scenario = build_scenario(
-        scenario,
-        primary_agent_id=primary_agent_id,
-        initial_cash=Decimal(1200000),
-        initial_lots=(),
-        properties_by_id=catalog.properties_by_id,
+    home = _home(
+        build_situation(
+            scenario,
+            primary_agent_id=primary_agent_id,
+            initial_cash=Decimal(1200000),
+            initial_lots=(),
+            properties_by_id=catalog.properties_by_id,
+            locations=sim_locations_from_config(augur_config.locations),
+        )
     )
 
     rent_transfer = one(
         transfer
-        for transfer in sim_scenario.recurring_property_cashflows
-        if transfer.cause_id == "rental_income:location_a_property"
+        for transfer in home.cashflows
+        if isinstance(transfer, PreparedRecurringPropertyCashflow)
+        and transfer.cause_id == "rental_income:location_a_property"
     )
     assert rent_transfer.property_id == "location_a_property"
     assert (rent_transfer.start_month, rent_transfer.end_month) == (3, 5)
-    assert isinstance(rent_transfer.amount, SeriesIndexedAmount)
-    assert rent_transfer.amount.base_amount == pytest.approx(4_200.0 * 0.5 * 0.95)
-    assert rent_transfer.amount.series == RentKey(location_id=LocationId("location_a"))
+    assert isinstance(rent_transfer.amount, PreparedIndexedAmount)
+    assert rent_transfer.amount.base_amount == _quanta_int(_usd_quanta(4_200.0 * 0.5 * 0.95))
+    assert rent_transfer.amount.series_id == RentKey(location_id=LocationId("location_a")).wire_id
 
 
 def test_future_rental_lifecycle_requires_rent_series_at_product_api(
@@ -1675,7 +1707,7 @@ def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(product: s
     assert [event for event in detail.rollout.events if event.kind == "hoa_dues_payment"] == []
 
 
-def test_build_scenario_wires_property_expenses_to_payees(augur_config: Config, catalog: CatalogResponse) -> None:
+def test_build_situation_wires_property_expenses_to_payees(augur_config: Config, catalog: CatalogResponse) -> None:
     primary_agent_id = resolve_primary_agent_id(augur_config)
     scenario = ScenarioKey(
         model_id="current_model",
@@ -1691,17 +1723,18 @@ def test_build_scenario_wires_property_expenses_to_payees(augur_config: Config, 
         ),
     )
 
-    sim_scenario = build_scenario(
+    situation = build_situation(
         scenario,
         primary_agent_id=primary_agent_id,
         initial_cash=Decimal(600_000),
         initial_lots=(),
         properties_by_id=catalog.properties_by_id,
+        locations=sim_locations_from_config(augur_config.locations),
     )
 
     expense_obligations = [
         obligation
-        for obligation in sim_scenario.recurring_obligations
+        for obligation in situation.obligations
         if obligation.obligation_id in {"hoa_dues", "homeowners_insurance", "property_maintenance"}
     ]
     assert [obligation.obligation_id for obligation in expense_obligations] == [
@@ -1709,21 +1742,18 @@ def test_build_scenario_wires_property_expenses_to_payees(augur_config: Config, 
         "homeowners_insurance",
         "property_maintenance",
     ]
-    assert [(obligation.to_agent_id, obligation.to_account_id) for obligation in expense_obligations] == [
-        ("hoa", "checking"),
-        ("insurer", "checking"),
-        ("maintenance_vendor", "checking"),
-    ]
-    assert all(obligation.agent_id == primary_agent_id for obligation in expense_obligations)
+    assert [
+        (obligation.to_account.agent_id, obligation.to_account.account_id) for obligation in expense_obligations
+    ] == [("hoa", "checking"), ("insurer", "checking"), ("maintenance_vendor", "checking")]
+    assert all(obligation.from_account.agent_id == primary_agent_id for obligation in expense_obligations)
     assert all(obligation.property_id == "location_b_property" for obligation in expense_obligations)
-    assert [obligation.deductible_fraction for obligation in expense_obligations] == pytest.approx([0.25] * 3)
-    expense_amounts: list[Decimal] = []
+    assert [obligation.deductible_fraction_ppb for obligation in expense_obligations] == [250_000_000] * 3
+    expense_amounts: list[int] = []
     for obligation in expense_obligations:
-        assert isinstance(obligation.amount_due, SeriesIndexedAmount)
+        assert isinstance(obligation.amount_due, PreparedIndexedAmount)
         expense_amounts.append(obligation.amount_due.base_amount)
-    assert expense_amounts == [Decimal(150), Decimal(182), Decimal("487.50")]
-    assert {agent.agent_id for agent in sim_scenario.agents} >= {"hoa", "insurer", "maintenance_vendor"}
-    assert {balance.agent_id for balance in sim_scenario.initial_cash} >= {"hoa", "insurer", "maintenance_vendor"}
+    assert expense_amounts == [_quanta_int(_usd_quanta(amount)) for amount in (150, 182, 487.50)]
+    assert {opening.account.agent_id for opening in situation.accounts} >= {"hoa", "insurer", "maintenance_vendor"}
 
 
 def test_property_purchase_emits_homeowners_insurance_at_default_pct(product: service.ProductService) -> None:
@@ -1834,8 +1864,8 @@ def test_property_purchase_rejects_unknown_property(product: service.ProductServ
 def test_primary_residence_mortgage_emits_mortgage_interest_deduction_policy(
     counting_model: CountingModel, augur_config: Config, make_product_service: MakeProductService
 ) -> None:
-    """A mortgaged primary residence builds one MortgageInterestDeductionPolicy on the sim
-    Scenario; tax_accrual events surface a non-zero mortgage_interest_deduction."""
+    """A mortgaged primary residence declares one mortgage interest deduction on each world;
+    tax_accrual events surface a non-zero mortgage_interest_deduction."""
     config = _with_fixed_cash(augur_config, 400_000)
     product = make_product_service(counting_model, config=config)
     scenario = ScenarioKey(

@@ -1032,26 +1032,6 @@ py_test(
 )
 
 py_test(
-    name = "prepared_allocation_test",
-    srcs = ["prepared_allocation_test.py"],
-    deps = [
-        ":artifacts",
-        ":external_series",
-        ":jurisdictions",
-        ":prepared",
-        ":scenario",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "//finance/augur/policy:configured_allocation",
-        "//finance/augur/sim/compiler:execution",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "mortgage_lifecycle_test",
     srcs = ["mortgage_lifecycle_test.py"],
     deps = [

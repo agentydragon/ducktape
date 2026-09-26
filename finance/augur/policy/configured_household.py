@@ -2,13 +2,15 @@
 
 from collections import defaultdict
 
-from finance.augur.policy.configured_allocation import PendingBuy, materialize_buy, plan
+from finance.augur.policy.configured_allocation import PendingBuy, check_policies, materialize_buy, plan
 from finance.augur.sim.actions import Action, Buy, Liquidate, LotSale, PayClaim, Sell, Withdraw
 from finance.augur.sim.agent import EconomicAgent
+from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AgentId
 from finance.augur.sim.money import checked_count, mul_div, position_value
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import PreparedAmount, PreparedFixedAmount, _AllocationPolicy, _ScheduledSale
+from finance.augur.sim.world import World
 
 
 class ConfiguredHousehold(EconomicAgent):
@@ -40,6 +42,20 @@ class ConfiguredHousehold(EconomicAgent):
         # The CPI level of every month this household has seen, so an indexed band bound can be
         # read at its own reset month rather than only at the current one.
         self.cpi_levels: list[int] = []
+
+    def check(self, world: World) -> None:
+        """Refuse policies and scheduled sales naming what `world` does not declare; call before tracking."""
+        check_policies(world, self.policies)
+        pools = {(pool.agent_id, pool.account_id, pool.asset_id) for pool in world.holdings.pools}
+        for sale in self.scheduled_sales:
+            if not 0 <= sale.month < world.horizon_months:
+                raise ValueError(f"sale {sale.cause_id!r} has month {sale.month}, outside the horizon")
+            if AccountRef(agent_id=sale.agent_id, account_id=sale.proceeds_account_id) not in world.accounting.declared:
+                raise ValueError(f"sale {sale.cause_id!r} references an unknown proceeds account")
+            if (sale.agent_id, sale.account_id, sale.asset_id) not in pools:
+                raise ValueError(f"sale {sale.cause_id!r} references no holding pool")
+            if f"security:{sale.asset_id}" not in world.market.series:
+                raise ValueError(f'missing series "security:{sale.asset_id}"')
 
     def decide(self, observation: Observation) -> list[Action]:
         if observation.cpi is not None:
