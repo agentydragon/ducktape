@@ -20,11 +20,6 @@ This study does not wait for the app's housing/PE branches, unrelated configured
 reader retirement or performance work. BIND/TAX gate expanded product/statutory
 claims, not clearly labeled synthetic controls.
 
-Tax-aware investor rules additionally need CAP's
-[recorded-tax observation slice](policy_interfaces.md#observationspy): current
-Python observations expose component value/basis but not the household's tax
-facts. Fixed-flow harvesting/no-harvest comparisons need not wait for that slice.
-
 Empirical calibration, wash sales, fees and constituent modeling remain
 [future research](future_work.md#reduced-form-tlh-portfolios), not prerequisites
 for the paired accounting control.

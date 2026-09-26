@@ -26,23 +26,15 @@ class Observation:
     contracts: tuple[ContractView, ...]
     claims: tuple[ClaimView, ...]
     market: MarketView
-    tax_records: TaxRecords
     events: tuple[ActorEvent, ...]
 ```
 
-Beyond today's cash, lots, pools, held bonds, TLH statements, claims, CPI and last
-month's receipts: accounts distinguish available cash from unsettled proceeds;
-contracts expose known terms, amounts and due dates, not a funding strategy; market
-observations carry publication/observation times, and a property estimate is not an
-observable true value; events convey new information. No future realized paths or
+Beyond today's cash, lots, pools, held bonds, TLH statements, claims, CPI, tax
+records and last month's receipts: accounts distinguish available cash from unsettled
+proceeds; contracts expose known terms, amounts and due dates, not a funding strategy;
+market observations carry publication/observation times, and a property estimate is
+not an observable true value; events convey new information. No future realized paths or
 another actor's private books.
-
-`tax_records` is CAP's committed slice. Expose actor-scoped recorded income,
-jurisdiction gain/carryforward facts and assessed outstanding liabilities from the
-existing Python accounting records when a tax-aware policy needs them; TLH value/basis
-and payment claims are not a substitute. Test visibility after the month's modeled
-losses, after a prior sale and across year-end/reset; exclude future assessments and
-other actors' facts. Reuse the canonical records, not a policy-side tax ledger.
 
 ## `actions.py`
 
