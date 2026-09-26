@@ -20,20 +20,15 @@ from cnpg_database_crds.io.cnpg.postgresql import (
     DatabaseSpecExtensions,
     DatabaseSpecExtensionsEnsure,
 )
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTargetCreationPolicy,
-    ExternalSecretSpecTargetTemplate,
-)
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from agentplane.indexing.main import Settings
 from cluster.cdk8s import cnpg, forgejo_images
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from util.settings_contract import env_name
 
 NAME = "agentplane-index"
@@ -78,21 +73,13 @@ def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
 
 
 def _read_token(chart: Chart) -> None:
-    Password(
-        chart,
-        "read-token-generator",
-        metadata=metadata(_READ_TOKEN, NAME),
-        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         chart,
         "read-token",
         name=_READ_TOKEN,
         namespace=NAME,
-        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[DataFrom.from_password_generator(_READ_TOKEN)],
+        key="token",
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"token": "{{ .password }}"}),
     )
 
 

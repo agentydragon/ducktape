@@ -16,11 +16,7 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTargetCreationPolicy,
-)
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsAuthorization,
@@ -45,13 +41,13 @@ from volsync_replicationsource_crds.backube.volsync import (
 )
 
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
@@ -519,19 +515,14 @@ def _token_provisioner(scope: Construct) -> None:
 
 
 def _metrics_token(scope: Construct) -> None:
-    generator = Password(
-        scope,
-        "metrics-token-generator",
-        metadata=metadata(_METRICS_TOKEN, _NAMESPACE),
-        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    # No explicit target template: ESO copies the generator's own `password` field
+    # straight into the target Secret, under that same name.
+    mint_bearer_secret(
         scope,
         "metrics-token",
         name=_METRICS_TOKEN,
         namespace=_NAMESPACE,
-        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[DataFrom.from_password_generator(generator.name)],
+        key=None,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
     )
 

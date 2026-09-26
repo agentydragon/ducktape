@@ -19,7 +19,6 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPorts,
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_clusterexternalsecret_crds.io.external_secrets import (
     ClusterExternalSecret,
     ClusterExternalSecretSpec,
@@ -30,19 +29,15 @@ from external_secrets_clusterexternalsecret_crds.io.external_secrets import (
     ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind,
     ClusterExternalSecretSpecExternalSecretSpecTarget,
 )
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTargetCreationPolicy,
-    ExternalSecretSpecTargetTemplate,
-)
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 
 NAME = "airlock"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/airlock"
@@ -135,21 +130,15 @@ def _deployment(chart: Chart) -> None:
 def _session_secret(chart: Chart) -> None:
     """Airlock's session-signing key is app-local. A key rotation invalidates existing browser
     sessions but does not need to update Authentik or another credential store."""
-    generator = Password(
-        chart,
-        "session-secret-generator",
-        metadata=metadata(_SESSION_SECRET, NAME),
-        spec=PasswordSpec(allow_repeat=True, digits=16, length=64, no_upper=False, symbols=0),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         chart,
         "session-secret",
         name=_SESSION_SECRET,
         namespace=NAME,
-        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[DataFrom.from_password_generator(generator.name)],
+        key="session-secret",
+        length=64,
+        digits=16,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
-        template=ExternalSecretSpecTargetTemplate(data={"session-secret": "{{ .password }}"}, type="Opaque"),
         immutable=True,
     )
 
