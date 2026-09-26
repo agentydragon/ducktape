@@ -19,12 +19,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecSelector,
-)
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
     PrometheusRuleSpecGroupsRules,
     PrometheusRuleSpecGroupsRulesExpr,
@@ -38,6 +32,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, group
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/tana-mcp"
@@ -381,10 +376,8 @@ def _facade(chart: Chart) -> None:
         chart,
         "facade-servicemonitor",
         metadata=metadata(_FACADE, _NAMESPACE),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(match_labels=_FACADE_LABELS),
-            endpoints=[ServiceMonitorSpecEndpoints(port="metrics", path="/metrics", scrape_timeout="10s")],
-        ),
+        selector=_FACADE_LABELS,
+        endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
     PrometheusRule(
         chart,

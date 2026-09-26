@@ -67,15 +67,15 @@ ledger principal before that month's servicing, so the sold property creates no
 later mortgage installment. This timing does not provide a household purchase
 action or change the configured all-or-none funding groups.
 
-The sim-level scenario separates property use from property ownership:
+The sim's authored records separate property use from property ownership:
 
 - `ScheduledPropertyPurchase.rented_fraction` is the initial rented share.
-- `Scenario.initial_primary_residences` is agent-scoped, one initial main home per agent.
-- `Scenario.primary_residence_events` assigns or clears an agent's main home over time.
-- `Scenario.property_lifecycle_events` handles rented-fraction changes, improvements,
+- `PrimaryResidenceAssignment` is agent-scoped, one initial main home per agent.
+- `SetPrimaryResidenceEvent` assigns or clears an agent's main home over time.
+- `PropertyLifecycleEvent` handles rented-fraction changes, improvements,
   and sales.
-- `Scenario.scheduled_property_cashflows` and
-  `Scenario.recurring_property_cashflows` model property-linked rent,
+- `ScheduledPropertyCashflow` and
+  `RecurringPropertyCashflow` model property-linked rent,
   management, and leasing cashflows. The engine gates them by property
   ownership lifecycle, then decodes fired rows into the generic transfer event
   frame without adding `property_id` to transfer events.

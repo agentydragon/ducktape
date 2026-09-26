@@ -36,7 +36,7 @@ from finance.augur.sim.prepared import (
     PreparedTransfer,
     _AllocationPolicy,
     _ScheduledSale,
-    _SleeveTarget,
+    _SecuritySleeveTarget,
 )
 from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, TaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -131,7 +131,9 @@ def allocation(
         account_id=account_id,
         source_account_ids=(BROKERAGE,),
         sleeves=tuple(
-            _SleeveTarget(asset_id=str(asset.symbol), weight=0 if zero_exit and index == 0 else 1, quantity_scale=SCALE)
+            _SecuritySleeveTarget(
+                asset_id=str(asset.symbol), weight=0 if zero_exit and index == 0 else 1, quantity_scale=SCALE
+            )
             for index, asset in enumerate(assets)
         ),
         cash_floor=floor,

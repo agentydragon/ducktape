@@ -11,12 +11,6 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecSelector,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import (
@@ -29,6 +23,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
 NAME = "cert-manager"
 NAMESPACE = "cert-manager"
@@ -106,13 +101,9 @@ def _service_monitor(chart: Chart, name: str, *, component: str, port: str) -> N
         chart,
         name,
         metadata=metadata(name, NAMESPACE),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(
-                match_labels={"app.kubernetes.io/instance": NAME, "app.kubernetes.io/component": component}
-            ),
-            # ServiceMonitor.port matches the Service port name, not the targetPort.
-            endpoints=[ServiceMonitorSpecEndpoints(port=port, path="/metrics")],
-        ),
+        selector={"app.kubernetes.io/instance": NAME, "app.kubernetes.io/component": component},
+        # ServiceMonitor.port matches the Service port name, not the targetPort.
+        endpoints=[Endpoint.plain(port=port)],
     )
 
 

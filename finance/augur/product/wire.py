@@ -66,19 +66,35 @@ type CurrencyQuanta = Annotated[str, StringConstraints(pattern=r"^-?(0|[1-9][0-9
 MAX_HORIZON_MONTHS = 100 * 12
 
 
-class SleeveWeight(ApiModel):
-    """One holding's share of the target allocation, as an integer relative weight.
+class SecuritySleeveWeight(ApiModel):
+    """A security's lots across the owner's accounts, as one sleeve of the target allocation.
 
-    Only RATIOS matter, so `(3, 1)` and `(30, 10)` are the same target. Weight 0 means the
-    holding is OUTSIDE the target: never sold to fund the band, and not counted when measuring
-    what is overweight. That is how a position you intend to keep — private equity before
-    liquidity, a bond held to maturity — is expressed. The product adapter drops these entries;
-    unlike this UI exclusion, a sim `SleeveTarget` with zero weight stays sellable and targets
-    a full exit when rebalancing.
+    Weights are integer and relative: only RATIOS matter, so `(3, 1)` and `(30, 10)` are the
+    same target. Weight 0 means the sleeve is OUTSIDE the target: never sold to fund the band,
+    and not counted when measuring what is overweight. That is how a position you intend to
+    keep — private equity before liquidity, a bond held to maturity — is expressed. The product
+    adapter drops these entries; unlike this UI exclusion, a sim sleeve target with zero weight
+    stays sellable and targets a full exit when rebalancing.
     """
 
+    kind: Literal["security"] = "security"
     symbol: SecuritySymbol
     weight: NonNegativeInt
+
+
+class ManagedSleeveWeight(ApiModel):
+    """A managed TLH portfolio as its own sleeve, sized in money; weights read as for a security sleeve.
+
+    `portfolio_id` is `ProductTlhPortfolio.portfolio_id`. The portfolio is not its index: lots of
+    the index it tracks are a separate security sleeve.
+    """
+
+    kind: Literal["managed_portfolio"] = "managed_portfolio"
+    portfolio_id: str
+    weight: NonNegativeInt
+
+
+type SleeveWeight = Annotated[SecuritySleeveWeight | ManagedSleeveWeight, Field(discriminator="kind")]
 
 
 class FundingPolicy(ApiModel):
@@ -103,27 +119,33 @@ class FundingPolicy(ApiModel):
     sleeve_weights: tuple[SleeveWeight, ...] = Field(
         default=(),
         description=(
-            "Target weight per holding symbol. Empty disables auto-sale entirely — the owner "
-            "never sells to fund the band, and an unaffordable obligation is ruin. There is no "
-            "'derive it for me' sentinel: the caller has each holding's current value and seeds "
-            "the weights from it, which is what makes the default 'hold what you have'. Private "
-            "equity can never appear — it has no symbol, and is sold only at tender events."
+            "Target weight per sleeve: a held security by symbol, or a managed TLH portfolio by id. "
+            "Empty disables auto-sale entirely — the owner never sells to fund the band, and an "
+            "unaffordable obligation is ruin. There is no 'derive it for me' sentinel: the caller "
+            "has each sleeve's current value and seeds the weights from it, which is what makes "
+            "the default 'hold what you have'. Private equity can never appear — it has no symbol, "
+            "and is sold only at tender events."
         ),
     )
 
     @model_validator(mode="after")
-    def _reject_inverted_band_and_duplicate_symbols(self) -> FundingPolicy:
+    def _reject_inverted_band_and_duplicate_sleeves(self) -> FundingPolicy:
         if self.cash_floor > self.cash_ceiling:
             raise ValueError(
                 f"cash floor must not exceed its ceiling; got floor={self.cash_floor}, "
                 f"ceiling={self.cash_ceiling}. An inverted band has no interior, so every "
                 "balance crosses both bounds at once."
             )
-        symbols = [sleeve.symbol for sleeve in self.sleeve_weights]
-        if len(set(symbols)) != len(symbols):
-            duplicated = sorted({s for s in symbols if symbols.count(s) > 1})
+        named = [
+            f"symbol {sleeve.symbol}"
+            if isinstance(sleeve, SecuritySleeveWeight)
+            else f"portfolio {sleeve.portfolio_id}"
+            for sleeve in self.sleeve_weights
+        ]
+        if len(set(named)) != len(named):
+            duplicated = sorted({name for name in named if named.count(name) > 1})
             raise ValueError(
-                f"sleeve weights name {duplicated} more than once; a holding weighted twice is double-counted"
+                f"sleeve weights name {duplicated} more than once; a sleeve weighted twice is double-counted"
             )
         return self
 

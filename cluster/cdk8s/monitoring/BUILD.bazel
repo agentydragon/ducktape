@@ -2,8 +2,8 @@
 # gazelle:resolve py source_watcher_crds //cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator
 # gazelle:resolve py flux_helm //cluster/cdk8s/crd_bindings/flux:helmrelease
 # gazelle:resolve py flux_source //cluster/cdk8s/crd_bindings/flux:helmrepository
-# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor
-# gazelle:resolve py prometheus_operator_podmonitor_crds //cluster/cdk8s/crd_bindings/prometheus_operator:podmonitor
+# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
+# gazelle:resolve py prometheus_operator_podmonitor_crds //cluster/cdk8s/providers/prometheus_operator:podmonitor
 # gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/providers/prometheus_operator:prometheusrule
 # gazelle:resolve py cilium_crds //cluster/cdk8s/providers/cilium:ciliumnetworkpolicy
 # gazelle:resolve py cnpg_cluster_crds //cluster/cdk8s/providers/cnpg:cluster
@@ -102,8 +102,9 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
+        "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
     ],
 )
@@ -308,8 +309,9 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/prometheus_operator:podmonitor",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
+        "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "//cluster/scripts:nebula_mesh",

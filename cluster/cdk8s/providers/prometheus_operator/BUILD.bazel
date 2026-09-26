@@ -1,8 +1,26 @@
 # gazelle:ignore
+# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
+# gazelle:resolve py prometheus_operator_podmonitor_crds //cluster/cdk8s/providers/prometheus_operator:podmonitor
 # gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/providers/prometheus_operator:prometheusrule
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+cdk8s_import(
+    name = "servicemonitor",
+    crd = "@prometheus_operator_servicemonitor_crd//file",
+    module_name = "prometheus_operator_crds",
+    module_path = "com/coreos/monitoring",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "podmonitor",
+    crd = "@prometheus_operator_podmonitor_crd//file",
+    module_name = "prometheus_operator_podmonitor_crds",
+    module_path = "com/coreos/monitoring",
+    visibility = ["//visibility:public"],
+)
 
 cdk8s_import(
     name = "prometheusrule",
@@ -13,6 +31,28 @@ cdk8s_import(
 )
 
 py_library(
+    name = "service_monitor",
+    srcs = ["service_monitor.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":servicemonitor",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "pod_monitor",
+    srcs = ["pod_monitor.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":podmonitor",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "prometheus_rule",
     srcs = ["prometheus_rule.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -20,6 +60,34 @@ py_library(
         ":prometheusrule",
         "@pypi//cdk8s",
         "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_service_monitor",
+    srcs = ["test_service_monitor.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":service_monitor",
+        ":servicemonitor",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_pod_monitor",
+    srcs = ["test_pod_monitor.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":pod_monitor",
+        ":podmonitor",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
     ],
 )
 

@@ -133,7 +133,7 @@ class _Cohort:
     # any mark and rides the index ratio without rounding. Money is rounded only where it leaves.
     exposure: Fraction
     basis: int
-    purchase_month: int
+    purchase_month_index: int
 
 
 def _money(amount: Fraction) -> int:
@@ -152,9 +152,13 @@ class TlhPortfolio:
     A contribution of X becomes exposure worth exactly X at the current mark; a
     withdrawal of X sells exactly X of exposure, FIFO, each cohort giving up basis in
     proportion to the value it sells. Nothing is rounded to a share grid and nothing
-    is kept back as cash, so there is no grid for a policy to size against. A caller
-    needing transactional settlement operates on a deepcopy and adopts it only when
-    the accounting engine accepts its financial effects.
+    is kept back as cash, so there is no grid for a policy to size against, and a
+    funding policy names the portfolio itself, never the index that moves its value.
+    At a zero mark there is no exposure to buy, so a contribution raises; the owner's
+    statement carries that as `accepts_contributions`, since a worthless portfolio and
+    an empty one can both report value and basis 0. A caller needing transactional
+    settlement operates on a deepcopy and adopts it only when the accounting engine
+    accepts its financial effects.
 
     Sale character uses Augur's monthly holding-period convention (12 months is
     long-term); the harvested character is the assumptions' short-term fraction.
@@ -277,7 +281,7 @@ class TlhPortfolio:
             basis = _money(cohort.basis * share)
             if share != 1:
                 kept.append(replace(cohort, exposure=cohort.exposure * (1 - share), basis=cohort.basis - basis))
-            if self._month - cohort.purchase_month >= 12:
+            if self._month - cohort.purchase_month_index >= 12:
                 long_term += proceeds - basis
             else:
                 short_term += proceeds - basis

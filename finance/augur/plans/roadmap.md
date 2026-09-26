@@ -22,10 +22,10 @@ recorded in [the design gates](library_design_gates.md) with GMETRICS (every cal
 records what it wants between steps) and the graph of the remaining `World` slices.
 This roadmap alone owns dispatch and dependencies.
 
-Committed and still open: remove the mandatory whole-Scenario authoring path and
-retire configured implicit strategies. Keep useful preparation, canonical
-accounting, explicit tax treatment and independent financial assertions. These
-cleanups do not authorize new financial features or silent timing changes.
+Committed and still open: retire configured implicit strategies. Keep useful
+preparation, canonical accounting, explicit tax treatment and independent financial
+assertions. These cleanups do not authorize new financial features or silent timing
+changes.
 
 **World is the selected composition.** The experiment tracks agents, contracts
 and components on an empty `World` and loops over `World.step()`: open, drain a
@@ -39,22 +39,19 @@ not empty. Financial duties never depend on what a caller records.
 The freeze prevents new dependence on legacy layers; correctness fixes and atomic
 reader migrations remain allowed. It does not block preserving supported behavior.
 
-- Do not add experiment-specific strategy/lifecycle fields to the universal
-  `Scenario`/`PreparedScenario` bag or require a new schema variant for each study.
 - Do not add new implicit policies; a policy is something a household consults.
 - Do not add a central component constructor/dispatch for a new experiment; declare
   and track it on `World`. Keep one owner per financial fact.
 - Do not add product-specific counters/slabs to `World`; the app records in `product/`.
 
-| Unit    | Scope                                                                                                                                                                                                                                                                                                                       | Immediate prerequisite and completion evidence                                                                                                                                                                            |
-| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| COMPOSE | The remaining `World` slices in [the gate note's graph](library_design_gates.md#remaining-work-in-dependency-order): delete `CompiledRun`, `compile_run` and the `Scenario` import adapters; the offers slice and drain; the tax-year close in `TaxAuthority`; seasoned contracts and a tracked property; the rollout axis. | The gate note's graph; its offers slice waits on GPE and its seasoned-contract and property slices on GHOUSE. Keep useful quantization, validation and external artifact persistence; no replacement giant config schema. |
-| P12     | Retire configured strategy orchestration: the app's configured household, its allocation proposer and funding-policy lowering.                                                                                                                                                                                              | Continue independently landable slices on settled contracts; full P12 still needs HOUSING and PE for their readers.                                                                                                       |
+| Unit    | Scope                                                                                                                                                                                                                                                                           | Immediate prerequisite and completion evidence                                                                                                    |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| COMPOSE | The remaining `World` slices in [the gate note's graph](library_design_gates.md#remaining-work-in-dependency-order): one public TLH cohort type; the offers slice and drain; the tax-year close in `TaxAuthority`; seasoned contracts and a tracked property; the rollout axis. | The gate note's graph; its offers slice waits on GPE and its seasoned-contract and property slices on GHOUSE. No replacement giant config schema. |
+| P12     | Retire configured strategy orchestration: the app's configured household, its allocation proposer and funding-policy lowering.                                                                                                                                                  | Continue independently landable slices on settled contracts; full P12 still needs HOUSING and PE for their readers.                               |
 
-Deleting `CompiledRun` and the `Scenario` adapters, the tax-year close and P12's
-public-portfolio slices can start now, in parallel. Keep older financial capability branches scoped
-as below. No dependency is introduced merely because files overlap or a rebase will
-be needed.
+The tax-year close, the rollout axis and P12's public-portfolio slices can start
+now, in parallel. Keep older financial capability branches scoped as below. No
+dependency is introduced merely because files overlap or a rebase will be needed.
 
 ## Destination and stopping conditions
 
@@ -361,9 +358,8 @@ and ownership are documented in [the simulator design](../sim/DESIGN.md).
 
 Remaining work is consumer/capability driven: P12 retires configured policy
 inputs and preserves unsupported common-action domains, while CAP adds only facts
-needed by an actual consumer. COMPOSE's remaining slices remove the mandatory
-construction path and finish the `World`. No new evaluator or native fallback is
-implied.
+needed by an actual consumer. COMPOSE's remaining slices finish the `World`. No new
+evaluator or native fallback is implied.
 
 ### Policy-interface PRs and acceptance
 
@@ -555,8 +551,8 @@ all the others to be solved first.
 
 ## Current dispatch and priorities
 
-1. **COMPOSE**: deleting `CompiledRun`, `compile_run` and the `Scenario` adapters
-   is ready now, as is the tax-year close; the rollout axis follows the deletion.
+1. **COMPOSE**: the tax-year close and the rollout axis are ready now; the TLH
+   cohort type waits on the open question in its gate-note entry.
 2. **MA3** remains a runnable paired TLH comparison on the existing Python
    component/session. Continue **STUDY** consumers alongside cleanup. Scope GT/GS
    and continue independent BIND/SCORE work. **domain composition** selects further domain

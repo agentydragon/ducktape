@@ -19,7 +19,6 @@ py_library(
         "//finance/augur/model:testing",
         "//finance/augur/product:testing",
         "//finance/augur/sim:locations",
-        "//finance/augur/sim:scenario",
         "//util/bazel:runfiles",
         "@pypi//pytest",
     ],

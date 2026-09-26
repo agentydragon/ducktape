@@ -14,7 +14,7 @@ import pytest_bazel
 from finance.augur.model.series import InflationKey, LevelSeriesKey, RentKey, SecurityDistributionKey, SecurityKey
 from finance.augur.product.funding import Policy
 from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, TAX_AUTHORITY_AGENT_ID, Situation, build_situation
-from finance.augur.product.wire import FundingPolicy, ScenarioKey, SleeveWeight, SpendIndex
+from finance.augur.product.wire import FundingPolicy, ScenarioKey, SecuritySleeveWeight, SleeveWeight, SpendIndex
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.compiler.execution import compile_holding_pools, compile_jurisdictions, compile_series
 from finance.augur.sim.compiler.tax import compile_profile
@@ -118,7 +118,7 @@ def run(
         world.declare_account(account)
     if tax is not None:
         world.track(TaxAuthority(compile_profile(tax[0], jurisdictions, quantum=situation.currency.quantum)))
-    for pool in compile_holding_pools(pools=(), lots=product.lots, policies=(), tlh_portfolios=()):
+    for pool in compile_holding_pools(lots=product.lots, policies=(), tlh_portfolios=()):
         world.declare_pool(pool)
     for held in situation.lots:
         world.hold(held)
@@ -145,7 +145,10 @@ def run(
 
 def test_symbol_weight_is_not_repeated_per_account_and_fifo_is_account_scoped() -> None:
     config = FundingPolicy(
-        sleeve_weights=(SleeveWeight(symbol=FIRST.symbol, weight=1), SleeveWeight(symbol=SECOND.symbol, weight=1))
+        sleeve_weights=(
+            SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),
+            SecuritySleeveWeight(symbol=SECOND.symbol, weight=1),
+        )
     )
     product = product_situation(
         config,
@@ -175,7 +178,7 @@ def test_refill_to_ceiling_inclusive_band_and_surplus_never_invested(cash: int, 
         cash_floor=260,
         cash_ceiling=280,
         cash_band_index_to_inflation=False,
-        sleeve_weights=(SleeveWeight(symbol=FIRST.symbol, weight=1),),
+        sleeve_weights=(SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),),
     )
     product = product_situation(config, cash=Decimal(cash), lots=(lot("fund", "brokerage", FIRST, Decimal(10)),))
     result = run(product, config, {FIRST: np.full((1, 2), 100.0)})
@@ -186,7 +189,8 @@ def test_refill_to_ceiling_inclusive_band_and_surplus_never_invested(cash: int, 
 
 
 @pytest.mark.parametrize(
-    "weights", [(), (SleeveWeight(symbol=FIRST.symbol, weight=0),), (SleeveWeight(symbol="absent", weight=1),)]
+    "weights",
+    [(), (SecuritySleeveWeight(symbol=FIRST.symbol, weight=0),), (SecuritySleeveWeight(symbol="absent", weight=1),)],
 )
 def test_empty_excluded_or_unheld_targets_allow_cash_payments_but_never_sell(weights: tuple[SleeveWeight, ...]) -> None:
     # Indexed nonzero bounds still need no CPI when sales are disabled, matching app semantics.
@@ -214,7 +218,10 @@ def test_empty_excluded_or_unheld_targets_allow_cash_payments_but_never_sell(wei
 
 def test_zero_weight_excludes_from_sales_and_target_denominator_even_on_exhaustion() -> None:
     config = FundingPolicy(
-        sleeve_weights=(SleeveWeight(symbol=FIRST.symbol, weight=0), SleeveWeight(symbol=SECOND.symbol, weight=1))
+        sleeve_weights=(
+            SecuritySleeveWeight(symbol=FIRST.symbol, weight=0),
+            SecuritySleeveWeight(symbol=SECOND.symbol, weight=1),
+        )
     )
     product = product_situation(
         config,
@@ -233,7 +240,7 @@ def test_monthly_cpi_band_rounds_original_bound_once() -> None:
     config = FundingPolicy(
         cash_floor=Decimal("0.01"),
         cash_ceiling=Decimal("0.01"),
-        sleeve_weights=(SleeveWeight(symbol=FIRST.symbol, weight=1),),
+        sleeve_weights=(SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),),
     )
     product = product_situation(
         config, spend=Decimal("0.01"), horizon=3, lots=(lot("fund", "brokerage", FIRST, Decimal(10)),)
@@ -281,7 +288,7 @@ def test_product_spend_tracks_monthly_cpi_but_rent_resets_only_annually() -> Non
 
 
 def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim() -> None:
-    config = FundingPolicy(sleeve_weights=(SleeveWeight(symbol=FIRST.symbol, weight=1),))
+    config = FundingPolicy(sleeve_weights=(SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),))
     rule = Jurisdiction(
         jurisdiction_id="test-flat",
         level=JurisdictionLevel.FEDERAL,

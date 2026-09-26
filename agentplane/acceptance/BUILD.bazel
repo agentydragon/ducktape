@@ -155,6 +155,7 @@ py_test(
         "//agentplane/app:presets",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
+        "//cluster/cdk8s:model_rosters",
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest",

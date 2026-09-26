@@ -20,15 +20,17 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
-from collections.abc import Callable
+import subprocess
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pygit2
 
-from devinfra.gc import branch_gc, git_repo, output_base_gc, worktree_gc
+from devinfra.gc import branch_gc, foreign_clone_gc, git_repo, output_base_gc, worktree_gc
 from devinfra.gc.branch_gc import BranchClassification, Holder, MainCheckout, PrunableBranch, RetainedBranch
+from devinfra.gc.foreign_clone_gc import ForeignCloneClassification
 from devinfra.gc.output_base_gc import Inspection, RetainedBase
 from devinfra.gc.pull_request import PrInfo
 from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressCategory, ProgressSink
@@ -44,6 +46,7 @@ class WorkspaceScan:
     worktrees: list[Classification]
     branches: list[BranchClassification]
     bases: list[Inspection]
+    foreign_clones: list[ForeignCloneClassification] = field(default_factory=list)
 
 
 def pr_branch_candidates(repo: Path) -> set[str]:
@@ -155,6 +158,35 @@ def _retained_workspaces(bases: list[Inspection]) -> set[Path]:
     )
 
 
+def _known_worktree_paths(repo: Path) -> set[Path]:
+    return _resolved({wt.path for wt in git_repo.list_worktrees(repo)})
+
+
+def foreign_clone_roots(repo: Path, output_user_root: Path) -> list[Path]:
+    """Roots of foreign clones of `repo`'s project found among Bazel output-base workspaces.
+
+    Filesystem-only (no network): re-scans output bases purely to learn candidate workspace
+    paths, independent of the main scan's own later bases pass — cheap without `--sizes`, so
+    duplicating it here is simpler than threading a shared scan through both call sites (the
+    bases-only CLI path already does the analogous two-pass thing for its PR-annotation step).
+    """
+    bases = output_base_gc.scan_output_user_root(output_user_root)
+    return foreign_clone_gc.discover_foreign_clones(
+        _retained_workspaces(bases), known_paths=_known_worktree_paths(repo), repo=repo
+    )
+
+
+def foreign_clone_branch_candidates(roots: Sequence[Path]) -> set[str]:
+    """Branch names worth a PR lookup across every worktree these foreign clones hold."""
+    names: set[str] = set()
+    for root in roots:
+        try:
+            names.update(wt.branch for wt in git_repo.list_worktrees(root) if wt.branch)
+        except OSError, subprocess.CalledProcessError:
+            continue
+    return names
+
+
 def _worktrees_at(repo: Path, workspaces: set[Path]) -> list[git_repo.Worktree]:
     """The linked worktrees sitting at one of `workspaces` (already resolved)."""
     if not workspaces:
@@ -212,6 +244,7 @@ def scan_workspace(
     pr_states: dict[str, PrInfo],
     active_path: Path | None = None,
     output_user_root: Path | None = None,
+    foreign_clone_roots: Sequence[Path] = (),
     proc_root: Path = Path("/proc"),
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
     progress: ProgressSink = NULL_PROGRESS,
@@ -279,4 +312,11 @@ def scan_workspace(
         ]
         logger.info("Bazel output-base scan complete: %d bases", len(bases))
 
-    return WorkspaceScan(worktrees=worktrees, branches=branches, bases=bases)
+    logger.info("Scanning %d foreign clones", len(foreign_clone_roots))
+    foreign_clones = [
+        foreign_clone_gc.classify_foreign_clone(root, pr_states=pr_states, active_path=active_path, proc_root=proc_root)
+        for root in foreign_clone_roots
+    ]
+    logger.info("Foreign-clone scan complete: %d clones", len(foreign_clones))
+
+    return WorkspaceScan(worktrees=worktrees, branches=branches, bases=bases, foreign_clones=foreign_clones)

@@ -133,7 +133,6 @@ py_library(
         ":tlh",
         "//finance/augur/model:asset_key",
         "//finance/augur/model:series",
-        "//finance/augur/model:series_model",
         "//finance/augur/policy:cash_band",
         "@pypi//pydantic",
     ],
@@ -193,7 +192,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
-        "@pypi//numpy",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -259,9 +257,6 @@ py_library(
         ":jurisdictions",
         ":scenario",
         ":tlh",
-        "//finance/augur/sim/compiler:income_sources",
-        "//finance/augur/sim/compiler:tax",
-        "@pypi//pydantic",
     ],
 )
 
@@ -298,9 +293,7 @@ py_library(
         ":capture",
         ":ids",
         ":observations",
-        ":prepared",
         ":results",
-        ":validation",
         ":world",
     ],
 )
@@ -768,20 +761,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "validation",
-    srcs = ["validation.py"],
-    deps = [
-        ":books",
-        ":fixed_point",
-        ":holdings",
-        ":money",
-        ":prepared",
-        ":private_equity",
-        ":scenario",
-    ],
-)
-
 py_test(
     name = "test_managed",
     srcs = ["test_managed.py"],
@@ -886,15 +865,6 @@ py_test(
         "//finance/augur/sim/testing:accounting",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "artifacts",
-    srcs = ["artifacts.py"],
-    deps = [
-        ":prepared",
-        "@pypi//pydantic",
     ],
 )
 
@@ -1634,8 +1604,8 @@ py_test(
 )
 
 py_test(
-    name = "validation_edges_test",
-    srcs = ["validation_edges_test.py"],
+    name = "unusable_facts_test",
+    srcs = ["unusable_facts_test.py"],
     deps = [
         ":books",
         ":external_series",
@@ -1684,25 +1654,6 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//numpy",
         "@pypi//polars",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "artifacts_test",
-    srcs = ["artifacts_test.py"],
-    deps = [
-        ":artifacts",
-        ":external_series",
-        ":prepared",
-        ":scenario",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "//finance/augur/sim/compiler:execution",
-        "@pypi//numpy",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

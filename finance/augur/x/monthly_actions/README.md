@@ -47,8 +47,8 @@ The tests invoke the documented CLI and check its emitted financial outcomes,
 then compare reordered and selected replay through the same authoring function.
 All inputs are generated locally; the tests need no live service or evidence data.
 
-`run.py` composes the situation straight onto a `World` per path — no `Scenario`,
-no `compile_run`: `situation()` compiles the shared stipulated price paths, and
+`run.py` composes the situation straight onto a `World` per path: `situation()`
+compiles the shared stipulated price paths, and
 `compose(case, rollout_id)` declares the three checking accounts, the tax authority,
 the household's holding pool and lot, and the bill onto one world. `execute` drives
 those worlds through the in-process

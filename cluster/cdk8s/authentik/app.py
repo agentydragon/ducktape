@@ -30,12 +30,6 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
     HttpRouteSpecRulesFiltersType,
 )
-from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
-    PodMonitor,
-    PodMonitorSpec,
-    PodMonitorSpecPodMetricsEndpoints,
-    PodMonitorSpecSelector,
-)
 
 from cluster.cdk8s.authentik import db
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
@@ -45,6 +39,7 @@ from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "authentik"
@@ -307,11 +302,9 @@ def _pod_monitor(chart: Chart) -> None:
         chart,
         "server-podmonitor",
         metadata=metadata("authentik-server", NAMESPACE),
-        spec=PodMonitorSpec(
-            selector=PodMonitorSpecSelector(match_labels=_SERVER_LABELS),
-            # TODO: Consider adding bearer token auth if Authentik metrics require authentication.
-            pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics")],
-        ),
+        selector=_SERVER_LABELS,
+        # TODO: Consider adding bearer token auth if Authentik metrics require authentication.
+        pod_metrics_endpoints=[Endpoint.plain(port="metrics")],
     )
 
 
