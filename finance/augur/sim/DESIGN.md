@@ -26,15 +26,21 @@ or HTTP modules.
 ```text
 supplied paths (+ rules)
     -> World(MarketPath(series, rollout_id, ...), horizon_months=...)
-    -> world.declare_account / declare_pool / hold / declare_portfolio
+    -> world.declare_account / declare_pool / hold / declare_portfolio / declare_distribution
+    -> world.declare_housing / declare_flow / declare_deduction / declare_tender_policy
     -> world.track(agent | mortgage | biller | tax_authority); world.start()
     -> world.step()  # open: statements and dues to the agent; MonthOpened -> ordered actions; close
     -> world.finished; the experiment read what it measures between steps
 ```
 
-An authored `Scenario` reaches the same world through the import adapter,
-`compile_run` then `World.from_run(run, rollout_id)`, which declares and tracks
-what the prepared scenario describes.
+Each declaration refuses what it cannot execute where it is declared: an unknown
+account, a missing or unusable series, a cashflow outside the horizon, a lifecycle
+event before its purchase. The compiler's per-table pieces (`compile_lots`,
+`compile_housing`, `compile_recurring_obligation`, …) lower authored records into
+the prepared records these declarations take. An authored `Scenario` reaches the
+same world through the import adapter, `compile_run` then
+`World.from_run(run, rollout_id)`, which declares and tracks what the prepared
+scenario describes.
 
 The batch form drives one such world per selected path:
 
@@ -122,9 +128,10 @@ comparing stopped books with completed horizons.
 
 ## The app
 
-`ProductService` runs <../product/simulation.py>: one world per path with the app
-household (<../policy/configured_household.py>) tracked on it and stepped to the
-horizon. The household consults `policy/configured_allocation.py` for its funding
+`ProductService` lowers each request once into a `Situation` of prepared declarations
+(<../product/scenarios.py>), samples the series it reads, and composes one world per
+path with the app household (<../policy/configured_household.py>) tracked on it;
+<../product/simulation.py> steps each to the horizon. The household consults `policy/configured_allocation.py` for its funding
 sales, pays each account's claims all or none on the cash those sales leave — so a
 month it cannot fund stops the path with the whole due as its shortfall — and sizes
 each exact purchase from what those sales and payments leave. Selected detail
