@@ -16,8 +16,16 @@ See <SPEC.md> for current financial, policy, failure and reporting contracts.
 ## Using Augur
 
 Augur is a set of building blocks, the way PyTorch is: the caller owns the rollout loop
-and calls Augur inside it. <x/monthly_actions/run.py> is the runnable, CI-tested template.
-Abridged:
+and calls Augur inside it. A run has two halves, and effects flow one way between them:
+
+- **Exogenous models** (<model/>, <x/models/>) are the part of reality Augur does not
+  simulate as actors: prices, rates, inflation. They sample their paths first.
+- **The `World`** (<sim/>) is the economy of simulated actors: the household,
+  counterparties, taxes and settlement. It is built on a sampled path and reads it.
+
+Actors never feed back into the exogenous paths.
+
+<x/monthly_actions/run.py> is the runnable, CI-tested template. Abridged:
 
 ```python
 bundle = model.sample(request)  # the model the caller chose
@@ -43,8 +51,8 @@ for rollout in batch.rollouts:
 1. **Sample paths.** A `Sampler` (<model/exogenous.py>) returns a `SampledExogenousBundle`
    from `sample(ExogenousSamplingRequest(...))`; historical replay
    (<model/historical_windows.py>) returns one from `materialize(...)`. `compile_series`
-   (<sim/external_series.py>) turns it into the integer series a world reads. A world is
-   built on its path, so sampling comes first. The template stipulates two price paths with
+   (<sim/external_series.py>) turns it into the integer series a world reads. The template
+   stipulates two price paths with
    `ExternalSeriesContext.from_level_blocks` instead of sampling a model.
 2. **Build and declare.** One `World` (<sim/world.py>) per path. Declare its month-0 state
    from the `Prepared*` facts (<sim/prepared.py>) with `declare_*` and `hold`, then `track`

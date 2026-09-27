@@ -16,6 +16,9 @@ adding parallel read-model tables over the captured long-form polars frames.
 - **One way to declare a world:** `declare_*`, `hold` and `track` on a `World`, driven by
   `start()`/`step()` or `ActionSession` (README § Using Augur). Do not add a second
   declaration path beside it.
+- **Exogenous paths come first and flow one way.** Exogenous models sample market paths;
+  a `World` of simulated actors is built on them. Nothing in `sim/` feeds back into a
+  sampler.
 - **No scenario objects.** No configuration value or enum that tries to represent every use
   case; callers compose worlds in code.
 - **No layer without a caller that needs it now.**
