@@ -1,14 +1,11 @@
-"""Ergonomic wrapper for grafana-operator's `Grafana` instance CR. The schema
-discriminates two real top-level shapes: an externally run instance the operator only
-points at (`spec.external`, wrapped by `Grafana.external`) and a managed instance the
-operator deploys itself, driven by `config`/`deployment`/etc. Ducktape's one managed
-instance (`monitoring/grafana_instance.py`) builds a `GrafanaSpec` almost entirely of its
-own OAuth/Postgres configuration, with no further reusable shape to factor out,
-so it constructs `Grafana` directly with that `GrafanaSpec` rather than through a
-`managed(...)` factory that would just forward one caller's blob.
+"""Ergonomic wrapper for grafana-operator's `Grafana` instance CR, following cdk8s-plus's own
+construction pattern: a class named after the kind, constructed as `Grafana(scope, id, *,
+metadata, ...)` with `GrafanaSpec` fields under their own names and types.
 """
 
 from __future__ import annotations
+
+from collections.abc import Mapping
 
 from cdk8s import ApiObjectMetadata
 from constructs import Construct
@@ -16,34 +13,33 @@ from grafana_grafana_crds.org.integreatly.grafana import (
     Grafana as _Grafana,
     GrafanaSpec,
     GrafanaSpecClient,
+    GrafanaSpecDeployment,
     GrafanaSpecExternal,
 )
 
 
 class Grafana(_Grafana):
-    """grafana-operator's `Grafana` instance. A managed instance is built by passing a
-    `GrafanaSpec` straight to this constructor (see module docstring); `Grafana.external`
-    covers the CRD's other real top-level shape."""
+    """grafana-operator's `Grafana` instance. The schema has two real top-level shapes: an
+    externally run instance the operator only points at (`external`), and a managed instance
+    the operator deploys itself from `config`/`deployment`. `None` leaves a field unset, so
+    grafana-operator's own default applies. Fields this repo doesn't build yet (`service`,
+    `persistentVolumeClaim`, ...) have no keyword here -- add one the day a caller needs it.
+    """
 
-    @classmethod
-    def external(
-        cls,
+    def __init__(
+        self,
         scope: Construct,
         id: str,
         *,
         metadata: ApiObjectMetadata,
-        url: str,
-        tenant_namespace: str,
-        use_kube_auth: bool | None = None,
-    ) -> Grafana:
-        """References a Grafana instance the operator does not manage -- `spec.external`,
-        the CRD's alternative to a `deployment`/`config`-driven managed instance."""
-        return cls(
+        external: GrafanaSpecExternal | None = None,
+        client: GrafanaSpecClient | None = None,
+        config: Mapping[str, Mapping[str, str]] | None = None,
+        deployment: GrafanaSpecDeployment | None = None,
+    ) -> None:
+        super().__init__(
             scope,
             id,
             metadata=metadata,
-            spec=GrafanaSpec(
-                external=GrafanaSpecExternal(url=url, tenant_namespace=tenant_namespace),
-                client=GrafanaSpecClient(use_kube_auth=use_kube_auth) if use_kube_auth is not None else None,
-            ),
+            spec=GrafanaSpec(external=external, client=client, config=config, deployment=deployment),
         )

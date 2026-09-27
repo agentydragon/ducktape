@@ -27,16 +27,8 @@ def write_manifests(root: Path) -> None:
 
 
 def flux_webhook_token(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    tofu_controller: Kustomization,
-    tofu_state_db: Kustomization,
-    github_secrets_sync_secrets: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
-        chart,
-        NAME,
-        artifact,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db, github_secrets_sync_secrets),
+        chart, NAME, artifact, timeout="5m", depends_on=flux_kustomization_depends_on_many(tofu_controller)
     )

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
+from grafana_grafana_crds.org.integreatly.grafana import GrafanaSpecClient, GrafanaSpecExternal
 from grafana_grafanaserviceaccount_crds.org.integreatly.grafana import (
     GrafanaServiceAccount,
     GrafanaServiceAccountSpec,
@@ -29,13 +30,14 @@ _GRAFANA = "grafana"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    Grafana.external(
+    Grafana(
         chart,
         "grafana",
         metadata=ApiObjectMetadata(name=_GRAFANA, namespace=_NAMESPACE),
-        url="http://grafana-service.monitoring.svc.cluster.local:3000",
-        tenant_namespace=_NAMESPACE,
-        use_kube_auth=True,
+        external=GrafanaSpecExternal(
+            url="http://grafana-service.monitoring.svc.cluster.local:3000", tenant_namespace=_NAMESPACE
+        ),
+        client=GrafanaSpecClient(use_kube_auth=True),
     )
     GrafanaServiceAccount(
         chart,

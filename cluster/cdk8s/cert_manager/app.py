@@ -11,6 +11,7 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
@@ -95,7 +96,9 @@ def _service_monitor(chart: Chart, name: str, *, component: str, port: str) -> N
         chart,
         name,
         metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-        selector={"app.kubernetes.io/instance": NAME, "app.kubernetes.io/component": component},
+        selector=ServiceMonitorSpecSelector(
+            match_labels={"app.kubernetes.io/instance": NAME, "app.kubernetes.io/component": component}
+        ),
         # ServiceMonitor.port matches the Service port name, not the targetPort.
         endpoints=[Endpoint.plain(port=port)],
     )
@@ -136,7 +139,7 @@ def write_manifests(root: Path) -> None:
 
 
 def cert_manager(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, reflector: Kustomization, monitoring_crds: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -144,10 +147,7 @@ def cert_manager(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            # TODO: drop this edge. It ordered the reflected cert-manager-issuer-config
-            # ConfigMap that postBuild read; neither exists any more.
-            reflector,
             # the ServiceMonitor/PodMonitor CRD
-            monitoring_crds,
+            monitoring_crds
         ),
     )

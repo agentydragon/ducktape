@@ -141,7 +141,7 @@ def _add_credentials(scope: Construct) -> None:
             namespace=_NAMESPACE,
             annotations={"description": "ESO-generated Dex client credentials and Agentplane session signing key."},
         ),
-        refresh="8760h",
+        refresh_interval="8760h",
         data_from=[
             rewrite("agentplane-testing-dex-client-secret", "client-secret"),
             rewrite("agentplane-testing-agentplane-session-secret", "session-secret"),
@@ -166,7 +166,7 @@ def _add_credentials(scope: Construct) -> None:
             namespace=_NAMESPACE,
             annotations={"description": "ESO-generated credentials for the testing MCP client registered in Dex."},
         ),
-        refresh="8760h",
+        refresh_interval="8760h",
         data_from=[rewrite("agentplane-testing-mcp-client-secret", "client-secret")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
@@ -186,7 +186,7 @@ def _add_credentials(scope: Construct) -> None:
                 "description": "Generates the acceptance password and Dex config together from one password value."
             },
         ),
-        refresh="8760h",
+        refresh_interval="8760h",
         # Dex's config and the acceptance client's password both come from this one
         # dataFrom entry: two ExternalSecrets naming the same Password generator get two
         # independent values (#7042).
@@ -300,7 +300,7 @@ def _add_network_policy(scope: Construct) -> None:
         scope,
         "networkpolicy",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        selector=_LABELS,
+        endpoint_selector=_LABELS,
         ingress=[
             IngressRule.from_gateway(_PORT),
             IngressRule.from_endpoints(cilium.endpoint_labels(_NAMESPACE, "agentplane-app"), ports=[_PORT]),

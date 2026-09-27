@@ -202,8 +202,8 @@ def chart(app: App) -> Chart:
                 "ntfy.ducktape.io/auth-generation": "1",
             },
         ),
-        refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
-        store=SecretStoreRef.cluster(ntfy.SECRET_STORE),
+        refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
+        secret_store_ref=SecretStoreRef.cluster(ntfy.SECRET_STORE),
         data=[remote_data("ntfy-credentials", "alertmanager-token", secret_key="alertmanager_token")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
@@ -223,10 +223,8 @@ def write_manifests(root: Path) -> None:
 def flux_webhook(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    flux_webhook_token: Kustomization,
     ntfy: Kustomization,
-    external_secrets_config: Kustomization,
-    gateway: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -236,5 +234,5 @@ def flux_webhook(
         wait=None,
         timeout="5m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(flux_webhook_token, ntfy, external_secrets_config, gateway),
+        depends_on=flux_kustomization_depends_on_many(ntfy, external_secrets_operator),
     )

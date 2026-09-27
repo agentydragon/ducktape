@@ -11,9 +11,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from grafana_grafanadashboard_crds.org.integreatly.grafana import GrafanaDashboardSpecConfigMapRef
+from grafana_grafanadashboard_crds.org.integreatly.grafana import (
+    GrafanaDashboardSpecConfigMapRef,
+    GrafanaDashboardSpecInstanceSelector,
+)
 from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecDatasource,
+    GrafanaDatasourceSpecInstanceSelector,
     GrafanaDatasourceSpecValuesFrom,
     GrafanaDatasourceSpecValuesFromValueFrom,
     GrafanaDatasourceSpecValuesFromValueFromSecretKeyRef,
@@ -35,7 +39,7 @@ def chart(app: App) -> Chart:
         chart,
         "datasource",
         metadata=ApiObjectMetadata(name="clickhouse", namespace=_NAMESPACE),
-        instance_selector_labels=_INSTANCE_LABELS,
+        instance_selector=GrafanaDatasourceSpecInstanceSelector(match_labels=_INSTANCE_LABELS),
         values_from=[
             GrafanaDatasourceSpecValuesFrom(
                 target_path="secureJsonData.password",
@@ -70,7 +74,7 @@ def chart(app: App) -> Chart:
         chart,
         "dashboard",
         metadata=ApiObjectMetadata(name="aiquota-history", namespace=_NAMESPACE),
-        instance_selector_labels=_INSTANCE_LABELS,
+        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=_INSTANCE_LABELS),
         folder="Analytics",
         config_map_ref=GrafanaDashboardSpecConfigMapRef(name="aiquota-history-dashboard", key="dashboard.json"),
     )

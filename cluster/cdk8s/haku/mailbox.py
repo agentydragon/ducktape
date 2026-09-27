@@ -29,7 +29,11 @@ from cluster.cdk8s.haku import namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
-from cluster.cdk8s.providers.external_secrets.external_secret import ClusterExternalSecret, cluster_remote_data
+from cluster.cdk8s.providers.external_secrets.external_secret import (
+    ClusterExternalSecret,
+    ClusterSecretStoreRef,
+    cluster_remote_data,
+)
 
 NAME = "haku-mailbox"
 NAMESPACE = "haku-mailbox"
@@ -356,7 +360,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
         chart,
         "smtp-ingress-policy",
         metadata=ApiObjectMetadata(name=_INGRESS_NAME, namespace=NAMESPACE),
-        selector=_INGRESS_LABELS,
+        endpoint_selector=_INGRESS_LABELS,
         ingress=[
             CiliumNetworkPolicySpecIngress(
                 from_entities=[
@@ -381,7 +385,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
         chart,
         "policy",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        selector=_LABELS,
+        endpoint_selector=_LABELS,
         ingress=[
             IngressRule.from_endpoints(_INGRESS_LABELS, ports=[_SMTP_PORT]),
             IngressRule.from_gateway(_HTTP_PORT),
@@ -468,10 +472,10 @@ def chart(app: App) -> Chart:
     ClusterExternalSecret(
         chart,
         "mail-token",
-        name="haku-mail-token",
+        metadata=ApiObjectMetadata(name="haku-mail-token"),
         namespaces=[namespace.NAMESPACE],
-        store_name="kubernetes-flux-system-secret-store",
-        refresh="1m",
+        secret_store_ref=ClusterSecretStoreRef.cluster("kubernetes-flux-system-secret-store"),
+        refresh_interval="1m",
         data=[cluster_remote_data("haku-mail-token", "jwt")],
     )
     return chart

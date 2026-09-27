@@ -175,8 +175,8 @@ def _repository(scope: Construct) -> None:
         scope,
         "repository",
         metadata=ApiObjectMetadata(name=_REPOSITORY_SECRET_NAME, namespace=_NAMESPACE),
-        refresh="1h",
-        store=SecretStoreRef.namespaced(_SECRET_STORE_NAME),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.namespaced(_SECRET_STORE_NAME),
         data=[
             remote_data(_S3_CREDENTIALS_SECRET_NAME, "AWS_ACCESS_KEY_ID"),
             remote_data(_S3_CREDENTIALS_SECRET_NAME, "AWS_SECRET_ACCESS_KEY"),

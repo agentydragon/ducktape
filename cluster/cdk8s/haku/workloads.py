@@ -18,7 +18,7 @@ from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -150,7 +150,7 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
 
 
-def haku_workloads(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, haku_state: Kustomization) -> Kustomization:
+def haku_workloads(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
@@ -159,10 +159,4 @@ def haku_workloads(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, haku_
         # Don't gate on the inner haku-state-workloads Kustomization's readiness — it's
         # NotReady until Haku first seeds k8s/, which would otherwise wedge this wrapper.
         wait=False,
-        depends_on=[
-            # The forgejo/haku-state Terraform apply provisions the haku-state repo and the
-            # haku-forgejo-git Secret (now also reflected into flux-system for the
-            # GitRepository's basic auth).
-            flux_kustomization_depends_on(haku_state)
-        ],
     )

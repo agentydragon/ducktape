@@ -12,13 +12,10 @@ def home_assistant(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     local_path_provisioner: Kustomization,
-    seaweedfs_cluster: Kustomization,
     volsync: Kustomization,
-    external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
+    external_secrets_operator: Kustomization,
+    seaweedfs_operator: Kustomization,
     monitoring_crds: Kustomization,
-    gateway: Kustomization,
-    sso_providers_tf: Kustomization,
 ) -> Kustomization:
     name = "home-assistant"
     return flux_kustomization(
@@ -29,14 +26,12 @@ def home_assistant(
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
             local_path_provisioner,
-            seaweedfs_cluster,
             volsync,
-            external_secrets_config,
-            forgejo_images,
+            external_secrets_operator,
+            # Bucket, S3Identity and S3Credentials CRDs
+            seaweedfs_operator,
             # ServiceMonitor + PrometheusRule
             monitoring_crds,
-            gateway,
-            sso_providers_tf,
         ),
         description=(
             "Home Assistant with encrypted Restic/VolSync backups and its dedicated private SeaweedFS S3 bucket."

@@ -115,8 +115,8 @@ def chart(app: App) -> Chart:
             namespace=namespace.NAME,
             annotations={"description": "Assembles the s3 gateway config Secret from per-tenant identity Secrets."},
         ),
-        refresh="1m",
-        store=SecretStoreRef.namespaced(_SECRET_STORE),
+        refresh_interval="1m",
+        secret_store_ref=SecretStoreRef.namespaced(_SECRET_STORE),
         data_from=[DataFrom.from_find_by_name_regexp("^s3-identity-.+-json$")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         template=ExternalSecretSpecTargetTemplate(

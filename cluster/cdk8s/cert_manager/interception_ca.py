@@ -27,7 +27,8 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetNamespaceSelectorMatchExpressions,
 )
 
-from cluster.cdk8s.providers.cert_manager.certificate import LONG_LIVED_CA, Certificate, CertificatePrivateKey
+from cluster.cdk8s.cert_manager.cluster_ca import LONG_LIVED_CA
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 
 _ROOT_CA_ISSUER = "cluster-ca-bootstrap"
 _CLUSTER_ROOT_CA_SECRET = "cluster-root-ca-secret"

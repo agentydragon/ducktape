@@ -153,7 +153,7 @@ def write_manifests(root: Path) -> None:
 
 
 def infra_drift(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization, tofu_state_db: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -172,5 +172,5 @@ def infra_drift(
                 namespace=terraform.NAMESPACE,
             )
         ],
-        depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db),
+        depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )

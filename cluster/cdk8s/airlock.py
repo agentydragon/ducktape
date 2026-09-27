@@ -28,7 +28,11 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
-from cluster.cdk8s.providers.external_secrets.external_secret import ClusterDataFrom, ClusterExternalSecret
+from cluster.cdk8s.providers.external_secrets.external_secret import (
+    ClusterDataFrom,
+    ClusterExternalSecret,
+    ClusterSecretStoreRef,
+)
 
 NAME = "airlock"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/airlock"
@@ -133,10 +137,10 @@ def _mirror(chart: Chart, name: str, namespaces: list[str]) -> None:
     ClusterExternalSecret(
         chart,
         name,
-        name=name,
+        metadata=ApiObjectMetadata(name=name),
         namespaces=namespaces,
-        store_name="kubernetes-airlock-secret-store",
-        refresh="1m",
+        secret_store_ref=ClusterSecretStoreRef.cluster("kubernetes-airlock-secret-store"),
+        refresh_interval="1m",
         data_from=[ClusterDataFrom.from_extract(name)],
     )
 
@@ -231,7 +235,7 @@ def chart(app: App) -> Chart:
         chart,
         "ciliumnetworkpolicy",
         metadata=ApiObjectMetadata(name="airlock-ingress", namespace=NAME),
-        selector=_LABELS,
+        endpoint_selector=_LABELS,
         ingress=[
             _ingress_from(CiliumNetworkPolicySpecIngressFromEntities.INGRESS),
             # Kubelet liveness/readiness probes originate from the node host.

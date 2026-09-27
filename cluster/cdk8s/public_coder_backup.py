@@ -203,8 +203,8 @@ def _repository(scope: Construct) -> None:
         scope,
         "repository",
         metadata=ApiObjectMetadata(name=_REPOSITORY_SECRET_NAME, namespace=_NAMESPACE),
-        refresh="1h",
-        store=SecretStoreRef.namespaced(_SECRET_STORE_NAME),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.namespaced(_SECRET_STORE_NAME),
         data=[
             remote_data(_S3_CREDENTIALS_SECRET_NAME, "AWS_ACCESS_KEY_ID"),
             remote_data(_S3_CREDENTIALS_SECRET_NAME, "AWS_SECRET_ACCESS_KEY"),
@@ -308,8 +308,8 @@ def write_manifests(root: Path) -> None:
 def public_coder_agent_backup(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_public_coder_agent_backups_bucket: Kustomization,
-    external_secrets_config: Kustomization,
+    seaweedfs_operator: Kustomization,
+    external_secrets_operator: Kustomization,
     volsync: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
@@ -318,9 +318,7 @@ def public_coder_agent_backup(
         artifact,
         timeout="5m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(
-            seaweedfs_public_coder_agent_backups_bucket, external_secrets_config, volsync
-        ),
+        depends_on=flux_kustomization_depends_on_many(seaweedfs_operator, external_secrets_operator, volsync),
         description=(
             "Restic/VolSync backup of Public Coder's worker-local OpenClaw state "
             "to its dedicated private SeaweedFS S3 bucket."

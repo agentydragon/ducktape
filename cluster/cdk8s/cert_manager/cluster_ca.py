@@ -6,7 +6,10 @@ namespace.
 
 from __future__ import annotations
 
+from typing import TypedDict
+
 from cdk8s import ApiObjectMetadata, App, Chart
+from cert_manager_clusterissuer_crds.io.cert_manager import ClusterIssuerSpecCa, ClusterIssuerSpecSelfSigned
 from cert_manager_crds.io.cert_manager import (
     CertificateSpecIssuerRef,
     CertificateSpecPrivateKey,
@@ -22,16 +25,30 @@ from trust_manager_crds.io.cert_manager.trust import (
 )
 
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
-from cluster.cdk8s.providers.cert_manager.certificate import LONG_LIVED_CA, Certificate
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
 
 NAME = "cluster-ca"
 _ROOT_CA_SECRET = "cluster-root-ca-secret"
 
 
+class _LongLivedCa(TypedDict):
+    duration: str
+    renew_before: str
+
+
+# Every long-lived CA Certificate this cluster signs, spread as `Certificate(..., **LONG_LIVED_CA)`.
+LONG_LIVED_CA: _LongLivedCa = {"duration": "87600h", "renew_before": "8760h"}  # 10 years / 1 year
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    bootstrap = ClusterIssuer.self_signed(chart, "bootstrap", metadata=ApiObjectMetadata(name="cluster-ca-bootstrap"))
+    bootstrap = ClusterIssuer(
+        chart,
+        "bootstrap",
+        metadata=ApiObjectMetadata(name="cluster-ca-bootstrap"),
+        self_signed=ClusterIssuerSpecSelfSigned(),
+    )
     Certificate(
         chart,
         "root-ca",
@@ -44,8 +61,11 @@ def chart(app: App) -> Chart:
         issuer_ref=CertificateSpecIssuerRef(name=bootstrap.name, kind="ClusterIssuer"),
     )
     # Issues internal service certificates from the root CA.
-    ClusterIssuer.ca(
-        chart, "internal", metadata=ApiObjectMetadata(name="cluster-internal-ca"), secret_name=_ROOT_CA_SECRET
+    ClusterIssuer(
+        chart,
+        "internal",
+        metadata=ApiObjectMetadata(name="cluster-internal-ca"),
+        ca=ClusterIssuerSpecCa(secret_name=_ROOT_CA_SECRET),
     )
     Bundle(
         chart,
