@@ -385,10 +385,9 @@ export function EntityCard({
   if (entity.entityKind === "command" || entity.entityKind === "view_state") return <></>;
   if (!("kind" in entity.state)) return <></>;
   const tool = entity.state.kind === ItemKind.TOOL_CALL;
-  // Assistant text carries no role label: it reads as the reply by position, across from the
-  // user's right-aligned bubble. A tool call is labelled by its tool, reasoning by its disclosure.
-  return (
-    <Paper p="sm" withBorder style={{ position: "relative" }}>
+  const reasoning = entity.state.kind === ItemKind.REASONING;
+  const body = (
+    <>
       {tool || entity.state.completion === null ? (
         <Group justify="space-between" mb="xs" wrap="nowrap">
           <Group gap="xs">
@@ -400,7 +399,7 @@ export function EntityCard({
       ) : (
         <EvidenceToggle entity={entity} style={{ position: "absolute", top: 4, right: 4 }} />
       )}
-      {entity.state.kind === ItemKind.REASONING ? (
+      {reasoning ? (
         entity.textRef ? (
           <LazyBody label="Reasoning" reference={entity.textRef} format="markdown" />
         ) : (
@@ -412,8 +411,19 @@ export function EntityCard({
       {entity.argumentsRef && <LazyBody label="Arguments" reference={entity.argumentsRef} format="code" />}
       {entity.outputRef && <LazyBody label="Output" reference={entity.outputRef} format="code" />}
       <EvidencePanel threadId={threadId} entity={entity} />
-    </Paper>
+    </>
   );
+  // Assistant text carries no role label and no card: it reads as the reply by position, across
+  // from the user's right-aligned bubble. A tool call is boxed and labelled by its tool, reasoning
+  // by its disclosure.
+  if (tool || reasoning) {
+    return (
+      <Paper p="sm" withBorder style={{ position: "relative" }}>
+        {body}
+      </Paper>
+    );
+  }
+  return <Box style={{ position: "relative" }}>{body}</Box>;
 }
 
 /** Whether any of `items` is unfinished -- streaming while `live`, otherwise never completed in
