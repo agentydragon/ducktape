@@ -9,8 +9,6 @@ image-automation markers override this chart's placeholder image tags
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
@@ -45,17 +43,9 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecVolumesContainerDisk,
     VirtualMachineSpecTemplateSpecVolumesSecret,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium, forgejo_images
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 
@@ -73,7 +63,7 @@ _GATEWAY_PORT = 18080
 _GIT_CREDENTIALS = "cpap-data-git-write"
 _WORKDIR = "/workdir"
 _CARD_SECRET = "cpap-ezshare"
-_RESOURCES = ["namespace.k8s.yaml", f"{_CARD_SECRET}.sops.yaml", f"{NAME}.k8s.yaml"]
+CARD_SECRET_FILE = f"{_CARD_SECRET}.sops.yaml"
 
 
 def _git_env(name: str, key: str) -> k8s.EnvVar:
@@ -175,6 +165,23 @@ def _gateway_vm(chart: Chart) -> None:
             ),
         ),
     )
+
+
+def namespace_chart(app: App) -> Chart:
+    chart = Chart(app, "namespace", disable_resource_name_hashes=True)
+    k8s.KubeNamespace(
+        chart,
+        "namespace",
+        metadata=k8s.ObjectMeta(
+            name=NAMESPACE,
+            labels={
+                "name": NAMESPACE,
+                "pod-security.kubernetes.io/enforce": "baseline",
+                "goldilocks.fairwinds.com/enabled": "false",
+            },
+        ),
+    )
+    return chart
 
 
 def chart(app: App) -> Chart:
@@ -336,35 +343,13 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_namespace(
-        root,
-        OUTPUT_DIR,
-        name=NAMESPACE,
-        labels={
-            "name": NAMESPACE,
-            "pod-security.kubernetes.io/enforce": "baseline",
-            "goldilocks.fairwinds.com/enabled": "false",
-        },
-    )
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=_RESOURCES, components=["./image-pins"]),
-    )
-
-
 def cpap_sync(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_operator: Kustomization,
-    kubevirt: Kustomization,
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, kubevirt: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
-        decryption=SOPS_DECRYPTION,
+        directory,
         timeout="30m",
         depends_on=flux_kustomization_depends_on_many(external_secrets_operator, kubevirt),
     )

@@ -622,11 +622,7 @@ def chart(app: App) -> Chart:
 
 
 def loki(
-    chart: Chart,
-    directory: RenderedDirectory,
-    grafana_helmrepository: Kustomization,
-    seaweedfs_operator: Kustomization,
-    monitoring_crds: Kustomization,
+    chart: Chart, directory: RenderedDirectory, seaweedfs_operator: Kustomization, monitoring_crds: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -646,7 +642,6 @@ def loki(
         ],
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(
-            grafana_helmrepository,
             seaweedfs_operator,
             # the chart's monitoring.serviceMonitor
             monitoring_crds,

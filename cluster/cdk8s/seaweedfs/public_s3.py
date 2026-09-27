@@ -282,24 +282,16 @@ def write_manifests(root: Path) -> None:
 
 
 def seaweedfs_public_s3(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_operator: Kustomization,
-    vm_images_publisher: Kustomization,
-    kyverno: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_operator: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
     name = "seaweedfs-public-s3"
     return flux_kustomization(
         chart,
         name,
-        # Gate on Bucket CRs managed in this repo that the public identities target.
-        # Claude and DriveFS identities authenticate through native IAM; static
-        # gateway configuration now contains only the credential-free anonymous read.
         artifact,
         depends_on=flux_kustomization_depends_on_many(
             # S3Identity, S3Credentials, S3Policy and S3PolicyBinding CRDs
             seaweedfs_operator,
-            vm_images_publisher,
             # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
             kyverno,
         ),

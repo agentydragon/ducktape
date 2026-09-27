@@ -233,11 +233,7 @@ def chart(app: App) -> Chart:
 
 
 def mimir(
-    chart: Chart,
-    directory: RenderedDirectory,
-    monitoring_crds: Kustomization,
-    grafana_helmrepository: Kustomization,
-    seaweedfs_operator: Kustomization,
+    chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization, seaweedfs_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -263,7 +259,6 @@ def mimir(
         depends_on=flux_kustomization_depends_on_many(
             # the chart's metaMonitoring.serviceMonitor
             monitoring_crds,
-            grafana_helmrepository,
             # The Bucket, S3Identity and S3Credentials CRDs.
             seaweedfs_operator,
         ),

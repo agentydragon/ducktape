@@ -392,7 +392,7 @@ def haku_workspaces(
             agent_sandbox_controller,
             # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs
             haku_rbac,
-            # the fence haku-sandbox is opted into
+            # destructive-if-out-of-order: the haku-sandbox egress fence must precede sandbox pods.
             haku_egress_proxy,
             # CleanupPolicy CRD and cleanup-controller permissions
             kyverno_policies,

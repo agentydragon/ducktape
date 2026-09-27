@@ -112,7 +112,6 @@ def haku_console(
     flux_chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
-    local_path_provisioner: Kustomization,
     external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
@@ -137,9 +136,8 @@ def haku_console(
         # haku-workspaces -> haku-egress-proxy -> haku-state) blocks namespace
         # creation. Pods can wait for credentials after this layer is admitted.
         depends_on=flux_kustomization_depends_on_many(
-            # The Cluster operator and the storage class its PVCs bind.
+            # The Cluster CRD and CNPG's failurePolicy: Fail webhook.
             cnpg,
-            local_path_provisioner,
             external_secrets_operator,
             # The ServiceMonitor CRD.
             monitoring_crds,

@@ -19,8 +19,7 @@ def agent_box(
     artifact: ArtifactGeneratorSpecArtifacts,
     kubevirt: Kustomization,
     external_secrets_operator: Kustomization,
-    seaweedfs_public_s3: Kustomization,
-    local_path_provisioner: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     name = "agent-box"
     return flux_kustomization(
@@ -34,7 +33,10 @@ def agent_box(
         timeout="30m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            kubevirt, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
+            kubevirt,
+            external_secrets_operator,
+            # Kyverno's failurePolicy: Fail webhooks admit the Namespace.
+            kyverno,
         ),
     )
 
@@ -80,8 +82,9 @@ def haku_cloud_agent(
 def docker_ci(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    cert_manager_environment: Kustomization,
     claude_rbac: Kustomization,
+    cert_manager: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     name = "docker-ci"
     return flux_kustomization(
@@ -92,11 +95,11 @@ def docker_ci(
         suspend=True,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            # No storage dep (emptyDir, not a CSI PVC). Needs the cluster-internal-ca
-            # ClusterIssuer for the mTLS Certificates and agent-rbac-base for the
-            # claude-sandbox namespace the client Certificate lives in.
-            cert_manager_environment,
             claude_rbac,
+            # The Certificate CRD and cert-manager's failurePolicy: Fail webhook.
+            cert_manager,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and Namespace.
+            kyverno,
         ),
     )
 
@@ -107,8 +110,6 @@ def gecko(
     gecko_namespace: Kustomization,
     kubevirt: Kustomization,
     external_secrets_operator: Kustomization,
-    seaweedfs_public_s3: Kustomization,
-    local_path_provisioner: Kustomization,
 ) -> Kustomization:
     name = "gecko"
     return flux_kustomization(
@@ -121,9 +122,7 @@ def gecko(
         suspend=True,
         timeout="30m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(
-            gecko_namespace, kubevirt, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
-        ),
+        depends_on=flux_kustomization_depends_on_many(gecko_namespace, kubevirt, external_secrets_operator),
     )
 
 
@@ -141,13 +140,7 @@ def gecko_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> K
     )
 
 
-def haku_dispatch(
-    chart: Chart,
-    cnpg: Kustomization,
-    local_path_provisioner: Kustomization,
-    external_secrets_operator: Kustomization,
-    litellm: Kustomization,
-) -> Kustomization:
+def haku_dispatch(chart: Chart, cnpg: Kustomization, external_secrets_operator: Kustomization) -> Kustomization:
     name = "haku-dispatch"
     return flux_kustomization(
         chart,
@@ -162,7 +155,7 @@ def haku_dispatch(
         timeout="10m",
         path="./haku/x/dispatch/deploy",
         deletion_policy=KustomizationSpecDeletionPolicy.WAIT_FOR_TERMINATION,
-        depends_on=flux_kustomization_depends_on_many(cnpg, local_path_provisioner, external_secrets_operator, litellm),
+        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator),
     )
 
 
@@ -188,17 +181,14 @@ def haku_managed_agent(
             external_secrets_operator,
             haku_namespace,
             haku_rbac,
-            # injects the egress proxy + CA the worker imports
+            # destructive-if-out-of-order: the haku-sandbox egress fence must precede sandbox pods.
             haku_egress_proxy,
         ),
     )
 
 
 def sdr(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_operator: Kustomization,
-    authentik: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
 ) -> Kustomization:
     name = "sdr"
     return flux_kustomization(
@@ -209,5 +199,5 @@ def sdr(
         # Temporarily disabled until the radio is set up again after relocation.
         suspend=True,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, authentik),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
     )

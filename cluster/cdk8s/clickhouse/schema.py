@@ -77,5 +77,10 @@ def chart(app: App) -> Chart:
 
 def clickhouse_schema(flux_chart: Chart, directory: RenderedDirectory, clickhouse: Kustomization) -> Kustomization:
     return flux_kustomization(
-        flux_chart, NAME, directory, timeout="20m", depends_on=[flux_kustomization_depends_on(clickhouse)]
+        flux_chart,
+        NAME,
+        directory,
+        timeout="20m",
+        # bootstrap-never-converges: the Job's 20m deadline runs from apply and Flux never recreates it.
+        depends_on=[flux_kustomization_depends_on(clickhouse)],
     )

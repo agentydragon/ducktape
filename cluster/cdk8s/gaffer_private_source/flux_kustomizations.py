@@ -30,9 +30,7 @@ def gaffer_private_source(chart: Chart, flux_image_automation_ghcr: Kustomizatio
     )
 
 
-def gaffer_private_bridge(
-    chart: Chart, authentik: Kustomization, kyverno: Kustomization, tofu_controller: Kustomization
-) -> Kustomization:
+def gaffer_private_bridge(chart: Chart, kyverno: Kustomization, tofu_controller: Kustomization) -> Kustomization:
     """The cross-repo bridge: reconciles ``gaffer-private/k8s/`` from the private companion
     monorepo's ``gaffer-private`` GitRepository (built by ``gaffer_private_source``), the
     entry point for every private app's ``flux-kustomization.yaml``. Its child resources live
@@ -48,7 +46,6 @@ def gaffer_private_bridge(
         timeout="5m",
         wait=None,
         depends_on=flux_kustomization_depends_on_many(
-            authentik,
             # Kyverno's failurePolicy: Fail webhook admits the child Flux Kustomizations.
             kyverno,
             # The Terraform CRD: the private repo's k8s/ applies Terraform CRs.

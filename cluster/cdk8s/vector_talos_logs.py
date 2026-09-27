@@ -12,13 +12,7 @@ import tomli_w
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
-from cluster.cdk8s.flux import (
-    ConfigMapArgs,
-    Kustomization,
-    RenderedDirectory,
-    flux_kustomization,
-    flux_kustomization_depends_on,
-)
+from cluster.cdk8s.flux import ConfigMapArgs, Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import loki
 
@@ -154,14 +148,5 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def vector_talos_logs(chart: Chart, directory: RenderedDirectory, loki: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        timeout="2m",
-        depends_on=[
-            # loki-write is the log sink.
-            flux_kustomization_depends_on(loki)
-        ],
-    )
+def vector_talos_logs(chart: Chart, directory: RenderedDirectory) -> Kustomization:
+    return flux_kustomization(chart, NAME, directory, timeout="2m")

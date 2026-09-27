@@ -9,11 +9,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 
 
 def grocy_sf(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    cert_manager_environment: Kustomization,
-    authentik: Kustomization,
-    volsync: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, volsync: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
     name = "grocy-sf"
     return flux_kustomization(
@@ -21,7 +17,11 @@ def grocy_sf(
         name,
         artifact,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(cert_manager_environment, authentik, volsync),
+        depends_on=flux_kustomization_depends_on_many(
+            volsync,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment, Job and Namespace.
+            kyverno,
+        ),
     )
 
 
@@ -29,9 +29,9 @@ def grocy_mcp_sf(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_operator: Kustomization,
-    grocy_sf: Kustomization,
     valkey: Kustomization,
     monitoring_crds: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     name = "grocy-mcp-sf"
     return flux_kustomization(
@@ -41,10 +41,11 @@ def grocy_mcp_sf(
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_operator,
-            grocy_sf,
             valkey,
             # the ServiceMonitor/PodMonitor CRD
             monitoring_crds,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+            kyverno,
         ),
     )
 
@@ -58,20 +59,13 @@ def grocy_sf_user_perms(
         name,
         artifact,
         timeout="5m",
-        # Run only after grocy-sf is up (and self-migrated via its postStart hook); the
-        # wait on the Job's completion makes this kustomization Ready only once the policy
-        # in policy.yaml has actually been applied — so a fresh cluster converges to the
-        # committed user→permission policy.
+        # bootstrap-never-converges: the Job's retries (no TTL) run from apply and Flux never recreates it.
         depends_on=flux_kustomization_depends_on_many(grocy_sf),
     )
 
 
 def grocy_vallejo(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    cert_manager_environment: Kustomization,
-    authentik: Kustomization,
-    volsync: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, volsync: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
     name = "grocy-vallejo"
     return flux_kustomization(
@@ -79,7 +73,11 @@ def grocy_vallejo(
         name,
         artifact,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(cert_manager_environment, authentik, volsync),
+        depends_on=flux_kustomization_depends_on_many(
+            volsync,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment, Job and Namespace.
+            kyverno,
+        ),
     )
 
 
@@ -87,9 +85,9 @@ def grocy_mcp_vallejo(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_operator: Kustomization,
-    grocy_vallejo: Kustomization,
     valkey: Kustomization,
     monitoring_crds: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     name = "grocy-mcp-vallejo"
     return flux_kustomization(
@@ -99,10 +97,11 @@ def grocy_mcp_vallejo(
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_operator,
-            grocy_vallejo,
             valkey,
             # the ServiceMonitor/PodMonitor CRD
             monitoring_crds,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+            kyverno,
         ),
     )
 
@@ -116,9 +115,6 @@ def grocy_vallejo_user_perms(
         name,
         artifact,
         timeout="5m",
-        # Run only after grocy-vallejo is up (and self-migrated via its postStart hook);
-        # the wait on the Job's completion makes this kustomization Ready only once the
-        # policy in policy.yaml has actually been applied — so a fresh cluster converges
-        # to the committed user→permission policy.
+        # bootstrap-never-converges: the Job's retries (no TTL) run from apply and Flux never recreates it.
         depends_on=flux_kustomization_depends_on_many(grocy_vallejo),
     )

@@ -455,7 +455,6 @@ def agentplane_staging(
     health_checks: list[KustomizationSpecHealthChecks],
     agentplane_crds: Kustomization,
     agent_sandbox_controller: Kustomization,
-    cert_manager_environment: Kustomization,
     cert_manager_trust: Kustomization,
     claude_rbac: Kustomization,
     cnpg: Kustomization,
@@ -487,12 +486,6 @@ def agentplane_staging(
         ],
         decryption=sops_decryption(ENV.extra_resources),
         depends_on=flux_kustomization_depends_on_many(
-            agentplane_crds,
-            agent_sandbox_controller,
-            cert_manager_environment,
-            cert_manager_trust,
-            claude_rbac,
-            cnpg,
-            external_secrets_operator,
+            agentplane_crds, agent_sandbox_controller, cert_manager_trust, claude_rbac, cnpg, external_secrets_operator
         ),
     )

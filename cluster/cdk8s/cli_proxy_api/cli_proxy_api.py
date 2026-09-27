@@ -305,10 +305,7 @@ def chart(app: App) -> Chart:
 
 
 def cli_proxy_api(
-    chart: Chart,
-    directory: RenderedDirectory,
-    external_secrets_operator: Kustomization,
-    cert_manager_environment: Kustomization,
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
     name = "cli-proxy-api"
     return flux_kustomization(
@@ -317,5 +314,9 @@ def cli_proxy_api(
         directory,
         retry_interval=None,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, cert_manager_environment),
+        depends_on=flux_kustomization_depends_on_many(
+            external_secrets_operator,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment, HTTPRoute and Namespace.
+            kyverno,
+        ),
     )
