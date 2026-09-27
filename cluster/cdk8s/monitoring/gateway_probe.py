@@ -22,6 +22,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitorSpecPodMetricsEndpoints,
     PodMonitorSpecPodMetricsEndpointsRelabelings,
 )
+from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRuleSpecGroupsRules
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
@@ -195,7 +196,7 @@ def _own_node_endpoint(dial: Dial, targets: dict[str, str]) -> PodMonitorSpecPod
     )
 
 
-def _rules(nodes: list[str]) -> list[Rule]:
+def _rules(nodes: list[str]) -> list[PrometheusRuleSpecGroupsRules]:
     probe = f'probe_success{{job="{_JOB}", dial=~"{_OWN_NODE_DIALS}"}}'
     return [
         Rule.alert(
