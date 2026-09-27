@@ -26,16 +26,12 @@ from finance.augur.model.series import (
 )
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
-from finance.augur.sim.fixed_point import (
-    currency_amount_to_quanta,
-    quantity_to_quanta,
-    rate_to_ppb,
-    round_currency_amount,
-)
+from finance.augur.sim.fixed_point import quantity_to_quanta, rate_to_ppb, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, QualifiedDividendIncome, TransferIncomeCategory
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import Currency
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedDistribution,
@@ -56,7 +52,7 @@ from finance.augur.study.guyton_klinger.panel import PRICED, AnnualPanel, Sleeve
 MONTHS_PER_YEAR = 12
 # Every sleeve's unit is priced at one dollar in each window's January. Fine enough that
 # proxy rounding stays far below any reported digit: micro-dollar money, nano-unit quantities.
-QUANTUM = Decimal("0.000001")
+CURRENCY = Currency(code="USD", quantum=Decimal("0.000001"))
 QUANTITY_SCALE = 10**9
 
 RETIREE = AgentId("retiree")
@@ -188,7 +184,7 @@ def annual_windows(
             ExternalSeriesContext.from_level_blocks(blocks, rollout_count=len(offsets), horizon_months=horizon),
             rollout_count=len(offsets),
             horizon_months=horizon,
-            currency_quantum=QUANTUM,
+            currency=CURRENCY,
         ),
     )
 
@@ -207,7 +203,7 @@ def _federal_ca_taxes(panel: AnnualPanel, start_years: Sequence[int], tax_law: T
         payment_account_id=TAX_RESERVE,
         tax_authority_account_id=CHECKING,
     )
-    profile = compile_profile(taxpayer, load_jurisdictions_for([taxpayer]), quantum=QUANTUM)
+    profile = compile_profile(taxpayer, load_jurisdictions_for([taxpayer]), currency=CURRENCY)
     if tax_law is TaxLaw.FIXED_NOMINAL:
         return FederalCaTaxes(profile=profile, laws=(FixedNominalLaw(),) * len(start_years))
     law_year = one(
@@ -282,7 +278,7 @@ def compose_world(windows: AnnualWindows, rollout_id: int, *, wealth: Decimal, w
     for sleeve in Sleeve:
         if not weights[sleeve]:
             continue
-        value = round_currency_amount(wealth * weights[sleeve] / total, quantum=QUANTUM)
+        value = round_currency_amount(wealth * weights[sleeve] / total, quantum=CURRENCY.quantum)
         world.hold(
             PreparedLot(
                 lot_id=LotId(f"{sleeve}_opening"),
@@ -292,7 +288,7 @@ def compose_world(windows: AnnualWindows, rollout_id: int, *, wealth: Decimal, w
                 purchase_month=-1,
                 quantity_scale=QUANTITY_SCALE,
                 units=quantity_to_quanta(value, scale=QUANTITY_SCALE),
-                basis=int(currency_amount_to_quanta(value, quantum=QUANTUM)),
+                basis=CURRENCY.quanta(value),
             )
         )
     return world

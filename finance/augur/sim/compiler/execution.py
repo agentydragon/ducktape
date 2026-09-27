@@ -14,11 +14,12 @@ from finance.augur.model.series import LocationId
 from finance.augur.sim.bonds import coupon_amount_quanta
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.external_series import INDEX_SERIES_KINDS, UnsupportedScenarioError
-from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, round_ppb
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, round_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId
 from finance.augur.sim.income import InterestIncome
 from finance.augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
 from finance.augur.sim.locations import Location
+from finance.augur.sim.money import Currency
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedAmount,
@@ -79,14 +80,14 @@ def _asset_id(asset: AssetKey) -> AssetId:
     return AssetId(asset.wire_id if isinstance(asset, PrivateEquityAssetKey) else asset.symbol)
 
 
-def _amount(amount: object, *, quantum: Decimal, context: str) -> PreparedAmount:
+def _amount(amount: object, *, currency: Currency, context: str) -> PreparedAmount:
     """Resolve exact money once, retaining indexed claims' declared reset convention."""
 
     match amount:
         case Decimal():
-            return int(currency_amount_to_quanta(amount, quantum=quantum))
+            return currency.quanta(amount)
         case FixedAmount():
-            return PreparedFixedAmount(amount=int(currency_amount_to_quanta(amount.amount, quantum=quantum)))
+            return PreparedFixedAmount(amount=currency.quanta(amount.amount))
         case SeriesIndexedAmount():
             if not isinstance(amount.series, INDEX_SERIES_KINDS):
                 raise UnsupportedScenarioError(
@@ -94,7 +95,7 @@ def _amount(amount: object, *, quantum: Decimal, context: str) -> PreparedAmount
                     "schedule does not carry; only inflation and rent levels are index series"
                 )
             return PreparedIndexedAmount(
-                base_amount=int(currency_amount_to_quanta(amount.base_amount, quantum=quantum)),
+                base_amount=currency.quanta(amount.base_amount),
                 series_id=amount.series.wire_id,
                 base_month_index=int(amount.base_month_index),
                 adjustment_period_months=int(amount.adjustment_period_months),
@@ -132,11 +133,11 @@ def compile_jurisdictions(
     )
 
 
-def compile_accounts(balances: Iterable[InitialAccountBalance], *, quantum: Decimal) -> tuple[PreparedAccount, ...]:
+def compile_accounts(balances: Iterable[InitialAccountBalance], *, currency: Currency) -> tuple[PreparedAccount, ...]:
     return tuple(
         PreparedAccount(
             account=AccountRef(agent_id=balance.agent_id, account_id=balance.account_id),
-            opening_balance=int(currency_amount_to_quanta(balance.balance, quantum=quantum)),
+            opening_balance=currency.quanta(balance.balance),
         )
         for balance in balances
     )
@@ -159,7 +160,7 @@ def compile_holding_pools(*, lots: Iterable[InitialLot]) -> tuple[PreparedHoldin
     return tuple(prepared.values())
 
 
-def compile_lots(lots: Iterable[InitialLot], *, quantum: Decimal) -> tuple[PreparedLot, ...]:
+def compile_lots(lots: Iterable[InitialLot], *, currency: Currency) -> tuple[PreparedLot, ...]:
     prepared = []
     for lot in lots:
         scale = quantity_scale_for_asset(lot.asset)
@@ -173,15 +174,15 @@ def compile_lots(lots: Iterable[InitialLot], *, quantum: Decimal) -> tuple[Prepa
                 quantity_scale=scale,
                 # Scenario quantities are floats, often derived as value / price, so they round.
                 units=int((Decimal(str(lot.quantity)) * scale).quantize(Decimal(1), rounding=ROUND_HALF_UP)),
-                basis=int(currency_amount_to_quanta(lot.cost_basis, quantum=quantum)),
+                basis=currency.quanta(lot.cost_basis),
             )
         )
     return tuple(prepared)
 
 
-def compile_bond(bond: BondHolding, *, quantum: Decimal) -> PreparedBond:
+def compile_bond(bond: BondHolding, *, currency: Currency) -> PreparedBond:
     rate_ppb = int(round_ppb(bond.annual_coupon_rate))
-    face = int(currency_amount_to_quanta(bond.face_value, quantum=quantum))
+    face = currency.quanta(bond.face_value)
     coupon = (
         PreparedIndexedCoupon(annual_rate_ppb=rate_ppb)
         if bond.inflation_indexed
@@ -197,7 +198,7 @@ def compile_bond(bond: BondHolding, *, quantum: Decimal) -> PreparedBond:
         account_id=bond.account_id,
         issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
         face_value=face,
-        purchase_price=int(currency_amount_to_quanta(bond.purchase_price, quantum=quantum)),
+        purchase_price=currency.quanta(bond.purchase_price),
         coupon=coupon,
         coupon_period_months=int(bond.coupon_period_months),
         purchase_month_index=int(bond.purchase_month_index),
@@ -220,7 +221,7 @@ def compile_distribution(distribution: SecurityDistribution) -> PreparedDistribu
     )
 
 
-def compile_tlh_portfolio(portfolio: TlhPortfolioSpec, *, quantum: Decimal) -> PreparedTlhPortfolio:
+def compile_tlh_portfolio(portfolio: TlhPortfolioSpec, *, currency: Currency) -> PreparedTlhPortfolio:
     return PreparedTlhPortfolio(
         portfolio_id=portfolio.portfolio_id,
         owner_agent_id=portfolio.owner_agent_id,
@@ -228,8 +229,8 @@ def compile_tlh_portfolio(portfolio: TlhPortfolioSpec, *, quantum: Decimal) -> P
         asset_id=_asset_id(portfolio.asset),
         initial_cohorts=tuple(
             TlhOpeningCohort(
-                value=int(currency_amount_to_quanta(cohort.value, quantum=quantum)),
-                cost_basis=int(currency_amount_to_quanta(cohort.cost_basis, quantum=quantum)),
+                value=currency.quanta(cohort.value),
+                cost_basis=currency.quanta(cohort.cost_basis),
                 purchase_month_index=cohort.purchase_month_index,
             )
             for cohort in portfolio.initial_cohorts
@@ -238,33 +239,35 @@ def compile_tlh_portfolio(portfolio: TlhPortfolioSpec, *, quantum: Decimal) -> P
     )
 
 
-def compile_tender_policy(policy: PrivateEquityTenderPolicy, *, quantum: Decimal) -> _TenderPolicy:
+def compile_tender_policy(policy: PrivateEquityTenderPolicy, *, currency: Currency) -> _TenderPolicy:
     return _TenderPolicy(
         owner_agent_id=policy.owner_agent_id,
         proceeds_account_id=policy.proceeds_account_id,
         liquid_net_worth_floor=_amount(
             policy.liquid_net_worth_floor,
-            quantum=quantum,
+            currency=currency,
             context=f"private-equity floor for {policy.owner_agent_id!r}",
         ),
     )
 
 
-def compile_property_cashflow(cashflow: ScheduledPropertyCashflow, *, quantum: Decimal) -> PreparedPropertyCashflow:
+def compile_property_cashflow(cashflow: ScheduledPropertyCashflow, *, currency: Currency) -> PreparedPropertyCashflow:
     return PreparedPropertyCashflow(
         month=int(cashflow.month),
         property_id=cashflow.property_id,
         cause_id=cashflow.cause_id,
         from_account=AccountRef(agent_id=cashflow.from_agent_id, account_id=cashflow.from_account_id),
         to_account=AccountRef(agent_id=cashflow.to_agent_id, account_id=cashflow.to_account_id),
-        amount=_amount(cashflow.amount, quantum=quantum, context=f"scheduled property cashflow {cashflow.cause_id!r}"),
+        amount=_amount(
+            cashflow.amount, currency=currency, context=f"scheduled property cashflow {cashflow.cause_id!r}"
+        ),
         income_category=cashflow.income_category,
         deduction_category=cashflow.deduction_category,
     )
 
 
 def compile_recurring_property_cashflow(
-    cashflow: RecurringPropertyCashflow, *, quantum: Decimal
+    cashflow: RecurringPropertyCashflow, *, currency: Currency
 ) -> PreparedRecurringPropertyCashflow:
     return PreparedRecurringPropertyCashflow(
         start_month=int(cashflow.start_month),
@@ -273,13 +276,15 @@ def compile_recurring_property_cashflow(
         cause_id=cashflow.cause_id,
         from_account=AccountRef(agent_id=cashflow.from_agent_id, account_id=cashflow.from_account_id),
         to_account=AccountRef(agent_id=cashflow.to_agent_id, account_id=cashflow.to_account_id),
-        amount=_amount(cashflow.amount, quantum=quantum, context=f"recurring property cashflow {cashflow.cause_id!r}"),
+        amount=_amount(
+            cashflow.amount, currency=currency, context=f"recurring property cashflow {cashflow.cause_id!r}"
+        ),
         income_category=cashflow.income_category,
         deduction_category=cashflow.deduction_category,
     )
 
 
-def compile_recurring_obligation(obligation: RecurringObligation, *, quantum: Decimal) -> PreparedRecurringObligation:
+def compile_recurring_obligation(obligation: RecurringObligation, *, currency: Currency) -> PreparedRecurringObligation:
     return PreparedRecurringObligation(
         start_month=int(obligation.start_month),
         end_month=None if obligation.end_month is None else int(obligation.end_month),
@@ -287,7 +292,9 @@ def compile_recurring_obligation(obligation: RecurringObligation, *, quantum: De
         obligation_type=obligation.obligation_type,
         from_account=AccountRef(agent_id=obligation.agent_id, account_id=obligation.from_account_id),
         to_account=AccountRef(agent_id=obligation.to_agent_id, account_id=obligation.to_account_id),
-        amount_due=_amount(obligation.amount_due, quantum=quantum, context=f"obligation {obligation.obligation_id!r}"),
+        amount_due=_amount(
+            obligation.amount_due, currency=currency, context=f"obligation {obligation.obligation_id!r}"
+        ),
         property_id=obligation.property_id,
         deduction_category=obligation.deduction_category,
         deductible_fraction_ppb=int(round_ppb(obligation.deductible_fraction)),
@@ -311,7 +318,7 @@ def compile_housing(
     initial_residences: Iterable[PrimaryResidenceAssignment],
     residence_events: Iterable[SetPrimaryResidenceEvent],
     lifecycle_events: Sequence[PropertyLifecycleEvent],
-    quantum: Decimal,
+    currency: Currency,
 ) -> Housing:
     """Scripted purchases, their residence assignments and their lifecycle, as the tables `Properties` reads."""
     return Housing(
@@ -325,9 +332,9 @@ def compile_housing(
                 buyer_account_id=purchase.buyer_account_id,
                 seller_agent_id=purchase.seller_agent_id,
                 seller_account_id=purchase.seller_account_id,
-                purchase_price=int(currency_amount_to_quanta(purchase.purchase_price, quantum=quantum)),
-                down_payment=int(currency_amount_to_quanta(purchase.down_payment, quantum=quantum)),
-                buyer_closing_cost=int(currency_amount_to_quanta(purchase.buyer_closing_cost, quantum=quantum)),
+                purchase_price=currency.quanta(purchase.purchase_price),
+                down_payment=currency.quanta(purchase.down_payment),
+                buyer_closing_cost=currency.quanta(purchase.buyer_closing_cost),
                 rented_fraction_ppb=int(round_ppb(purchase.rented_fraction)),
                 land_value_fraction_ppb=int(round_ppb(purchase.land_value_fraction)),
                 mortgage=(
@@ -337,7 +344,7 @@ def compile_housing(
                         liability_id=purchase.mortgage.liability_id,
                         lender_agent_id=purchase.mortgage.lender_agent_id,
                         lender_account_id=purchase.mortgage.lender_account_id,
-                        principal=int(currency_amount_to_quanta(purchase.mortgage.principal, quantum=quantum)),
+                        principal=currency.quanta(purchase.mortgage.principal),
                         annual_interest_rate_ppb=int(round_ppb(purchase.mortgage.annual_interest_rate)),
                         term_months=int(purchase.mortgage.term_months),
                     )
@@ -373,7 +380,7 @@ def compile_housing(
             _CapitalImprovement(
                 month=int(event.month),
                 property_id=event.property_id,
-                amount=int(currency_amount_to_quanta(event.amount, quantum=quantum)),
+                amount=currency.quanta(event.amount),
                 description=event.description,
             )
             for event in lifecycle_events
@@ -383,7 +390,7 @@ def compile_housing(
 
 
 def compile_locations(
-    purchases: Sequence[ScheduledPropertyPurchase], locations: Mapping[LocationId, Location], *, quantum: Decimal
+    purchases: Sequence[ScheduledPropertyPurchase], locations: Mapping[LocationId, Location], *, currency: Currency
 ) -> tuple[PreparedLocation, ...]:
     """The locations the purchases buy in.
 
@@ -405,9 +412,7 @@ def compile_locations(
             display_name=locations[location_id].display_name,
             jurisdiction_ids=tuple(locations[location_id].jurisdiction_ids),
             annual_property_tax_rate_ppb=int(round_ppb(locations[location_id].annual_property_tax_rate)),
-            annual_special_assessment=int(
-                currency_amount_to_quanta(locations[location_id].annual_special_assessment, quantum=quantum)
-            ),
+            annual_special_assessment=currency.quanta(locations[location_id].annual_special_assessment),
         )
         for location_id in referenced
     )
@@ -427,14 +432,14 @@ def compile_property_tax(policy: PropertyTaxPolicy) -> _PropertyTax:
 
 
 def compile_interest_deduction(
-    policy: MortgageInterestDeductionPolicy, *, quantum: Decimal
+    policy: MortgageInterestDeductionPolicy, *, currency: Currency
 ) -> _MortgageInterestDeduction:
     return _MortgageInterestDeduction(
         liability_id=policy.liability_id,
         owner_agent_id=policy.owner_agent_id,
         debt_class=policy.debt_class,
         per_jurisdiction_principal_cap={
-            jurisdiction_id: int(currency_amount_to_quanta(cap, quantum=quantum))
+            jurisdiction_id: currency.quanta(cap)
             for jurisdiction_id, cap in policy.per_jurisdiction_principal_cap.items()
         },
     )

@@ -18,7 +18,7 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, L
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.money import position_value
+from finance.augur.sim.money import USD, position_value
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -104,7 +104,7 @@ def situation(
         horizon_months=horizon,
     )
     return Situation(
-        series=compile_series(paths, rollout_count=rollouts, horizon_months=horizon, currency_quantum=QUANTUM),
+        series=compile_series(paths, rollout_count=rollouts, horizon_months=horizon, currency=USD),
         rollout_count=rollouts,
         horizon_months=horizon,
         sleeve=_lot(
@@ -142,7 +142,7 @@ def compose(case: Situation, rollout_id: int) -> World:
                     tax_authority_agent_id=IRS,
                 ),
                 jurisdictions,
-                quantum=QUANTUM,
+                currency=USD,
             ),
             indexation=FixedNominalLaw(),
         )

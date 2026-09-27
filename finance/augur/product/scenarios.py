@@ -58,7 +58,7 @@ from finance.augur.sim.compiler.execution import (
     compile_tlh_portfolio,
 )
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series, level_series_demand
-from finance.augur.sim.fixed_point import currency_amount_to_quanta, round_currency_amount
+from finance.augur.sim.fixed_point import round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.locations import Location
@@ -69,6 +69,7 @@ from finance.augur.sim.prepared import (
     PreparedBond,
     PreparedDistribution,
     PreparedHoldingPool,
+    PreparedIndexedAmount,
     PreparedJurisdiction,
     PreparedLocation,
     PreparedLot,
@@ -298,7 +299,6 @@ def build_situation(
     horizon_months = int(scenario_key.horizon_months)
     end_month = horizon_months - 1
     currency = Currency(code=scenario_key.currency_code, quantum=scenario_key.currency_quantum)
-    quantum = currency.quantum
     currency_quantum = scenario_key.currency_quantum
 
     initial_balances = [
@@ -367,7 +367,7 @@ def build_situation(
                     MortgageInterestDeductionPolicy(
                         liability_id=mortgage.liability_id, owner_agent_id=primary_agent_id
                     ),
-                    quantum=quantum,
+                    currency=currency,
                 )
         scheduled_property_purchases.append(
             _sim_property_purchase(
@@ -421,7 +421,7 @@ def build_situation(
                 initial_residences=initial_primary_residences,
                 residence_events=primary_residence_events,
                 lifecycle_events=property_lifecycle_events,
-                quantum=quantum,
+                currency=currency,
             ),
             property_tax=compile_property_tax(
                 PropertyTaxPolicy(
@@ -435,12 +435,12 @@ def build_situation(
                     end_month=end_month,
                 )
             ),
-            location=one(compile_locations(scheduled_property_purchases, locations, quantum=quantum)),
+            location=one(compile_locations(scheduled_property_purchases, locations, currency=currency)),
             interest_deduction=interest_deduction,
             cashflows=(
-                *(compile_property_cashflow(cashflow, quantum=quantum) for cashflow in scheduled_property_cashflows),
+                *(compile_property_cashflow(cashflow, currency=currency) for cashflow in scheduled_property_cashflows),
                 *(
-                    compile_recurring_property_cashflow(cashflow, quantum=quantum)
+                    compile_recurring_property_cashflow(cashflow, currency=currency)
                     for cashflow in recurring_property_cashflows
                 ),
             ),
@@ -454,7 +454,7 @@ def build_situation(
         primary_agent_id=primary_agent_id,
         initial_lots=initial_lots,
         tlh_portfolios=tlh_portfolios,
-        quantum=quantum,
+        currency=currency,
     )
     # The funding policy sells a pool's lots oldest first, so a pool may not hold two lots bought the same month.
     bought = [(lot.agent_id, lot.account_id, lot.asset.wire_id, lot.purchase_month_index) for lot in initial_lots]
@@ -471,47 +471,49 @@ def build_situation(
         tax_authority_account_id=TAX_AUTHORITY_ACCOUNT_ID,
     )
     jurisdictions = load_jurisdictions_for([profile])
+    lots = compile_lots(initial_lots, currency=currency)
+    prepared_tlh_portfolios = tuple(compile_tlh_portfolio(portfolio, currency=currency) for portfolio in tlh_portfolios)
+    bonds = tuple(compile_bond(bond, currency=currency) for bond in initial_bonds)
+    distributions = tuple(compile_distribution(distribution) for distribution in security_distributions)
+    tender_policy = None if not tender_policies else compile_tender_policy(one(tender_policies), currency=currency)
+    obligations = tuple(
+        compile_recurring_obligation(obligation, currency=currency) for obligation in recurring_obligations
+    )
+    cashflows = () if home is None else home.cashflows
     return Situation(
         currency=currency,
         horizon_months=horizon_months,
         household=household,
         level_series=level_series_demand(
-            lots=initial_lots,
-            tlh_portfolios=tlh_portfolios,
-            bonds=initial_bonds,
-            distributions=security_distributions,
+            lots=lots,
+            tlh_portfolios=prepared_tlh_portfolios,
+            bonds=bonds,
+            distributions=distributions,
             amounts=(
-                *(cashflow.amount for cashflow in scheduled_property_cashflows),
-                *(cashflow.amount for cashflow in recurring_property_cashflows),
-                *(obligation.amount_due for obligation in recurring_obligations),
+                *(cashflow.amount for cashflow in cashflows),
+                *(obligation.amount_due for obligation in obligations),
                 # Both band bounds, not just the floor: the ceiling is the refill target a raise is
                 # sized to, so an indexed ceiling needs its series sampled.
                 *band,
             ),
-            tender_policies=tender_policies,
-            purchases=scheduled_property_purchases,
+            tender_policies=() if tender_policy is None else (tender_policy,),
+            purchases=() if home is None else home.housing.purchases,
         ),
         private_equity_issuers=frozenset(
             lot.asset.issuer_id for lot in initial_lots if isinstance(lot.asset, PrivateEquityAssetKey)
         ),
         jurisdictions=compile_jurisdictions(jurisdictions, bonds=initial_bonds, distributions=security_distributions),
-        income_sources=compile_income_sources(
-            flows=(*scheduled_property_cashflows, *recurring_property_cashflows),
-            bonds=initial_bonds,
-            distributions=security_distributions,
-        ),
-        accounts=compile_accounts(initial_balances, quantum=quantum),
-        tax_profile=compile_profile(profile, jurisdictions, quantum=quantum),
+        income_sources=compile_income_sources(flows=cashflows, bonds=bonds, distributions=distributions),
+        accounts=compile_accounts(initial_balances, currency=currency),
+        tax_profile=compile_profile(profile, jurisdictions, currency=currency),
         pools=compile_holding_pools(lots=initial_lots),
-        lots=compile_lots(initial_lots, quantum=quantum),
-        tlh_portfolios=tuple(compile_tlh_portfolio(portfolio, quantum=quantum) for portfolio in tlh_portfolios),
-        bonds=tuple(compile_bond(bond, quantum=quantum) for bond in initial_bonds),
+        lots=lots,
+        tlh_portfolios=prepared_tlh_portfolios,
+        bonds=bonds,
         home=home,
-        distributions=tuple(compile_distribution(distribution) for distribution in security_distributions),
-        tender_policy=None if not tender_policies else compile_tender_policy(one(tender_policies), quantum=quantum),
-        obligations=tuple(
-            compile_recurring_obligation(obligation, quantum=quantum) for obligation in recurring_obligations
-        ),
+        distributions=distributions,
+        tender_policy=tender_policy,
+        obligations=obligations,
     )
 
 
@@ -519,17 +521,14 @@ def paths(situation: Situation, sampled: ExternalSeriesContext, *, rollout_count
     """The sampled paths as the integer series a world reads: levels, then each held issuer's protocol."""
     return (
         *compile_series(
-            sampled,
-            rollout_count=rollout_count,
-            horizon_months=situation.horizon_months,
-            currency_quantum=situation.currency.quantum,
+            sampled, rollout_count=rollout_count, horizon_months=situation.horizon_months, currency=situation.currency
         ),
         *compile_private_equity_series(
             sorted(situation.private_equity_issuers),
             sampled.private_equity,
             rollout_count=rollout_count,
             horizon_months=situation.horizon_months,
-            quantum=situation.currency.quantum,
+            currency=situation.currency,
         ),
     )
 
@@ -1053,8 +1052,8 @@ def _funding_household(
     primary_agent_id: AgentId,
     initial_lots: tuple[InitialLot, ...],
     tlh_portfolios: tuple[TlhPortfolioSpec, ...],
-    quantum: Decimal,
-) -> tuple[Callable[[], CashBandHousehold | ClaimPayer], tuple[Decimal | SeriesIndexedAmount, ...]]:
+    currency: Currency,
+) -> tuple[Callable[[], CashBandHousehold | ClaimPayer], tuple[int | PreparedIndexedAmount, ...]]:
     """The household the wire's cash band + weights describe, and the band bounds it reads.
 
     Zero-weight entries are the product UI's explicit "never sell" exclusion, not the
@@ -1089,10 +1088,10 @@ def _funding_household(
         managed_by_id[sleeve.portfolio_id].account_id for sleeve in sleeves if isinstance(sleeve, ManagedSleeve)
     ]
     band = tuple(
-        _band_bound_amount(amount, index_to_inflation=funding_policy.cash_band_index_to_inflation)
+        _band_bound_amount(amount, index_to_inflation=funding_policy.cash_band_index_to_inflation, currency=currency)
         for amount in (funding_policy.cash_floor, funding_policy.cash_ceiling)
     )
-    floor, ceiling = (_household_bound(amount, quantum=quantum) for amount in band)
+    floor, ceiling = (_household_bound(amount) for amount in band)
     household = partial(
         CashBandHousehold,
         primary_agent_id,
@@ -1107,25 +1106,27 @@ def _funding_household(
     return household, band
 
 
-def _band_bound_amount(amount: Decimal, *, index_to_inflation: bool) -> Decimal | SeriesIndexedAmount:
-    """Translate an exact configured amount + index flag into the sim `AmountSpec`.
+def _band_bound_amount(amount: Decimal, *, index_to_inflation: bool, currency: Currency) -> int | PreparedIndexedAmount:
+    """Translate an exact configured amount + index flag into a prepared amount.
 
     An indexed bound tracks CPI monthly (period=1) so the real-terms band stays constant; a
-    nominal bound remains the exact configured amount.
+    nominal bound is the exact configured amount in quanta.
     """
 
     if not index_to_inflation or amount <= 0:
-        return amount
-    return SeriesIndexedAmount(base_amount=amount, series=InflationKey(), adjustment_period_months=1)
-
-
-def _household_bound(amount: Decimal | SeriesIndexedAmount, *, quantum: Decimal) -> BandBound:
-    if isinstance(amount, Decimal):
-        return int(currency_amount_to_quanta(amount, quantum=quantum))
-    return CpiIndexed(
-        base_amount=int(currency_amount_to_quanta(amount.base_amount, quantum=quantum)),
-        adjustment_period_months=int(amount.adjustment_period_months),
+        return currency.quanta(amount)
+    return PreparedIndexedAmount(
+        base_amount=currency.quanta(amount),
+        series_id=InflationKey().wire_id,
+        base_month_index=0,
+        adjustment_period_months=1,
     )
+
+
+def _household_bound(amount: int | PreparedIndexedAmount) -> BandBound:
+    if isinstance(amount, int):
+        return amount
+    return CpiIndexed(base_amount=amount.base_amount, adjustment_period_months=amount.adjustment_period_months)
 
 
 def _build_private_equity_tender_policies(

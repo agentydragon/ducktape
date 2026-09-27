@@ -17,10 +17,11 @@ from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot, PreparedObligation
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
 from finance.augur.sim.world import World
-from finance.augur.study.trinity.replay import EQUITY, HORIZON_MONTHS, QUANTUM, Situation, situation
+from finance.augur.study.trinity.replay import EQUITY, HORIZON_MONTHS, Situation, situation
 from finance.augur.x.bounded_spending.compare import _write_consumption_distribution, compare
 from finance.augur.x.bounded_spending.python_policy import BatchPolicy, Parameters, SpendingPolicy, consumption, run
 from util.bazel.runfiles import get_required_path
@@ -37,7 +38,7 @@ def early_claim_failure() -> Finished:
         ),
         rollout_count=2,
         horizon_months=2,
-        currency_quantum=QUANTUM,
+        currency=USD,
     )
     scale = quantity_scale_for_asset(stock)
 

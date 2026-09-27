@@ -22,6 +22,7 @@ from finance.augur.sim.external_series import ExternalSeriesContext, compile_ser
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedLocation,
@@ -71,7 +72,7 @@ def home_value(*paths: list[Decimal | int], horizon_months: int) -> tuple[Prepar
         ),
         rollout_count=len(paths),
         horizon_months=horizon_months,
-        currency_quantum=QUANTUM,
+        currency=USD,
     )
 
 

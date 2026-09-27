@@ -124,7 +124,7 @@ def run(
                 ),
                 rollout_count=1,
                 horizon_months=situation.horizon_months,
-                currency_quantum=situation.currency.quantum,
+                currency=situation.currency,
             ),
             0,
             rollout_count=1,
@@ -138,7 +138,7 @@ def run(
     if tax is not None:
         world.track(
             TaxAuthority(
-                compile_profile(tax[0], jurisdictions, quantum=situation.currency.quantum), indexation=FixedNominalLaw()
+                compile_profile(tax[0], jurisdictions, currency=situation.currency), indexation=FixedNominalLaw()
             )
         )
     for pool in compile_holding_pools(lots=product.lots):

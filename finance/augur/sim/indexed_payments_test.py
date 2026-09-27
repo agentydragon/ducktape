@@ -17,6 +17,7 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedIndexedAmount,
@@ -39,7 +40,7 @@ def _series(levels: list[list[float]], *, horizon_months: int) -> tuple[Prepared
     paths = ExternalSeriesContext.from_level_blocks(
         [(RENT, np.asarray(levels, dtype=np.float64))], rollout_count=len(levels), horizon_months=len(levels[0]) - 1
     )
-    return compile_series(paths, rollout_count=len(levels), horizon_months=horizon_months, currency_quantum=QUANTUM)
+    return compile_series(paths, rollout_count=len(levels), horizon_months=horizon_months, currency=USD)
 
 
 def _indexed(base_amount: Decimal, *, base_month_index: int, adjustment_period_months: int) -> PreparedIndexedAmount:

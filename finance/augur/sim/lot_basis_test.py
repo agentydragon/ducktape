@@ -23,6 +23,7 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_sc
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot
 from finance.augur.sim.results import Finished
 from finance.augur.sim.scenario import InitialLot
@@ -82,9 +83,7 @@ def _compose(lots: list[PreparedLot], *, horizon_months: int) -> World:
     )
     world = World(
         MarketPath(
-            compile_series(paths, rollout_count=1, horizon_months=horizon_months, currency_quantum=QUANTUM),
-            0,
-            rollout_count=1,
+            compile_series(paths, rollout_count=1, horizon_months=horizon_months, currency=USD), 0, rollout_count=1
         ),
         horizon_months=horizon_months,
         income_sources=(ORDINARY_INCOME,),

@@ -28,6 +28,7 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, L
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedHoldingPool,
@@ -178,7 +179,7 @@ def compose(case: Situation, indexation: TaxIndexation) -> World:
         ),
         rollout_count=1,
         horizon_months=horizon,
-        currency_quantum=QUANTUM,
+        currency=USD,
     )
     if isinstance(indexation, CpiIndexedLaw):
         cpi = (100,) * (horizon + 1) if case.cpi is None else case.cpi
@@ -213,7 +214,7 @@ def compose(case: Situation, indexation: TaxIndexation) -> World:
                         prior_year_tax=Decimal(case.prior_year_tax),
                     ),
                     jurisdictions,
-                    quantum=QUANTUM,
+                    currency=USD,
                 ),
                 indexation=indexation,
             )

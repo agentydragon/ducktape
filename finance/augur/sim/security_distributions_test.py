@@ -24,6 +24,7 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, L
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, income_source_sort_key
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedDistribution,
@@ -95,7 +96,7 @@ def _paths(payout: np.ndarray | None) -> tuple[PreparedSeries, ...]:
         ExternalSeriesContext.from_level_blocks(blocks, rollout_count=1, horizon_months=HORIZON),
         rollout_count=1,
         horizon_months=HORIZON,
-        currency_quantum=QUANTUM,
+        currency=USD,
     )
 
 
@@ -175,7 +176,7 @@ def compose(
                 compile_profile(
                     TaxProfile(agent_id=ALICE, jurisdiction_ids=list(FILED_IN), tax_authority_agent_id=IRS),
                     {id_: load_jurisdiction(id_) for id_ in FILED_IN},
-                    quantum=QUANTUM,
+                    currency=USD,
                 ),
                 indexation=FixedNominalLaw(),
             )

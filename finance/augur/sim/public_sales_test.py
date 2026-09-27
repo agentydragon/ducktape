@@ -21,6 +21,7 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, L
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -73,7 +74,7 @@ def _situation(prices: np.ndarray, *, quantity: Decimal | int, cost_basis: Decim
     )
     scale = quantity_scale_for_asset(VTI)
     return Situation(
-        series=compile_series(paths, rollout_count=rollout_count, horizon_months=horizon, currency_quantum=QUANTUM),
+        series=compile_series(paths, rollout_count=rollout_count, horizon_months=horizon, currency=USD),
         rollout_count=rollout_count,
         horizon_months=horizon,
         lot=PreparedLot(
@@ -112,9 +113,7 @@ def _compose(case: Situation, rollout_id: int) -> World:
     profile = TaxProfile(
         agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS, prior_year_tax=Decimal(0)
     )
-    world.track(
-        TaxAuthority(compile_profile(profile, {FEDERAL: federal}, quantum=QUANTUM), indexation=FixedNominalLaw())
-    )
+    world.track(TaxAuthority(compile_profile(profile, {FEDERAL: federal}, currency=USD), indexation=FixedNominalLaw()))
     world.declare_pool(
         PreparedHoldingPool(
             agent_id=ALICE,

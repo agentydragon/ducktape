@@ -16,6 +16,7 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, P
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import Currency
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -38,7 +39,7 @@ MANAGED = PortfolioId("managed")
 
 ASSET = SecurityKey(symbol=SecuritySymbol("managed-index"))
 # Whole-dollar money, so a portfolio mark is the number the assertions name.
-QUANTUM = Decimal(1)
+WHOLE_DOLLARS = Currency(code="USD", quantum=Decimal(1))
 OWNER = AgentId("owner")
 OTHER = AgentId("other")
 IRS = AgentId("irs")
@@ -119,7 +120,7 @@ def compose(case: Situation, rollout_id: int) -> World:
                 compile_profile(
                     TaxProfile(agent_id=OWNER, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS),
                     {FEDERAL: load_jurisdiction(FEDERAL)},
-                    quantum=QUANTUM,
+                    currency=WHOLE_DOLLARS,
                 ),
                 indexation=FixedNominalLaw(),
             )

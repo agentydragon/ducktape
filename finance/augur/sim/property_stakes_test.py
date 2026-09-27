@@ -31,6 +31,7 @@ from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityI
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedJurisdiction,
@@ -194,7 +195,7 @@ def compose(case: Situation, rollout_id: int) -> World:
         ),
         rollout_count=case.rollout_count,
         horizon_months=case.horizon_months,
-        currency_quantum=QUANTUM,
+        currency=USD,
     )
     jurisdictions = {id_: load_jurisdiction(id_) for id_ in case.jurisdiction_ids}
     world = World(
@@ -218,7 +219,7 @@ def compose(case: Situation, rollout_id: int) -> World:
                         tax_authority_agent_id=IRS,
                     ),
                     jurisdictions,
-                    quantum=QUANTUM,
+                    currency=USD,
                 ),
                 indexation=FixedNominalLaw(),
             )

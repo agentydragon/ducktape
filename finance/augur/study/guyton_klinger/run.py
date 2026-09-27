@@ -22,7 +22,6 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.session import ActionSession
@@ -31,9 +30,9 @@ from finance.augur.study.guyton_klinger.panel import AnnualPanel, Sleeve, load_p
 from finance.augur.study.guyton_klinger.paths import (
     ADAPTATION_TARGET_PERCENT,
     CALIFORNIA,
+    CURRENCY,
     FEDERAL,
     MONTHS_PER_YEAR,
-    QUANTUM,
     RETIREE,
     TAX_RESERVE,
     AnnualWindows,
@@ -157,7 +156,7 @@ def _half_up(amount: Fraction) -> int:
 
 
 def _dollars(quanta: float) -> str:
-    return str((Decimal(quanta) * QUANTUM).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    return str((Decimal(quanta) * CURRENCY.quantum).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
 def _amounts(withdrawal: int, taxes: Mapping[str, int] | None, deflator: Fraction) -> YearAmounts:
@@ -194,7 +193,7 @@ def path_records(
     for rollout in rollouts:
         cpi = MarketPath(windows.series, rollout.rollout_id, rollout_count=len(windows.start_years)).path("inflation")
         start_cpi = real.start_cpi[rollout.rollout_id]
-        initial_wealth = int(currency_amount_to_quanta(wealth[rollout.rollout_id], quantum=QUANTUM))
+        initial_wealth = CURRENCY.quanta(wealth[rollout.rollout_id])
         taxes: dict[int, dict[str, int]] = {}
         for row in rollout.summary.tax_accruals:
             by_jurisdiction = taxes.setdefault(row.tax_year_end_month // MONTHS_PER_YEAR, {})
@@ -261,7 +260,7 @@ def headline(records: Records) -> dict[str, object]:
     }
     if completed:
         summary |= {
-            "successful_windows": sum(terminal * QUANTUM >= 1 for terminal, _, _ in completed),
+            "successful_windows": sum(terminal * CURRENCY.quantum >= 1 for terminal, _, _ in completed),
             "median_real_lifetime_spendable": _dollars(statistics.median(sum(years) for _, _, years in completed)),
             "min_real_annual_spendable": _dollars(min(value for _, _, years in completed for value in years)),
             "median_real_terminal_wealth": _dollars(statistics.median(real for _, real, _ in completed)),
@@ -307,7 +306,8 @@ def main() -> None:
     windows = annual_windows(panel, start_years=start_years, years=args.years, tax_law=args.tax_law)
     real = real_dollars(panel, windows.start_years, args.initial_wealth_dollars_of)
     wealth = [
-        Decimal(_half_up(Fraction(args.initial_wealth / QUANTUM) * start_cpi)) * QUANTUM for start_cpi in real.start_cpi
+        Decimal(_half_up(Fraction(args.initial_wealth / CURRENCY.quantum) * start_cpi)) * CURRENCY.quantum
+        for start_cpi in real.start_cpi
     ]
     cell = Cell(initial_rate=args.initial_rate, years=args.years)
 
