@@ -41,5 +41,10 @@ def test_flux_decrypts_exactly_when_a_sibling_is_sops(tmp_path: Path, siblings: 
     assert ("decryption" in rendered["spec"]) is decrypted
 
 
+def test_writer_refuses_an_artifact_with_shared_bases(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="shared bases"):
+        write_directory(tmp_path, artifact("test-app", "test/app", "test/base"), _chart("first"))
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
