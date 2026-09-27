@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecRefreshPolicy,
@@ -195,8 +195,14 @@ def chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         "ntfy-webhook",
-        name=_NTFY_WEBHOOK,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_NTFY_WEBHOOK,
+            namespace=NAMESPACE,
+            annotations={
+                "description": "Flux failure notifications delivered through the self-hosted ntfy instance",
+                "ntfy.ducktape.io/auth-generation": "1",
+            },
+        ),
         refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
         store=SecretStoreRef.cluster(ntfy.SECRET_STORE),
         data=[remote_data("ntfy-credentials", "alertmanager-token", secret_key="alertmanager_token")],
@@ -207,10 +213,6 @@ def chart(app: App) -> Chart:
             type="Opaque",
             data={"address": f"https://{ntfy.HOSTNAME}/alerts", "headers": _NTFY_HEADERS},
         ),
-        annotations={
-            "description": "Flux failure notifications delivered through the self-hosted ntfy instance",
-            "ntfy.ducktape.io/auth-generation": "1",
-        },
     )
     return chart
 

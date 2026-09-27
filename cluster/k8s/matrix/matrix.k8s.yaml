@@ -127,8 +127,6 @@ spec:
       job:
         enabled: false
     synapse:
-      annotations:
-        reloader.stakater.com/auto: "true"
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
     workers:
@@ -239,8 +237,6 @@ spec:
       app.kubernetes.io/name: element-web
   template:
     metadata:
-      annotations:
-        reloader.stakater.com/auto: "true"
       labels:
         app.kubernetes.io/name: element-web
     spec:

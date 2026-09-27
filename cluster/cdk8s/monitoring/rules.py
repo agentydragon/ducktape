@@ -552,43 +552,35 @@ def chart(app: App) -> Chart:
     PrometheusRule(
         chart,
         "control-plane-io-alerts",
-        metadata=metadata("control-plane-io-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=metadata("control-plane-io-alerts", NAMESPACE),
         groups=[group("control-plane-io", _CONTROL_PLANE_IO)],
     )
     PrometheusRule(
         chart,
         "external-secrets-alerts",
-        metadata=metadata("external-secrets-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=metadata("external-secrets-alerts", NAMESPACE),
         groups=[group("external-secrets", _EXTERNAL_SECRETS)],
     )
-    PrometheusRule(
-        chart,
-        "flux-alerts",
-        metadata=metadata("flux-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
-        groups=[group("flux", _FLUX)],
-    )
+    PrometheusRule(chart, "flux-alerts", metadata=metadata("flux-alerts", NAMESPACE), groups=[group("flux", _FLUX)])
     PrometheusRule(
         chart,
         "github-quota-alerts",
-        metadata=metadata("github-quota-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=metadata("github-quota-alerts", NAMESPACE),
         groups=[group("github-quota", _GITHUB_QUOTA)],
     )
     PrometheusRule(
         chart,
         "grocy-mcp-alerts",
-        metadata=metadata("grocy-mcp-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=metadata("grocy-mcp-alerts", NAMESPACE),
         groups=[group("grocy-mcp", _GROCY_MCP)],
     )
     PrometheusRule(
-        chart,
-        "mcp-auth-alerts",
-        metadata=metadata("mcp-auth-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
-        groups=[group("mcp-auth", _MCP_AUTH)],
+        chart, "mcp-auth-alerts", metadata=metadata("mcp-auth-alerts", NAMESPACE), groups=[group("mcp-auth", _MCP_AUTH)]
     )
     PrometheusRule(
         chart,
         "roaming-node-alerts",
-        metadata=metadata("roaming-node-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=metadata("roaming-node-alerts", NAMESPACE),
         groups=[
             group("roaming-node-alerts", _ROAMING_NODE),
             group("roaming-node-workload-alerts", _ROAMING_NODE_WORKLOAD),

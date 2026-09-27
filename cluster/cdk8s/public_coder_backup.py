@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -203,8 +203,7 @@ def _repository(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "repository",
-        name=_REPOSITORY_SECRET_NAME,
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(name=_REPOSITORY_SECRET_NAME, namespace=_NAMESPACE),
         refresh="1h",
         store=SecretStoreRef.namespaced(_SECRET_STORE_NAME),
         data=[

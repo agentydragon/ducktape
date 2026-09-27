@@ -144,6 +144,7 @@ py_library(
         ":local_path_provisioner",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/cnpg:cnpg_cluster",
+        "@pypi//cdk8s",
         "@pypi//constructs",
     ],
 )
@@ -831,6 +832,7 @@ py_library(
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@pypi//pydantic",
     ],
 )
 
@@ -864,6 +866,28 @@ py_library(
         ":metadata",
         "//cluster/cdk8s/providers/tofu_controller:terraform",
         "@pypi//constructs",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_terraform_vars",
+    srcs = ["test_terraform_vars.py"],
+    data = [
+        "//tf/gitops/dns-records:variables.tf",
+        "//tf/gitops/litellm-keys:variables.tf",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":dns_automation",
+        "//:conftest",
+        "//cluster/cdk8s/litellm:keys",
+        "//util/bazel:runfiles",
+        "@pypi//pydantic",
+        "@pypi//pygohcl",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

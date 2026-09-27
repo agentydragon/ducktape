@@ -3,7 +3,7 @@ discriminates two real top-level shapes: an externally run instance the operator
 points at (`spec.external`, wrapped by `Grafana.external`) and a managed instance the
 operator deploys itself, driven by `config`/`deployment`/etc. Ducktape's one managed
 instance (`monitoring/grafana_instance.py`) builds a `GrafanaSpec` almost entirely of its
-own OAuth/Postgres/Reloader configuration, with no further reusable shape to factor out,
+own OAuth/Postgres configuration, with no further reusable shape to factor out,
 so it constructs `Grafana` directly with that `GrafanaSpec` rather than through a
 `managed(...)` factory that would just forward one caller's blob.
 """

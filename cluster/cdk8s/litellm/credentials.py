@@ -88,8 +88,7 @@ class CheapExperimentsCredentials(Construct):
         ExternalSecret(
             self,
             "target-external-secret",
-            name=_KEY_SECRET_NAME,
-            namespace=_AGENTPLANE_NAMESPACE,
+            metadata=ApiObjectMetadata(name=_KEY_SECRET_NAME, namespace=_AGENTPLANE_NAMESPACE),
             refresh="1m",
             store=SecretStoreRef.cluster(_SECRET_STORE_NAME),
             data=[remote_data(_KEY_SECRET_NAME, "api-key")],
