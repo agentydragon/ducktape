@@ -23,12 +23,13 @@ from cnpg_database_crds.io.cnpg.postgresql import (
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from agentplane.indexing.main import Settings
-from cluster.cdk8s import cnpg, forgejo_images
+from cluster.cdk8s import cnpg, forgejo_images, namespaces
 from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from util.settings_contract import env_name
 
 NAME = "agentplane-index"
@@ -200,18 +201,14 @@ def _worker(
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAME,
-            labels={
-                "name": NAME,
-                "goldilocks.fairwinds.com/enabled": "false",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-            annotations={"description": "Single-repository semantic indexes for ducktape and haku-state."},
-        ),
+        name=NAME,
+        vpa=Vpa.DISABLED,
+        agent_readable=AgentReadable.LOGS,
+        labels={"name": NAME},
+        annotations={"description": "Single-repository semantic indexes for ducktape and haku-state."},
     )
     _read_token(chart)
     forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)

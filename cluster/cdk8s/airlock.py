@@ -21,12 +21,14 @@ from cilium_crds.io.cilium import (
 )
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     ClusterDataFrom,
@@ -163,27 +165,22 @@ def _ingress_from(entity: CiliumNetworkPolicySpecIngressFromEntities) -> CiliumN
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAME,
-            labels={
-                "name": NAME,
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-            annotations={
-                # controlledValues has to be spelled out here: default-vpa-requests-only
-                # only adds the annotation when it is absent, so declaring any policy of
-                # your own opts the namespace out of the default entirely.
-                "goldilocks.fairwinds.com/vpa-resource-policy": (
-                    '{ "containerPolicies": [ { "containerName": "*", "controlledValues":'
-                    ' "RequestsOnly", "minAllowed": { "cpu": "100m", "memory": "128Mi" } } ] }\n'
-                )
-            },
-        ),
+        name=NAME,
+        vpa=Vpa.AUTO,
+        agent_readable=AgentReadable.LOGS,
+        labels={"name": NAME},
+        annotations={
+            # controlledValues has to be spelled out here: default-vpa-requests-only
+            # only adds the annotation when it is absent, so declaring any policy of
+            # your own opts the namespace out of the default entirely.
+            "goldilocks.fairwinds.com/vpa-resource-policy": (
+                '{ "containerPolicies": [ { "containerName": "*", "controlledValues":'
+                ' "RequestsOnly", "minAllowed": { "cpu": "100m", "memory": "128Mi" } } ] }\n'
+            )
+        },
     )
     _session_secret(chart)
     _deployment(chart)

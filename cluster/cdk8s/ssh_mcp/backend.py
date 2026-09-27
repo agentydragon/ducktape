@@ -30,10 +30,11 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -211,14 +212,14 @@ class SshMcp(Construct):
 
 def chart(app: App, *, config: SshMcpConfig, mesh: Mesh) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={"name": NAMESPACE, "goldilocks.fairwinds.com/enabled": "false"},
-            annotations={"description": "SSH MCP backend; private keys stay in this namespace."},
-        ),
+        name=NAMESPACE,
+        vpa=Vpa.DISABLED,
+        agent_readable=None,
+        labels={"name": NAMESPACE},
+        annotations={"description": "SSH MCP backend; private keys stay in this namespace."},
     )
     SshMcp(chart, NAME, config=config, mesh=mesh)
     return chart
