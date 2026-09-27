@@ -52,6 +52,12 @@ build time.
   it off the top of the screen, so collapsing means scrolling back up first. One direction: keep the
   summary/toggle stuck to the viewport top while its content is still in view, only releasing it once scrolled
   fully past -- would need a custom sticky-summary treatment rather than the native `<details>` element as is.
+- **Row spacing feels too loose, especially around collapsed blocks**: every virtualized history row gets a flat
+  `paddingBottom: 8` (`projected_session.tsx` ~line 1141), uniform across row types -- text messages, collapsed
+  `CollapsibleRows` tool-call/reasoning runs, everything. Feedback was that the gap between text and a collapsed
+  tool block specifically could be roughly half what it is now. Since the padding is currently one constant for
+  every row regardless of neighbor type, halving it flat would tighten all row gaps equally; making it tighter
+  only around collapsed blocks specifically would need type-aware spacing instead -- worth deciding which.
 - **Consider squashing the "observation" naming layer**: not remembered as a deliberate design choice. `Event`
   (`protocol/event.proto`)'s payload is a `oneof` field literally named `observation`; that name then propagated
   outward into `runner/observation.py`'s `Observation` type, the archive/API layer
