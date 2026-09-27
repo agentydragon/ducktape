@@ -499,10 +499,8 @@ py_library(
     deps = [
         ":artifact_generators",
         ":flux",
-        ":generation",
         ":manifest_roots",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -514,11 +512,9 @@ py_library(
         ":artifact_generators",
         ":external_creds",
         ":flux",
-        ":generation",
         ":manifest_roots",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

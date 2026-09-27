@@ -271,7 +271,6 @@ def generate_manifests(root: Path) -> None:
     haku_ui_image_webhook.write_manifests(root)
     haku_mailbox.write_manifests(root)
     haku_ci_runner.write_manifests(root)
-    alloy_otlp_bearer.write_manifests(root)
     public_coder_agent_config.write_manifests(root)
     public_coder_proxy.write_manifests(
         root,
@@ -301,9 +300,6 @@ def generate_manifests(root: Path) -> None:
     tofu_state_db.write_manifests(root)
     authentik_namespace.write_manifests(root)
     authentik_db.write_manifests(root)
-    clickhouse_operator.write_manifests(root)
-    clickhouse_installation.write_manifests(root)
-    cpap_sync_app.write_manifests(root)
     authentik_app.write_manifests(root)
     authentik_proxy_routes.write_manifests(root)
     authentik_db_backups.write_manifests(root)
@@ -319,7 +315,6 @@ def generate_manifests(root: Path) -> None:
     grafana_helmrepository.write_manifests(root)
     drift_watch.write_manifests(root)
     github_secrets_sync_gitops_module.write_manifests(root)
-    github_secrets_sync_secrets.write_manifests(root)
     forgejo_images.write_manifests(root)
     gatus_sso.write_manifests(root)
     sso_providers.write_manifests(root)
@@ -365,7 +360,6 @@ def generate_manifests(root: Path) -> None:
     airlock.write_manifests(root)
     authentik_jwt_rotation.write_manifests(root)
     forgejo_token_rotation.write_manifests(root)
-    claude_sandbox_secrets.write_manifests(root)
     kubectl_passthrough_mcp.write_manifests(root)
     agent_shared_rbac.write_manifests(root)
     website.write_manifests(root)
@@ -530,7 +524,15 @@ def generate_manifests(root: Path) -> None:
     )
     clickhouse_operator_artifact = artifact("clickhouse-operator", clickhouse_operator.OUTPUT_DIR)
     clickhouse_operator_kustomization = clickhouse_operator.clickhouse_operator(
-        flux_chart, clickhouse_operator_artifact, monitoring_crds_kustomization
+        flux_chart,
+        write_directory(
+            root,
+            clickhouse_operator_artifact,
+            clickhouse_operator.namespace_chart,
+            clickhouse_operator.helmrelease_chart,
+            siblings=["operator-values.sops.yaml"],
+        ),
+        monitoring_crds_kustomization,
     )
     flux_monitoring_artifact = artifact("flux-monitoring", flux_monitoring.OUTPUT_DIR)
     flux_monitoring.flux_monitoring(
@@ -592,7 +594,11 @@ def generate_manifests(root: Path) -> None:
         flux_chart, write_directory(root, vpa_artifact, vpa.chart), kyverno_kustomization, metrics_server_kustomization
     )
     clickhouse_kustomization = clickhouse_installation.clickhouse(
-        flux_chart, clickhouse_artifact, clickhouse_operator_kustomization
+        flux_chart,
+        write_directory(
+            root, clickhouse_artifact, *clickhouse_installation.CHARTS, siblings=clickhouse_installation.SOPS_FILES
+        ),
+        clickhouse_operator_kustomization,
     )
     dcgm_exporter_artifact = artifact("dcgm-exporter", dcgm_exporter_exporter.OUTPUT_DIR)
     dcgm_exporter_flux_kustomizations.dcgm_exporter(
@@ -735,7 +741,9 @@ def generate_manifests(root: Path) -> None:
     alloy_otlp_bearer_artifact = artifact("alloy-otlp-bearer", alloy_otlp_bearer.OUTPUT_DIR)
     alloy_otlp_bearer.alloy_otlp_bearer(
         flux_chart,
-        alloy_otlp_bearer_artifact,
+        write_directory(
+            root, alloy_otlp_bearer_artifact, alloy_otlp_bearer.chart, siblings=[f"{alloy_otlp_bearer.NAME}.sops.yaml"]
+        ),
         external_secrets_operator_kustomization,
         claude_rbac_kustomization,
         haku_rbac_kustomization,
@@ -744,7 +752,14 @@ def generate_manifests(root: Path) -> None:
         "github-secrets-sync-secrets", github_secrets_sync_secrets.OUTPUT_DIR
     )
     github_secrets_sync_secrets.github_secrets_sync_secrets(
-        flux_chart, github_secrets_sync_secrets_artifact, external_secrets_operator_kustomization
+        flux_chart,
+        write_directory(
+            root,
+            github_secrets_sync_secrets_artifact,
+            github_secrets_sync_secrets.chart,
+            siblings=["ci-age-key.sops.yaml"],
+        ),
+        external_secrets_operator_kustomization,
     )
     ntfy_artifact = artifact("ntfy", ntfy.OUTPUT_DIR)
     ntfy_kustomization = ntfy.ntfy(
@@ -806,7 +821,15 @@ def generate_manifests(root: Path) -> None:
     )
     claude_sandbox_secrets_artifact = artifact("claude-sandbox-secrets", claude_sandbox_secrets.OUTPUT_DIR)
     claude_sandbox_secrets.claude_sandbox_secrets(
-        flux_chart, claude_sandbox_secrets_artifact, claude_rbac_kustomization, external_secrets_operator_kustomization
+        flux_chart,
+        write_directory(
+            root,
+            claude_sandbox_secrets_artifact,
+            claude_sandbox_secrets.chart,
+            siblings=claude_sandbox_secrets.SOPS_FILES,
+        ),
+        claude_rbac_kustomization,
+        external_secrets_operator_kustomization,
     )
     haku_openclaw_spike_backup_artifact = artifact("haku-openclaw-spike-backup", haku_openclaw_spike_backup.OUTPUT_DIR)
     haku_openclaw_spike_backup.haku_openclaw_spike_backup(
@@ -1092,7 +1115,17 @@ def generate_manifests(root: Path) -> None:
     )
     cpap_sync_artifact = artifact("cpap-sync", cpap_sync_app.OUTPUT_DIR)
     cpap_sync_kustomization = cpap_sync_app.cpap_sync(
-        flux_chart, cpap_sync_artifact, external_secrets_operator_kustomization, kubevirt_kustomization
+        flux_chart,
+        write_directory(
+            root,
+            cpap_sync_artifact,
+            cpap_sync_app.namespace_chart,
+            cpap_sync_app.chart,
+            siblings=[cpap_sync_app.CARD_SECRET_FILE],
+            components=["./image-pins"],
+        ),
+        external_secrets_operator_kustomization,
+        kubevirt_kustomization,
     )
     flux_image_automation_forgejo_artifact = artifact(
         "flux-image-automation-forgejo", forgejo_image_automation.OUTPUT_DIR
