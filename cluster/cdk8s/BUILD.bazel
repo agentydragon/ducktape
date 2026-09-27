@@ -1195,9 +1195,7 @@ py_library(
     deps = [
         ":artifact_generators",
         ":flux",
-        ":generation",
         ":manifest_roots",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -1323,10 +1321,8 @@ py_library(
     deps = [
         ":artifact_generators",
         ":flux",
-        ":generation",
         ":manifest_roots",
         "//cluster/cdk8s/monitoring:loki",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//tomli_w",
