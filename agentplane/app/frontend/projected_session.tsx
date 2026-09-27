@@ -1426,6 +1426,8 @@ function ProjectedSessionBody({
                 </ActionIcon>
               </Menu.Target>
               <Menu.Dropdown>
+                <Menu.Label style={{ overflowWrap: "anywhere" }}>Thread ID: {threadId}</Menu.Label>
+                <Menu.Divider />
                 <Menu.Item leftSection={<IconHistory size={15} />} onClick={() => openDebug()}>
                   Debug history
                 </Menu.Item>

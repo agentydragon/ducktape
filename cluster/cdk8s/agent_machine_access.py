@@ -3,15 +3,11 @@
 from __future__ import annotations
 
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
 from tofu_controller.io.fluxcd.contrib.infra import TerraformV1Alpha2SpecStoreReadablePlan
 
 from cluster.cdk8s import terraform
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "agent-machine-access"
-OUTPUT_DIR = f"{GENERATED_ROOT}/agents/machine-access-tf"
 
 
 def chart(app: App) -> Chart:
@@ -20,26 +16,3 @@ def chart(app: App) -> Chart:
         chart, "terraform", name=NAME, variables=None, store_readable_plan=TerraformV1Alpha2SpecStoreReadablePlan.HUMAN
     )
     return chart
-
-
-def agent_machine_access_tf(
-    chart: Chart, directory: RenderedDirectory, tofu_controller: Kustomization
-) -> Kustomization:
-    name = "agent-machine-access-tf"
-    return flux_kustomization(
-        chart,
-        name,
-        directory,
-        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        wait=None,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="infra.contrib.fluxcd.io/v1alpha2",
-                kind="Terraform",
-                name=NAME,
-                namespace=terraform.NAMESPACE,
-            )
-        ],
-        timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(tofu_controller),
-    )
