@@ -31,6 +31,7 @@ from external_secrets_crds.io.external_secrets import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -132,12 +133,6 @@ def _config(scope: Construct) -> None:
     )
 
 
-def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
-    )
-
-
 def _deployment(scope: Construct) -> None:
     tcp_probe = k8s.TcpSocketAction(port=k8s.IntOrString.from_number(PORT))
     k8s.KubeDeployment(
@@ -186,9 +181,11 @@ def _deployment(scope: Construct) -> None:
                             image=_IMAGE,
                             args=["-config", "/config/config.yaml"],
                             env=[
-                                _secret_env("MANAGEMENT_PASSWORD", "cli-proxy-api-management", "management-password"),
+                                secret_env_var(
+                                    "MANAGEMENT_PASSWORD", "cli-proxy-api-management", "management-password"
+                                ),
                                 *(
-                                    _secret_env(key, _ADMIN_OIDC_SECRET, key)
+                                    secret_env_var(key, _ADMIN_OIDC_SECRET, key)
                                     for key in (
                                         "MANAGEMENT_OIDC_ISSUER",
                                         "MANAGEMENT_OIDC_CLIENT_ID",

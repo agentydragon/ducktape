@@ -1400,6 +1400,18 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
+  name: github-actions-logs
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - "*.blob.core.windows.net"
+      methods:
+        - GET
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
   name: github-clone
   namespace: agentplane-staging
 spec:
@@ -4078,6 +4090,7 @@ spec:
     - github-downloads
     - github-clone
     - github-agentydragon-agent
+    - github-actions-logs
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet

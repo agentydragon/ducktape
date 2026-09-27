@@ -544,7 +544,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
     draft = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
     await draft.fill("Draft survives debug inspection")
     assert not any("/observations" in url for url in requests)
-    await page.get_by_role("button", name="Debug history", exact=True).click()
+    await open_debug_history(page)
     dialog = page.get_by_role("dialog", name="Chronological debug")
     observations = dialog.locator("[data-debug-observation]")
     await expect(observations).to_have_count(30)
@@ -603,7 +603,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
 
     await page.route("**/observations?*", hold_debug_response)
     try:
-        await page.get_by_role("button", name="Debug history", exact=True).click()
+        await open_debug_history(page)
         async with asyncio.timeout(10):
             await response_ready.wait()
         async with page.expect_event("requestfailed", predicate=lambda request: "/observations" in request.url):
@@ -1191,6 +1191,12 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
 
 async def expand_item_evidence(page: Page) -> None:
     await page.locator('[data-thread-anchor="3"]').get_by_role("button", name="Evidence", exact=True).click()
+
+
+async def open_debug_history(page: Page) -> None:
+    """Debug history lives in the composer's overflow menu, not a standalone button."""
+    await page.get_by_role("button", name="More", exact=True).click()
+    await page.get_by_role("menuitem", name="Debug history", exact=True).click()
 
 
 @pytest.mark.parametrize("replay_after", [4])

@@ -1359,6 +1359,18 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
+  name: github-actions-logs
+  namespace: agentplane-testing
+spec:
+  rules:
+    - hosts:
+        - "*.blob.core.windows.net"
+      methods:
+        - GET
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
   name: github-clone
   namespace: agentplane-testing
 spec:

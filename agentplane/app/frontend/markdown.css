@@ -15,6 +15,17 @@
   padding-inline-start: 1.5em;
 }
 
+/* The card around this prose pads all four sides equally; without this, the first/last child's own
+   block margin above stacks on top of that padding, so the card reads with more space top/bottom
+   than left/right. */
+.agentplane-markdown > :first-child {
+  margin-block-start: 0;
+}
+
+.agentplane-markdown > :last-child {
+  margin-block-end: 0;
+}
+
 .agentplane-markdown :where(code) {
   font-family: var(--mantine-font-family-monospace);
   overflow-wrap: anywhere;

@@ -20,7 +20,6 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPorts,
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 
 from cluster.cdk8s import cilium, cnpg, forgejo_images, gateway
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
@@ -110,7 +109,7 @@ def _add_store(chart: Chart) -> None:
         storage_class="local-path-ovh",
         size="10Gi",
         # CNPG auto-generates credentials in secret haku-mailbox-db-app.
-        initdb=ClusterSpecBootstrapInitdb(database="stalwart", owner="stalwart"),
+        initdb=cnpg.same_owner_initdb("stalwart"),
     )
 
 

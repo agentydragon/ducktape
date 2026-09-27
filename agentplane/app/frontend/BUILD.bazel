@@ -1004,6 +1004,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":thread_sync",
+        "//:node_modules/@bufbuild/protobuf",
         "//agentplane/protocol:event_pb",
     ],
 )
@@ -1016,6 +1017,8 @@ ts_library(
     deps = [
         ":history_rows",
         ":thread_entity_fixture",
+        ":thread_sync",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
         "//agentplane/protocol:event_pb",
     ],

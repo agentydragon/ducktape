@@ -107,7 +107,7 @@ def _lot(
         quantity_scale=scale,
         book_basis=7,
         price=price,
-        value=sleeves._quoted_value(units, price, scale),
+        value=sleeves.quoted_value(units, price, scale),
     )
 
 
@@ -137,7 +137,7 @@ def test_post_claim_purchase_clamp_and_lot_identity() -> None:
     purchase = household.buy(_observation(cash=7, prices=quoted, scale=10), pending)
     assert purchase is not None
     assert (purchase.units, purchase.quantity_scale, purchase.lot_id) == (23, 10, "fund_buy_s0_0")
-    assert sleeves._quoted_value(purchase.units, pending.price, purchase.quantity_scale) == 7
+    assert sleeves.quoted_value(purchase.units, pending.price, purchase.quantity_scale) == 7
     again = household.buy(_observation(cash=7, prices=quoted, scale=10), pending)
     assert again is not None
     assert again.lot_id == "fund_buy_s0_1"
@@ -183,7 +183,7 @@ def test_ordered_sources_and_per_lot_rounding_use_economic_units() -> None:
     # A whole-unit target cannot buy the next account's indivisible unit after
     # taking 0.7 units in the first account. Never sum those raw counts as 8 units.
     assert [(lot.lot_id, lot.units) for lot in sale.lots] == [("old", 3), ("new", 4)]
-    assert sum(sleeves._quoted_value(lot.units, 3, 10) for lot in sale.lots) == 2
+    assert sum(sleeves.quoted_value(lot.units, 3, 10) for lot in sale.lots) == 2
 
 
 def test_zero_target_exit_includes_zero_mark_units_and_a_worthless_managed_sleeve() -> None:

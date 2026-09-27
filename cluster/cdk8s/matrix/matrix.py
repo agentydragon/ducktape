@@ -13,7 +13,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -120,7 +119,7 @@ def _database(scope: Construct) -> None:
         storage_class="local-path-ovh",
         size="10Gi",
         # CNPG auto-generates credentials in secret matrix-db-app
-        initdb=ClusterSpecBootstrapInitdb(database="synapse", owner="synapse", locale_c_type="C", locale_collate="C"),
+        initdb=cnpg.same_owner_initdb("synapse", locale_c_type="C", locale_collate="C"),
     )
 
 

@@ -10,7 +10,6 @@ it; they retry until the Cluster accepts connections.
 from __future__ import annotations
 
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesEnsure,
@@ -61,7 +60,7 @@ class Db(Construct):
             node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
             storage_class="local-path-ovh",
             size="2Gi",
-            initdb=ClusterSpecBootstrapInitdb(database=DATABASE, owner=DATABASE),
+            initdb=cnpg.same_owner_initdb(DATABASE),
             managed=ClusterSpecManaged(
                 roles=[
                     # The haku-indexer worker's narrow credential: recall-index read/write.

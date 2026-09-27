@@ -180,7 +180,7 @@ async function render(state: ThreadState = threadState()): Promise<HTMLDivElemen
     root.render(
       <MantineProvider env="test">
         <ThreadSyncContext.Provider value={sync}>
-          <ProjectedSession threadId={THREAD.id} onBack={() => {}} />
+          <ProjectedSession threadId={THREAD.id} />
         </ThreadSyncContext.Provider>
       </MantineProvider>
     );

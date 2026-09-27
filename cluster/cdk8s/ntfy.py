@@ -32,7 +32,6 @@ from cdk8s_plus_34 import (
     Service,
     ServicePort,
 )
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from external_secret_store_crds.io.external_secrets import (
     ClusterSecretStore,
@@ -195,7 +194,7 @@ def _database(scope: Construct) -> None:
         node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
         storage_class="local-path-ovh-hdd",
         size="2Gi",
-        initdb=ClusterSpecBootstrapInitdb(database=NAME, owner=NAME),
+        initdb=cnpg.same_owner_initdb(NAME),
     )
 
 

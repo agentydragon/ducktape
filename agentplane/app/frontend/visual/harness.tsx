@@ -7,7 +7,7 @@
 import "./network";
 import "@mantine/core/styles.css";
 
-import { create, toJson } from "@bufbuild/protobuf";
+import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import { createRoot } from "react-dom/client";
 
 import App from "../app";
@@ -1074,9 +1074,31 @@ function statesRows(threadId: string): Record<string, unknown>[] {
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
+/** Three mundane observations that collapse into one comma-joined row, then a prominent one
+ * (harness lost) that stands alone, then one final mundane one -- lone, so it groups with nothing. */
+function lifecycleGroupRows(threadId: string): Record<string, unknown>[] {
+  const event = (value: MessageInitShape<typeof EventSchema>["observation"]): Record<string, unknown> =>
+    toJson(EventSchema, create(EventSchema, { observation: value })) as Record<string, unknown>;
+  const rows = [
+    viewState(50, null),
+    lifecycle(10, "turn_started", event({ case: "turnStarted", value: { turnId: "turn-visual" } }), threadId),
+    lifecycle(20, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+    lifecycle(
+      30,
+      "turn_completed",
+      event({ case: "turnCompleted", value: { turnId: "turn-visual", status: TurnStatus.COMPLETED } }),
+      threadId
+    ),
+    lifecycle(40, "harness_lost", event({ case: "harnessLost", value: {} }), threadId),
+    lifecycle(50, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
 function threadEntityRows(threadId: string): Record<string, unknown>[] {
   if (scenario.failedTurn) return failedRows(threadId, scenario.failedTurn === "after-content");
   if (scenario.interleavedEvents) return interleavedRows(threadId);
+  if (scenario.lifecycleGroup) return lifecycleGroupRows(threadId);
   if (threadId === THREADS[2].id || scenario.pendingCommands) return statesRows(threadId);
   return standardRows(threadId);
 }
@@ -1700,24 +1722,33 @@ if (scenario.openConnectionStatus) {
 }
 
 if (scenario.openDebug) {
-  const openDebug = new MutationObserver(() => {
-    const button = [...document.querySelectorAll("button")].find(
-      (candidate) => candidate.textContent === "Debug history"
-    );
-    if (!(button instanceof HTMLButtonElement)) return;
-    openDebug.disconnect();
-    button.click();
-    if (scenario.openDebug !== "stderr") return;
-    const expandStderr = new MutationObserver(() => {
-      const row = document.querySelector<HTMLDetailsElement>('[data-debug-observation="31"]');
-      if (!row) return;
-      expandStderr.disconnect();
-      row.open = true;
-      row.dispatchEvent(new Event("toggle", { bubbles: true }));
+  // "Debug history" now lives in the composer's overflow menu: open that first, since Mantine
+  // does not mount a closed Menu's dropdown items at all.
+  const openMenu = new MutationObserver(() => {
+    const trigger = document.querySelector('button[aria-label="More"]');
+    if (!(trigger instanceof HTMLButtonElement)) return;
+    openMenu.disconnect();
+    trigger.click();
+    const openDebug = new MutationObserver(() => {
+      const item = [...document.querySelectorAll('[role="menuitem"]')].find(
+        (candidate) => candidate.textContent === "Debug history"
+      );
+      if (!(item instanceof HTMLElement)) return;
+      openDebug.disconnect();
+      item.click();
+      if (scenario.openDebug !== "stderr") return;
+      const expandStderr = new MutationObserver(() => {
+        const row = document.querySelector<HTMLDetailsElement>('[data-debug-observation="31"]');
+        if (!row) return;
+        expandStderr.disconnect();
+        row.open = true;
+        row.dispatchEvent(new Event("toggle", { bubbles: true }));
+      });
+      expandStderr.observe(document, { childList: true, subtree: true });
     });
-    expandStderr.observe(document, { childList: true, subtree: true });
+    openDebug.observe(document, { childList: true, subtree: true });
   });
-  openDebug.observe(document, { childList: true, subtree: true });
+  openMenu.observe(document, { childList: true, subtree: true });
 }
 
 /** Opens the folded tool-call run, whose steps mount only once it is open. */

@@ -11,6 +11,7 @@ _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
 BASIC_POLICY = "basic"
 GITHUB_AGENTYDRAGON_AGENT_POLICY = "github-agentydragon-agent"
 GITHUB_CLONE_POLICY = "github-clone"
+GITHUB_ACTIONS_LOGS_POLICY = "github-actions-logs"
 FORGEJO_HAKU_POLICY = "forgejo-haku"
 PACKAGES_POLICY = "packages"
 KUBERNETES_POLICY = "kubernetes"
@@ -57,7 +58,12 @@ def settings(
             "public-coder": {
                 "title": "Public coder",
                 "template": "agentplane-runner",
-                "policies": [BASIC_POLICY, GITHUB_AGENTYDRAGON_AGENT_POLICY, GITHUB_CLONE_POLICY],
+                "policies": [
+                    BASIC_POLICY,
+                    GITHUB_AGENTYDRAGON_AGENT_POLICY,
+                    GITHUB_CLONE_POLICY,
+                    GITHUB_ACTIONS_LOGS_POLICY,
+                ],
                 **({"action_policy_sets": action_policy_sets} if action_policy_sets is not None else {}),
                 "thread_preset": _THREAD_PRESET_PUBLIC_CODER_CODEX,
                 "bootstrap": (

@@ -15,7 +15,6 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesEnsure,
@@ -111,7 +110,7 @@ def _database(scope: Construct) -> None:
             ]
         ),
         # CNPG auto-generates credentials in secret study-casino-db-app
-        initdb=ClusterSpecBootstrapInitdb(database=_DATABASE, owner=_DATABASE),
+        initdb=cnpg.same_owner_initdb(_DATABASE),
     )
 
 

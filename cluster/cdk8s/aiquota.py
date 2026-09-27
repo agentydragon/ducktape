@@ -28,13 +28,11 @@ from cdk8s_plus_34 import (
     Deployment,
     EnvValue,
     ImagePullPolicy,
-    ISecret,
     LabelSelector,
     MemoryResources,
     PodSecurityContextProps,
     Protocol,
     Secret,
-    SecretValue,
     Service,
     ServicePort,
     Volume,
@@ -56,6 +54,7 @@ from cluster.cdk8s import public_coder_proxy
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE
 from cluster.cdk8s.cli_proxy_api import cli_proxy_api as cli_proxy_api_app  # aiquota()'s parameter is its Kustomization
 from cluster.cdk8s.clickhouse import client
+from cluster.cdk8s.env_helpers import secret_env_value
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
@@ -171,10 +170,6 @@ BEARER_MIRRORS = (
 )
 
 
-def _secret_env(secret: ISecret, key: str) -> EnvValue:
-    return EnvValue.from_secret_value(SecretValue(secret=secret, key=key))
-
-
 class Aiquota(Construct):
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
@@ -270,12 +265,12 @@ class Aiquota(Construct):
             image_pull_policy=ImagePullPolicy.ALWAYS,
             ports=[ContainerPort(name="http", number=_PORT, protocol=Protocol.TCP)],
             env_variables={
-                env_name(Settings, "api_bearer_token"): _secret_env(bearer, _BEARER_KEY),
-                env_name(Settings, "cli_proxy_api_key"): _secret_env(cli_proxy_api, "management-password"),
+                env_name(Settings, "api_bearer_token"): secret_env_value(bearer, _BEARER_KEY),
+                env_name(Settings, "cli_proxy_api_key"): secret_env_value(cli_proxy_api, "management-password"),
                 env_name(Settings, "clickhouse_url"): EnvValue.from_value(f"http://{client.HOST}:{client.HTTP_PORT}"),
                 env_name(Settings, "clickhouse_database"): EnvValue.from_value("aiquota"),
-                env_name(Settings, "clickhouse_username"): _secret_env(clickhouse_credentials, "username"),
-                env_name(Settings, "clickhouse_password"): _secret_env(clickhouse_credentials, "password"),
+                env_name(Settings, "clickhouse_username"): secret_env_value(clickhouse_credentials, "username"),
+                env_name(Settings, "clickhouse_password"): secret_env_value(clickhouse_credentials, "password"),
                 env_name(Settings, "poll_interval_seconds"): EnvValue.from_value(
                     str(checked_value(Settings, "poll_interval_seconds", 300))
                 ),
@@ -289,9 +284,9 @@ class Aiquota(Construct):
                 env_name(Settings, "oauth_issuer"): EnvValue.from_value(
                     "https://auth.allegedly.works/application/o/aiquota/"
                 ),
-                env_name(Settings, "oauth_client_id"): _secret_env(oidc, "client_id"),
-                env_name(Settings, "oauth_client_secret"): _secret_env(oidc, "client_secret"),
-                env_name(Settings, "oauth_session_secret"): _secret_env(oidc, "session_secret"),
+                env_name(Settings, "oauth_client_id"): secret_env_value(oidc, "client_id"),
+                env_name(Settings, "oauth_client_secret"): secret_env_value(oidc, "client_secret"),
+                env_name(Settings, "oauth_session_secret"): secret_env_value(oidc, "session_secret"),
             },
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(25), limit=Cpu.millis(250)),

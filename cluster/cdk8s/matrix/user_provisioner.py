@@ -14,6 +14,7 @@ from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,
@@ -29,12 +30,6 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/matrix/user-provisioner"
 _NAME = "matrix-user-provisioner"
 # Script baked in via Bazel (//cluster/provisioners/matrix_user_provisioner:image).
 _IMAGE = "git.allegedly.works/ducktape-ci/matrix-user-provisioner:unset"
-
-
-def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
-    )
 
 
 def chart(app: App) -> Chart:
@@ -62,11 +57,11 @@ def chart(app: App) -> Chart:
                             image=_IMAGE,
                             image_pull_policy="Always",
                             env=[
-                                _secret_env(
+                                secret_env_var(
                                     "REGISTRATION_SECRET", "synapse-registration-secret", "registration_shared_secret"
                                 ),
-                                _secret_env("ADMIN_PASSWORD", "synapse-admin-credentials", "password"),
-                                _secret_env(
+                                secret_env_var("ADMIN_PASSWORD", "synapse-admin-credentials", "password"),
+                                secret_env_var(
                                     "PUBLIC_CODER_AGENT_BOT_PASSWORD",
                                     "public-coder-agent-matrix-bot-password",
                                     "password",

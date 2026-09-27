@@ -14,9 +14,10 @@ import {
   Textarea,
   Tooltip,
 } from "@mantine/core";
-import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
+import { create } from "@bufbuild/protobuf";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
+import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
 import IconSend from "@tabler/icons-react/dist/esm/icons/IconSend.mjs";
@@ -25,6 +26,7 @@ import {
   type CSSProperties,
   type JSX,
   type KeyboardEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -35,7 +37,7 @@ import {
 } from "react";
 
 import { CommandSchema, type Command } from "../../protocol/command_pb";
-import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
+import { ItemKind } from "../../protocol/event_pb";
 import {
   command,
   threadEvidence,
@@ -56,14 +58,21 @@ import {
   type ThreadState,
   type ThreadWindow,
 } from "./thread_sync";
-import { historyRows, rowKey, summarizeRun, type HistoryRow } from "./history_rows";
+import {
+  historyRows,
+  lifecyclePresentation,
+  rowKey,
+  summarizeLifecycleGroup,
+  summarizeRun,
+  type HistoryRow,
+} from "./history_rows";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
 import { StaleNotice, useStreamStatus, type StreamStatus } from "./stream_status";
 import { HighlightedText, JsonView } from "./json_view";
 import { Markdown } from "./markdown";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
-import { ChronologicalDebugLink, ChronologicalDebugProvider } from "./chronological_debug";
+import { ChronologicalDebugLink, ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
 import "./projected_session.css";
 
@@ -72,49 +81,6 @@ const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
 export function pruneCommandErrors(errors: Map<string, string>, commandIds: ReadonlySet<string>): Map<string, string> {
   if (Array.from(errors.keys()).every((id) => commandIds.has(id))) return errors;
   return new Map(Array.from(errors).filter(([id]) => commandIds.has(id)));
-}
-
-// An interrupt is usually the operator's own doing, so an interrupted turn reads as ordinary.
-const TURN_OUTCOMES: Record<TurnStatus, { label: string; prominent: boolean }> = {
-  [TurnStatus.UNSPECIFIED]: { label: "Turn ended without a status", prominent: true },
-  [TurnStatus.COMPLETED]: { label: "Turn completed", prominent: false },
-  [TurnStatus.INTERRUPTED]: { label: "Turn interrupted", prominent: false },
-  [TurnStatus.FAILED]: { label: "Turn failed", prominent: true },
-  [TurnStatus.PROCESS_LOST]: { label: "Turn lost", prominent: true },
-};
-
-interface LifecyclePresentation {
-  label: string;
-  /** A prominent row is an alert; any other reads as dimmed text. */
-  prominent: boolean;
-  diagnostic: string | null;
-}
-
-function lifecyclePresentation(observation: string, event: unknown): LifecyclePresentation {
-  const parsed = fromJson(EventSchema, event as JsonValue).observation;
-  switch (parsed.case) {
-    case "turnStarted":
-      return { label: "Turn started", prominent: false, diagnostic: null };
-    case "turnCompleted": {
-      const { status, error } = parsed.value;
-      const diagnostic = error || (status === TurnStatus.FAILED ? "The harness reported no error details." : null);
-      return { ...TURN_OUTCOMES[status], diagnostic };
-    }
-    case "modelChanged":
-      return { label: `Model changed to ${parsed.value.model}`, prominent: false, diagnostic: null };
-    case "harnessStarted":
-      return { label: "Harness started", prominent: false, diagnostic: null };
-    case "harnessExited":
-      return {
-        label: parsed.value.exitCode ? `Harness exited with code ${parsed.value.exitCode}` : "Harness exited",
-        prominent: false,
-        diagnostic: null,
-      };
-    case "harnessLost":
-      return { label: "Harness lost", prominent: true, diagnostic: null };
-    default:
-      return { label: observation.replaceAll("_", " "), prominent: false, diagnostic: null };
-  }
 }
 
 /** How a body renders: the agent's prose (assistant text, reasoning) as Markdown, tool arguments and
@@ -419,10 +385,9 @@ export function EntityCard({
   if (entity.entityKind === "command" || entity.entityKind === "view_state") return <></>;
   if (!("kind" in entity.state)) return <></>;
   const tool = entity.state.kind === ItemKind.TOOL_CALL;
-  // Assistant text carries no role label: it reads as the reply by position, across from the
-  // user's right-aligned bubble. A tool call is labelled by its tool, reasoning by its disclosure.
-  return (
-    <Paper p="sm" withBorder style={{ position: "relative" }}>
+  const reasoning = entity.state.kind === ItemKind.REASONING;
+  const body = (
+    <>
       {tool || entity.state.completion === null ? (
         <Group justify="space-between" mb="xs" wrap="nowrap">
           <Group gap="xs">
@@ -434,7 +399,7 @@ export function EntityCard({
       ) : (
         <EvidenceToggle entity={entity} style={{ position: "absolute", top: 4, right: 4 }} />
       )}
-      {entity.state.kind === ItemKind.REASONING ? (
+      {reasoning ? (
         entity.textRef ? (
           <LazyBody label="Reasoning" reference={entity.textRef} format="markdown" />
         ) : (
@@ -446,8 +411,19 @@ export function EntityCard({
       {entity.argumentsRef && <LazyBody label="Arguments" reference={entity.argumentsRef} format="code" />}
       {entity.outputRef && <LazyBody label="Output" reference={entity.outputRef} format="code" />}
       <EvidencePanel threadId={threadId} entity={entity} />
-    </Paper>
+    </>
   );
+  // Assistant text carries no role label and no card: it reads as the reply by position, across
+  // from the user's right-aligned bubble. A tool call is boxed and labelled by its tool, reasoning
+  // by its disclosure.
+  if (tool || reasoning) {
+    return (
+      <Paper p="sm" withBorder style={{ position: "relative" }}>
+        {body}
+      </Paper>
+    );
+  }
+  return <Box style={{ position: "relative" }}>{body}</Box>;
 }
 
 /** Whether any of `items` is unfinished -- streaming while `live`, otherwise never completed in
@@ -472,6 +448,36 @@ function ItemStatus({ items, live }: { items: ThreadEntity[]; live: boolean }): 
 }
 
 /** A run of tool calls and reasoning steps, folded behind its summary until opened. */
+/** The collapsible shell a run or a lifecycle group shares: collapsed, it shows nothing but
+ * `summary`, so the full card padding and border its opened entities warrant would only pad out
+ * that one line. */
+function CollapsibleRows({
+  id,
+  summary,
+  threadId,
+  entities,
+  live,
+}: {
+  id: string;
+  summary: ReactNode;
+  threadId: string;
+  entities: ThreadEntity[];
+  live: (entity: ThreadEntity) => boolean;
+}): JSX.Element {
+  const [open] = useRetainedDisclosure(id);
+  return (
+    <Paper p={open ? "sm" : "xs"} withBorder={open}>
+      <RetainedDisclosure id={id} summary={summary}>
+        <Stack gap="xs" mt="xs">
+          {entities.map((entity) => (
+            <EntityCard key={entity.entityId} threadId={threadId} entity={entity} live={live(entity)} />
+          ))}
+        </Stack>
+      </RetainedDisclosure>
+    </Paper>
+  );
+}
+
 function RunView({
   threadId,
   entities,
@@ -483,23 +489,50 @@ function RunView({
 }): JSX.Element {
   const first = entities[0];
   return (
-    <Paper p="sm" withBorder>
-      <RetainedDisclosure
-        id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:run`}
-        summary={
-          <Flex component="span" display="inline-flex" gap="xs" align="center">
-            <Badge variant="light">{summarizeRun(entities)}</Badge>
-            <ItemStatus items={entities} live={entities.some(live)} />
-          </Flex>
-        }
-      >
-        <Stack gap="xs" mt="xs">
-          {entities.map((entity) => (
-            <EntityCard key={entity.entityId} threadId={threadId} entity={entity} live={live(entity)} />
-          ))}
-        </Stack>
-      </RetainedDisclosure>
-    </Paper>
+    <CollapsibleRows
+      id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:run`}
+      summary={
+        <Flex component="span" display="inline-flex" gap="xs" align="center">
+          <Text size="xs" c="dimmed">
+            {summarizeRun(entities)}
+          </Text>
+          <ItemStatus items={entities} live={entities.some(live)} />
+        </Flex>
+      }
+      threadId={threadId}
+      entities={entities}
+      live={live}
+    />
+  );
+}
+
+/** Consecutive mundane lifecycle observations (turn started, harness started, an ordinary turn
+ * completion, ...), collapsed to their comma-joined labels. Expanding reveals each one exactly as
+ * it reads standing alone, evidence toggle included. */
+function LifecycleGroupView({
+  threadId,
+  entities,
+  live,
+}: {
+  threadId: string;
+  entities: ThreadEntity[];
+  live: (entity: ThreadEntity) => boolean;
+}): JSX.Element {
+  const first = entities[0];
+  return (
+    <CollapsibleRows
+      id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:lifecycle`}
+      summary={
+        // Unlike RunView's inline-flex Flex, a plain Text defaults to a block <p> -- inside
+        // <summary>, that wraps the label to its own line below the disclosure triangle.
+        <Text span size="xs" c="dimmed">
+          {summarizeLifecycleGroup(entities)}
+        </Text>
+      }
+      threadId={threadId}
+      entities={entities}
+      live={live}
+    />
   );
 }
 
@@ -514,14 +547,17 @@ export function HistoryRowView({
 }): JSX.Element {
   const [first] = row.entities;
   // A lone reasoning step is already a folded block of its own; a lone tool call keeps its run's
-  // summary, so every tool call reads the same.
+  // summary, so every tool call reads the same. A lone lifecycle observation has nothing to
+  // group with, so it reads exactly as it always has.
   const lone =
     row.kind === "entity" ||
-    (row.entities.length === 1 && "kind" in first.state && first.state.kind === ItemKind.REASONING);
-  return lone ? (
-    <EntityCard threadId={threadId} entity={first} live={live(first)} />
-  ) : (
+    (row.entities.length === 1 &&
+      (row.kind === "lifecycle_group" || ("kind" in first.state && first.state.kind === ItemKind.REASONING)));
+  if (lone) return <EntityCard threadId={threadId} entity={first} live={live(first)} />;
+  return row.kind === "run" ? (
     <RunView threadId={threadId} entities={row.entities} live={live} />
+  ) : (
+    <LifecycleGroupView threadId={threadId} entities={row.entities} live={live} />
   );
 }
 
@@ -1122,6 +1158,7 @@ function ProjectedSessionBody({
   const [draft, setDraft] = useState("");
   const sync = useThreadSync().useThread();
   const commands = useProjectedCommands(threadId, entities);
+  const openDebug = useOpenChronologicalDebug();
   const view = entities.find((row) => row.entityKind === "view_state");
   const controls = view && "controls" in view.state ? view.state.controls : null;
   const operational = view && "controls" in view.state ? view.state.operational : null;
@@ -1312,6 +1349,10 @@ function ProjectedSessionBody({
                 </ActionIcon>
               </Menu.Target>
               <Menu.Dropdown>
+                <Menu.Item leftSection={<IconHistory size={15} />} onClick={() => openDebug()}>
+                  Debug history
+                </Menu.Item>
+                <Menu.Divider />
                 <Menu.Item
                   color="red"
                   leftSection={<IconPower size={15} />}
@@ -1415,7 +1456,7 @@ function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean
   return `Last observed Sandbox state: ${sandbox.state}. Showing retained Thread history; controls are disabled.`;
 }
 
-export function ProjectedSession({ threadId, onBack }: { threadId: string; onBack: () => void }): JSX.Element {
+export function ProjectedSession({ threadId }: { threadId: string }): JSX.Element {
   const sync = useThreadSync();
   const [thread, setThread] = useState<ThreadView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1429,13 +1470,7 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
   return (
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
       <Stack style={{ flex: 1, minHeight: 0 }}>
-        <Group>
-          <Button variant="subtle" onClick={onBack}>
-            ← Threads
-          </Button>
-          <ChronologicalDebugLink />
-          <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
-        </Group>
+        <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
         {/* The controls wait on this stream's word that the sandbox runs, so one down past a blip, or
             whose watch has stalled, disables them as surely as a stopped sandbox. The sidebar's
             connection indicator says the first; this says the second. */}
