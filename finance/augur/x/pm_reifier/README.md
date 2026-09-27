@@ -40,8 +40,8 @@ are evaluated at specific month indices on the paths.
 | `plot_*.py`              | rollout fan plot + calibration histograms / horizon plots → `results/*.png`  |
 
 Macro history comes from the **augur-evidence checkout** (`AUGUR_EVIDENCE_DIR`) via
-`evidence_series.py` (sp500/BTC, FRED CPI/home/rent) — the daily scraper already maintains these
-series, so the backtests read them from the checkout instead of fetching live.
+`evidence_series.py` (sp500/BTC, FRED CPI/home/rent) — the checkout already holds these series,
+so the backtests read them from it instead of fetching live.
 `results/` (summaries, plots, `quota_log.jsonl` of per-run token + z.ai-quota burn) and
 `transcripts/` (every request/response) are **git-ignored** — written locally, not committed.
 The numbers below are what those runs produced; re-run the scripts to regenerate them.

@@ -106,11 +106,10 @@ Downstream deployments should serve the React bundle and private property
 assets separately, e.g. from an nginx sidecar.
 
 Prediction-market calibration reads market quotes from the augur-evidence
-checkout (`AUGUR_EVIDENCE_DIR`, the same git-sync'd checkout the macro anchors
-use), mirrored there by the `finance/scraper` CronJob for every market the
-calibration catalogs reference — no market-API network I/O at request time.
-Quote staleness is bounded by the scraper cadence, and the last synced state
-survives upstream outages. Workstation runs (dev server, `calibration_report`)
+checkout (`AUGUR_EVIDENCE_DIR`, the same checkout the macro anchors use) — no
+market-API network I/O at request time. The `finance/scraper` cluster pipeline
+that mirrors every catalog-referenced market into that repo is parked, so quotes
+date from its last run. Workstation runs (dev server, `calibration_report`)
 auto-clone the checkout via `ensure_checkout()` with the
 `AUGUR_EVIDENCE_GIT_USERNAME`/`AUGUR_EVIDENCE_GIT_PASSWORD` read credentials.
 Resolution, missing-data and model-interpretation boundaries: <docs/calibration.md>.
