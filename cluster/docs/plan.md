@@ -233,10 +233,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       itself should decrypt the new token and inject it into the local environment so
       Claude Code sessions work immediately without waiting for the git push + re-source
       cycle.
-- [ ] Require every workload to declare Stakater Reloader explicitly as enabled or
-      intentionally disabled. No implicit default. Enforce via review/docs and
-      add missing `reloader.stakater.com/auto: "true"` or an explicit opt-out
-      comment/setting on existing Deployments, StatefulSets, and Helm releases.
 - [ ] Autopopulate `tf/gitops/dns-records` IP lists from cluster state instead of a
       hand-edited literal. After every `talos-* → ovh-ns*` rename the comments rot
       (none of those rename commits touched the DNS TF) and IPs of nodes whose Cilium

@@ -61,6 +61,16 @@ Model with constructs, deploy with one props object per environment.
   and its `CONFIG_FILE_ENV`; `cluster/cdk8s` owns where and how it runs. Nothing under
   `x/` or `haku/` imports `cluster/`. A project's own `deploy/` may hold a props-driven
   construct (tested with synthetic props); the cluster's instantiation of it lives here.
+  A tofu-controller module's inputs are the same idea: a frozen pydantic model mirroring
+  its `variables.tf`, passed as `gitops_terraform(variables=...)`, and listed in
+  `test_terraform_vars.py`, since tofu only warns on an undeclared variable.
+- **Don't restate what the cluster already does for every object.** Reloader runs with
+  `autoReloadAll` (`reloader.py`), so a workload restarts on a change to any ConfigMap
+  or Secret it references with no `reloader.stakater.com/auto: "true"`. The per-workload
+  decision is the `"false"` opt-out, on the workload's own metadata: Reloader never
+  reads a pod template. Alloy discovers every ServiceMonitor, PodMonitor and
+  PrometheusRule without a selector, so none carries a `release: kube-prometheus-stack`
+  label.
 - **One helper per repeated shape.** When the same dozen generated-struct lines appear
   twice, name the shape once: `cilium.py` (`egress_via_gateway`, `dns_egress`,
   `fqdn_fence`, ...) for this cluster's own facts, `providers/cilium/network_policy.py`'s
@@ -249,8 +259,8 @@ and lands in its own PR with the violations fixed. Exceptions are explicit param
   affinity, not `nodeSelector`.
 - `add_container(env_from=[EnvFrom(config_map=...)])` takes the wrapper, not the
   ConfigMap.
-- `Chart(namespace=...)` would drop the `metadata(name, namespace)` call from every
-  object, but it injects the namespace into cluster-scoped objects too (ClusterRole,
+- `Chart(namespace=...)` would drop `namespace=` from every object's `ApiObjectMetadata`,
+  but it injects the namespace into cluster-scoped objects too (ClusterRole,
   Bundle) with no opt-out; usable only once cluster-scoped objects get their own chart.
 - Synth imports each service's `main` for its `Settings`, pulling the runtime in; synth
   tests are `size = "medium"` until a light `settings.py` per service exists
