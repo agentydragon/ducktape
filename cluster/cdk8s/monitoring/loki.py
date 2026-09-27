@@ -9,7 +9,6 @@ backend. Grafana reaches Loki internally via the cluster Service.
 from __future__ import annotations
 
 import textwrap
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
@@ -29,10 +28,8 @@ from cilium_crds.io.cilium import (
 )
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
@@ -624,22 +621,18 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
 def loki(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     grafana_helmrepository: Kustomization,
-    seaweedfs_cluster: Kustomization,
+    seaweedfs_operator: Kustomization,
+    monitoring_crds: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         "loki",
-        artifact,
+        directory,
         wait=None,
-        decryption=SOPS_DECRYPTION,
         health_checks=[
             KustomizationSpecHealthChecks(
                 api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="loki", namespace="loki"
@@ -652,5 +645,10 @@ def loki(
             ),
         ],
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(grafana_helmrepository, seaweedfs_cluster),
+        depends_on=flux_kustomization_depends_on_many(
+            grafana_helmrepository,
+            seaweedfs_operator,
+            # the chart's monitoring.serviceMonitor
+            monitoring_crds,
+        ),
     )

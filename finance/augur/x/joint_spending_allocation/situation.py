@@ -24,6 +24,7 @@ from finance.augur.sim.jurisdictions import (
     TaxBracket,
 )
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedHoldingPool,
@@ -47,8 +48,8 @@ SECURITIES = (GROWTH, STEADY)
 _FLAT_TAX = Jurisdiction(
     jurisdiction_id=JurisdictionId("test-flat-tax"),
     level=JurisdictionLevel.FEDERAL,
-    ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.20)]},
-    ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.10)]},
+    ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
+    ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
     standard_deduction={FilingStatus.SINGLE: Decimal(0)},
     max_capital_loss_ordinary_offset={FilingStatus.SINGLE: Decimal(0)},
     law_year=2024,
@@ -93,9 +94,7 @@ def situation(
     paths: ExternalSeriesContext, *, rollout_count: int, horizon_months: int, taxable: bool, annual_bill: int = 100_000
 ) -> Situation:
     return Situation(
-        series=compile_series(
-            paths, rollout_count=rollout_count, horizon_months=horizon_months, currency_quantum=QUANTUM
-        ),
+        series=compile_series(paths, rollout_count=rollout_count, horizon_months=horizon_months, currency=USD),
         rollout_count=rollout_count,
         horizon_months=horizon_months,
         taxable=taxable,
@@ -131,7 +130,7 @@ def compose(situation: Situation, rollout_id: int) -> World:
         )
         world.track(
             TaxAuthority(
-                compile_profile(profile, {_FLAT_TAX.jurisdiction_id: _FLAT_TAX}, quantum=QUANTUM),
+                compile_profile(profile, {_FLAT_TAX.jurisdiction_id: _FLAT_TAX}, currency=USD),
                 indexation=FixedNominalLaw(),
             )
         )
@@ -150,7 +149,7 @@ def compose(situation: Situation, rollout_id: int) -> World:
                 asset_id=AssetId(symbol),
                 purchase_month=-24,
                 quantity_scale=scale,
-                units=int(quantity_to_quanta(500, scale=scale)),
+                units=quantity_to_quanta(500, scale=scale),
                 basis=int(currency_amount_to_quanta(Decimal(40_000), quantum=QUANTUM)),
             )
         )

@@ -222,7 +222,7 @@ def test_the_payout_yield_on_the_mark_is_the_yield_of_the_bonds_held() -> None:
     things belonged to different instruments — a slow book yield is a LADDER of staggered
     maturities, while the price response was a constant-maturity roll — and the fixed face
     belonged to neither. Glued together they let the fund pay a yield on its own net assets
-    that its holdings never earned (<../debug/bond_sleeve_overdistribution.md>).
+    that its holdings never earned (`model/bond_fund.py::constant_maturity_fund_paths`).
 
     A constant-maturity fund re-yields when it rolls, which is every month, so the payout is
     last month's yield struck on last month's mark, and the ratio recovers that yield exactly.

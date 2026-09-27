@@ -20,6 +20,8 @@ from finance.augur.api.portfolio import (
     PortfolioAccountConfig,
     PortfolioConfig,
     SecurityHoldingConfig,
+    TlhCohort,
+    TlhPortfolioSpec,
 )
 from finance.augur.api.portfolio_source_config import (
     FixedPortfolioSourceConfig,
@@ -29,7 +31,6 @@ from finance.augur.api.portfolio_source_config import (
 )
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey
 from finance.augur.sim.ids import AccountId, LotId, PortfolioId
-from finance.augur.sim.scenario import TlhCohort, TlhPortfolioSpec
 from finance.plaid.db.read_model import (
     CurrentCashBalance,
     CurrentHolding,

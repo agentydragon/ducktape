@@ -24,11 +24,10 @@ from finance.augur.sim.jurisdictions import (
     TaxBracket,
     load_jurisdiction,
 )
+from finance.augur.sim.money import USD, Currency
 from finance.augur.sim.tax_profile import TaxProfile, compile_income_sources, compile_profile
 
 FEDERAL_US = JurisdictionId("federal_us")
-
-CENT = Decimal("0.01")
 
 
 def _alice(*jurisdiction_ids: JurisdictionId) -> TaxProfile:
@@ -45,7 +44,7 @@ def test_the_shipped_jurisdictions_agree_on_the_cap() -> None:
     """The premise of the rejection below: today's data compiles, so failing means disagreement."""
 
     jurisdictions = {name: load_jurisdiction(name) for name in (FEDERAL_US, JurisdictionId("california"))}
-    compile_profile(_alice(FEDERAL_US, JurisdictionId("california")), jurisdictions, quantum=CENT)
+    compile_profile(_alice(FEDERAL_US, JurisdictionId("california")), jurisdictions, currency=USD)
 
 
 def test_a_profile_whose_jurisdictions_cap_the_offset_differently_is_refused() -> None:
@@ -61,7 +60,7 @@ def test_a_profile_whose_jurisdictions_cap_the_offset_differently_is_refused() -
         compile_profile(
             _alice(FEDERAL_US, JurisdictionId("california")),
             {FEDERAL_US: federal, JurisdictionId("california"): california},
-            quantum=CENT,
+            currency=USD,
         )
 
 
@@ -81,7 +80,7 @@ def test_a_profile_whose_jurisdictions_index_the_offset_differently_is_refused()
         compile_profile(
             _alice(FEDERAL_US, JurisdictionId("california")),
             {FEDERAL_US: load_jurisdiction(FEDERAL_US), JurisdictionId("california"): indexing},
-            quantum=CENT,
+            currency=USD,
         )
 
 
@@ -91,14 +90,14 @@ def test_a_single_jurisdiction_may_cap_the_offset_at_anything() -> None:
     compile_profile(
         _alice(JurisdictionId("california")),
         {JurisdictionId("california"): _capping(load_jurisdiction(JurisdictionId("california")), offset=Decimal(0))},
-        quantum=CENT,
+        currency=USD,
     )
 
 
 def test_profile_order_routes_and_jurisdiction_specific_rules_survive_preparation() -> None:
     jurisdictions = {name: load_jurisdiction(name) for name in (FEDERAL_US, JurisdictionId("california"))}
     alice, bob = (
-        compile_profile(profile, jurisdictions, quantum=CENT)
+        compile_profile(profile, jurisdictions, currency=USD)
         for profile in (
             _alice(JurisdictionId("california"), FEDERAL_US),
             TaxProfile(
@@ -131,19 +130,21 @@ def test_profile_order_routes_and_jurisdiction_specific_rules_survive_preparatio
     assert [bracket.rate_ppb for bracket in federal.long_term_capital_gain_brackets] == [0, 150_000_000, 200_000_000]
 
 
-def test_prepared_thresholds_use_exact_quantum_and_rates_keep_half_away_rounding() -> None:
+def test_prepared_thresholds_and_rates_convert_exactly() -> None:
     jurisdiction = load_jurisdiction(FEDERAL_US).model_copy(
         update={
             "ordinary_income_brackets": {
                 "single": [
-                    TaxBracket(upper=Decimal("10.05"), rate=0.1000000005),
-                    TaxBracket(upper="Infinity", rate=0.20),
+                    TaxBracket(upper=Decimal("10.05"), rate=Decimal("0.100000001")),
+                    TaxBracket(upper="Infinity", rate=Decimal("0.20")),
                 ]
             },
             "standard_deduction": {"single": Decimal("5.05")},
         }
     )
-    profile = compile_profile(_alice(FEDERAL_US), {FEDERAL_US: jurisdiction}, quantum=Decimal("0.05"))
+    profile = compile_profile(
+        _alice(FEDERAL_US), {FEDERAL_US: jurisdiction}, currency=Currency(code="TEST-NICKEL", quantum=Decimal("0.05"))
+    )
     [rule] = profile.jurisdictions
     first, last = rule.ordinary_brackets
     assert (first.upper, first.rate_ppb) == (201, 100_000_001)
@@ -162,13 +163,13 @@ def test_largest_finite_threshold_is_not_an_open_bracket_sentinel() -> None:
         update={
             "ordinary_income_brackets": {
                 "single": [
-                    TaxBracket(upper=Decimal(maximum) * CENT, rate=0.10),
-                    TaxBracket(upper="Infinity", rate=0.20),
+                    TaxBracket(upper=Decimal(maximum) * USD.quantum, rate=Decimal("0.10")),
+                    TaxBracket(upper="Infinity", rate=Decimal("0.20")),
                 ]
             }
         }
     )
-    profile = compile_profile(_alice(FEDERAL_US), {FEDERAL_US: jurisdiction}, quantum=CENT)
+    profile = compile_profile(_alice(FEDERAL_US), {FEDERAL_US: jurisdiction}, currency=USD)
     assert [bracket.upper for bracket in profile.jurisdictions[0].ordinary_brackets] == [maximum, None]
 
 

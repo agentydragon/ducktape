@@ -15,6 +15,7 @@ import pytest_bazel
 from more_itertools import one
 
 from finance.augur.api.config import Config
+from finance.augur.api.portfolio import TlhCohort, TlhPortfolioSpec
 from finance.augur.api.wire import CatalogResponse
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
@@ -33,7 +34,6 @@ from finance.augur.product.wire import (
 )
 from finance.augur.sim.events import TlhOperation
 from finance.augur.sim.ids import AccountId, PortfolioId
-from finance.augur.sim.scenario import TlhCohort, TlhPortfolioSpec
 from finance.augur.sim.tlh import TlhAssumptions
 
 VOO = SecuritySymbol("VOO")

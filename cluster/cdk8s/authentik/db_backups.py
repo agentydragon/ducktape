@@ -121,13 +121,13 @@ def write_manifests(root: Path) -> None:
 
 
 def authentik_db_backups(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cnpg: Kustomization, seaweedfs_cluster: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cnpg: Kustomization, seaweedfs_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         artifact,
         timeout="15m",
-        depends_on=flux_kustomization_depends_on_many(cnpg, seaweedfs_cluster),
+        depends_on=flux_kustomization_depends_on_many(cnpg, seaweedfs_operator),
         description="Creates the Authentik CNPG backup schedule and its SeaweedFS storage.",
     )

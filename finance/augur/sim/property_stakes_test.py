@@ -31,6 +31,7 @@ from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityI
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedJurisdiction,
@@ -85,7 +86,7 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
-def location(location_id: LocationId, display_name: str, *, annual_rate: float) -> PreparedLocation:
+def location(location_id: LocationId, display_name: str, *, annual_rate: Decimal | int) -> PreparedLocation:
     return PreparedLocation(
         location_id=location_id,
         display_name=display_name,
@@ -95,10 +96,10 @@ def location(location_id: LocationId, display_name: str, *, annual_rate: float) 
     )
 
 
-LOCATIONS = (location(LOCATION_ID, "Loc", annual_rate=0.0),)
+LOCATIONS = (location(LOCATION_ID, "Loc", annual_rate=0),)
 MULTI_PROPERTY_LOCATIONS = (
-    location(HOME_LOCATION_ID, "Primary Home", annual_rate=0.012),
-    location(RENTAL_LOCATION_ID, "Rental", annual_rate=0.024),
+    location(HOME_LOCATION_ID, "Primary Home", annual_rate=Decimal("0.012")),
+    location(RENTAL_LOCATION_ID, "Rental", annual_rate=Decimal("0.024")),
 )
 
 
@@ -106,7 +107,9 @@ def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
     return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
 
 
-def financing(liability_id: LiabilityId, lender: AgentId, *, principal: int, annual_rate: float) -> _MortgageFinancing:
+def financing(
+    liability_id: LiabilityId, lender: AgentId, *, principal: int, annual_rate: Decimal | int
+) -> _MortgageFinancing:
     return _MortgageFinancing(
         liability_id=liability_id,
         lender_agent_id=lender,
@@ -127,7 +130,7 @@ def purchase(
     price: int,
     down: int,
     closing: int = 0,
-    rented_fraction: float = 0.0,
+    rented_fraction: Decimal | int = 0,
     mortgage: _MortgageFinancing | None = None,
 ) -> _PropertyPurchase:
     return _PropertyPurchase(
@@ -143,7 +146,7 @@ def purchase(
         down_payment=money(down),
         buyer_closing_cost=money(closing),
         rented_fraction_ppb=rate_to_ppb(rented_fraction),
-        land_value_fraction_ppb=rate_to_ppb(0.20),
+        land_value_fraction_ppb=rate_to_ppb(Decimal("0.20")),
         mortgage=mortgage,
     )
 
@@ -192,7 +195,7 @@ def compose(case: Situation, rollout_id: int) -> World:
         ),
         rollout_count=case.rollout_count,
         horizon_months=case.horizon_months,
-        currency_quantum=QUANTUM,
+        currency=USD,
     )
     jurisdictions = {id_: load_jurisdiction(id_) for id_ in case.jurisdiction_ids}
     world = World(
@@ -216,7 +219,7 @@ def compose(case: Situation, rollout_id: int) -> World:
                         tax_authority_agent_id=IRS,
                     ),
                     jurisdictions,
-                    quantum=QUANTUM,
+                    currency=USD,
                 ),
                 indexation=FixedNominalLaw(),
             )
@@ -283,7 +286,9 @@ def two_property_case() -> Situation:
                     price=1_000_000,
                     down=200_000,
                     closing=30_000,
-                    mortgage=financing(LiabilityId("p1-mortgage"), LENDER, principal=800_000, annual_rate=0.06),
+                    mortgage=financing(
+                        LiabilityId("p1-mortgage"), LENDER, principal=800_000, annual_rate=Decimal("0.06")
+                    ),
                 ),
                 purchase("buy-p2", PropertyId("p2"), LOCATION_ID, price=500_000, down=500_000, closing=10_000),
             )
@@ -307,7 +312,9 @@ def zero_stake_case() -> Situation:
                     month=1,
                     price=100_000,
                     down=0,
-                    mortgage=financing(LiabilityId("zero-stake-mortgage"), LENDER, principal=100_000, annual_rate=0.06),
+                    mortgage=financing(
+                        LiabilityId("zero-stake-mortgage"), LENDER, principal=100_000, annual_rate=Decimal("0.06")
+                    ),
                 ),
                 purchase(
                     "buy-positive-stake",
@@ -360,7 +367,7 @@ def home_and_rental_case() -> Situation:
                     price=500_000,
                     down=100_000,
                     mortgage=financing(
-                        LiabilityId("home-mortgage"), AgentId("bank"), principal=400_000, annual_rate=0.06
+                        LiabilityId("home-mortgage"), AgentId("bank"), principal=400_000, annual_rate=Decimal("0.06")
                     ),
                 ),
                 purchase(
@@ -370,17 +377,21 @@ def home_and_rental_case() -> Situation:
                     seller=AgentId("seller"),
                     price=RENTAL_PURCHASE_PRICE,
                     down=RENTAL_PURCHASE_PRICE,
-                    rented_fraction=1.0,
+                    rented_fraction=1,
                 ),
             ),
             sales=(
                 _PropertySale(
-                    month=RENTAL_SALE_MONTH, property_id=PropertyId("rental"), closing_cost_ppb=rate_to_ppb(0.06)
+                    month=RENTAL_SALE_MONTH,
+                    property_id=PropertyId("rental"),
+                    closing_cost_ppb=rate_to_ppb(Decimal("0.06")),
                 ),
             ),
             initial_residences=(_PrimaryResidence(agent_id=ALICE, property_id=PropertyId("home")),),
             rented_fraction_events=(
-                _RentedFraction(month=12, property_id=PropertyId("rental"), rented_fraction_ppb=rate_to_ppb(0.5)),
+                _RentedFraction(
+                    month=12, property_id=PropertyId("rental"), rented_fraction_ppb=rate_to_ppb(Decimal("0.5"))
+                ),
             ),
             capital_improvements=(
                 _CapitalImprovement(

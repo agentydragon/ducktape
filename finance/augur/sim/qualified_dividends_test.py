@@ -19,6 +19,7 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import AgentId, JurisdictionId
 from finance.augur.sim.income import ORDINARY_INCOME, QualifiedDividendIncome
 from finance.augur.sim.jurisdictions import load_jurisdiction
+from finance.augur.sim.money import USD
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
@@ -49,7 +50,7 @@ def close(year: Year) -> dict[JurisdictionId, TaxAccrual]:
     profile = compile_profile(
         TaxProfile(agent_id=FILER, jurisdiction_ids=[FEDERAL, CALIFORNIA], tax_authority_agent_id=AgentId("test_irs")),
         {id_: load_jurisdiction(id_) for id_ in (FEDERAL, CALIFORNIA)},
-        quantum=QUANTUM,
+        currency=USD,
     )
     book = TaxBook((ORDINARY_INCOME, QualifiedDividendIncome()))
     book.enroll(FILER)

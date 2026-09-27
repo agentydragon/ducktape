@@ -286,7 +286,6 @@ def seaweedfs_public_s3(
     artifact: ArtifactGeneratorSpecArtifacts,
     seaweedfs_operator: Kustomization,
     vm_images_publisher: Kustomization,
-    seaweedfs_cluster: Kustomization,
     kyverno: Kustomization,
 ) -> Kustomization:
     name = "seaweedfs-public-s3"
@@ -301,7 +300,6 @@ def seaweedfs_public_s3(
             # S3Identity, S3Credentials, S3Policy and S3PolicyBinding CRDs
             seaweedfs_operator,
             vm_images_publisher,
-            seaweedfs_cluster,
             # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
             kyverno,
         ),

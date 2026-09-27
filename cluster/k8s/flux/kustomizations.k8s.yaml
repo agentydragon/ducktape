@@ -921,9 +921,6 @@ metadata:
   name: snapshot-controller
   namespace: ducktape-flux
 spec:
-  dependsOn:
-    - name: snapshot-controller-crds
-      namespace: ducktape-flux
   images:
     - name: registry.k8s.io/sig-storage/snapshot-controller
       newTag: v8.6.0
@@ -1190,8 +1187,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: cert-manager
-      namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
   interval: 10m
@@ -1212,8 +1207,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: cert-manager
-      namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
   interval: 10m0s
@@ -1235,6 +1228,8 @@ metadata:
 spec:
   dependsOn:
     - name: snapshot-controller
+      namespace: ducktape-flux
+    - name: monitoring-crds
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: v1
@@ -1261,8 +1256,6 @@ metadata:
 spec:
   dependsOn:
     - name: claude-rbac
-      namespace: ducktape-flux
-    - name: kyverno-policies
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/shared-rbac
@@ -1324,7 +1317,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: vpa
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/goldilocks
@@ -1508,7 +1501,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: goldilocks
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/kube-system
@@ -1620,11 +1613,11 @@ metadata:
   namespace: flux-system
 spec:
   dependsOn:
-    - name: gaffer-private-source
-      namespace: flux-system
     - name: authentik
       namespace: ducktape-flux
     - name: kyverno
+      namespace: ducktape-flux
+    - name: tofu-controller
       namespace: ducktape-flux
   interval: 10m
   path: ./k8s
@@ -1686,10 +1679,6 @@ metadata:
   name: infra-drift
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
@@ -2094,7 +2083,7 @@ spec:
   dependsOn:
     - name: cnpg
       namespace: ducktape-flux
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/authentik/db-backups
@@ -2113,14 +2102,12 @@ metadata:
   name: loki
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: grafana-helmrepository
       namespace: ducktape-flux
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
+      namespace: ducktape-flux
+    - name: monitoring-crds
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -2151,16 +2138,12 @@ metadata:
   name: mimir
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: monitoring-crds
       namespace: ducktape-flux
     - name: grafana-helmrepository
       namespace: ducktape-flux
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: seaweed.seaweedfs.com/v1
@@ -2196,16 +2179,12 @@ metadata:
   name: tempo
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: monitoring-crds
       namespace: ducktape-flux
     - name: grafana-helmrepository
       namespace: ducktape-flux
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: seaweed.seaweedfs.com/v1
@@ -2238,7 +2217,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs/drivefs-artifacts-bucket
@@ -2264,7 +2243,7 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/seaweedfs/external-credentials
@@ -2284,7 +2263,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs/forgejo-bucket
@@ -2304,7 +2283,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs/loom-gym-bucket
@@ -2324,8 +2303,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
@@ -2344,7 +2321,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 1h
   path: ./cluster/generated/seaweedfs/pr-visuals-bucket
@@ -2364,7 +2341,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs/public-coder-agent-backups-bucket
@@ -2384,7 +2361,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs/registry-cache-bucket
@@ -2403,9 +2380,6 @@ metadata:
   name: seaweedfs-csi
   namespace: ducktape-flux
 spec:
-  dependsOn:
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs-csi
   prune: true
@@ -2428,7 +2402,7 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/vm-images-publisher
@@ -2592,10 +2566,6 @@ metadata:
   name: flux-webhook
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: ntfy
       namespace: ducktape-flux
@@ -2759,8 +2729,6 @@ spec:
     - name: seaweedfs-operator
       namespace: ducktape-flux
     - name: vm-images-publisher
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
       namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
@@ -2987,8 +2955,6 @@ spec:
   dependsOn:
     - name: kubevirt
       namespace: ducktape-flux
-    - name: cdi
-      namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: seaweedfs-public-s3
@@ -3023,8 +2989,6 @@ spec:
     - name: gecko-namespace
       namespace: ducktape-flux
     - name: kubevirt
-      namespace: ducktape-flux
-    - name: cdi
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
@@ -3484,8 +3448,6 @@ spec:
   dependsOn:
     - name: local-path-provisioner
       namespace: ducktape-flux
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
     - name: volsync
       namespace: ducktape-flux
     - name: external-secrets-operator
@@ -3547,10 +3509,6 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: seaweedfs-operator
-      namespace: ducktape-flux
-    - name: cert-manager
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/nix-cache
@@ -4368,8 +4326,6 @@ spec:
     - name: kubevirt
       namespace: ducktape-flux
     - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: public-coder-agent-app
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/public-coder-agent/devbox

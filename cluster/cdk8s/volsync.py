@@ -7,8 +7,6 @@ need to read a local token file.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
@@ -24,10 +22,8 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -112,19 +108,19 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
 def volsync(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, snapshot_controller: Kustomization
+    chart: Chart, directory: RenderedDirectory, snapshot_controller: Kustomization, monitoring_crds: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         timeout="5m",
-        depends_on=[flux_kustomization_depends_on(snapshot_controller)],
+        depends_on=[
+            flux_kustomization_depends_on(snapshot_controller),
+            # The chart renders its ServiceMonitor only if the CRD exists when Helm installs it.
+            flux_kustomization_depends_on(monitoring_crds),
+        ],
         # The token controller populates data.token asynchronously. Do not declare
         # the VolSync auth material ready until Alloy can actually use it.
         health_check_exprs=[

@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "kube-system"
@@ -33,9 +29,12 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def kube_system(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, goldilocks: Kustomization) -> Kustomization:
-    return flux_kustomization(chart, NAME, artifact, wait=None, depends_on=[flux_kustomization_depends_on(goldilocks)])
+def kube_system(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        NAME,
+        directory,
+        wait=None,
+        # Kyverno's failurePolicy: Fail webhooks admit the Namespace.
+        depends_on=[flux_kustomization_depends_on(kyverno)],
+    )

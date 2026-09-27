@@ -5,12 +5,9 @@ cluster/cdk8s/infra_drift/README.md."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitRepositorySpec, GitRepositorySpecRef
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2,
     TerraformV1Alpha2Spec,
@@ -23,8 +20,7 @@ from tofu_controller.io.fluxcd.contrib.infra import (
 )
 
 from cluster.cdk8s import terraform
-from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "infra-drift"
@@ -148,20 +144,13 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def infra_drift(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization
-) -> Kustomization:
+def infra_drift(chart: Chart, directory: RenderedDirectory, tofu_controller: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         wait=None,
         timeout="10m",
-        decryption=SOPS_DECRYPTION,
         # Ready tracks the plan, so a drift finding shows up here as a NotReady
         # Kustomization — README § Reading a plan.
         health_checks=[

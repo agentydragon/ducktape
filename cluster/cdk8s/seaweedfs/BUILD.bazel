@@ -20,9 +20,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -54,9 +52,7 @@ py_library(
     deps = [
         ":s3",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/seaweedfs:namespace",
         "@pypi//cdk8s",
     ],
@@ -69,9 +65,7 @@ py_library(
     deps = [
         ":s3",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/seaweedfs:namespace",
         "@pypi//cdk8s",
     ],
@@ -83,10 +77,8 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/seaweedfs:namespace",
         "@pypi//cdk8s",
     ],
@@ -100,10 +92,8 @@ py_library(
         ":cluster",
         ":namespace",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/seaweedfs:s3",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -116,10 +106,8 @@ py_library(
         ":cluster",
         ":namespace",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/seaweedfs:s3",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -131,9 +119,7 @@ py_library(
     deps = [
         ":s3",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -145,10 +131,8 @@ py_library(
     deps = [
         ":s3",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/seaweedfs:bucket",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -159,12 +143,10 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:helmrepository",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/seaweedfs:namespace",
         "@pypi//cdk8s",
     ],
@@ -177,9 +159,7 @@ py_library(
     deps = [
         ":s3",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -192,10 +172,8 @@ py_library(
     deps = [
         "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/cnpg:cluster",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/seaweedfs:namespace",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

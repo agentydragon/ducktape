@@ -6,8 +6,6 @@ Hand-written beside the generated output: `langfuse-secrets.sops.yaml`.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
 from constructs import Construct
@@ -21,18 +19,10 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cnpg
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.seaweedfs.s3 import SecretKeyFields
@@ -363,17 +353,9 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml", "langfuse-secrets.sops.yaml"]),
-    )
-
-
 def langfuse(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     cnpg: Kustomization,
     valkey: Kustomization,
     seaweedfs_operator: Kustomization,
@@ -381,10 +363,9 @@ def langfuse(
     return flux_kustomization(
         chart,
         _NAME,
-        artifact,
+        directory,
         suspend=False,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        decryption=SOPS_DECRYPTION,
         timeout="20m",
         depends_on=flux_kustomization_depends_on_many(cnpg, valkey, seaweedfs_operator),
     )
