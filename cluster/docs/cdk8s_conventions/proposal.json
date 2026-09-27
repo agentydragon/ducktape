@@ -2076,7 +2076,7 @@
     {
       "pr": 7112,
       "title": "cluster: wire rugged's NPU-backed LLM into litellm",
-      "recommendation": "keep open",
+      "recommendation": "revise",
       "reason": "You kept it open. It is stale and builds untyped ApiObjects with dict JSON patches; when the feature is picked up, redo it with `k8s.KubeService` and `KubeEndpointSlice`."
     }
   ],

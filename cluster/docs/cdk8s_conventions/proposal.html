@@ -11013,19 +11013,6 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
               </td>
             </tr>
             <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8115">#8115</a></td>
-              <td>cdk8s: shared drop-ALL capabilities constants (audit D.4)</td>
-              <td><span class="chip chip-close">close</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    Superseded by <code>pod_policy.harden()</code>, which fills drop-ALL on every dialect. Two per-tier
-                    constants are the &#39;policy as a constant&#39; shape C5 replaces.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
               <td><a href="https://github.com/agentydragon/ducktape/pull/8111">#8111</a></td>
               <td>cilium: add open_internet_egress combinator (finding C.4)</td>
               <td><span class="chip chip-revise">revise</span></td>
@@ -11036,47 +11023,6 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
                     <code>[cilium.dns_egress(), cilium.open_internet_egress(ports=...)]</code>. The
                     <code>include_dns</code> flag, added after the owner objected to indexing the result, then goes too.
                     It currently conflicts with devel.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8109">#8109</a></td>
-              <td>cdk8s: factor hardened single-container pod defaults (D.1)</td>
-              <td><span class="chip chip-close">close</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    The TypedDict kwargs spread is rejected (P2). Hardening moves to <code>pod_policy.harden()</code>,
-                    and the Pod labels and selector come from the <code>ServiceRef</code>&#39;s <code>Pods</code>.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8106">#8106</a></td>
-              <td>cdk8s: add simple_http_service helper (finding C.6)</td>
-              <td><span class="chip chip-close">close</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    A thin wrapper over <code>Service(selector=, ports=)</code>. The repeated fact it targets, the port,
-                    becomes a <code>ServiceRef</code> whose <code>Port</code> projects <code>service_port()</code>.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8095">#8095</a></td>
-              <td>cdk8s: record builder/binding deduplication audit</td>
-              <td><span class="chip chip-close">close</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    This proposal supersedes the audit&#39;s findings, several of which have landed (#8097, #8098,
-                    #8099, #8105, #8113, #8114). Finding A, a default <code>timeout=&#34;5m&#34;</code>, falls away:
-                    with <code>wait</code> off by default the timeout rarely binds. A <code>debug/</code> note the
-                    migration would delete is not worth landing.
                   </p>
                 </div>
               </td>
@@ -11140,48 +11086,6 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
               </td>
             </tr>
             <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/7446">#7446</a></td>
-              <td>refactor(cluster): put single-source artifacts at root</td>
-              <td><span class="chip chip-close">close</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    Probably stale against #7616 and #7741. After this design, path derivation lives in one place
-                    (<code>artifact_directory</code>, read by the writer and the node), so root placement is a separate,
-                    small decision if it is still wanted.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/7444">#7444</a></td>
-              <td>docs: propose cdk8s Flux component construction</td>
-              <td><span class="chip chip-close">close</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    A component base class conflicts with PLAN.md F and <code>cluster/cdk8s/AGENTS.md:98-101</code>.
-                    <code>RenderedDirectory</code> gives the derivation it wanted without a class or a registry.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/7440">#7440</a></td>
-              <td>cluster/cdk8s: pass cert-manager artifacts into Flux nodes</td>
-              <td><span class="chip chip-close">close</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    Superseded by the merged #7616 (artifacts built at the call site) and by
-                    <code>write_directory</code> returning the artifact inside <code>RenderedDirectory</code>. Its first
-                    unit, <code>cert-manager-issuer-config</code>, goes once <code>LETSENCRYPT_ISSUER</code> renders in
-                    Python.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
               <td><a href="https://github.com/agentydragon/ducktape/pull/7432">#7432</a></td>
               <td>cluster: move Tana credentials to external-creds</td>
               <td><span class="chip chip-revise">revise</span></td>
@@ -11213,12 +11117,12 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             <tr>
               <td><a href="https://github.com/agentydragon/ducktape/pull/7112">#7112</a></td>
               <td>cluster: wire rugged&#39;s NPU-backed LLM into litellm</td>
-              <td><span class="chip chip-close">close</span></td>
+              <td><span class="chip chip-revise">revise</span></td>
               <td>
                 <div class="rich">
                   <p>
-                    Stale, and it builds untyped ApiObjects with dict JSON patches. If the feature is still wanted, redo
-                    it with <code>k8s.KubeService</code> and <code>KubeEndpointSlice</code>.
+                    You kept it open. It is stale and builds untyped ApiObjects with dict JSON patches; when the feature
+                    is picked up, redo it with <code>k8s.KubeService</code> and <code>KubeEndpointSlice</code>.
                   </p>
                 </div>
               </td>
@@ -11233,12 +11137,7 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
       <ol class="steps">
         <li>
           <div class="st">
-            <div class="rich">
-              <p>
-                Housekeeping: apply the PR dispositions. Close #8115, #8109, #8106, #8095, #7446, #7444, #7440 and
-                #7112; land #7426, #7859 and #7909, and #7695 after a rebase.
-              </p>
-            </div>
+            <div class="rich"><p>Housekeeping: land #7426, #7859 and #7909, and #7695 after a rebase.</p></div>
           </div>
           <div class="sc">
             <div class="rich"><p>PR state only; no new code.</p></div>
