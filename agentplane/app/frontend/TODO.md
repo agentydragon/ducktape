@@ -25,8 +25,9 @@ build time.
   magnifying-glass `IconZoomCode` button) renders unconditionally at every one of its 7 call sites, one per
   message/entity, whether or not a reader is looking at that row. Consider a per-message overflow affordance
   instead -- e.g. a vertical-dots button, shown only on hover (desktop) or tap (mobile), holding this and other
-  message-level debug actions -- mirroring the composer's existing `Menu` + `IconDotsVertical` pattern
-  (`projected_session.tsx`, "Debug history" / "Shut down harness").
+  message-level debug actions. This would be its own menu, separate from the composer's thread-level one below
+  (`Menu` + `IconDotsVertical`, "Debug history" / "Shut down harness" / thread id) -- a per-message menu and a
+  per-thread menu, not one merged control, even though both would share the dots-icon pattern.
 - **A pending sent message shows in its own box below the thread, not inline as a message**: a `submitInput`
   command still `outcome: "pending"` renders in the "Pending commands" region (`projected_session.tsx`'s
   `hasPendingCommands` `Stack`, ~line 1326) as a bordered `Paper` with a "Saved · awaiting effect" caption, separate
@@ -83,9 +84,10 @@ build time.
   `IconDotsVertical` `ActionIcon` (`projected_session.tsx` ~line 1422, `variant="light"` -- which takes a color
   from Mantine's default primary) currently sits at the bottom, next to the composer. One idea: move it to the
   top right, beside `ThreadTitle` (`projected_session.tsx` ~line 1550, which today renders alone with no header
-  row to share), and drop the color so it reads as a plain utility control. Would want to reconcile with the
-  per-message overflow affordance idea above, which proposes the same `Menu`/`IconDotsVertical` pattern per row --
-  two color-free dots menus in the same view might want a visual distinction of their own.
+  row to share), and drop the color so it reads as a plain utility control. This is the thread-level menu; the
+  per-message overflow affordance above is a separate, per-row menu, not something to merge into this one -- but
+  the two sharing the same dots icon in one view might still want a visual distinction of their own (position
+  alone may be enough: one per row, one at the top).
 
 ## Approval-arrival attention, and merging the pending/history Action pages
 
