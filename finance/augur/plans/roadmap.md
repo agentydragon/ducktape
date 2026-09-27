@@ -202,7 +202,6 @@ flowchart TB
     GX{"GX: backstop jurisdiction and realism"}
     GL{"GL: future measured workload tuning; parked"}
     RUNTIME["RUNTIME: future bottleneck investigation; parked"] --> GE{"GE: future optimization choice; parked"}
-    IDTYPES["IDTYPES: typed entity IDs"]
 
     P12["P12: retire the configured housing and PE strategies"]
     MA3["MA3: runnable TLH comparison"]
@@ -329,12 +328,6 @@ to finish P12.
 
 [The P12 reader list](cleanup_migration.md) names the configured strategy's live
 readers and their deletion criteria.
-
-| Unit    | Change                           | Needs |
-| ------- | -------------------------------- | ----- |
-| IDTYPES | Typed config-model construction. | None  |
-
-The [entity-ID note](typed_series_config.md) scopes IDTYPES without turning artifact/wire churn into an active cleanup prerequisite.
 
 ### Deletion checkpoints, not another interface family
 
@@ -463,8 +456,8 @@ all the others to be solved first.
    the capabilities they actually need; do not remove those regressions or add
    a compatibility driver to claim convergence. Public reader deletions proceed.
    **GL and RUNTIME/GE remain parked** without outgoing gates to this work.
-   **IDTYPES** has no prerequisite, the “exogenous” rename is only a consideration, and
-   constituent-level managed portfolios wait for decision-relevant fidelity gaps.
+   The “exogenous” rename is only a consideration, and constituent-level managed
+   portfolios wait for decision-relevant fidelity gaps.
    New evidence-fetch/cache infrastructure waits for observed throttling; richer
    PE app controls are dropped, not a deferred product feature.
 
