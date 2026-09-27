@@ -1353,7 +1353,6 @@ py_library(
         "//cluster/cdk8s/clickhouse:installation",
         "//cluster/cdk8s/clickhouse:operator",
         "//cluster/cdk8s/clickhouse:schema",
-        "//cluster/cdk8s/coredns_custom:flux_kustomizations",
         "//cluster/cdk8s/cpap_sync:app",
         "//cluster/cdk8s/dcgm_exporter:exporter",
         "//cluster/cdk8s/dcgm_exporter:flux_kustomizations",

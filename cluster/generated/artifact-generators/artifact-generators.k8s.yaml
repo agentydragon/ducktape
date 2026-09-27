@@ -435,11 +435,6 @@ spec:
       name: clickhouse-schema
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/coredns-custom/**"
-          to: "@artifact/cluster/k8s/coredns-custom/"
-      name: coredns-custom
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/cpap-sync/**"
           to: "@artifact/cluster/k8s/cpap-sync/"
       name: cpap-sync
