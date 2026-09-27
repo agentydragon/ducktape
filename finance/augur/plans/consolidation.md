@@ -31,7 +31,9 @@ These graduate into `README.md` and `AGENTS.md` with step 1.
 2. **Callers declare worlds directly,** building the `Prepared*` facts themselves. `World`
    stays on integer quanta and unit-agnostic. Callers convert at their edge with a small
    helper in `sim/money.py` that holds the currency quantum and turns exact `Decimal`
-   amounts into quanta, plus the existing quantity-scale and ppb helpers. The helpers that
+   amounts into quanta, plus the existing quantity-scale and ppb helpers. A conversion
+   never rounds: it refuses floats and any amount, quantity or rate the target unit cannot
+   represent exactly (as `fixed_point.currency_amount_to_quanta` already does). The helpers that
    still read scenario records (`compile_income_sources`, `bond_income_categories`,
    `distribution_income_categories`, `level_series_demand`) move to reading the facts. One
    PR per group:
