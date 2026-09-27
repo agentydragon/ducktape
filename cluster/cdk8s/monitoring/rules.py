@@ -5,15 +5,11 @@ from __future__ import annotations
 from textwrap import dedent
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 
 NAME = "monitoring-rules"
 NAMESPACE = "monitoring"
-OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/rules"
 
 _CONTROL_PLANE_IO = [
     Rule.alert(
@@ -592,18 +588,3 @@ def chart(app: App) -> Chart:
         ],
     )
     return chart
-
-
-def monitoring_rules(chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        retry_interval=None,
-        wait=None,
-        depends_on=[
-            # PrometheusRule
-            flux_kustomization_depends_on(monitoring_crds)
-        ],
-    )

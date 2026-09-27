@@ -88,9 +88,6 @@ py_library(
     srcs = ["cilium_monitoring.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
@@ -204,9 +201,6 @@ py_library(
     srcs = ["rules.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "@pypi//cdk8s",
     ],

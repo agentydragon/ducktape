@@ -50,6 +50,7 @@ from cluster.cdk8s import (
     ntfy,
     nvidia_device_plugin,
     nvidia_runtimeclass,
+    platform_monitoring,
     proxmox_proxy,
     public_coder_agent_config,
     public_coder_backup,
@@ -483,22 +484,18 @@ def generate_manifests(root: Path) -> None:
         ),
         monitoring_crds_kustomization,
     )
-    flux_monitoring_artifact = artifact("flux-monitoring", flux_monitoring.OUTPUT_DIR)
-    flux_monitoring.flux_monitoring(
+    platform_monitoring_artifact = artifact("platform-monitoring", platform_monitoring.OUTPUT_DIR)
+    platform_monitoring.platform_monitoring(
         flux_chart,
-        write_directory(root, flux_monitoring_artifact, flux_monitoring.chart),
-        monitoring_crds_kustomization,
-    )
-    monitoring_cilium_artifact = artifact("monitoring-cilium", cilium_monitoring.OUTPUT_DIR)
-    cilium_monitoring.cilium_monitoring(
-        flux_chart,
-        write_directory(root, monitoring_cilium_artifact, cilium_monitoring.chart),
-        monitoring_crds_kustomization,
-    )
-    monitoring_etcd_artifact = artifact("monitoring-etcd", etcd.OUTPUT_DIR)
-    etcd.etcd_monitoring(
-        flux_chart,
-        write_directory(root, monitoring_etcd_artifact, lambda app: etcd.chart(app, mesh)),
+        write_directory(
+            root,
+            platform_monitoring_artifact,
+            flux_monitoring.chart,
+            cilium_monitoring.chart,
+            lambda app: etcd.chart(app, mesh),
+            monitoring_rules.chart,
+            seaweedfs_monitoring.chart,
+        ),
         monitoring_crds_kustomization,
     )
     monitoring_gateway_probe_artifact = artifact("monitoring-gateway-probe", gateway_probe.OUTPUT_DIR)
@@ -511,12 +508,6 @@ def generate_manifests(root: Path) -> None:
             namespace=gateway_probe.NAMESPACE,
             config_map_generator=[gateway_probe.CONFIG_MAP],
         ),
-        monitoring_crds_kustomization,
-    )
-    monitoring_rules_artifact = artifact("monitoring-rules", monitoring_rules.OUTPUT_DIR)
-    monitoring_rules.monitoring_rules(
-        flux_chart,
-        write_directory(root, monitoring_rules_artifact, monitoring_rules.chart),
         monitoring_crds_kustomization,
     )
     grafana_operator_artifact = artifact("grafana-operator", grafana_operator.OUTPUT_DIR)
@@ -900,12 +891,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         write_directory(root, seaweedfs_loom_gym_bucket_artifact, seaweedfs_loom_gym_bucket.chart),
         seaweedfs_operator_kustomization,
-    )
-    seaweedfs_monitoring_artifact = artifact("seaweedfs-monitoring", seaweedfs_monitoring.OUTPUT_DIR)
-    seaweedfs_monitoring.seaweedfs_monitoring(
-        flux_chart,
-        write_directory(root, seaweedfs_monitoring_artifact, seaweedfs_monitoring.chart),
-        monitoring_crds_kustomization,
     )
     seaweedfs_pr_visuals_bucket_artifact = artifact(
         "seaweedfs-pr-visuals-bucket", seaweedfs_pr_visuals_bucket.OUTPUT_DIR
@@ -1520,7 +1505,6 @@ def generate_manifests(root: Path) -> None:
             dns_automation_artifact,
             flux_grafana_secrets_artifact,
             flux_image_automation_forgejo_artifact,
-            flux_monitoring_artifact,
             flux_webhook_artifact,
             flux_webhook_token_artifact,
             forgejo_agentydragon_artifact,
@@ -1564,23 +1548,20 @@ def generate_manifests(root: Path) -> None:
             agents_mitmproxy_artifact,
             monitoring_alloy_artifact,
             monitoring_alloy_otlp_bearer_token_tf_artifact,
-            monitoring_cilium_artifact,
-            monitoring_etcd_artifact,
             monitoring_gateway_probe_artifact,
             monitoring_loki_artifact,
             monitoring_mimir_artifact,
-            monitoring_rules_artifact,
             monitoring_tempo_artifact,
             node_feature_discovery_artifact,
             oci_cache_artifact,
             ollama_app_artifact,
             openebs_lvm_artifact,
+            platform_monitoring_artifact,
             proxmox_proxy_artifact,
             reloader_artifact,
             seaweedfs_drivefs_artifacts_bucket_artifact,
             seaweedfs_forgejo_bucket_artifact,
             seaweedfs_loom_gym_bucket_artifact,
-            seaweedfs_monitoring_artifact,
             seaweedfs_pr_visuals_bucket_artifact,
             seaweedfs_public_coder_agent_backups_bucket_artifact,
             seaweedfs_registry_cache_bucket_artifact,

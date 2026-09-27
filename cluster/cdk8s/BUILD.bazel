@@ -398,12 +398,18 @@ py_library(
     name = "flux_monitoring",
     srcs = ["flux_monitoring.py"],
     deps = [
-        ":artifact_generators",
-        ":flux",
-        ":manifest_roots",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "platform_monitoring",
+    srcs = ["platform_monitoring.py"],
+    deps = [
+        ":flux",
+        ":manifest_roots",
         "@pypi//cdk8s",
     ],
 )
@@ -870,11 +876,7 @@ py_library(
     name = "etcd",
     srcs = ["etcd.py"],
     deps = [
-        ":artifact_generators",
         ":fleet_rules",
-        ":flux",
-        ":manifest_roots",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "//cluster/scripts:nebula_mesh",
@@ -1309,6 +1311,7 @@ py_library(
         ":ntfy",
         ":nvidia_device_plugin",
         ":nvidia_runtimeclass",
+        ":platform_monitoring",
         ":proxmox_proxy",
         ":public_coder_agent_config",
         ":public_coder_backup",

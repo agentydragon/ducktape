@@ -15,15 +15,11 @@ nothing.
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.seaweedfs import namespace
 
 NAME = "seaweedfs-monitoring"
-OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs/monitoring"
 
 
 def chart(app: App) -> Chart:
@@ -68,17 +64,3 @@ def chart(app: App) -> Chart:
         ],
     )
     return chart
-
-
-def seaweedfs_monitoring(chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        retry_interval=None,
-        wait=None,
-        suspend=False,
-        # PrometheusRule
-        depends_on=flux_kustomization_depends_on_many(monitoring_crds),
-    )
