@@ -2032,34 +2032,10 @@
       "reason": "Open since 2026-09-16, docs only, no reviews. It is the governing policy for C7 (decision 2): rules 1, 2, 4 and 6 are what the synth-time checks enforce. Before merging, rebase it past #7441, which already removed the three-layer law it replaces; point rule 2's `_ORDERING_EXCEPTIONS` at `flux.ORDERING_EXCEPTIONS`, checked at synth; note that derived Orphan covers the rename case rule 3b's narrow unit exists for; and refresh its 2026-09-16 numbers (713 edges, 278 units; 426 and 182 on devel 1faf6d5f22)."
     },
     {
-      "pr": 8115,
-      "title": "cdk8s: shared drop-ALL capabilities constants (audit D.4)",
-      "recommendation": "close",
-      "reason": "Superseded by `pod_policy.harden()`, which fills drop-ALL on every dialect. Two per-tier constants are the 'policy as a constant' shape C5 replaces."
-    },
-    {
       "pr": 8111,
       "title": "cilium: add open_internet_egress combinator (finding C.4)",
       "recommendation": "revise",
       "reason": "Keep the dedupe, but return one egress rule with no DNS rule inside it; callers write `[cilium.dns_egress(), cilium.open_internet_egress(ports=...)]`. The `include_dns` flag, added after the owner objected to indexing the result, then goes too. It currently conflicts with devel."
-    },
-    {
-      "pr": 8109,
-      "title": "cdk8s: factor hardened single-container pod defaults (D.1)",
-      "recommendation": "close",
-      "reason": "The TypedDict kwargs spread is rejected (P2). Hardening moves to `pod_policy.harden()`, and the Pod labels and selector come from the `ServiceRef`'s `Pods`."
-    },
-    {
-      "pr": 8106,
-      "title": "cdk8s: add simple_http_service helper (finding C.6)",
-      "recommendation": "close",
-      "reason": "A thin wrapper over `Service(selector=, ports=)`. The repeated fact it targets, the port, becomes a `ServiceRef` whose `Port` projects `service_port()`."
-    },
-    {
-      "pr": 8095,
-      "title": "cdk8s: record builder/binding deduplication audit",
-      "recommendation": "close",
-      "reason": "This proposal supersedes the audit's findings, several of which have landed (#8097, #8098, #8099, #8105, #8113, #8114). Finding A, a default `timeout=\"5m\"`, falls away: with `wait` off by default the timeout rarely binds. A `debug/` note the migration would delete is not worth landing."
     },
     {
       "pr": 8035,
@@ -2086,24 +2062,6 @@
       "reason": "Named pin constants with `# renovate:` comments are the N25 convention (C2). It is still a draft from 2026-09-23; rebase it before landing."
     },
     {
-      "pr": 7446,
-      "title": "refactor(cluster): put single-source artifacts at root",
-      "recommendation": "close",
-      "reason": "Probably stale against #7616 and #7741. After this design, path derivation lives in one place (`artifact_directory`, read by the writer and the node), so root placement is a separate, small decision if it is still wanted."
-    },
-    {
-      "pr": 7444,
-      "title": "docs: propose cdk8s Flux component construction",
-      "recommendation": "close",
-      "reason": "A component base class conflicts with PLAN.md F and `cluster/cdk8s/AGENTS.md:98-101`. `RenderedDirectory` gives the derivation it wanted without a class or a registry."
-    },
-    {
-      "pr": 7440,
-      "title": "cluster/cdk8s: pass cert-manager artifacts into Flux nodes",
-      "recommendation": "close",
-      "reason": "Superseded by the merged #7616 (artifacts built at the call site) and by `write_directory` returning the artifact inside `RenderedDirectory`. Its first unit, `cert-manager-issuer-config`, goes once `LETSENCRYPT_ISSUER` renders in Python."
-    },
-    {
       "pr": 7432,
       "title": "cluster: move Tana credentials to external-creds",
       "recommendation": "revise",
@@ -2118,13 +2076,13 @@
     {
       "pr": 7112,
       "title": "cluster: wire rugged's NPU-backed LLM into litellm",
-      "recommendation": "close",
-      "reason": "Stale, and it builds untyped ApiObjects with dict JSON patches. If the feature is still wanted, redo it with `k8s.KubeService` and `KubeEndpointSlice`."
+      "recommendation": "keep open",
+      "reason": "You kept it open. It is stale and builds untyped ApiObjects with dict JSON patches; when the feature is picked up, redo it with `k8s.KubeService` and `KubeEndpointSlice`."
     }
   ],
   "migration": [
     {
-      "step": "Housekeeping: apply the PR dispositions. Close #8115, #8109, #8106, #8095, #7446, #7444, #7440 and #7112; land #7426, #7859 and #7909, and #7695 after a rebase.",
+      "step": "Housekeeping: land #7426, #7859 and #7909, and #7695 after a rebase.",
       "scope": "PR state only; no new code.",
       "risk": "None."
     },
