@@ -12,13 +12,12 @@ are in <SPEC.md>; capability requirements every item below must meet are in
   the fitted models through a tombstoned visibility exception. That union is the pattern
   the conventions rule out. Deciding the app's model selection is part of deciding the app's
   future, which is not decided.
-- **Held feature PRs.** #8139 (uncertain equity mean), #8141 (pinned equity mean), #8142
-  (block bootstrap) and #8143 (trading costs) waited for consolidation, which is done. The
-  first three target `x/`.
-- **Integer money, later.** Integer quanta were chosen for speed at large rollout counts, and
-  that gain was never measured. Now that consolidation is done, measure it. If it does not
-  pay, `World` may instead know its currency and take and return exact fixed-point `Decimal`
-  money.
+- **Held feature PRs.** #8139 (uncertain equity mean), #8141 (pinned equity mean) and #8142
+  (block bootstrap) would land in `x/models/`; #8143 is trading costs. Each waits on the
+  owner's go.
+- **Integer money.** Integer quanta were chosen for speed at large rollout counts, a gain
+  never measured. If a measurement shows it does not pay, `World` may instead know its
+  currency and take and return exact fixed-point `Decimal` money.
 
 ## Work
 
@@ -27,15 +26,12 @@ Every change is checked against an independent calculation, never a copy of the 
 
 ### Taxes (closing the gaps SPEC lists in its supported tax scope)
 
-- **Distributions:** price-return plus payout paths for the equity funds in scope, the
-  qualified-dividend holding-period test (or its explicit exclusion per product), qualified
-  dividends itemized in the year-end breakdown, reinvestment basis. Fund capital-gain and
-  return-of-capital payouts are implemented or the products needing them rejected.
+- **Distributions:** fund capital-gain and return-of-capital payouts are implemented, or the
+  products needing them rejected.
 - **Payments:** per-jurisdiction estimated-payment schedules (federal equal quarters,
   California's unequal proportions) and the true-up, with the safe-harbor rule only as it
   sets the amounts; no penalties.
-- **Mortgage interest:** single-filer federal and California deduction, itemized versus
-  standard, with the SALT cap's income phase-out and each acquisition-debt limit.
+- **SALT phase-out:** the SALT cap's income phase-out.
 - **NIIT:** net rental income becomes net investment income (`OrdinaryIncome` merges rent with
   wages today); Form 8960 line 9 deductions.
 - **Housing basis:** `Properties.sell` leaves out the closing costs `sim/property.py`
