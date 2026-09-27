@@ -266,9 +266,7 @@ def generate_manifests(root: Path) -> None:
     agentplane_testing_health_checks = agentplane_generation.environment_health_checks(
         agentplane_testing_resource_chart, testing.ENV.namespace
     )
-    haku_charts.write_console_manifests(root)
     haku_openclaw_spike_config.write_manifests(root)
-    haku_mailbox.write_manifests(root)
     public_coder_agent_config.write_manifests(root)
     public_coder_proxy.write_manifests(
         root,
@@ -286,7 +284,6 @@ def generate_manifests(root: Path) -> None:
     egress_fences.write_manifests(root)
     litellm_namespace.write_manifests(root)
     litellm_proxy.write_manifests(root)
-    agentplane_index_workers.write_manifests(root)
     litellm_database.write_manifests(root)
     litellm_secrets.write_manifests(root)
     agents_namespaces.write_manifests(root)
@@ -300,8 +297,6 @@ def generate_manifests(root: Path) -> None:
     forgejo_db.write_manifests(root)
     home_assistant_namespace.write_manifests(root)
     forgejo_gitops_modules.write_manifests(root)
-    seaweedfs_s3_config.write_manifests(root)
-    seaweedfs_public_s3.write_manifests(root)
     nix_cache_attic.write_manifests(root)
     vm_images_publisher_publisher.write_manifests(root)
     alloy.write_manifests(root)
@@ -330,7 +325,6 @@ def generate_manifests(root: Path) -> None:
     github_api_proxy.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
     ducktape_flux.write_manifests(root)
-    flux_image_automation_ghcr.write_manifests(root)
     flux_sources.write_manifests(root)
     gaffer_private_source.write_manifests(root)
     dcgm_exporter_exporter.write_manifests(root)
@@ -353,7 +347,13 @@ def generate_manifests(root: Path) -> None:
     external_secrets_crds_kustomization = external_secrets_flux_kustomizations.external_secrets_crds(flux_chart)
     flux_image_automation_ghcr_artifact = artifact("flux-image-automation-ghcr", flux_image_automation_ghcr.OUTPUT_DIR)
     flux_image_automation_ghcr_kustomization = flux_image_automation_ghcr.flux_image_automation_ghcr(
-        flux_chart, flux_image_automation_ghcr_artifact
+        flux_chart,
+        write_directory(
+            root,
+            flux_image_automation_ghcr_artifact,
+            flux_image_automation_ghcr.automation_chart,
+            flux_image_automation_ghcr.openclaw_chart,
+        ),
     )
     budget_namespace_artifact = artifact("budget-namespace", forgejo_budget_namespace.OUTPUT_DIR)
     forgejo_budget_namespace.budget_namespace(
@@ -647,7 +647,11 @@ def generate_manifests(root: Path) -> None:
     tofu_state_db.tofu_state_db(flux_chart, tofu_state_db_artifact, cnpg_kustomization)
     seaweedfs_secrets_artifact = artifact("seaweedfs-secrets", seaweedfs_s3_config.OUTPUT_DIR)
     seaweedfs_s3_config.seaweedfs_secrets(
-        flux_chart, seaweedfs_secrets_artifact, external_secrets_operator_kustomization
+        flux_chart,
+        write_directory(
+            root, seaweedfs_secrets_artifact, seaweedfs_s3_config.chart, siblings=seaweedfs_s3_config.IDENTITY_FILES
+        ),
+        external_secrets_operator_kustomization,
     )
     website_artifact = artifact("website", website.OUTPUT_DIR)
     website.website(flux_chart, write_directory(root, website_artifact, website.chart), kyverno_kustomization)
@@ -975,7 +979,10 @@ def generate_manifests(root: Path) -> None:
     )
     seaweedfs_public_s3_artifact = artifact("seaweedfs-public-s3", seaweedfs_public_s3.OUTPUT_DIR)
     seaweedfs_public_s3.seaweedfs_public_s3(
-        flux_chart, seaweedfs_public_s3_artifact, seaweedfs_operator_kustomization, kyverno_kustomization
+        flux_chart,
+        write_directory(root, seaweedfs_public_s3_artifact, seaweedfs_public_s3.chart),
+        seaweedfs_operator_kustomization,
+        kyverno_kustomization,
     )
     haku_cloud_agent_artifact = artifact("haku-cloud-agent", f"{HAND_WRITTEN_ROOT}/parked/cloud-agent-tf")
     parked_flux_kustomizations.haku_cloud_agent(
@@ -1032,7 +1039,13 @@ def generate_manifests(root: Path) -> None:
     agentplane_index_artifact = artifact("agentplane-index", agentplane_index_workers.OUTPUT_DIR)
     agentplane_index_flux_kustomizations.agentplane_index(
         flux_chart,
-        agentplane_index_artifact,
+        write_directory(
+            root,
+            agentplane_index_artifact,
+            agentplane_index_workers.chart,
+            components=["./image-pins"],
+            config_map_generator=[agentplane_index_workers.CONFIG_MAP],
+        ),
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         kyverno_kustomization,
@@ -1128,7 +1141,14 @@ def generate_manifests(root: Path) -> None:
     haku_mailbox_artifact = artifact("haku-mailbox", haku_mailbox.OUTPUT_DIR)
     haku_flux_kustomizations.haku_mailbox(
         flux_chart,
-        haku_mailbox_artifact,
+        write_directory(
+            root,
+            haku_mailbox_artifact,
+            haku_mailbox.chart,
+            siblings=haku_mailbox.SOPS_FILES,
+            components=["./image-pins"],
+            config_map_generator=[haku_mailbox.CONFIG_MAP, haku_mailbox.INGRESS_CONFIG_MAP],
+        ),
         cnpg_kustomization,
         cert_manager_kustomization,
         external_secrets_operator_kustomization,
@@ -1319,7 +1339,15 @@ def generate_manifests(root: Path) -> None:
     haku_console_artifact = artifact("haku-console", haku_charts.PATH)
     haku_charts.haku_console(
         flux_chart,
-        haku_console_artifact,
+        write_directory(
+            root,
+            haku_console_artifact,
+            haku_charts.console_chart,
+            siblings=haku_charts.EXTRA_RESOURCES,
+            namespace=haku_charts.NAMESPACE,
+            components=["./image-pins"],
+            config_map_generator=haku_charts.CONFIG_MAP_GENERATOR,
+        ),
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
