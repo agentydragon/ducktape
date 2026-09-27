@@ -1847,7 +1847,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Restic/VolSync backup of the Haku OpenClaw spike state to its dedicated private SeaweedFS S3 bucket, plus the one-shot restore into the optiplex worker PVC that migrates the state off the control plane.
+    description: Restic/VolSync backup of the Haku OpenClaw spike state to its dedicated private SeaweedFS S3 bucket.
   name: haku-openclaw-spike-backup
   namespace: ducktape-flux
 spec:

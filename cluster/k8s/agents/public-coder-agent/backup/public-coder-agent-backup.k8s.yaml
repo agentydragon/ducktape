@@ -110,7 +110,6 @@ rules:
   - apiGroups:
       - ""
     resourceNames:
-      - public-coder-agent-volsync-s3
       - public-coder-agent-seaweedfs-credentials
       - public-coder-agent-volsync-restic-password
     resources:
