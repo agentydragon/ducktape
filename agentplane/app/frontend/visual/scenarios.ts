@@ -47,6 +47,9 @@ export interface Scenario extends ScenarioOptions {
   sessionReplay?: "catching-up" | "unavailable" | "reconnecting";
   /** Assistant output precedes coalesced queued input, then model/interrupt effects. */
   interleavedEvents?: boolean;
+  /** Mundane lifecycle observations collapse into one comma-joined row; a prominent one (harness
+   * lost) still stands alone and breaks the group around it. */
+  lifecycleGroup?: boolean;
   /** Open the chronological archive drawer, the native-frame inspection surface. */
   openDebug?: "latest" | "stderr";
   /** Open the tool-call run once it mounts, then the reasoning step folded inside it. */
@@ -138,6 +141,14 @@ export const SCENARIOS: Record<string, Scenario> = {
     interleavedEvents: true,
     openDebug: "latest",
     readySelectors: ['[aria-label="Chronological observations"]'],
+    captureViewport: true,
+  },
+  session_lifecycle_group: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    lifecycleGroup: true,
+    readySelectors: ['[data-thread-anchor="50"]'],
     captureViewport: true,
   },
   session_interleaved_native_details: {

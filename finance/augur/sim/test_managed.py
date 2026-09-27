@@ -10,10 +10,11 @@ from finance.augur.sim.actions import Withdraw
 from finance.augur.sim.books import EXTERNAL_BOUNDARY
 from finance.augur.sim.holdings import gain_account
 from finance.augur.sim.ids import AccountId, AssetId, JurisdictionId, PortfolioId
-from finance.augur.sim.managed import ComponentEffects, InterestCredit, ManagedPortfolios, basis_account
+from finance.augur.sim.managed import ComponentEffects, IncomeCredit, ManagedPortfolios, basis_account
 from finance.augur.sim.money import MIN_COUNT
 from finance.augur.sim.observations import TlhPortfolioObservation
 from finance.augur.sim.prepared import PreparedSeries, PreparedTlhPortfolio
+from finance.augur.sim.scenario import InterestIncome
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, INCOME_SOURCES, accounting, world_on
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
@@ -131,7 +132,11 @@ def test_invalid_effects_and_overflow_leave_every_financial_book_unchanged(
             amount,
             0,
             0,
-            (InterestCredit(JurisdictionId("undeclared") if case == 6 else None, amount),),
+            (
+                IncomeCredit(
+                    InterestIncome(issuer_jurisdiction_id=JurisdictionId("undeclared") if case == 6 else None), amount
+                ),
+            ),
         )
     before = fingerprint(world)
     with pytest.raises(
@@ -146,7 +151,7 @@ def test_invalid_effects_and_overflow_leave_every_financial_book_unchanged(
 def test_distribution_cash_uses_interest_source_not_capital_gain_journal_account(
     world: World, opening: TlhPortfolioObservation
 ) -> None:
-    effects = ComponentEffects(opening, AccountId("checking"), 5, 0, 0, (InterestCredit(None, 5),))
+    effects = ComponentEffects(opening, AccountId("checking"), 5, 0, 0, (IncomeCredit(InterestIncome(), 5),))
     world.managed_portfolios().settle(world.accounting, 0, HOUSEHOLD, "distribution", effects, operation="distribution")
     assert world.accounting.ledger.balance(CASH) == 105
     assert world.accounting.ledger.balance(gain_account(HOUSEHOLD)) == 0

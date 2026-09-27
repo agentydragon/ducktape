@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import yaml
-from pydantic import BaseModel, BeforeValidator, Field
+from pydantic import BaseModel, BeforeValidator, Field, model_validator
 
 from finance.augur.sim.fixed_point import validate_currency_amount
 from finance.augur.sim.ids import JurisdictionId
@@ -30,6 +30,24 @@ class JurisdictionLevel(StrEnum):
 
     FEDERAL = "federal"
     STATE = "state"
+
+
+class StatutoryAmount(StrEnum):
+    """A dollar amount in a jurisdiction's rules, which statute either indexes or fixes."""
+
+    ORDINARY_INCOME_BRACKETS = "ordinary_income_brackets"
+    LTCG_BRACKETS = "ltcg_brackets"
+    STANDARD_DEDUCTION = "standard_deduction"
+    MAX_CAPITAL_LOSS_ORDINARY_OFFSET = "max_capital_loss_ordinary_offset"
+    NET_INVESTMENT_INCOME_TAX = "net_investment_income_tax"
+    TAXABLE_INCOME_SURTAX = "taxable_income_surtax"
+
+
+class StatutoryIndexation(StrEnum):
+    """Whether statute adjusts an amount for inflation each year or fixes it in nominal dollars."""
+
+    CPI = "cpi"
+    FIXED = "fixed"
 
 
 _DATA_DIR = Path(__file__).parent / "data" / "jurisdictions"
@@ -64,6 +82,17 @@ class TaxBracket(BaseModel):
     rate: float
 
 
+class ThresholdTax(BaseModel):
+    """A flat-rate additional tax on the part of some income measure above a threshold.
+
+    Which measure a field applies it to is the field's contract; the threshold is keyed by
+    filing status, and the jurisdiction's `indexation` says whether it is inflation-indexed.
+    """
+
+    rate: float
+    threshold: dict[str, CurrencyAmount]
+
+
 class Jurisdiction(BaseModel):
     """A taxing authority's complete bracket + deduction config.
 
@@ -72,6 +101,13 @@ class Jurisdiction(BaseModel):
     (California-style)."""
 
     jurisdiction_id: JurisdictionId
+    law_year: int = Field(description="The tax year whose statute and published inflation adjustments the amounts are.")
+    indexation: dict[StatutoryAmount, StatutoryIndexation] = Field(
+        description=(
+            "Per dollar amount this jurisdiction carries, whether statute indexes it for inflation "
+            "or fixes it; every amount present is tagged and nothing else is."
+        )
+    )
     ordinary_income_brackets: dict[str, list[TaxBracket]]
     ltcg_brackets: dict[str, list[TaxBracket]] | None = Field(default=None)
     standard_deduction: dict[str, CurrencyAmount]
@@ -100,6 +136,40 @@ class Jurisdiction(BaseModel):
             "NOT exempt Treasuries."
         ),
     )
+    net_investment_income_tax: ThresholdTax | None = Field(
+        default=None,
+        description=(
+            "IRC 1411: `rate` times the lesser of net investment income and modified adjusted gross "
+            "income above `threshold`. Absent where the jurisdiction levies no such tax."
+        ),
+    )
+    taxable_income_surtax: ThresholdTax | None = Field(
+        default=None,
+        description=(
+            "`rate` times taxable income above `threshold`, on top of the bracket tax (California's "
+            "Behavioral Health Services Tax). Absent where the jurisdiction levies no such tax."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _every_amount_tagged(self) -> Jurisdiction:
+        present = {
+            StatutoryAmount.ORDINARY_INCOME_BRACKETS,
+            StatutoryAmount.STANDARD_DEDUCTION,
+            StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET,
+        }
+        for amount, field in (
+            (StatutoryAmount.LTCG_BRACKETS, self.ltcg_brackets),
+            (StatutoryAmount.NET_INVESTMENT_INCOME_TAX, self.net_investment_income_tax),
+            (StatutoryAmount.TAXABLE_INCOME_SURTAX, self.taxable_income_surtax),
+        ):
+            if field is not None:
+                present.add(amount)
+        if set(self.indexation) != present:
+            raise ValueError(
+                f"{self.jurisdiction_id!r} indexation tags {sorted(self.indexation)}, not its amounts {sorted(present)}"
+            )
+        return self
 
     def taxes_interest_from(
         self, issuer_jurisdiction_id: JurisdictionId | None, issuer_level: JurisdictionLevel | None

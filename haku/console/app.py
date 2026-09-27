@@ -20,7 +20,6 @@ from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
-from uuid import UUID
 
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
@@ -49,7 +48,6 @@ from haku.console.identity import (
     operator_auth,
     operator_login_flow,
 )
-from haku.console.identity.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.identity.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
 from haku.console.identity.operator_identity import OperatorIdentityTrust
@@ -61,21 +59,16 @@ from haku.console.mcp.in_process_servers import (
     build_in_process_servers,
 )
 from haku.console.mcp_config import (
-    InProcessBackend,
     InProcessServers,
     LoadedStaticAgent,
-    OperatorConnectionCredential,
-    _server_entry,
     load_static_agents,
     validate_in_process_server_bindings,
 )
 from haku.console.models import ConfigResponse
-from haku.console.notifications import connection_metrics, console_events, push, push_routes
-from haku.console.oauth import association_maintenance, connection_result, provider_connection, token_state
+from haku.console.notifications import console_events, push, push_routes
 from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.settings import Settings
 from haku.console.tools import (
-    gmail as gmail_tools,
     grants as grants_tools,
     kubernetes as kubernetes_tools,
     routine as routine_tools,
@@ -160,16 +153,10 @@ def create_app(
     *,
     loaded_static_agents: list[LoadedStaticAgent] | None = None,
     static_agent_definitions: tuple[StaticAgentDefinition, ...] | None = None,
-    gmail_client: gmail_tools.GmailToolsClient | None = None,
     in_process_servers: InProcessServers | None = None,
 ) -> FastAPI:
     # Deploy-time console config file (non-secret): the MCP server catalog and static agents.
     console_config = settings
-    # The `hostexec` MCP tool (Tier 1) has been removed, so `ConsoleConfigFile` no longer carries a
-    # `hostexec` field. The operator-login-identity token-exchange plumbing this still gates
-    # (Authentik token refresh, login offline_access, hostexec_enabled) is orphaned-but-harmless
-    # dead code pending a follow-up removal; hardcode the always-off value here rather than touch it.
-    hostexec_config = None
     # Postgres is required: it backs the approval ledger and the operator OAuth token stores, all
     # always constructed. Construction is lazy (no connect); migrations run once at startup (app.main /
     # the test fixture), not here. Cross-replica fan-out (Postgres LISTEN/NOTIFY) is started by the
@@ -182,25 +169,8 @@ def create_app(
     db_sessions = async_sessionmaker(db_engine, expire_on_commit=False)
     operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
     operator_login_flows = operator_login_flow.PostgresOperatorLoginFlowStore(db_sessions)
-    oauth_token_states = token_state.PostgresTokenStateStore(
-        db_sessions, operator_identity_store=operator_identity_store
-    )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     tool_call_ledger = approval.PostgresToolCallLedger(db_sessions)
-    # Per-Operator external provider connections (Google today), replacing Airlock's brokered
-    # token. Only deploy-named providers whose client env vars are present are offered.
-    provider_clients = provider_connection.load_provider_clients(console_config)
-    provider_connection_store = provider_connection.PostgresProviderConnectionStore(
-        db_sessions,
-        operator_identity_store=operator_identity_store,
-        token_states=oauth_token_states,
-        provider_definitions=console_config.operator_connection_providers,
-        provider_clients=provider_clients,
-        operator_connections=console_config.operator_connections,
-    )
-    oauth_connection_result_store = connection_result.PostgresConnectionResultStore(
-        db_sessions, operator_identity_store=operator_identity_store
-    )
     # Web Push reaches the operator's browsers when none of them has the console open. Without a
     # VAPID identity there is nothing to sign with, so the console simply never notifies.
     push_subscription_store = push.PostgresPushSubscriptionStore(db_sessions)
@@ -211,25 +181,6 @@ def create_app(
         )
         if push_identity is not None
         else push.NullNotifier()
-    )
-    # The operator's own Authentik token (captured at login via offline_access), self-refreshed with
-    # the operator-OIDC client — hostexec exchanges it for a per-host token. The store derives the
-    # Authentik token endpoint lazily (on refresh), so a non-Authentik operator OIDC that never
-    # refreshes (e.g. a hermetic test IdP with hostexec off) constructs it fine.
-    authentik_operator_token_store = PostgresAuthentikOperatorTokenStore(
-        db_sessions,
-        operator_identity_store=operator_identity_store,
-        token_states=oauth_token_states,
-        client_id=settings.operator_oidc.client_id,
-        client_secret=settings.operator_oidc.client_secret.get_secret_value(),
-        issuer=settings.operator_oidc.issuer,
-    )
-    oauth_maintenance = association_maintenance.AssociationMaintenance(
-        db_engine,
-        db_sessions,
-        provider_store=provider_connection_store,
-        authentik_store=authentik_operator_token_store,
-        refresh_authentik_tokens=hostexec_config is not None,
     )
     agent_authority = PostgresAgentAuthority(
         db_sessions,
@@ -305,22 +256,6 @@ def create_app(
         else None
     )
 
-    # The gmail/google_calendar in-process servers are built per call from the acting Operator's
-    # Google access token, resolved from the provider-connection store. Auto-approval label lookups
-    # use the same per-Operator Gmail client; a test may inject a fixed `gmail_client` instead.
-    async def gmail_client_provider(operator_id: UUID) -> gmail_tools.GmailToolsClient | None:
-        if gmail_client is not None:
-            return gmail_client
-        backend = _server_entry(settings, gmail_tools.GMAIL_SERVER_ID).backend
-        if not isinstance(backend, InProcessBackend) or not isinstance(
-            backend.credential, OperatorConnectionCredential
-        ):
-            raise RuntimeError("gmail must bind an operator connection credential")
-        token = await provider_connection_store.access_token_for(
-            connection=backend.credential.connection, operator_id=operator_id
-        )
-        return gmail_tools.build_gmail_client_from_token(token) if token is not None else None
-
     # `haku_routine` fires the Haku claude-code-web routine as an approval-gated MCP tool (the
     # standard queue), superseding the bespoke launch-routine capability tier. Same
     # `launch_routine` config/secret; independent of the Google connection above.
@@ -391,20 +326,15 @@ def create_app(
     catalogs = catalog_reconciler.OperatorCatalogReconciler(
         servers=list(console_config.mcp.servers.values()),
         dispatcher=dispatcher,
-        provider_store=provider_connection_store,
         operator_ids=operator_identity_store.list_active_ids,
         refresh_interval_seconds=settings.mcp_catalog_refresh_interval_seconds,
     )
-    console_event_hub.add_listener(catalogs.connection_changed)
     tool_calls = tool_call_service.ToolCallApplicationService(
         settings=settings,
         repository=tool_call_ledger,
         invalidation_publisher=console_event_hub,
         executor=dispatcher,
         in_process_servers=in_process_servers,
-        gmail_client_provider=gmail_client_provider,
-        provider_store=provider_connection_store,
-        authentik_token_store=authentik_operator_token_store,
         approval_notifier=approval_notifier,
         kubernetes_authorization=kubernetes_authorization,
     )
@@ -413,11 +343,7 @@ def create_app(
     # Its tools re-expose the connected servers through the same application service. Always built;
     # `build_auth` fails loud if nothing can authenticate to it (no static agent, no OAuth).
     console_mcp_context = server.ConsoleMcpContext(
-        settings=settings,
-        tool_calls=tool_calls,
-        provider_store=provider_connection_store,
-        dispatcher=dispatcher,
-        catalogs=catalogs,
+        settings=settings, tool_calls=tool_calls, dispatcher=dispatcher, catalogs=catalogs
     )
 
     console_mcp = server.build_console_mcp(console_mcp_context, auth=mcp_auth.provider, actor_resolver=actor_resolver)
@@ -438,7 +364,7 @@ def create_app(
             else await _resolve_static_agent_definitions()
         )
         await agent_authority.reconcile_static_agents(static_definitions)
-        async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), catalogs.run():
+        async with agent_authority.expiry_maintenance(), catalogs.run():
             await console_event_hub.start()
             try:
                 # Pre-warm the OIDCProxy client-state store so the first OAuth request isn't slowed by a
@@ -471,16 +397,10 @@ def create_app(
     # above uses these same objects rather than creating a second pool.
     app.state.db_engine = db_engine
     app.state.db_sessions = db_sessions
-    # The operator-login callback persists the operator's Authentik token only when hostexec is
-    # configured (offline_access is requested for the same reason). Read at request time from here.
-    app.state.hostexec_enabled = hostexec_config is not None
     app.state.agent_enrollment_service = agent_authority
     app.state.operator_identity_store = operator_identity_store
     app.state.operator_login_flows = operator_login_flows
     app.state.tool_call_service = tool_calls
-    app.state.provider_connection_store = provider_connection_store
-    app.state.oauth_connection_result_store = oauth_connection_result_store
-    app.state.authentik_operator_token_store = authentik_operator_token_store
     app.state.console_event_hub = console_event_hub
     app.state.in_process_servers = in_process_servers
     app.state.mcp_dispatcher = dispatcher
@@ -523,9 +443,6 @@ def create_app(
     # would fall through to the SPA catch-all and return the app shell.
     @app.get("/metrics")
     async def metrics() -> Response:
-        # Re-sampled per scrape rather than pushed on failure: correct after a restart, and it keeps
-        # reporting "still broken" without waiting for the next retry to fail again.
-        await connection_metrics.refresh_connection_metrics(db_sessions)
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     # The browser API is operator-only. Agents use /mcp; static bearer support there does not grant
@@ -535,8 +452,6 @@ def create_app(
     app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(approval.router, dependencies=operator_only)
     app.include_router(grant_routes.router, dependencies=operator_only)
-    app.include_router(provider_connection.router, dependencies=operator_only)
-    app.include_router(connection_result.router, dependencies=operator_only)
     app.include_router(enrollment_routes.operator_router, dependencies=operator_only)
     app.include_router(push_routes.router, dependencies=operator_only)
     app.include_router(
@@ -567,9 +482,7 @@ def create_app(
 
     # Operator browser auth is mandatory. SessionMiddleware establishes request.session, which the
     # router guards read; https_only follows the canonical public origin.
-    app.state.operator_oauth = operator_auth.build_oauth(
-        settings.operator_oidc, login_flows=operator_login_flows, offline_access=hostexec_config is not None
-    )
+    app.state.operator_oauth = operator_auth.build_oauth(settings.operator_oidc, login_flows=operator_login_flows)
     app.include_router(operator_auth.router)
     app.add_middleware(
         SessionMiddleware,

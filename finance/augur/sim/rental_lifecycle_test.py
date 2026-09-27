@@ -74,6 +74,7 @@ from finance.augur.sim.scenario import (
 )
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -383,7 +384,9 @@ def compose(situation: Situation, rollout_id: int) -> World:
     for opening in situation.accounts:
         world.declare_account(opening)
     for profile in situation.tax_profiles:
-        world.track(TaxAuthority(compile_profile(profile, jurisdictions, quantum=QUANTUM)))
+        world.track(
+            TaxAuthority(compile_profile(profile, jurisdictions, quantum=QUANTUM), indexation=FixedNominalLaw())
+        )
     for salt in situation.salt_policies:
         world.declare_deduction(salt)
     for interest in situation.mortgage_interest_policies:

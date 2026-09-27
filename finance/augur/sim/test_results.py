@@ -8,8 +8,7 @@ from pydantic import ValidationError
 
 from finance.augur.sim.results import Finished, Paid, PaymentReceipt, PaymentRejected, RejectedAction
 from finance.augur.sim.session import ActionSession
-from finance.augur.x.monthly_actions.policy import decide
-from finance.augur.x.monthly_actions.run import HOUSEHOLD, compose, situation
+from finance.augur.sim.testing.funded_bill import HOUSEHOLD, compose, sell_then_pay, situation
 
 
 @pytest.mark.parametrize("capture", ["summary", "forensic"])
@@ -19,7 +18,7 @@ def test_results_and_file_replay_keep_exact_successful_prefix(capture: Literal["
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
-            batch = session.advance(decide(batch))
+            batch = session.advance(sell_then_pay(batch))
         stopped, completed = batch.rollouts
         assert [row.rollout_id for row in batch.rollouts] == [1, 0]
         assert stopped.stop == RejectedAction(month=0, action_index=1)

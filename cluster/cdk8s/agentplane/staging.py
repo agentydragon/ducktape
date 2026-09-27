@@ -7,15 +7,11 @@ from __future__ import annotations
 
 from cdk8s import App, Chart, Duration
 from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute, ServiceAccount
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecRefreshPolicy,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
-    ExternalSecretSpecTargetTemplate,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    Kustomization,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
@@ -39,17 +35,13 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule
-from cluster.cdk8s.providers.external_secrets.external_secret import (
-    DataFrom,
-    ExternalSecret,
-    SecretStoreRef,
-    remote_data,
-)
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
 
 _NAMESPACE = "agentplane-staging"
@@ -147,6 +139,13 @@ _ACTIONS_SETTINGS = {
                     "url": _GITHUB_MCP_URL,
                     "server_id": "github",
                     "auth": "oauth",
+                    # Actions (get_job_logs, actions_get, actions_list, ...) is not in GitHub
+                    # MCP's default toolset catalog. `_REPOSITORY_SCOPED_ACTIONS` in
+                    # actions_staging_policies.py already expects these tools; without this
+                    # header the server never advertises them. Ported from haku-console's
+                    # now-removed GitHub MCP wiring (cluster/cdk8s/haku/console_config.py,
+                    # dropped in #7773), which configured this the same way.
+                    "headers": {"X-MCP-Toolsets": "default,actions"},
                 },
             },
         },
@@ -432,24 +431,18 @@ def _add_session_secret(scope: Chart) -> None:
     Rotating this value invalidates existing browser sessions, but does not touch the
     Authentik OAuth client credentials or the Agentplane testing environment.
     """
-    Password(
-        scope,
-        "session-password-generator",
-        metadata=metadata(_OIDC_SESSION_SECRET, _NAMESPACE),
-        spec=PasswordSpec(length=64, digits=16, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         scope,
         "session-external-secret",
         name=_OIDC_SESSION_SECRET,
         namespace=_NAMESPACE,
-        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[DataFrom.from_password_generator(_OIDC_SESSION_SECRET)],
+        key="session-secret",
+        length=64,
+        digits=16,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"session-secret": "{{ .password }}"}),
         immutable=True,
-        annotations={"description": "ESO-generated Agentplane staging session-signing key."},
+        description="ESO-generated Agentplane staging session-signing key.",
     )
 
 

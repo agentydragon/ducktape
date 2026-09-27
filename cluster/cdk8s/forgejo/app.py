@@ -17,12 +17,9 @@ from cilium_envoyconfig_crds.io.cilium import (
     CiliumEnvoyConfigSpecNodeSelector,
 )
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecRefreshPolicy,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
-    ExternalSecretSpecTargetTemplate,
 )
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -34,13 +31,13 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
 
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.providers.seaweedfs.s3 import SecretKeyFields
 from cluster.cdk8s.seaweedfs import s3
@@ -108,22 +105,14 @@ def _object_storage(scope: Construct) -> None:
 def _metrics_token(scope: Construct) -> None:
     """ESO owns a stable Forgejo metrics bearer token. CreatedOnce avoids rotating the token
     without coordinating a Forgejo restart and Prometheus scrape cutover."""
-    generator = Password(
-        scope,
-        "metrics-token-generator",
-        metadata=metadata(_METRICS_TOKEN, _NAMESPACE),
-        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         scope,
         "metrics-token",
         name=_METRICS_TOKEN,
         namespace=_NAMESPACE,
-        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[DataFrom.from_password_generator(generator.name)],
+        key="token",
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"token": "{{ .password }}"}),
     )
 
 
@@ -437,7 +426,7 @@ def chart(app: App) -> Chart:
         chart,
         "route",
         metadata=metadata(_NAME, _NAMESPACE),
-        hostname="git.allegedly.works",
+        hostnames=["git.allegedly.works"],
         backend="forgejo-http",
         port=3000,
         hsts=False,

@@ -9,9 +9,10 @@ from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Contribute, Liquidate, Withdraw
 from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, DistributionOutcome, JournalEntry, Posting
+from finance.augur.sim.compiler.income_sources import income_source_wire_id
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import gain_account
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, PortfolioId
+from finance.augur.sim.ids import AccountId, AgentId, PortfolioId
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.observations import TlhPortfolioObservation
 from finance.augur.sim.prepared import PreparedDistribution, PreparedJurisdiction, PreparedTlhPortfolio
@@ -21,8 +22,8 @@ type Operation = Literal["modeled_realization", "contribution", "redemption", "d
 
 
 @dataclass(frozen=True)
-class InterestCredit:
-    issuer_jurisdiction_id: JurisdictionId | None
+class IncomeCredit:
+    income_category: TransferIncomeCategory
     amount: int
 
 
@@ -33,7 +34,7 @@ class ComponentEffects:
     cash_amount: int
     short_term_gain: int
     long_term_gain: int
-    interest: tuple[InterestCredit, ...] = ()
+    income: tuple[IncomeCredit, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -49,7 +50,7 @@ class FinancialEffect:
     short_term_gain: int
     long_term_gain: int
     basis_change: int
-    interest_income: int
+    income: int
 
 
 def basis_account(observation: TlhPortfolioObservation) -> AccountRef:
@@ -154,7 +155,7 @@ class ManagedPortfolios:
             action.portfolio_id,
             action.cash_account_id,
             expected,
-        ) or effects.interest:
+        ) or effects.income:
             raise ValueError("component effects do not match the requested operation")
 
     def settle(
@@ -175,20 +176,21 @@ class ManagedPortfolios:
             operation = "contribution" if isinstance(action, Contribute) else "redemption"
         row = effects.observation
         self.validate_observation(row)
-        for interest in effects.interest:
-            source = InterestIncome(issuer_jurisdiction_id=interest.issuer_jurisdiction_id)
+        for credit in effects.income:
+            source = credit.income_category
             if (
-                interest.amount < 0
+                credit.amount < 0
                 or source not in self.income_sources
                 or (
-                    interest.issuer_jurisdiction_id is not None
+                    isinstance(source, InterestIncome)
+                    and source.issuer_jurisdiction_id is not None
                     and not any(
-                        jurisdiction.jurisdiction_id == interest.issuer_jurisdiction_id
+                        jurisdiction.jurisdiction_id == source.issuer_jurisdiction_id
                         for jurisdiction in self.jurisdictions
                     )
                 )
             ):
-                raise ValueError("component interest needs a declared income source and nonnegative amount")
+                raise ValueError("component income needs a declared income source and nonnegative amount")
         if not cause or row.owner_agent_id != actor:
             raise ValueError("component effects need a cause and the component's owner")
         if row.portfolio_id not in self.marks:
@@ -197,10 +199,10 @@ class ManagedPortfolios:
             row.reported_tax_basis - self.marks[row.portfolio_id].reported_tax_basis, "money subtraction"
         )
         capital_gain = checked_count(effects.short_term_gain + effects.long_term_gain, "money addition")
-        interest_total = 0
-        for interest in effects.interest:
-            interest_total = checked_count(interest_total + interest.amount, "money addition")
-        gain = checked_count(capital_gain + interest_total, "money addition")
+        income_total = 0
+        for credit in effects.income:
+            income_total = checked_count(income_total + credit.amount, "money addition")
+        gain = checked_count(capital_gain + income_total, "money addition")
         if checked_count(effects.cash_amount + basis_change, "money addition") != gain:
             raise ValueError("component cash, basis change and realized gains do not reconcile")
         postings = []
@@ -219,15 +221,13 @@ class ManagedPortfolios:
                 Posting(account=gain_account(actor), amount=checked_count(-capital_gain, "money negation")),
             ]
         )
-        if interest_total:
-            postings.append(Posting(account=EXTERNAL_BOUNDARY, amount=checked_count(-interest_total, "money negation")))
+        if income_total:
+            postings.append(Posting(account=EXTERNAL_BOUNDARY, amount=checked_count(-income_total, "money negation")))
         tax = deepcopy(accounting.tax)
         tax.gain(actor, effects.short_term_gain, long_term=False)
         tax.gain(actor, effects.long_term_gain, long_term=True)
-        for interest in effects.interest:
-            tax.income.accrue(
-                actor, InterestIncome(issuer_jurisdiction_id=interest.issuer_jurisdiction_id), interest.amount
-            )
+        for credit in effects.income:
+            tax.income.accrue(actor, credit.income_category, credit.amount)
         accounting.apply(JournalEntry(month=month, cause_id=cause, postings=postings))
         accounting.tax = tax
         self.marks[row.portfolio_id] = row
@@ -244,7 +244,7 @@ class ManagedPortfolios:
                 effects.short_term_gain,
                 effects.long_term_gain,
                 basis_change,
-                interest_total,
+                income_total,
             )
         )
 
@@ -265,7 +265,7 @@ class ManagedPortfolios:
         for slice_index, slice_ in enumerate(spec.tax_character):
             amount = mul_div(total, slice_.fraction_ppb, MONEY_FACTOR_SCALE, "security distribution tax slice")
             cash = checked_count(cash + amount, "money addition")
-            credits.append(InterestCredit(slice_.issuer_jurisdiction_id, amount))
+            credits.append(IncomeCredit(slice_.income_category, amount))
             outcomes.append(
                 DistributionOutcome(
                     month=month,
@@ -274,7 +274,7 @@ class ManagedPortfolios:
                     asset_id=spec.asset_id,
                     slice_index=slice_index,
                     fraction_ppb=slice_.fraction_ppb,
-                    issuer_jurisdiction_id=slice_.issuer_jurisdiction_id,
+                    income_source=income_source_wire_id(slice_.income_category),
                     units=None,
                     amount=amount,
                 )

@@ -11,10 +11,9 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngress,
     CiliumNetworkPolicySpecIngressFromEndpoints,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import flux_kustomization
+from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata

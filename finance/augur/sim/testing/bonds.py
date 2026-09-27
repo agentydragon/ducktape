@@ -29,6 +29,7 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, TaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -146,7 +147,7 @@ def compose(case: Situation, rollout_id: int = 0) -> World:
         world.declare_account(account)
     for agent_id in case.taxpayers:
         profile = TaxProfile(agent_id=agent_id, jurisdiction_ids=list(filed_in), tax_authority_agent_id=AgentId("irs"))
-        world.track(TaxAuthority(compile_profile(profile, rules, quantum=QUANTUM)))
+        world.track(TaxAuthority(compile_profile(profile, rules, quantum=QUANTUM), indexation=FixedNominalLaw()))
     for bond in case.bonds:
         world.hold(bond)
     return world

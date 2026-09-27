@@ -95,6 +95,7 @@ from finance.augur.sim.scenario import (
     FixedAmount,
     InitialAccountBalance,
     InitialLot,
+    InterestIncome,
     MortgageFinancing as SimMortgageFinancing,
     MortgageInterestDeductionPolicy,
     ObligationType,
@@ -117,6 +118,7 @@ from finance.augur.sim.scenario import (
     TransferIncomeCategory,
 )
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.world import World
 
 PRIMARY_ACCOUNT_ID = AccountId("checking")
@@ -212,7 +214,10 @@ def security_distributions_from_portfolio(
 
     tax_character_by_symbol = {
         declaration.symbol: tuple(
-            DistributionTaxSlice(fraction=share.fraction, issuer_jurisdiction_id=share.issuer_jurisdiction_id)
+            DistributionTaxSlice(
+                fraction=share.fraction,
+                income_category=InterestIncome(issuer_jurisdiction_id=share.issuer_jurisdiction_id),
+            )
             for share in declaration.tax_character
         )
         for declaration in declarations
@@ -545,7 +550,7 @@ def compose(situation: Situation, market: MarketPath) -> World:
     )
     for account in situation.accounts:
         world.declare_account(account)
-    world.track(TaxAuthority(situation.tax_profile))
+    world.track(TaxAuthority(situation.tax_profile, indexation=FixedNominalLaw()))
     if situation.home is not None and situation.home.interest_deduction is not None:
         world.declare_deduction(situation.home.interest_deduction)
     for pool in situation.pools:

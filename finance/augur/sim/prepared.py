@@ -146,7 +146,7 @@ class PreparedBond:
 @dataclass(frozen=True, kw_only=True)
 class PreparedDistributionSlice:
     fraction_ppb: int
-    issuer_jurisdiction_id: JurisdictionId | None
+    income_category: TransferIncomeCategory
 
 
 @dataclass(frozen=True, kw_only=True)

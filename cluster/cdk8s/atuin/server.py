@@ -7,7 +7,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -44,7 +43,7 @@ def _database(chart: Chart) -> None:
         node_selector=_ZONE_SELECTOR,
         storage_class="local-path-ovh-ssd",
         size="2Gi",
-        initdb=ClusterSpecBootstrapInitdb(database=NAME, owner=NAME),
+        initdb=cnpg.same_owner_initdb(NAME),
     )
 
 
@@ -122,7 +121,7 @@ def _server(chart: Chart) -> None:
         chart,
         "route",
         metadata=metadata(NAME, NAMESPACE),
-        hostname="atuin.allegedly.works",
+        hostnames=["atuin.allegedly.works"],
         backend=_SERVER,
         port=_PORT,
         hsts=False,

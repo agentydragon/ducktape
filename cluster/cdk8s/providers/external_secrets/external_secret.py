@@ -7,7 +7,24 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from cdk8s import ApiObjectMetadata
 from constructs import Construct
+from external_secrets_clusterexternalsecret_crds.io.external_secrets import (
+    ClusterExternalSecret as _ClusterExternalSecret,
+    ClusterExternalSecretSpec,
+    ClusterExternalSecretSpecExternalSecretSpec,
+    ClusterExternalSecretSpecExternalSecretSpecData,
+    ClusterExternalSecretSpecExternalSecretSpecDataFrom,
+    ClusterExternalSecretSpecExternalSecretSpecDataFromExtract,
+    ClusterExternalSecretSpecExternalSecretSpecDataRemoteRef,
+    ClusterExternalSecretSpecExternalSecretSpecRefreshPolicy,
+    ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef,
+    ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind,
+    ClusterExternalSecretSpecExternalSecretSpecTarget,
+    ClusterExternalSecretSpecExternalSecretSpecTargetCreationPolicy,
+    ClusterExternalSecretSpecExternalSecretSpecTargetDeletionPolicy,
+    ClusterExternalSecretSpecExternalSecretSpecTargetTemplate,
+)
 from external_secrets_crds.io.external_secrets import (
     ExternalSecret as _ExternalSecret,
     ExternalSecretSpec,
@@ -161,6 +178,110 @@ class ExternalSecret(_ExternalSecret):
                     deletion_policy=deletion_policy,
                     template=template,
                     immutable=immutable,
+                ),
+            ),
+        )
+
+
+def cluster_remote_data(
+    key: str, property: str, *, secret_key: str | None = None
+) -> ClusterExternalSecretSpecExternalSecretSpecData:
+    """Copy `property` of the store's `key` into the target, under `secret_key` or else the same name.
+
+    Mirrors `remote_data`, for `ClusterExternalSecret`'s embedded, `ExternalSecretSpec`-shaped
+    target: `cdk8s_import` generates a distinct Python type per CRD it's pointed at, so this
+    identically-shaped embedded field (`ClusterExternalSecretSpecExternalSecretSpecData`, not
+    `ExternalSecretSpecData`) isn't the same class and needs its own builder.
+    """
+    return ClusterExternalSecretSpecExternalSecretSpecData(
+        secret_key=secret_key or property,
+        remote_ref=ClusterExternalSecretSpecExternalSecretSpecDataRemoteRef(key=key, property=property),
+    )
+
+
+class ClusterDataFrom:
+    """One `dataFrom` source for a `ClusterExternalSecret`'s embedded `ExternalSecretSpec`. Same
+    variant shape as `DataFrom` (see its docstring), generated as its own type by the
+    `ClusterExternalSecret` CRD import; add another factory the day a second shape is needed here.
+    """
+
+    def __init__(self, spec: ClusterExternalSecretSpecExternalSecretSpecDataFrom) -> None:
+        self._spec = spec
+
+    def to_spec(self) -> ClusterExternalSecretSpecExternalSecretSpecDataFrom:
+        return self._spec
+
+    @classmethod
+    def from_extract(cls, key: str) -> ClusterDataFrom:
+        """Copy every property of the store's `key` into the target, under the same names."""
+        return cls(
+            ClusterExternalSecretSpecExternalSecretSpecDataFrom(
+                extract=ClusterExternalSecretSpecExternalSecretSpecDataFromExtract(key=key)
+            )
+        )
+
+
+class ClusterExternalSecret(_ClusterExternalSecret):
+    """Adds `namespaces`: which namespaces get the mirrored `ExternalSecret`. `name`'s target
+    Secret is `target_name`, else also `name`. `store_name` always names a `ClusterSecretStore`:
+    every current caller wants one, and a namespaced `SecretStore` of that name would need to
+    exist identically in every namespace listed in `namespaces` -- add a `kind` parameter the day
+    a caller needs that instead.
+
+    `refresh` is a `refreshInterval` duration or a non-periodic `refreshPolicy`. Exactly one of
+    `data` and `data_from` is given. `None` leaves a field unset, so ESO's own default applies.
+    Cluster-scoped, unlike `ExternalSecret`: its `ApiObjectMetadata` carries no `namespace`.
+    """
+
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        *,
+        name: str,
+        namespaces: Sequence[str],
+        store_name: str,
+        refresh: str | ClusterExternalSecretSpecExternalSecretSpecRefreshPolicy,
+        data: Sequence[ClusterExternalSecretSpecExternalSecretSpecData] = (),
+        data_from: Sequence[ClusterDataFrom] = (),
+        creation_policy: ClusterExternalSecretSpecExternalSecretSpecTargetCreationPolicy | None = None,
+        deletion_policy: ClusterExternalSecretSpecExternalSecretSpecTargetDeletionPolicy | None = None,
+        template: ClusterExternalSecretSpecExternalSecretSpecTargetTemplate | None = None,
+        immutable: bool | None = None,
+        target_name: str | None = None,
+        annotations: dict[str, str] | None = None,
+    ) -> None:
+        if bool(data) == bool(data_from):
+            raise ValueError(f"{name=}: give exactly one of data and data_from")
+        refresh_interval: str | None = None
+        refresh_policy: ClusterExternalSecretSpecExternalSecretSpecRefreshPolicy | None = None
+        match refresh:
+            case str():
+                refresh_interval = refresh
+            case ClusterExternalSecretSpecExternalSecretSpecRefreshPolicy():
+                refresh_policy = refresh
+        super().__init__(
+            scope,
+            id,
+            metadata=ApiObjectMetadata(name=name, annotations=annotations),
+            spec=ClusterExternalSecretSpec(
+                namespaces=list(namespaces),
+                external_secret_spec=ClusterExternalSecretSpecExternalSecretSpec(
+                    refresh_interval=refresh_interval,
+                    refresh_policy=refresh_policy,
+                    secret_store_ref=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef(
+                        kind=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
+                        name=store_name,
+                    ),
+                    data=list(data) or None,
+                    data_from=[item.to_spec() for item in data_from] or None,
+                    target=ClusterExternalSecretSpecExternalSecretSpecTarget(
+                        name=target_name or name,
+                        creation_policy=creation_policy,
+                        deletion_policy=deletion_policy,
+                        template=template,
+                        immutable=immutable,
+                    ),
                 ),
             ),
         )

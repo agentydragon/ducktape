@@ -32,6 +32,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     BASIC_POLICY,
     COINBASE_POLICY,
     FORGEJO_HAKU_POLICY,
+    GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
     GOOGLE_READONLY_POLICY,
@@ -510,6 +511,9 @@ def add_staging_action_policies(scope: Construct) -> None:
     # caller's can therefore act as that bot across the whole GitHub REST API and git protocol
     # -- not just clone/push -- by the operator's explicit choice, the same shape of tradeoff
     # `forgejo-haku` above already accepts for Forgejo.
+    # `github-actions-logs` presents nothing either: GET-only to the Azure Blob Storage hosts
+    # a workflow run's job logs and artifacts 302 to, so a sandbox of this caller's can follow
+    # that redirect and read its own PR's CI output (egress.py).
     EgressBinding(
         scope,
         "egressbinding-claude-ai",
@@ -535,6 +539,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             _GITHUB_DOWNLOADS_POLICY,
             GITHUB_CLONE_POLICY,
             GITHUB_AGENTYDRAGON_AGENT_POLICY,
+            GITHUB_ACTIONS_LOGS_POLICY,
         ],
     )
 

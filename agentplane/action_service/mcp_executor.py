@@ -67,6 +67,10 @@ class _McpHttpServerConfigBase(BaseModel):
 
     transport: Literal["streamable-http"]
     url: AnyHttpUrl
+    # Extra request headers sent on every call to this server, alongside its auth header (e.g.
+    # GitHub's hosted MCP server keys its toolset selection off `X-MCP-Toolsets`, since Actions
+    # is not in its default catalog). Never `Authorization`: that header is owned by `auth`.
+    headers: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("url")
     @classmethod
@@ -74,6 +78,13 @@ class _McpHttpServerConfigBase(BaseModel):
         if url.username is not None or url.password is not None or url.fragment is not None or url.query is not None:
             raise ValueError("MCP endpoint must not contain userinfo, a query, or a fragment")
         return url
+
+    @field_validator("headers")
+    @classmethod
+    def validate_headers(cls, headers: dict[str, str]) -> dict[str, str]:
+        if any(name.lower() == "authorization" for name in headers):
+            raise ValueError("MCP server headers must not set Authorization; that is owned by auth")
+        return headers
 
 
 class McpHttpNoAuthServerConfig(_McpHttpServerConfigBase):
@@ -225,7 +236,7 @@ class McpActionGroupExecutor(Executor):
         else:
 
             def transport_factory() -> ClientTransport:
-                return StreamableHttpTransport(config.url, auth=_http_auth(config))
+                return StreamableHttpTransport(config.url, auth=_http_auth(config), headers=config.headers or None)
 
         return cls(
             group_key, group, catalog_refresh_interval=catalog_refresh_interval, transport_factory=transport_factory
@@ -248,7 +259,9 @@ class McpActionGroupExecutor(Executor):
         server_id = config.server_id
 
         def transport_factory() -> ClientTransport:
-            return StreamableHttpTransport(config.url, auth=_LinkageBearerAuth(linkage, server_id))
+            return StreamableHttpTransport(
+                config.url, auth=_LinkageBearerAuth(linkage, server_id), headers=config.headers or None
+            )
 
         executor = cls(
             group_key, group, catalog_refresh_interval=catalog_refresh_interval, transport_factory=transport_factory

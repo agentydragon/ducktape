@@ -50,6 +50,7 @@ from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -217,7 +218,8 @@ def compose(case: Situation, rollout_id: int) -> World:
                     ),
                     jurisdictions,
                     quantum=QUANTUM,
-                )
+                ),
+                indexation=FixedNominalLaw(),
             )
         )
     world.declare_housing(case.housing, case.tax_policies, case.locations)

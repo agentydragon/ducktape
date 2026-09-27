@@ -4,10 +4,9 @@ scaler. The Secret stays hand-written; this builds the directory's Flux Kustomiz
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import SOPS_DECRYPTION, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "haku-forgejo-tea"

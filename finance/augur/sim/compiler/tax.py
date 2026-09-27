@@ -9,7 +9,15 @@ from finance.augur.sim.compiler.distributions import distribution_income_categor
 from finance.augur.sim.compiler.income_sources import income_source_sort_key
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
-from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket, load_jurisdiction
+from finance.augur.sim.jurisdictions import (
+    Jurisdiction,
+    JurisdictionLevel,
+    StatutoryAmount,
+    StatutoryIndexation,
+    TaxBracket,
+    ThresholdTax,
+    load_jurisdiction,
+)
 from finance.augur.sim.scenario import (
     BondHolding,
     FilingStatus,
@@ -48,6 +56,14 @@ class PreparedTaxBracket:
 
 
 @dataclass(frozen=True)
+class PreparedThresholdTax:
+    """A flat rate on the part of an income measure above `threshold` quanta."""
+
+    rate_ppb: int
+    threshold: int
+
+
+@dataclass(frozen=True)
 class PreparedTaxRules:
     """One jurisdiction's rules resolved for a taxpayer's filing status; money is integer quanta."""
 
@@ -60,6 +76,13 @@ class PreparedTaxRules:
     max_capital_loss_ordinary_offset: int
     # Positive caps federal-style unrecaptured depreciation; zero uses ordinary brackets.
     section_1250_rate_ppb: int
+    # The tax year the amounts are law for, and those of them statute adjusts for inflation.
+    law_year: int
+    indexed: frozenset[StatutoryAmount]
+    # Over modified adjusted gross income, on the lesser of the excess and net investment income.
+    net_investment_income_tax: PreparedThresholdTax | None = None
+    # Over taxable income.
+    taxable_income_surtax: PreparedThresholdTax | None = None
 
 
 @dataclass(frozen=True)
@@ -102,10 +125,13 @@ def compile_income_sources(
 def _agreed_capital_loss_offset_cap(
     profile: TaxProfile, jurisdictions: Mapping[JurisdictionId, Jurisdiction], *, quantum: Decimal
 ) -> int:
-    """Netting runs once per taxpayer; reject jurisdictions requiring different offset caps."""
+    """Netting runs once per taxpayer; reject jurisdictions requiring different offset caps, now or once indexed."""
 
     caps = {
-        jurisdiction_id: jurisdictions[jurisdiction_id].max_capital_loss_ordinary_offset[profile.filing_status]
+        jurisdiction_id: (
+            jurisdictions[jurisdiction_id].max_capital_loss_ordinary_offset[profile.filing_status],
+            jurisdictions[jurisdiction_id].indexation[StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET],
+        )
         for jurisdiction_id in profile.jurisdiction_ids
     }
     if len(set(caps.values())) > 1:
@@ -113,7 +139,7 @@ def _agreed_capital_loss_offset_cap(
             f"tax profile for {profile.agent_id!r} spans jurisdictions that cap the capital-loss "
             f"ordinary offset differently ({caps}); one netting per taxpayer cannot answer for both"
         )
-    return int(currency_amount_to_quanta(next(iter(caps.values())), quantum=quantum))
+    return int(currency_amount_to_quanta(next(iter(caps.values()))[0], quantum=quantum))
 
 
 def _brackets(brackets: Sequence[TaxBracket], *, quantum: Decimal) -> tuple[PreparedTaxBracket, ...]:
@@ -125,6 +151,17 @@ def _brackets(brackets: Sequence[TaxBracket], *, quantum: Decimal) -> tuple[Prep
             rate_ppb=rate_to_ppb(bracket.rate),
         )
         for bracket in brackets
+    )
+
+
+def _threshold_tax(
+    tax: ThresholdTax | None, filing_status: FilingStatus, *, quantum: Decimal
+) -> PreparedThresholdTax | None:
+    if tax is None:
+        return None
+    return PreparedThresholdTax(
+        rate_ppb=rate_to_ppb(tax.rate),
+        threshold=int(currency_amount_to_quanta(tax.threshold[filing_status], quantum=quantum)),
     )
 
 
@@ -155,6 +192,18 @@ def compile_profile(
                 max_capital_loss_ordinary_offset=offset_cap,
                 section_1250_rate_ppb=rate_to_ppb(
                     SECTION_1250_FEDERAL_CAP_RATE if jurisdiction_id == SECTION_1250_FEDERAL_JURISDICTION_ID else 0.0
+                ),
+                net_investment_income_tax=_threshold_tax(
+                    jurisdiction.net_investment_income_tax, profile.filing_status, quantum=quantum
+                ),
+                taxable_income_surtax=_threshold_tax(
+                    jurisdiction.taxable_income_surtax, profile.filing_status, quantum=quantum
+                ),
+                law_year=jurisdiction.law_year,
+                indexed=frozenset(
+                    amount
+                    for amount, indexation in jurisdiction.indexation.items()
+                    if indexation is StatutoryIndexation.CPI
                 ),
             )
         )

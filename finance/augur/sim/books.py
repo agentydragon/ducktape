@@ -157,6 +157,10 @@ class TaxAccrual(Record):
     agent_id: AgentId
     jurisdiction_id: JurisdictionId
     tax_year_end_month: int
+    # TODO: itemize qualified dividends. They are in neither `ordinary_income` nor
+    # `long_term_gain`, only in the taxable amounts (`long_term_capital_gain_taxable` where the
+    # jurisdiction has those brackets, else `ordinary_taxable`), so the year-end frame and wire
+    # breakdown cannot show them.
     ordinary_income: int
     short_term_gain: int
     long_term_gain: int
@@ -172,6 +176,8 @@ class TaxAccrual(Record):
     ordinary_tax: int
     capital_gain_tax: int
     section_1250_tax: int
+    net_investment_income_tax: int
+    taxable_income_surtax: int
     total_tax: int
     capital_loss_carryforward: int
 
@@ -201,7 +207,7 @@ class DistributionOutcome(Record):
     asset_id: AssetId
     slice_index: int
     fraction_ppb: int
-    issuer_jurisdiction_id: JurisdictionId | None
+    income_source: str
     units: int | None
     amount: int
 

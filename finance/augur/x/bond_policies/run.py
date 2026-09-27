@@ -137,7 +137,7 @@ def compose(case: Situation, rollout_id: int) -> World:
             holding_account_id=BROKERAGE,
             asset_id=AssetId(STRATEGY),
             to_account_id=CHECKING,
-            tax_character=(PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), issuer_jurisdiction_id=None),),
+            tax_character=(PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), income_category=InterestIncome()),),
         )
     )
     if case.annual_spending > 0:

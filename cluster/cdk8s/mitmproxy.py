@@ -24,12 +24,12 @@ from cilium_clusterwide_crds.io.cilium import (
     CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator,
 )
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpecDeletionPolicy
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium, egress_fences
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
-from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 

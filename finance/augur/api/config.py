@@ -26,13 +26,13 @@ from finance.augur.api.local_regulation import LocalRegulation
 from finance.augur.api.portfolio_source_config import PortfolioSourcesConfig
 from finance.augur.api.schemas import ApiModel
 from finance.augur.api.wire import ActorRole, ProductInputDefaults
-from finance.augur.budget.schema import BudgetConfig
 from finance.augur.model.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
 from finance.augur.model.series import LocationId, SecuritySymbol
 from finance.augur.model.state_space import StateSpaceProviderConfig
 from finance.augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 from finance.augur.product.wire import MAX_HORIZON_MONTHS
 from finance.augur.sim.ids import AgentId, JurisdictionId, PropertyId
+from finance.budget.schema import BudgetConfig
 
 AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
 DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")
@@ -112,6 +112,8 @@ class DistributionTaxShareConfig(ApiModel):
     exempt at the state level. The fractions come from the fund's own annual disclosure.
     """
 
+    # TODO: let a share declare qualified-dividend or ordinary character. The sim's
+    # `DistributionTaxSlice` takes any income category; this config reaches it only as interest.
     fraction: float = Field(gt=0.0, le=1.0)
     issuer_jurisdiction_id: JurisdictionId | None = Field(
         default=None,

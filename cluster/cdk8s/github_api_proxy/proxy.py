@@ -19,8 +19,6 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_crds.io.cert_manager import (
     CertificateSpecIssuerRef,
-    CertificateSpecPrivateKey,
-    CertificateSpecPrivateKeyAlgorithm,
     CertificateSpecPrivateKeyRotationPolicy,
     CertificateSpecUsages,
 )
@@ -54,7 +52,7 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.cert_manager.certificate import Certificate
+from cluster.cdk8s.providers.cert_manager.certificate import LONG_LIVED_CA, Certificate, CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
@@ -200,11 +198,7 @@ def _certificates(scope: Construct) -> None:
         namespace=_NAMESPACE,
         secret_name=_SERVER_TLS_SECRET,
         dns_names=[_HOSTNAME],
-        private_key=CertificateSpecPrivateKey(
-            algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA,
-            size=256,
-            rotation_policy=CertificateSpecPrivateKeyRotationPolicy.ALWAYS,
-        ),
+        private_key=CertificatePrivateKey.ecdsa_p256(rotation_policy=CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
         usages=[CertificateSpecUsages.SERVER_AUTH],
         issuer_ref=CertificateSpecIssuerRef(name="${LETSENCRYPT_ISSUER}", kind="ClusterIssuer"),
     )
@@ -222,14 +216,9 @@ def _certificates(scope: Construct) -> None:
         is_ca=True,
         common_name="ducktape-github-api-proxy-interception-ca",
         secret_name=_INTERCEPTION_CA,
-        duration="87600h",
-        renew_before="8760h",
-        private_key=CertificateSpecPrivateKey(
-            algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA,
-            size=256,
-            # A signing-key rotation requires an explicit client trust migration.
-            rotation_policy=CertificateSpecPrivateKeyRotationPolicy.NEVER,
-        ),
+        **LONG_LIVED_CA,
+        # A signing-key rotation requires an explicit client trust migration.
+        private_key=CertificatePrivateKey.ecdsa_p256(rotation_policy=CertificateSpecPrivateKeyRotationPolicy.NEVER),
         usages=[CertificateSpecUsages.CERT_SIGN, CertificateSpecUsages.CRL_SIGN],
         issuer_ref=CertificateSpecIssuerRef(name="cluster-ca-bootstrap", kind="ClusterIssuer"),
     )

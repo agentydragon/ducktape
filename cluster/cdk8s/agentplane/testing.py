@@ -7,7 +7,6 @@ from __future__ import annotations
 from cdk8s import App, Chart
 from cdk8s_plus_34 import DeploymentStrategy
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    Kustomization,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
@@ -35,7 +34,7 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy

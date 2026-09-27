@@ -62,7 +62,10 @@ beforeEach(() => {
   inventoryFresh = true;
   inventoryDrops = false;
   vi.mocked(getThread).mockResolvedValue(THREAD);
-  vi.mocked(models).mockResolvedValue({ HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] });
+  vi.mocked(models).mockResolvedValue({
+    models: [{ model: "test-model", display_name: "Test Model" }],
+    harnesses: { HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] },
+  });
   vi.mocked(command).mockReturnValue(new Promise(() => {}));
   vi.stubGlobal(
     "EventSource",
@@ -180,7 +183,7 @@ async function render(state: ThreadState = threadState()): Promise<HTMLDivElemen
     root.render(
       <MantineProvider env="test">
         <ThreadSyncContext.Provider value={sync}>
-          <ProjectedSession threadId={THREAD.id} onBack={() => {}} />
+          <ProjectedSession threadId={THREAD.id} />
         </ThreadSyncContext.Provider>
       </MantineProvider>
     );

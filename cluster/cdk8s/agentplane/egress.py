@@ -53,10 +53,11 @@ from trust_manager_crds.io.cert_manager.trust import (
 
 from agentplane.egress.database_migrate import MigrationSettings
 from agentplane.egress.main import CONFIG_FILE_ENV, Settings
-from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import actions, container_security, database, llm_ingress, node_scheduling
+from cluster.cdk8s import cilium, container_security, node_scheduling
+from cluster.cdk8s.agentplane import actions, database, llm_ingress
 from cluster.cdk8s.agentplane.app_settings import (
     BASIC_POLICY,
+    GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
     KUBERNETES_POLICY,
@@ -289,6 +290,22 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.POST],
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="github-pat"),
             )
+        ],
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-github-actions-logs",
+        metadata=ApiObjectMetadata(name=GITHUB_ACTIONS_LOGS_POLICY, namespace=namespace),
+        rules=[
+            # A workflow run's job logs (`GET .../actions/jobs/{id}/logs`) and artifacts
+            # (`GET .../actions/artifacts/{id}/zip`) answer from api.github.com with a 302 to
+            # a presigned Azure Blob Storage URL rather than the log bytes themselves; without
+            # this, following that redirect fails and a sandbox reviewing its own PR's CI
+            # cannot read why a check failed. The URL's SAS token is in the query string, not
+            # a header, so there is nothing for the PAT substitution to attach and no
+            # credentialRef here -- this is the same shape as `packages` below. GET-only:
+            # retrieving a log or artifact archive, never uploading one.
+            EgressPolicySpecRules(hosts=["*.blob.core.windows.net"], methods=[EgressPolicySpecRulesMethods.GET])
         ],
     )
     EgressPolicy(

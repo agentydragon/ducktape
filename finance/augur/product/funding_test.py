@@ -28,12 +28,26 @@ from finance.augur.sim.compiler.execution import compile_holding_pools, compile_
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId
-from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
+from finance.augur.sim.jurisdictions import (
+    Jurisdiction,
+    JurisdictionLevel,
+    StatutoryAmount,
+    StatutoryIndexation,
+    TaxBracket,
+)
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
-from finance.augur.sim.scenario import DistributionTaxSlice, FilingStatus, InitialLot, SecurityDistribution, TaxProfile
+from finance.augur.sim.scenario import (
+    DistributionTaxSlice,
+    FilingStatus,
+    InitialLot,
+    InterestIncome,
+    SecurityDistribution,
+    TaxProfile,
+)
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.world import World
 
 BROKERAGE = AccountId("brokerage")
@@ -128,7 +142,11 @@ def run(
     for account in situation.accounts:
         world.declare_account(account)
     if tax is not None:
-        world.track(TaxAuthority(compile_profile(tax[0], jurisdictions, quantum=situation.currency.quantum)))
+        world.track(
+            TaxAuthority(
+                compile_profile(tax[0], jurisdictions, quantum=situation.currency.quantum), indexation=FixedNominalLaw()
+            )
+        )
     for pool in compile_holding_pools(lots=product.lots):
         world.declare_pool(pool)
     for held in situation.lots:
@@ -313,6 +331,16 @@ def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim()
         ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.10)]},
         standard_deduction={FilingStatus.SINGLE: Decimal(0)},
         max_capital_loss_ordinary_offset={FilingStatus.SINGLE: Decimal(0)},
+        law_year=2024,
+        indexation=dict.fromkeys(
+            (
+                StatutoryAmount.ORDINARY_INCOME_BRACKETS,
+                StatutoryAmount.LTCG_BRACKETS,
+                StatutoryAmount.STANDARD_DEDUCTION,
+                StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET,
+            ),
+            StatutoryIndexation.FIXED,
+        ),
     )
     product = product_situation(
         config,
@@ -325,7 +353,7 @@ def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim()
                 agent_id=ACTOR,
                 holding_account_id=BROKERAGE,
                 to_account_id=PRIMARY_ACCOUNT_ID,
-                tax_character=(DistributionTaxSlice(fraction=1),),
+                tax_character=(DistributionTaxSlice(fraction=1, income_category=InterestIncome()),),
             ),
         ),
     )

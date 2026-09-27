@@ -13,7 +13,6 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import Protocol, Service, ServicePort, k8s
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsRelabelings,
@@ -21,7 +20,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor

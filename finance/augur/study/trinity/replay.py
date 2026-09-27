@@ -387,7 +387,9 @@ def compose(case: Situation, rollout_id: int, *, lots: Sequence[PreparedLot], an
                 # Nobody is taxed here, so the character is inert; it is required because a
                 # payout that allocates less than all of itself would pay out less than the
                 # fund distributes.
-                tax_character=(PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), issuer_jurisdiction_id=None),),
+                tax_character=(
+                    PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), income_category=InterestIncome()),
+                ),
             )
         )
     return world

@@ -12,12 +12,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata
-from cert_manager_crds.io.cert_manager import (
-    CertificateSpecIssuerRef,
-    CertificateSpecPrivateKey,
-    CertificateSpecPrivateKeyAlgorithm,
-    CertificateSpecSecretTemplate,
-)
+from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef, CertificateSpecSecretTemplate
 from constructs import Construct
 from trust_manager_crds.io.cert_manager.trust import (
     Bundle,
@@ -32,7 +27,7 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetNamespaceSelectorMatchExpressions,
 )
 
-from cluster.cdk8s.providers.cert_manager.certificate import Certificate
+from cluster.cdk8s.providers.cert_manager.certificate import LONG_LIVED_CA, Certificate, CertificatePrivateKey
 
 _ROOT_CA_ISSUER = "cluster-ca-bootstrap"
 _CLUSTER_ROOT_CA_SECRET = "cluster-root-ca-secret"
@@ -75,9 +70,8 @@ def interception_root_ca(
         is_ca=True,
         common_name=name,
         secret_name=secret_name,
-        duration="87600h",  # 10 years
-        renew_before="8760h",  # 1 year
-        private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA, size=256),
+        **LONG_LIVED_CA,
+        private_key=CertificatePrivateKey.ecdsa_p256(),
         # trust-manager reads Bundle sources from its own namespace.
         secret_template=CertificateSpecSecretTemplate(annotations=_reflector_annotations(reflection_namespaces)),
         issuer_ref=CertificateSpecIssuerRef(name=_ROOT_CA_ISSUER, kind="ClusterIssuer"),

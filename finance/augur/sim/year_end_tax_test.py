@@ -3,6 +3,7 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
+from fractions import Fraction
 from typing import Any
 
 import numpy as np
@@ -34,11 +35,13 @@ from finance.augur.sim.prepared import (
     PreparedJurisdiction,
     PreparedLot,
     PreparedRecurringTransfer,
+    PreparedSeries,
 )
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, TaxProfile
+from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, InterestIncome, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import CpiIndexedLaw, FixedNominalLaw, TaxIndexation
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import World
 
@@ -108,6 +111,20 @@ def monthly(
     )
 
 
+def monthly_interest(cause_id: str, issuer: JurisdictionId | None, amount: Decimal) -> PreparedRecurringTransfer:
+    """A year of monthly coupons from `issuer`'s debt (`None`: a corporate issuer) into Alice's checking."""
+    return PreparedRecurringTransfer(
+        start_month=0,
+        end_month=11,
+        cause_id=cause_id,
+        from_account=AccountRef(agent_id=PAYROLL, account_id=CHECKING),
+        to_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
+        amount=money(amount),
+        income_category=InterestIncome(issuer_jurisdiction_id=issuer),
+        deduction_category=None,
+    )
+
+
 def sell_into_cash(asset: SecurityKey) -> CashBandHousehold:
     """A band with no floor and no ceiling: Alice holds no spare cash and funds her claims by selling."""
     return CashBandHousehold(
@@ -136,9 +153,21 @@ class Situation:
     # The holding Alice sells to fund her claims; with none, she only pays them.
     funded_by: SecurityKey | None = None
     prices: Mapping[SecurityKey, Sequence[float]] = field(default_factory=dict)
+    # The modeled CPI path; `None` holds CPI flat wherever tax is CPI-indexed and models none otherwise.
+    cpi: tuple[int, ...] | None = None
 
 
-def compose(case: Situation) -> World:
+@pytest.fixture(
+    params=[FixedNominalLaw(), CpiIndexedLaw(start_year=2024, law_year_to_start=Fraction(1))],
+    ids=["fixed_nominal", "cpi_indexed_flat"],
+)
+def indexation(request: pytest.FixtureRequest) -> TaxIndexation:
+    """Every case holds under both: a flat CPI from a start in the tables' law year indexes by exactly 1."""
+    chosen: TaxIndexation = request.param
+    return chosen
+
+
+def compose(case: Situation, indexation: TaxIndexation) -> World:
     horizon = case.horizon_months
     series = compile_series(
         ExternalSeriesContext.from_level_blocks(
@@ -150,11 +179,21 @@ def compose(case: Situation) -> World:
         horizon_months=horizon,
         currency_quantum=QUANTUM,
     )
+    if isinstance(indexation, CpiIndexedLaw):
+        cpi = (100,) * (horizon + 1) if case.cpi is None else case.cpi
+        series = (*series, PreparedSeries(series_id="inflation", snapshots=horizon + 1, values=cpi))
     jurisdictions = {id_: load_jurisdiction(id_) for id_ in case.jurisdiction_ids}
     world = World(
         MarketPath(series, 0, rollout_count=1),
         horizon_months=horizon,
-        income_sources=(ORDINARY_INCOME,),
+        income_sources=tuple(
+            dict.fromkeys(
+                [
+                    ORDINARY_INCOME,
+                    *(flow.income_category for flow in case.recurring_transfers if flow.income_category is not None),
+                ]
+            )
+        ),
         jurisdictions=tuple(
             PreparedJurisdiction(jurisdiction_id=id_, level=rules.level) for id_, rules in jurisdictions.items()
         ),
@@ -174,7 +213,8 @@ def compose(case: Situation) -> World:
                     ),
                     jurisdictions,
                     quantum=QUANTUM,
-                )
+                ),
+                indexation=indexation,
             )
         )
     for pool in {
@@ -191,10 +231,10 @@ def compose(case: Situation) -> World:
     return world
 
 
-def run(case: Situation) -> Rollout:
+def run(case: Situation, indexation: TaxIndexation) -> Rollout:
     """Alice makes her scripted sales, sells on her band, then pays every due claim in full, in order."""
     household = Scripted(ClaimPayer(ALICE) if case.funded_by is None else sell_into_cash(case.funded_by), case.sales)
-    session = ActionSession({0: compose(case)}, ALICE)
+    session = ActionSession({0: compose(case, indexation)}, ALICE)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -247,7 +287,7 @@ def by_jurisdiction(frame: pl.DataFrame) -> dict[str, dict[str, Any]]:
     return {row["jurisdiction_id"]: row for row in frame.iter_rows(named=True)}
 
 
-def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
+def test_year_end_tax_accrual_federal_and_california_single_filer(indexation: TaxIndexation) -> None:
     """L7 — Alice gets $200k of W-2 income in year 0. At month 11
     the engine computes federal + CA tax on (200000 - std_deduction)
     and owes one liability per jurisdiction.
@@ -267,7 +307,8 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
             horizon_months=12,
             accounts=(account(ALICE), account(PAYROLL), account(IRS)),
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, wage(200_000), income=True),),
-        )
+        ),
+        indexation,
     )
     assert rollout.trace is not None
     events = rollout.trace.events
@@ -302,7 +343,7 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     assert ordinary_income(rollout, 12) == 0.0
 
 
-def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedule() -> None:
+def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedule(indexation: TaxIndexation) -> None:
     """L8 — Alice gets $50k W-2 wages, plus sells a long-held VTI
     lot (24 months pre-horizon) for a $20k gain at month 6.
 
@@ -325,7 +366,8 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, wage(50_000), income=True),),
             sales={6: (sale("alice_long_sale", LotId("alice_long_vti"), VTI, quantity=100.0),)},
             prices={VTI: [280.0] * 13},
-        )
+        ),
+        indexation,
     )
     assert rollout.trace is not None
     accruals = by_jurisdiction(rollout.trace.events.tax_accruals)
@@ -345,7 +387,80 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
     assert usd(gain.long_term_gain) == pytest.approx(20_000.0, abs=0.02)
 
 
-def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
+def test_niit_taxes_the_magi_excess_but_not_muni_interest_and_settles_in_the_true_up(indexation: TaxIndexation) -> None:
+    """$180,000 wages, $30,000 corporate interest and $48,000 California muni interest.
+
+    Muni interest is outside federal AGI and outside net investment income (Form 8960). MAGI is
+    $210,000, $10,000 over the single threshold, and NII is the $30,000 of corporate interest,
+    so NIIT is 3.8% of the smaller, $10,000: $380.00. Counting the muni coupons would have made
+    it 3.8% of $58,000.
+    Federal taxable = 210,000 - 14,600 = 195,400:
+      10% × 11600 + 12% × 35550 + 22% × 53375 + 24% × 91425 + 32% × 3450
+      = 1160 + 4266 + 11742.50 + 21942 + 1104 = 40214.50; with NIIT 40594.50.
+    California exempts its own munis and taxes the corporate interest: 210,000 - 5,363 = 204,637:
+      104.12 + 285.44 + 571.00 + 907.32 + 1141.52 + 9.3% × 136287 = 15684.09.
+    No prior-year tax, so January's true-up is the whole 56278.59.
+    """
+    rollout = run(
+        Situation(
+            horizon_months=13,
+            accounts=(account(ALICE), account(PAYROLL), account(IRS)),
+            recurring_transfers=(
+                monthly("alice_paycheck", PAYROLL, ALICE, Decimal(15_000), income=True),
+                monthly_interest("alice_corporate_coupon", None, Decimal(2_500)),
+                monthly_interest("alice_muni_coupon", CALIFORNIA, Decimal(4_000)),
+            ),
+        ),
+        indexation,
+    )
+    assert rollout.trace is not None
+    breakdowns = by_jurisdiction(rollout.trace.events.tax_breakdowns)
+    assert usd(breakdowns[FEDERAL]["net_investment_income_tax_quanta"]) == 380.00
+    assert usd(breakdowns[FEDERAL]["ordinary_tax_quanta"]) == 40_214.50
+    assert usd(breakdowns[FEDERAL]["total_tax_quanta"]) == 40_594.50
+    assert usd(breakdowns[CALIFORNIA]["net_investment_income_tax_quanta"]) == 0
+    assert usd(breakdowns[CALIFORNIA]["total_tax_quanta"]) == 15_684.09
+    assert [usd(row.amount_owed) for row in owed(rollout, 12)] == [15_684.09, 40_594.50]
+    assert tax_transfers(rollout).select("month_index", "cause_id", "amount_quanta").to_dicts() == [
+        {"month_index": 12, "cause_id": "alice_tax_true_up_y0", "amount_quanta": 5_627_859}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("monthly_wage", "surtax", "california_tax"),
+    [
+        # Taxable income exactly $1,000,000: the surtax starts above it.
+        #   104.12 + 285.44 + 571.00 + 907.32 + 1141.52 + 9.3% × 280787 + 10.3% × 69824
+        #   + 11.3% × 279310 + 12.3% × 301729 = 104989.16
+        (Decimal("83780.25"), 0.00, 104_989.16),
+        # $1,000,120: 12.3% × 120 = 14.76 more bracket tax, and 1% × 120 = 1.20 surtax.
+        (Decimal("83790.25"), 1.20, 105_005.12),
+        # $1,194,637: 1% × 194637 = 1946.37 on top of 128929.51 bracket tax.
+        (Decimal(100_000), 1_946.37, 130_875.88),
+    ],
+)
+def test_california_surtax_on_taxable_income_above_a_million(
+    monthly_wage: Decimal, surtax: float, california_tax: float, indexation: TaxIndexation
+) -> None:
+    """California taxable income is wages less its $5,363 standard deduction. Wages alone are
+    not net investment income, so none of this high income draws NIIT."""
+    rollout = run(
+        Situation(
+            horizon_months=12,
+            accounts=(account(ALICE), account(PAYROLL), account(IRS)),
+            recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, monthly_wage, income=True),),
+        ),
+        indexation,
+    )
+    assert rollout.trace is not None
+    breakdowns = by_jurisdiction(rollout.trace.events.tax_breakdowns)
+    assert usd(breakdowns[CALIFORNIA]["taxable_income_surtax_quanta"]) == surtax
+    assert usd(breakdowns[CALIFORNIA]["total_tax_quanta"]) == california_tax
+    assert usd(breakdowns[FEDERAL]["net_investment_income_tax_quanta"]) == 0
+    assert usd(breakdowns[FEDERAL]["taxable_income_surtax_quanta"]) == 0
+
+
+def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics(indexation: TaxIndexation) -> None:
     """Pinned deterministic e2e: wages + a long-held asset sale +
     federal/CA year tax + estimated-tax safe harbor + true-up.
 
@@ -365,7 +480,8 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, wage(50_000), income=True),),
             sales={6: (sale("alice_long_sale", LotId("alice_long_vti"), VTI, quantity=100.0),)},
             prices={VTI: [280.0] * 14},
-        )
+        ),
+        indexation,
     )
     assert rollout.trace is not None
     accruals = by_jurisdiction(rollout.trace.events.tax_accruals)
@@ -393,7 +509,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
     assert units_remaining(rollout, LotId("alice_long_vti"), 13) == 0.0
 
 
-def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
+def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics(indexation: TaxIndexation) -> None:
     """Pinned tax aggregation e2e: wages plus two asset sales.
 
     Alice earns $50,000.04 after cent-rounded monthly paychecks, sells one
@@ -420,7 +536,8 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
                 )
             },
             prices={VTI: [200.0] * 13, IXUS: [200.0] * 13},
-        )
+        ),
+        indexation,
     )
     assert rollout.trace is not None
     accrual = rollout.trace.events.tax_accruals.row(0, named=True)
@@ -438,7 +555,7 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
     assert usd(gain.short_term_gain) == pytest.approx(1_500.0)
 
 
-def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability() -> None:
+def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(indexation: TaxIndexation) -> None:
     """Pinned obligation e2e: taxes are due-now outflows.
 
     Alice earns $50k and spends every paycheck on rent, so estimated
@@ -459,7 +576,8 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability() 
             ),
             funded_by=VTI,
             prices={VTI: [100.0] * 14},
-        )
+        ),
+        indexation,
     )
     assert rollout.trace is not None
     payments = tax_transfers(rollout)
@@ -491,7 +609,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability() 
     assert rollout.stop is None
 
 
-def test_explicit_empty_tax_profiles_means_no_year_end_accrual() -> None:
+def test_explicit_empty_tax_profiles_means_no_year_end_accrual(indexation: TaxIndexation) -> None:
     """An explicit no-tax scenario emits no year-end accruals."""
     rollout = run(
         Situation(
@@ -501,14 +619,15 @@ def test_explicit_empty_tax_profiles_means_no_year_end_accrual() -> None:
             recurring_transfers=(
                 monthly("alice_paycheck", PAYROLL, ALICE, Decimal(5000), income=True, end_month=None),
             ),
-        )
+        ),
+        indexation,
     )
     assert rollout.trace is not None
     assert rollout.trace.events.tax_accruals.is_empty()
     assert not [row for entry in rollout.trace.books for row in entry.tax_liabilities]
 
 
-def test_year_end_tax_payment_debits_agent_cash() -> None:
+def test_year_end_tax_payment_debits_agent_cash(indexation: TaxIndexation) -> None:
     """The year-end tax accrual is followed by a January true-up
     payment to the tax authority. Alice earns $200k of W-2 income
     across year 0; with no prior-year safe-harbor amount configured,
@@ -518,7 +637,8 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
             horizon_months=13,
             accounts=(account(ALICE), account(PAYROLL), account(IRS)),
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, wage(200_000), income=True),),
-        )
+        ),
+        indexation,
     )
     assert rollout.trace is not None
 
@@ -543,7 +663,7 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
     assert cash(rollout, IRS, 13) == pytest.approx(52_292.60, abs=0.02)
 
 
-def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
+def test_tax_payment_can_trigger_rollout_failure_when_unfunded(indexation: TaxIndexation) -> None:
     """When the tax-payment true-up exceeds the agent's cash plus
     liquidity-policy sale proceeds, the rejected payment stops the path.
     The "mandatory obligation that fails the scenario if unpaid" pattern
@@ -558,7 +678,8 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
                 # Spend it all on rent, with payroll as the sink.
                 monthly("alice_rent", ALICE, PAYROLL, wage(500_000), income=False),
             ),
-        )
+        ),
+        indexation,
     )
     # Alice has $0 cash after year 0 (income == rent), no assets,
     # but the tax bill arrives in January. Failure fires at month 12.
@@ -567,6 +688,46 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
     assert failures.height == 1
     assert failures.row(0, named=True)["month_index"] == 12
     assert rollout.stop == RejectedAction(month=12, action_index=0)
+
+
+def test_cpi_indexed_amounts_follow_each_januarys_cpi() -> None:
+    """$150,000 of wages in each of two years; CPI is flat through year 0 and half again higher from
+    year 1's January, so year 0 applies the 2024 tables and year 1 their indexed amounts at 1.5.
+
+    Year 0: federal 150,000 - 14,600 = 135,400:
+      10% × 11600 + 12% × 35550 + 22% × 53375 + 24% × 34875 = 25538.50
+    California 150,000 - 5,363 = 144,637:
+      104.12 + 285.44 + 571.00 + 907.32 + 1141.52 + 9.3% × 76287 = 10104.091, rounded once: 10104.09
+    Year 1: deductions 21,900 and 8,044.50, and every bracket edge × 1.5. Federal 128,100:
+      10% × 17400 + 12% × 53325 + 22% × 57375 = 1740 + 6399 + 12622.50 = 20761.50
+    California 141,955.50:
+      1% × 15618 + 2% × 21408 + 4% × 21412.50 + 6% × 22683 + 8% × 21403.50 + 9.3% × 39430.50
+      = 156.18 + 428.16 + 856.50 + 1360.98 + 1712.28 + 3667.0365 = 8181.1365, rounded once: 8181.14
+    """
+    rollout = run(
+        Situation(
+            horizon_months=24,
+            accounts=(account(ALICE), account(PAYROLL), account(IRS)),
+            recurring_transfers=(
+                monthly("alice_paycheck", PAYROLL, ALICE, Decimal(12_500), income=True, end_month=23),
+            ),
+            cpi=(100,) * 12 + (150,) * 13,
+        ),
+        CpiIndexedLaw(start_year=2024, law_year_to_start=Fraction(1)),
+    )
+    assert rollout.trace is not None
+    breakdowns = {
+        (row["jurisdiction_id"], row["month_index"]): row
+        for row in rollout.trace.events.tax_breakdowns.iter_rows(named=True)
+    }
+    assert {key: usd(row["total_tax_quanta"]) for key, row in breakdowns.items()} == {
+        (FEDERAL, 11): 25_538.50,
+        (CALIFORNIA, 11): 10_104.09,
+        (FEDERAL, 23): 20_761.50,
+        (CALIFORNIA, 23): 8_181.14,
+    }
+    assert usd(breakdowns[(FEDERAL, 23)]["standard_deduction_quanta"]) == 21_900
+    assert usd(breakdowns[(CALIFORNIA, 23)]["standard_deduction_quanta"]) == 8_044.50
 
 
 if __name__ == "__main__":

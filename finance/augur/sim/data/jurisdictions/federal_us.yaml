@@ -8,9 +8,25 @@
 # (lower_of_this_bracket, upper_of_this_bracket].
 #
 # LTCG brackets are walked separately on long-term capital gains
-# (holding period >= 12 months); the LTCG bracket position depends
-# on total taxable income (ordinary + LTCG combined) per §1(h).
+# (holding period >= 12 months) plus qualified dividends (§1(h)(11));
+# the LTCG bracket position depends on total taxable income (ordinary
+# + LTCG + qualified dividends combined) per §1(h).
 jurisdiction_id: federal_us
+# The amounts below are 2024 law: the IRS's 2024 inflation adjustments (Rev. Proc. 2023-34).
+law_year: 2024
+
+indexation:
+  # IRC 1(j)(2) rate tables, re-prescribed each year under 1(j)(3) by the chained CPI-U
+  # cost-of-living adjustment of 1(f)(3).
+  ordinary_income_brackets: cpi
+  # IRC 1(j)(5)(B) 0%/15% and 15%/20% breakpoints, increased each year under 1(j)(5)(C).
+  ltcg_brackets: cpi
+  # IRC 63(c)(7)(A)(iii) $12,000, increased each year under 63(c)(7)(B).
+  standard_deduction: cpi
+  # IRC 1211(b)(1): $3,000, with no inflation adjustment.
+  max_capital_loss_ordinary_offset: fixed
+  # IRC 1411(b): $200,000, with no inflation adjustment.
+  net_investment_income_tax: fixed
 
 ordinary_income_brackets:
   single:
@@ -40,3 +56,11 @@ level: federal
 # hence exempts_own_issue is left false.
 exempt_interest_from_levels:
   - state
+
+# IRC 1411 net investment income tax. IRS Form 8960 (2025) instructions, Part III: 3.8% of
+# the smaller of net investment income and MAGI over $200,000 for a single filer.
+# https://www.irs.gov/instructions/i8960
+net_investment_income_tax:
+  rate: 0.038
+  threshold:
+    single: 200000

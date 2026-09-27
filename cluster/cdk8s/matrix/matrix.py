@@ -13,7 +13,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -32,9 +31,6 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpec,
     HttpRouteSpecRules,
     HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesMatches,
-    HttpRouteSpecRulesMatchesPath,
-    HttpRouteSpecRulesMatchesPathType,
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -51,6 +47,7 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.gateway_api.http_route import RouteMatch
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/matrix"
 NAMESPACE = "matrix"
@@ -122,7 +119,7 @@ def _database(scope: Construct) -> None:
         storage_class="local-path-ovh",
         size="10Gi",
         # CNPG auto-generates credentials in secret matrix-db-app
-        initdb=ClusterSpecBootstrapInitdb(database="synapse", owner="synapse", locale_c_type="C", locale_collate="C"),
+        initdb=cnpg.same_owner_initdb("synapse", locale_c_type="C", locale_collate="C"),
     )
 
 
@@ -251,14 +248,16 @@ def _synapse_routes(scope: Construct) -> None:
         scope,
         "synapse-route",
         metadata=metadata(SYNAPSE, NAMESPACE),
-        hostname="matrix.allegedly.works",
+        hostnames=["matrix.allegedly.works"],
         backend=SYNAPSE,
         port=_SYNAPSE_PORT,
         hsts=False,
         listener=None,
     )
     # Federation and well-known endpoints on the apex domain. More specific path matches
-    # take priority over the website catch-all route.
+    # take priority over the website catch-all route. Two independent rules, not one
+    # https_route() call: each needs its own single-prefix match (Gateway API's own
+    # per-rule structure), and both happen to share this backend.
     HttpRoute(
         scope,
         "federation-route",
@@ -268,13 +267,7 @@ def _synapse_routes(scope: Construct) -> None:
             hostnames=["allegedly.works"],
             rules=[
                 HttpRouteSpecRules(
-                    matches=[
-                        HttpRouteSpecRulesMatches(
-                            path=HttpRouteSpecRulesMatchesPath(
-                                type=HttpRouteSpecRulesMatchesPathType.PATH_PREFIX, value=prefix
-                            )
-                        )
-                    ],
+                    matches=[RouteMatch.path_prefix(prefix).to_spec()],
                     backend_refs=[HttpRouteSpecRulesBackendRefs(name=SYNAPSE, port=_SYNAPSE_PORT)],
                 )
                 for prefix in ("/_matrix", "/.well-known/matrix")
@@ -351,7 +344,7 @@ def _element(scope: Construct) -> None:
         scope,
         "element-route",
         metadata=metadata(_ELEMENT, NAMESPACE),
-        hostname="chat.allegedly.works",
+        hostnames=["chat.allegedly.works"],
         backend=_ELEMENT,
         port=80,
         hsts=False,

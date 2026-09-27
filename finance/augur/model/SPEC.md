@@ -341,10 +341,9 @@ how much they move an allocation answer.
    than clamped. The second is the smaller change and does not claim rigor this state vector
    cannot support.
 
-9. **No equity distribution.** `IncomeCategory` has no qualified-dividend rate, so an equity
-   dividend routed through the interest path would be overtaxed as ordinary income. Equity
-   emits a total-return price and no payout — consistent, but it means dividend TIMING and its
-   tax treatment are absent.
+9. **No equity distribution.** Equity emits a total-return price and no payout — consistent,
+   but it means dividend TIMING and its tax treatment are absent until the path is split into
+   price return plus a qualified-dividend payout.
 10. **No real yield, so a ladder cannot roll.** A ladder held from scenario start IS
     representable — the sim's `BondHolding(inflation_indexed=True)` needs only the CPI path,
     which this model emits, and it carries no duration risk because it is never marked. What is

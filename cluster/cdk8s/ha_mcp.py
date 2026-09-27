@@ -10,9 +10,9 @@ cluster/k8s/agents/ha-mcp/app/image-pins/kustomization.yaml) overrides it at
 `kustomize build` time via Flux's image-automation marker. The ha-mcp container's own
 image is pinned by digest directly and isn't Flux-managed.
 
-The facade's static bearer token is minted by ESO's Password generator (same pattern
-as ssh_mcp/backend.py's `_bearer_credentials`), not hand-written SOPS -- ducktape mints
-this value itself, so there is no ciphertext to keep in sync with the cluster's age
+The facade's static bearer token is minted by ESO's Password generator
+(`external_secrets.minted_secret.mint_bearer_secret`), not hand-written SOPS -- ducktape
+mints this value itself, so there is no ciphertext to keep in sync with the cluster's age
 recipients.
 """
 
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     Capability,
     ConfigMap,
@@ -45,33 +45,28 @@ from cdk8s_plus_34 import (
     Volume,
 )
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTargetCreationPolicy,
-    ExternalSecretSpecTargetTemplate,
-)
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecEndpoints
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
+from cluster.cdk8s.flux import (
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+    kustomize_kustomization,
+)
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.home_assistant.app import HA_MCP_TOKEN
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
+from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
-from cluster.cdk8s.providers.external_secrets.external_secret import (
-    DataFrom,
-    ExternalSecret,
-    SecretStoreRef,
-    remote_data,
-)
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 
 _NAMESPACE = "ha-mcp"
@@ -89,33 +84,6 @@ _APP_FACADE_PORT = 8765
 _APP_METRICS_PORT = 9090
 _APP_LABELS = {"app.kubernetes.io/name": _APP_NAME}
 _APP_DATA_DIR = "/data"
-
-
-def _bearer_credentials(scope: Construct) -> None:
-    """The facade's static bearer token: ducktape mints it itself (same pattern as
-    ssh_mcp/backend.py's `_bearer_credentials`), so ESO's Password generator creates it
-    directly -- no hand-written SOPS ciphertext to keep in sync with cluster recipients.
-
-    agentplane-staging copies it with ESO through a store that can read this one Secret
-    (cluster/cdk8s/agentplane/staging.py): this namespace also holds the Home Assistant admin
-    token, which no store may reach.
-    """
-    Password(
-        scope,
-        "bearer-password-generator",
-        metadata=metadata(_BEARER_SECRET_NAME, _NAMESPACE),
-        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
-        scope,
-        "bearer-external-secret",
-        name=_BEARER_SECRET_NAME,
-        namespace=_NAMESPACE,
-        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[DataFrom.from_password_generator(_BEARER_SECRET_NAME)],
-        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={_BEARER_SECRET_KEY: "{{ .password }}"}),
-    )
 
 
 def _home_assistant_token(scope: Construct) -> None:
@@ -151,7 +119,21 @@ class HaMcpApp(Construct):
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
         forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=_NAMESPACE)
-        _bearer_credentials(self)
+        # The facade's static bearer token: ducktape mints it itself, so ESO's Password
+        # generator creates it directly -- no hand-written SOPS ciphertext to keep in sync
+        # with cluster recipients.
+        #
+        # agentplane-staging copies it with ESO through a store that can read this one Secret
+        # (cluster/cdk8s/agentplane/staging.py): this namespace also holds the Home Assistant admin
+        # token, which no store may reach.
+        mint_bearer_secret(
+            self,
+            "bearer-external-secret",
+            name=_BEARER_SECRET_NAME,
+            namespace=_NAMESPACE,
+            key=_BEARER_SECRET_KEY,
+            creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        )
         config_map = self._add_config_map()
         deployment = self._add_deployment(config_map)
         self._add_service(deployment)
@@ -217,7 +199,7 @@ class HaMcpApp(Construct):
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
             automount_service_account_token=False,
         )
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
+        apply_pod_spec_patches(deployment)
 
         tmp_volume = Volume.from_empty_dir(self, "tmp-volume", "tmp")
         data_volume = Volume.from_empty_dir(self, "data-volume", "data")

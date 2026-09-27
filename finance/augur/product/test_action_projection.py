@@ -1,7 +1,7 @@
 """One executed session supplies the product's wealth, payment, sale and tax views.
 
 Stipulated $100/$50 share prices, $40 basis and synthetic 10% LTCG tax come from
-the runnable monthly-actions example; these are accounting controls, not forecasts.
+the shared funded-bill situation; these are accounting controls, not forecasts.
 """
 
 from collections.abc import Callable
@@ -36,11 +36,10 @@ from finance.augur.sim.testing.bonds import (
     cpi_series,
     dated,
 )
-from finance.augur.sim.world import World
-from finance.augur.x.monthly_actions.policy import decide
 
 # Aliased: the bond situations' `compose` holds the plain name.
-from finance.augur.x.monthly_actions.run import HOUSEHOLD, STOCK, compose as example_world, situation
+from finance.augur.sim.testing.funded_bill import HOUSEHOLD, STOCK, compose as example_world, sell_then_pay, situation
+from finance.augur.sim.world import World
 
 type Compose = Callable[[int], World]
 EXAMPLE_HORIZON = 13
@@ -50,7 +49,7 @@ def _run(
     worlds: Compose,
     ids: list[int],
     capture: Literal["summary", "dense", "forensic"],
-    policy: Callable[[list[Decision]], list[DecisionActions]] = decide,
+    policy: Callable[[list[Decision]], list[DecisionActions]] = sell_then_pay,
     *,
     actor_id: AgentId = HOUSEHOLD,
 ) -> list[Rollout]:
@@ -178,7 +177,7 @@ def test_compact_population_and_selected_detail_share_observed_support(
 
 def test_attempted_consumption_gap_does_not_duplicate_claims_or_invent_future_demand(example: Compose) -> None:
     def consume_after_bills(batch: list[Decision]) -> list[DecisionActions]:
-        responses = decide(batch)
+        responses = sell_then_pay(batch)
         return [
             DecisionActions(
                 response.rollout_id,

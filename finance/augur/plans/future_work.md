@@ -53,8 +53,8 @@ because the app has no corresponding input control.
 
 - Preserve the distinction between available payment machinery and full
   jurisdiction-specific safe-harbor, withholding, penalty and refund rules.
-  Calendar/law-year selection, opening YTD facts/carryovers, qualified dividends,
-  NIIT and filing/residency coverage remain scoped requirements, not optional
+  Calendar/law-year selection, opening YTD facts/carryovers, NIIT and
+  filing/residency coverage remain scoped requirements, not optional
   omissions from a report that needs them.
 - Reconcile purchase costs, depreciation, improvements and disposal basis using
   independent cases. Improvements may need their own in-service schedules;

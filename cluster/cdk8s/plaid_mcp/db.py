@@ -13,20 +13,18 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import ServiceAccount, k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesEnsure,
     ClusterSpecManagedRolesPasswordSecret,
 )
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
-    ExternalSecretSpecTargetTemplate,
 )
 
 from cluster.cdk8s import cilium, cnpg
+from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
@@ -41,7 +39,6 @@ _CLUSTER = "plaid-mcp-db"
 _DATABASE = "plaidmcp"
 _READONLY_ROLE = "plaid_ro"
 _READONLY_SECRET = "plaid-mcp-db-readonly"
-_READONLY_GENERATOR = "plaid-mcp-db-readonly-generator"
 # The namespace holding a copy of the read-only credentials, for Haku's ad-hoc queries, and the
 # identity that copy is read with.
 _READONLY_CONSUMER = "haku-sandbox"
@@ -84,36 +81,23 @@ def _cluster(chart: Chart) -> None:
             ]
         ),
         # CNPG auto-generates credentials in secret plaid-mcp-db-app.
-        initdb=ClusterSpecBootstrapInitdb(database=_DATABASE, owner=_DATABASE),
+        initdb=cnpg.same_owner_initdb(_DATABASE),
     )
 
 
 def _readonly_credentials(chart: Chart) -> None:
     """A stable read-only password: ESO generates it once, with symbols disabled so the
     templated DATABASE_URL is safe without URL escaping."""
-    Password(
-        chart,
-        "readonly-password-generator",
-        metadata=metadata(_READONLY_GENERATOR, NAMESPACE),
-        spec=PasswordSpec(length=40, digits=8, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    mint_db_role_secret(
         chart,
         "readonly-external-secret",
         name=_READONLY_SECRET,
         namespace=NAMESPACE,
-        refresh="8760h",
-        data_from=[DataFrom.from_password_generator(_READONLY_GENERATOR)],
-        template=ExternalSecretSpecTargetTemplate(
-            data={
-                "username": _READONLY_ROLE,
-                "password": "{{ .password }}",
-                "host": _PRIMARY_HOST,
-                "port": "5432",
-                "dbname": _DATABASE,
-                "DATABASE_URL": f"postgresql://{_READONLY_ROLE}:{{{{ .password }}}}@{_PRIMARY_HOST}:5432/{_DATABASE}",
-            }
-        ),
+        role=_READONLY_ROLE,
+        host=_PRIMARY_HOST,
+        port=5432,
+        database=_DATABASE,
+        secret_type=None,
     )
 
 

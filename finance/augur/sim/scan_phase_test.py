@@ -45,6 +45,7 @@ from finance.augur.sim.prepared import (
 from finance.augur.sim.property import Housing
 from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, TaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import World
 
@@ -110,7 +111,8 @@ def taxed_by(world: World, *jurisdiction_ids: JurisdictionId, prior_year_tax: De
                 ),
                 {id_: load_jurisdiction(id_) for id_ in jurisdiction_ids},
                 quantum=QUANTUM,
-            )
+            ),
+            indexation=FixedNominalLaw(),
         )
     )
 

@@ -263,7 +263,7 @@ def _gateway(scope: Construct) -> None:
         scope,
         "route",
         metadata=metadata(NAME, namespace.NAME),
-        hostname="s3.allegedly.works",
+        hostnames=["s3.allegedly.works"],
         backend=NAME,
         port=_PORT,
         timeout="3600s",

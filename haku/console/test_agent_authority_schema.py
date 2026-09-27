@@ -699,9 +699,9 @@ def test_database_at_head_with_missing_orm_column_fails_validation(db_url: str) 
     engine = create_engine(db_url)
     try:
         with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE provider_connections DROP COLUMN provider_name CASCADE"))
+            conn.execute(text("ALTER TABLE operators DROP COLUMN updated_at CASCADE"))
 
-        with pytest.raises(ProgrammingError, match=r"provider_connections\.provider_name"):
+        with pytest.raises(ProgrammingError, match=r"operators\.updated_at"):
             apply_migrations(db_url)
     finally:
         engine.dispose()

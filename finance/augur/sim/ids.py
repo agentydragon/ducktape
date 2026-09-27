@@ -2,6 +2,10 @@
 
 Each is a plain `str` at runtime and on the wire; the distinct types keep one kind of
 identity from standing in for another under type checking.
+
+Labels, not entity identities, stay plain `str`: cause IDs, obligation IDs (a recurring
+bill's cause-ID stem), consumption component IDs, `PreparedSeries.series_id` (the wire
+form of a typed series key), Plaid account IDs and catalog source IDs.
 """
 
 from typing import NewType

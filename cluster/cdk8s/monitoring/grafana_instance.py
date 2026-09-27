@@ -13,12 +13,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb, ClusterSpecBootstrapInitdbSecret
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-)
 from grafana_grafana_crds.org.integreatly.grafana import (
     GrafanaSpec,
     GrafanaSpecClient,
@@ -40,7 +34,7 @@ from grafana_grafanadashboard_crds.org.integreatly.grafana import (
 from grafana_grafanadatasource_crds.org.integreatly.grafana import GrafanaDatasourceSpecDatasource
 
 from cluster.cdk8s import cnpg
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
@@ -185,15 +179,15 @@ def _grafana(chart: Chart) -> None:
             ),
         ),
     )
-    HttpRoute(
+    https_route(
         chart,
         "route",
         metadata=metadata(_NAME, _NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=["grafana.allegedly.works"],
-            rules=[HttpRouteSpecRules(backend_refs=[HttpRouteSpecRulesBackendRefs(name="grafana-service", port=3000)])],
-        ),
+        hostnames=["grafana.allegedly.works"],
+        backend="grafana-service",
+        port=3000,
+        hsts=False,
+        listener=None,
     )
 
 
@@ -257,6 +251,21 @@ def _datasources(chart: Chart) -> None:
                     "filterBySpanID": False,
                 },
             },
+        ),
+    )
+    # The Alertmanager that Mimir's ruler sends to: its alert groups and silences in
+    # Grafana, without exposing Alertmanager itself.
+    _datasource(
+        chart,
+        "alertmanager",
+        GrafanaDatasourceSpecDatasource(
+            name="Alertmanager",
+            type="alertmanager",
+            access="proxy",
+            url="http://alertmanager-operated.monitoring.svc.cluster.local:9093",
+            is_default=False,
+            editable=True,
+            json_data={"implementation": "prometheus", "handleGrafanaManagedAlerts": False},
         ),
     )
 

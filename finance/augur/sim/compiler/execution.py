@@ -77,6 +77,7 @@ from finance.augur.sim.scenario import (
     FixedAmount,
     InitialAccountBalance,
     InitialLot,
+    InterestIncome,
     MortgageInterestDeductionPolicy,
     PrimaryResidenceAssignment,
     PrivateEquityTenderPolicy,
@@ -259,7 +260,10 @@ def compile_jurisdictions(
 
     levels = {jurisdiction_id: jurisdiction.level for jurisdiction_id, jurisdiction in jurisdictions.items()}
     issuers = {bond.issuer_jurisdiction_id for bond in bonds} | {
-        tax_slice.issuer_jurisdiction_id for distribution in distributions for tax_slice in distribution.tax_character
+        tax_slice.income_category.issuer_jurisdiction_id
+        for distribution in distributions
+        for tax_slice in distribution.tax_character
+        if isinstance(tax_slice.income_category, InterestIncome)
     }
     for issuer_id in issuers:
         if issuer_id is not None and issuer_id not in levels:
@@ -350,7 +354,7 @@ def compile_distribution(distribution: SecurityDistribution) -> PreparedDistribu
         to_account_id=distribution.to_account_id,
         tax_character=tuple(
             PreparedDistributionSlice(
-                fraction_ppb=rate_to_ppb(tax_slice.fraction), issuer_jurisdiction_id=tax_slice.issuer_jurisdiction_id
+                fraction_ppb=rate_to_ppb(tax_slice.fraction), income_category=tax_slice.income_category
             )
             for tax_slice in distribution.tax_character
         ),

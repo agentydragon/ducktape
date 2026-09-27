@@ -6,11 +6,148 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
+    name = "gmail_client",
+    srcs = ["gmail_client.py"],
+    deps = [
+        "//gmail_api:filters",
+        "//gmail_api:labels",
+        "//gmail_api:messages",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "google_calendar_client",
+    srcs = ["google_calendar_client.py"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//python_dateutil",
+    ],
+)
+
+py_library(
+    name = "google_service",
+    srcs = ["google_service.py"],
+    deps = [
+        "@pypi//google_api_python_client",
+        "@pypi//google_auth",
+    ],
+)
+
+py_library(
+    name = "google_discovery",
+    srcs = ["google_discovery.py"],
+    deps = [
+        "@pypi//fastmcp_slim",
+        "@pypi//google_api_python_client",  # keep: discovery docs loaded via importlib.resources (no import stmt)
+        "@pypi//mcp",
+        "@pypi//mcp_types",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "gmail",
+    srcs = ["gmail.py"],
+    deps = [
+        ":gmail_client",
+        ":google_discovery",
+        ":google_service",
+        "//gmail_api:filters",
+        "//gmail_api:labels",
+        "//gmail_api:messages",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "google_calendar",
+    srcs = ["google_calendar.py"],
+    deps = [
+        ":google_calendar_client",
+        ":google_service",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_gmail",
+    size = "medium",
+    srcs = ["test_gmail.py"],
+    deps = [
+        ":gmail",
+        ":gmail_client",
+        "//:conftest",
+        "//gmail_api:filters",
+        "//gmail_api:labels",
+        "//gmail_api:messages",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_gmail_client",
+    srcs = ["test_gmail_client.py"],
+    deps = [
+        ":gmail_client",
+        "//:conftest",
+        "//gmail_api:filters",
+        "//gmail_api:labels",
+        "//gmail_api:messages",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_google_calendar",
+    srcs = ["test_google_calendar.py"],
+    deps = [
+        ":google_calendar",
+        ":google_calendar_client",
+        "//:conftest",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_google_calendar_client",
+    srcs = ["test_google_calendar_client.py"],
+    deps = [
+        ":google_calendar_client",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_google_discovery",
+    srcs = ["test_google_discovery.py"],
+    deps = [
+        ":google_discovery",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "server",
     srcs = ["server.py"],
     deps = [
-        "//haku/console/tools:gmail",
-        "//haku/console/tools:google_calendar",
+        ":gmail",
+        ":google_calendar",
         "//mcp_infra:static_bearer",
         "@pypi//starlette",
         "@pypi//uvicorn",

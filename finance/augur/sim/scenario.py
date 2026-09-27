@@ -161,7 +161,23 @@ class InterestIncome(BaseModel):
     )
 
 
-type TransferIncomeCategory = Annotated[OrdinaryIncome | InterestIncome, Field(discriminator="category")]
+# TODO: apply the holding-period test (IRC 1(h)(11)(B)(iii)) to the holder's lots rather than
+# trusting the declaration.
+class QualifiedDividendIncome(BaseModel):
+    """Dividends taxed at the long-term capital-gain rates where a jurisdiction has them, else as ordinary.
+
+    Declared simplification: the declaration says "qualified" and the engine trusts it; the
+    holding-period test (IRC 1(h)(11)(B)(iii)) is not checked.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    category: Literal[IncomeCategory.QUALIFIED_DIVIDEND] = IncomeCategory.QUALIFIED_DIVIDEND
+
+
+type TransferIncomeCategory = Annotated[
+    OrdinaryIncome | InterestIncome | QualifiedDividendIncome, Field(discriminator="category")
+]
 ORDINARY_INCOME = OrdinaryIncome()
 
 type TransferDeductionCategory = Literal["ordinary"]
@@ -331,22 +347,20 @@ class BondHolding(BaseModel):
 
 
 class DistributionTaxSlice(BaseModel):
-    """What fraction of a distribution carries one issuer's tax character.
+    """What fraction of a distribution carries one tax character.
 
     Real funds are mixed and publish the split, so a single tag would be a lie: an aggregate
-    bond fund is part Treasury (state-exempt) and part corporate (exempt nowhere), and a
-    national muni fund is federally exempt throughout while only its in-state slice is exempt
-    at the state level. Splitting the payout into slices reuses the existing per-issuer
-    exemption machinery unchanged — this is the muni-bond path applied several times with
-    weights, not new tax machinery.
+    bond fund is part Treasury (state-exempt) and part corporate (exempt nowhere), a national
+    muni fund is federally exempt throughout while only its in-state slice is exempt at the
+    state level, and an equity fund's dividends are part qualified and part ordinary. Each
+    slice accrues to the income source it names, so the per-issuer exemption and
+    qualified-dividend rates apply to it unchanged.
     """
 
     model_config = ConfigDict(frozen=True)
 
     fraction: PositiveFloat
-    # Same holder-relative meaning as `BondHolding.issuer_jurisdiction_id`: whether this slice
-    # is taxable is a relation between the issuer and the holder's jurisdictions.
-    issuer_jurisdiction_id: JurisdictionId | None = None
+    income_category: TransferIncomeCategory
 
 
 class SecurityDistribution(BaseModel):
@@ -364,11 +378,6 @@ class SecurityDistribution(BaseModel):
     Scoped to one (agent, holding account, asset) pool because that is what determines both the
     units paid on and where the cash lands. Two positions in the same fund in the same account
     are one pool, not two payouts.
-
-    Every slice is `InterestIncome` today, which is right for the bond funds this exists for and
-    wrong for an equity fund: `IncomeCategory` has no qualified-dividend rate, so an equity
-    distribution routed through here would be overtaxed as ordinary income. Distributions on an
-    equity fund need that third category first.
     """
 
     model_config = ConfigDict(frozen=True)

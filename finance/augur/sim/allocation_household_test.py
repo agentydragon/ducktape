@@ -22,7 +22,13 @@ from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, currency_amount_to_quanta, quantity_scale_for_asset
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
-from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
+from finance.augur.sim.jurisdictions import (
+    Jurisdiction,
+    JurisdictionLevel,
+    StatutoryAmount,
+    StatutoryIndexation,
+    TaxBracket,
+)
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import MAX_COUNT
 from finance.augur.sim.prepared import (
@@ -40,6 +46,7 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, TaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import World
 
@@ -59,6 +66,16 @@ TAX = Jurisdiction(
     ltcg_brackets={"single": [TaxBracket(upper="Infinity", rate=0.1)]},
     standard_deduction={"single": Decimal(0)},
     max_capital_loss_ordinary_offset={"single": Decimal(0)},
+    law_year=2024,
+    indexation=dict.fromkeys(
+        (
+            StatutoryAmount.ORDINARY_INCOME_BRACKETS,
+            StatutoryAmount.LTCG_BRACKETS,
+            StatutoryAmount.STANDARD_DEDUCTION,
+            StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET,
+        ),
+        StatutoryIndexation.FIXED,
+    ),
 )
 
 
@@ -176,7 +193,8 @@ def compose(case: Situation, rollout_id: int) -> World:
                     TaxProfile(agent_id=ALICE, jurisdiction_ids=[SYNTHETIC], tax_authority_agent_id=WORLD),
                     {SYNTHETIC: TAX},
                     quantum=QUANTUM,
-                )
+                ),
+                indexation=FixedNominalLaw(),
             )
         )
     for holding_pool in case.pools:
@@ -356,7 +374,9 @@ def test_empty_buyable_pool_pays_coupon_only_after_first_purchase() -> None:
                     holding_account_id=BROKERAGE,
                     asset_id=AssetId(STOCK.symbol),
                     to_account_id=CHECKING,
-                    tax_character=(PreparedDistributionSlice(fraction_ppb=1_000_000_000, issuer_jurisdiction_id=None),),
+                    tax_character=(
+                        PreparedDistributionSlice(fraction_ppb=1_000_000_000, income_category=InterestIncome()),
+                    ),
                 ),
             ),
             interest_sources=(InterestIncome(issuer_jurisdiction_id=None),),

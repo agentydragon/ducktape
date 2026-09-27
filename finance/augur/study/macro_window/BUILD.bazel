@@ -1,5 +1,11 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
+# Only study/ and x/ may depend on this package: finance/augur/README.md § Stability tiers.
+package(default_visibility = [
+    "//finance/augur/study:__subpackages__",
+    "//finance/augur/x:__subpackages__",
+])
+
 py_library(
     name = "compare",
     srcs = ["compare.py"],

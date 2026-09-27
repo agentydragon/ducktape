@@ -18,7 +18,6 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncIterator, Callable, Iterable
-from enum import StrEnum
 from typing import Annotated, Any, ClassVar, Literal, cast
 from uuid import UUID
 
@@ -40,18 +39,6 @@ router = APIRouter(tags=["console-events"])
 OPERATOR_SESSION_EXPIRED_CLOSE_CODE = 4001
 
 
-# TODO: maybe this should be a bool (`connected: bool`) rather than a two-member enum.
-class ConnectionStatus(StrEnum):
-    CONNECTED = "connected"
-    DISCONNECTED = "disconnected"
-
-
-class OperatorConnectionChangedEvent(BaseModel):
-    event_type: Literal["operator_connection_changed"] = "operator_connection_changed"
-    connection: str
-    status: ConnectionStatus
-
-
 class ConsoleHelloEvent(BaseModel):
     event_type: Literal["hello"] = "hello"
 
@@ -61,7 +48,7 @@ class ToolCallsChangedEvent(BaseModel):
     tool_call_id: str
 
 
-type ConsoleEvent = ToolCallsChangedEvent | OperatorConnectionChangedEvent
+type ConsoleEvent = ToolCallsChangedEvent
 type ConsoleEventListener = Callable[[UUID, ConsoleEvent], None]
 
 

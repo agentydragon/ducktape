@@ -16,7 +16,14 @@ import pytest_bazel
 
 from finance.augur.sim.compiler.tax import compile_income_sources, compile_profile
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
-from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket, load_jurisdiction
+from finance.augur.sim.jurisdictions import (
+    Jurisdiction,
+    JurisdictionLevel,
+    StatutoryAmount,
+    StatutoryIndexation,
+    TaxBracket,
+    load_jurisdiction,
+)
 from finance.augur.sim.scenario import OrdinaryIncome, TaxProfile
 
 FEDERAL_US = JurisdictionId("federal_us")
@@ -54,6 +61,26 @@ def test_a_profile_whose_jurisdictions_cap_the_offset_differently_is_refused() -
         compile_profile(
             _alice(FEDERAL_US, JurisdictionId("california")),
             {FEDERAL_US: federal, JurisdictionId("california"): california},
+            quantum=CENT,
+        )
+
+
+def test_a_profile_whose_jurisdictions_index_the_offset_differently_is_refused() -> None:
+    """Equal caps today diverge in a CPI-indexed year once one jurisdiction indexes its cap."""
+
+    california = load_jurisdiction(JurisdictionId("california"))
+    indexing = california.model_copy(
+        update={
+            "indexation": {
+                **california.indexation,
+                StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET: StatutoryIndexation.CPI,
+            }
+        }
+    )
+    with pytest.raises(ValueError, match="cap the capital-loss ordinary offset differently"):
+        compile_profile(
+            _alice(FEDERAL_US, JurisdictionId("california")),
+            {FEDERAL_US: load_jurisdiction(FEDERAL_US), JurisdictionId("california"): indexing},
             quantum=CENT,
         )
 

@@ -20,7 +20,7 @@ import logging
 import secrets
 import time
 from dataclasses import dataclass
-from typing import Annotated, Any, cast
+from typing import Annotated, cast
 from urllib.parse import urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
@@ -31,7 +31,6 @@ from pydantic import BaseModel, Field
 from starlette.requests import HTTPConnection
 
 from haku.console.config import OperatorOidcConfig
-from haku.console.identity.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.identity.operator_identity import OperatorIdentityError, VerifiedExternalIdentity
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.identity.operator_login_flow import (
@@ -98,25 +97,19 @@ class OperatorSession:
     expires_at: datetime.datetime
 
 
-def build_oauth(
-    config: OperatorOidcConfig, *, login_flows: PostgresOperatorLoginFlowStore, offline_access: bool = False
-) -> OAuth:
+def build_oauth(config: OperatorOidcConfig, *, login_flows: PostgresOperatorLoginFlowStore) -> OAuth:
     """Build an authlib OAuth registry with the Authentik provider registered.
-
-    `offline_access` adds that scope so Authentik returns a refresh token — requested only when the
-    console persists the operator's token for hostexec (no needless credential otherwise).
 
     Each pending authorization request lives in `login_flows`, which authlib reaches through the
     registry's cache slot — see `operator_login_flow.py` for why it is not in the session cookie.
     """
-    scope = "openid email profile offline_access" if offline_access else "openid email profile"
     oauth = LoginFlowOAuth(cache=login_flows)
     oauth.register(
         name=AUTHENTIK_CLIENT_NAME,
         client_id=config.client_id,
         client_secret=config.client_secret.get_secret_value(),
         server_metadata_url=config.server_metadata_url,
-        client_kwargs={"scope": scope},
+        client_kwargs={"scope": "openid email profile"},
     )
     return oauth
 
@@ -407,11 +400,6 @@ async def callback(request: Request) -> Response:
         # reports it, so the shell can warn instead of letting a background request fail.
         "expires_at": int(time.time()) + OPERATOR_SESSION_MAX_AGE_SECONDS,
     }
-    # Persist the operator's own Authentik token for hostexec (offline_access grants a refresh
-    # token). Only when hostexec is configured — otherwise there is no reader for this credential.
-    # hostexec lives in the console config file, resolved to this flag at create_app.
-    if request.app.state.hostexec_enabled:
-        await _persist_operator_authentik_token(request, identity.operator_id, token)
     logger.info("operator browser login: %s (operator_id=%s)", username, identity.operator_id)
     # The continuation rides the flow, not the session: it is this attempt's destination, so a
     # second tab logging in cannot redirect the first one somewhere it never asked to go.
@@ -422,33 +410,6 @@ async def callback(request: Request) -> Response:
     if request.cookies.get(LOGIN_RETRY_COOKIE_NAME) is not None:
         response.delete_cookie(LOGIN_RETRY_COOKIE_NAME, path=LOGIN_COOKIE_PATH)
     return response
-
-
-async def _persist_operator_authentik_token(request: Request, operator_id: UUID, token: dict[str, Any]) -> None:
-    """Best-effort: store the operator's Authentik token for hostexec. A failure never breaks login
-    (hostexec just won't have a token); the exception is logged."""
-    store = cast(PostgresAuthentikOperatorTokenStore, request.app.state.authentik_operator_token_store)
-    access_token = token.get("access_token")
-    if not isinstance(access_token, str) or not access_token:
-        logger.warning("operator login: Authentik token had no access_token; hostexec will be unavailable")
-        return
-    expires_at_ts = token.get("expires_at")
-    expires_at = (
-        datetime.datetime.fromtimestamp(expires_at_ts, tz=datetime.UTC)
-        if isinstance(expires_at_ts, (int, float)) and not isinstance(expires_at_ts, bool)
-        else None
-    )
-    try:
-        await store.store_login_token(
-            operator_id=operator_id,
-            access_token=access_token,
-            refresh_token=token.get("refresh_token"),
-            token_type=token.get("token_type") or "Bearer",
-            scope=token.get("scope"),
-            expires_at=expires_at,
-        )
-    except Exception:
-        logger.warning("operator login: failed to persist Authentik token for hostexec", exc_info=True)
 
 
 @router.post("/logout", dependencies=[Depends(require_operator_mutation_origin)])

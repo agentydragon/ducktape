@@ -49,7 +49,18 @@ export type PolicyView = components["schemas"]["PolicyView"];
 export type SandboxPresetView = components["schemas"]["SandboxPresetView"];
 export type ThreadDefaults = components["schemas"]["ThreadDefaults"];
 export type Harness = components["schemas"]["Harness"];
-export type ModelCatalog = Record<Harness, string[]>;
+export type ModelOption = components["schemas"]["ModelOption"];
+export type ModelCatalog = components["schemas"]["ModelCatalog"];
+
+/** The models offered for one harness, resolved from the catalog's deduplicated `models`
+ * list via its `harnesses` id references. */
+export function modelsForHarness(catalog: ModelCatalog, harness: Harness): ModelOption[] {
+  const byId = new Map(catalog.models.map((option) => [option.model, option]));
+  return (catalog.harnesses[harness] ?? []).flatMap((id) => {
+    const option = byId.get(id);
+    return option ? [option] : [];
+  });
+}
 export type Decision = components["schemas"]["Decision"];
 export type Connection = components["schemas"]["Connection"];
 export type CallerServiceAccount = components["schemas"]["ServiceAccountRef"];
