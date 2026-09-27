@@ -55,9 +55,6 @@ def haku_openclaw_spike_backup(
             volsync,
         ),
         description=(
-            "Restic/VolSync backup of the Haku OpenClaw spike state to its "
-            "dedicated private SeaweedFS S3 bucket, plus the one-shot restore "
-            "into the optiplex worker PVC that migrates the state off the control "
-            "plane."
+            "Restic/VolSync backup of the Haku OpenClaw spike state to its dedicated private SeaweedFS S3 bucket."
         ),
     )
