@@ -1,6 +1,7 @@
 """Ergonomic wrapper for External Secrets Operator's `ExternalSecret`, following
 cdk8s-plus's own construction pattern: a class named after the kind, and named
-`@classmethod` factories grouping a spec fragment's real variant shapes under one type.
+`@staticmethod` factories grouping a spec fragment's real variant shapes under one type, each
+returning the generated struct.
 """
 
 from __future__ import annotations
@@ -47,28 +48,20 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 
-from cluster.cdk8s.metadata import metadata
-
 
 class SecretStoreRef:
     """Which store an `ExternalSecret` reads from: a cluster-wide `ClusterSecretStore`, or
     a `SecretStore` local to the `ExternalSecret`'s own namespace."""
 
-    def __init__(self, spec: ExternalSecretSpecSecretStoreRef) -> None:
-        self._spec = spec
-
-    def to_spec(self) -> ExternalSecretSpecSecretStoreRef:
-        return self._spec
-
-    @classmethod
-    def cluster(cls, name: str) -> SecretStoreRef:
-        return cls(
-            ExternalSecretSpecSecretStoreRef(kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE, name=name)
+    @staticmethod
+    def cluster(name: str) -> ExternalSecretSpecSecretStoreRef:
+        return ExternalSecretSpecSecretStoreRef(
+            kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE, name=name
         )
 
-    @classmethod
-    def namespaced(cls, name: str) -> SecretStoreRef:
-        return cls(ExternalSecretSpecSecretStoreRef(kind=ExternalSecretSpecSecretStoreRefKind.SECRET_STORE, name=name))
+    @staticmethod
+    def namespaced(name: str) -> ExternalSecretSpecSecretStoreRef:
+        return ExternalSecretSpecSecretStoreRef(kind=ExternalSecretSpecSecretStoreRefKind.SECRET_STORE, name=name)
 
 
 class DataFrom:
@@ -76,42 +69,32 @@ class DataFrom:
     variant type (`extract`, `find`, `sourceRef`); each factory here covers one shape this
     repo actually builds — add another the day a second caller needs it."""
 
-    def __init__(self, spec: ExternalSecretSpecDataFrom) -> None:
-        self._spec = spec
-
-    def to_spec(self) -> ExternalSecretSpecDataFrom:
-        return self._spec
-
-    @classmethod
+    @staticmethod
     def from_password_generator(
-        cls, name: str, *, rewrite: Sequence[ExternalSecretSpecDataFromRewrite] | None = None
-    ) -> DataFrom:
+        name: str, *, rewrite: Sequence[ExternalSecretSpecDataFromRewrite] | None = None
+    ) -> ExternalSecretSpecDataFrom:
         """Source the template's `.password` from the `Password` generator `name`."""
-        return cls(
-            ExternalSecretSpecDataFrom(
-                source_ref=ExternalSecretSpecDataFromSourceRef(
-                    generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                        api_version="generators.external-secrets.io/v1alpha1",
-                        kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                        name=name,
-                    )
-                ),
-                rewrite=list(rewrite) if rewrite else None,
-            )
+        return ExternalSecretSpecDataFrom(
+            source_ref=ExternalSecretSpecDataFromSourceRef(
+                generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
+                    api_version="generators.external-secrets.io/v1alpha1",
+                    kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
+                    name=name,
+                )
+            ),
+            rewrite=list(rewrite) if rewrite else None,
         )
 
-    @classmethod
-    def from_extract(cls, key: str) -> DataFrom:
+    @staticmethod
+    def from_extract(key: str) -> ExternalSecretSpecDataFrom:
         """Copy every property of the store's `key` into the target, under the same names."""
-        return cls(ExternalSecretSpecDataFrom(extract=ExternalSecretSpecDataFromExtract(key=key)))
+        return ExternalSecretSpecDataFrom(extract=ExternalSecretSpecDataFromExtract(key=key))
 
-    @classmethod
-    def from_find_by_name_regexp(cls, regexp: str) -> DataFrom:
+    @staticmethod
+    def from_find_by_name_regexp(regexp: str) -> ExternalSecretSpecDataFrom:
         """Copy every store entry whose name matches `regexp` into the target, under the same names."""
-        return cls(
-            ExternalSecretSpecDataFrom(
-                find=ExternalSecretSpecDataFromFind(name=ExternalSecretSpecDataFromFindName(regexp=regexp))
-            )
+        return ExternalSecretSpecDataFrom(
+            find=ExternalSecretSpecDataFromFind(name=ExternalSecretSpecDataFromFindName(regexp=regexp))
         )
 
 
@@ -128,7 +111,7 @@ def remote_data(key: str, property: str, *, secret_key: str | None = None) -> Ex
 
 
 class ExternalSecret(_ExternalSecret):
-    """Adds `name`'s target Secret is `target_name`, else also `name`.
+    """The target Secret is `target_name`, else `metadata.name`.
 
     `refresh` is a `refreshInterval` duration or a non-periodic `refreshPolicy`. Exactly one of
     `data` and `data_from` is given; `store` is omitted only for a generator source. `None`
@@ -140,21 +123,19 @@ class ExternalSecret(_ExternalSecret):
         scope: Construct,
         id: str,
         *,
-        name: str,
-        namespace: str,
+        metadata: ApiObjectMetadata,
         refresh: str | ExternalSecretSpecRefreshPolicy,
-        store: SecretStoreRef | None = None,
+        store: ExternalSecretSpecSecretStoreRef | None = None,
         data: Sequence[ExternalSecretSpecData] = (),
-        data_from: Sequence[DataFrom] = (),
+        data_from: Sequence[ExternalSecretSpecDataFrom] = (),
         creation_policy: ExternalSecretSpecTargetCreationPolicy | None = None,
         deletion_policy: ExternalSecretSpecTargetDeletionPolicy | None = None,
         template: ExternalSecretSpecTargetTemplate | None = None,
         immutable: bool | None = None,
         target_name: str | None = None,
-        annotations: dict[str, str] | None = None,
     ) -> None:
         if bool(data) == bool(data_from):
-            raise ValueError(f"{name=}: give exactly one of data and data_from")
+            raise ValueError(f"{metadata.name=}: give exactly one of data and data_from")
         refresh_interval: str | None = None
         refresh_policy: ExternalSecretSpecRefreshPolicy | None = None
         match refresh:
@@ -165,15 +146,15 @@ class ExternalSecret(_ExternalSecret):
         super().__init__(
             scope,
             id,
-            metadata=metadata(name, namespace, annotations=annotations),
+            metadata=metadata,
             spec=ExternalSecretSpec(
                 refresh_interval=refresh_interval,
                 refresh_policy=refresh_policy,
-                secret_store_ref=store.to_spec() if store else None,
+                secret_store_ref=store,
                 data=list(data) or None,
-                data_from=[item.to_spec() for item in data_from] or None,
+                data_from=list(data_from) or None,
                 target=ExternalSecretSpecTarget(
-                    name=target_name or name,
+                    name=target_name or metadata.name,
                     creation_policy=creation_policy,
                     deletion_policy=deletion_policy,
                     template=template,
@@ -205,19 +186,11 @@ class ClusterDataFrom:
     `ClusterExternalSecret` CRD import; add another factory the day a second shape is needed here.
     """
 
-    def __init__(self, spec: ClusterExternalSecretSpecExternalSecretSpecDataFrom) -> None:
-        self._spec = spec
-
-    def to_spec(self) -> ClusterExternalSecretSpecExternalSecretSpecDataFrom:
-        return self._spec
-
-    @classmethod
-    def from_extract(cls, key: str) -> ClusterDataFrom:
+    @staticmethod
+    def from_extract(key: str) -> ClusterExternalSecretSpecExternalSecretSpecDataFrom:
         """Copy every property of the store's `key` into the target, under the same names."""
-        return cls(
-            ClusterExternalSecretSpecExternalSecretSpecDataFrom(
-                extract=ClusterExternalSecretSpecExternalSecretSpecDataFromExtract(key=key)
-            )
+        return ClusterExternalSecretSpecExternalSecretSpecDataFrom(
+            extract=ClusterExternalSecretSpecExternalSecretSpecDataFromExtract(key=key)
         )
 
 
@@ -243,7 +216,7 @@ class ClusterExternalSecret(_ClusterExternalSecret):
         store_name: str,
         refresh: str | ClusterExternalSecretSpecExternalSecretSpecRefreshPolicy,
         data: Sequence[ClusterExternalSecretSpecExternalSecretSpecData] = (),
-        data_from: Sequence[ClusterDataFrom] = (),
+        data_from: Sequence[ClusterExternalSecretSpecExternalSecretSpecDataFrom] = (),
         creation_policy: ClusterExternalSecretSpecExternalSecretSpecTargetCreationPolicy | None = None,
         deletion_policy: ClusterExternalSecretSpecExternalSecretSpecTargetDeletionPolicy | None = None,
         template: ClusterExternalSecretSpecExternalSecretSpecTargetTemplate | None = None,
@@ -274,7 +247,7 @@ class ClusterExternalSecret(_ClusterExternalSecret):
                         name=store_name,
                     ),
                     data=list(data) or None,
-                    data_from=[item.to_spec() for item in data_from] or None,
+                    data_from=list(data_from) or None,
                     target=ClusterExternalSecretSpecExternalSecretSpecTarget(
                         name=target_name or name,
                         creation_policy=creation_policy,

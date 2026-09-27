@@ -62,8 +62,7 @@ def credential_external_secret(
     ExternalSecret(
         scope,
         target,
-        name=target,
-        namespace=namespace,
+        metadata=ApiObjectMetadata(name=target, namespace=namespace),
         refresh="1h",
         store=SecretStoreRef.cluster(store),
         data=[remote_data(source, key)],

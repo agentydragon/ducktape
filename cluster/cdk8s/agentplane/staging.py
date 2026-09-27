@@ -5,7 +5,7 @@ Google Calendar MCP action groups.
 
 from __future__ import annotations
 
-from cdk8s import App, Chart, Duration
+from cdk8s import ApiObjectMetadata, App, Chart, Duration
 from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute, ServiceAccount
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -363,14 +363,16 @@ def chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         "tana-pat-external-secret",
-        name=_TANA_MCP_BEARER_SECRET,
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_TANA_MCP_BEARER_SECRET,
+            namespace=_NAMESPACE,
+            annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
+        ),
         refresh="1h",
         store=external_creds.STORE,
         data=[remote_data(_TANA_MCP_BEARER_SECRET, "token")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
     )
     for backend, target, source in (
         ("ssh-mcp", _SSH_MCP_BEARER_SECRET, BEARER_SECRET_NAME),
@@ -397,8 +399,7 @@ def chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         "github-mcp-client-external-secret",
-        name=_GITHUB_MCP_CLIENT_SECRET,
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(name=_GITHUB_MCP_CLIENT_SECRET, namespace=_NAMESPACE),
         refresh="1h",
         store=SecretStoreRef.cluster(
             single_secret_store(
