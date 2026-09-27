@@ -234,7 +234,7 @@ preserve this source contract or update and revalidate the subject mode.
 
 ### Distribution and ordering
 
-1. The already-existing `sso-providers-tf` health check waits for the Terraform resource. The module
+1. The `authentik-tf` Kustomization's health check waits for the `sso-providers` Terraform resource. The module
    creates the Authentik target, its policy binding, and credential-bearing Secrets. The
    `agentplane-action-federation` ConfigMap is a reviewed, non-secret resource in the Actions
    Kustomization; it contains only the two verification/federation JSON objects, **no target client

@@ -68,7 +68,7 @@ def chart(app: App) -> Chart:
                     "description": (
                         "Fine-grained GitHub PAT for GitOps-managed GitHub resources and token-rotation commits."
                         " Required permissions and rationale are documented in"
-                        " cluster/k8s/github-secrets-sync/README.md."
+                        " tf/gitops/github-secrets-sync/README.md."
                     )
                 }
             ),
