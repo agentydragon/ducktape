@@ -3229,6 +3229,8 @@ spec:
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
+    - name: kyverno
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/tana-mcp
   prune: true
@@ -3357,6 +3359,8 @@ spec:
     - name: external-secrets-config
       namespace: ducktape-flux
     - name: external-creds
+      namespace: ducktape-flux
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/github-exporter
@@ -3556,6 +3560,8 @@ spec:
     - name: cert-manager
       namespace: ducktape-flux
     - name: seaweedfs-cluster
+      namespace: ducktape-flux
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/nix-cache

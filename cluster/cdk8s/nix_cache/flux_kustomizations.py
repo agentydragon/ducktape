@@ -17,6 +17,7 @@ def nix_cache(
     seaweedfs_operator: Kustomization,
     cert_manager: Kustomization,
     seaweedfs_cluster: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     name = "nix-cache"
     return flux_kustomization(
@@ -26,6 +27,13 @@ def nix_cache(
         timeout="5m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            cnpg, external_creds, external_secrets_config, seaweedfs_operator, cert_manager, seaweedfs_cluster
+            cnpg,
+            external_creds,
+            external_secrets_config,
+            seaweedfs_operator,
+            cert_manager,
+            seaweedfs_cluster,
+            # Kyverno's failurePolicy: Fail webhooks admit the Namespace, workloads and HTTPRoute.
+            kyverno,
         ),
     )

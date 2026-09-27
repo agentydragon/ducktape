@@ -15,6 +15,7 @@ def github_exporter(
     grafana_instance: Kustomization,
     external_secrets_config: Kustomization,
     external_creds: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     name = "github-exporter"
     return flux_kustomization(
@@ -28,6 +29,8 @@ def github_exporter(
             grafana_instance,
             external_secrets_config,
             external_creds,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployments.
+            kyverno,
         ),
         description="GitHub API rate-limit metrics for the human and agent accounts.",
     )

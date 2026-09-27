@@ -236,6 +236,7 @@ def tana_mcp(
     external_secrets_config: Kustomization,
     valkey: Kustomization,
     monitoring_crds: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     name = "tana-mcp"
     return flux_kustomization(
@@ -250,5 +251,7 @@ def tana_mcp(
             valkey,
             # ServiceMonitor + PrometheusRule
             monitoring_crds,
+            # Kyverno's failurePolicy: Fail webhooks admit the Namespace, Deployment and HTTPRoute.
+            kyverno,
         ),
     )

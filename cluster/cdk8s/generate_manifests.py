@@ -995,6 +995,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_config_kustomization,
         valkey_kustomization,
         monitoring_crds_kustomization,
+        kyverno_kustomization,
     )
     cli_proxy_api_artifact = artifact("cli-proxy-api", cli_proxy_api.OUTPUT_DIR)
     cli_proxy_api_kustomization = cli_proxy_api.cli_proxy_api(
@@ -1030,6 +1031,7 @@ def generate_manifests(root: Path) -> None:
         grafana_instance_kustomization,
         external_secrets_config_kustomization,
         external_creds_kustomization,
+        kyverno_kustomization,
     )
     github_secrets_sync_artifact = artifact("github-secrets-sync", github_secrets_sync_gitops_module.OUTPUT_DIR)
     github_secrets_sync_gitops_module.github_secrets_sync(
@@ -1089,6 +1091,7 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_operator_kustomization,
         cert_manager_kustomization,
         seaweedfs_cluster_kustomization,
+        kyverno_kustomization,
     )
     sdr_artifact = artifact("sdr", f"{HAND_WRITTEN_ROOT}/parked/sdr")
     parked_flux_kustomizations.sdr(
