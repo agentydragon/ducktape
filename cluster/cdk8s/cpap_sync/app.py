@@ -357,7 +357,7 @@ def write_manifests(root: Path) -> None:
 def cpap_sync(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     kubevirt: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
@@ -366,5 +366,5 @@ def cpap_sync(
         artifact,
         decryption=SOPS_DECRYPTION,
         timeout="30m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_config, kubevirt),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, kubevirt),
     )

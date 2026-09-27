@@ -28,7 +28,7 @@ def grocy_sf(
 def grocy_mcp_sf(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     grocy_sf: Kustomization,
     valkey: Kustomization,
     agent_machine_access_tf: Kustomization,
@@ -42,7 +42,7 @@ def grocy_mcp_sf(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config,
+            external_secrets_operator,
             grocy_sf,
             valkey,
             agent_machine_access_tf,
@@ -90,7 +90,7 @@ def grocy_vallejo(
 def grocy_mcp_vallejo(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     grocy_vallejo: Kustomization,
     valkey: Kustomization,
     agent_machine_access_tf: Kustomization,
@@ -104,7 +104,7 @@ def grocy_mcp_vallejo(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config,
+            external_secrets_operator,
             grocy_vallejo,
             valkey,
             agent_machine_access_tf,
