@@ -18,8 +18,6 @@ recipients.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     Capability,
@@ -47,19 +45,12 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecEndpoints, ServiceMonitorSpecSelector
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
-from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.home_assistant.app import HA_MCP_TOKEN
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
@@ -68,6 +59,7 @@ from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPo
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 
+_NAME = "ha-mcp"
 _NAMESPACE = "ha-mcp"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/ha-mcp/app"
 _HOME_ASSISTANT_TOKEN_SECRET_NAME = "ha-mcp-home-assistant-token"
@@ -334,27 +326,24 @@ class HaMcp(Construct):
         HaMcpApp(self, "app")
 
 
+def chart(app: App) -> Chart:
+    chart = Chart(app, _NAME, disable_resource_name_hashes=True)
+    HaMcp(chart, _NAME)
+    add_fleet_rules(chart)
+    return chart
+
+
 def ha_mcp(
     flux_chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    root: Path,
+    directory: RenderedDirectory,
     external_secrets_operator: Kustomization,
     home_assistant: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
-    name = "ha-mcp"
-    app_dir = root / OUTPUT_DIR
-    app_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(app_dir))
-    chart = Chart(app, name, disable_resource_name_hashes=True)
-    HaMcp(chart, "ha-mcp")
-    add_fleet_rules(chart)
-    app.synth()
-
-    kustomization = flux_kustomization(
+    return flux_kustomization(
         flux_chart,
-        name,
-        artifact,
+        _NAME,
+        directory,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_operator,
@@ -363,8 +352,3 @@ def ha_mcp(
             monitoring_crds,
         ),
     )
-    write_yaml(
-        app_dir / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{name}.k8s.yaml"], components=["./image-pins"]),
-    )
-    return kustomization

@@ -13,7 +13,6 @@ through `lo` and never meets the bug.
 from __future__ import annotations
 
 from enum import StrEnum
-from pathlib import Path
 
 import yaml
 from cdk8s import ApiObjectMetadata, App, Chart
@@ -24,17 +23,15 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitorSpecSelector,
 )
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRuleSpecGroupsRules
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
     Kustomization,
+    RenderedDirectory,
     flux_kustomization,
     flux_kustomization_depends_on,
-    kustomize_kustomization,
 )
-from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import PodMonitor
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
@@ -78,7 +75,7 @@ _CONFIG = {
         }
     }
 }
-_CONFIG_MAP = ConfigMapArgs(
+CONFIG_MAP = ConfigMapArgs(
     name=f"{_NAME}-config", namespace=NAMESPACE, literals=[f"{_CONFIG_FILE}={yaml.safe_dump(_CONFIG)}"]
 )
 
@@ -152,7 +149,7 @@ def _daemon_set(scope: Chart, nodes: list[str]) -> None:
                             ),
                         )
                     ],
-                    volumes=[k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP.name))],
+                    volumes=[k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=CONFIG_MAP.name))],
                 ),
             ),
         ),
@@ -258,23 +255,11 @@ def chart(app: App, mesh: Mesh) -> Chart:
     return chart
 
 
-def write_manifests(root: Path, mesh: Mesh) -> None:
-    write_charts(root, OUTPUT_DIR, lambda app: chart(app, mesh))
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(
-            namespace=NAMESPACE, resources=[f"{_NAME}.k8s.yaml"], config_map_generator=[_CONFIG_MAP]
-        ),
-    )
-
-
-def gateway_probe(
-    flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
-) -> Kustomization:
+def gateway_probe(flux_chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization) -> Kustomization:
     return flux_kustomization(
         flux_chart,
         "monitoring-gateway-probe",
-        artifact,
+        directory,
         timeout="5m",
         # the PodMonitor and PrometheusRule CRDs
         depends_on=[flux_kustomization_depends_on(monitoring_crds)],
