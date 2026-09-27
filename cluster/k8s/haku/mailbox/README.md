@@ -9,8 +9,7 @@ Haku (`haku@allegedly.works`) over an authenticated channel — contract in
 The `haku-mailbox` Flux Kustomization owns the namespace, database, and application
 through the root `kustomization.yaml`; the Namespace is part of that root. CNPG,
 cert-manager, and External Secrets retain their
-operator prerequisites; `cert-manager-issuer-config` supplies the required issuer
-substitution. Registry, storage, identity, and routing services may converge after
+operator prerequisites. Registry, storage, identity, and routing services may converge after
 admission. The init container retries through normal Pod reconciliation.
 
 Ownership changes follow the [stateful Flux migration guidance](../../../AGENTS.md#migrating-stateful-flux-kustomizations).

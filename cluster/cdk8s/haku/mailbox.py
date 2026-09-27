@@ -22,6 +22,7 @@ from cilium_crds.io.cilium import (
 )
 
 from cluster.cdk8s import cilium, cnpg, forgejo_images, gateway
+from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.haku import namespace
@@ -437,7 +438,7 @@ def chart(app: App) -> Chart:
         },
         secret_name=_TLS_SECRET,
         dns_names=["mx.allegedly.works"],
-        issuer_ref=CertificateSpecIssuerRef(name="${LETSENCRYPT_ISSUER}", kind="ClusterIssuer"),
+        issuer_ref=CertificateSpecIssuerRef(name=LETSENCRYPT_ISSUER, kind="ClusterIssuer"),
     )
     _add_deployment(chart)
     _add_services(chart)

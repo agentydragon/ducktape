@@ -59,7 +59,7 @@ spec:
       priorityClassName: system-cluster-critical
     ingressShim:
       defaultIssuerKind: ClusterIssuer
-      defaultIssuerName: ${LETSENCRYPT_ISSUER}
+      defaultIssuerName: letsencrypt-prod
     prometheus:
       enabled: true
       servicemonitor:

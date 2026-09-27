@@ -1,6 +1,6 @@
-"""The two Let's Encrypt ACME ClusterIssuers, and their root CA Secrets, which the cluster
-trust Bundle (`cluster_ca`) reads as `${LETSENCRYPT_ISSUER}-root-ca` so it gets the right
-root whichever issuer is active.
+"""The two Let's Encrypt ACME ClusterIssuers, `LETSENCRYPT_ISSUER` naming the active one, and
+their root CA Secrets, which the cluster trust Bundle (`cluster_ca`) reads as
+`{LETSENCRYPT_ISSUER}-root-ca` so it gets the right root whichever issuer is active.
 """
 
 from __future__ import annotations
@@ -20,6 +20,9 @@ from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
 
 NAME = "letsencrypt-root-cas"
 ISSUERS_NAME = "letsencrypt-issuers"
+# Single toggle for the Let's Encrypt ClusterIssuer every public certificate uses.
+# Use letsencrypt-staging for development (rate limits).
+LETSENCRYPT_ISSUER = "letsencrypt-prod"
 
 # Let's Encrypt Production Root CA (ISRG Root X1). Redundant with system trust stores but
 # included for symmetry with staging.
@@ -58,7 +61,7 @@ emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 -----END CERTIFICATE-----
 """
 
-# Let's Encrypt Staging Root CA (Pretend Pear X1), trusted when LETSENCRYPT_ISSUER is
+# Let's Encrypt Staging Root CA (Pretend Pear X1), trusted when `LETSENCRYPT_ISSUER` is
 # letsencrypt-staging.
 # Source: https://letsencrypt.org/docs/staging-environment/
 _STAGING_ROOT = """\

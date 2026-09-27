@@ -31,12 +31,8 @@ from gateway_api_gateway_crds.io.k8s.networking.gateway import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import (
-    CERT_MANAGER_ISSUER_SUBSTITUTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-)
+from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
@@ -126,7 +122,7 @@ def chart(app: App) -> Chart:
     Gateway(
         chart,
         "gateway",
-        metadata=metadata(_NAME, _NAMESPACE, annotations={"cert-manager.io/cluster-issuer": "${LETSENCRYPT_ISSUER}"}),
+        metadata=metadata(_NAME, _NAMESPACE, annotations={"cert-manager.io/cluster-issuer": LETSENCRYPT_ISSUER}),
         spec=GatewaySpec(
             gateway_class_name="cilium",
             listeners=[
@@ -174,17 +170,8 @@ def write_manifests(root: Path) -> None:
 
 
 def gateway(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    cert_manager: Kustomization,
-    kyverno: Kustomization,
-    cert_manager_issuer_config: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cert_manager: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
-        chart,
-        "gateway",
-        artifact,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(cert_manager, kyverno, cert_manager_issuer_config),
-        post_build=CERT_MANAGER_ISSUER_SUBSTITUTION,
+        chart, "gateway", artifact, timeout="5m", depends_on=flux_kustomization_depends_on_many(cert_manager, kyverno)
     )
