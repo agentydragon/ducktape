@@ -113,8 +113,17 @@ def _config(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "config",
-        name=_CONFIG_SECRET,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_CONFIG_SECRET,
+            namespace=NAMESPACE,
+            annotations={
+                "description": (
+                    "CLIProxyAPI config.yaml rendered from the client-key Secret. Retry an upstream stream up "
+                    "to three times only before its first response byte reaches the caller. Remote management "
+                    "uses native Authentik OIDC for browsers and a management key for AIQuota."
+                )
+            },
+        ),
         refresh="1h",
         store=SecretStoreRef.cluster("kubernetes-cli-proxy-api-secret-store"),
         data=[remote_data("cli-proxy-api-client-key", "client-key", secret_key="client_key")],
@@ -122,13 +131,6 @@ def _config(scope: Construct) -> None:
         template=ExternalSecretSpecTargetTemplate(
             engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2, data={"config.yaml": _CONFIG}
         ),
-        annotations={
-            "description": (
-                "CLIProxyAPI config.yaml rendered from the client-key Secret. Retry an upstream stream up "
-                "to three times only before its first response byte reaches the caller. Remote management "
-                "uses native Authentik OIDC for browsers and a management key for AIQuota."
-            )
-        },
     )
 
 

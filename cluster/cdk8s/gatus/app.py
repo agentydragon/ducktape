@@ -102,7 +102,6 @@ def _helm_release(scope: Construct) -> None:
                 "LITELLM_API_KEY": {"valueFrom": {"secretKeyRef": {"name": "litellm-master-key", "key": "api-key"}}},
             },
             "envFrom": [{"secretRef": {"name": "gatus-oidc-secret"}}],
-            "podAnnotations": {"reloader.stakater.com/auto": "true"},
             "ingress": {"enabled": False},
             # Storage moved off the local SQLite PVC onto the gatus-db CNPG
             # cluster on OVH-HA (the Cluster above).

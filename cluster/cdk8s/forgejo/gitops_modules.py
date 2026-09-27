@@ -39,8 +39,8 @@ def _write(
         Chart(app, name, disable_resource_name_hashes=True),
         "terraform",
         name=name,
-        variables={},
-        depends_on=[dependency.name for dependency in depends_on],
+        variables=None,
+        depends_on=depends_on,
         schema=schema,
     )
     app.synth()

@@ -190,9 +190,7 @@ def _synapse(scope: Construct) -> None:
                 # has no top-level key of that name, so a selector placed there is silently
                 # ignored (which is why the previous `region: proxmox` never pinned
                 # anything, and Synapse only landed on wyrm2 by chance).
-                "nodeSelector": {"topology.kubernetes.io/zone": _ZONE},
-                # Reloader: auto-restart pods when secrets change
-                "annotations": {"reloader.stakater.com/auto": "true"},
+                "nodeSelector": {"topology.kubernetes.io/zone": _ZONE}
             },
             # macaroonSecretKey and registrationSharedSecret injected via valuesFrom;
             # extraConfig with oidc_providers is injected via valuesFrom from the
@@ -291,7 +289,7 @@ def _element(scope: Construct) -> None:
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_ELEMENT_LABELS),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_ELEMENT_LABELS, annotations={"reloader.stakater.com/auto": "true"}),
+                metadata=k8s.ObjectMeta(labels=_ELEMENT_LABELS),
                 spec=k8s.PodSpec(
                     containers=[
                         k8s.Container(

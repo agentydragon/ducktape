@@ -128,8 +128,7 @@ def _buildbuddy_api_key(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "buildbuddy-api-key",
-        name=name,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
         refresh="1h",
         store=external_creds.STORE,
         data=[remote_data(name, "api-key")],

@@ -6,7 +6,8 @@ from decimal import Decimal
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.sim.ids import JurisdictionId
-from finance.augur.sim.scenario import DistributionTaxSlice, InterestIncome, QualifiedDividendIncome
+from finance.augur.sim.income import InterestIncome, QualifiedDividendIncome
+from finance.augur.sim.scenario import DistributionTaxSlice
 
 HORIZON = 13
 SYMBOL = SecuritySymbol("bnd")

@@ -178,6 +178,7 @@ py_library(
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s/providers/agent_sandbox:sandboxtemplate",
         "//util:settings_contract",
+        "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
@@ -533,6 +534,7 @@ py_library(
     srcs = ["egress_testing_credentials.py"],
     deps = [
         ":egress_credentials",
+        "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],

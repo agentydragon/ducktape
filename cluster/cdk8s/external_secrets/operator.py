@@ -68,11 +68,7 @@ def _values(webhook_issuer: str) -> dict[str, object]:
         # affinity: steady-state ESO is small and I/O-light, so this widens the
         # candidate set rather than pinning it.
         "tolerations": [_CONTROL_PLANE_TOLERATION],
-        "serviceMonitor": {
-            "enabled": True,
-            "namespace": "monitoring",
-            "additionalLabels": {"release": "kube-prometheus-stack"},
-        },
+        "serviceMonitor": {"enabled": True, "namespace": "monitoring"},
         # Service account used by the Kubernetes-provider ClusterSecretStores to read
         # secrets across namespaces.
         "serviceAccount": {"create": True, "name": "external-secrets"},

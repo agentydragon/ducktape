@@ -1,6 +1,6 @@
 """Stable reporting order and execution-input labels for typed income categories."""
 
-from finance.augur.sim.scenario import InterestIncome, QualifiedDividendIncome, TransferIncomeCategory
+from finance.augur.sim.income import InterestIncome, QualifiedDividendIncome, TransferIncomeCategory
 
 
 def income_source_sort_key(category: TransferIncomeCategory) -> tuple[int, str]:

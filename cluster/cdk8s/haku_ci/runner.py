@@ -483,8 +483,7 @@ def _add_runner(chart: Chart) -> None:
     trigger_auth = TriggerAuthentication.from_secret_key(
         chart,
         "trigger-authentication",
-        name=_AUTH,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name=_AUTH, namespace=NAMESPACE),
         parameter="token",
         secret_name=FORGEJO_TOKEN_SECRET,
         secret_key=FORGEJO_TOKEN_KEY,
@@ -505,9 +504,7 @@ def _add_runner(chart: Chart) -> None:
     ScaledJob(
         chart,
         "scaled-job",
-        name=_RUNNER,
-        namespace=NAMESPACE,
-        labels=_LABELS,
+        metadata=ApiObjectMetadata(name=_RUNNER, namespace=NAMESPACE, labels=_LABELS),
         # One pod per queued job, up to four concurrently. No minimum: between bursts there are
         # no runner pods at all, which was already true under the ScaledObject
         # (minReplicaCount: 0) -- the runner holds no state worth keeping warm.

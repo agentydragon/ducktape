@@ -161,7 +161,7 @@ def chart(app: App) -> Chart:
             replicas=2,
             selector=k8s.LabelSelector(match_labels=_LABELS),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}),
+                metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
                     containers=[
                         k8s.Container(

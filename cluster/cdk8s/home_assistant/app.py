@@ -536,7 +536,7 @@ def _monitoring(scope: Construct) -> None:
     PrometheusRule(
         scope,
         "prometheus-rule",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         groups=[
             group(
                 _NAME,

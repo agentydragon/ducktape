@@ -425,15 +425,17 @@ def chart(app: App) -> Chart:
     Certificate(
         chart,
         "certificate",
-        name="mx-allegedly-works",
-        namespace=NAMESPACE,
-        annotations={
-            "description": (
-                "STARTTLS certificate for the inbound SMTP listener (mx.allegedly.works). Sending MTAs "
-                "(Gmail) use opportunistic TLS; the reloader annotation on the deployment restarts the "
-                "receiver when cert-manager rotates this."
-            )
-        },
+        metadata=ApiObjectMetadata(
+            name="mx-allegedly-works",
+            namespace=NAMESPACE,
+            annotations={
+                "description": (
+                    "STARTTLS certificate for the inbound SMTP listener (mx.allegedly.works). Sending MTAs "
+                    "(Gmail) use opportunistic TLS; the reloader annotation on the deployment restarts the "
+                    "receiver when cert-manager rotates this."
+                )
+            },
+        ),
         secret_name=_TLS_SECRET,
         dns_names=["mx.allegedly.works"],
         issuer_ref=CertificateSpecIssuerRef(name="${LETSENCRYPT_ISSUER}", kind="ClusterIssuer"),

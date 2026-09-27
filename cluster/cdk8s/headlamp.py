@@ -71,7 +71,6 @@ def chart(app: App) -> Chart:
         upgrade=HelmReleaseSpecUpgrade(remediation=HelmReleaseSpecUpgradeRemediation(retries=3)),
         values={
             "replicaCount": 1,
-            "podAnnotations": {"reloader.stakater.com/auto": "true"},
             "config": {
                 # OIDC mode: Headlamp redirects to Authentik, JWT forwarded to K8s API server
                 # which validates it via oidc-issuer-url (in Talos machine config).

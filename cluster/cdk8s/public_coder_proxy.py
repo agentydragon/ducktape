@@ -84,8 +84,7 @@ def _external_secrets(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "brave-search-api-key",
-        name=brave,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name=brave, namespace=NAMESPACE),
         refresh="1m",
         store=external_creds.STORE,
         data=[remote_data(brave, "api-key")],

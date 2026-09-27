@@ -202,8 +202,7 @@ def _repository(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "repository",
-        name=_REPOSITORY_SECRET_NAME,
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(name=_REPOSITORY_SECRET_NAME, namespace=_NAMESPACE),
         refresh="1h",
         store=SecretStoreRef.namespaced(_SECRET_STORE_NAME),
         data=[

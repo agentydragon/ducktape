@@ -80,15 +80,15 @@ def mint_bearer_secret(
     ExternalSecret(
         scope,
         id,
-        name=name,
-        namespace=namespace,
+        metadata=ApiObjectMetadata(
+            name=name, namespace=namespace, annotations={"description": description} if description else None
+        ),
         refresh=refresh,
         data_from=[DataFrom.from_password_generator(generator)],
         creation_policy=creation_policy,
         deletion_policy=deletion_policy,
         template=template,
         immutable=immutable,
-        annotations={"description": description} if description else None,
     )
 
 
@@ -124,8 +124,7 @@ def mint_db_role_secret(
     ExternalSecret(
         scope,
         id,
-        name=name,
-        namespace=namespace,
+        metadata=ApiObjectMetadata(name=name, namespace=namespace),
         refresh="8760h",
         data_from=[DataFrom.from_password_generator(generator)],
         template=ExternalSecretSpecTargetTemplate(type=secret_type, data=data),

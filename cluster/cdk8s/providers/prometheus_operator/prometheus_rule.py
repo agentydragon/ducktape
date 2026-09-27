@@ -30,15 +30,8 @@ class Rule:
     kwargs; `annotations` stays open for anything else (e.g. `runbook_url`).
     """
 
-    def __init__(self, spec: PrometheusRuleSpecGroupsRules) -> None:
-        self._spec = spec
-
-    def to_spec(self) -> PrometheusRuleSpecGroupsRules:
-        return self._spec
-
-    @classmethod
+    @staticmethod
     def alert(
-        cls,
         name: str,
         expr: str,
         *,
@@ -47,35 +40,31 @@ class Rule:
         summary: str | None = None,
         description: str | None = None,
         annotations: Mapping[str, str] | None = None,
-    ) -> Rule:
+    ) -> PrometheusRuleSpecGroupsRules:
         merged_annotations = dict(annotations) if annotations else {}
         if summary is not None:
             merged_annotations["summary"] = summary
         if description is not None:
             merged_annotations["description"] = description
-        return cls(
-            PrometheusRuleSpecGroupsRules(
-                alert=name,
-                expr=PrometheusRuleSpecGroupsRulesExpr.from_string(expr),
-                for_=for_,
-                labels=dict(labels) if labels else None,
-                annotations=merged_annotations or None,
-            )
+        return PrometheusRuleSpecGroupsRules(
+            alert=name,
+            expr=PrometheusRuleSpecGroupsRulesExpr.from_string(expr),
+            for_=for_,
+            labels=dict(labels) if labels else None,
+            annotations=merged_annotations or None,
         )
 
-    @classmethod
-    def record(cls, name: str, expr: str, *, labels: Mapping[str, str] | None = None) -> Rule:
-        return cls(
-            PrometheusRuleSpecGroupsRules(
-                record=name,
-                expr=PrometheusRuleSpecGroupsRulesExpr.from_string(expr),
-                labels=dict(labels) if labels else None,
-            )
+    @staticmethod
+    def record(name: str, expr: str, *, labels: Mapping[str, str] | None = None) -> PrometheusRuleSpecGroupsRules:
+        return PrometheusRuleSpecGroupsRules(
+            record=name,
+            expr=PrometheusRuleSpecGroupsRulesExpr.from_string(expr),
+            labels=dict(labels) if labels else None,
         )
 
 
-def group(name: str, rules: Sequence[Rule]) -> PrometheusRuleSpecGroups:
-    return PrometheusRuleSpecGroups(name=name, rules=[rule.to_spec() for rule in rules])
+def group(name: str, rules: Sequence[PrometheusRuleSpecGroupsRules]) -> PrometheusRuleSpecGroups:
+    return PrometheusRuleSpecGroups(name=name, rules=list(rules))
 
 
 class PrometheusRule(_PrometheusRule):

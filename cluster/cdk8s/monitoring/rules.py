@@ -551,57 +551,43 @@ def chart(app: App) -> Chart:
     PrometheusRule(
         chart,
         "control-plane-io-alerts",
-        metadata=ApiObjectMetadata(
-            name="control-plane-io-alerts", namespace=NAMESPACE, labels={"release": "kube-prometheus-stack"}
-        ),
+        metadata=ApiObjectMetadata(name="control-plane-io-alerts", namespace=NAMESPACE),
         groups=[group("control-plane-io", _CONTROL_PLANE_IO)],
     )
     PrometheusRule(
         chart,
         "external-secrets-alerts",
-        metadata=ApiObjectMetadata(
-            name="external-secrets-alerts", namespace=NAMESPACE, labels={"release": "kube-prometheus-stack"}
-        ),
+        metadata=ApiObjectMetadata(name="external-secrets-alerts", namespace=NAMESPACE),
         groups=[group("external-secrets", _EXTERNAL_SECRETS)],
     )
     PrometheusRule(
         chart,
         "flux-alerts",
-        metadata=ApiObjectMetadata(
-            name="flux-alerts", namespace=NAMESPACE, labels={"release": "kube-prometheus-stack"}
-        ),
+        metadata=ApiObjectMetadata(name="flux-alerts", namespace=NAMESPACE),
         groups=[group("flux", _FLUX)],
     )
     PrometheusRule(
         chart,
         "github-quota-alerts",
-        metadata=ApiObjectMetadata(
-            name="github-quota-alerts", namespace=NAMESPACE, labels={"release": "kube-prometheus-stack"}
-        ),
+        metadata=ApiObjectMetadata(name="github-quota-alerts", namespace=NAMESPACE),
         groups=[group("github-quota", _GITHUB_QUOTA)],
     )
     PrometheusRule(
         chart,
         "grocy-mcp-alerts",
-        metadata=ApiObjectMetadata(
-            name="grocy-mcp-alerts", namespace=NAMESPACE, labels={"release": "kube-prometheus-stack"}
-        ),
+        metadata=ApiObjectMetadata(name="grocy-mcp-alerts", namespace=NAMESPACE),
         groups=[group("grocy-mcp", _GROCY_MCP)],
     )
     PrometheusRule(
         chart,
         "mcp-auth-alerts",
-        metadata=ApiObjectMetadata(
-            name="mcp-auth-alerts", namespace=NAMESPACE, labels={"release": "kube-prometheus-stack"}
-        ),
+        metadata=ApiObjectMetadata(name="mcp-auth-alerts", namespace=NAMESPACE),
         groups=[group("mcp-auth", _MCP_AUTH)],
     )
     PrometheusRule(
         chart,
         "roaming-node-alerts",
-        metadata=ApiObjectMetadata(
-            name="roaming-node-alerts", namespace=NAMESPACE, labels={"release": "kube-prometheus-stack"}
-        ),
+        metadata=ApiObjectMetadata(name="roaming-node-alerts", namespace=NAMESPACE),
         groups=[
             group("roaming-node-alerts", _ROAMING_NODE),
             group("roaming-node-workload-alerts", _ROAMING_NODE_WORKLOAD),

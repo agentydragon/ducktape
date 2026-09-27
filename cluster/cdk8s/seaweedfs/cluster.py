@@ -370,13 +370,9 @@ def seaweed(scope: Construct) -> Seaweed:
                 replicas=2,  # stateless S3 gateway -- scales freely across the 3 kimsufi hosts
                 config_secret=SeaweedSpecS3ConfigSecret(name=s3_config.SECRET_NAME, key=s3_config.SECRET_KEY),
                 # `weed s3` only reads seaweedfs-s3-config at startup, so it must roll when ESO
-                # reassembles that Secret (tenant added/rotated). NOTE: this annotation lands
-                # on the *pod template*, not the Deployment's own metadata, and Reloader only
-                # reads the workload-level annotation -- so it is INERT here. The actual roll
-                # comes from Reloader's cluster-wide `autoReloadAll: true` (see
-                # cluster/generated/reloader/). Kept for intent/future-proofing if the operator ever
-                # sets Deployment annotations.
-                annotations={"reloader.stakater.com/auto": "true"},
+                # reassembles that Secret (tenant added/rotated): Reloader's `autoReloadAll` rolls
+                # it. No `reloader.stakater.com/auto` here: `spec.s3.annotations` lands on the pod
+                # template, and Reloader reads only the Deployment's own metadata.
                 metrics_port=9327,
                 # QoS / eviction protection. No PDB: it is stateless and freely
                 # reschedulable, so descheduler moves are harmless.

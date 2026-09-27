@@ -193,8 +193,7 @@ class Aiquota(Construct):
         ExternalSecret(
             self,
             f"bearer-{mirror.consumer}",
-            name=mirror.secret_name,
-            namespace=NAMESPACE,
+            metadata=ApiObjectMetadata(name=mirror.secret_name, namespace=NAMESPACE),
             refresh="1h",
             store=SecretStoreRef.cluster("kubernetes-cli-proxy-api-secret-store"),
             data=[remote_data(BEARER_SECRET_NAME, _BEARER_KEY)],

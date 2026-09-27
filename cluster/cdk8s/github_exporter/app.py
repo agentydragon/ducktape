@@ -62,8 +62,7 @@ def _token_external_secret(chart: Chart, account: str) -> None:
     ExternalSecret(
         chart,
         f"token-{account}",
-        name=_token_secret(account),
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(name=_token_secret(account), namespace=_NAMESPACE),
         refresh="1h",
         store=external_creds.STORE,
         data=[remote_data(_TOKEN_SOURCES[account], "token")],

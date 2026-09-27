@@ -121,8 +121,7 @@ def _readonly_copy(chart: Chart) -> None:
     ExternalSecret(
         chart,
         "consumer-copy",
-        name=_READONLY_SECRET,
-        namespace=_READONLY_CONSUMER,
+        metadata=ApiObjectMetadata(name=_READONLY_SECRET, namespace=_READONLY_CONSUMER),
         refresh="10m",
         store=SecretStoreRef.cluster(store),
         data_from=[DataFrom.from_extract(_READONLY_SECRET)],

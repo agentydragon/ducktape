@@ -41,8 +41,7 @@ class Kustomization(_Kustomization):
         scope: Construct,
         id: str,
         *,
-        name: str,
-        namespace: str,
+        metadata: ApiObjectMetadata,
         source_ref: KustomizationSpecSourceRef,
         interval: str,
         prune: bool,
@@ -70,12 +69,11 @@ class Kustomization(_Kustomization):
         kube_config: KustomizationSpecKubeConfig | None = None,
         name_prefix: str | None = None,
         name_suffix: str | None = None,
-        annotations: dict[str, str] | None = None,
     ) -> None:
         super().__init__(
             scope,
             id,
-            metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=annotations),
+            metadata=metadata,
             spec=KustomizationSpec(
                 source_ref=source_ref,
                 interval=interval,

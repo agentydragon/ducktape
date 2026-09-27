@@ -39,8 +39,7 @@ class Cluster(_Cluster):
         scope: Construct,
         id: str,
         *,
-        name: str,
-        namespace: str,
+        metadata: ApiObjectMetadata,
         storage_class: str,
         size: str,
         instances: int,
@@ -53,12 +52,11 @@ class Cluster(_Cluster):
         resources: ClusterSpecResources | None = None,
         probes: ClusterSpecProbes | None = None,
         monitoring: ClusterSpecMonitoring | None = None,
-        annotations: dict[str, str] | None = None,
     ) -> None:
         super().__init__(
             scope,
             id,
-            metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=annotations),
+            metadata=metadata,
             spec=ClusterSpec(
                 instances=instances,
                 image_name=image_name,

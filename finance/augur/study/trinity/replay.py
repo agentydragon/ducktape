@@ -143,6 +143,7 @@ from finance.augur.model.series import (
 from finance.augur.policy.funding import fund_claims
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
+from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_sampled_exogenous
 from finance.augur.sim.fixed_point import (
@@ -152,6 +153,7 @@ from finance.augur.sim.fixed_point import (
     rate_to_ppb,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -164,7 +166,6 @@ from finance.augur.sim.prepared import (
     PreparedSeries,
 )
 from finance.augur.sim.results import Finished, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, ObligationType
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence

@@ -30,11 +30,9 @@ class ScaledJob(_ScaledJob):
         scope: Construct,
         id: str,
         *,
-        name: str,
-        namespace: str,
+        metadata: ApiObjectMetadata,
         job_target_ref: ScaledJobSpecJobTargetRef,
         triggers: Sequence[ScaledJobSpecTriggers],
-        labels: dict[str, str] | None = None,
         min_replica_count: int | None = None,
         max_replica_count: int | None = None,
         polling_interval: int | None = None,
@@ -47,7 +45,7 @@ class ScaledJob(_ScaledJob):
         super().__init__(
             scope,
             id,
-            metadata=ApiObjectMetadata(name=name, namespace=namespace, labels=labels),
+            metadata=metadata,
             spec=ScaledJobSpec(
                 job_target_ref=job_target_ref,
                 triggers=list(triggers),

@@ -138,9 +138,9 @@ def _template(
     SandboxTemplate(
         scope,
         id,
-        name=name,
-        namespace=env.namespace,
-        annotations={DESCRIPTION_ANNOTATION: description},
+        metadata=ApiObjectMetadata(
+            name=name, namespace=env.namespace, annotations={DESCRIPTION_ANNOTATION: description}
+        ),
         # The CiliumNetworkPolicy beside it is the box's fence.
         network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
         pod_template=SandboxTemplateSpecPodTemplate(

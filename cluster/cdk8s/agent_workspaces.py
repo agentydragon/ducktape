@@ -84,8 +84,7 @@ def _codex_template(chart: Chart) -> SandboxTemplate:
     return SandboxTemplate(
         chart,
         "codex",
-        name="codex",
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name="codex", namespace=NAMESPACE),
         network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
         pod_template=SandboxTemplateSpecPodTemplate(
             metadata=SandboxTemplateSpecPodTemplateMetadata(labels={"app.kubernetes.io/name": "agent-workspace"}),

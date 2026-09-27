@@ -110,8 +110,11 @@ def chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         "s3-config",
-        name=SECRET_NAME,
-        namespace=namespace.NAME,
+        metadata=ApiObjectMetadata(
+            name=SECRET_NAME,
+            namespace=namespace.NAME,
+            annotations={"description": "Assembles the s3 gateway config Secret from per-tenant identity Secrets."},
+        ),
         refresh="1m",
         store=SecretStoreRef.namespaced(_SECRET_STORE),
         data_from=[DataFrom.from_find_by_name_regexp("^s3-identity-.+-json$")],
@@ -130,7 +133,6 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        annotations={"description": "Assembles the s3 gateway config Secret from per-tenant identity Secrets."},
     )
     return chart
 

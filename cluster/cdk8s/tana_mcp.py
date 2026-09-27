@@ -372,7 +372,7 @@ def _facade(chart: Chart) -> None:
     PrometheusRule(
         chart,
         "facade-prometheusrule",
-        metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
         groups=[
             group(
                 _FACADE,
@@ -448,14 +448,16 @@ def chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         "tana-pat",
-        name=_PAT_SECRET,
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_PAT_SECRET,
+            namespace=_NAMESPACE,
+            annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
+        ),
         refresh="1h",
         store=external_creds.STORE,
         data=[remote_data(_PAT_SECRET, "token")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
     )
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)
     _resigner(chart)

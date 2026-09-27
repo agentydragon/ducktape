@@ -182,8 +182,7 @@ def _rotation(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "github-pat",
-        name=_GITHUB_PAT_SECRET,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name=_GITHUB_PAT_SECRET, namespace=NAMESPACE),
         refresh="1h",
         store=external_creds.STORE,
         data=[remote_data("github-agentydragon-2", "token")],
