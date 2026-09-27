@@ -70,9 +70,7 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
 
 
-def vpa(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno: Kustomization, metrics_server: Kustomization
-) -> Kustomization:
+def vpa(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart, NAME, artifact, timeout="5m", depends_on=flux_kustomization_depends_on_many(kyverno, metrics_server)
+        chart, NAME, artifact, timeout="5m", depends_on=flux_kustomization_depends_on_many(kyverno)
     )

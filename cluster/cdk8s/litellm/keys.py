@@ -186,7 +186,7 @@ def write_manifests(root: Path) -> None:
 # DATABASE_URL deployment because its secrets layer waited on a TF apply that
 # needed the app. Dependency direction here is the fix.
 def litellm_keys_tf(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, litellm: Kustomization, tofu_controller: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization
 ) -> Kustomization:
     name = "litellm-keys-tf"
     return flux_kustomization(
@@ -198,9 +198,5 @@ def litellm_keys_tf(
         # the tf-runner) so sops_file in tf/gitops/litellm-keys can read the virtual-key
         # SSOT. Added when that SOPS file arrived — previously this dir held only plain YAML.
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(
-            # The app must serve (with its DB) before keys can mint.
-            litellm,
-            tofu_controller,
-        ),
+        depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )

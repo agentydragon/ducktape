@@ -294,7 +294,6 @@ def public_coder_agent_devbox(
     artifact: ArtifactGeneratorSpecArtifacts,
     kubevirt: Kustomization,
     external_secrets_operator: Kustomization,
-    public_coder_agent_app_kustomization: Kustomization,
 ) -> Kustomization:
     name = "public-coder-agent-devbox"
     return flux_kustomization(
@@ -303,9 +302,7 @@ def public_coder_agent_devbox(
         artifact,
         timeout="30m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(
-            kubevirt, external_secrets_operator, public_coder_agent_app_kustomization
-        ),
+        depends_on=flux_kustomization_depends_on_many(kubevirt, external_secrets_operator),
         description=(
             "KubeVirt build/test devbox for public-coder-agent "
             "(Bazel/BuildBuddy/direnv), with an ephemeral containerDisk root "

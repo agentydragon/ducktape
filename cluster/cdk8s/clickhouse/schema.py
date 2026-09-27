@@ -90,7 +90,12 @@ def clickhouse_schema(
     app.synth()
 
     kustomization = flux_kustomization(
-        flux_chart, name, artifact, timeout="20m", depends_on=[flux_kustomization_depends_on(clickhouse)]
+        flux_chart,
+        name,
+        artifact,
+        timeout="20m",
+        # bootstrap-never-converges: the Job's 20m deadline runs from apply and Flux never recreates it.
+        depends_on=[flux_kustomization_depends_on(clickhouse)],
     )
     write_yaml(
         out_dir / "kustomization.yaml",

@@ -68,7 +68,6 @@ def forgejo_images(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_operator: Kustomization,
-    forgejo: Kustomization,
     tofu_controller: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
@@ -77,12 +76,7 @@ def forgejo_images(
         artifact,
         timeout="10m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(
-            external_secrets_operator,
-            # Forgejo API must be up (provider target)
-            forgejo,
-            tofu_controller,
-        ),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, tofu_controller),
         description=(
             "ducktape-ci Forgejo registry tenant — shared credential (read by "
             "consumers, including flux-system, via per-namespace ExternalSecrets "

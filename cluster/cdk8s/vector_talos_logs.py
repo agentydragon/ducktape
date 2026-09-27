@@ -15,13 +15,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import (
-    ConfigMapArgs,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on,
-    kustomize_kustomization,
-)
+from cluster.cdk8s.flux import ConfigMapArgs, Kustomization, flux_kustomization, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import loki
@@ -168,14 +162,5 @@ def write_manifests(root: Path) -> None:
     )
 
 
-def vector_talos_logs(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, loki: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        artifact,
-        timeout="2m",
-        depends_on=[
-            # loki-write is the log sink.
-            flux_kustomization_depends_on(loki)
-        ],
-    )
+def vector_talos_logs(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
+    return flux_kustomization(chart, NAME, artifact, timeout="2m")

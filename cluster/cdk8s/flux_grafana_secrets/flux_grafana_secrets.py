@@ -57,10 +57,7 @@ def write_manifests(root: Path) -> None:
 
 
 def flux_grafana_secrets(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    grafana_instance: Kustomization,
-    grafana_operator: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, grafana_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -76,5 +73,5 @@ def flux_grafana_secrets(
             )
         ],
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(grafana_instance, grafana_operator),
+        depends_on=flux_kustomization_depends_on_many(grafana_operator),
     )

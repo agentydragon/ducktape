@@ -109,7 +109,6 @@ def tempo(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     monitoring_crds: Kustomization,
-    grafana_helmrepository: Kustomization,
     seaweedfs_cluster: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
@@ -134,7 +133,6 @@ def tempo(
         depends_on=flux_kustomization_depends_on_many(
             # the chart's serviceMonitor.enabled
             monitoring_crds,
-            grafana_helmrepository,
             seaweedfs_cluster,
         ),
     )

@@ -243,7 +243,6 @@ def mimir(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     monitoring_crds: Kustomization,
-    grafana_helmrepository: Kustomization,
     seaweedfs_cluster: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
@@ -271,7 +270,6 @@ def mimir(
         depends_on=flux_kustomization_depends_on_many(
             # the chart's metaMonitoring.serviceMonitor
             monitoring_crds,
-            grafana_helmrepository,
             # seaweedfs-cluster provides the Seaweed CR + Bucket CRD that our
             # mimir-blocks / mimir-ruler Bucket resources reference (buckets.yaml).
             seaweedfs_cluster,

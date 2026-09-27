@@ -31,7 +31,7 @@ def write_manifests(root: Path) -> None:
 
 
 def gatus_sso_tf(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization, authentik: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization
 ) -> Kustomization:
     name = "gatus-sso-tf"
     return flux_kustomization(
@@ -48,5 +48,5 @@ def gatus_sso_tf(
             )
         ],
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(tofu_controller, authentik),
+        depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )

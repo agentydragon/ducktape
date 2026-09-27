@@ -348,9 +348,8 @@ def aiquota(
     flux_chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     root: Path,
-    cli_proxy_api: Kustomization,
     external_secrets_operator: Kustomization,
-    clickhouse_schema: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     name = NAME
     out_dir = root / OUTPUT_DIR
@@ -369,13 +368,11 @@ def aiquota(
         # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            # Provides the shared namespace and the CLIProxyAPI management Secret.
-            cli_proxy_api,
             # Materializes the narrow mirrored copies of the API bearer for its
             # consumers; the source Secret stays SOPS-managed here.
             external_secrets_operator,
-            # Creates the aiquota database the migrate init container populates.
-            clickhouse_schema,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+            kyverno,
         ),
     )
     write_yaml(

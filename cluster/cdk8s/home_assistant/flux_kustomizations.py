@@ -11,7 +11,6 @@ from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomizatio
 def home_assistant(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    local_path_provisioner: Kustomization,
     seaweedfs_cluster: Kustomization,
     volsync: Kustomization,
     external_secrets_operator: Kustomization,
@@ -26,7 +25,6 @@ def home_assistant(
         timeout="10m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            local_path_provisioner,
             seaweedfs_cluster,
             volsync,
             external_secrets_operator,

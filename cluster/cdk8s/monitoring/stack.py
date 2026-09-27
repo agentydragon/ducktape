@@ -564,7 +564,7 @@ def monitoring_stack(
     artifact: ArtifactGeneratorSpecArtifacts,
     monitoring_namespace: Kustomization,
     monitoring_crds: Kustomization,
-    ntfy: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -596,6 +596,7 @@ def monitoring_stack(
             # The chart's Prometheus/Alertmanager CRs are rejected at admission until
             # the CRDs exist, and the chart no longer installs them itself.
             monitoring_crds,
-            ntfy,
+            # Kyverno's failurePolicy: Fail webhooks admit the chart's Deployments and DaemonSet.
+            kyverno,
         ),
     )
