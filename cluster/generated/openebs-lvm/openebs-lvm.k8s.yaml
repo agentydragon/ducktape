@@ -36,6 +36,10 @@ spec:
       retries: 3
   interval: 30m
   values:
+    crds:
+      csi:
+        volumeSnapshots:
+          enabled: false
     lvmController:
       nodeSelector:
         topology.kubernetes.io/region: proxmox

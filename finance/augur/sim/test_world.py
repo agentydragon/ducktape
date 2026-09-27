@@ -16,7 +16,6 @@ from finance.augur.sim.agent import EconomicAgent, assemble
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput, event_log
-from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxProfile
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.market_path import MarketPath
@@ -33,6 +32,7 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.results import ConsumptionTarget, Executed, Finished, Rejected, RejectedAction, UnpaidClaims
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.tax import PreparedTaxBracket, PreparedTaxProfile
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, opening, taxpayer, world_on
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import Capture, World

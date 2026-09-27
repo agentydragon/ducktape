@@ -36,13 +36,12 @@ from finance.augur.sim.books import (
     TaxPaymentOutcome,
     TlhPortfolioState,
 )
-from finance.augur.sim.compiler.income_sources import income_source_wire_id
 from finance.augur.sim.distributions import Distributions
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.held_bonds import BondStatement, HeldBonds
 from finance.augur.sim.holdings import Holdings, private_issuer
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, PortfolioId, PropertyId
-from finance.augur.sim.income import InterestIncome, TransferIncomeCategory
+from finance.augur.sim.income import InterestIncome, TransferIncomeCategory, income_source_wire_id
 from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios, TlhStatement
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, is_quantity_scale, position_value

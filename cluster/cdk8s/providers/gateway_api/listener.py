@@ -1,8 +1,8 @@
 """Ergonomic building blocks for Gateway API's `Gateway` listeners, following
-cdk8s-plus's own construction pattern: named `@classmethod` factories grouping a spec
-fragment's real variant shapes under one type. No Gateway name/namespace, hostname, or
-certificate fact lives here -- those are this cluster's own values, built in
-`cluster.cdk8s.gateway`.
+cdk8s-plus's own construction pattern: named `@staticmethod` factories grouping a spec
+fragment's real variant shapes under one type, each returning the generated struct. No
+Gateway name/namespace, hostname, or certificate fact lives here -- those are this cluster's
+own values, built in `cluster.cdk8s.gateway`.
 """
 
 from __future__ import annotations
@@ -22,55 +22,36 @@ class ListenerTls:
     wrapped here -- add a `Passthrough` factory the day this cluster needs one.
     """
 
-    def __init__(self, spec: GatewaySpecListenersTls) -> None:
-        self._spec = spec
-
-    def to_spec(self) -> GatewaySpecListenersTls:
-        return self._spec
-
-    @classmethod
-    def terminate(cls, certificate_secret_name: str) -> ListenerTls:
-        return cls(
-            GatewaySpecListenersTls(
-                mode=GatewaySpecListenersTlsMode.TERMINATE,
-                certificate_refs=[GatewaySpecListenersTlsCertificateRefs(name=certificate_secret_name)],
-            )
+    @staticmethod
+    def terminate(certificate_secret_name: str) -> GatewaySpecListenersTls:
+        return GatewaySpecListenersTls(
+            mode=GatewaySpecListenersTlsMode.TERMINATE,
+            certificate_refs=[GatewaySpecListenersTlsCertificateRefs(name=certificate_secret_name)],
         )
 
 
 class Listener:
-    """One `Gateway` listener. Only the two protocol shapes this cluster builds today
-    -- a TLS-terminating HTTPS listener and a plaintext HTTP listener -- are wrapped
+    """One `Gateway` listener; `name` is its `spec.listeners[].name`, the section a route's
+    `parentRefs[].sectionName` attaches to. Only the two protocol shapes this cluster builds
+    today -- a TLS-terminating HTTPS listener and a plaintext HTTP listener -- are wrapped
     here; pass a full `GatewaySpecListeners` directly for any other combination.
     """
 
-    def __init__(self, spec: GatewaySpecListeners) -> None:
-        self._spec = spec
-
-    def to_spec(self) -> GatewaySpecListeners:
-        return self._spec
-
-    @classmethod
+    @staticmethod
     def https(
-        cls,
         *,
         name: str,
         hostname: str,
         port: int,
-        tls: ListenerTls,
+        tls: GatewaySpecListenersTls,
         allowed_routes: GatewaySpecListenersAllowedRoutes | None = None,
-    ) -> Listener:
-        return cls(
-            GatewaySpecListeners(
-                name=name,
-                hostname=hostname,
-                port=port,
-                protocol="HTTPS",
-                tls=tls.to_spec(),
-                allowed_routes=allowed_routes,
-            )
+    ) -> GatewaySpecListeners:
+        return GatewaySpecListeners(
+            name=name, hostname=hostname, port=port, protocol="HTTPS", tls=tls, allowed_routes=allowed_routes
         )
 
-    @classmethod
-    def http(cls, *, name: str, port: int, allowed_routes: GatewaySpecListenersAllowedRoutes | None = None) -> Listener:
-        return cls(GatewaySpecListeners(name=name, port=port, protocol="HTTP", allowed_routes=allowed_routes))
+    @staticmethod
+    def http(
+        *, name: str, port: int, allowed_routes: GatewaySpecListenersAllowedRoutes | None = None
+    ) -> GatewaySpecListeners:
+        return GatewaySpecListeners(name=name, port=port, protocol="HTTP", allowed_routes=allowed_routes)

@@ -6,9 +6,9 @@ from enum import StrEnum
 from finance.augur.sim import observations
 from finance.augur.sim.actions import ClaimId
 from finance.augur.sim.books import AccountRef, Record
-from finance.augur.sim.compiler.tax import PreparedTaxProfile
 from finance.augur.sim.ids import AgentId
 from finance.augur.sim.mortgage import InstallmentDue, MortgagePayment
+from finance.augur.sim.tax import PreparedTaxProfile
 
 
 class ObligationType(StrEnum):

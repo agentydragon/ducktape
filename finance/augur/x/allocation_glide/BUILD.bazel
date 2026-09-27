@@ -29,7 +29,6 @@ py_library(
         "//finance/augur/sim:results",
         "//finance/augur/sim:session",
         "//finance/augur/sim:world",
-        "//finance/augur/sim/compiler:execution",
         "@pypi//numpy",
     ],
 )
