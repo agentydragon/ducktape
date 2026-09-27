@@ -29,14 +29,7 @@ from finance.augur.sim.jurisdictions import (
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedObligation,
-    PreparedSeries,
-)
+from finance.augur.sim.prepared import PreparedJurisdiction, PreparedObligation, PreparedSeries
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -102,9 +95,7 @@ def compose(case: Situation, rollout_id: int) -> World:
         jurisdictions=(PreparedJurisdiction(jurisdiction_id=_FLAT_TAX.jurisdiction_id, level=_FLAT_TAX.level),),
     )
     for agent_id in (HOUSEHOLD, CREDITOR, TAX_AUTHORITY):
-        world.declare_account(
-            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
-        )
+        world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
     profile = TaxProfile(
         agent_id=HOUSEHOLD,
         jurisdiction_ids=[_FLAT_TAX.jurisdiction_id],
@@ -117,22 +108,16 @@ def compose(case: Situation, rollout_id: int) -> World:
         )
     )
     scale = quantity_scale_for_asset(STOCK)
-    world.declare_pool(
-        PreparedHoldingPool(
-            agent_id=HOUSEHOLD, account_id=CHECKING, asset_id=AssetId(STOCK.symbol), quantity_scale=scale
-        )
-    )
-    world.hold(
-        PreparedLot(
-            lot_id=LotId("example-lot"),
-            agent_id=HOUSEHOLD,
-            account_id=CHECKING,
-            asset_id=AssetId(STOCK.symbol),
-            purchase_month=-24,
-            quantity_scale=scale,
-            units=quantity_to_quanta(2, scale=scale),
-            basis=USD.quanta(80),
-        )
+    world.declare_pool(agent_id=HOUSEHOLD, account_id=CHECKING, asset_id=AssetId(STOCK.symbol), quantity_scale=scale)
+    world.hold_lot(
+        lot_id=LotId("example-lot"),
+        agent_id=HOUSEHOLD,
+        account_id=CHECKING,
+        asset_id=AssetId(STOCK.symbol),
+        purchase_month=-24,
+        quantity_scale=scale,
+        units=quantity_to_quanta(2, scale=scale),
+        basis=USD.quanta(80),
     )
     world.track(
         Biller(

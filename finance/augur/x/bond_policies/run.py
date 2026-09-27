@@ -34,11 +34,8 @@ from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
-    PreparedAccount,
     PreparedDistribution,
     PreparedDistributionSlice,
-    PreparedHoldingPool,
-    PreparedLot,
     PreparedObligation,
     PreparedSeries,
 )
@@ -112,24 +109,18 @@ def compose(case: Situation, rollout_id: int) -> World:
         income_sources=(ORDINARY_INCOME, InterestIncome(issuer_jurisdiction_id=None)),
     )
     for agent_id in (HOUSEHOLD, WORLD):
-        world.declare_account(
-            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
-        )
+        world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
     scale = quantity_scale_for_asset(SecurityKey(symbol=STRATEGY))
-    world.declare_pool(
-        PreparedHoldingPool(agent_id=HOUSEHOLD, account_id=BROKERAGE, asset_id=AssetId(STRATEGY), quantity_scale=scale)
-    )
-    world.hold(
-        PreparedLot(
-            lot_id=LotId("example_initial_strategy"),
-            agent_id=HOUSEHOLD,
-            account_id=BROKERAGE,
-            asset_id=AssetId(STRATEGY),
-            purchase_month=-1,
-            quantity_scale=scale,
-            units=quantity_to_quanta(INITIAL_WEALTH / INITIAL_UNIT_PRICE, scale=scale),
-            basis=int(currency_amount_to_quanta(INITIAL_WEALTH, quantum=QUANTUM)),
-        )
+    world.declare_pool(agent_id=HOUSEHOLD, account_id=BROKERAGE, asset_id=AssetId(STRATEGY), quantity_scale=scale)
+    world.hold_lot(
+        lot_id=LotId("example_initial_strategy"),
+        agent_id=HOUSEHOLD,
+        account_id=BROKERAGE,
+        asset_id=AssetId(STRATEGY),
+        purchase_month=-1,
+        quantity_scale=scale,
+        units=quantity_to_quanta(INITIAL_WEALTH / INITIAL_UNIT_PRICE, scale=scale),
+        basis=int(currency_amount_to_quanta(INITIAL_WEALTH, quantum=QUANTUM)),
     )
     world.declare_distribution(
         PreparedDistribution(

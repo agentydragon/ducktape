@@ -23,14 +23,7 @@ from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedLot,
-    PreparedObligation,
-    PreparedRecurringTransfer,
-    PreparedSeries,
-)
+from finance.augur.sim.prepared import PreparedObligation, PreparedRecurringTransfer, PreparedSeries
 from finance.augur.sim.results import (
     Executed,
     Finished,
@@ -60,35 +53,20 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(amount, quantum=QUANTUM))
 
 
-def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=ref(agent_id, account_id), opening_balance=money(balance))
+def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return ref(agent_id, account_id), money(balance)
 
 
-def pool(agent_id: AgentId, account_id: AccountId) -> PreparedHoldingPool:
-    return PreparedHoldingPool(
-        agent_id=agent_id, account_id=account_id, asset_id=AssetId(VTI.symbol), quantity_scale=SCALE
-    )
+@dataclass(frozen=True)
+class OpeningLot:
+    """VTI Alice holds in `account_id` when the path starts."""
 
-
-def lot(
-    lot_id: LotId,
-    agent_id: AgentId,
-    account_id: AccountId,
-    *,
-    quantity: Decimal | int,
-    cost_basis: Decimal | int,
-    purchase_month: int = -24,
-) -> PreparedLot:
-    return PreparedLot(
-        lot_id=lot_id,
-        agent_id=agent_id,
-        account_id=account_id,
-        asset_id=AssetId(VTI.symbol),
-        purchase_month=purchase_month,
-        quantity_scale=SCALE,
-        units=quantity_to_quanta(quantity, scale=SCALE),
-        basis=money(cost_basis),
-    )
+    lot_id: LotId
+    account_id: AccountId
+    quantity: Decimal | int
+    cost_basis: Decimal | int
+    purchase_month: int = -24
 
 
 def bill(
@@ -140,9 +118,10 @@ class Situation:
     """The books and claims every path declares; `compose` puts them on one `World` per price path."""
 
     horizon_months: int
-    accounts: list[PreparedAccount] = field(default_factory=list)
-    pools: list[PreparedHoldingPool] = field(default_factory=list)
-    lots: list[PreparedLot] = field(default_factory=list)
+    accounts: list[tuple[AccountRef, int]] = field(default_factory=list)
+    # The accounts Alice holds a VTI pool in.
+    pools: list[AccountId] = field(default_factory=list)
+    lots: list[OpeningLot] = field(default_factory=list)
     claims: list[PreparedObligation] = field(default_factory=list)
     recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
 
@@ -153,12 +132,23 @@ def compose(case: Situation, rollout_id: int, *, series: tuple[PreparedSeries, .
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
     )
-    for opening in case.accounts:
-        world.declare_account(opening)
-    for holding_pool in case.pools:
-        world.declare_pool(holding_pool)
-    for holding in case.lots:
-        world.hold(holding)
+    for opened, balance in case.accounts:
+        world.declare_account(account=opened, opening_balance=balance)
+    for account_id in case.pools:
+        world.declare_pool(
+            agent_id=AgentId("alice"), account_id=account_id, asset_id=AssetId(VTI.symbol), quantity_scale=SCALE
+        )
+    for held in case.lots:
+        world.hold_lot(
+            lot_id=held.lot_id,
+            agent_id=AgentId("alice"),
+            account_id=held.account_id,
+            asset_id=AssetId(VTI.symbol),
+            purchase_month=held.purchase_month,
+            quantity_scale=SCALE,
+            units=quantity_to_quanta(held.quantity, scale=SCALE),
+            basis=money(held.cost_basis),
+        )
     for flow in case.recurring_transfers:
         world.declare_flow(flow)
     for claim in case.claims:
@@ -171,8 +161,8 @@ def rent() -> Situation:
     return Situation(
         horizon_months=1,
         accounts=[account(AgentId("alice"), balance=Decimal(100)), account(AgentId("landlord"))],
-        pools=[pool(AgentId("alice"), AccountId("checking"))],
-        lots=[lot(LotId("alice_vti"), AgentId("alice"), AccountId("checking"), quantity=10, cost_basis=Decimal(500))],
+        pools=[AccountId("checking")],
+        lots=[OpeningLot(LotId("alice_vti"), AccountId("checking"), quantity=10, cost_basis=Decimal(500))],
         claims=[bill("rent_due", "rent", ref(AgentId("alice")), ref(AgentId("landlord")), Decimal(500))],
     )
 
@@ -331,9 +321,9 @@ def test_funding_consumes_only_selected_account_fifo_pool(rent: Situation) -> No
     rent.claims[0] = replace(
         rent.claims[0], from_account=ref(AgentId("alice"), AccountId("taxable")), amount_due=money(Decimal(400))
     )
-    rent.lots[0] = lot(LotId("alice_vti"), AgentId("alice"), AccountId("taxable"), quantity=5, cost_basis=Decimal(250))
-    rent.lots.append(lot(LotId("ira_vti"), AgentId("alice"), AccountId("ira"), quantity=100, cost_basis=Decimal(5000)))
-    rent.pools = [pool(AgentId("alice"), AccountId("taxable")), pool(AgentId("alice"), AccountId("ira"))]
+    rent.lots[0] = OpeningLot(LotId("alice_vti"), AccountId("taxable"), quantity=5, cost_basis=Decimal(250))
+    rent.lots.append(OpeningLot(LotId("ira_vti"), AccountId("ira"), quantity=100, cost_basis=Decimal(5000)))
+    rent.pools = [AccountId("taxable"), AccountId("ira")]
     [result], _ = _run(
         rent,
         partial(fund_claims, targets={(AccountId("taxable"), AssetId("vti")): 1}, cash_account_id=AccountId("taxable")),
@@ -352,8 +342,8 @@ def test_funding_consumes_only_selected_account_fifo_pool(rent: Situation) -> No
 
 def test_funding_sells_from_source_account_into_cash_account(rent: Situation) -> None:
     rent.accounts[0] = account(AgentId("alice"))
-    rent.lots[0] = lot(LotId("alice_vti"), AgentId("alice"), AccountId("taxable"), quantity=5, cost_basis=Decimal(250))
-    rent.pools = [pool(AgentId("alice"), AccountId("taxable"))]
+    rent.lots[0] = OpeningLot(LotId("alice_vti"), AccountId("taxable"), quantity=5, cost_basis=Decimal(250))
+    rent.pools = [AccountId("taxable")]
     rent.claims[0] = replace(rent.claims[0], amount_due=money(Decimal(400)))
     [result], _ = _run(
         rent,
@@ -375,13 +365,8 @@ def test_funding_sells_from_source_account_into_cash_account(rent: Situation) ->
 
 def test_funding_covers_monthly_spend_deficit(rent: Situation) -> None:
     rent.accounts[0] = account(AgentId("alice"), balance=Decimal(1000))
-    rent.lots[0] = lot(
-        LotId("alice_vti"),
-        AgentId("alice"),
-        AccountId("checking"),
-        quantity=200,
-        cost_basis=Decimal(10000),
-        purchase_month=-1,
+    rent.lots[0] = OpeningLot(
+        LotId("alice_vti"), AccountId("checking"), quantity=200, cost_basis=Decimal(10000), purchase_month=-1
     )
     rent.claims = [monthly_bill("alice_rent", "rent", ref(AgentId("alice")), ref(AgentId("landlord")), Decimal(5000))]
     rent.horizon_months = 3
@@ -417,9 +402,7 @@ def test_cash_band_uses_balance_after_planned_claims(
     rent: Situation, cash: int, ending_cash: int, sales: list[tuple[int, int]]
 ) -> None:
     rent.accounts[0] = account(AgentId("alice"), balance=Decimal(cash))
-    rent.lots[0] = lot(
-        LotId("alice_vti"), AgentId("alice"), AccountId("checking"), quantity=100, cost_basis=Decimal(5000)
-    )
+    rent.lots[0] = OpeningLot(LotId("alice_vti"), AccountId("checking"), quantity=100, cost_basis=Decimal(5000))
     rent.claims[0] = replace(rent.claims[0], amount_due=money(Decimal(1000)))
     [result], _ = _run(rent, _band_funding)
     assert result.stop is None
@@ -487,13 +470,8 @@ def test_first_payment_survives_later_rejection_and_subsequent_action_is_skipped
 @pytest.fixture
 def exhaustion(rent: Situation) -> Situation:
     rent.accounts[0] = account(AgentId("alice"))
-    rent.lots[0] = lot(
-        LotId("alice_vti"),
-        AgentId("alice"),
-        AccountId("checking"),
-        quantity=5,
-        cost_basis=Decimal(400),
-        purchase_month=-1,
+    rent.lots[0] = OpeningLot(
+        LotId("alice_vti"), AccountId("checking"), quantity=5, cost_basis=Decimal(400), purchase_month=-1
     )
     rent.claims = [monthly_bill("alice_rent", "rent", ref(AgentId("alice")), ref(AgentId("landlord")), Decimal(1000))]
     return rent
@@ -518,13 +496,8 @@ def test_asset_exhaustion_keeps_successful_sale_and_rejects_full_payment(exhaust
 
 
 def test_failed_path_skips_future_transfers_and_policy_calls_while_other_path_continues(exhaustion: Situation) -> None:
-    exhaustion.lots[0] = lot(
-        LotId("alice_vti"),
-        AgentId("alice"),
-        AccountId("checking"),
-        quantity=1,
-        cost_basis=Decimal(80),
-        purchase_month=-1,
+    exhaustion.lots[0] = OpeningLot(
+        LotId("alice_vti"), AccountId("checking"), quantity=1, cost_basis=Decimal(80), purchase_month=-1
     )
     exhaustion.accounts.append(account(AgentId("employer")))
     exhaustion.recurring_transfers = (

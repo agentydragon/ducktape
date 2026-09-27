@@ -7,7 +7,7 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedAccount, PreparedSeries
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.tax import PreparedTaxBracket, PreparedTaxProfile, PreparedTaxRules
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -51,12 +51,9 @@ def taxpayer(agent_id: AgentId) -> PreparedTaxProfile:
     )
 
 
-def opening(balances: Mapping[AccountRef, int]) -> tuple[PreparedAccount, ...]:
+def opening(balances: Mapping[AccountRef, int]) -> dict[AccountRef, int]:
     """The four accounts, each opening at its balance here and at zero otherwise."""
-    return tuple(
-        PreparedAccount(account=account, opening_balance=balances.get(account, 0))
-        for account in (CASH, RESERVE, RECIPIENT, EXOGENOUS)
-    )
+    return {account: balances.get(account, 0) for account in (CASH, RESERVE, RECIPIENT, EXOGENOUS)}
 
 
 ACCOUNTS = opening({CASH: 100})
@@ -64,12 +61,12 @@ TAXPAYERS = (taxpayer(HOUSEHOLD), taxpayer(OTHER))
 
 
 def accounting(
-    accounts: Sequence[PreparedAccount] = ACCOUNTS, taxpayers: Sequence[PreparedTaxProfile] = TAXPAYERS
+    accounts: Mapping[AccountRef, int] = ACCOUNTS, taxpayers: Sequence[PreparedTaxProfile] = TAXPAYERS
 ) -> Accounting:
-    """The accounts and taxpayers on a fresh ledger."""
+    """The accounts, at their opening balances, and taxpayers on a fresh ledger."""
     books = Accounting(INCOME_SOURCES)
-    for account in accounts:
-        books.declare(account)
+    for account, balance in accounts.items():
+        books.declare(account=account, opening_balance=balance)
     for profile in taxpayers:
         books.enroll(profile)
     return books
@@ -81,17 +78,18 @@ def world_on(
     horizon_months: int,
     rollout_id: int = 0,
     rollout_count: int = 1,
-    accounts: Sequence[PreparedAccount] = ACCOUNTS,
+    accounts: Mapping[AccountRef, int] = ACCOUNTS,
     taxpayers: Sequence[PreparedTaxProfile] = TAXPAYERS,
 ) -> World:
-    """An unstarted world on one path of `series` with the accounts declared and each taxpayer's authority tracked."""
+    """An unstarted world on one path of `series` with the accounts declared at their opening balances and each
+    taxpayer's authority tracked."""
     world = World(
         MarketPath(series, rollout_id, rollout_count=rollout_count),
         horizon_months=horizon_months,
         income_sources=INCOME_SOURCES,
     )
-    for account in accounts:
-        world.declare_account(account)
+    for account, balance in accounts.items():
+        world.declare_account(account=account, opening_balance=balance)
     for profile in taxpayers:
         world.track(TaxAuthority(profile, indexation=FixedNominalLaw()))
     return world

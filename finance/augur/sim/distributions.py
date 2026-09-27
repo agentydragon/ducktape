@@ -1,6 +1,6 @@
 """Ordinary holding distributions, rounded once per pool and then per tax slice."""
 
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Collection, Sequence
 from copy import deepcopy
 
 from finance.augur.sim.accounting import Accounting
@@ -8,7 +8,7 @@ from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, DistributionO
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import Holdings
 from finance.augur.sim.ids import AccountId, AgentId, AssetId
-from finance.augur.sim.income import TransferIncomeCategory, income_source_wire_id
+from finance.augur.sim.income import income_source_wire_id
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, distribution_value, mul_div
 from finance.augur.sim.prepared import PreparedDistribution
@@ -34,11 +34,11 @@ class Distributions:
             lots = [
                 lot
                 for lot in holdings.lots
-                if (lot.spec.agent_id, lot.spec.account_id, lot.spec.asset_id)
+                if (lot.agent_id, lot.account_id, lot.asset_id)
                 == (spec.agent_id, spec.holding_account_id, spec.asset_id)
             ]
             units = checked_count(sum(lot.units_remaining for lot in lots), "distribution pool quantity")
-            scale = lots[0].spec.quantity_scale if lots else 1
+            scale = lots[0].quantity_scale if lots else 1
             total = distribution_value(market.value(f"security_distribution:{spec.asset_id}", month), units, scale)
             tax = deepcopy(accounting.tax)
             entries = []
@@ -75,9 +75,3 @@ class Distributions:
             accounting.apply_entries(entries)
             accounting.tax = tax
             self.outcomes.extend(outcomes)
-
-
-def distribution_income_categories(distributions: Iterable[PreparedDistribution]) -> set[TransferIncomeCategory]:
-    """Income sources needed by tax compilation for every distribution slice."""
-
-    return {tax_slice.income_category for distribution in distributions for tax_slice in distribution.tax_character}

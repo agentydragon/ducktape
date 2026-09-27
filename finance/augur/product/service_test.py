@@ -97,8 +97,6 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId, PropertyId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
     PreparedIndexedAmount,
     PreparedPropertyCashflow,
     PreparedRecurringPropertyCashflow,
@@ -333,18 +331,14 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled(
 def test_a_holding_no_series_prices_is_refused_where_its_pool_is_declared() -> None:
     world = World(MarketPath((), 0, rollout_count=1), horizon_months=1)
     world.declare_account(
-        PreparedAccount(
-            account=AccountRef(agent_id=AgentId("agent_a"), account_id=AccountId("checking")), opening_balance=0
-        )
+        account=AccountRef(agent_id=AgentId("agent_a"), account_id=AccountId("checking")), opening_balance=0
     )
     with pytest.raises(ValueError, match="missing public security series for 'missing'"):
         world.declare_pool(
-            PreparedHoldingPool(
-                agent_id=AgentId("agent_a"),
-                account_id=AccountId("checking"),
-                asset_id=AssetId("missing"),
-                quantity_scale=1_000_000,
-            )
+            agent_id=AgentId("agent_a"),
+            account_id=AccountId("checking"),
+            asset_id=AssetId("missing"),
+            quantity_scale=1_000_000,
         )
 
 
@@ -1892,7 +1886,7 @@ def test_build_situation_wires_property_expenses_to_payees(augur_config: Config,
         assert isinstance(obligation.amount_due, PreparedIndexedAmount)
         expense_amounts.append(obligation.amount_due.base_amount)
     assert expense_amounts == [_quanta_int(_usd_quanta(amount)) for amount in (150, 182, 487.50)]
-    assert {opening.account.agent_id for opening in situation.accounts} >= {"hoa", "insurer", "maintenance_vendor"}
+    assert {account.agent_id for account, _ in situation.accounts} >= {"hoa", "insurer", "maintenance_vendor"}
 
 
 def test_property_purchase_emits_homeowners_insurance_at_default_pct(product: service.ProductService) -> None:

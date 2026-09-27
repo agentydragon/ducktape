@@ -159,8 +159,8 @@ def run(
         income_sources=situation.income_sources,
         jurisdictions=prepared_jurisdictions(jurisdictions, bonds=(), distributions=situation.distributions),
     )
-    for account in situation.accounts:
-        world.declare_account(account)
+    for account, balance in situation.accounts:
+        world.declare_account(account=account, opening_balance=balance)
     if tax is not None:
         world.track(
             TaxAuthority(
@@ -168,9 +168,23 @@ def run(
             )
         )
     for pool in situation.pools:
-        world.declare_pool(pool)
+        world.declare_pool(
+            agent_id=pool.agent_id,
+            account_id=pool.account_id,
+            asset_id=pool.asset_id,
+            quantity_scale=pool.quantity_scale,
+        )
     for held in situation.lots:
-        world.hold(held)
+        world.hold_lot(
+            lot_id=held.lot_id,
+            agent_id=held.agent_id,
+            account_id=held.account_id,
+            asset_id=held.asset_id,
+            purchase_month=held.purchase_month,
+            quantity_scale=held.quantity_scale,
+            units=held.units,
+            basis=held.basis,
+        )
     for distribution in situation.distributions:
         world.declare_distribution(distribution)
     for obligation in situation.obligations:

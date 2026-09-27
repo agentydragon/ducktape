@@ -19,7 +19,6 @@ from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
-    PreparedAccount,
     PreparedIndexedAmount,
     PreparedObligation,
     PreparedRecurringTransfer,
@@ -53,11 +52,9 @@ def _indexed(base_amount: Decimal, *, base_month_index: int, adjustment_period_m
     )
 
 
-def _account(agent_id: AgentId, balance: Decimal) -> PreparedAccount:
-    return PreparedAccount(
-        account=AccountRef(agent_id=agent_id, account_id=CHECKING),
-        opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
-    )
+def _account(agent_id: AgentId, balance: Decimal) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return AccountRef(agent_id=agent_id, account_id=CHECKING), int(currency_amount_to_quanta(balance, quantum=QUANTUM))
 
 
 def _rent_obligation(amount: PreparedIndexedAmount) -> PreparedObligation:
@@ -97,7 +94,7 @@ def _compose(
     *,
     rollout_count: int,
     horizon_months: int,
-    accounts: Sequence[PreparedAccount],
+    accounts: Sequence[tuple[AccountRef, int]],
     obligation: PreparedObligation | None = None,
     transfer: PreparedRecurringTransfer | None = None,
 ) -> World:
@@ -106,8 +103,8 @@ def _compose(
         horizon_months=horizon_months,
         income_sources=(ORDINARY_INCOME,),
     )
-    for account in accounts:
-        world.declare_account(account)
+    for opened, balance in accounts:
+        world.declare_account(account=opened, opening_balance=balance)
     if obligation is not None:
         world.track(Biller(obligation))
     if transfer is not None:

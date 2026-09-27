@@ -24,12 +24,9 @@ from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import Currency
 from finance.augur.sim.prepared import (
-    PreparedAccount,
     PreparedDistribution,
     PreparedDistributionSlice,
-    PreparedHoldingPool,
     PreparedJurisdiction,
-    PreparedLot,
     PreparedSeries,
 )
 from finance.augur.sim.results import Executed, Finished, Receipt, Rejected, RejectedAction, Rollout
@@ -147,11 +144,9 @@ def world(paths: list[Path], rollout_id: int) -> World:
         ),
     ]
     for account in accounts:
-        result.declare_account(PreparedAccount(account=account, opening_balance=0))
+        result.declare_account(account=account, opening_balance=0)
     for sleeve in Sleeve:
-        result.declare_pool(
-            PreparedHoldingPool(agent_id=RETIREE, account_id=BROKERAGE, asset_id=AssetId(sleeve), quantity_scale=1)
-        )
+        result.declare_pool(agent_id=RETIREE, account_id=BROKERAGE, asset_id=AssetId(sleeve), quantity_scale=1)
     if path.taxed:
         profile = TaxProfile(
             agent_id=RETIREE,
@@ -188,17 +183,15 @@ def world(paths: list[Path], rollout_id: int) -> World:
         *((Sleeve.EQUITY, lot, units) for lot, units in path.equity_lots),
     ]
     for index, (sleeve, lot, units) in enumerate(lots):
-        result.hold(
-            PreparedLot(
-                lot_id=LotId(lot),
-                agent_id=RETIREE,
-                account_id=BROKERAGE,
-                asset_id=AssetId(sleeve),
-                purchase_month=index - len(lots),
-                quantity_scale=1,
-                units=units,
-                basis=100 * units,
-            )
+        result.hold_lot(
+            lot_id=LotId(lot),
+            agent_id=RETIREE,
+            account_id=BROKERAGE,
+            asset_id=AssetId(sleeve),
+            purchase_month=index - len(lots),
+            quantity_scale=1,
+            units=units,
+            basis=100 * units,
         )
     return result
 

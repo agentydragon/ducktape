@@ -14,24 +14,37 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import apportion, checked_count, checked_wide, is_quantity_scale, position_value
 from finance.augur.sim.observations import HoldingPool, PublicPosition
-from finance.augur.sim.prepared import PreparedHoldingPool, PreparedLot
 
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
+class Pool:
+    """A declared place an owner may hold a security, on one quantity scale."""
+
+    agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
+    quantity_scale: int
+
+
+@dataclass(kw_only=True)
 class Lot:
-    spec: PreparedLot
+    lot_id: LotId
+    agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
+    purchase_month: int
+    quantity_scale: int
     units_remaining: int
     basis_remaining: int
 
     def snapshot(self) -> SecurityLotState:
-        spec = self.spec
         return SecurityLotState(
-            lot_id=spec.lot_id,
-            agent_id=spec.agent_id,
-            account_id=spec.account_id,
-            asset_id=spec.asset_id,
-            purchase_month=spec.purchase_month,
-            quantity_scale=spec.quantity_scale,
+            lot_id=self.lot_id,
+            agent_id=self.agent_id,
+            account_id=self.account_id,
+            asset_id=self.asset_id,
+            purchase_month=self.purchase_month,
+            quantity_scale=self.quantity_scale,
             units_remaining=self.units_remaining,
             basis_remaining=self.basis_remaining,
         )
@@ -84,33 +97,34 @@ class PositionStatement(Statement):
 
 class Holdings:
     def __init__(self) -> None:
-        self.pools: tuple[PreparedHoldingPool, ...] = ()
+        self.pools: tuple[Pool, ...] = ()
         self.lots: list[Lot] = []
         # Holdings a managed portfolio owns; ordinary purchases into them are refused.
         self.managed: set[tuple[AgentId, AccountId, AssetId]] = set()
         # This month's dispositions, cleared by `begin_month`; lots are the state.
         self.dispositions: list[Disposition] = []
 
-    def declare_pool(self, accounting: Accounting, pool: PreparedHoldingPool) -> None:
+    def declare_pool(self, accounting: Accounting, pool: Pool) -> None:
         self.pools = (*self.pools, pool)
         accounting.ledger.ensure_account(basis_account(pool.agent_id, pool.account_id, pool.asset_id))
         accounting.ledger.ensure_account(gain_account(pool.agent_id))
 
-    def hold(self, accounting: Accounting, spec: PreparedLot) -> None:
+    def hold(self, accounting: Accounting, lot: Lot) -> None:
         """Open a lot held at month zero, its basis against the owner's opening equity."""
-        self.lots.append(Lot(spec, spec.units, spec.basis))
-        if spec.basis:
+        self.lots.append(lot)
+        if lot.basis_remaining:
             accounting.apply(
                 JournalEntry(
                     month=0,
-                    cause_id=f"opening-lot:{spec.lot_id}",
+                    cause_id=f"opening-lot:{lot.lot_id}",
                     postings=[
                         Posting(
-                            account=basis_account(spec.agent_id, spec.account_id, spec.asset_id), amount=spec.basis
+                            account=basis_account(lot.agent_id, lot.account_id, lot.asset_id),
+                            amount=lot.basis_remaining,
                         ),
                         Posting(
-                            account=AccountRef(agent_id=spec.agent_id, account_id=AccountId("equity:opening")),
-                            amount=checked_count(-spec.basis, "money negation"),
+                            account=AccountRef(agent_id=lot.agent_id, account_id=AccountId("equity:opening")),
+                            amount=checked_count(-lot.basis_remaining, "money negation"),
                         ),
                     ],
                 )
@@ -129,21 +143,20 @@ class Holdings:
     def statement(self, actor: AgentId, market: MarketPath, month: int) -> PositionStatement:
         positions = []
         for lot in self.lots:
-            spec = lot.spec
-            if spec.agent_id != actor or lot.units_remaining == 0 or private_issuer(spec.asset_id) is not None:
+            if lot.agent_id != actor or lot.units_remaining == 0 or private_issuer(lot.asset_id) is not None:
                 continue
-            price = self.public_price(actor, spec.asset_id, market, month)
+            price = self.public_price(actor, lot.asset_id, market, month)
             positions.append(
                 PublicPosition(
-                    account_id=spec.account_id,
-                    asset_id=spec.asset_id,
-                    lot_id=spec.lot_id,
-                    purchase_month=spec.purchase_month,
+                    account_id=lot.account_id,
+                    asset_id=lot.asset_id,
+                    lot_id=lot.lot_id,
+                    purchase_month=lot.purchase_month,
                     units=lot.units_remaining,
-                    quantity_scale=spec.quantity_scale,
+                    quantity_scale=lot.quantity_scale,
                     book_basis=lot.basis_remaining,
                     price=price,
-                    value=position_value(price, lot.units_remaining, spec.quantity_scale),
+                    value=position_value(price, lot.units_remaining, lot.quantity_scale),
                 )
             )
         return PositionStatement(
@@ -171,16 +184,14 @@ class Holdings:
             raise ValueError("unknown candidate lot")
         if len(set(candidates)) != len(candidates):
             raise ValueError("duplicate candidate lot")
-        ordered = sorted(
-            candidates, key=lambda index: (self.lots[index].spec.purchase_month, self.lots[index].spec.lot_id)
-        )
+        ordered = sorted(candidates, key=lambda index: (self.lots[index].purchase_month, self.lots[index].lot_id))
         remaining = units
         selected = []
         for index in ordered:
             lot = self.lots[index]
             sold = min(remaining, lot.units_remaining)
             if sold > 0:
-                selected.append(LotSale(account_id=lot.spec.account_id, lot_id=lot.spec.lot_id, units=sold))
+                selected.append(LotSale(account_id=lot.account_id, lot_id=lot.lot_id, units=sold))
                 remaining -= sold
             if not remaining:
                 break
@@ -194,7 +205,7 @@ class Holdings:
             raise ValueError("unknown declared proceeds account")
         if not request.lots or proceeds < 0:
             raise ValueError("sale needs lots and nonnegative execution proceeds")
-        by_id = {lot.spec.lot_id: index for index, lot in enumerate(self.lots)}
+        by_id = {lot.lot_id: index for index, lot in enumerate(self.lots)}
         seen = set()
         selected = []
         for selection in request.lots:
@@ -205,7 +216,7 @@ class Holdings:
                 raise ValueError(f"unknown lot {selection.lot_id!r}")
             index = by_id[selection.lot_id]
             lot = self.lots[index]
-            if (lot.spec.agent_id, lot.spec.account_id, lot.spec.asset_id) != (
+            if (lot.agent_id, lot.account_id, lot.asset_id) != (
                 request.agent_id,
                 selection.account_id,
                 request.asset_id,
@@ -218,14 +229,14 @@ class Holdings:
 
     def sell(self, accounting: Accounting, month: int, request: Sell, *, price: int) -> None:
         selected = self._selected(accounting, request, price)
-        amounts = [position_value(price, units, self.lots[index].spec.quantity_scale) for index, units in selected]
+        amounts = [position_value(price, units, self.lots[index].quantity_scale) for index, units in selected]
         self._post_sale(accounting, month, request, selected, amounts)
 
     def cashout(self, accounting: Accounting, month: int, request: Sell, *, total: int) -> None:
         selected = self._selected(accounting, request, total)
-        scale = max(self.lots[index].spec.quantity_scale for index, _ in selected)
+        scale = max(self.lots[index].quantity_scale for index, _ in selected)
         weights = [
-            checked_wide(units * (scale // self.lots[index].spec.quantity_scale), "total sale proceeds allocation")
+            checked_wide(units * (scale // self.lots[index].quantity_scale), "total sale proceeds allocation")
             for index, units in selected
         ]
         denominator = checked_wide(sum(weights), "total sale proceeds allocation")
@@ -259,18 +270,17 @@ class Holdings:
         tax = deepcopy(accounting.tax)
         for (index, units), proceeds in zip(selected, amounts, strict=True):
             lot = self.lots[index]
-            spec = lot.spec
             basis = apportion(lot.basis_remaining, units, lot.units_remaining)
             gain = checked_count(proceeds - basis, "money subtraction")
             total_proceeds = checked_count(total_proceeds + proceeds, "money addition")
             total_gain = checked_count(total_gain + gain, "money addition")
-            tax.gain(request.agent_id, gain, long_term=month - spec.purchase_month >= 12)
+            tax.gain(request.agent_id, gain, long_term=month - lot.purchase_month >= 12)
             replacements.append(
                 (index, lot.units_remaining - units, checked_count(lot.basis_remaining - basis, "money subtraction"))
             )
             basis_postings.append(
                 Posting(
-                    account=basis_account(spec.agent_id, spec.account_id, spec.asset_id),
+                    account=basis_account(lot.agent_id, lot.account_id, lot.asset_id),
                     amount=checked_count(-basis, "money negation"),
                 )
             )
@@ -279,11 +289,11 @@ class Holdings:
                     month,
                     request.cause_id,
                     request.agent_id,
-                    spec.account_id,
-                    spec.asset_id,
-                    spec.lot_id,
-                    spec.purchase_month,
-                    spec.quantity_scale,
+                    lot.account_id,
+                    lot.asset_id,
+                    lot.lot_id,
+                    lot.purchase_month,
+                    lot.quantity_scale,
                     units,
                     basis,
                     proceeds,
@@ -324,7 +334,7 @@ class Holdings:
             or private_issuer(request.asset_id) is not None
         ):
             raise ValueError("purchase needs a public security, positive units/price and a supported quantity scale")
-        if not request.lot_id or any(lot.spec.lot_id == request.lot_id for lot in self.lots):
+        if not request.lot_id or any(lot.lot_id == request.lot_id for lot in self.lots):
             raise ValueError("purchase needs a new nonempty lot ID")
         if not any(
             (pool.agent_id, pool.account_id, pool.asset_id, pool.quantity_scale)
@@ -339,24 +349,28 @@ class Holdings:
             raise ValueError("insufficient purchase cash")
         if not 0 <= month < 1 << 31:
             raise OverflowError("integer overflow during purchase month")
-        spec = PreparedLot(
-            lot_id=request.lot_id,
-            agent_id=request.agent_id,
-            account_id=request.holding_account_id,
-            asset_id=request.asset_id,
-            purchase_month=month,
-            quantity_scale=request.quantity_scale,
-            units=request.units,
-            basis=spent,
-        )
         accounting.apply(
             JournalEntry(
                 month=month,
                 cause_id=request.cause_id,
                 postings=[
                     Posting(account=cash, amount=checked_count(-spent, "money negation")),
-                    Posting(account=basis_account(spec.agent_id, spec.account_id, spec.asset_id), amount=spent),
+                    Posting(
+                        account=basis_account(request.agent_id, request.holding_account_id, request.asset_id),
+                        amount=spent,
+                    ),
                 ],
             )
         )
-        self.lots.append(Lot(spec, request.units, spent))
+        self.lots.append(
+            Lot(
+                lot_id=request.lot_id,
+                agent_id=request.agent_id,
+                account_id=request.holding_account_id,
+                asset_id=request.asset_id,
+                purchase_month=month,
+                quantity_scale=request.quantity_scale,
+                units_remaining=request.units,
+                basis_remaining=spent,
+            )
+        )

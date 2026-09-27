@@ -38,26 +38,32 @@ from finance.augur.sim.books import (
 )
 from finance.augur.sim.distributions import Distributions
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
-from finance.augur.sim.held_bonds import BondStatement, HeldBonds
-from finance.augur.sim.holdings import Holdings, private_issuer
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, PortfolioId, PropertyId
+from finance.augur.sim.held_bonds import Bond, BondStatement, HeldBonds
+from finance.augur.sim.holdings import Holdings, Lot, Pool, private_issuer
+from finance.augur.sim.ids import (
+    AccountId,
+    AgentId,
+    AssetId,
+    BondId,
+    JurisdictionId,
+    LiabilityId,
+    LotId,
+    PortfolioId,
+    PropertyId,
+)
 from finance.augur.sim.income import InterestIncome, TransferIncomeCategory, income_source_wire_id
 from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios, TlhStatement
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, is_quantity_scale, position_value
 from finance.augur.sim.mortgage import InstallmentPaid, Mortgage, MortgagePayment, ServicingStatement
 from finance.augur.sim.prepared import (
-    PreparedAccount,
     PreparedAmount,
-    PreparedBond,
     PreparedDistribution,
     PreparedFixedAmount,
-    PreparedHoldingPool,
     PreparedIndexedAmount,
     PreparedIndexedCoupon,
     PreparedJurisdiction,
     PreparedLocation,
-    PreparedLot,
     PreparedPropertyCashflow,
     PreparedRecurringPropertyCashflow,
     PreparedRecurringTransfer,
@@ -160,11 +166,11 @@ class World:
         if self.started:
             raise ValueError("declare and track components before starting the world")
 
-    def declare_account(self, account: PreparedAccount) -> None:
+    def declare_account(self, *, account: AccountRef, opening_balance: int) -> None:
         self._composing()
-        self.accounting.declare(account)
+        self.accounting.declare(account=account, opening_balance=opening_balance)
 
-    def declare_pool(self, pool: PreparedHoldingPool) -> None:
+    def declare_pool(self, *, agent_id: AgentId, account_id: AccountId, asset_id: AssetId, quantity_scale: int) -> None:
         """A place the owner may hold a security; a public one is priceable at every snapshot.
 
         A pool whose quote is zero would value the position at nothing rather than admit the
@@ -172,53 +178,109 @@ class World:
         exclusively through a manager may carry a zero mark.
         """
         self._composing()
-        if not is_quantity_scale(pool.quantity_scale):
+        if not is_quantity_scale(quantity_scale):
             raise ValueError("invalid holding pool quantity scale")
-        slot = (pool.agent_id, pool.account_id, pool.asset_id)
+        slot = (agent_id, account_id, asset_id)
         if any((declared.agent_id, declared.account_id, declared.asset_id) == slot for declared in self.holdings.pools):
             raise ValueError("duplicate holding pool declaration")
         if slot in self.holdings.managed:
             raise ValueError(f"TLH pool {slot!r} must have exactly one component owner and no ordinary holdings")
-        if private_issuer(pool.asset_id) is None:
-            if f"security:{pool.asset_id}" not in self.market.series:
-                raise ValueError(f"missing public security series for {pool.asset_id!r}")
-            self.market.require_prices(f"security:{pool.asset_id}")
-        self.holdings.declare_pool(self.accounting, pool)
+        if private_issuer(asset_id) is None:
+            if f"security:{asset_id}" not in self.market.series:
+                raise ValueError(f"missing public security series for {asset_id!r}")
+            self.market.require_prices(f"security:{asset_id}")
+        self.holdings.declare_pool(
+            self.accounting,
+            Pool(agent_id=agent_id, account_id=account_id, asset_id=asset_id, quantity_scale=quantity_scale),
+        )
 
-    def hold(self, holding: PreparedLot | PreparedBond) -> None:
-        """A lot or dated bond held at month zero."""
+    def hold_lot(
+        self,
+        *,
+        lot_id: LotId,
+        agent_id: AgentId,
+        account_id: AccountId,
+        asset_id: AssetId,
+        purchase_month: int,
+        quantity_scale: int,
+        units: int,
+        basis: int,
+    ) -> None:
+        """A lot held at month zero, in a declared pool."""
         self._composing()
-        if isinstance(holding, PreparedLot):
-            pool = next(
-                (
-                    pool
-                    for pool in self.holdings.pools
-                    if (pool.agent_id, pool.account_id, pool.asset_id)
-                    == (holding.agent_id, holding.account_id, holding.asset_id)
-                ),
-                None,
-            )
-            if pool is None:
-                raise ValueError(f"lot {holding.lot_id!r} references no declared holding pool")
-            if pool.quantity_scale != holding.quantity_scale:
-                raise ValueError(f"lot {holding.lot_id!r} has a mixed quantity scale")
-            bought = (holding.agent_id, holding.account_id, holding.asset_id, holding.purchase_month)
-            for held in self.holdings.lots:
-                if (held.spec.agent_id, held.spec.account_id, held.spec.asset_id, held.spec.purchase_month) == bought:
-                    raise ValueError(
-                        f"lots {held.spec.lot_id!r} and {holding.lot_id!r} share {holding.purchase_month=} in one "
-                        "pool; FIFO sells oldest first, so their order would rest on lot ids alone"
-                    )
-            if (issuer := private_issuer(holding.asset_id)) is not None:
-                self._check_issuer(issuer)
-                if self.private_equity is None:
-                    self.private_equity = private_equity.PrivateEquity([])
-            self.holdings.hold(self.accounting, holding)
-            return
-        self._check_bond(holding)
+        pool = next(
+            (
+                pool
+                for pool in self.holdings.pools
+                if (pool.agent_id, pool.account_id, pool.asset_id) == (agent_id, account_id, asset_id)
+            ),
+            None,
+        )
+        if pool is None:
+            raise ValueError(f"lot {lot_id!r} references no declared holding pool")
+        if pool.quantity_scale != quantity_scale:
+            raise ValueError(f"lot {lot_id!r} has a mixed quantity scale")
+        for held in self.holdings.lots:
+            if (held.agent_id, held.account_id, held.asset_id, held.purchase_month) == (
+                agent_id,
+                account_id,
+                asset_id,
+                purchase_month,
+            ):
+                raise ValueError(
+                    f"lots {held.lot_id!r} and {lot_id!r} share {purchase_month=} in one "
+                    "pool; FIFO sells oldest first, so their order would rest on lot ids alone"
+                )
+        if (issuer := private_issuer(asset_id)) is not None:
+            self._check_issuer(issuer)
+            if self.private_equity is None:
+                self.private_equity = private_equity.PrivateEquity([])
+        self.holdings.hold(
+            self.accounting,
+            Lot(
+                lot_id=lot_id,
+                agent_id=agent_id,
+                account_id=account_id,
+                asset_id=asset_id,
+                purchase_month=purchase_month,
+                quantity_scale=quantity_scale,
+                units_remaining=units,
+                basis_remaining=basis,
+            ),
+        )
+
+    def hold_bond(
+        self,
+        *,
+        bond_id: BondId,
+        agent_id: AgentId,
+        account_id: AccountId,
+        issuer_jurisdiction_id: JurisdictionId | None,
+        face_value: int,
+        purchase_price: int,
+        coupon: PreparedFixedAmount | PreparedIndexedCoupon,
+        coupon_period_months: int,
+        purchase_month_index: int,
+        maturity_month_index: int,
+    ) -> None:
+        """A dated bond held at month zero; a `None` issuer is non-governmental."""
+        self._composing()
+        bond = Bond(
+            bond_id=bond_id,
+            agent_id=agent_id,
+            account_id=account_id,
+            issuer_jurisdiction_id=issuer_jurisdiction_id,
+            face_value=face_value,
+            purchase_price=purchase_price,
+            coupon=coupon,
+            coupon_period_months=coupon_period_months,
+            purchase_month_index=purchase_month_index,
+            maturity_month_index=maturity_month_index,
+        )
+        self._check_bond(bond)
         if self.bonds is None:
             self.bonds = HeldBonds((), self.market)
-        self.bonds.hold(holding)
+        self.bonds.hold(bond)
 
     def _check_issuer(self, issuer: IssuerId) -> None:
         """Every protocol channel on the path and in its range, a tender exactly where an opportunity is."""
@@ -239,7 +301,7 @@ class World:
         ):
             raise ValueError(f"issuer {issuer!r} has a tender event and a sale opportunity in different months")
 
-    def _check_bond(self, bond: PreparedBond) -> None:
+    def _check_bond(self, bond: Bond) -> None:
         """Bought at par, a nonnegative coupon on whole periods, and indexed only on an index the path carries."""
         if AccountRef(agent_id=bond.agent_id, account_id=bond.account_id) not in self.accounting.declared:
             raise ValueError(f"bond {bond.bond_id!r} references an unknown account")
@@ -1263,19 +1325,18 @@ class World:
     ) -> int:
         total = 0
         for lot in self.holdings.lots:
-            spec = lot.spec
             if (
-                spec.agent_id != actor
-                or private_issuer(spec.asset_id) is not None
+                lot.agent_id != actor
+                or private_issuer(lot.asset_id) is not None
                 or not lot.units_remaining
-                or (account is not None and spec.account_id != account)
-                or (asset is not None and spec.asset_id != asset)
+                or (account is not None and lot.account_id != account)
+                or (asset is not None and lot.asset_id != asset)
             ):
                 continue
             total = checked_count(
                 total
                 + position_value(
-                    self.public_price(actor, spec.asset_id, month), lot.units_remaining, spec.quantity_scale
+                    self.public_price(actor, lot.asset_id, month), lot.units_remaining, lot.quantity_scale
                 ),
                 "public value",
             )
