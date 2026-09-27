@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest_bazel
 from playwright.async_api import Page, Request, Route, expect
 
-from agentplane.app.test_thread_browser import ThreadBrowser, db_url, expect_reading_anchor
+from agentplane.app.test_thread_browser import ThreadBrowser, capture_reading_anchor, db_url, expect_reading_anchor
 from agentplane.protocol import event_log_pb2, event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -130,23 +130,7 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
         async with asyncio.timeout(30):
             await held.asked.wait()
             await gesture.evaluate("gesture => gesture.ended")
-            anchor = await history.evaluate(
-                """area => new Promise(resolve => {
-                    const sample = () => {
-                        const top = area.getBoundingClientRect().top;
-                        const row = [...area.querySelectorAll('[data-thread-anchor]')]
-                            .find(candidate => candidate.getBoundingClientRect().bottom > top);
-                        const rowTop = row.getBoundingClientRect().top;
-                        return { cursor: row.dataset.threadAnchor, top: rowTop, offset: rowTop - top };
-                    };
-                    const settle = previous => requestAnimationFrame(() => {
-                        const current = sample();
-                        if (current.cursor === previous.cursor && current.top === previous.top) resolve(current);
-                        else settle(current);
-                    });
-                    requestAnimationFrame(() => settle(sample()));
-                })"""
-            )
+            anchor = await capture_reading_anchor(history)
         await gesture.dispose()
         await expect(loading).to_be_visible()
         await page.screenshot(path=undeclared_outputs_dir() / "thread-window-loading-earlier.png")
