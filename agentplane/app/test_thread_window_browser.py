@@ -196,6 +196,40 @@ async def test_an_older_page_landing_mid_gesture_does_not_move_the_reader(thread
         await page.screenshot(path=undeclared_outputs_dir() / "thread-window-mid-gesture-prepend.png")
 
 
+async def test_scrolling_up_continuously_through_a_landing_older_page_does_not_jump_to_the_bottom(
+    thread_browser: ThreadBrowser,
+) -> None:
+    """A trackpad/touch scroll dispatches many small wheel events over time, not one big one --
+    unlike test_an_older_page_landing_mid_gesture_does_not_move_the_reader, several of them can
+    land while the older page's rows are still being measured one at a time (each starts at the
+    180px estimate and is re-measured as it mounts), not just before or after that process."""
+    page = thread_browser.page
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
+    latest = _append_items(thread_browser, "window-item", range(70))
+    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+    await page.reload()
+    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    await history.hover()
+    async with _holding_older_pages(page) as held:
+        await page.mouse.wheel(0, -3_000)
+        async with asyncio.timeout(30):
+            await held.asked.wait()
+        held.release.set()
+        for _ in range(20):
+            await page.mouse.wheel(0, -150)
+    await _frames(page)
+    await _frames(page)
+    await _frames(page)
+    geometry = await history.evaluate(
+        "area => ({top: area.scrollTop, bottom: area.scrollHeight - area.clientHeight - area.scrollTop})"
+    )
+    # A reader scrolling up through the landing page must not end up at the tail.
+    assert geometry["bottom"] > 24, geometry
+
+
 async def test_a_tail_too_short_to_scroll_loads_the_rows_before_it_unasked(thread_browser: ThreadBrowser) -> None:
     page = thread_browser.page
     thread_browser.opened.replay.set()
