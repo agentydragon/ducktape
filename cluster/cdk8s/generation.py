@@ -72,6 +72,8 @@ def write_directory(
     directory's `decryption` is set exactly when a sibling is SOPS ciphertext.
     """
     directory = artifact_directory(artifact)
+    if len(artifact.copy) != 1:
+        raise ValueError(f"{artifact.name=}: the writer lists one directory; this artifact also copies shared bases")
     resources = [*write_charts(root, directory, *chart_builders), *siblings]
     write_yaml(root / directory / "kustomization.yaml", kustomize_kustomization(resources=resources))
     return RenderedDirectory(artifact=artifact, decryption=sops_decryption(siblings))
