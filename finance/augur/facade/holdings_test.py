@@ -216,6 +216,15 @@ def test_negative_holding_period_is_rejected() -> None:
         )
 
 
+@pytest.mark.parametrize("basis", [{}, {"cost_basis": None}], ids=["missing", "none"])
+def test_a_lot_basis_is_never_assumed(basis: dict[str, None]) -> None:
+    # Untyped input, as a notebook or an agent passes it: a typed call cannot omit the basis at all.
+    lot = {"lot_id": "test_lot", "holding_period_months_at_start": 12, "quantity": 1.0} | basis
+    with pytest.raises(ValidationError) as rejected:
+        HoldingTaxLotConfig.model_validate(lot)
+    assert [error["loc"] for error in rejected.value.errors()] == [("cost_basis",)]
+
+
 # -- Bonds ---------------------------------------------------------------------------------
 
 

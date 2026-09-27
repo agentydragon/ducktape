@@ -29,3 +29,31 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "household",
+    srcs = ["household.py"],
+    deps = [
+        ":holdings",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:scenario",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "household_test",
+    srcs = ["household_test.py"],
+    deps = [
+        ":holdings",
+        ":household",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:scenario",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
