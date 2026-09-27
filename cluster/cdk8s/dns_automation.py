@@ -3,18 +3,14 @@ copy of the Route 53 credential its Terraform runner reads."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from pydantic import BaseModel, ConfigDict
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds, terraform
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.scripts import nebula_mesh
@@ -80,20 +76,13 @@ def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
     return chart
 
 
-def write_manifests(root: Path, mesh: nebula_mesh.Mesh) -> None:
-    write_charts(root, OUTPUT_DIR, lambda app: chart(app, mesh))
-
-
 def dns_automation(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    tofu_controller: Kustomization,
-    external_secrets_operator: Kustomization,
+    chart: Chart, directory: RenderedDirectory, tofu_controller: Kustomization, external_secrets_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         "dns-automation",
-        artifact,
+        directory,
         wait=None,
         health_checks=[
             KustomizationSpecHealthChecks(

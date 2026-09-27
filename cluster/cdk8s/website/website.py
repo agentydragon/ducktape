@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import textwrap
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/website"
@@ -223,16 +220,12 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def website(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno: Kustomization) -> Kustomization:
+def website(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
     name = "website"
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         timeout="5m",
         # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
         depends_on=[flux_kustomization_depends_on(kyverno)],
