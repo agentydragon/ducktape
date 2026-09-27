@@ -45,6 +45,7 @@ from gateway_api_tlsroute_crds.io.k8s.networking.gateway import (
     TlsRouteSpecRules,
     TlsRouteSpecRulesBackendRefs,
 )
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
@@ -476,7 +477,7 @@ def _monitoring(scope: Construct) -> None:
         scope,
         "pod-monitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        selector=_LABELS,
+        selector=PodMonitorSpecSelector(match_labels=_LABELS),
         pod_metrics_endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
     PrometheusRule(

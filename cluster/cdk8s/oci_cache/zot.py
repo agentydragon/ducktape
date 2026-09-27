@@ -13,6 +13,7 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
@@ -240,7 +241,7 @@ def chart(app: App) -> Chart:
             namespace=_NAMESPACE,
             annotations={"description": "Zot OCI-cache application metrics scraped into Mimir by Alloy."},
         ),
-        selector=_LABELS,
+        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
         endpoints=[Endpoint.plain(port="http", scrape_timeout="10s")],
     )
     valkey_instance(

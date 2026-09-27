@@ -22,6 +22,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategyName,
 )
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import cilium, cnpg
 from cluster.cdk8s.gateway import https_route
@@ -208,7 +209,7 @@ def chart(app: App) -> Chart:
         chart,
         "service-monitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        selector=_LABELS,
+        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
         endpoints=[Endpoint.plain(port="http")],
     )
     return chart

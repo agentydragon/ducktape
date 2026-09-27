@@ -48,6 +48,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.config_format import yaml_config
@@ -390,7 +391,7 @@ class LiteLLMServiceMonitor(Construct):
             self,
             "servicemonitor",
             metadata=ApiObjectMetadata(name="litellm", namespace="litellm"),
-            selector={"app.kubernetes.io/name": "litellm"},
+            selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": "litellm"}),
             endpoints=[
                 Endpoint.bearer_token_secret(
                     port="http", secret_name="litellm-master-key", key="api-key", scrape_timeout="10s"

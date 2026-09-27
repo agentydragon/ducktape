@@ -14,6 +14,7 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.forgejo_images import SECRET_NAME
@@ -233,7 +234,7 @@ def servicemonitor_chart(app: App) -> Chart:
         chart,
         "servicemonitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
-        selector=_LABELS,
+        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
         endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
     return chart

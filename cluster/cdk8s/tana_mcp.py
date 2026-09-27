@@ -19,6 +19,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import external_creds
 from cluster.cdk8s.env_helpers import secret_env_var
@@ -363,7 +364,7 @@ def _facade(chart: Chart) -> None:
         chart,
         "facade-servicemonitor",
         metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
-        selector=_FACADE_LABELS,
+        selector=ServiceMonitorSpecSelector(match_labels=_FACADE_LABELS),
         endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
     PrometheusRule(
