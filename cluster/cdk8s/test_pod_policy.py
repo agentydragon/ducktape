@@ -54,7 +54,10 @@ def _scaled_job(chart: Chart) -> keda.ScaledJob:
             keda.ScaledJobSpecJobTargetRefTemplateSpecContainers(
                 name="runner",
                 security_context=keda.ScaledJobSpecJobTargetRefTemplateSpecContainersSecurityContext(
-                    allow_privilege_escalation=True
+                    allow_privilege_escalation=True,
+                    capabilities=keda.ScaledJobSpecJobTargetRefTemplateSpecContainersSecurityContextCapabilities(
+                        add=["NET_BIND_SERVICE"]
+                    ),
                 ),
             )
         ],
@@ -82,17 +85,23 @@ def test_harden_fills_only_what_each_dialect_leaves_unset(chart: Chart) -> None:
     for workload in (deployment, cron_job, scaled_job):
         pod_policy.harden(workload)
 
-    runtime_default = {"type": "RuntimeDefault"}
-    assert _deployment_pod(deployment)["securityContext"]["seccompProfile"] == runtime_default
+    runtime_default, drop_all = {"type": "RuntimeDefault"}, {"drop": ["ALL"]}
+    deployment_pod = _deployment_pod(deployment)
+    assert deployment_pod["securityContext"]["seccompProfile"] == runtime_default
+    # A patch into a cdk8s-plus container's securityContext survives rendering.
+    assert deployment_pod["containers"][0]["securityContext"]["capabilities"] == drop_all
     cron_pod = cron_job.to_json()["spec"]["jobTemplate"]["spec"]["template"]["spec"]
     assert cron_pod["securityContext"] == {"seccompProfile": runtime_default}
     assert [c["securityContext"] for c in [*cron_pod["initContainers"], *cron_pod["containers"]]] == [
-        {"allowPrivilegeEscalation": False}
+        {"allowPrivilegeEscalation": False, "capabilities": drop_all}
     ] * 2
-    # The escalation the ScaledJob states at construction survives.
+    # What the ScaledJob states at construction survives.
     scaled_pod = scaled_job.to_json()["spec"]["jobTargetRef"]["template"]["spec"]
     assert scaled_pod["securityContext"] == {"runAsUser": 1000, "seccompProfile": runtime_default}
-    assert scaled_pod["containers"][0]["securityContext"] == {"allowPrivilegeEscalation": True}
+    assert scaled_pod["containers"][0]["securityContext"] == {
+        "allowPrivilegeEscalation": True,
+        "capabilities": {"add": ["NET_BIND_SERVICE"]},
+    }
 
 
 def test_place_requires_the_placement_and_appends_the_control_plane_toleration(chart: Chart) -> None:

@@ -29,6 +29,7 @@ POD_SPEC_PATHS: Mapping[str, str] = MappingProxyType(
     }
 )
 _RUNTIME_DEFAULT = k8s.SeccompProfile(type="RuntimeDefault")
+_DROP_ALL = k8s.Capabilities(drop=["ALL"])
 
 
 def pod_spec(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -45,8 +46,8 @@ def _workload(workload: Construct) -> tuple[ApiObject, str, dict[str, Any]]:
 
 
 def harden(workload: Construct) -> None:
-    """RuntimeDefault seccomp on the Pod and `allowPrivilegeEscalation: false` on each init and
-    main container, where unset. Call it once every container exists."""
+    """RuntimeDefault seccomp on the Pod, and no privilege escalation and every capability
+    dropped on each init and main container, where unset. Call it once every container exists."""
     obj, path, pod = _workload(workload)
     if "securityContext" not in pod:
         obj.add_json_patch(
@@ -58,8 +59,13 @@ def harden(workload: Construct) -> None:
         for index, container in enumerate(pod.get(field, [])):
             at = f"{path}/{field}/{index}/securityContext"
             if "securityContext" not in container:
-                obj.add_json_patch(JsonPatch.add(at, k8s.SecurityContext(allow_privilege_escalation=False)))
-            elif "allowPrivilegeEscalation" not in container["securityContext"]:
+                obj.add_json_patch(
+                    JsonPatch.add(at, k8s.SecurityContext(allow_privilege_escalation=False, capabilities=_DROP_ALL))
+                )
+                continue
+            if "capabilities" not in container["securityContext"]:
+                obj.add_json_patch(JsonPatch.add(f"{at}/capabilities", _DROP_ALL))
+            if "allowPrivilegeEscalation" not in container["securityContext"]:
                 obj.add_json_patch(JsonPatch.add(f"{at}/allowPrivilegeEscalation", False))
 
 

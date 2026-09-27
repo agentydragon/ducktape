@@ -25,6 +25,7 @@ from cdk8s_plus_34 import (
     ConfigMap,
     ContainerPort,
     ContainerResources,
+    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
     Deployment,
@@ -56,7 +57,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import container_security, node_scheduling, pod_policy
+from cluster.cdk8s import node_scheduling, pod_policy
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
@@ -388,7 +389,7 @@ class Console(Construct):
             liveness=http_probe("/healthz", port=API_PORT, initial_delay_seconds=10, period_seconds=30),
             readiness=http_probe("/healthz", port=API_PORT, initial_delay_seconds=5, period_seconds=10),
             # The aspect py_binary launcher materializes its venv on the rootfs at startup.
-            security_context=container_security.WRITABLE_ROOT,
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         container.mount("/tmp", Volume.from_empty_dir(self, "tmp-volume", "tmp"))
         container.mount(_CONFIG_DIR, Volume.from_config_map(self, "config-volume", config_map), read_only=True)
@@ -465,7 +466,8 @@ class Console(Construct):
             # nginx's own SPA response, not /healthz, which is proxied to the API.
             liveness=http_probe("/", port=_STATIC_PORT, initial_delay_seconds=10, period_seconds=30),
             readiness=http_probe("/", port=_STATIC_PORT, initial_delay_seconds=5, period_seconds=10),
-            security_context=container_security.WRITABLE_ROOT,
+            # Writable: its root filesystem writes are unaudited.
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         # The entrypoint writes the envsubst-rendered config here before nginx starts.
         container.mount("/etc/nginx/conf.d", Volume.from_empty_dir(self, "nginx-conf-volume", "nginx-conf"))
@@ -541,7 +543,8 @@ class Console(Construct):
                 cpu=CpuResources(request=Cpu.millis(10)),
                 memory=MemoryResources(request=Size.mebibytes(32), limit=Size.mebibytes(128)),
             ),
-            security_context=container_security.WRITABLE_ROOT,
+            # Writable: its root filesystem writes are unaudited.
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         sql = ConfigMap.from_config_map_name(self, "indexer-sql-ref", INDEXER_SQL_CONFIG_MAP)
         container.mount(_INDEXER_SQL_DIR, Volume.from_config_map(self, "indexer-sql-volume", sql), read_only=True)
