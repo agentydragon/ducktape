@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecDriftDetection,
     HelmReleaseSpecDriftDetectionMode,
@@ -30,7 +30,6 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "clickhouse-operator"
 NAMESPACE = "clickhouse"
@@ -82,7 +81,7 @@ def helmrelease_chart(app: App) -> Chart:
     repository = HelmRepository(
         chart,
         "repository",
-        metadata=metadata("altinity-clickhouse-operator", "flux-system"),
+        metadata=ApiObjectMetadata(name="altinity-clickhouse-operator", namespace="flux-system"),
         spec=HelmRepositorySpec(
             type=HelmRepositorySpecType.OCI, url="oci://ghcr.io/altinity/clickhouse-operator-helm-chart", interval="12h"
         ),

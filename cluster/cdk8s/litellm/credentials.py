@@ -23,7 +23,6 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
 _LITELLM_NAMESPACE = "litellm"
@@ -42,19 +41,21 @@ class CheapExperimentsCredentials(Construct):
         super().__init__(scope, id)
 
         reader_service_account = ServiceAccount(
-            self, "reader-service-account", metadata=metadata(_READER_SERVICE_ACCOUNT_NAME, _AGENTPLANE_NAMESPACE)
+            self,
+            "reader-service-account",
+            metadata=ApiObjectMetadata(name=_READER_SERVICE_ACCOUNT_NAME, namespace=_AGENTPLANE_NAMESPACE),
         )
         source_secret = Secret.from_secret_name(self, "source-secret", _KEY_SECRET_NAME)
         Role(
             self,
             "source-reader-role",
-            metadata=metadata(_SOURCE_READER_ROLE_NAME, _LITELLM_NAMESPACE),
+            metadata=ApiObjectMetadata(name=_SOURCE_READER_ROLE_NAME, namespace=_LITELLM_NAMESPACE),
             rules=[RolePolicyRule(resources=[source_secret], verbs=["get"])],
         )
         RoleBinding(
             self,
             "source-reader-role-binding",
-            metadata=metadata(_SOURCE_READER_ROLE_NAME, _LITELLM_NAMESPACE),
+            metadata=ApiObjectMetadata(name=_SOURCE_READER_ROLE_NAME, namespace=_LITELLM_NAMESPACE),
             role=Role.from_role_name(self, "source-reader-role-reference", _SOURCE_READER_ROLE_NAME),
         ).add_subjects(reader_service_account)
 
@@ -88,8 +89,7 @@ class CheapExperimentsCredentials(Construct):
         ExternalSecret(
             self,
             "target-external-secret",
-            name=_KEY_SECRET_NAME,
-            namespace=_AGENTPLANE_NAMESPACE,
+            metadata=ApiObjectMetadata(name=_KEY_SECRET_NAME, namespace=_AGENTPLANE_NAMESPACE),
             refresh="1m",
             store=SecretStoreRef.cluster(_SECRET_STORE_NAME),
             data=[remote_data(_KEY_SECRET_NAME, "api-key")],

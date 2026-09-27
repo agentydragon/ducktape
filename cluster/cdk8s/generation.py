@@ -5,13 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
-from cdk8s import App, Chart, Yaml
+from cdk8s import ApiObjectMetadata, App, Chart, Yaml
 from cdk8s_plus_34 import ConfigMap, k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDecryption
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 CNPG_DATABASE_READY = (
     "has(status.applied) && status.applied && "
@@ -41,7 +40,7 @@ def write_yaml(path: Path, manifest: dict[str, object]) -> None:
 
 def config_map_chart(app: App, *, chart_name: str, configmap_name: str, namespace: str, data: dict[str, str]) -> Chart:
     chart = Chart(app, chart_name, disable_resource_name_hashes=True)
-    ConfigMap(chart, "config", metadata=metadata(configmap_name, namespace), data=data)
+    ConfigMap(chart, "config", metadata=ApiObjectMetadata(name=configmap_name, namespace=namespace), data=data)
     return chart
 
 

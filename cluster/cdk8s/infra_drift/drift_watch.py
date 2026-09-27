@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitRepositorySpec, GitRepositorySpecRef
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
@@ -26,7 +26,6 @@ from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "infra-drift"
 OUTPUT_DIR = f"{GENERATED_ROOT}/infra-drift"
@@ -41,9 +40,9 @@ def chart(app: App) -> Chart:
     source = GitRepository(
         chart,
         "source",
-        metadata=metadata(
-            "infra-drift-source",
-            terraform.NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name="infra-drift-source",
+            namespace=terraform.NAMESPACE,
             annotations={
                 "description": "Filtered checkout of the metal tofu root, its module tree, the SOPS secrets it reads "
                 "and nebula-mesh.json, for the infra-drift plan-only Terraform CR."
@@ -89,9 +88,9 @@ def chart(app: App) -> Chart:
     TerraformV1Alpha2(
         chart,
         "terraform",
-        metadata=metadata(
-            NAME,
-            terraform.NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=NAME,
+            namespace=terraform.NAMESPACE,
             annotations={
                 "description": (
                     "Plan-only drift watch on cluster/terraform/main (the metal root). Never applies;"

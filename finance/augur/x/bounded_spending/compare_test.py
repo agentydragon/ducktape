@@ -11,14 +11,14 @@ import pytest_bazel
 from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.claims import ObligationType
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot, PreparedObligation
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME, ObligationType
 from finance.augur.sim.world import World
 from finance.augur.study.trinity.replay import EQUITY, HORIZON_MONTHS, QUANTUM, Situation, situation
 from finance.augur.x.bounded_spending.compare import _write_consumption_distribution, compare

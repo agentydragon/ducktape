@@ -5,7 +5,7 @@ Google Calendar MCP action groups.
 
 from __future__ import annotations
 
-from cdk8s import App, Chart, Duration
+from cdk8s import ApiObjectMetadata, App, Chart, Duration
 from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute, ServiceAccount
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -39,7 +39,6 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
@@ -358,19 +357,24 @@ def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
     command_sandbox.CommandSandbox(chart, "command-sandbox", ENV)
     reader = ServiceAccount(
-        chart, "external-creds-reader", metadata=metadata("external-creds-reader", _NAMESPACE), automount_token=False
+        chart,
+        "external-creds-reader",
+        metadata=ApiObjectMetadata(name="external-creds-reader", namespace=_NAMESPACE),
+        automount_token=False,
     )
     ExternalSecret(
         chart,
         "tana-pat-external-secret",
-        name=_TANA_MCP_BEARER_SECRET,
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_TANA_MCP_BEARER_SECRET,
+            namespace=_NAMESPACE,
+            annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
+        ),
         refresh="1h",
         store=external_creds.STORE,
         data=[remote_data(_TANA_MCP_BEARER_SECRET, "token")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
     )
     for backend, target, source in (
         ("ssh-mcp", _SSH_MCP_BEARER_SECRET, BEARER_SECRET_NAME),
@@ -397,8 +401,7 @@ def chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         "github-mcp-client-external-secret",
-        name=_GITHUB_MCP_CLIENT_SECRET,
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(name=_GITHUB_MCP_CLIENT_SECRET, namespace=_NAMESPACE),
         refresh="1h",
         store=SecretStoreRef.cluster(
             single_secret_store(

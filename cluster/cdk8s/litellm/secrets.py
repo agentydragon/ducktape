@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ServiceAccount
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
@@ -17,7 +17,6 @@ from cluster.cdk8s.external_secrets.single_secret_store import single_secret_sto
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/secrets"
@@ -43,14 +42,12 @@ def _external_secret(
     return ExternalSecret(
         chart,
         id,
-        name=name,
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE, annotations=annotations),
         refresh="1h",
         store=SecretStoreRef.cluster(store),
         data=[remote_data(source, source_property, secret_key=secret_key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         target_name=target,
-        annotations=annotations,
     )
 
 
@@ -59,7 +56,10 @@ def _chart(app: App) -> Chart:
     # Consumer-owned referent identity for canonical credentials approved by
     # source-side RoleBindings in external-creds, and for the Tana copy below.
     reader = ServiceAccount(
-        chart, "external-creds-reader", metadata=metadata("external-creds-reader", _NAMESPACE), automount_token=False
+        chart,
+        "external-creds-reader",
+        metadata=ApiObjectMetadata(name="external-creds-reader", namespace=_NAMESPACE),
+        automount_token=False,
     )
     # Anthropic API key for LiteLLM's anthropic-api/ant-messages/* exposed models. Its dedicated
     # SecretStore can read only ducktape-flux/llm-anthropic-haku.
@@ -114,8 +114,7 @@ def _chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         "tana",
-        name=_TANA_REFRESH_TOKEN,
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(name=_TANA_REFRESH_TOKEN, namespace=_NAMESPACE),
         refresh="10m",
         store=SecretStoreRef.cluster(
             single_secret_store(

@@ -20,7 +20,7 @@ so the reweight is fiction.)
 
 ## augur's native trajectory shape
 
-The macro model (`augur/model/state_space.py`) emits a **dense monthly level path per factor**, shape
+The macro model (`augur/x/models/state_space.py`) emits a **dense monthly level path per factor**, shape
 `(rollout, horizon_months+1, factors)`, factors being augur wire-ids: `inflation` (CPI index), `sp500`,
 `crypto:BTC`, `home_value:<loc>`, `rent:<loc>`, plus private-equity issuer marks. The LLM is asked for
 exactly that — dense monthly paths over those series — plus the OpenAI PE issuer. Market thresholds

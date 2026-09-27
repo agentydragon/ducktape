@@ -21,6 +21,7 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetConfigMap,
 )
 
+from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.providers.cert_manager.certificate import LONG_LIVED_CA, Certificate
 from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
 
@@ -30,12 +31,11 @@ _ROOT_CA_SECRET = "cluster-root-ca-secret"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    bootstrap = ClusterIssuer.self_signed(chart, "bootstrap", name="cluster-ca-bootstrap")
+    bootstrap = ClusterIssuer.self_signed(chart, "bootstrap", metadata=ApiObjectMetadata(name="cluster-ca-bootstrap"))
     Certificate(
         chart,
         "root-ca",
-        name="cluster-root-ca",
-        namespace="cert-manager",
+        metadata=ApiObjectMetadata(name="cluster-root-ca", namespace="cert-manager"),
         is_ca=True,
         common_name="cluster-root-ca",
         secret_name=_ROOT_CA_SECRET,
@@ -44,7 +44,9 @@ def chart(app: App) -> Chart:
         issuer_ref=CertificateSpecIssuerRef(name=bootstrap.name, kind="ClusterIssuer"),
     )
     # Issues internal service certificates from the root CA.
-    ClusterIssuer.ca(chart, "internal", name="cluster-internal-ca", secret_name=_ROOT_CA_SECRET)
+    ClusterIssuer.ca(
+        chart, "internal", metadata=ApiObjectMetadata(name="cluster-internal-ca"), secret_name=_ROOT_CA_SECRET
+    )
     Bundle(
         chart,
         "bundle",
@@ -52,8 +54,8 @@ def chart(app: App) -> Chart:
         spec=BundleSpec(
             sources=[
                 BundleSpecSources(secret=BundleSpecSourcesSecret(name=_ROOT_CA_SECRET, key="ca.crt")),
-                # The active issuer's root, from `config`; Flux postBuild substitutes it.
-                BundleSpecSources(secret=BundleSpecSourcesSecret(name="${LETSENCRYPT_ISSUER}-root-ca", key="ca.crt")),
+                # The active issuer's root, from `config`.
+                BundleSpecSources(secret=BundleSpecSourcesSecret(name=f"{LETSENCRYPT_ISSUER}-root-ca", key="ca.crt")),
             ],
             target=BundleSpecTarget(config_map=BundleSpecTargetConfigMap(key="ca-certificates.crt")),
         ),

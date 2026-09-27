@@ -1,5 +1,7 @@
 # Augur: experiment-driven modularization
 
+**[Consolidation](consolidation.md) comes first:** no item below is dispatched until it lands.
+
 This is the landing plan for a composable financial simulator: an experiment
 loads or samples worlds, varies financial decisions, runs the shared mechanics,
 and examines distributions and individual timelines. The primary acceptance

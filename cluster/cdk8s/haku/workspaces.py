@@ -39,7 +39,7 @@ from agent_sandbox_sandboxwarmpool_crds.io.x_k8s.agents.extensions import (
     SandboxWarmPoolSpecUpdateStrategy,
     SandboxWarmPoolSpecUpdateStrategyType,
 )
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -69,7 +69,6 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     DataFrom,
@@ -98,8 +97,7 @@ def _external_secrets(chart: Chart) -> None:
     ExternalSecret(
         chart,
         "forgejo-images-creds",
-        name=forgejo_images.SECRET_NAME,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name=forgejo_images.SECRET_NAME, namespace=NAMESPACE),
         refresh="1h",
         store=SecretStoreRef.cluster("kubernetes-flux-system-secret-store"),
         data_from=[DataFrom.from_extract(forgejo_images.SECRET_NAME)],
@@ -116,8 +114,7 @@ def _external_secrets(chart: Chart) -> None:
     ExternalSecret(
         chart,
         "activitywatch-read-token",
-        name="activitywatch-read-token",
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name="activitywatch-read-token", namespace=NAMESPACE),
         refresh="1h",
         store=SecretStoreRef.cluster("kubernetes-activitywatch-secret-store"),
         data=[remote_data("activitywatch-read-token", "token")],
@@ -125,8 +122,7 @@ def _external_secrets(chart: Chart) -> None:
     ExternalSecret(
         chart,
         "coinbase-api-credentials",
-        name="coinbase-api-credentials",
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name="coinbase-api-credentials", namespace=NAMESPACE),
         refresh="1h",
         store=external_creds.STORE,
         data=[remote_data("coinbase-api-credentials", key) for key in ("api_key", "api_secret")],
@@ -159,8 +155,7 @@ def _sandbox_template(chart: Chart) -> SandboxTemplate:
     return SandboxTemplate(
         chart,
         "sandbox-template",
-        name=TEMPLATE_NAME,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name=TEMPLATE_NAME, namespace=NAMESPACE),
         # Unmanaged so the controller doesn't stamp its own RFC1918-blocking policy that would
         # fight the haku-egress-proxy fence applied at the namespace level (the existing
         # haku-sandbox-force-proxy CCNP).
@@ -344,7 +339,7 @@ def chart(app: App) -> Chart:
     SandboxWarmPool(
         chart,
         "warm-pool",
-        metadata=metadata("haku", NAMESPACE),
+        metadata=ApiObjectMetadata(name="haku", namespace=NAMESPACE),
         spec=SandboxWarmPoolSpec(
             replicas=1,
             update_strategy=SandboxWarmPoolSpecUpdateStrategy(type=SandboxWarmPoolSpecUpdateStrategyType.RECREATE),
@@ -359,7 +354,7 @@ def chart(app: App) -> Chart:
     CleanupPolicy(
         chart,
         "janitor",
-        metadata=metadata("haku-workspace-janitor", NAMESPACE),
+        metadata=ApiObjectMetadata(name="haku-workspace-janitor", namespace=NAMESPACE),
         spec=CleanupPolicySpec(
             schedule="45 * * * *",
             match=CleanupPolicySpecMatch(

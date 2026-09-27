@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
     GitRepository,
     GitRepositorySpec,
@@ -44,7 +44,6 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 
 _OPENCLAW = "openclaw"
 NAMESPACE = "flux-system"
@@ -59,9 +58,9 @@ def automation_chart(app: App) -> Chart:
     source = GitRepository(
         chart,
         "source",
-        metadata=metadata(
-            "ducktape-write",
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name="ducktape-write",
+            namespace=NAMESPACE,
             annotations={
                 "description": "Authenticated ducktape checkout for image automation pushes. The root flux-system "
                 "GitRepository stays anonymous so Terraform can cold-bootstrap Flux before this SOPS-managed GitHub "
@@ -80,7 +79,7 @@ def automation_chart(app: App) -> Chart:
     ImageUpdateAutomation(
         chart,
         "automation",
-        metadata=metadata("all-images", NAMESPACE),
+        metadata=ApiObjectMetadata(name="all-images", namespace=NAMESPACE),
         spec=ImageUpdateAutomationSpec(
             interval="5m",
             source_ref=ImageUpdateAutomationSpecSourceRef(
@@ -119,13 +118,13 @@ def openclaw_chart(app: App) -> Chart:
     repository = ImageRepository(
         chart,
         "repository",
-        metadata=metadata(_OPENCLAW, NAMESPACE),
+        metadata=ApiObjectMetadata(name=_OPENCLAW, namespace=NAMESPACE),
         spec=ImageRepositorySpec(image="ghcr.io/agentydragon/openclaw", interval="5m"),
     )
     ImagePolicy(
         chart,
         "policy",
-        metadata=metadata(_OPENCLAW, NAMESPACE),
+        metadata=ApiObjectMetadata(name=_OPENCLAW, namespace=NAMESPACE),
         spec=ImagePolicySpec(
             image_repository_ref=ImagePolicySpecImageRepositoryRef(name=repository.name),
             # Tags pushed by CI: {branch}-YYYYMMDDHHMMSS-{sha7} — alphabetical order == chronological

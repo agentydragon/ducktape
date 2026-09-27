@@ -65,7 +65,6 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
@@ -114,7 +113,7 @@ class GoogleMcpApp(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(_NAME, _NAME, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=_NAME, labels=_LABELS),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=1,
             strategy=DeploymentStrategy.recreate(),
@@ -168,7 +167,7 @@ class GoogleMcpApp(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(_NAME, _NAME),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=_NAME),
             selector=deployment,
             ports=[ServicePort(name="http", port=_HTTP_PORT, target_port=_HTTP_PORT, protocol=Protocol.TCP)],
         )
@@ -177,7 +176,7 @@ class GoogleMcpApp(Construct):
         NetworkPolicy(
             self,
             "network-policy",
-            metadata=metadata(_NAME, _NAME),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=_NAME),
             selector=_LABELS,
             ingress=[
                 IngressRule.from_endpoints(

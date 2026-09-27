@@ -10,10 +10,10 @@ from finance.augur.policy import sleeves
 from finance.augur.sim.actions import Consume, DecisionActions, Sell, Transfer
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot, PreparedSeries
 from finance.augur.sim.results import Finished, RejectedAction
-from finance.augur.sim.scenario import ORDINARY_INCOME
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 

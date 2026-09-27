@@ -141,7 +141,7 @@ the takeover guard and fails. The run after that succeeds, having merged away th
 orphaned turn. So it costs one prompt per restart, on the session that was live —
 recurring, not random, and self-healing.
 
-**What restarts it.** `reloader.stakater.com/auto` plus `strategy: Recreate`. The
+**What restarts it.** Reloader's `autoReloadAll` plus `strategy: Recreate`. The
 replicaset pod templates name the trigger directly:
 
 ```text

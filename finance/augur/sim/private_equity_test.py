@@ -22,7 +22,7 @@ from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, Pri
 from finance.augur.sim.actions import DecisionActions, PayClaim
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.compiler.tax import compile_profile
+from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.fixed_point import (
     currency_amount_to_quanta,
     quantity_scale_for_asset,
@@ -30,6 +30,7 @@ from finance.augur.sim.fixed_point import (
     rate_to_ppb,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -42,10 +43,10 @@ from finance.augur.sim.prepared import (
     _TenderPolicy,
 )
 from finance.augur.sim.results import Finished, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME, ObligationType, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.issuer_protocol import Code, Money, Rate, at_month, issuer_protocol
 from finance.augur.sim.world import World
 

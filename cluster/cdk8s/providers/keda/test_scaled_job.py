@@ -2,7 +2,7 @@
 `ScaledJobSpec` fields unset on `None`, so KEDA's own defaults apply."""
 
 import pytest_bazel
-from cdk8s import Testing as Cdk8sTesting
+from cdk8s import ApiObjectMetadata, Testing as Cdk8sTesting
 from keda_scaledjob_crds.sh.keda import (
     ScaledJobSpecJobTargetRef,
     ScaledJobSpecJobTargetRefTemplate,
@@ -25,8 +25,7 @@ def test_required_fields_render_under_their_own_names() -> None:
     ScaledJob(
         chart,
         "scaled-job",
-        name="test-scaled-job",
-        namespace="test-namespace",
+        metadata=ApiObjectMetadata(name="test-scaled-job", namespace="test-namespace"),
         job_target_ref=_JOB_TARGET_REF,
         triggers=_TRIGGERS,
     )
@@ -43,8 +42,7 @@ def test_optional_fields_render_when_given() -> None:
     ScaledJob(
         chart,
         "scaled-job",
-        name="test-scaled-job",
-        namespace="test-namespace",
+        metadata=ApiObjectMetadata(name="test-scaled-job", namespace="test-namespace"),
         job_target_ref=_JOB_TARGET_REF,
         triggers=_TRIGGERS,
         max_replica_count=4,

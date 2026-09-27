@@ -171,7 +171,6 @@ kind: Deployment
 metadata:
   annotations:
     description: Writable Home Assistant MCP server behind the shared MCP facade, cluster-internal and gated by a static bearer that only agentplane-staging's Action Service holds. The upstream HA token remains server-side, and the Action Service applies its own per-call approval policy.
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: ha-mcp
   name: ha-mcp

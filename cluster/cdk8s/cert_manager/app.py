@@ -8,21 +8,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import (
-    CERT_MANAGER_ISSUER_SUBSTITUTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-)
+from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
 NAME = "cert-manager"
@@ -55,8 +50,7 @@ def _values() -> dict[str, object]:
         "tolerations": [_CONTROL_PLANE_TOLERATION],
         "crds": {"enabled": True},
         # Default ClusterIssuer for Ingress resources without explicit annotation.
-        # Driven by cert-manager-issuer-config ConfigMap via Flux postBuild substitution.
-        "ingressShim": {"defaultIssuerName": "${LETSENCRYPT_ISSUER}", "defaultIssuerKind": "ClusterIssuer"},
+        "ingressShim": {"defaultIssuerName": LETSENCRYPT_ISSUER, "defaultIssuerKind": "ClusterIssuer"},
         # Gateway API support — enables gateway-shim controller that watches Gateway
         # resources for cert-manager.io/cluster-issuer annotations.
         # Since v1.15 the old --feature-gates=ExperimentalGatewayAPISupport flag is
@@ -100,7 +94,7 @@ def _service_monitor(chart: Chart, name: str, *, component: str, port: str) -> N
     ServiceMonitor(
         chart,
         name,
-        metadata=metadata(name, NAMESPACE),
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
         selector={"app.kubernetes.io/instance": NAME, "app.kubernetes.io/component": component},
         # ServiceMonitor.port matches the Service port name, not the targetPort.
         endpoints=[Endpoint.plain(port=port)],
@@ -117,7 +111,7 @@ def chart(app: App) -> Chart:
     repository = HelmRepository(
         chart,
         "repository",
-        metadata=metadata("jetstack", "flux-system"),
+        metadata=ApiObjectMetadata(name="jetstack", namespace="flux-system"),
         spec=HelmRepositorySpec(interval="24h", url="https://charts.jetstack.io"),
     )
     helm_release(
@@ -142,21 +136,16 @@ def write_manifests(root: Path) -> None:
 
 
 def cert_manager(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    cert_manager_issuer_config: Kustomization,
-    reflector: Kustomization,
-    monitoring_crds: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, reflector: Kustomization, monitoring_crds: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         artifact,
         timeout="5m",
-        post_build=CERT_MANAGER_ISSUER_SUBSTITUTION,
         depends_on=flux_kustomization_depends_on_many(
-            cert_manager_issuer_config,
-            # Produces the namespace-local ConfigMap that postBuild reads.
+            # TODO: drop this edge. It ordered the reflected cert-manager-issuer-config
+            # ConfigMap that postBuild read; neither exists any more.
             reflector,
             # the ServiceMonitor/PodMonitor CRD
             monitoring_crds,

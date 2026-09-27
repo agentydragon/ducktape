@@ -8,6 +8,7 @@ needed.
 
 from __future__ import annotations
 
+from cdk8s import ApiObjectMetadata
 from constructs import Construct
 from keda_triggerauthentication_crds.sh.keda import (
     TriggerAuthentication as _TriggerAuthentication,
@@ -15,21 +16,26 @@ from keda_triggerauthentication_crds.sh.keda import (
     TriggerAuthenticationSpecSecretTargetRef,
 )
 
-from cluster.cdk8s.metadata import metadata
-
 
 class TriggerAuthentication(_TriggerAuthentication):
     """A KEDA `TriggerAuthentication`, sourcing scaler credentials from an existing Secret."""
 
     @classmethod
     def from_secret_key(
-        cls, scope: Construct, id: str, *, name: str, namespace: str, parameter: str, secret_name: str, secret_key: str
+        cls,
+        scope: Construct,
+        id: str,
+        *,
+        metadata: ApiObjectMetadata,
+        parameter: str,
+        secret_name: str,
+        secret_key: str,
     ) -> TriggerAuthentication:
         """Source `parameter` from `secret_key` of the existing Secret `secret_name`."""
         return cls(
             scope,
             id,
-            metadata=metadata(name, namespace),
+            metadata=metadata,
             spec=TriggerAuthenticationSpec(
                 secret_target_ref=[
                     TriggerAuthenticationSpecSecretTargetRef(parameter=parameter, name=secret_name, key=secret_key)

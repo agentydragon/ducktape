@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -31,7 +31,6 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from cluster.cdk8s import external_creds, forgejo_images
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
@@ -63,8 +62,7 @@ def _token_external_secret(chart: Chart, account: str) -> None:
     ExternalSecret(
         chart,
         f"token-{account}",
-        name=_token_secret(account),
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(name=_token_secret(account), namespace=_NAMESPACE),
         refresh="1h",
         store=external_creds.STORE,
         data=[remote_data(_TOKEN_SOURCES[account], "token")],
@@ -219,7 +217,7 @@ def _service_monitor(chart: Chart, app: str, endpoint: ServiceMonitorSpecEndpoin
     ServiceMonitor(
         chart,
         f"{app}-monitor",
-        metadata=metadata(app, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=app, namespace=_NAMESPACE),
         selector={"app.kubernetes.io/name": app, "app.kubernetes.io/component": "quota"},
         endpoints=[endpoint],
     )
@@ -276,7 +274,7 @@ def chart(app: App) -> Chart:
     GrafanaDashboard(
         chart,
         "dashboard",
-        metadata=metadata("github-exporter", _NAMESPACE),
+        metadata=ApiObjectMetadata(name="github-exporter", namespace=_NAMESPACE),
         instance_selector_labels={"dashboards": "grafana"},
         folder="GitHub",
         config_map_ref=GrafanaDashboardSpecConfigMapRef(name="github-exporter-dashboard", key="dashboard.json"),

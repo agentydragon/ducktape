@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ServiceAccount, k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManaged,
@@ -29,7 +29,6 @@ from cluster.cdk8s.external_secrets.single_secret_store import single_secret_sto
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.plaid_mcp.app import NAMESPACE
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
@@ -106,7 +105,10 @@ def _readonly_copy(chart: Chart) -> None:
     reaches only that one Secret here. ESO polls the source, so a new password reaches the copy
     within the refresh interval."""
     reader = ServiceAccount(
-        chart, "consumer-reader", metadata=metadata(_READONLY_READER, _READONLY_CONSUMER), automount_token=False
+        chart,
+        "consumer-reader",
+        metadata=ApiObjectMetadata(name=_READONLY_READER, namespace=_READONLY_CONSUMER),
+        automount_token=False,
     )
     store = single_secret_store(
         chart,
@@ -119,8 +121,7 @@ def _readonly_copy(chart: Chart) -> None:
     ExternalSecret(
         chart,
         "consumer-copy",
-        name=_READONLY_SECRET,
-        namespace=_READONLY_CONSUMER,
+        metadata=ApiObjectMetadata(name=_READONLY_SECRET, namespace=_READONLY_CONSUMER),
         refresh="10m",
         store=SecretStoreRef.cluster(store),
         data_from=[DataFrom.from_extract(_READONLY_SECRET)],
@@ -139,9 +140,9 @@ def _readonly_provisioner(chart: Chart) -> None:
     NetworkPolicy(
         chart,
         "provisioner-egress",
-        metadata=metadata(
-            "plaid-mcp-db-readonly-provisioner-egress",
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name="plaid-mcp-db-readonly-provisioner-egress",
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "Allow the one-shot readonly-role provisioner to resolve and connect to the Plaid CNPG primary."

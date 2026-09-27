@@ -87,9 +87,7 @@ class Mitmproxy(Construct):
         k8s.KubeDeployment(
             self,
             "deployment",
-            metadata=k8s.ObjectMeta(
-                name=NAME, namespace=NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-            ),
+            metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_LABELS),
             spec=k8s.DeploymentSpec(
                 replicas=1,
                 selector=k8s.LabelSelector(match_labels=_LABELS),

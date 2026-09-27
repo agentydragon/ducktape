@@ -4,10 +4,11 @@ Postgres under the module's own schema."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from typing import Any
+from collections.abc import Sequence
 
+from cdk8s import ApiObjectMetadata
 from constructs import Construct
+from pydantic import BaseModel
 from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2,
     TerraformV1Alpha2Spec,
@@ -27,7 +28,6 @@ from tofu_controller.io.fluxcd.contrib.infra import (
 )
 
 from cluster.cdk8s import ducktape_flux, flux
-from cluster.cdk8s.metadata import metadata
 
 NAMESPACE = "flux-system"
 STATE_DB = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
@@ -53,8 +53,8 @@ def gitops_terraform(
     id: str,
     *,
     name: str,
-    variables: Mapping[str, Any],
-    depends_on: Sequence[str] = (),
+    variables: BaseModel | None,
+    depends_on: Sequence[TerraformV1Alpha2] = (),
     env: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv] = (),
     env_from: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFrom] = (),
     schema: str | None = None,
@@ -63,8 +63,9 @@ def gitops_terraform(
     """`name` is the module directory under tf/gitops and, underscored, its state schema
     unless `schema` names the one its state already lives in.
 
-    `variables` values are written structurally into the runner's tfvars, so a nested
-    map arrives as a Terraform map/object, not a string.
+    `variables` models the module's variables.tf (None: set none); each field is written
+    structurally into the runner's tfvars, so a nested map arrives as a Terraform
+    map/object, not a string.
 
     `store_readable_plan=HUMAN` writes each plan's diff to the `tfplan-default-<name>`
     ConfigMap, readable by anyone who can read ConfigMaps in flux-system. Enable it only
@@ -74,7 +75,7 @@ def gitops_terraform(
     return TerraformV1Alpha2(
         scope,
         id,
-        metadata=metadata(name, NAMESPACE),
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
         spec=TerraformV1Alpha2Spec(
             interval="15m",
             refresh_before_apply=True,
@@ -92,8 +93,13 @@ def gitops_terraform(
                     f'backend "pg" {{\n  conn_str    = "{STATE_DB}"\n  schema_name = "{schema or name.replace("-", "_")}"\n}}\n'
                 )
             ),
-            vars=[TerraformV1Alpha2SpecVars(name=key, value=value) for key, value in variables.items()] or None,
-            depends_on=[TerraformV1Alpha2SpecDependsOn(name=dep) for dep in depends_on] or None,
+            vars=None
+            if variables is None
+            else [
+                TerraformV1Alpha2SpecVars(name=key, value=value)
+                for key, value in variables.model_dump(mode="json").items()
+            ],
+            depends_on=[TerraformV1Alpha2SpecDependsOn(name=dependency.name) for dependency in depends_on] or None,
             runner_pod_template=TerraformV1Alpha2SpecRunnerPodTemplate(
                 spec=TerraformV1Alpha2SpecRunnerPodTemplateSpec(
                     env_from=list(env_from) or None,

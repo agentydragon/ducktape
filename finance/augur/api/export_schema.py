@@ -28,9 +28,9 @@ from finance.augur.api.local_regulation import LocalRegulation, TaxRegime
 from finance.augur.api.portfolio_source_config import FixedPortfolioSourceConfig, PortfolioSourcesConfig
 from finance.augur.api.server import create_app_from_augur_config, static_price_clients
 from finance.augur.api.wire import ActorRole, Property
-from finance.augur.model.independent import IndependentProviderConfig
 from finance.augur.model.series import LocationId
 from finance.augur.sim.ids import AgentId, PropertyId
+from finance.augur.x.models.independent import IndependentProviderConfig
 
 _SCHEMA_LOCATION_ID = LocationId("schema_location")
 

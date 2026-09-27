@@ -4,7 +4,7 @@ credentialless MCP fixtures in place of the real action groups.
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import DeploymentStrategy
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
@@ -36,7 +36,6 @@ from cluster.cdk8s.agentplane.environment import (
 )
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 
 _NAMESPACE = "agentplane-testing"
@@ -150,7 +149,7 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "networkpolicy-app-from-staging-egress",
-        metadata=metadata(f"{app_component.NAME}-from-staging-egress", ENV.namespace),
+        metadata=ApiObjectMetadata(name=f"{app_component.NAME}-from-staging-egress", namespace=ENV.namespace),
         selector={"app.kubernetes.io/name": app_component.NAME},
         ingress=[
             IngressRule.from_endpoints(

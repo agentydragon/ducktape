@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngress,
@@ -27,7 +27,6 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ClusterDataFrom, ClusterExternalSecret
 
@@ -54,9 +53,7 @@ def _deployment(chart: Chart) -> None:
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=NAME, namespace=NAME, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAME, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -221,7 +218,7 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "httproute",
-        metadata=metadata(NAME, NAME),
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAME),
         hostnames=["airlock.allegedly.works"],
         backend=NAME,
         port=_PORT,
@@ -233,7 +230,7 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "ciliumnetworkpolicy",
-        metadata=metadata("airlock-ingress", NAME),
+        metadata=ApiObjectMetadata(name="airlock-ingress", namespace=NAME),
         selector=_LABELS,
         ingress=[
             _ingress_from(CiliumNetworkPolicySpecIngressFromEntities.INGRESS),

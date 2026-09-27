@@ -24,10 +24,10 @@ from finance.augur.product.funding import Policy
 from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, TAX_AUTHORITY_AGENT_ID, Situation, build_situation
 from finance.augur.product.wire import FundingPolicy, ScenarioKey, SecuritySleeveWeight, SleeveWeight, SpendIndex
 from finance.augur.sim.bills import Biller
-from finance.augur.sim.compiler.execution import compile_holding_pools, compile_jurisdictions, compile_series
-from finance.augur.sim.compiler.tax import compile_profile
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.compiler.execution import compile_holding_pools, compile_jurisdictions
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId
+from finance.augur.sim.income import InterestIncome
 from finance.augur.sim.jurisdictions import (
     Jurisdiction,
     JurisdictionLevel,
@@ -37,17 +37,11 @@ from finance.augur.sim.jurisdictions import (
 )
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
-from finance.augur.sim.scenario import (
-    DistributionTaxSlice,
-    FilingStatus,
-    InitialLot,
-    InterestIncome,
-    SecurityDistribution,
-    TaxProfile,
-)
+from finance.augur.sim.scenario import DistributionTaxSlice, InitialLot, SecurityDistribution
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
 from finance.augur.sim.world import World
 
 BROKERAGE = AccountId("brokerage")

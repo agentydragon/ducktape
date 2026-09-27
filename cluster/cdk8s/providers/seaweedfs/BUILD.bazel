@@ -79,7 +79,6 @@ py_library(
     srcs = ["s3.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/providers/seaweedfs:bucket",
         "//cluster/cdk8s/providers/seaweedfs:resourcereferencegrant",
         "//cluster/cdk8s/providers/seaweedfs:s3credentials",

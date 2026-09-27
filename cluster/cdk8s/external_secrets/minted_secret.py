@@ -7,6 +7,7 @@ credential (`mint_db_role_secret`).
 
 from __future__ import annotations
 
+from cdk8s import ApiObjectMetadata
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
@@ -17,7 +18,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateMetadata,
 )
 
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 
 
@@ -28,7 +28,7 @@ def _password_generator(scope: Construct, id: str, *, name: str, namespace: str,
     Password(
         scope,
         id,
-        metadata=metadata(name, namespace),
+        metadata=ApiObjectMetadata(name=name, namespace=namespace),
         spec=PasswordSpec(length=length, digits=digits, symbols=0, no_upper=False, allow_repeat=True),
     )
     return name
@@ -80,15 +80,15 @@ def mint_bearer_secret(
     ExternalSecret(
         scope,
         id,
-        name=name,
-        namespace=namespace,
+        metadata=ApiObjectMetadata(
+            name=name, namespace=namespace, annotations={"description": description} if description else None
+        ),
         refresh=refresh,
         data_from=[DataFrom.from_password_generator(generator)],
         creation_policy=creation_policy,
         deletion_policy=deletion_policy,
         template=template,
         immutable=immutable,
-        annotations={"description": description} if description else None,
     )
 
 
@@ -124,8 +124,7 @@ def mint_db_role_secret(
     ExternalSecret(
         scope,
         id,
-        name=name,
-        namespace=namespace,
+        metadata=ApiObjectMetadata(name=name, namespace=namespace),
         refresh="8760h",
         data_from=[DataFrom.from_password_generator(generator)],
         template=ExternalSecretSpecTargetTemplate(type=secret_type, data=data),

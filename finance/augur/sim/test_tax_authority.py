@@ -7,9 +7,9 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.ids import JurisdictionId, LiabilityId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.ledger import Ledger
 from finance.augur.sim.prepared import _MortgageInterestDeduction, _SaltCap, _SaltDeduction
-from finance.augur.sim.scenario import ORDINARY_INCOME
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, OTHER, accounting, flat_rules, taxpayer

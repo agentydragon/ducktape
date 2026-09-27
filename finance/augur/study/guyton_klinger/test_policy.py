@@ -18,8 +18,8 @@ import pytest_bazel
 
 from finance.augur.sim.actions import Action, Buy, Consume, LotSale, PayClaim, Sell, Transfer
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.ids import AssetId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -33,10 +33,10 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.results import Executed, Finished, Receipt, Rejected, RejectedAction, Rollout
 from finance.augur.sim.runtime import load_jurisdictions_for
-from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.world import World
 from finance.augur.study.guyton_klinger.panel import Sleeve
 from finance.augur.study.guyton_klinger.paths import (

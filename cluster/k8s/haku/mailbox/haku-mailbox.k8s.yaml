@@ -58,7 +58,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   annotations:
-    description: STARTTLS certificate for the inbound SMTP listener (mx.allegedly.works). Sending MTAs (Gmail) use opportunistic TLS; the reloader annotation on the deployment restarts the receiver when cert-manager rotates this.
+    description: STARTTLS certificate for the inbound SMTP listener (mx.allegedly.works). Sending MTAs (Gmail) use opportunistic TLS; Reloader restarts the receiver when cert-manager rotates this.
   name: mx-allegedly-works
   namespace: haku-mailbox
 spec:
@@ -66,14 +66,12 @@ spec:
     - mx.allegedly.works
   issuerRef:
     kind: ClusterIssuer
-    name: ${LETSENCRYPT_ISSUER}
+    name: letsencrypt-prod
   secretName: mx-allegedly-works-tls
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: haku-mailbox
   name: haku-mailbox
@@ -261,7 +259,6 @@ kind: DaemonSet
 metadata:
   annotations:
     description: Per-public-node port-25 TCP ingress. Preserves the sending MTA address through PROXY protocol so Stalwart's SPF gate remains meaningful.
-    reloader.stakater.com/auto: "true"
   name: haku-mailbox-smtp-ingress
   namespace: haku-mailbox
 spec:

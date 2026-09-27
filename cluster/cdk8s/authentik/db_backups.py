@@ -17,7 +17,7 @@ from barman_cloud_objectstore_crds.io.cnpg.barmancloud import (
     ObjectStoreSpecConfigurationWal,
     ObjectStoreSpecConfigurationWalCompression,
 )
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cnpg_scheduledbackup_crds.io.cnpg.postgresql import (
     ScheduledBackup,
     ScheduledBackupSpec,
@@ -31,7 +31,6 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.seaweedfs.s3 import AWS_ENV_KEY_FIELDS
 from cluster.cdk8s.seaweedfs import s3
 
@@ -70,9 +69,9 @@ def chart(app: App) -> Chart:
     ObjectStore(
         chart,
         "object-store",
-        metadata=metadata(
-            _OBJECT_STORE,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_OBJECT_STORE,
+            namespace=NAMESPACE,
             annotations={"description": "SeaweedFS S3 destination for Authentik CNPG base backups and WAL."},
         ),
         spec=ObjectStoreSpec(
@@ -96,9 +95,9 @@ def chart(app: App) -> Chart:
     ScheduledBackup(
         chart,
         "scheduled-backup",
-        metadata=metadata(
-            "authentik-db-ovh-daily",
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name="authentik-db-ovh-daily",
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "Daily physical Authentik database backup; WAL archiving provides continuous recovery points."

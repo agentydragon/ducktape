@@ -3,7 +3,7 @@
 A test rather than a script for the reason `compare_test.py` gives, and asserting the same kind
 of thing: what makes the comparison VALID, never which arm wins. #5509 is explicit that the long
 record scoring worse is a completed outcome, so an assertion either way would prejudge the run.
-The numbers go to the log and a human records the decision in `model/SPEC.md`.
+The numbers go to the log and a human records the decision in `x/models/structural_macro.md`.
 
 Manual, and fetching from the public upstreams, so an upstream outage cannot redden an unrelated
 PR.

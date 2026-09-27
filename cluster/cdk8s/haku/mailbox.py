@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef
 from cilium_crds.io.cilium import (
@@ -22,11 +22,11 @@ from cilium_crds.io.cilium import (
 )
 
 from cluster.cdk8s import cilium, cnpg, forgejo_images, gateway
+from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.haku import namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ClusterExternalSecret, cluster_remote_data
@@ -120,17 +120,12 @@ def _add_deployment(chart: Chart) -> None:
     Authentication is exclusively Authentik OIDC bearer tokens (the stalwart-haku provider); no
     mailbox password exists."""
     public_url = k8s.EnvVar(name="STALWART_PUBLIC_URL", value=_PUBLIC_URL)
+    # Reloader's `autoReloadAll` restarts this on rotation of the mounted STARTTLS certificate and
+    # DB credentials so the normal server re-reads them.
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=NAME,
-            namespace=NAMESPACE,
-            labels=_LABELS,
-            # Restart on rotation of the mounted STARTTLS certificate and DB credentials so the
-            # normal server re-reads them.
-            annotations={"reloader.stakater.com/auto": "true"},
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -277,8 +272,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
                 "description": (
                     "Per-public-node port-25 TCP ingress. Preserves the sending MTA address through "
                     "PROXY protocol so Stalwart's SPF gate remains meaningful."
-                ),
-                "reloader.stakater.com/auto": "true",
+                )
             },
         ),
         spec=k8s.DaemonSetSpec(
@@ -361,7 +355,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
     NetworkPolicy(
         chart,
         "smtp-ingress-policy",
-        metadata=metadata(_INGRESS_NAME, NAMESPACE),
+        metadata=ApiObjectMetadata(name=_INGRESS_NAME, namespace=NAMESPACE),
         selector=_INGRESS_LABELS,
         ingress=[
             CiliumNetworkPolicySpecIngress(
@@ -386,7 +380,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
     NetworkPolicy(
         chart,
         "policy",
-        metadata=metadata(NAME, NAMESPACE),
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         selector=_LABELS,
         ingress=[
             IngressRule.from_endpoints(_INGRESS_LABELS, ports=[_SMTP_PORT]),
@@ -426,18 +420,20 @@ def chart(app: App) -> Chart:
     Certificate(
         chart,
         "certificate",
-        name="mx-allegedly-works",
-        namespace=NAMESPACE,
-        annotations={
-            "description": (
-                "STARTTLS certificate for the inbound SMTP listener (mx.allegedly.works). Sending MTAs "
-                "(Gmail) use opportunistic TLS; the reloader annotation on the deployment restarts the "
-                "receiver when cert-manager rotates this."
-            )
-        },
+        metadata=ApiObjectMetadata(
+            name="mx-allegedly-works",
+            namespace=NAMESPACE,
+            annotations={
+                "description": (
+                    "STARTTLS certificate for the inbound SMTP listener (mx.allegedly.works). Sending MTAs "
+                    "(Gmail) use opportunistic TLS; Reloader restarts the receiver when cert-manager rotates "
+                    "this."
+                )
+            },
+        ),
         secret_name=_TLS_SECRET,
         dns_names=["mx.allegedly.works"],
-        issuer_ref=CertificateSpecIssuerRef(name="${LETSENCRYPT_ISSUER}", kind="ClusterIssuer"),
+        issuer_ref=CertificateSpecIssuerRef(name=LETSENCRYPT_ISSUER, kind="ClusterIssuer"),
     )
     _add_deployment(chart)
     _add_services(chart)
@@ -445,9 +441,9 @@ def chart(app: App) -> Chart:
     gateway.https_route(
         chart,
         "route",
-        metadata=metadata(
-            NAME,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=NAME,
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "Public route to Stalwart's HTTP listener: JMAP for haku (authenticated with its "

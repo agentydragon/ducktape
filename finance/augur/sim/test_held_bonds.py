@@ -8,9 +8,9 @@ import pytest_bazel
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.held_bonds import HeldBonds
 from finance.augur.sim.ids import AccountId, BondId
+from finance.augur.sim.income import InterestIncome
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedBond, PreparedFixedAmount, PreparedIndexedCoupon, PreparedSeries
-from finance.augur.sim.scenario import InterestIncome
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, accounting
 
 

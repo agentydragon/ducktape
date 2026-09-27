@@ -42,7 +42,7 @@ spec:
         name: cluster-root-ca-secret
     - secret:
         key: ca.crt
-        name: ${LETSENCRYPT_ISSUER}-root-ca
+        name: letsencrypt-prod-root-ca
   target:
     configMap:
       key: ca-certificates.crt

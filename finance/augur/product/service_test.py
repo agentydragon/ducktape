@@ -15,8 +15,6 @@ from finance.augur.api.finance import FinanceSnapshot
 from finance.augur.api.wire import CatalogResponse
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, Sampler
-from finance.augur.model.independent import IndependentProviderConfig
-from finance.augur.model.provider_config import CompositeProviderConfig, MirroringProviderConfig
 from finance.augur.model.series import (
     HomeValueKey,
     InflationKey,
@@ -99,6 +97,8 @@ from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.scenario import InitialLot, TlhCohort, TlhPortfolioSpec
 from finance.augur.sim.tlh import TlhAssumptions
 from finance.augur.sim.world import World
+from finance.augur.x.models.independent import IndependentProviderConfig
+from finance.augur.x.models.provider_config import CompositeProviderConfig, MirroringProviderConfig
 
 LOCATION_A = LocationId("location_a")
 TEST_MANAGED = PortfolioId("test-managed")

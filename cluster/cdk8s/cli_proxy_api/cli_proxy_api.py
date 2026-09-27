@@ -13,7 +13,7 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngress,
@@ -43,7 +43,6 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
@@ -114,8 +113,17 @@ def _config(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "config",
-        name=_CONFIG_SECRET,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_CONFIG_SECRET,
+            namespace=NAMESPACE,
+            annotations={
+                "description": (
+                    "CLIProxyAPI config.yaml rendered from the client-key Secret. Retry an upstream stream up "
+                    "to three times only before its first response byte reaches the caller. Remote management "
+                    "uses native Authentik OIDC for browsers and a management key for AIQuota."
+                )
+            },
+        ),
         refresh="1h",
         store=SecretStoreRef.cluster("kubernetes-cli-proxy-api-secret-store"),
         data=[remote_data("cli-proxy-api-client-key", "client-key", secret_key="client_key")],
@@ -123,13 +131,6 @@ def _config(scope: Construct) -> None:
         template=ExternalSecretSpecTargetTemplate(
             engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2, data={"config.yaml": _CONFIG}
         ),
-        annotations={
-            "description": (
-                "CLIProxyAPI config.yaml rendered from the client-key Secret. Retry an upstream stream up "
-                "to three times only before its first response byte reaches the caller. Remote management "
-                "uses native Authentik OIDC for browsers and a management key for AIQuota."
-            )
-        },
     )
 
 
@@ -138,9 +139,7 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=NAME, namespace=NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -246,7 +245,7 @@ def _routes(scope: Construct) -> None:
     https_route(
         scope,
         "route",
-        metadata=metadata(NAME, NAMESPACE),
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         hostnames=["cli-proxy-api.allegedly.works"],
         backend=NAME,
         port=PORT,
@@ -258,7 +257,7 @@ def _routes(scope: Construct) -> None:
     https_route(
         scope,
         "admin-route",
-        metadata=metadata("cli-proxy-api-admin", NAMESPACE),
+        metadata=ApiObjectMetadata(name="cli-proxy-api-admin", namespace=NAMESPACE),
         hostnames=["cli-proxy-api-admin.allegedly.works"],
         backend=NAME,
         port=PORT,
@@ -272,7 +271,7 @@ def _network_policy(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "network-policy",
-        metadata=metadata("cli-proxy-api-ingress", NAMESPACE),
+        metadata=ApiObjectMetadata(name="cli-proxy-api-ingress", namespace=NAMESPACE),
         selector=_LABELS,
         ingress=[
             # cilium-envoy hostNetwork traffic carries reserved:ingress identity. Preserves the

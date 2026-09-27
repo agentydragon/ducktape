@@ -4,11 +4,11 @@ from collections.abc import Mapping, Sequence
 
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxProfile, PreparedTaxRules
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedSeries
-from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome
+from finance.augur.sim.tax import PreparedTaxBracket, PreparedTaxProfile, PreparedTaxRules
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.world import World

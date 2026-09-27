@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
@@ -14,7 +14,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, kustomize_kust
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "kyverno"
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/app"
@@ -132,7 +131,7 @@ def chart(app: App) -> Chart:
     repository = HelmRepository(
         chart,
         "repository",
-        metadata=metadata(NAME, _FLUX_NAMESPACE),
+        metadata=ApiObjectMetadata(name=NAME, namespace=_FLUX_NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://kyverno.github.io/kyverno/"),
     )
     helm_release(

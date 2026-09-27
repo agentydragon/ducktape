@@ -62,7 +62,6 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, f
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.home_assistant.app import HA_MCP_TOKEN
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
@@ -90,13 +89,14 @@ def _home_assistant_token(scope: Construct) -> None:
     """ESO copy of the token the Home Assistant provisioner keeps valid in its own namespace, read
     through a store that can get that one Secret."""
     reader = ServiceAccount(
-        scope, "home-assistant-token-reader", metadata=metadata("home-assistant-token-reader", _NAMESPACE)
+        scope,
+        "home-assistant-token-reader",
+        metadata=ApiObjectMetadata(name="home-assistant-token-reader", namespace=_NAMESPACE),
     )
     ExternalSecret(
         scope,
         "home-assistant-token",
-        name=_HOME_ASSISTANT_TOKEN_SECRET_NAME,
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(name=_HOME_ASSISTANT_TOKEN_SECRET_NAME, namespace=_NAMESPACE),
         refresh="1h",
         store=SecretStoreRef.cluster(
             single_secret_store(
@@ -144,7 +144,7 @@ class HaMcpApp(Construct):
         return ConfigMap(
             self,
             "config",
-            metadata=metadata(_APP_CONFIG_MAP_NAME, _NAMESPACE),
+            metadata=ApiObjectMetadata(name=_APP_CONFIG_MAP_NAME, namespace=_NAMESPACE),
             data={
                 "HOMEASSISTANT_URL": "http://home-assistant.home-assistant.svc.cluster.local:8123",
                 "MCP_HOST": "0.0.0.0",
@@ -180,9 +180,9 @@ class HaMcpApp(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                _APP_NAME,
-                _NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=_APP_NAME,
+                namespace=_NAMESPACE,
                 labels=_APP_LABELS,
                 annotations={
                     "description": (
@@ -190,8 +190,7 @@ class HaMcpApp(Construct):
                         "and gated by a static bearer that only agentplane-staging's Action Service holds. "
                         "The upstream HA token remains server-side, and the Action Service applies its own "
                         "per-call approval policy."
-                    ),
-                    "reloader.stakater.com/auto": "true",
+                    )
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=_APP_LABELS),
@@ -272,7 +271,7 @@ class HaMcpApp(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(_APP_NAME, _NAMESPACE, labels=_APP_LABELS),
+            metadata=ApiObjectMetadata(name=_APP_NAME, namespace=_NAMESPACE, labels=_APP_LABELS),
             selector=deployment,
             ports=[
                 ServicePort(name="http", port=_APP_FACADE_PORT, target_port=_APP_FACADE_PORT, protocol=Protocol.TCP),
@@ -286,9 +285,9 @@ class HaMcpApp(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=metadata(
-                "ha-mcp-ingress",
-                _NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name="ha-mcp-ingress",
+                namespace=_NAMESPACE,
                 annotations={
                     "description": (
                         "Default-deny ingress for HA-MCP. Only agentplane-staging reaches the facade port; the "
@@ -312,7 +311,7 @@ class HaMcpApp(Construct):
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=metadata(_APP_NAME, _NAMESPACE),
+            metadata=ApiObjectMetadata(name=_APP_NAME, namespace=_NAMESPACE),
             selector=_APP_LABELS,
             endpoints=[ServiceMonitorSpecEndpoints(port="metrics")],
         )

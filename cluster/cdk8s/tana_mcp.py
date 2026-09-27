@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -26,7 +26,6 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -65,9 +64,7 @@ def _tana_deployment(chart: Chart) -> None:
     k8s.KubeDeployment(
         chart,
         "tana-deployment",
-        metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -255,7 +252,6 @@ def _facade(chart: Chart) -> None:
                     " Access is enforced by Authentik group membership; the server injects a static downstream"
                     " PAT."
                 ),
-                "reloader.stakater.com/auto": "true",
                 # CPU: VPA manages requests only — no CPU limit so cold-start bursts aren't
                 # throttled. fastmcp takes ~6 CPU-seconds to import; at a 60m limit that's
                 # 100s wall time even on an idle node (cgroups CFS is a hard rate limiter
@@ -332,7 +328,7 @@ def _facade(chart: Chart) -> None:
     https_route(
         chart,
         "facade-httproute",
-        metadata=metadata(_FACADE, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
         hostnames=["tana-mcp-facade.allegedly.works"],
         backend=_FACADE,
         port=_FACADE_PORT,
@@ -366,14 +362,14 @@ def _facade(chart: Chart) -> None:
     ServiceMonitor(
         chart,
         "facade-servicemonitor",
-        metadata=metadata(_FACADE, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
         selector=_FACADE_LABELS,
         endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
     PrometheusRule(
         chart,
         "facade-prometheusrule",
-        metadata=metadata(_FACADE, _NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
         groups=[
             group(
                 _FACADE,
@@ -449,14 +445,16 @@ def chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         "tana-pat",
-        name=_PAT_SECRET,
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_PAT_SECRET,
+            namespace=_NAMESPACE,
+            annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
+        ),
         refresh="1h",
         store=external_creds.STORE,
         data=[remote_data(_PAT_SECRET, "token")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
     )
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)
     _resigner(chart)

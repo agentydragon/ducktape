@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from cdk8s import Chart, JsonPatch
+from cdk8s import ApiObjectMetadata, Chart, JsonPatch
 from constructs import Construct
 from seaweed_bucket_crds.com.seaweedfs.seaweed import (
     Bucket as _Bucket,
@@ -54,8 +54,6 @@ from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
     S3IdentitySpecReclaimPolicy,
     S3IdentitySpecSeaweedRef,
 )
-
-from cluster.cdk8s.metadata import metadata
 
 _GROUP = "seaweed.seaweedfs.com"
 
@@ -93,7 +91,7 @@ class _ClusterGrant(Construct):
         self._resource = ResourceReferenceGrant(
             self,
             "Resource",
-            metadata=metadata(name, cluster_namespace),
+            metadata=ApiObjectMetadata(name=name, namespace=cluster_namespace),
             spec=ResourceReferenceGrantSpec(
                 from_=[ResourceReferenceGrantSpecFrom(group=_GROUP, kind=kind, namespace=namespace)],
                 to=[ResourceReferenceGrantSpecTo(group=_GROUP, kind="Seaweed", name=cluster_name)],
@@ -164,7 +162,7 @@ def _identity_credentials(
     return S3Credentials(
         scope,
         id,
-        metadata=metadata(identity_name, namespace, annotations=_description(description)),
+        metadata=ApiObjectMetadata(name=identity_name, namespace=namespace, annotations=_description(description)),
         spec=S3CredentialsSpec(
             seaweed_ref=S3CredentialsSpecSeaweedRef(
                 name=cluster_name, namespace=_seaweed_ref_namespace(namespace, cluster_namespace)
@@ -245,7 +243,7 @@ class Identity(Construct):
         self._resource = S3Identity(
             self,
             "Resource",
-            metadata=metadata(name, namespace, annotations=_description(description)),
+            metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=_description(description)),
             spec=S3IdentitySpec(
                 seaweed_ref=S3IdentitySpecSeaweedRef(
                     name=cluster_name, namespace=_seaweed_ref_namespace(namespace, cluster_namespace)
@@ -324,7 +322,7 @@ class Bucket(Construct):
         self._resource = _Bucket(
             self,
             "Resource",
-            metadata=metadata(name, namespace, annotations=_description(description)),
+            metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=_description(description)),
             spec=BucketSpec(
                 name=name,
                 adopt_existing=adopt_existing or None,
@@ -371,7 +369,7 @@ def secret_grant(scope: Construct, *, secret: str, namespace: str, cluster_names
     return ResourceReferenceGrant(
         scope,
         f"secret-grant-{namespace}-{secret}",
-        metadata=metadata(secret, namespace),
+        metadata=ApiObjectMetadata(name=secret, namespace=namespace),
         spec=ResourceReferenceGrantSpec(
             from_=[ResourceReferenceGrantSpecFrom(group=_GROUP, kind="S3Credentials", namespace=cluster_namespace)],
             to=[ResourceReferenceGrantSpecTo(group="", kind="Secret", name=secret)],

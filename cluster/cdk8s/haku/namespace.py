@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEndpointSelector,
@@ -16,7 +16,6 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 
 NAME = "haku-namespace"
@@ -63,7 +62,7 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "ingress",
-        metadata=metadata("haku-sandbox-ingress", NAMESPACE),
+        metadata=ApiObjectMetadata(name="haku-sandbox-ingress", namespace=NAMESPACE),
         selector=CiliumNetworkPolicySpecEndpointSelector(),
         ingress=[
             CiliumNetworkPolicySpecIngress(
