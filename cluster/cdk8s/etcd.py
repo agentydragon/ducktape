@@ -11,6 +11,7 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Protocol, Service, ServicePort, k8s
 from constructs import Construct
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsRelabelings,
@@ -101,6 +102,7 @@ def etcd_monitoring(flux_chart: Chart, directory: RenderedDirectory, monitoring_
         flux_chart,
         NAME,
         directory,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         timeout="2m",
         # the ServiceMonitor CRD
         depends_on=[flux_kustomization_depends_on(monitoring_crds)],

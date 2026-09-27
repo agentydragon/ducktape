@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from cdk8s import App, Chart
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -21,5 +22,10 @@ def chart(app: App) -> Chart:
 
 def github_secrets_sync(chart: Chart, directory: RenderedDirectory, tofu_controller: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart, NAME, directory, timeout="10m", depends_on=flux_kustomization_depends_on_many(tofu_controller)
+        chart,
+        NAME,
+        directory,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        timeout="10m",
+        depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )

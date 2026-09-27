@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from cdk8s import App, Chart
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -25,6 +26,7 @@ def github_branch_protection(
         chart,
         NAME,
         directory,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(
             # tofu-controller runs the Terraform CR.

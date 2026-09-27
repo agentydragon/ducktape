@@ -401,6 +401,7 @@ py_library(
         ":artifact_generators",
         ":flux",
         ":manifest_roots",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "@pypi//cdk8s",
@@ -666,6 +667,7 @@ py_library(
         ":flux",
         ":manifest_roots",
         ":terraform",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
     ],
 )

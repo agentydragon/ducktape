@@ -9,6 +9,7 @@ kube-state-metrics `customResourceState` in `monitoring/stack.py`.
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
@@ -40,6 +41,7 @@ def flux_monitoring(chart: Chart, directory: RenderedDirectory, monitoring_crds:
         chart,
         NAME,
         directory,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         timeout="2m",
         depends_on=[
             # PodMonitor CRD ships with kube-prometheus-stack in monitoring-stack.

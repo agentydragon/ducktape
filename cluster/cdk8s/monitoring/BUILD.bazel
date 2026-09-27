@@ -90,6 +90,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
@@ -205,6 +206,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "@pypi//cdk8s",
     ],

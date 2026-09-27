@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
 from tofu_controller.io.fluxcd.contrib.infra import TerraformV1Alpha2SpecStoreReadablePlan
 
 from cluster.cdk8s import terraform
@@ -27,6 +27,7 @@ def sso_providers_tf(chart: Chart, directory: RenderedDirectory, tofu_controller
         chart,
         "sso-providers-tf",
         directory,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         wait=None,
         health_checks=[
             KustomizationSpecHealthChecks(

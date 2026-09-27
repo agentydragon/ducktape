@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
 
 from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -26,6 +26,7 @@ def alloy_otlp_bearer_token_tf(
         chart,
         "alloy-otlp-bearer-token-tf",
         directory,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         wait=None,
         health_checks=[
             KustomizationSpecHealthChecks(

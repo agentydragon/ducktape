@@ -735,6 +735,7 @@ metadata:
   name: flux-monitoring
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -755,6 +756,7 @@ metadata:
   name: cilium-monitoring
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -775,6 +777,7 @@ metadata:
   name: etcd-monitoring
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -815,6 +818,7 @@ metadata:
   name: monitoring-rules
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -1845,6 +1849,7 @@ metadata:
   name: agent-machine-access-tf
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
@@ -1869,6 +1874,7 @@ metadata:
   name: sso-providers-tf
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
@@ -1893,6 +1899,7 @@ metadata:
   name: gatus-sso-tf
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
@@ -1917,6 +1924,7 @@ metadata:
   name: flux-webhook-token
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
@@ -1937,6 +1945,7 @@ metadata:
   name: github-branch-protection
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
@@ -2269,6 +2278,7 @@ metadata:
   name: seaweedfs-monitoring
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -3278,6 +3288,7 @@ metadata:
   name: github-secrets-sync
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
@@ -3579,6 +3590,7 @@ metadata:
   name: alloy-otlp-bearer-token-tf
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
