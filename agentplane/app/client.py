@@ -20,7 +20,7 @@ from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 
 from agentplane.app.agent_runtime.runner.bridge import NewSession
 from agentplane.app.agent_runtime.view.views import ThreadView
-from agentplane.app.api import EgressGrant, ModelCatalog
+from agentplane.app.api import EgressGrant, ModelCatalog, ModelOption
 from agentplane.app.decisions import Decision
 from agentplane.app.egress import BindingView, PolicyView
 from agentplane.app.inventory import NewSandbox, ProvisioningState, SandboxView
@@ -76,7 +76,10 @@ class Client:
 
     async def models(self) -> ModelCatalog:
         """Which models each harness may be opened with, as this deployment is configured."""
-        return {Harness(harness): names for harness, names in (await self._json("GET", "/models")).items()}
+        return {
+            Harness(harness): [ModelOption.model_validate(option) for option in options]
+            for harness, options in (await self._json("GET", "/models")).items()
+        }
 
     async def presets(self) -> list[SandboxPresetView]:
         return [SandboxPresetView.model_validate(row) for row in await self._json("GET", "/presets")]

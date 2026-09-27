@@ -128,7 +128,8 @@ class Settings(BaseSettings):
         default=None, description="Cluster-internal Electric root URL; omitted leaves thread sync routes disabled."
     )
     models: ModelCatalog = Field(
-        description='The models each agent harness may run, as JSON: {"HARNESS_CLAUDE": ["..."], "HARNESS_CODEX": ["..."]}.'
+        description="The models each agent harness may run, as JSON: "
+        '{"HARNESS_CLAUDE": [{"model": "...", "display_name": "..."}], "HARNESS_CODEX": [...]}.'
     )
     sandbox_presets: dict[str, SandboxPreset] = Field(
         default_factory=dict, description="App-owned Sandbox launch-form presets keyed by displayable name."

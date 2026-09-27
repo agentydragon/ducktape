@@ -46,6 +46,7 @@ import {
   getThread,
   models,
   type EvidencePage,
+  type ModelOption,
   type NativeFramePage,
   type SandboxView,
   type ThreadView,
@@ -1153,7 +1154,7 @@ function ProjectedSessionBody({
   const running =
     available && !thread.archived && operational?.status !== "failed" && controls?.harness_state === "running";
   const activeTurn = controls?.active_turn_id ?? null;
-  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
@@ -1306,7 +1307,7 @@ function ProjectedSessionBody({
             />
             <Select
               aria-label="Model"
-              data={modelOptions}
+              data={modelOptions.map((option) => ({ value: option.model, label: option.display_name }))}
               value={controls?.applied_model ?? null}
               placeholder={
                 sync.window?.error || operational?.status === "failed"

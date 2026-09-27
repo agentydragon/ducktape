@@ -93,9 +93,18 @@ router = APIRouter(prefix="/sandboxes", tags=["sandboxes"])
 logger = logging.getLogger(__name__)
 
 
+class ModelOption(BaseModel):
+    """One model a harness may be opened with, offered to the session form."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model: str = Field(description="The route name a session opens with; opaque to the operator.")
+    display_name: str = Field(description='Short human name for the session form, e.g. "Sonnet 5".')
+
+
 # The models each agent harness may be opened with: the app's configuration, offered to the session form.
 # A thread carries its harness and model; a sandbox is a Pod and carries neither.
-ModelCatalog = dict[Harness, list[str]]
+ModelCatalog = dict[Harness, list[ModelOption]]
 
 
 def _models(request: Request) -> ModelCatalog:
@@ -699,7 +708,8 @@ async def thread_command(
     if thread is None:
         raise ThreadNotFoundError(thread_id)
     if command.HasField("change_model") and (
-        not command.change_model.model or command.change_model.model not in catalog[thread.harness]
+        not command.change_model.model
+        or command.change_model.model not in {option.model for option in catalog[thread.harness]}
     ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="model is incompatible with this thread's harness"
@@ -868,7 +878,7 @@ def create_app(
         raise ValueError(f"the model catalog needs a non-empty list for every harness: {catalog=}")
     configured_presets = presets or PresetCatalog()
     for name, preset in configured_presets.threads.items():
-        if preset.model not in catalog[preset.harness]:
+        if preset.model not in {option.model for option in catalog[preset.harness]}:
             raise ValueError(f"ThreadPreset {name!r} names model {preset.model!r} outside the configured catalog")
     app = FastAPI(title="Agentplane", version="0")
     app.state.inventory = inventory

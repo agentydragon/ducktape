@@ -26,7 +26,7 @@ from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.api import create_app
+from agentplane.app.api import ModelOption, create_app
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -47,7 +47,10 @@ APP_ENVIRONMENT = {
     "AGENTPLANE_SANDBOX_NAMESPACE": "test-sandbox-namespace",
     "AGENTPLANE_RUNNER_PORT": "7000",
     "AGENTPLANE_DATABASE_URL": "postgresql+asyncpg://test@test.invalid/test",
-    "AGENTPLANE_MODELS": '{"HARNESS_CLAUDE": ["test-claude-model"], "HARNESS_CODEX": ["test-codex-model"]}',
+    "AGENTPLANE_MODELS": (
+        '{"HARNESS_CLAUDE": [{"model": "test-claude-model", "display_name": "Test Claude Model"}], '
+        '"HARNESS_CODEX": [{"model": "test-codex-model", "display_name": "Test Codex Model"}]}'
+    ),
     "AGENTPLANE_EGRESS_ADMIN_URL": "http://egress.test.invalid:8081",
 }
 OIDC_ENVIRONMENT = {
@@ -123,7 +126,10 @@ def test_without_an_issuer_there_is_no_login(monkeypatch: pytest.MonkeyPatch) ->
 
 
 SANDBOX = "shutdown-test-sandbox"
-MODELS = {Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]}
+MODELS = {
+    Harness.CLAUDE: [ModelOption(model="test-claude-model", display_name="Test Claude Model")],
+    Harness.CODEX: [ModelOption(model="test-codex-model", display_name="Test Codex Model")],
+}
 
 
 @pytest.fixture

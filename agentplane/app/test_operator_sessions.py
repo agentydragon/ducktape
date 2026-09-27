@@ -25,7 +25,7 @@ from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.api import create_app
+from agentplane.app.api import ModelOption, create_app
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
@@ -113,7 +113,7 @@ async def app(
         inventory,
         bridge,
         store,
-        {harness: ["test-model"] for harness in Harness},
+        {harness: [ModelOption(model="test-model", display_name="Test Model")] for harness in Harness},
         egress,
         decisions,
         live_index,

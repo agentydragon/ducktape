@@ -75,7 +75,12 @@ async function render(
   fetchMock.mockImplementation((request: Request) => {
     const path = new URL(request.url).pathname;
     if (path === "/models") {
-      return Promise.resolve(Response.json({ HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] }));
+      return Promise.resolve(
+        Response.json({
+          HARNESS_CLAUDE: [{ model: "test-model", display_name: "Test Model" }],
+          HARNESS_CODEX: [],
+        })
+      );
     }
     if (path === "/egress/policies" || path === "/sandboxes/startup-test/egress/decisions") {
       return Promise.resolve(Response.json([]));

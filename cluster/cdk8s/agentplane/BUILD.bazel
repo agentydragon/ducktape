@@ -309,6 +309,27 @@ py_library(
 py_library(
     name = "app_settings",
     srcs = ["app_settings.py"],
+    deps = [":model_display_names"],
+)
+
+py_library(
+    name = "model_display_names",
+    srcs = ["model_display_names.py"],
+    deps = ["//cluster/cdk8s:model_rosters"],
+)
+
+py_test(
+    name = "test_model_display_names",
+    srcs = ["test_model_display_names.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":model_display_names",
+        "//:conftest",
+        "//cluster/cdk8s/litellm:keys",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_library(

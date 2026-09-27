@@ -1507,7 +1507,7 @@ async def test_ahead_snapshot_is_not_a_thread_or_effective_model(thread_browser:
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     await expect(page.get_by_role("status")).to_have_count(0)
-    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_have_value("test-model-before")
+    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_have_value("Test Model Before")
     await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_enabled()
     await expect(page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")).to_be_enabled()
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_enabled()

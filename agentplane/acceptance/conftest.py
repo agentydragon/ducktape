@@ -108,7 +108,7 @@ async def model(client: Client, harness: protocol_pb2.Harness) -> str:
     config_harness = Harness(protocol_pb2.Harness.Name(harness))
     offered = catalog[config_harness]
     assert offered, f"the deployment offers no model for {harness}"
-    return offered[0]
+    return offered[0].model
 
 
 async def _running(client: Client, name: str) -> SandboxView:

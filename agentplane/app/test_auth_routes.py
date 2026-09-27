@@ -28,7 +28,7 @@ from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.api import create_app
+from agentplane.app.api import ModelOption, create_app
 from agentplane.app.conftest import AGENT, AGENT_AUTH, AUDIENCE, STRANGER_AUTH
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -48,7 +48,10 @@ OPERATOR = "agentydragon"
 SUBJECT = "op-subject-1"
 SESSION_SECRET = "test-session-secret"  # a test literal, not a real credential
 ACTIVITY_STEP = timedelta(minutes=5)
-MODELS = {Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]}
+MODELS = {
+    Harness.CLAUDE: [ModelOption(model="test-claude-model", display_name="Test Claude Model")],
+    Harness.CODEX: [ModelOption(model="test-codex-model", display_name="Test Codex Model")],
+}
 
 
 # Serves the app accepting tokens from exactly the subjects passed, yielding its base URL.

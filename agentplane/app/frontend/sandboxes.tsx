@@ -164,8 +164,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     setThread((current) => {
       if (!current.harness) return current;
       const offered = modelCatalog[current.harness];
-      if (current.model && offered.includes(current.model)) return current;
-      return { ...current, model: offered[0] ?? null };
+      if (current.model && offered.some((option) => option.model === current.model)) return current;
+      return { ...current, model: offered[0]?.model ?? null };
     });
   }, [modelCatalog, thread.harness, thread.model]);
 
@@ -268,7 +268,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           disabled={
             !form.slug ||
             !form.template ||
-            Boolean(selectedPreset && (!thread.model || !modelOptions.includes(thread.model)))
+            Boolean(selectedPreset && (!thread.model || !modelOptions.some((option) => option.model === thread.model)))
           }
         >
           New sandbox
@@ -306,7 +306,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
             label="Model"
             searchable
             allowDeselect={false}
-            data={modelOptions}
+            data={modelOptions.map((option) => ({ value: option.model, label: option.display_name }))}
             value={thread.model ?? null}
             onChange={(model) => setThread({ ...thread, model })}
             disabled={modelOptions.length === 0}

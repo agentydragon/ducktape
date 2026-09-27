@@ -62,7 +62,10 @@ beforeEach(() => {
   inventoryFresh = true;
   inventoryDrops = false;
   vi.mocked(getThread).mockResolvedValue(THREAD);
-  vi.mocked(models).mockResolvedValue({ HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] });
+  vi.mocked(models).mockResolvedValue({
+    HARNESS_CLAUDE: [{ model: "test-model", display_name: "Test Model" }],
+    HARNESS_CODEX: [],
+  });
   vi.mocked(command).mockReturnValue(new Promise(() => {}));
   vi.stubGlobal(
     "EventSource",
