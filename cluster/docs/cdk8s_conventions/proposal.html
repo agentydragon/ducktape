@@ -1147,12 +1147,12 @@
           </p>
           <p>
             None of this is a big-bang rewrite. Each convention lands as a series of small PRs you can review as
-            rendered diffs. The provider cleanup, the edge trim (426 edges down to 258, and 231 once #8185 lands) and
-            the writer, now writing 109 directories, have landed. Ready without a decision: the edge check, the
-            render-identical cores of pod policy and the namespace helper, four stateless folds, eight more writer
-            conversions and the ResticBackup dedupe. The fleet rules, graph checks, health-check derivation and glue
-            absorption are deferred. The <code>wait</code> default and derived Orphan are postponed, and C4 and the
-            steps built on it wait on your decision.
+            rendered diffs. The provider cleanup, the edge trim (426 edges down to 249, and 222 once #8185 lands), the
+            writer, now writing 100 directories, and three stateless folds (181 units down to 171) have landed. Ready
+            without a decision: the edge check, the render-identical cores of pod policy and the namespace helper, eight
+            more writer conversions and the ResticBackup dedupe. The fleet rules, graph checks, health-check derivation
+            and glue absorption are deferred. The <code>wait</code> default and derived Orphan are postponed, and C4 and
+            the steps built on it wait on your decision.
           </p>
         </div>
       </div>
@@ -11246,9 +11246,9 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
                 <code>tofu-state-db</code> (#8176), the ESO store (#8183), <code>forgejo-images</code> (#8186), the
                 credential sources (#8188), <code>seaweedfs-cluster</code> (#8187), the ordering-only edges (#8190),
                 service readiness (#8191: 62 removed, 16 retargets added, 5 kept as registered exceptions) and the two
-                CRD edges that were missing (#8194). The graph is down from 426 edges to 258. Open: the namespace units
-                (#8185: 27, green), after which 231 remain. Left for later: the two user-provisioner Job edges, with the
-                Jobs, and the direct <code>kyverno</code> edges (decision 13).
+                CRD edges that were missing (#8194). The graph is down from 426 edges to 249 (the folds in step 6 took 9
+                more). Open: the namespace units (#8185: 27, green), after which 222 remain. Left for later: the two
+                user-provisioner Job edges, with the Jobs, and the direct <code>kyverno</code> edges (decision 13).
               </p>
             </div>
           </div>
@@ -11275,26 +11275,20 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                Stateless tiny-unit folds, behind one PR that sets Orphan on every unit folded away, then one PR per
-                fold: the monitoring set (<code>flux-</code>, <code>cilium-</code>, <code>etcd-</code> and
-                <code>seaweedfs-monitoring</code> with <code>monitoring-rules</code>, into one platform-monitoring
-                unit); the kube-system trio (<code>kube-system</code>, <code>hubble-ui</code>,
-                <code>coredns-custom</code>, whose Corefile becomes a <code>config_map_generator</code> entry; check
-                first that the live ConfigMap has no hash suffix); the authentik Terraform units
-                (<code>sso-providers-tf</code>, <code>agent-machine-access-tf</code>, <code>gatus-sso-tf</code>,
-                <code>alloy-otlp-bearer-token-tf</code>); and the GitHub ones (<code>github-branch-protection</code>,
-                <code>github-secrets-sync</code>, <code>flux-webhook-token</code>). Ten units go.
-                <code>forgejo-gitops</code> waits on the Terraform-ordering call in step 10; the six
-                <code>seaweedfs-*-bucket</code> units retire with step 19; the provisioner Jobs are deferred.
+                Stateless tiny-unit folds. Landed, behind the Orphan PR #8216: the five monitoring units into
+                <code>platform-monitoring</code> (#8221), the four authentik-provider Terraform units into
+                <code>authentik-tf</code> (#8220) and the three GitHub ones into <code>github-tf</code> (#8222); every
+                object kept its UID. <code>coredns-custom</code> was deleted instead (#8219): its generator
+                hash-suffixed the ConfigMap, so CoreDNS never read it. Left: <code>hubble-ui</code> into
+                <code>kube-system</code>, your call; <code>forgejo-gitops</code> waits on the Terraform-ordering call in
+                step 10; the six <code>seaweedfs-*-bucket</code> units retire with step 19; the provisioner Jobs are
+                deferred.
               </p>
             </div>
           </div>
           <div class="sc">
             <div class="rich">
-              <p>
-                One Orphan PR, then four fold PRs of 60 to 150 lines, each one <code>write_directory</code> call and one
-                node.
-              </p>
+              <p>One Orphan PR, then one fold PR, for <code>hubble-ui</code> if you want it.</p>
             </div>
           </div>
           <div class="sr">
@@ -11405,14 +11399,14 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             <div class="rich">
               <p>
                 Convert the rest to the writer. Landed: #8192 (the writer), #8195, #8197 to #8200, #8201, #8203 to
-                #8206, #8210, #8211 and #8213; 109 directories now go through <code>write_directory</code>. Of the 66
-                nodes still on the old path, 8 convert as they are, in three PRs: haku console and mailbox;
-                <code>flux-image-automation-ghcr</code>, <code>seaweedfs-secrets</code>,
+                #8206, #8210, #8211 and #8213; 100 directories now go through <code>write_directory</code>, after the
+                folds merged 12 of them into 3. Of the 65 nodes still on the old path, 8 convert as they are, in three
+                PRs: haku console and mailbox; <code>flux-image-automation-ghcr</code>, <code>seaweedfs-secrets</code>,
                 <code>agentplane-index</code> and <code>seaweedfs-public-s3</code> (whose dead decryption #8213
                 dropped); and the two sibling-only directories (<code>haku-forgejo-tea</code>,
                 <code>agent-shared-secrets</code>), the writer&#39;s first zero-chart use. The six Forgejo gitops-module
                 directories pass Terraform objects between charts, where names would do (<code>gitops_terraform</code>
-                reads only <code>.name</code>); that is your call. The rest stay: 40 have a hand-written
+                reads only <code>.name</code>); that is your call. The rest stay: 39 have a hand-written
                 <code>kustomization.yaml</code> (call C; 8 are parked); 5 copy shared bases, which the writer rejects
                 (public-coder-agent-app and the grocy MCP and user-perms overlays); 4 are nested (tofu-state, litellm,
                 and the flux-system bootstrap&#39;s <code>ducktape-flux</code> and <code>sources</code>); and 2 are
