@@ -26,6 +26,7 @@ py_test(
         ":artifact_generators",
         ":flux",
         "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
