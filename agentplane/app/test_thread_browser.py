@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
+from typing import cast
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -890,8 +891,10 @@ async def capture_reading_anchor(area: Locator) -> dict[str, str | float]:
     """The first row whose bottom is below the viewport top, and its position -- the reader's
     place, sampled once two consecutive frames agree so a pending re-measure right after a
     just-ended gesture cannot register as a false position."""
-    return await area.evaluate(
-        """area => new Promise(resolve => {
+    return cast(
+        "dict[str, str | float]",
+        await area.evaluate(
+            """area => new Promise(resolve => {
             const sample = () => {
                 const top = area.getBoundingClientRect().top;
                 const row = [...area.querySelectorAll('[data-thread-anchor]')].find(
@@ -907,6 +910,7 @@ async def capture_reading_anchor(area: Locator) -> dict[str, str | float]:
             });
             requestAnimationFrame(() => settle(sample()));
         })"""
+        ),
     )
 
 
