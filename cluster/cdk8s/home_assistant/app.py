@@ -36,6 +36,7 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
@@ -60,7 +61,6 @@ _NAME = "home-assistant"
 _NAMESPACE = "home-assistant"
 _HOSTNAME = "home.allegedly.works"
 _LABELS = {"app.kubernetes.io/name": _NAME}
-_NODE_SELECTOR = {"kubernetes.io/hostname": "optiplex"}
 _CONFIG_CLAIM = "home-assistant-config"
 _METRICS_TOKEN = "home-assistant-metrics-token"
 _BACKUP = "home-assistant-config-restic"
@@ -220,7 +220,7 @@ def _deployment(scope: Construct) -> None:
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     host_network=True,
                     dns_policy="ClusterFirstWithHostNet",
-                    node_selector=_NODE_SELECTOR,
+                    node_selector=node_scheduling.OPTIPLEX.node_selector,
                     init_containers=[
                         k8s.Container(
                             name="provision-components",
