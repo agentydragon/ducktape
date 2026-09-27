@@ -231,7 +231,7 @@ async def test_switching_threads_starts_at_each_threads_tail(
         source.attached.session_id = f"test-navigation-session-{number}"
         source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
         source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="test-navigation-turn")))
-        for index in range(80):
+        for index in range(130):
             item_id = f"test-navigation-item-{index}"
             source.append(
                 event_pb2.Event(
@@ -257,21 +257,23 @@ async def test_switching_threads_starts_at_each_threads_tail(
         http2_proxy(app.url, certificate) as ingress,
     ):
         await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
-        await expect(page.locator('[data-thread-anchor="161"]')).to_be_visible()
-        await expect(page.get_by_text("Thread 0 message 79", exact=True)).to_be_visible()
+        await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible()
         await page.get_by_role("region", name="Thread history", exact=True).hover()
+        # The eager initial load holds message 40 (well up from the tail) but not the thread's start;
+        # scrolling all the way up lands at the top of what's already loaded -- mounting message 40 --
+        # and, being within a screen of that top, triggers the fetch for the page before it.
         async with page.expect_request(
             lambda request: request.method == "POST" and "entity_index < $1" in (request.post_data or "")
         ):
             await page.mouse.wheel(0, -10_000)
+        await expect(page.get_by_text("Thread 0 message 40", exact=True)).to_be_visible()
         for number in (1, 0):
             async with page.expect_request(f"**/threads/{threads[number]}/sync/scope"):
                 await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()
             await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value(
                 f"Test navigation thread {number}"
             )
-            await expect(page.locator('[data-thread-anchor="161"]')).to_be_visible()
-            await expect(page.get_by_text(f"Thread {number} message 79", exact=True)).to_be_visible()
+            await expect(page.get_by_text(f"Thread {number} message 129", exact=True)).to_be_visible()
         await page.screenshot(path=undeclared_outputs_dir() / "thread-navigation.png")
 
 

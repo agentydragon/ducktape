@@ -127,22 +127,24 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     page = thread_browser.page
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
-    latest = _append_items(thread_browser, "window-item", range(70))
+    latest = _append_items(thread_browser, "window-item", range(130))
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
 
-    # Opened now, the thread is longer than its tail: older rows are a page away.
+    # Opened now, the thread is longer than its eager initial load: older rows are still a page away.
     requests = _recording_requests(page)
     await page.reload()
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
-    await expect(page.get_by_text("Window message 069", exact=False)).to_be_visible()
+    await expect(page.get_by_text("Window message 129", exact=False)).to_be_visible()
     composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
     await composer.fill("Draft retained while the thread grows")
     # Virtualization keeps only the measured viewport and overscan mounted: a loose bound well
-    # below the 70 rows appended, tolerant of row-height changes rather than pinned to one.
+    # below the 130 rows appended, tolerant of row-height changes rather than pinned to one.
     assert await page.locator("[data-thread-anchor]").count() < 40
-    # The tail fills the view: nothing older loads before the reader scrolls up to it.
+    # Opening eagerly loads a couple of screens' worth up front -- itself some of these
+    # same-shaped requests -- but settles there; nothing more loads before the reader scrolls up.
     await _frames(page)
-    assert not [request for request in requests if _older_page(request)]
+    eager = len([request for request in requests if _older_page(request)])
+    assert eager > 0
 
     history = page.get_by_role("region", name="Thread history", exact=True)
     loading = history.get_by_role("status").filter(has_text="Loading earlier…")
@@ -168,7 +170,7 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
 
     # The tail grows by more than a page while the reader stays back in the thread: its rows
     # arrive on the same shape, and the row the reader is at does not move.
-    latest = _append_items(thread_browser, "window-item", range(70, 105))
+    latest = _append_items(thread_browser, "window-item", range(130, 165))
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
     restored = page.locator(f'[data-thread-anchor="{anchor["cursor"]}"]')
     await expect(restored).to_have_count(1)
@@ -176,11 +178,11 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     await expect(composer).to_have_value("Draft retained while the thread grows")
 
     # One scope read and one shape since the reload: the window moved by loading more into it, one
-    # page for the one time the reader reached its top.
+    # further page for the one time the reader reached its top -- on top of the eager initial load.
     urls = [request.url for request in requests]
     assert len([url for url in urls if "/sync/scope" in url]) == 1
     assert len(_handles(urls)) == 1
-    assert len([request for request in requests if _older_page(request)]) == 1
+    assert len([request for request in requests if _older_page(request)]) == eager + 1
     await page.screenshot(path=undeclared_outputs_dir() / "thread-window-retained-reader.png")
 
 
@@ -193,7 +195,7 @@ async def test_an_older_page_landing_mid_gesture_does_not_move_the_reader(thread
     page = thread_browser.page
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
-    latest = _append_items(thread_browser, "window-item", range(70))
+    latest = _append_items(thread_browser, "window-item", range(130))
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
     await page.reload()
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
@@ -286,7 +288,7 @@ async def test_scrolling_up_continuously_through_a_landing_older_page_does_not_j
     page = thread_browser.page
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
-    latest = _append_items(thread_browser, "window-item", range(70))
+    latest = _append_items(thread_browser, "window-item", range(130))
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
     await page.reload()
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
@@ -294,7 +296,9 @@ async def test_scrolling_up_continuously_through_a_landing_older_page_does_not_j
     history = page.get_by_role("region", name="Thread history", exact=True)
     await history.hover()
     async with _holding_older_pages(page) as held:
-        await page.mouse.wheel(0, -3_000)
+        # The eager initial load holds 3x as many rows as before (INITIAL_ROWS vs the old PAGE-sized
+        # load) -- three times as far to scroll through to cross the top-of-loaded trigger.
+        await page.mouse.wheel(0, -9_000)
         async with asyncio.timeout(30):
             await held.asked.wait()
         held.release.set()
@@ -359,36 +363,38 @@ async def test_repeated_pagination_through_wildly_uneven_row_heights_keeps_the_r
         await page.screenshot(path=undeclared_outputs_dir() / f"thread-window-uneven-cycle-{cycle}.png")
 
 
-async def test_a_tail_too_short_to_scroll_loads_the_rows_before_it_unasked(thread_browser: ThreadBrowser) -> None:
+async def test_a_thread_shorter_than_the_eager_load_shows_in_full_without_a_scroll(
+    thread_browser: ThreadBrowser,
+) -> None:
+    """A thread this short (with the eager initial load's headroom) loads in full up front, not
+    via a separate request a scroll -- or a too-short-tail safety net -- would otherwise trigger."""
     page = thread_browser.page
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
     latest = _append_items(thread_browser, "short-item", range(32))
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
 
-    # Opened again in a view taller than its tail, the thread has no scrollbar, so no scroll can
-    # reach the top to ask for the few rows before the tail.
+    # Opened again in a view taller than the whole (short) thread: there is no scrollbar, and
+    # nothing for the reader to ever scroll up to -- the eager initial load already covers it all.
     await page.set_viewport_size({"width": 1280, "height": 8000})
-    requests = _recording_requests(page)
+    await page.reload()
+    await expect(page.get_by_text("Window message 031", exact=False)).to_be_visible(timeout=30_000)
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     history = page.get_by_role("region", name="Thread history", exact=True)
-    async with _holding_older_pages(page) as held:
-        await page.reload()
-        async with asyncio.timeout(30):
-            await held.asked.wait()
-        await expect(history.get_by_role("status").filter(has_text="Loading earlier…")).to_be_visible()
-        assert await history.evaluate("area => area.scrollHeight <= area.clientHeight")
-        await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(0)
-        await page.screenshot(
-            path=undeclared_outputs_dir() / "thread-window-short-loading-earlier.png",
-            clip={"x": 0, "y": 0, "width": 1280, "height": 1000},
-        )
-        held.release.set()
-        await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     await expect(history.get_by_role("status")).to_have_count(0)
-    await expect(page.get_by_text("Window message 031", exact=False)).to_be_visible()
-    # That page held the rest of the thread, so nothing more is asked for.
+    assert await history.evaluate("area => area.scrollHeight <= area.clientHeight")
+    await page.screenshot(
+        path=undeclared_outputs_dir() / "thread-window-short-loaded-in-full.png",
+        clip={"x": 0, "y": 0, "width": 1280, "height": 1000},
+    )
+
+    requests = _recording_requests(page)
+    await history.hover()
+    await page.mouse.wheel(0, -10_000)
     await _frames(page)
-    assert len([request for request in requests if _older_page(request)]) == 1
+    await _frames(page)
+    # The whole thread already loaded eagerly; scrolling up asks for nothing more.
+    assert not [request for request in requests if _older_page(request)]
 
 
 async def test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draft(
