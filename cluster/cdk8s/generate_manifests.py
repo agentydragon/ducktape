@@ -132,7 +132,7 @@ from cluster.cdk8s.gaffer_private_source import (
     source as gaffer_private_source,
 )
 from cluster.cdk8s.gatus import app as gatus_app, flux_kustomizations as gatus_flux_kustomizations, sso as gatus_sso
-from cluster.cdk8s.generation import write_generated_readme
+from cluster.cdk8s.generation import write_directory, write_generated_readme
 from cluster.cdk8s.github_api_proxy import (
     flux_kustomizations as github_api_proxy_flux_kustomizations,
     proxy as github_api_proxy,
@@ -405,7 +405,6 @@ def generate_manifests(root: Path) -> None:
     user_agentydragon.write_manifests(root)
     nvidia_runtimeclass.write_manifests(root)
     hubble_ui.write_manifests(root)
-    metrics_server.write_manifests(root)
     reflector.write_manifests(root)
     keda.write_manifests(root)
     valkey.write_manifests(root)
@@ -524,7 +523,7 @@ def generate_manifests(root: Path) -> None:
     keda_kustomization = keda.keda(flux_chart, keda_artifact, kyverno_kustomization)
     metrics_server_artifact = artifact("metrics-server", metrics_server.OUTPUT_DIR)
     metrics_server_kustomization = metrics_server.metrics_server(
-        flux_chart, metrics_server_artifact, kyverno_kustomization
+        flux_chart, write_directory(root, metrics_server_artifact, metrics_server.chart), kyverno_kustomization
     )
     cdi_artifact = artifact("cdi", kubevirt_cdi.OUTPUT_DIR)
     reloader_artifact = artifact("reloader", reloader.OUTPUT_DIR)
@@ -695,8 +694,7 @@ def generate_manifests(root: Path) -> None:
     ntfy_artifact = artifact("ntfy", ntfy.OUTPUT_DIR)
     ntfy_kustomization = ntfy.ntfy(
         flux_chart,
-        ntfy_artifact,
-        root,
+        write_directory(root, ntfy_artifact, ntfy.chart, siblings=["credentials.sops.yaml"]),
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,

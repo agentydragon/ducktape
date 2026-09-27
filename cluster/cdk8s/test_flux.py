@@ -9,7 +9,8 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import kustomizations_chart
+from cluster.cdk8s.artifact_generators import artifact
+from cluster.cdk8s.flux import SOPS_DECRYPTION, RenderedDirectory, flux_kustomization, kustomizations_chart
 
 _HEALTH_CHECKS = [KustomizationSpecHealthChecks(kind="Deployment", name="test-app", namespace="test-ns")]
 
@@ -48,6 +49,12 @@ def test_wait_or_health_checks_alone_synthesizes(
     _raw_kustomization(chart, wait=wait, health_checks=health_checks)
     (rendered,) = Cdk8sTesting.synth(chart)
     assert rendered["spec"]["wait"] is wait
+
+
+def test_rendered_directory_refuses_a_second_decryption() -> None:
+    directory = RenderedDirectory(artifact=artifact("test-app", "test/app"), decryption=None)
+    with pytest.raises(ValueError, match="derives its decryption"):
+        flux_kustomization(kustomizations_chart(Cdk8sTesting.app()), "test-app", directory, decryption=SOPS_DECRYPTION)
 
 
 if __name__ == "__main__":
