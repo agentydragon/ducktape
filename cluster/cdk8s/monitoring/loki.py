@@ -627,7 +627,12 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
 
 
-def loki(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_cluster: Kustomization) -> Kustomization:
+def loki(
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    seaweedfs_operator: Kustomization,
+    monitoring_crds: Kustomization,
+) -> Kustomization:
     return flux_kustomization(
         chart,
         "loki",
@@ -646,5 +651,9 @@ def loki(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_clust
             ),
         ],
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(seaweedfs_cluster),
+        depends_on=flux_kustomization_depends_on_many(
+            seaweedfs_operator,
+            # the chart's monitoring.serviceMonitor
+            monitoring_crds,
+        ),
     )

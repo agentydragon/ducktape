@@ -9,7 +9,7 @@ from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomizatio
 
 
 def vm_images_publisher(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_cluster: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_operator: Kustomization
 ) -> Kustomization:
     name = "vm-images-publisher"
     return flux_kustomization(
@@ -20,5 +20,5 @@ def vm_images_publisher(
         artifact,
         timeout="5m",
         decryption=SOPS_DECRYPTION,
-        depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
+        depends_on=[flux_kustomization_depends_on(seaweedfs_operator)],
     )

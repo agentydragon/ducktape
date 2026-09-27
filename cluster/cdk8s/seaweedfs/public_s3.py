@@ -281,11 +281,7 @@ def write_manifests(root: Path) -> None:
 
 
 def seaweedfs_public_s3(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_operator: Kustomization,
-    seaweedfs_cluster: Kustomization,
-    kyverno: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_operator: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
     name = "seaweedfs-public-s3"
     return flux_kustomization(
@@ -295,7 +291,6 @@ def seaweedfs_public_s3(
         depends_on=flux_kustomization_depends_on_many(
             # S3Identity, S3Credentials, S3Policy and S3PolicyBinding CRDs
             seaweedfs_operator,
-            seaweedfs_cluster,
             # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
             kyverno,
         ),

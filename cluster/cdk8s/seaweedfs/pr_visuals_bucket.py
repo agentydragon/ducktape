@@ -37,7 +37,7 @@ def write_manifests(root: Path) -> None:
 
 
 def seaweedfs_pr_visuals_bucket(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_cluster: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_operator: Kustomization
 ) -> Kustomization:
     name = "seaweedfs-pr-visuals-bucket"
     return flux_kustomization(
@@ -46,5 +46,5 @@ def seaweedfs_pr_visuals_bucket(
         artifact,
         interval="1h",
         timeout="5m",
-        depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
+        depends_on=[flux_kustomization_depends_on(seaweedfs_operator)],
     )
