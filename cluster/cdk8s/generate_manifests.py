@@ -405,6 +405,7 @@ def generate_manifests(root: Path) -> None:
     nvidia_runtimeclass.write_manifests(root)
     local_path_provisioner.write_manifests(root)
     proxmox_proxy.write_manifests(root, mesh)
+    vpa.write_manifests(root)
     node_feature_discovery.write_manifests(root)
     nvidia_device_plugin.write_manifests(root)
     talos_cloud_controller_manager.write_manifests(root)
@@ -568,9 +569,7 @@ def generate_manifests(root: Path) -> None:
     )
     clickhouse_artifact = artifact("clickhouse", clickhouse_installation.OUTPUT_DIR)
     vpa_artifact = artifact("vpa", vpa.OUTPUT_DIR)
-    vpa_kustomization = vpa.vpa(
-        flux_chart, write_directory(root, vpa_artifact, vpa.chart), kyverno_kustomization, metrics_server_kustomization
-    )
+    vpa_kustomization = vpa.vpa(flux_chart, vpa_artifact, kyverno_kustomization, metrics_server_kustomization)
     clickhouse_kustomization = clickhouse_installation.clickhouse(
         flux_chart, clickhouse_artifact, clickhouse_operator_kustomization
     )
