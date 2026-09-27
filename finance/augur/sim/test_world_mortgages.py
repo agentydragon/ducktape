@@ -24,6 +24,7 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.property import Housing
 from finance.augur.sim.results import Executed
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, opening, world_on
 from finance.augur.sim.world import World
 
@@ -108,7 +109,7 @@ def composed(case: Situation, rollout: int = 0) -> World:
     world.track(
         Biller(
             PreparedObligation(
-                month=3,
+                schedule=Once(month=3),
                 obligation_id="ordinary",
                 obligation_type="rent",
                 from_account=CASH,
