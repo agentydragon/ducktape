@@ -13,13 +13,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -36,6 +36,7 @@ from cluster.cdk8s.haku.database import Db
 from cluster.cdk8s.haku.kube_api_proxy import KubeApiProxy
 from cluster.cdk8s.haku.migration import Migration
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = console.NAME
 NAMESPACE = console.NAMESPACE
@@ -69,17 +70,8 @@ def console_chart(app: App) -> Chart:
     # namespace; this one gets ordinary egress). That is the confidentiality boundary
     # letting the console hold secrets Haku may not read, e.g. the Claude Code web
     # session bearer.
-    k8s.KubeNamespace(
-        chart,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "name": NAMESPACE,
-            },
-        ),
+    namespaces.namespace(
+        chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=None, labels={"name": NAMESPACE}
     )
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     Db(chart, "db")

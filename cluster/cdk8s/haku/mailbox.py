@@ -21,12 +21,13 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
 
-from cluster.cdk8s import cilium, cnpg, forgejo_images, gateway
+from cluster.cdk8s import cilium, cnpg, forgejo_images, gateway, namespaces
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.haku import namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import (
@@ -402,22 +403,20 @@ def chart(app: App) -> Chart:
     # haku-egress-proxy egress fence: Haku must not be able to patch the server, edit the
     # whitelist, read the admin/TLS secrets, or touch the CNPG store. Haku is a mail *user* only,
     # authenticated via its Authentik-issued bearer. See cluster/k8s/haku/mailbox/README.md.
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "name": NAMESPACE,
-                # The per-public-node SMTP ingress must bind hostPort 25. Pod Security's baseline
-                # profile forbids every hostPort, so this trusted, operator-only namespace needs
-                # privileged admission even though its workloads retain restrictive container
-                # security contexts and Cilium policies.
-                "pod-security.kubernetes.io/enforce": "privileged",
-            },
-        ),
+        name=NAMESPACE,
+        vpa=Vpa.AUTO,
+        agent_readable=None,
+        labels={
+            "name": NAMESPACE,
+            # The per-public-node SMTP ingress must bind hostPort 25. Pod Security's baseline
+            # profile forbids every hostPort, so this trusted, operator-only namespace needs
+            # privileged admission even though its workloads retain restrictive container
+            # security contexts and Cilium policies.
+            "pod-security.kubernetes.io/enforce": "privileged",
+        },
     )
     _add_store(chart)
     forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
