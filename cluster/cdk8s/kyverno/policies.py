@@ -9,8 +9,6 @@ plain dicts.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from kyverno_clusterpolicy_crds.io.kyverno import (
@@ -31,10 +29,8 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesValidateCelExpressions,
     ClusterPolicySpecValidationFailureAction,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.kyverno import proxy_injection
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy, Validate, match_resources
@@ -768,7 +764,7 @@ def cleanup_controller_sandboxes_chart(app: App) -> Chart:
     return chart
 
 
-_CHARTS = (
+CHARTS = (
     require_gitops_chart,
     default_revision_history_limit_chart,
     default_disable_service_links_chart,
@@ -786,19 +782,11 @@ _CHARTS = (
 )
 
 
-def write_manifests(root: Path) -> None:
-    (root / OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(root / OUTPUT_DIR))
-    resources = [f"{build(app).node.id}.k8s.yaml" for build in _CHARTS]
-    app.synth()
-    write_yaml(root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=resources))
-
-
-def kyverno_policies(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno: Kustomization) -> Kustomization:
+def kyverno_policies(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         "kyverno-policies",
-        artifact,
+        directory,
         depends_on=[
             # Policies require Kyverno CRDs to be installed
             flux_kustomization_depends_on(kyverno)

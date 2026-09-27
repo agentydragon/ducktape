@@ -108,13 +108,19 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def volsync(chart: Chart, directory: RenderedDirectory, snapshot_controller: Kustomization) -> Kustomization:
+def volsync(
+    chart: Chart, directory: RenderedDirectory, snapshot_controller: Kustomization, monitoring_crds: Kustomization
+) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         directory,
         timeout="5m",
-        depends_on=[flux_kustomization_depends_on(snapshot_controller)],
+        depends_on=[
+            flux_kustomization_depends_on(snapshot_controller),
+            # The chart renders its ServiceMonitor only if the CRD exists when Helm installs it.
+            flux_kustomization_depends_on(monitoring_crds),
+        ],
         # The token controller populates data.token asynchronously. Do not declare
         # the VolSync auth material ready until Alloy can actually use it.
         health_check_exprs=[
