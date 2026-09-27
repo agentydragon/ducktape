@@ -23,8 +23,6 @@ The image tag is a deliberate placeholder ("unset") -- `image-pins/kustomization
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     Capability,
@@ -51,19 +49,12 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
-from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
@@ -207,27 +198,21 @@ class GoogleMcp(Construct):
         GoogleMcpApp(self, "app")
 
 
-def google_mcp(
-    flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path, external_secrets_operator: Kustomization
-) -> Kustomization:
-    app_dir = root / OUTPUT_DIR
-    app_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(app_dir))
+def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     GoogleMcp(chart, _NAME)
     add_fleet_rules(chart)
-    app.synth()
+    return chart
 
-    kustomization = flux_kustomization(
+
+def google_mcp(
+    flux_chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
+) -> Kustomization:
+    return flux_kustomization(
         flux_chart,
         _NAME,
-        artifact,
+        directory,
         description="Gmail/Calendar MCP backend for Agentplane staging.",
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
     )
-    write_yaml(
-        app_dir / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml"], components=["./image-pins"]),
-    )
-    return kustomization

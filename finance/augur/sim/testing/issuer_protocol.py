@@ -19,7 +19,7 @@ from finance.augur.sim.prepared import PreparedSeries
 QUANTUM = Decimal("0.01")
 
 type Money = Sequence[Decimal] | Decimal
-type Rate = Sequence[float] | float
+type Rate = Sequence[Decimal | int] | Decimal | int
 type Code = Sequence[int] | int
 
 
@@ -29,7 +29,7 @@ def _money(channel: Money, snapshots: int) -> tuple[int, ...]:
 
 
 def _rates(channel: Rate, snapshots: int) -> tuple[int, ...]:
-    values = [channel] * snapshots if isinstance(channel, float) else list(channel)
+    values = [channel] * snapshots if isinstance(channel, Decimal | int) else list(channel)
     return tuple(rate_to_ppb(value) for value in values)
 
 
@@ -46,9 +46,9 @@ def issuer_protocol(
     regime: Code = PrivateEquityRegimeCode.PRIVATE_OPERATING,
     event_kind: Code = PrivateEquityEventKindCode.NONE,
     sale_opportunity: Code = 0,
-    sale_capacity: Rate = 1.0,
-    eligible: Rate = 1.0,
-    forced_sale: Rate = 0.0,
+    sale_capacity: Rate = 1,
+    eligible: Rate = 1,
+    forced_sale: Rate = 0,
     liquidity_blocked: Code = 0,
     forced_recovery_usd: Money = Decimal(0),
     company_valuation_usd: Money = Decimal(0),

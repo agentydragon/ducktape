@@ -18,7 +18,6 @@ def agent_box(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     kubevirt: Kustomization,
-    cdi: Kustomization,
     external_secrets_operator: Kustomization,
     kyverno: Kustomization,
 ) -> Kustomization:
@@ -35,7 +34,6 @@ def agent_box(
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
             kubevirt,
-            cdi,
             external_secrets_operator,
             # Kyverno's failurePolicy: Fail webhooks admit the Namespace.
             kyverno,
@@ -111,7 +109,6 @@ def gecko(
     artifact: ArtifactGeneratorSpecArtifacts,
     gecko_namespace: Kustomization,
     kubevirt: Kustomization,
-    cdi: Kustomization,
     external_secrets_operator: Kustomization,
 ) -> Kustomization:
     name = "gecko"
@@ -125,7 +122,7 @@ def gecko(
         suspend=True,
         timeout="30m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(gecko_namespace, kubevirt, cdi, external_secrets_operator),
+        depends_on=flux_kustomization_depends_on_many(gecko_namespace, kubevirt, external_secrets_operator),
     )
 
 

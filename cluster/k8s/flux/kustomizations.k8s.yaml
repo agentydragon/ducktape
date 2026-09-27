@@ -914,9 +914,6 @@ metadata:
   name: snapshot-controller
   namespace: ducktape-flux
 spec:
-  dependsOn:
-    - name: snapshot-controller-crds
-      namespace: ducktape-flux
   images:
     - name: registry.k8s.io/sig-storage/snapshot-controller
       newTag: v8.6.0
@@ -1177,8 +1174,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: cert-manager
-      namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
   interval: 10m
@@ -1199,8 +1194,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: cert-manager
-      namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
   interval: 10m0s
@@ -1248,8 +1241,6 @@ metadata:
 spec:
   dependsOn:
     - name: claude-rbac
-      namespace: ducktape-flux
-    - name: kyverno-policies
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/shared-rbac
@@ -1311,7 +1302,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: vpa
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/goldilocks
@@ -1495,7 +1486,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: goldilocks
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/kube-system
@@ -1609,8 +1600,6 @@ metadata:
   namespace: flux-system
 spec:
   dependsOn:
-    - name: gaffer-private-source
-      namespace: flux-system
     - name: kyverno
       namespace: ducktape-flux
     - name: tofu-controller
@@ -2934,8 +2923,6 @@ spec:
   dependsOn:
     - name: kubevirt
       namespace: ducktape-flux
-    - name: cdi
-      namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: kyverno
@@ -2968,8 +2955,6 @@ spec:
     - name: gecko-namespace
       namespace: ducktape-flux
     - name: kubevirt
-      namespace: ducktape-flux
-    - name: cdi
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
@@ -3474,8 +3459,6 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: seaweedfs-operator
-      namespace: ducktape-flux
-    - name: cert-manager
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/nix-cache

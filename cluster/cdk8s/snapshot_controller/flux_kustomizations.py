@@ -11,10 +11,10 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization
 
 
-def snapshot_controller(chart: Chart, snapshot_controller_crds: Kustomization) -> Kustomization:
+def snapshot_controller(chart: Chart) -> Kustomization:
     name = "snapshot-controller"
     return flux_kustomization(
         chart,
@@ -26,7 +26,6 @@ def snapshot_controller(chart: Chart, snapshot_controller_crds: Kustomization) -
         ),
         path="./deploy/kubernetes/snapshot-controller",
         timeout="5m",
-        depends_on=[flux_kustomization_depends_on(snapshot_controller_crds)],
         images=[KustomizationSpecImages(name="registry.k8s.io/sig-storage/snapshot-controller", new_tag="v8.6.0")],
         patches=[
             KustomizationSpecPatches(

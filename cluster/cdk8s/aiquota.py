@@ -47,7 +47,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateMetadata,
 )
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from aiquota.api import Settings
 from aiquota.config import Config
@@ -58,16 +57,14 @@ from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.env_helpers import secret_env_value
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
     ConfigMapArgs,
     Kustomization,
+    RenderedDirectory,
     flux_kustomization,
     flux_kustomization_depends_on_many,
-    kustomize_kustomization,
 )
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
@@ -341,32 +338,19 @@ class Aiquota(Construct):
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     Aiquota(chart, NAME)
+    add_fleet_rules(chart)
     return chart
 
 
 def aiquota(
-    flux_chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    root: Path,
-    external_secrets_operator: Kustomization,
-    kyverno: Kustomization,
+    flux_chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
-    name = NAME
-    out_dir = root / OUTPUT_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    rendered_chart = chart(app)
-    add_fleet_rules(rendered_chart)
-    app.synth()
-
-    kustomization = flux_kustomization(
+    return flux_kustomization(
         flux_chart,
-        name,
-        artifact,
+        NAME,
+        directory,
         description="aiquota API with Claude and Codex quota through the CLIProxyAPI integration.",
         timeout="5m",
-        # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.
-        decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
             # Materializes the narrow mirrored copies of the API bearer for its
             # consumers; the source Secret stays SOPS-managed here.
@@ -375,15 +359,3 @@ def aiquota(
             kyverno,
         ),
     )
-    write_yaml(
-        out_dir / "kustomization.yaml",
-        # aiquota-api-bearer.sops.yaml and schema.sql stay hand-written (cluster/docs/cdk8s.md);
-        # the generator entries render schema.sql and the config into the ConfigMaps the
-        # Deployment mounts.
-        kustomize_kustomization(
-            resources=[f"{name}.k8s.yaml", f"{BEARER_SECRET_NAME}.sops.yaml"],
-            components=["./image-pins"],
-            config_map_generator=[CONFIG_CONFIG_MAP, SCHEMA_CONFIG_MAP],
-        ),
-    )
-    return kustomization

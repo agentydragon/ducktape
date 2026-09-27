@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
 from finance.augur.sim.ids import JurisdictionId
-from finance.augur.sim.jurisdictions import Jurisdiction, StatutoryAmount, load_jurisdiction
+from finance.augur.sim.jurisdictions import Jurisdiction, StatutoryAmount, TaxBracket, load_jurisdiction
 
 
 def test_load_federal_us_has_seven_ordinary_brackets() -> None:
@@ -15,9 +17,9 @@ def test_load_federal_us_has_seven_ordinary_brackets() -> None:
     assert fed.jurisdiction_id == "federal_us"
     single = fed.ordinary_income_brackets["single"]
     assert len(single) == 7
-    assert single[0].rate == 0.10
+    assert single[0].rate == Decimal("0.10")
     assert single[0].upper == 11600.0
-    assert single[-1].rate == 0.37
+    assert single[-1].rate == Decimal("0.37")
     assert single[-1].upper == "Infinity"
 
 
@@ -25,7 +27,7 @@ def test_load_federal_us_has_three_ltcg_brackets() -> None:
     fed = load_jurisdiction(JurisdictionId("federal_us"))
     assert fed.ltcg_brackets is not None
     ltcg = fed.ltcg_brackets["single"]
-    assert [b.rate for b in ltcg] == [0.0, 0.15, 0.20]
+    assert [b.rate for b in ltcg] == [0, Decimal("0.15"), Decimal("0.20")]
     assert ltcg[-1].upper == "Infinity"
 
 
@@ -54,6 +56,11 @@ def test_every_dollar_amount_is_tagged_indexed_or_fixed() -> None:
         Jurisdiction.model_validate(data)
     data["net_investment_income_tax"] = None
     Jurisdiction.model_validate(data)
+
+
+def test_float_rate_is_refused_as_inexact() -> None:
+    with pytest.raises(TypeError, match="floats are not exact"):
+        TaxBracket.model_validate({"upper": "Infinity", "rate": 0.1})
 
 
 if __name__ == "__main__":

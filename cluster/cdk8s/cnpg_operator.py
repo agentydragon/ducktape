@@ -96,5 +96,10 @@ def chart(app: App) -> Chart:
 
 def cnpg(chart: Chart, directory: RenderedDirectory, cert_manager: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart, NAME, directory, timeout="10m", depends_on=[flux_kustomization_depends_on(cert_manager)]
+        chart,
+        NAME,
+        directory,
+        timeout="10m",
+        # The plugin-barman-cloud chart renders a cert-manager Issuer and Certificates.
+        depends_on=[flux_kustomization_depends_on(cert_manager)],
     )

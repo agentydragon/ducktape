@@ -8,15 +8,11 @@ suffix rewrites the DaemonSet's volume reference and rolls the pods whenever it 
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import tomli_w
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import ConfigMapArgs, Kustomization, flux_kustomization, kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import ConfigMapArgs, Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import loki
 
@@ -59,7 +55,7 @@ _CONFIG = {
         }
     },
 }
-_CONFIG_MAP = ConfigMapArgs(
+CONFIG_MAP = ConfigMapArgs(
     name="vector-talos-config", namespace=NAMESPACE, literals=[f"{_CONFIG_FILE}={tomli_w.dumps(_CONFIG)}"]
 )
 
@@ -144,7 +140,7 @@ def chart(app: App) -> Chart:
                             ),
                         )
                     ],
-                    volumes=[k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP.name))],
+                    volumes=[k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=CONFIG_MAP.name))],
                 ),
             ),
         ),
@@ -152,15 +148,5 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(
-            namespace=NAMESPACE, resources=[f"{NAME}.k8s.yaml"], config_map_generator=[_CONFIG_MAP]
-        ),
-    )
-
-
-def vector_talos_logs(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    return flux_kustomization(chart, NAME, artifact, timeout="2m")
+def vector_talos_logs(chart: Chart, directory: RenderedDirectory) -> Kustomization:
+    return flux_kustomization(chart, NAME, directory, timeout="2m")

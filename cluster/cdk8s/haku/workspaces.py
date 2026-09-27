@@ -7,8 +7,6 @@ overrides the workspace image's `unset` tag.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecEnvVarsInjectionPolicy,
     SandboxTemplateSpecNetworkPolicyManagement,
@@ -56,16 +54,9 @@ from kyverno_cleanuppolicy_crds.io.kyverno import (
     CleanupPolicySpecMatchAny,
     CleanupPolicySpecMatchAnyResources,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds, forgejo_images
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -381,17 +372,9 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"], components=["./image-pins"]),
-    )
-
-
 def haku_workspaces(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     agent_sandbox_controller: Kustomization,
     haku_rbac: Kustomization,
     haku_egress_proxy: Kustomization,
@@ -402,7 +385,7 @@ def haku_workspaces(
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
             # shared CRDs + controller

@@ -11,6 +11,7 @@ from finance.augur.sim.ids import AgentId, JurisdictionId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, MarketStatement
+from finance.augur.sim.money import USD
 from finance.augur.sim.tax import PreparedTaxProfile, TaxFacts, assess
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw, rules_for_year
@@ -32,7 +33,7 @@ def profile() -> PreparedTaxProfile:
     return compile_profile(
         TaxProfile(agent_id=FILER, jurisdiction_ids=[FEDERAL, CALIFORNIA], tax_authority_agent_id=AgentId("test_irs")),
         {id_: load_jurisdiction(id_) for id_ in (FEDERAL, CALIFORNIA)},
-        quantum=QUANTUM,
+        currency=USD,
     )
 
 
