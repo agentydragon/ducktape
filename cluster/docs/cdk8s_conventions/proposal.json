@@ -4,7 +4,7 @@
   "baseline": "origin/devel c34eb113; Flux census at 1faf6d5f",
   "date": "2026-09-27",
   "branch": "claude/jolly-darwin-al6qse",
-  "verdict": "Make the ducktape layer a thin layer of policy and wiring over the generated bindings, with exactly one shape per job. Nine conventions cover every need in the matrix, and all but one reuse a mechanism the tree already has.\n- **C1 Provider kinds.** Under `providers/`, a CRD kind built more than once is a single-shot class named after the kind. Schema variants are `@staticmethod`s that return the generated struct, so a hand-built struct always fits in the same slot.\n- **C2 Policy functions.** A choice this cluster makes about one kind is a function named after what it returns: `flux_kustomization`, `cnpg.cluster`, `https_route`.\n- **C3 Composites.** A group of objects that repeats is a `Construct` whose objects and references are attributes: `MintedSecret`, `PrivateBucket`, `PostgresBackup`, `SettingsFile`.\n- **C4 References.** A fact two objects must agree on (a Secret key, a Service port and its Pod labels, a database's app Secret) is a small frozen reference declared once by its producer and imported by its consumers. This is the one boundary change, and it needs your approval.\n- **C5 Pod policy.** `pod_policy.harden()` and `pod_policy.place()` are the only functions that amend a built object. They reach cdk8s-plus, raw and CRD-embedded pod specs through one path table.\n- **C6 Fleet rules everywhere.** The writer attaches them to every chart, so coverage no longer depends on an author remembering.\n- **C7 Rendered directories, admission-only edges.** The writer returns what it rendered, and the Flux node derives decryption and `deletionPolicy: Orphan` from it. A `dependsOn` edge exists only for what the API server needs to admit the directory's objects (a CRD, a `Fail` webhook, a postBuild source), a synth-time check enforces that, and `wait` is off unless another node's admission depends on this one. One component is one Kustomization.\n- **C8 Credentials.** A `Credential` roster entry is the only way a Secret crosses namespaces.\n- **C9 Config from the consumer's model.** Our binaries render from their pydantic Settings; Terraform modules take a vars model checked against `variables.tf`.\nFollowing cdk8s-plus's own patterns is not an option on its own: its wrappers render their specs through `Lazy`, which Python cannot put into typed binding fields, and the ways the tree emulated it (JSON-patch appends, a chart-wide singleton found by construct id) are its least-liked shapes. So every object is built complete, once, and there is exactly one post-construction amendment (C5). The design-space section shows the other options on each axis and why they lost here.\nNone of this is a big-bang rewrite. Each convention lands as a series of small PRs you can review as rendered diffs. Pod policy, the writer and the edge check can start now. The `wait` default and derived Orphan are postponed, and C4 and the steps built on it wait on your decision.",
+  "verdict": "Make the ducktape layer a thin layer of policy and wiring over the generated bindings, with exactly one shape per job. Nine conventions cover every need in the matrix, and all but one reuse a mechanism the tree already has.\n- **C1 Provider kinds.** Under `providers/`, a CRD kind built more than once is a single-shot class named after the kind. Schema variants are `@staticmethod`s that return the generated struct, so a hand-built struct always fits in the same slot.\n- **C2 Policy functions.** A choice this cluster makes about one kind is a function named after what it returns: `flux_kustomization`, `cnpg.cluster`, `https_route`.\n- **C3 Composites.** A group of objects that repeats is a `Construct` whose objects and references are attributes: `MintedSecret`, `PrivateBucket`, `PostgresBackup`, `SettingsFile`.\n- **C4 References.** A fact two objects must agree on (a Secret key, a Service port and its Pod labels, a database's app Secret) is a small frozen reference declared once by its producer and imported by its consumers. This is the one boundary change, and it needs your approval.\n- **C5 Pod policy.** `pod_policy.harden()` and `pod_policy.place()` are the only functions that amend a built object. They reach cdk8s-plus, raw and CRD-embedded pod specs through one path table.\n- **C6 Fleet rules everywhere.** The writer attaches them to every chart, so coverage no longer depends on an author remembering.\n- **C7 Rendered directories, admission-only edges.** The writer returns what it rendered, and the Flux node derives decryption and `deletionPolicy: Orphan` from it. A `dependsOn` edge exists only for what the API server needs to admit the directory's objects (a CRD, a `Fail` webhook, a postBuild source), a synth-time check enforces that, and `wait` is off unless another node's admission depends on this one. One component is one Kustomization.\n- **C8 Credentials.** A `Credential` roster entry is the only way a Secret crosses namespaces.\n- **C9 Config from the consumer's model.** Our binaries render from their pydantic Settings; Terraform modules take a vars model checked against `variables.tf`.\nFollowing cdk8s-plus's own patterns is not an option on its own: its wrappers render their specs through `Lazy`, which Python cannot put into typed binding fields, and the ways the tree emulated it (JSON-patch appends, a chart-wide singleton found by construct id) are its least-liked shapes. So every object is built complete, once, and there is exactly one post-construction amendment (C5). The design-space section shows the other options on each axis and why they lost here.\nNone of this is a big-bang rewrite. Each convention lands as a series of small PRs you can review as rendered diffs. The provider cleanup has landed and most of the edge trim is in. The writer's first PR is under way, without the fleet rules, graph checks and health-check derivation you deferred. Pod policy and the edge check can start now. The `wait` default and derived Orphan are postponed, and C4 and the steps built on it wait on your decision.",
   "space_intro": "There are many ways the ducktape layer could integrate with cdk8s. The choices fall along a few independent axes: how an object gets built, how cross-cutting policy reaches it, how facts cross between objects and modules, how two-sided relationships are wired, how output and the Flux graph are organized, and where each abstraction lives.\nEach axis below lists the options that were considered, with a verdict and the reason in this repo, and names the pick. The last axis compares whole-design angles, which four independent designers each developed in full before three judges scored them. Prior art from other tools closes the section.",
   "design_space": [
     {
@@ -1985,7 +1985,7 @@
     },
     {
       "question": "Require every pod spec to state `automountServiceAccountToken`, as its own fleet rule that lands before any ServiceAccount conversion?",
-      "recommendation": "Yes. Converting a `KubeServiceAccount` to cdk8s-plus turns the account's token off (`automount_token` defaults to `False`), and a Pod that states nothing then loses its token silently: tana-mcp's firebase resigner calls the API with it (`tana/firebase_resigner/resigner.py:216`). The rule lands after the writer attaches rules to every chart and before the secrets step converts any account.",
+      "recommendation": "Yes. Converting a `KubeServiceAccount` to cdk8s-plus turns the account's token off (`automount_token` defaults to `False`), and a Pod that states nothing then loses its token silently: tana-mcp's firebase resigner calls the API with it (`tana/firebase_resigner/resigner.py:216`). The rule lands before the secrets step converts any account. It reaches every chart only once the writer attaches fleet rules, which you deferred.",
       "tradeoff": "Every raw pod spec gains one explicit line (the attic rotator states `true`); cdk8s-plus workloads already render `false`. A violation found by the rule is fixed by stating today's effective value, so the rule itself changes nothing at runtime."
     },
     {
@@ -2017,15 +2017,14 @@
       "question": "Who owns flux-system's `external-creds-reader` ServiceAccount? Three sources apply it today.",
       "recommendation": "The external-creds chart. flux-system exists before any Kustomization, and a single owner stops prune fights.",
       "tradeoff": "external-creds renders one object outside ducktape-flux. The alternative is designating one flux-system app chart as the owner."
+    },
+    {
+      "question": "Is Kyverno an admission prerequisite for the units whose kinds its `Fail` policies match?",
+      "recommendation": "No. Kyverno's chart templates no webhook configurations; its admission controller registers them once it runs, so an object applied before Kyverno is admitted unchecked. Ordering only decides whether the two admission-only mutations (`default-revision-history-limit`, `default-vpa-requests-only`) reach an object's first version. The `restrict-agent-*` policies gate agents' own requests, which come after bootstrap. Keep the `kyverno-policies` edges its CRDs need (rule 1), and drop the Kyverno-only edges in their own batch.",
+      "tradeoff": "An object created before Kyverno runs misses those mutations at least until Flux next applies it; whether Flux's dry-run diff picks them up on its own is unverified. 51 units that render Kyverno-matched kinds already have no path to `kyverno`. The edge PRs kept Kyverno ordering where they found it (#8181, #8185) so as not to decide this for you."
     }
   ],
   "open_prs": [
-    {
-      "pr": 8168,
-      "title": "cdk8s: construct ApiObjectMetadata directly; delete the metadata() wrapper",
-      "recommendation": "land as is",
-      "reason": "The last part of the providers step's `metadata=` convention: 305 calls construct `ApiObjectMetadata` directly. It conflicts with #8108 wherever an annotation sits inside a `metadata(...)` call; the codemod re-runs in seconds on whichever lands second."
-    },
     {
       "pr": 7094,
       "title": "cluster: replace the Kustomization layering law with a blast-radius policy",
@@ -2049,12 +2048,6 @@
       "title": "cdk8s: factor hardened single-container pod defaults (D.1)",
       "recommendation": "close",
       "reason": "The TypedDict kwargs spread is rejected (P2). Hardening moves to `pod_policy.harden()`, and the Pod labels and selector come from the `ServiceRef`'s `Pods`."
-    },
-    {
-      "pr": 8108,
-      "title": "cdk8s: drop reloader auto annotations; autoReloadAll already covers them",
-      "recommendation": "land as is",
-      "reason": "Reworked as recommended: it deletes the 36 remaining `\"true\"` annotations and adds no constant. CI green."
     },
     {
       "pr": 8106,
@@ -2146,24 +2139,19 @@
       "risk": "Low to medium. Units go Ready once applied. A dependent that still has a runtime edge to a unit that stops waiting (for example on `tofu-state-db`) starts earlier and retries until its prerequisite converges, which shows as transient failures during a bootstrap. The workload alerts are unchanged."
     },
     {
-      "step": "Edge-justification check with `flux.ORDERING_EXCEPTIONS`: every edge targets a CRD provider, a Fail-webhook operator or a `postBuild` source of something the dependent renders, or is listed with one of #7094 rule 2's two reasons. It lands with today's 271 unjustified edges in a burn-down table under a `CLEANUP` tombstone, so no new one can be added.",
-      "scope": "`flux.py` (the tables) and `cluster/validation/dependencies.py`, which already builds every unit; the check moves to synth when the last directory converts (step 12). Until then the 6 edges that exist because a Helm chart renders a custom resource take their kinds from a six-entry table, which `chart_kinds` replaces.",
+      "step": "Edge-justification check with `flux.ORDERING_EXCEPTIONS`: every edge targets a CRD provider, a Fail-webhook operator or a `postBuild` source of something the dependent renders, or is listed with one of #7094 rule 2's two reasons. It lands after the edge-removal batches (step 5), with whatever unjustified edges remain in a burn-down table under a `CLEANUP` tombstone, so no new one can be added.",
+      "scope": "`flux.py` (the tables) and `cluster/validation/dependencies.py`, which already builds every unit; the check moves to synth with the graph checks (step 12, deferred). Until then the 6 edges that exist because a Helm chart renders a custom resource take their kinds from a six-entry table, which `chart_kinds` replaces.",
       "risk": "None at runtime; no manifest changes."
     },
     {
-      "step": "Edge-removal batches, one class per PR, each deleting its rows from the burn-down table: the ESO store edges (34; 31 retarget to `external-secrets-operator`), `forgejo-images` (25; 16 retarget to `external-secrets-operator`), `tofu-state-db` (18), `gateway` (18), `seaweedfs-cluster` (17; 15 retarget to `seaweedfs-operator`), the namespace units (27), then the rest (`local-path-provisioner` 11, `external-creds` 11, `claude-rbac` 10, ...).",
-      "scope": "Several PRs of node-signature and call-site edits in the entry point.",
+      "step": "Edge-removal batches, one class or target per PR. You asked for the edges before the check in step 4, so they land without it. Landed: `gateway` (#8181: 18 edges, 5 retargeted to `kyverno`), the ESO store (#8183: 34, 31 retargeted to `external-secrets-operator`) and `forgejo-images` (#8186: 25, 2 retargeted to `seaweedfs-operator`). Open: the namespace units (#8185: 27) and `seaweedfs-cluster` (#8187: 17, 15 retargeted to `seaweedfs-operator`). Still being prepared: the other credential sources (`external-creds`, Reflector, the minted-secret Terraform units), the remaining readiness targets (among them `tofu-state-db`, `local-path-provisioner`, `cert-manager-environment` and `authentik`) and the ordering-only edges.",
+      "scope": "Node-signature and call-site edits in the entry point. The only rendered change is `spec.dependsOn`.",
       "risk": "Low to medium. The test for each edge is whether `bazel run //cluster:bootstrap` still converges without it (#7094); a unit that needed it retries until its prerequisite is up. A retarget keeps the admission path the removed edge carried."
     },
     {
       "step": "Stateless tiny-unit folds, one per PR: the kube-system trio (coredns-custom, kube-system, hubble-ui); the monitoring trio (flux-, cilium- and etcd-monitoring, with monitoring-rules, into one platform-monitoring unit); the six `seaweedfs-*-bucket` units into their consumers; the provisioner Jobs (atuin-user-provisioner into atuin, matrix-user-provisioner into matrix); the Terraform groups (forgejo-gitops, authentik-tf, github-tf).",
       "scope": "One PR per fold; each generated component becomes one `write_directory` call and one node.",
       "risk": "Medium per fold, because objects change owner. Each fold follows `cluster/cdk8s/AGENTS.md` § Restructuring (Orphan on the old owner, then adoption). Terraform CRs keep their names, so their state is reused, and none sets `destroyResourcesOnDeletion`; Buckets retain by default."
-    },
-    {
-      "step": "#8108: delete the remaining 36 `reloader.stakater.com/auto: \"true\"` annotations on workload metadata, which `autoReloadAll` (`reloader.py`) already covers, and reword the comments that credit the annotation.",
-      "scope": "About 30 generator files plus the regenerated manifests. Open, CI green.",
-      "risk": "Low. The render diff is annotations only (37 Deployments, 1 DaemonSet, the Forgejo HelmRelease)."
     },
     {
       "step": "`namespaces.namespace(scope, id, *, name, vpa, agent_readable)` with StrEnum label choices shared with `kyverno/policies.py` (X1); under decision 11, the 38 `enabled: \"true\"` labels and the two goldilocks checks that demand them change in the same PR.",
@@ -2181,18 +2169,23 @@
       "risk": "Medium per container that had no securityContext: it gains drop-ALL and no escalation. Review the render diff container by container."
     },
     {
-      "step": "The writer: `ObjectId`, `STATEFUL_KINDS`, `RenderedDirectory`, `artifact_directory` and `api_objects` in `flux.py`; `generation.write_directory`, which attaches `FleetRules`; `flux_kustomization` accepts a `RenderedDirectory` and derives source, path and decryption. Convert the 12 writer-nodes, and delete each converted chart's own `add_fleet_rules` call in the same PR.",
-      "scope": "`generation.py`, `flux.py`, 12 modules and their joins in `generate_manifests.py`.",
-      "risk": "Low to medium. Charts that are newly checked may fail synth; fix or exempt them in the same PR. The rendered Kustomizations are unchanged: decryption is now derived and comes out the same."
+      "step": "The writer, with your calls: it always writes the directory's `kustomization.yaml` (A); each component is written and joined to its node in one place in `generate_manifests.py` (B); hand-written kustomization glue stays as it is (C); health checks stay as each node types them (D). `RenderedDirectory` carries what `flux_kustomization` reads for `sourceRef`, `path` and decryption, which is set when a `*.sops.yaml` sits beside the rendered files. Nodes take it and never write. The first PR, under way, converts ntfy and one plain generated directory.",
+      "scope": "`generation.py`, `flux.py`, two components and their joins in `generate_manifests.py`.",
+      "risk": "Low. ntfy renders identically; the other directory gains a `kustomization.yaml`, and `render_diff.py` shows the applied objects unchanged."
     },
     {
-      "step": "Convert the remaining generated-directory nodes to `RenderedDirectory` in mechanical batches, absorbing hand-written kustomization glue through `components` and `config_map_generator` (nix-cache first, #7920). When the last one converts, the graph checks move to synth (`AdmissionGraph`), closing the `parse_cluster` gap #7763 reported.",
-      "scope": "About 170 node signatures and joins, in several PRs.",
-      "risk": "Low. The rendered output is identical, and `render_diff.py` confirms it."
+      "step": "Convert the rest to the writer in 6 to 8 area PRs stacked on the first: the remaining writer-nodes and about 150 split modules. Each deletes the module's write-phase line and its hand-typed decryption, and adds a `kustomization.yaml` where Flux generated one. A last PR deletes `write_charts` and `sops_decryption`.",
+      "scope": "About 160 modules and their joins in `generate_manifests.py`.",
+      "risk": "Low. The applied objects are identical, and `render_diff.py` confirms it for every directory that gains a `kustomization.yaml`. A node whose typed decryption disagrees with its directory shows up as a rendered diff."
+    },
+    {
+      "step": "**Deferred by the owner until the shared layer's scope is agreed.** On top of the writer: fleet rules attached to every chart (C6), replacing the 13 `add_fleet_rules` calls; the graph checks at synth (`AdmissionGraph`), closing the `parse_cluster` gap #7763 reported; health checks derived from the rendered objects, or `wait: true` with Flux's own checks, which belongs with step 3; and absorbing hand-written kustomization glue through `components` and `config_map_generator`, one directory per PR, nix-cache first (#7920).",
+      "scope": "`generation.py`, `fleet_rules.py`, `cluster/validation`, and the 50 hand-written directories that include generated files.",
+      "risk": "Medium. Charts that come under fleet rules for the first time may fail synth and need fixes or exemptions."
     },
     {
       "step": "The stated-token rule (decision 6): every pod spec states `automountServiceAccountToken`; fix violations by stating today's effective value, or exempt them.",
-      "scope": "`fleet_rules.py` plus the raw pod specs that state nothing.",
+      "scope": "`fleet_rules.py` plus the raw pod specs that state nothing. Until fleet rules reach every chart (step 12, deferred), the rule covers only the charts that call `add_fleet_rules`.",
       "risk": "Low. It is a check, and each fix states the value already in effect. It must land before step 19 converts any ServiceAccount."
     },
     {
@@ -2206,8 +2199,8 @@
       "risk": "Medium. Each follows `cluster/AGENTS.md`'s stateful-migration procedure (`prune: false` and Orphan on the old owner first), and forgejo-cache the Redis-operator label transition (`cluster/AGENTS.md:201-215`). A CNPG Cluster whose `initdb.secret` ESO mints stays ordered after that Secret (`cnpg_conventions.md` R4)."
     },
     {
-      "step": "Providers cleanup, the remainder: `ClusterExternalSecret` takes `metadata=`; `ClusterIssuer`'s per-variant classmethods become one constructor with `self_signed=`/`ca=`/`acme=`; `LONG_LIVED_CA` moves out of `providers/cert_manager`; the cnpg `Cluster` takes `storage` and `bootstrap` under their own names; the single-site `ScaledJob` and `TriggerAuthentication` wrappers give way to the generated bindings; #8168 deletes the `metadata()` helper. SeaweedFS converts in its own step.",
-      "scope": "One PR per provider package, plus #8168 (open).",
+      "step": "Providers leftovers, each your call: the ExternalSecret `target` stays flattened (`creation_policy` at 35 of 39 sites); `redis_operator` is heavily flattened for one site; kyverno `match_resources` is module-level; `ActionPolicySet` and flux `Kustomization` are each built at one site inside a function with many callers; kinds built at several sites have no provider class (Flux `HelmRepository` at about 31, `GitRepository` at 8, and `CiliumClusterwideNetworkPolicy`, `SandboxWarmPool`, Terraform, `VirtualMachine` and `CleanupPolicy` at 2 or 3 each); and naming (cilium `NetworkPolicy` against `CiliumNetworkPolicy`, the `flux_` prefix in `flux_kustomization.py`). The rest of the step landed in #8168, #8173 to #8180 and #8182.",
+      "scope": "One PR per call you make.",
       "risk": "Low. Mechanical, with identical render."
     },
     {

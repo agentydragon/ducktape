@@ -1147,8 +1147,10 @@
           </p>
           <p>
             None of this is a big-bang rewrite. Each convention lands as a series of small PRs you can review as
-            rendered diffs. Pod policy, the writer and the edge check can start now. The <code>wait</code> default and
-            derived Orphan are postponed, and C4 and the steps built on it wait on your decision.
+            rendered diffs. The provider cleanup has landed and most of the edge trim is in. The writer&#39;s first PR
+            is under way, without the fleet rules, graph checks and health-check derivation you deferred. Pod policy and
+            the edge check can start now. The <code>wait</code> default and derived Orphan are postponed, and C4 and the
+            steps built on it wait on your decision.
           </p>
         </div>
       </div>
@@ -10767,8 +10769,8 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
                 >
                 defaults to <code>False</code>), and a Pod that states nothing then loses its token silently:
                 tana-mcp&#39;s firebase resigner calls the API with it
-                (<code>tana/firebase_resigner/resigner.py:216</code>). The rule lands after the writer attaches rules to
-                every chart and before the secrets step converts any account.
+                (<code>tana/firebase_resigner/resigner.py:216</code>). The rule lands before the secrets step converts
+                any account. It reaches every chart only once the writer attaches fleet rules, which you deferred.
               </p>
             </div>
           </div>
@@ -10943,6 +10945,40 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             </div>
           </div>
         </li>
+        <li>
+          <div class="q">
+            <div class="rich">
+              <p>
+                Is Kyverno an admission prerequisite for the units whose kinds its <code>Fail</code> policies match?
+              </p>
+            </div>
+          </div>
+          <div>
+            <span class="lbl">Recommendation</span>
+            <div class="rich">
+              <p>
+                No. Kyverno&#39;s chart templates no webhook configurations; its admission controller registers them
+                once it runs, so an object applied before Kyverno is admitted unchecked. Ordering only decides whether
+                the two admission-only mutations (<code>default-revision-history-limit</code>,
+                <code>default-vpa-requests-only</code>) reach an object&#39;s first version. The
+                <code>restrict-agent-*</code> policies gate agents&#39; own requests, which come after bootstrap. Keep
+                the <code>kyverno-policies</code> edges its CRDs need (rule 1), and drop the Kyverno-only edges in their
+                own batch.
+              </p>
+            </div>
+          </div>
+          <div class="t">
+            <span class="lbl">Trade-off</span>
+            <div class="rich">
+              <p>
+                An object created before Kyverno runs misses those mutations at least until Flux next applies it;
+                whether Flux&#39;s dry-run diff picks them up on its own is unverified. 51 units that render
+                Kyverno-matched kinds already have no path to <code>kyverno</code>. The edge PRs kept Kyverno ordering
+                where they found it (#8181, #8185) so as not to decide this for you.
+              </p>
+            </div>
+          </div>
+        </li>
       </ol>
     </section>
 
@@ -10959,20 +10995,6 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8168">#8168</a></td>
-              <td>cdk8s: construct ApiObjectMetadata directly; delete the metadata() wrapper</td>
-              <td><span class="chip chip-land-as-is">land as is</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    The last part of the providers step&#39;s <code>metadata=</code> convention: 305 calls construct
-                    <code>ApiObjectMetadata</code> directly. It conflicts with #8108 wherever an annotation sits inside
-                    a <code>metadata(...)</code> call; the codemod re-runs in seconds on whichever lands second.
-                  </p>
-                </div>
-              </td>
-            </tr>
             <tr>
               <td><a href="https://github.com/agentydragon/ducktape/pull/7094">#7094</a></td>
               <td>cluster: replace the Kustomization layering law with a blast-radius policy</td>
@@ -11027,19 +11049,6 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
                   <p>
                     The TypedDict kwargs spread is rejected (P2). Hardening moves to <code>pod_policy.harden()</code>,
                     and the Pod labels and selector come from the <code>ServiceRef</code>&#39;s <code>Pods</code>.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8108">#8108</a></td>
-              <td>cdk8s: drop reloader auto annotations; autoReloadAll already covers them</td>
-              <td><span class="chip chip-land-as-is">land as is</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    Reworked as recommended: it deletes the 36 remaining <code>&#34;true&#34;</code> annotations and
-                    adds no constant. CI green.
                   </p>
                 </div>
               </td>
@@ -11296,8 +11305,9 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
               <p>
                 Edge-justification check with <code>flux.ORDERING_EXCEPTIONS</code>: every edge targets a CRD provider,
                 a Fail-webhook operator or a <code>postBuild</code> source of something the dependent renders, or is
-                listed with one of #7094 rule 2&#39;s two reasons. It lands with today&#39;s 271 unjustified edges in a
-                burn-down table under a <code>CLEANUP</code> tombstone, so no new one can be added.
+                listed with one of #7094 rule 2&#39;s two reasons. It lands after the edge-removal batches (step 5),
+                with whatever unjustified edges remain in a burn-down table under a <code>CLEANUP</code> tombstone, so
+                no new one can be added.
               </p>
             </div>
           </div>
@@ -11305,7 +11315,7 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             <div class="rich">
               <p>
                 <code>flux.py</code> (the tables) and <code>cluster/validation/dependencies.py</code>, which already
-                builds every unit; the check moves to synth when the last directory converts (step 12). Until then the 6
+                builds every unit; the check moves to synth with the graph checks (step 12, deferred). Until then the 6
                 edges that exist because a Helm chart renders a custom resource take their kinds from a six-entry table,
                 which <code>chart_kinds</code> replaces.
               </p>
@@ -11320,19 +11330,26 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                Edge-removal batches, one class per PR, each deleting its rows from the burn-down table: the ESO store
-                edges (34; 31 retarget to <code>external-secrets-operator</code>), <code>forgejo-images</code> (25; 16
-                retarget to <code>external-secrets-operator</code>), <code>tofu-state-db</code> (18),
-                <code>gateway</code> (18), <code>seaweedfs-cluster</code> (17; 15 retarget to
-                <code>seaweedfs-operator</code>), the namespace units (27), then the rest (<code
-                  >local-path-provisioner</code
-                >
-                11, <code>external-creds</code> 11, <code>claude-rbac</code> 10, ...).
+                Edge-removal batches, one class or target per PR. You asked for the edges before the check in step 4, so
+                they land without it. Landed: <code>gateway</code> (#8181: 18 edges, 5 retargeted to
+                <code>kyverno</code>), the ESO store (#8183: 34, 31 retargeted to
+                <code>external-secrets-operator</code>) and <code>forgejo-images</code> (#8186: 25, 2 retargeted to
+                <code>seaweedfs-operator</code>). Open: the namespace units (#8185: 27) and
+                <code>seaweedfs-cluster</code> (#8187: 17, 15 retargeted to <code>seaweedfs-operator</code>). Still
+                being prepared: the other credential sources (<code>external-creds</code>, Reflector, the minted-secret
+                Terraform units), the remaining readiness targets (among them <code>tofu-state-db</code>,
+                <code>local-path-provisioner</code>, <code>cert-manager-environment</code> and <code>authentik</code>)
+                and the ordering-only edges.
               </p>
             </div>
           </div>
           <div class="sc">
-            <div class="rich"><p>Several PRs of node-signature and call-site edits in the entry point.</p></div>
+            <div class="rich">
+              <p>
+                Node-signature and call-site edits in the entry point. The only rendered change is
+                <code>spec.dependsOn</code>.
+              </p>
+            </div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
@@ -11372,26 +11389,6 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
                 Restructuring (Orphan on the old owner, then adoption). Terraform CRs keep their names, so their state
                 is reused, and none sets <code>destroyResourcesOnDeletion</code>; Buckets retain by default.
               </p>
-            </div>
-          </div>
-        </li>
-        <li>
-          <div class="st">
-            <div class="rich">
-              <p>
-                #8108: delete the remaining 36 <code>reloader.stakater.com/auto: &#34;true&#34;</code> annotations on
-                workload metadata, which <code>autoReloadAll</code> (<code>reloader.py</code>) already covers, and
-                reword the comments that credit the annotation.
-              </p>
-            </div>
-          </div>
-          <div class="sc">
-            <div class="rich"><p>About 30 generator files plus the regenerated manifests. Open, CI green.</p></div>
-          </div>
-          <div class="sr">
-            <span class="lbl">Risk</span>
-            <div class="rich">
-              <p>Low. The render diff is annotations only (37 Deployments, 1 DaemonSet, the Forgejo HelmRelease).</p>
             </div>
           </div>
         </li>
@@ -11479,19 +11476,20 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                The writer: <code>ObjectId</code>, <code>STATEFUL_KINDS</code>, <code>RenderedDirectory</code>,
-                <code>artifact_directory</code> and <code>api_objects</code> in <code>flux.py</code>;
-                <code>generation.write_directory</code>, which attaches <code>FleetRules</code>;
-                <code>flux_kustomization</code> accepts a <code>RenderedDirectory</code> and derives source, path and
-                decryption. Convert the 12 writer-nodes, and delete each converted chart&#39;s own
-                <code>add_fleet_rules</code> call in the same PR.
+                The writer, with your calls: it always writes the directory&#39;s <code>kustomization.yaml</code> (A);
+                each component is written and joined to its node in one place in <code>generate_manifests.py</code> (B);
+                hand-written kustomization glue stays as it is (C); health checks stay as each node types them (D).
+                <code>RenderedDirectory</code> carries what <code>flux_kustomization</code> reads for
+                <code>sourceRef</code>, <code>path</code> and decryption, which is set when a
+                <code>*.sops.yaml</code> sits beside the rendered files. Nodes take it and never write. The first PR,
+                under way, converts ntfy and one plain generated directory.
               </p>
             </div>
           </div>
           <div class="sc">
             <div class="rich">
               <p>
-                <code>generation.py</code>, <code>flux.py</code>, 12 modules and their joins in
+                <code>generation.py</code>, <code>flux.py</code>, two components and their joins in
                 <code>generate_manifests.py</code>.
               </p>
             </div>
@@ -11500,8 +11498,8 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             <span class="lbl">Risk</span>
             <div class="rich">
               <p>
-                Low to medium. Charts that are newly checked may fail synth; fix or exempt them in the same PR. The
-                rendered Kustomizations are unchanged: decryption is now derived and comes out the same.
+                Low. ntfy renders identically; the other directory gains a <code>kustomization.yaml</code>, and
+                <code>render_diff.py</code> shows the applied objects unchanged.
               </p>
             </div>
           </div>
@@ -11510,20 +11508,58 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                Convert the remaining generated-directory nodes to <code>RenderedDirectory</code> in mechanical batches,
-                absorbing hand-written kustomization glue through <code>components</code> and
-                <code>config_map_generator</code> (nix-cache first, #7920). When the last one converts, the graph checks
-                move to synth (<code>AdmissionGraph</code>), closing the <code>parse_cluster</code> gap #7763 reported.
+                Convert the rest to the writer in 6 to 8 area PRs stacked on the first: the remaining writer-nodes and
+                about 150 split modules. Each deletes the module&#39;s write-phase line and its hand-typed decryption,
+                and adds a <code>kustomization.yaml</code> where Flux generated one. A last PR deletes
+                <code>write_charts</code> and <code>sops_decryption</code>.
               </p>
             </div>
           </div>
           <div class="sc">
-            <div class="rich"><p>About 170 node signatures and joins, in several PRs.</p></div>
+            <div class="rich">
+              <p>About 160 modules and their joins in <code>generate_manifests.py</code>.</p>
+            </div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
             <div class="rich">
-              <p>Low. The rendered output is identical, and <code>render_diff.py</code> confirms it.</p>
+              <p>
+                Low. The applied objects are identical, and <code>render_diff.py</code> confirms it for every directory
+                that gains a <code>kustomization.yaml</code>. A node whose typed decryption disagrees with its directory
+                shows up as a rendered diff.
+              </p>
+            </div>
+          </div>
+        </li>
+        <li>
+          <div class="st">
+            <div class="rich">
+              <p>
+                <strong>Deferred by the owner until the shared layer&#39;s scope is agreed.</strong> On top of the
+                writer: fleet rules attached to every chart (C6), replacing the 13 <code>add_fleet_rules</code> calls;
+                the graph checks at synth (<code>AdmissionGraph</code>), closing the <code>parse_cluster</code> gap
+                #7763 reported; health checks derived from the rendered objects, or <code>wait: true</code> with
+                Flux&#39;s own checks, which belongs with step 3; and absorbing hand-written kustomization glue through
+                <code>components</code> and <code>config_map_generator</code>, one directory per PR, nix-cache first
+                (#7920).
+              </p>
+            </div>
+          </div>
+          <div class="sc">
+            <div class="rich">
+              <p>
+                <code>generation.py</code>, <code>fleet_rules.py</code>, <code>cluster/validation</code>, and the 50
+                hand-written directories that include generated files.
+              </p>
+            </div>
+          </div>
+          <div class="sr">
+            <span class="lbl">Risk</span>
+            <div class="rich">
+              <p>
+                Medium. Charts that come under fleet rules for the first time may fail synth and need fixes or
+                exemptions.
+              </p>
             </div>
           </div>
         </li>
@@ -11538,7 +11574,10 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           </div>
           <div class="sc">
             <div class="rich">
-              <p><code>fleet_rules.py</code> plus the raw pod specs that state nothing.</p>
+              <p>
+                <code>fleet_rules.py</code> plus the raw pod specs that state nothing. Until fleet rules reach every
+                chart (step 12, deferred), the rule covers only the charts that call <code>add_fleet_rules</code>.
+              </p>
             </div>
           </div>
           <div class="sr">
@@ -11608,18 +11647,23 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                Providers cleanup, the remainder: <code>ClusterExternalSecret</code> takes <code>metadata=</code>;
-                <code>ClusterIssuer</code>&#39;s per-variant classmethods become one constructor with
-                <code>self_signed=</code>/<code>ca=</code>/<code>acme=</code>; <code>LONG_LIVED_CA</code> moves out of
-                <code>providers/cert_manager</code>; the cnpg <code>Cluster</code> takes <code>storage</code> and
-                <code>bootstrap</code> under their own names; the single-site <code>ScaledJob</code> and
-                <code>TriggerAuthentication</code> wrappers give way to the generated bindings; #8168 deletes the
-                <code>metadata()</code> helper. SeaweedFS converts in its own step.
+                Providers leftovers, each your call: the ExternalSecret <code>target</code> stays flattened (<code
+                  >creation_policy</code
+                >
+                at 35 of 39 sites); <code>redis_operator</code> is heavily flattened for one site; kyverno
+                <code>match_resources</code> is module-level; <code>ActionPolicySet</code> and flux
+                <code>Kustomization</code> are each built at one site inside a function with many callers; kinds built
+                at several sites have no provider class (Flux <code>HelmRepository</code> at about 31,
+                <code>GitRepository</code> at 8, and <code>CiliumClusterwideNetworkPolicy</code>,
+                <code>SandboxWarmPool</code>, Terraform, <code>VirtualMachine</code> and <code>CleanupPolicy</code> at 2
+                or 3 each); and naming (cilium <code>NetworkPolicy</code> against <code>CiliumNetworkPolicy</code>, the
+                <code>flux_</code> prefix in <code>flux_kustomization.py</code>). The rest of the step landed in #8168,
+                #8173 to #8180 and #8182.
               </p>
             </div>
           </div>
           <div class="sc">
-            <div class="rich"><p>One PR per provider package, plus #8168 (open).</p></div>
+            <div class="rich"><p>One PR per call you make.</p></div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
