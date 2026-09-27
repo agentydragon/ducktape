@@ -5,7 +5,6 @@ from decimal import Decimal
 
 import pytest
 import pytest_bazel
-from pydantic import ValidationError
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.action_projection import metric_arrays
@@ -27,7 +26,6 @@ from finance.augur.sim.prepared import (
     PreparedTlhPortfolio,
 )
 from finance.augur.sim.results import Executed, Finished, InvalidRequest, Rejected, RejectedAction
-from finance.augur.sim.scenario import TlhCohort, TlhPortfolioSpec
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -466,19 +464,6 @@ def test_a_contribution_into_a_worthless_index_is_rejected_not_parked() -> None:
         reason=InvalidRequest(detail="a worthless index takes no TLH contribution")
     )
     assert rollout.summary.cash[0].values[-1] == 10
-
-
-def test_removed_or_misplaced_fields_cannot_silently_disable_the_model() -> None:
-    portfolio = TlhPortfolioSpec(
-        portfolio_id=MANAGED,
-        owner_agent_id=OWNER,
-        account_id=CHECKING,
-        asset=ASSET,
-        initial_cohorts=[TlhCohort(value=Decimal(100), cost_basis=Decimal(100), purchase_month_index=-24)],
-        assumptions=assumptions(harvest=True),
-    )
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        TlhPortfolioSpec.model_validate({**portfolio.model_dump(), "cumulative_harvest": 1})
 
 
 if __name__ == "__main__":

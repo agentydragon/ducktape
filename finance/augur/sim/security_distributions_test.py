@@ -18,7 +18,6 @@ from finance.augur.sim.fixed_point import (
     quantity_scale_for_asset,
     quantity_to_quanta,
     rate_to_ppb,
-    round_ppb,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, income_source_sort_key
@@ -36,7 +35,6 @@ from finance.augur.sim.prepared import (
     PreparedSeries,
 )
 from finance.augur.sim.results import Finished, Paid, Rollout
-from finance.augur.sim.scenario import DistributionTaxSlice
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -100,15 +98,6 @@ def _paths(payout: np.ndarray | None) -> tuple[PreparedSeries, ...]:
     )
 
 
-def _slices(tax_character: tuple[DistributionTaxSlice, ...]) -> tuple[PreparedDistributionSlice, ...]:
-    return tuple(
-        PreparedDistributionSlice(
-            fraction_ppb=int(round_ppb(tax_slice.fraction)), income_category=tax_slice.income_category
-        )
-        for tax_slice in tax_character
-    )
-
-
 def _account(agent_id: AgentId, balance: Decimal) -> PreparedAccount:
     return PreparedAccount(
         account=AccountRef(agent_id=agent_id, account_id=CHECKING),
@@ -134,7 +123,7 @@ def _bill(amount: Decimal) -> PreparedObligation:
 
 def compose(
     *,
-    tax_character: tuple[DistributionTaxSlice, ...] = TREASURY,
+    tax_character: tuple[PreparedDistributionSlice, ...] = TREASURY,
     is_taxed: bool = True,
     distributes: bool = True,
     holding_account_id: AccountId = BROKERAGE,
@@ -148,7 +137,7 @@ def compose(
     cashflow cases want: with a tax authority the year-end settlement lands in the same months.
     """
 
-    slices = _slices(tax_character) if distributes else ()
+    slices = tax_character if distributes else ()
     # The vocabulary a taxpayer shares: what the fund's slices name, plus where alice files.
     issuers = {
         part.income_category.issuer_jurisdiction_id
