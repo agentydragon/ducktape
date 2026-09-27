@@ -15,9 +15,10 @@ metrics; absent detail is `trace=None`. Bond carrying value uses each declared b
 captured principal, including redemption and stopped-event marks, not a sale quote or
 an inferred history from its ending book. Missing/duplicate bond histories reject.
 Property and private-equity histories remain unsupported and raise explicitly.
-`ProductService` lowers each request once in <scenarios.py> (`build_situation`: the
-household's accounts, holdings, home and counterparties as prepared declarations, and the
-household the funding policy describes), samples the series that situation reads, and
+`ProductService` checks the deployment's portfolio once at startup in <holdings.py>
+(`opening_holdings`), then prepares each request once in <scenarios.py> (`build_situation`:
+the household's accounts, holdings, home and counterparties as prepared facts in the
+request's currency, and the household the funding policy describes), samples the series that situation reads, and
 composes one world per path (`compose`) with that household tracked on it — a
 <../policy/cash_band_household.py> household over the funding policy's sleeves, or, with
 none left, a <../policy/funding.py> `ClaimPayer` that never sells; <simulation.py> steps

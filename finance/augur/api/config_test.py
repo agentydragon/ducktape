@@ -140,7 +140,6 @@ def test_config_carries_tax_lot_accurate_portfolio_schema(minimal_config: Minima
 
     fixed = reloaded.portfolio_sources.fixed
     assert fixed.portfolio.holdings[0].lots[0].holding_period_months_at_start == 24
-    assert fixed.portfolio.to_initial_lots()[0].purchase_month_index == -24
 
 
 def test_config_carries_optional_plaid_portfolio_source(minimal_config: MinimalConfig) -> None:

@@ -1358,7 +1358,6 @@ py_test(
         ":money",
         ":prepared",
         ":results",
-        ":scenario",
         ":session",
         ":world",
         "//:conftest",

@@ -48,6 +48,7 @@ from finance.augur.product.wire import (
     RolloutResponse,
     TerminalDistributionResponse,
 )
+from finance.augur.sim.money import USD
 from finance.augur.x.models.sample_sanity import SampleSanitySpec, evaluate_sample_checks, partition_spec_coverage
 from finance.budget.service import BudgetService
 from finance.budget.wire import (
@@ -167,6 +168,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
                 snapshot=resolved_portfolio.snapshot,
                 portfolio=resolved_portfolio.portfolio,
                 tlh_portfolios=resolved_portfolio.tlh_portfolios,
+                currency=USD,
             )
         )
 
