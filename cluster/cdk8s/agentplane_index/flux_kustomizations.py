@@ -14,8 +14,7 @@ def agentplane_index(
     artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
-    local_path_provisioner: Kustomization,
-    ollama: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     name = "agentplane-index"
     return flux_kustomization(
@@ -23,10 +22,9 @@ def agentplane_index(
         name,
         artifact,
         timeout="10m",
-        # haku-state's Terraform Kustomization depends on this aggregate to create
-        # the target Namespace, then reflects haku-forgejo-git into it. Waiting for
-        # the haku-state Deployment here would deadlock that bootstrap: the Pod
-        # needs the Secret created by the dependency.
+        # The haku-state index worker reads haku-forgejo-git, which the haku-state
+        # Terraform reflects into this Namespace; waiting for that worker would hold
+        # this Kustomization NotReady until the Terraform has applied.
         wait=False,
         health_checks=[
             KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="agentplane-index"),
@@ -52,7 +50,12 @@ def agentplane_index(
                 ),
             )
         ],
-        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, local_path_provisioner, ollama),
+        depends_on=flux_kustomization_depends_on_many(
+            cnpg,
+            external_secrets_operator,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployments and Namespace.
+            kyverno,
+        ),
         description=(
             "Complete Agentplane repository-index service: namespace, ESO "
             "credentials, CNPG databases, and both index workers."

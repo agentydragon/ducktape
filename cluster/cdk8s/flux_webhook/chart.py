@@ -213,7 +213,7 @@ def chart(app: App) -> Chart:
 
 
 def flux_webhook(
-    chart: Chart, directory: RenderedDirectory, ntfy: Kustomization, external_secrets_operator: Kustomization
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -222,5 +222,9 @@ def flux_webhook(
         retry_interval=None,
         wait=None,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(ntfy, external_secrets_operator),
+        depends_on=flux_kustomization_depends_on_many(
+            external_secrets_operator,
+            # Kyverno's failurePolicy: Fail webhooks admit the HTTPRoute.
+            kyverno,
+        ),
     )

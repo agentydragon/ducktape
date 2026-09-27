@@ -31,7 +31,7 @@ def write_manifests(root: Path) -> None:
 
 
 def sso_providers_tf(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization, authentik: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -47,5 +47,5 @@ def sso_providers_tf(
             )
         ],
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(tofu_controller, authentik),
+        depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )

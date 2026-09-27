@@ -12,8 +12,8 @@ def github_exporter(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     monitoring_crds: Kustomization,
-    grafana_instance: Kustomization,
     external_secrets_operator: Kustomization,
+    grafana_operator: Kustomization,
 ) -> Kustomization:
     name = "github-exporter"
     return flux_kustomization(
@@ -24,8 +24,9 @@ def github_exporter(
         depends_on=flux_kustomization_depends_on_many(
             # ServiceMonitor
             monitoring_crds,
-            grafana_instance,
             external_secrets_operator,
+            # GrafanaDashboard
+            grafana_operator,
         ),
         description="GitHub API rate-limit metrics for the human and agent accounts.",
     )

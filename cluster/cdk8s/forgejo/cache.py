@@ -48,9 +48,7 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, _chart)
 
 
-def forgejo_cache(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, valkey: Kustomization, local_path_provisioner: Kustomization
-) -> Kustomization:
+def forgejo_cache(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, valkey: Kustomization) -> Kustomization:
     name = "forgejo-cache"
     return flux_kustomization(
         chart,
@@ -59,5 +57,5 @@ def forgejo_cache(
         timeout="5m",
         # Retry until the forgejo aggregate creates the Namespace. Waiting for
         # Forgejo readiness would deadlock its cache-dependent startup.
-        depends_on=flux_kustomization_depends_on_many(valkey, local_path_provisioner),
+        depends_on=flux_kustomization_depends_on_many(valkey),
     )

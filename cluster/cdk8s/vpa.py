@@ -62,9 +62,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def vpa(
-    chart: Chart, directory: RenderedDirectory, kyverno: Kustomization, metrics_server: Kustomization
-) -> Kustomization:
+def vpa(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart, NAME, directory, timeout="5m", depends_on=flux_kustomization_depends_on_many(kyverno, metrics_server)
+        chart, NAME, directory, timeout="5m", depends_on=flux_kustomization_depends_on_many(kyverno)
     )

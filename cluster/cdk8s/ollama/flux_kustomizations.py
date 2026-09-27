@@ -12,9 +12,8 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 def ollama(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    cert_manager_environment: Kustomization,
-    nvidia_runtimeclass: Kustomization,
     external_secrets_operator: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     name = "ollama"
     return flux_kustomization(
@@ -32,9 +31,9 @@ def ollama(
             )
         ],
         depends_on=flux_kustomization_depends_on_many(
-            cert_manager_environment,
-            nvidia_runtimeclass,
             # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
             external_secrets_operator,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment, HTTPRoute and Namespace.
+            kyverno,
         ),
     )

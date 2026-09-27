@@ -542,7 +542,7 @@ def chart(app: App) -> Chart:
 
 
 def monitoring_stack(
-    chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization, ntfy: Kustomization
+    chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -572,6 +572,7 @@ def monitoring_stack(
             # The chart's Prometheus/Alertmanager CRs are rejected at admission until
             # the CRDs exist, and the chart no longer installs them itself.
             monitoring_crds,
-            ntfy,
+            # Kyverno's failurePolicy: Fail webhooks admit the chart's Deployments and DaemonSet.
+            kyverno,
         ),
     )

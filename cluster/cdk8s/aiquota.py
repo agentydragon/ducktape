@@ -343,11 +343,7 @@ def chart(app: App) -> Chart:
 
 
 def aiquota(
-    flux_chart: Chart,
-    directory: RenderedDirectory,
-    cli_proxy_api: Kustomization,
-    external_secrets_operator: Kustomization,
-    clickhouse_schema: Kustomization,
+    flux_chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -356,12 +352,10 @@ def aiquota(
         description="aiquota API with Claude and Codex quota through the CLIProxyAPI integration.",
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            # Provides the shared namespace and the CLIProxyAPI management Secret.
-            cli_proxy_api,
             # Materializes the narrow mirrored copies of the API bearer for its
             # consumers; the source Secret stays SOPS-managed here.
             external_secrets_operator,
-            # Creates the aiquota database the migrate init container populates.
-            clickhouse_schema,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+            kyverno,
         ),
     )

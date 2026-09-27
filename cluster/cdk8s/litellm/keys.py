@@ -167,18 +167,8 @@ def keys_chart(app: App) -> Chart:
 # dependency) deadlocked the 2026-07-02 rollout — the app never applied the
 # DATABASE_URL deployment because its secrets layer waited on a TF apply that
 # needed the app. Dependency direction here is the fix.
-def litellm_keys_tf(
-    chart: Chart, directory: RenderedDirectory, litellm: Kustomization, tofu_controller: Kustomization
-) -> Kustomization:
+def litellm_keys_tf(chart: Chart, directory: RenderedDirectory, tofu_controller: Kustomization) -> Kustomization:
     name = "litellm-keys-tf"
     return flux_kustomization(
-        chart,
-        name,
-        directory,
-        timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(
-            # The app must serve (with its DB) before keys can mint.
-            litellm,
-            tofu_controller,
-        ),
+        chart, name, directory, timeout="10m", depends_on=flux_kustomization_depends_on_many(tofu_controller)
     )

@@ -9,10 +9,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 
 
 def dcgm_exporter(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    nvidia_device_plugin: Kustomization,
-    monitoring_crds: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
 ) -> Kustomization:
     name = "dcgm-exporter"
     return flux_kustomization(
@@ -21,10 +18,8 @@ def dcgm_exporter(
         artifact,
         timeout="2m",
         depends_on=flux_kustomization_depends_on_many(
-            # RuntimeClass "nvidia" + the containerd nvidia runtime.
-            nvidia_device_plugin,
             # PodMonitor CRD ships with kube-prometheus-stack in monitoring-stack.
             # PodMonitor
-            monitoring_crds,
+            monitoring_crds
         ),
     )

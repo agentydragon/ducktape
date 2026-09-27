@@ -389,7 +389,7 @@ def haku_workspaces(
         depends_on=flux_kustomization_depends_on_many(
             # shared CRDs + controller
             agent_sandbox_controller,
-            # the fence haku-sandbox is opted into
+            # destructive-if-out-of-order: the haku-sandbox egress fence must precede sandbox pods.
             haku_egress_proxy,
             # CleanupPolicy CRD and cleanup-controller permissions
             kyverno_policies,
