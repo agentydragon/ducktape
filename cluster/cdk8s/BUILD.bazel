@@ -1222,11 +1222,9 @@ py_library(
     deps = [
         ":artifact_generators",
         ":flux",
-        ":generation",
         ":helm",
         ":manifest_roots",
         "//cluster/cdk8s/providers/flux:helmrepository",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
