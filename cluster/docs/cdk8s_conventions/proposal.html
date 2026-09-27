@@ -11800,16 +11800,10 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             <p>§ The Flux graph. CHANGED:</p>
             <ul>
               <li>
-                A node for a generated directory is
-                <code>name(chart, directory: RenderedDirectory, *predecessors) -&gt; Kustomization</code>. A
-                hand-written directory passes its artifact; a GitRepository node passes a sourceRef and a path.
-              </li>
-              <li>
-                <code>flux_kustomization</code> derives sourceRef, path, decryption and Orphan from the directory.
-                Replace &#39;a second fact that needs to cross is a second parameter&#39;
-                (<code>AGENTS.md:110-111</code>) with &#39;the rendered directory is the one value that crosses; a fact
-                it does not carry is a keyword&#39;, and delete the SOPS-decryption-constant sentence
-                (<code>AGENTS.md:122-123</code>).
+                <code>flux_kustomization</code> derives Orphan from the directory too (decision 4). Replace &#39;a
+                second fact that needs to cross is a second parameter&#39; (<code>AGENTS.md:139-140</code>) with
+                &#39;the rendered directory is the one value that crosses; a fact it does not carry is a keyword&#39;,
+                and delete the SOPS-decryption-constant sentence (<code>AGENTS.md:151-152</code>).
               </li>
               <li>
                 ADDED: a predecessor is an admission prerequisite (the CRD&#39;s provider, a Fail-webhook operator, a
@@ -11819,13 +11813,12 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
                 and one node, and composites render in their owner&#39;s unit.
               </li>
               <li>
-                &#39;A Kustomization never builds the chart it describes&#39; becomes structural: only
-                <code>write_directory</code> writes.
+                &#39;A Kustomization never builds the chart it describes&#39; becomes structural once the last
+                <code>write_manifests</code> goes: only <code>write_directory</code> writes.
               </li>
               <li>
-                The worked edge (<code>AGENTS.md:137-173</code>) keeps its shape, and its
-                <code># The ServiceMonitor CRD.</code> comment becomes optional, since the check computes an admission
-                edge&#39;s reason.
+                The worked edge keeps its shape, and its <code># The ServiceMonitor CRD.</code> comment becomes
+                optional, since the check computes an admission edge&#39;s reason.
               </li>
             </ul>
           </div>
@@ -11869,10 +11862,8 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
         <li>
           <div class="rich">
             <p>
-              § Typed constructs over raw dicts: provider kind classes take <code>metadata: ApiObjectMetadata</code> and
-              import nothing from the <code>cluster/cdk8s</code> root. Variant factories are <code>@staticmethod</code>s
-              that return the generated struct, with no <code>.to_spec()</code>. The JsonPatch paragraph is limited as
-              the new Boundaries bullet says.
+              § Typed constructs over raw dicts: provider kind classes import nothing from the
+              <code>cluster/cdk8s</code> root, and the JsonPatch paragraph is limited as the new Boundaries bullet says.
             </p>
           </div>
         </li>
@@ -11934,12 +11925,8 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
               <code>cluster/cdk8s/PLAN.md</code> § F: keep &#39;no universal application base class or parallel
               deployment specification&#39;. Make the rest exact: &#39;a function for ducktape policy over one kind; a
               Construct subclass whenever a repeated shape builds two or more objects, exposing them and their
-              references as attributes; the generated binding directly for a one-off&#39;. Replace &#39;keep the current
-              small <code>write_charts</code> helper unless a concrete composition/validation requirement justifies a
-              different writer&#39; (<code>PLAN.md:154-156</code>) with <code>write_directory</code> and its two
-              requirements: rules on every chart, and the rendered identities the node derives from. § D&#39;s &#39;do
-              not infer a Flux readiness dependency&#39; (<code>PLAN.md:104-107</code>) points at the admission-only
-              rule and its check.
+              references as attributes; the generated binding directly for a one-off&#39;. § D&#39;s &#39;do not infer a
+              Flux readiness dependency&#39; points at the admission-only rule and its check.
             </p>
           </div>
         </li>
@@ -11948,10 +11935,9 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             <p><code>cluster/skills/cdk8s_builders/SKILL.md</code>:</p>
             <ul>
               <li>
-                &#39;Group variant constructors under one type&#39; now returns the generated struct: no wrapper, no
-                <code>to_spec</code>.
+                Drop § &#39;Only when the API is genuinely incremental&#39;: the build-complete rule at the top of the
+                skill covers it.
               </li>
-              <li>Replace § &#39;Only when the API is genuinely incremental&#39; with the build-complete rule.</li>
               <li>
                 The &#39;Construct holding <code>self._resource</code>&#39; paragraph becomes: single-object kinds
                 subclass the binding, and multi-object units are composites outside <code>providers/</code>.
