@@ -6,7 +6,6 @@ egress fence forcing their external traffic through haku-egress-proxy. See READM
 from __future__ import annotations
 
 import shlex
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, k8s
@@ -53,11 +52,9 @@ from keda_triggerauthentication_crds.sh.keda import (
     TriggerAuthenticationSpec,
     TriggerAuthenticationSpecSecretTargetRef,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.haku_ci import runner_config
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -639,15 +636,11 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def haku_ci(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, keda_kustomization: Kustomization) -> Kustomization:
+def haku_ci(chart: Chart, directory: RenderedDirectory, keda_kustomization: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         timeout="5m",
         # The runner pod stays pending until its registration-token Secret is provisioned by
         # tf/gitops/haku-state -- don't block on health.

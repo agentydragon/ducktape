@@ -1652,10 +1652,6 @@ metadata:
   name: infra-drift
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
@@ -2067,10 +2063,6 @@ metadata:
   name: loki
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: grafana-helmrepository
       namespace: ducktape-flux
@@ -2107,10 +2099,6 @@ metadata:
   name: mimir
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -2152,10 +2140,6 @@ metadata:
   name: tempo
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -2543,10 +2527,6 @@ metadata:
   name: flux-webhook
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: ntfy
       namespace: ducktape-flux
