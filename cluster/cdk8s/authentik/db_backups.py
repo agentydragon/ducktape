@@ -3,8 +3,6 @@ barman-cloud `ObjectStore` pointing at it, and the daily `ScheduledBackup`."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from barman_cloud_objectstore_crds.io.cnpg.barmancloud import (
     ObjectStore,
     ObjectStoreSpec,
@@ -26,10 +24,8 @@ from cnpg_scheduledbackup_crds.io.cnpg.postgresql import (
     ScheduledBackupSpecMethod,
     ScheduledBackupSpecPluginConfiguration,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.seaweedfs import s3
 
@@ -115,17 +111,13 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
 def authentik_db_backups(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cnpg: Kustomization, seaweedfs_operator: Kustomization
+    chart: Chart, directory: RenderedDirectory, cnpg: Kustomization, seaweedfs_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         timeout="15m",
         depends_on=flux_kustomization_depends_on_many(cnpg, seaweedfs_operator),
         description="Creates the Authentik CNPG backup schedule and its SeaweedFS storage.",

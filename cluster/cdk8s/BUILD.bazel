@@ -358,12 +358,10 @@ py_library(
     deps = [
         ":artifact_generators",
         ":flux",
-        ":generation",
         ":manifest_roots",
         ":terraform",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -675,11 +673,9 @@ py_library(
     deps = [
         ":artifact_generators",
         ":flux",
-        ":generation",
         ":manifest_roots",
         ":terraform",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/providers/tofu_controller:terraform",
         "@pypi//cdk8s",
     ],
@@ -691,10 +687,8 @@ py_library(
     deps = [
         ":artifact_generators",
         ":flux",
-        ":generation",
         ":manifest_roots",
         ":terraform",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
