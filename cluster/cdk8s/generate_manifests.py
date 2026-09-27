@@ -386,7 +386,6 @@ def generate_manifests(root: Path) -> None:
     cert_manager_trust.write_manifests(root)
     cert_manager_environment.write_manifests(root)
     external_secrets_config.write_manifests(root)
-    external_secrets_operator.write_manifests(root)
     ducktape_flux.write_manifests(root)
     flux_webhook_chart.write_manifests(root)
     flux_image_automation_ghcr.write_manifests(root)
@@ -403,7 +402,6 @@ def generate_manifests(root: Path) -> None:
     proxmox_proxy.write_manifests(root, mesh)
     volsync.write_manifests(root)
     reloader.write_manifests(root)
-    vpa.write_manifests(root)
     kube_api_proxy.write_manifests(root)
     vector_talos_logs.write_manifests(root)
     dcgm_exporter_exporter.write_manifests(root)
@@ -587,7 +585,9 @@ def generate_manifests(root: Path) -> None:
     )
     clickhouse_artifact = artifact("clickhouse", clickhouse_installation.OUTPUT_DIR)
     vpa_artifact = artifact("vpa", vpa.OUTPUT_DIR)
-    vpa_kustomization = vpa.vpa(flux_chart, vpa_artifact, kyverno_kustomization, metrics_server_kustomization)
+    vpa_kustomization = vpa.vpa(
+        flux_chart, write_directory(root, vpa_artifact, vpa.chart), kyverno_kustomization, metrics_server_kustomization
+    )
     clickhouse_kustomization = clickhouse_installation.clickhouse(
         flux_chart, clickhouse_artifact, clickhouse_operator_kustomization
     )
@@ -605,7 +605,10 @@ def generate_manifests(root: Path) -> None:
     )
     external_secrets_operator_artifact = artifact("external-secrets-operator", external_secrets_operator.OUTPUT_DIR)
     external_secrets_operator_kustomization = external_secrets_operator.external_secrets_operator(
-        flux_chart, external_secrets_operator_artifact, external_secrets_crds_kustomization, cert_manager_kustomization
+        flux_chart,
+        write_directory(root, external_secrets_operator_artifact, external_secrets_operator.chart),
+        external_secrets_crds_kustomization,
+        cert_manager_kustomization,
     )
     external_secrets_config_artifact = artifact("external-secrets-config", external_secrets_config.OUTPUT_DIR)
     external_secrets_config.external_secrets_config(
