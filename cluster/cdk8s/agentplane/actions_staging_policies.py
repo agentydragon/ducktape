@@ -400,8 +400,8 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "ESO copy of the view-only Coinbase CDP key from external-creds, read by claude-ai's sandboxes."
             },
         ),
-        refresh="1h",
-        store=external_creds.STORE,
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data(_COINBASE_SECRET, key) for key in ("api_key", "api_secret")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,

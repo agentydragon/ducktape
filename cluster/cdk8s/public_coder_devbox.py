@@ -129,8 +129,8 @@ def _buildbuddy_api_key(scope: Construct) -> None:
         scope,
         "buildbuddy-api-key",
         metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-        refresh="1h",
-        store=external_creds.STORE,
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data(name, "api-key")],
         # Reuse the existing Reflector mirror during the staged ownership handoff.
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,

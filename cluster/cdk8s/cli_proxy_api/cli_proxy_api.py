@@ -124,8 +124,8 @@ def _config(scope: Construct) -> None:
                 )
             },
         ),
-        refresh="1h",
-        store=SecretStoreRef.cluster("kubernetes-cli-proxy-api-secret-store"),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster("kubernetes-cli-proxy-api-secret-store"),
         data=[remote_data("cli-proxy-api-client-key", "client-key", secret_key="client_key")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         template=ExternalSecretSpecTargetTemplate(

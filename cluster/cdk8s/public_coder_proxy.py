@@ -85,8 +85,8 @@ def _external_secrets(scope: Construct) -> None:
         scope,
         "brave-search-api-key",
         metadata=ApiObjectMetadata(name=brave, namespace=NAMESPACE),
-        refresh="1m",
-        store=external_creds.STORE,
+        refresh_interval="1m",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data(brave, "api-key")],
         # The existing target is Reflector-created. Orphan lets ESO sync it without
         # requiring an owner reference it does not currently have; the short interval

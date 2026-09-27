@@ -370,8 +370,8 @@ def chart(app: App) -> Chart:
             namespace=_NAMESPACE,
             annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
         ),
-        refresh="1h",
-        store=external_creds.STORE,
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data(_TANA_MCP_BEARER_SECRET, "token")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
@@ -402,8 +402,8 @@ def chart(app: App) -> Chart:
         chart,
         "github-mcp-client-external-secret",
         metadata=ApiObjectMetadata(name=_GITHUB_MCP_CLIENT_SECRET, namespace=_NAMESPACE),
-        refresh="1h",
-        store=SecretStoreRef.cluster(
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster(
             single_secret_store(
                 chart,
                 "agentplane-staging-github-mcp-client",

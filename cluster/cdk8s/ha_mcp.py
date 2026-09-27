@@ -97,8 +97,8 @@ def _home_assistant_token(scope: Construct) -> None:
         scope,
         "home-assistant-token",
         metadata=ApiObjectMetadata(name=_HOME_ASSISTANT_TOKEN_SECRET_NAME, namespace=_NAMESPACE),
-        refresh="1h",
-        store=SecretStoreRef.cluster(
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster(
             single_secret_store(
                 scope,
                 "ha-mcp-home-assistant-token",

@@ -100,8 +100,8 @@ def _repository(scope: Construct) -> None:
         scope,
         "repository",
         metadata=ApiObjectMetadata(name=_REPOSITORY_SECRET, namespace=_NAMESPACE),
-        refresh="1h",
-        store=SecretStoreRef.namespaced(_SECRET_STORE),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.namespaced(_SECRET_STORE),
         data=[
             remote_data(secret, key)
             for key, secret in (
