@@ -31,11 +31,7 @@ def gaffer_private_source(chart: Chart, flux_image_automation_ghcr: Kustomizatio
 
 
 def gaffer_private_bridge(
-    chart: Chart,
-    gaffer_private_source: Kustomization,
-    authentik: Kustomization,
-    gateway: Kustomization,
-    cert_manager_issuer_config: Kustomization,
+    chart: Chart, gaffer_private_source: Kustomization, authentik: Kustomization, gateway: Kustomization
 ) -> Kustomization:
     """The cross-repo bridge: reconciles ``gaffer-private/k8s/`` from the private companion
     monorepo's ``gaffer-private`` GitRepository (built by ``gaffer_private_source``), the
@@ -53,9 +49,7 @@ def gaffer_private_bridge(
         path="./k8s",
         timeout="5m",
         wait=None,
-        depends_on=flux_kustomization_depends_on_many(
-            gaffer_private_source, authentik, gateway, cert_manager_issuer_config
-        ),
+        depends_on=flux_kustomization_depends_on_many(gaffer_private_source, authentik, gateway),
         description=(
             "Cross-repo bridge. Reconciles gaffer-private/k8s/ from the gaffer-private "
             "GitRepository -- entry point for every private app's flux-kustomization.yaml."

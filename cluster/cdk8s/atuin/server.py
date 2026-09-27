@@ -11,12 +11,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cnpg
-from cluster.cdk8s.flux import (
-    CERT_MANAGER_ISSUER_SUBSTITUTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-)
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -148,18 +143,12 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
 
 
-def atuin(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    cert_manager_issuer_config: Kustomization,
-    cnpg: Kustomization,
-) -> Kustomization:
+def atuin(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cnpg: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         artifact,
         timeout="5m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        post_build=CERT_MANAGER_ISSUER_SUBSTITUTION,
-        depends_on=flux_kustomization_depends_on_many(cert_manager_issuer_config, cnpg),
+        depends_on=flux_kustomization_depends_on_many(cnpg),
     )

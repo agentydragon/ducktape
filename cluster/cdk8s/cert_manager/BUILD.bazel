@@ -81,21 +81,6 @@ py_library(
 )
 
 py_library(
-    name = "issuer_config",
-    srcs = ["issuer_config.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = [
-        ":config",
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
-        "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-    ],
-)
-
-py_library(
     name = "trust",
     srcs = ["trust.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
