@@ -124,6 +124,7 @@ data:
           - basic
           - github-agentydragon-agent
           - github-clone
+          - github-actions-logs
         action_policy_sets:
           - public-github-reads
           - public-ducktape-reads

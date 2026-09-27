@@ -104,6 +104,7 @@ data:
           - basic
           - github-agentydragon-agent
           - github-clone
+          - github-actions-logs
         thread_preset: public-coder-codex
         bootstrap: |
           marker=/state/workspaces/.agentplane-public-coder-ready
