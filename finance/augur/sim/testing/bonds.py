@@ -50,7 +50,7 @@ CPI_DOUBLING = [100.0] * 6 + [200.0] * (HORIZON + 1 - 6)
 CPI_FLAT = [100.0] * (HORIZON + 1)
 CPI_DEFLATING = [100.0] * 6 + [80.0] * (HORIZON + 1 - 6)
 
-TREASURY, MUNI, CORPORATE = Treasury(), Municipal(state=JurisdictionId("california")), Taxable()
+TREASURY, MUNI, TAXABLE = Treasury(), Municipal(state=JurisdictionId("california")), Taxable()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -78,7 +78,7 @@ def dated(
     period: int,
     purchase: int = 0,
     maturity: int,
-    character: InterestCharacter = CORPORATE,
+    character: InterestCharacter = TAXABLE,
     indexed: bool = False,
 ) -> DatedBond:
     """A bond bought at par; a nominal coupon is the annual rate's share of the face, rounded once."""

@@ -15,9 +15,9 @@ from finance.augur.sim.observations import Decision, FixedCoupon, IndexedCoupon
 from finance.augur.sim.results import BondSeries, Finished, Paid, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.bonds import (
-    CORPORATE,
     MUNI,
     QUANTUM,
+    TAXABLE,
     TREASURY,
     Situation,
     bond_case,
@@ -184,7 +184,7 @@ def pay_claims(batch: list[Decision]) -> list[DecisionActions]:
 
 
 @pytest.mark.parametrize(
-    ("character", "federal", "state"), [(TREASURY, True, False), (MUNI, False, False), (CORPORATE, True, True)]
+    ("character", "federal", "state"), [(TREASURY, True, False), (MUNI, False, False), (TAXABLE, True, True)]
 )
 def test_interest_exemptions_survive_actor_capture(character: InterestCharacter, federal: bool, state: bool) -> None:
     [result] = execute(bond_case(character=character), pay_claims)

@@ -43,7 +43,7 @@ TREASURY: Mapping[TransferIncomeCategory, int] = {InterestIncome(character=Treas
 CALIFORNIA_MUNI: Mapping[TransferIncomeCategory, int] = {
     InterestIncome(character=Municipal(state=JurisdictionId("california"))): MONEY_FACTOR_SCALE
 }
-CORPORATE: Mapping[TransferIncomeCategory, int] = {InterestIncome(character=Taxable()): MONEY_FACTOR_SCALE}
+TAXABLE: Mapping[TransferIncomeCategory, int] = {InterestIncome(character=Taxable()): MONEY_FACTOR_SCALE}
 # An aggregate fund: part Treasury, part corporate. The case a single tag cannot express.
 AGGREGATE: Mapping[TransferIncomeCategory, int] = {
     InterestIncome(character=Treasury()): 400_000_000,

@@ -35,7 +35,6 @@ from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.security_distributions import (
     AGGREGATE,
     CALIFORNIA_MUNI,
-    CORPORATE,
     CORPORATE_SHARE,
     FUND,
     HORIZON,
@@ -47,6 +46,7 @@ from finance.augur.sim.testing.security_distributions import (
     QUALIFIED_DIVIDENDS,
     SUB_QUANTUM_PER_UNIT,
     SYMBOL,
+    TAXABLE,
     TREASURY,
     TREASURY_SHARE,
     UNITS,
@@ -298,15 +298,15 @@ def test_an_in_state_muni_funds_distribution_is_exempt_everywhere() -> None:
 def test_a_mixed_fund_is_exempt_only_on_its_treasury_slice() -> None:
     """The reason the tax character is a vector. California taxes the corporate 60% and
     not the Treasury 40%, so a mixed fund owes strictly between the all-Treasury and
-    all-corporate cases — a number neither single tag can produce."""
+    all-taxable cases — a number neither single tag can produce."""
 
     mixed = _tax_by_jurisdiction(_run(compose(tax_character=AGGREGATE)))
     treasury = _tax_by_jurisdiction(_run(compose(tax_character=TREASURY)))
-    corporate = _tax_by_jurisdiction(_run(compose(tax_character=CORPORATE)))
+    taxable = _tax_by_jurisdiction(_run(compose(tax_character=TAXABLE)))
 
-    assert treasury["california"] < mixed["california"] < corporate["california"]
+    assert treasury["california"] < mixed["california"] < taxable["california"]
     # Federal taxes both slices, so the split changes nothing there.
-    assert mixed["federal_us"] == treasury["federal_us"] == corporate["federal_us"]
+    assert mixed["federal_us"] == treasury["federal_us"] == taxable["federal_us"]
 
 
 def test_the_payout_accrues_as_interest_per_character_and_not_as_one_lump() -> None:
@@ -340,7 +340,7 @@ def test_qualified_dividends_take_federal_preferential_rates_and_california_ordi
         "federal_us": 0,
         "california": 26_862,
     }
-    assert _tax_by_jurisdiction(_run(compose(tax_character=CORPORATE)))["federal_us"] == 94_000
+    assert _tax_by_jurisdiction(_run(compose(tax_character=TAXABLE)))["federal_us"] == 94_000
 
 
 def test_qualified_dividends_are_their_own_row_in_the_holders_tax_records() -> None:

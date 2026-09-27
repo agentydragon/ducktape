@@ -17,13 +17,13 @@ from finance.augur.sim.income import Municipal
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.bonds import (
-    CORPORATE,
     CPI_DEFLATING,
     CPI_DOUBLING,
     CPI_FLAT,
     FACE,
     MUNI,
     NOMINAL_COUPON,
+    TAXABLE,
     TREASURY,
     Situation,
     bond_case,
@@ -126,7 +126,7 @@ def test_another_states_muni_coupon_is_federally_exempt_and_california_taxed() -
 
 
 def test_a_corporate_coupon_is_taxed_by_both() -> None:
-    tax = _tax_by_jurisdiction(execute(bond_case(character=CORPORATE)))
+    tax = _tax_by_jurisdiction(execute(bond_case(character=TAXABLE)))
 
     assert tax["federal_us"] > 0
     assert tax["california"] > 0
