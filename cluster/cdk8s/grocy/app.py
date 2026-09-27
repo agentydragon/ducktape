@@ -38,8 +38,10 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.volsync.replication_destination import ReplicationDestination
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 
@@ -254,18 +256,7 @@ def _source_mover_zone_affinity() -> ReplicationSourceSpecRsyncTlsMoverAffinity:
 def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
     namespace = f"grocy-{household}"
     chart = Chart(app, namespace, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
-        chart,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=namespace,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
-    )
+    namespaces.namespace(chart, "namespace", name=namespace, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
     k8s.KubePersistentVolumeClaim(
         chart,
         "config-claim",

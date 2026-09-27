@@ -18,10 +18,12 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ollama"
 _NAME = "ollama"
@@ -39,22 +41,18 @@ _PAUSED_FOR_HOST_EXPERIMENTS = True
 
 
 def _namespace(scope: Construct) -> None:
-    k8s.KubeNamespace(
+    namespaces.namespace(
         scope,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                # `auto` mode rewrites pod limits at admission time using the VPA's
-                # idle-history recommendations. For a bursty LLM workload that sits at
-                # ~50 MiB until a model loads (then needs tens of GiB) this caused the
-                # ollama pod to ship with a 1 GiB memory limit and OOM on every model
-                # load. Stay opted-in for recommendation reports, but don't let
-                # goldilocks mutate pods.
-                "goldilocks.fairwinds.com/vpa-update-mode": "off",
-            },
-        ),
+        name=_NAMESPACE,
+        # `auto` mode rewrites pod limits at admission time using the VPA's
+        # idle-history recommendations. For a bursty LLM workload that sits at
+        # ~50 MiB until a model loads (then needs tens of GiB) this caused the
+        # ollama pod to ship with a 1 GiB memory limit and OOM on every model
+        # load. Stay opted-in for recommendation reports, but don't let
+        # goldilocks mutate pods.
+        vpa=Vpa.RECOMMEND,
+        agent_readable=None,
     )
 
 
