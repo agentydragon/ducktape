@@ -954,7 +954,7 @@ def generate_manifests(root: Path) -> None:
         claude_rbac_kustomization,
     )
     forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
-    forgejo_images_kustomization = forgejo_images.forgejo_images(
+    forgejo_images.forgejo_images(
         flux_chart,
         forgejo_images_artifact,
         external_secrets_config_kustomization,
@@ -994,11 +994,7 @@ def generate_manifests(root: Path) -> None:
     )
     activitywatch_artifact = artifact("activitywatch", activitywatch_app.OUTPUT_DIR)
     activitywatch_flux_kustomizations.activitywatch(
-        flux_chart,
-        activitywatch_artifact,
-        external_secrets_config_kustomization,
-        forgejo_images_kustomization,
-        local_path_provisioner_kustomization,
+        flux_chart, activitywatch_artifact, external_secrets_config_kustomization, local_path_provisioner_kustomization
     )
     agentplane_index_artifact = artifact("agentplane-index", agentplane_index_workers.OUTPUT_DIR)
     agentplane_index_kustomization = agentplane_index_flux_kustomizations.agentplane_index(
@@ -1006,7 +1002,6 @@ def generate_manifests(root: Path) -> None:
         agentplane_index_artifact,
         cnpg_kustomization,
         external_secrets_config_kustomization,
-        forgejo_images_kustomization,
         local_path_provisioner_kustomization,
         ollama_kustomization,
     )
@@ -1022,7 +1017,6 @@ def generate_manifests(root: Path) -> None:
     agents_flux_kustomizations.plaid_mcp(
         flux_chart,
         plaid_mcp_artifact,
-        forgejo_images_kustomization,
         cnpg_kustomization,
         local_path_provisioner_kustomization,
         external_secrets_config_kustomization,
@@ -1047,24 +1041,16 @@ def generate_manifests(root: Path) -> None:
         external_secrets_config_kustomization,
         cert_manager_environment_kustomization,
         sso_providers_tf_kustomization,
-        forgejo_images_kustomization,
     )
     cpap_sync_artifact = artifact("cpap-sync", cpap_sync_app.OUTPUT_DIR)
     cpap_sync_kustomization = cpap_sync_app.cpap_sync(
-        flux_chart,
-        cpap_sync_artifact,
-        external_secrets_config_kustomization,
-        kubevirt_kustomization,
-        forgejo_images_kustomization,
+        flux_chart, cpap_sync_artifact, external_secrets_config_kustomization, kubevirt_kustomization
     )
     flux_image_automation_forgejo_artifact = artifact(
         "flux-image-automation-forgejo", forgejo_image_automation.OUTPUT_DIR
     )
     forgejo_image_automation.flux_image_automation_forgejo(
-        flux_chart,
-        flux_image_automation_forgejo_artifact,
-        forgejo_images_kustomization,
-        flux_image_automation_ghcr_kustomization,
+        flux_chart, flux_image_automation_forgejo_artifact, flux_image_automation_ghcr_kustomization
     )
     github_api_proxy_artifact = artifact("github-api-proxy", f"{HAND_WRITTEN_ROOT}/github-api-proxy")
     github_api_proxy_flux_kustomizations.github_api_proxy(
@@ -1078,7 +1064,6 @@ def generate_manifests(root: Path) -> None:
     github_exporter_flux_kustomizations.github_exporter(
         flux_chart,
         github_exporter_artifact,
-        forgejo_images_kustomization,
         monitoring_namespace_kustomization,
         monitoring_crds_kustomization,
         grafana_instance_kustomization,
@@ -1091,14 +1076,12 @@ def generate_manifests(root: Path) -> None:
         github_secrets_sync_artifact,
         tofu_controller_kustomization,
         github_secrets_sync_secrets_kustomization,
-        forgejo_images_kustomization,
         seaweedfs_pr_visuals_bucket_kustomization,
     )
     grocy_sf_artifact = artifact("grocy-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/app")
     grocy_sf_kustomization = grocy_flux_kustomizations.grocy_sf(
         flux_chart,
         grocy_sf_artifact,
-        forgejo_images_kustomization,
         cert_manager_environment_kustomization,
         authentik_kustomization,
         volsync_kustomization,
@@ -1107,7 +1090,6 @@ def generate_manifests(root: Path) -> None:
     grocy_vallejo_kustomization = grocy_flux_kustomizations.grocy_vallejo(
         flux_chart,
         grocy_vallejo_artifact,
-        forgejo_images_kustomization,
         cert_manager_environment_kustomization,
         authentik_kustomization,
         volsync_kustomization,
@@ -1125,20 +1107,15 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         home_assistant_artifact,
         local_path_provisioner_kustomization,
-        seaweedfs_operator_kustomization,
         volsync_kustomization,
         external_secrets_config_kustomization,
-        forgejo_images_kustomization,
+        seaweedfs_operator_kustomization,
         monitoring_crds_kustomization,
         sso_providers_tf_kustomization,
     )
     matrix_user_provisioner_artifact = artifact("matrix-user-provisioner", matrix_user_provisioner.OUTPUT_DIR)
     matrix_user_provisioner.matrix_user_provisioner(
-        flux_chart,
-        matrix_user_provisioner_artifact,
-        external_secrets_config_kustomization,
-        forgejo_images_kustomization,
-        matrix_kustomization,
+        flux_chart, matrix_user_provisioner_artifact, external_secrets_config_kustomization, matrix_kustomization
     )
     nix_cache_artifact = artifact("nix-cache", nix_cache_attic.OUTPUT_DIR)
     nix_cache_flux_kustomizations.nix_cache(
@@ -1147,26 +1124,19 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_creds_kustomization,
         external_secrets_config_kustomization,
-        forgejo_images_kustomization,
-        cert_manager_kustomization,
         seaweedfs_operator_kustomization,
+        cert_manager_kustomization,
     )
     sdr_artifact = artifact("sdr", f"{HAND_WRITTEN_ROOT}/parked/sdr")
     parked_flux_kustomizations.sdr(
-        flux_chart,
-        sdr_artifact,
-        external_secrets_config_kustomization,
-        forgejo_images_kustomization,
-        authentik_kustomization,
+        flux_chart, sdr_artifact, external_secrets_config_kustomization, authentik_kustomization
     )
     ssh_mcp_artifact = artifact("ssh-mcp", ssh_mcp_generation.OUTPUT_DIR)
     ssh_mcp_generation.ssh_mcp(
         flux_chart, ssh_mcp_artifact, root, mesh, devbox_service, external_secrets_operator_kustomization
     )
     google_mcp_artifact = artifact("google-mcp", google_mcp.OUTPUT_DIR)
-    google_mcp.google_mcp(
-        flux_chart, google_mcp_artifact, root, external_secrets_operator_kustomization, forgejo_images_kustomization
-    )
+    google_mcp.google_mcp(flux_chart, google_mcp_artifact, root, external_secrets_operator_kustomization)
     study_casino_artifact = artifact("study-casino", study_casino_app.OUTPUT_DIR)
     study_casino_flux_kustomizations.study_casino(
         flux_chart, study_casino_artifact, cnpg_kustomization, external_secrets_operator_kustomization
@@ -1203,7 +1173,6 @@ def generate_manifests(root: Path) -> None:
         aiquota_artifact,
         root,
         external_secrets_config_kustomization,
-        forgejo_images_kustomization,
         cli_proxy_api_kustomization,
         external_secrets_operator_kustomization,
         clickhouse_schema_kustomization,
@@ -1219,7 +1188,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         grocy_mcp_sf_artifact,
         external_secrets_config_kustomization,
-        forgejo_images_kustomization,
         grocy_sf_kustomization,
         valkey_kustomization,
         agent_machine_access_tf_kustomization,
@@ -1229,9 +1197,7 @@ def generate_manifests(root: Path) -> None:
     grocy_sf_user_perms_artifact = artifact(
         "grocy-sf-user-perms", f"{HAND_WRITTEN_ROOT}/grocy/sf/user-perms", grocy_user_perms.BASE_DIR
     )
-    grocy_flux_kustomizations.grocy_sf_user_perms(
-        flux_chart, grocy_sf_user_perms_artifact, forgejo_images_kustomization, grocy_sf_kustomization
-    )
+    grocy_flux_kustomizations.grocy_sf_user_perms(flux_chart, grocy_sf_user_perms_artifact, grocy_sf_kustomization)
     grocy_mcp_vallejo_artifact = artifact(
         "grocy-mcp-vallejo", f"{HAND_WRITTEN_ROOT}/grocy/vallejo/mcp", grocy_mcp.BASE_DIR
     )
@@ -1239,7 +1205,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         grocy_mcp_vallejo_artifact,
         external_secrets_config_kustomization,
-        forgejo_images_kustomization,
         grocy_vallejo_kustomization,
         valkey_kustomization,
         agent_machine_access_tf_kustomization,
@@ -1250,7 +1215,7 @@ def generate_manifests(root: Path) -> None:
         "grocy-vallejo-user-perms", f"{HAND_WRITTEN_ROOT}/grocy/vallejo/user-perms", grocy_user_perms.BASE_DIR
     )
     grocy_flux_kustomizations.grocy_vallejo_user_perms(
-        flux_chart, grocy_vallejo_user_perms_artifact, forgejo_images_kustomization, grocy_vallejo_kustomization
+        flux_chart, grocy_vallejo_user_perms_artifact, grocy_vallejo_kustomization
     )
     ha_mcp_artifact = artifact("ha-mcp", ha_mcp.OUTPUT_DIR)
     ha_mcp.ha_mcp(
@@ -1258,7 +1223,6 @@ def generate_manifests(root: Path) -> None:
         ha_mcp_artifact,
         root,
         external_secrets_config_kustomization,
-        forgejo_images_kustomization,
         home_assistant_kustomization,
         monitoring_crds_kustomization,
     )
@@ -1266,7 +1230,6 @@ def generate_manifests(root: Path) -> None:
     agents_flux_kustomizations.forgejo_token_rotation(
         flux_chart,
         forgejo_token_rotation_artifact,
-        forgejo_images_kustomization,
         authentik_jwt_rotation_kustomization,
         forgejo_claude_kustomization,
         haku_state_kustomization,
@@ -1311,7 +1274,6 @@ def generate_manifests(root: Path) -> None:
     parked_flux_kustomizations.haku_managed_agent(
         flux_chart,
         haku_managed_agent_artifact,
-        forgejo_images_kustomization,
         external_creds_kustomization,
         external_secrets_config_kustomization,
         haku_namespace_kustomization,
@@ -1355,7 +1317,6 @@ def generate_manifests(root: Path) -> None:
         haku_console_artifact,
         cnpg_kustomization,
         local_path_provisioner_kustomization,
-        forgejo_images_kustomization,
         agent_machine_access_tf_kustomization,
         reflector_kustomization,
         external_creds_kustomization,
@@ -1381,7 +1342,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         public_coder_agent_devbox_artifact,
         kubevirt_kustomization,
-        forgejo_images_kustomization,
         external_creds_kustomization,
         external_secrets_config_kustomization,
         agent_shared_secrets_kustomization,

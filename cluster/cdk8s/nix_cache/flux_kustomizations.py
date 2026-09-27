@@ -14,9 +14,8 @@ def nix_cache(
     cnpg: Kustomization,
     external_creds: Kustomization,
     external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
-    cert_manager: Kustomization,
     seaweedfs_operator: Kustomization,
+    cert_manager: Kustomization,
 ) -> Kustomization:
     name = "nix-cache"
     return flux_kustomization(
@@ -26,6 +25,6 @@ def nix_cache(
         timeout="5m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            cnpg, external_creds, external_secrets_config, forgejo_images, cert_manager, seaweedfs_operator
+            cnpg, external_creds, external_secrets_config, seaweedfs_operator, cert_manager
         ),
     )

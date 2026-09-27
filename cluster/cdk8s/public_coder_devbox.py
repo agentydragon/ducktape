@@ -293,7 +293,6 @@ def public_coder_agent_devbox(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     kubevirt: Kustomization,
-    forgejo_images: Kustomization,
     external_creds: Kustomization,
     external_secrets_config: Kustomization,
     agent_shared_secrets: Kustomization,
@@ -308,7 +307,6 @@ def public_coder_agent_devbox(
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
             kubevirt,
-            forgejo_images,
             external_creds,
             external_secrets_config,
             agent_shared_secrets,

@@ -11,7 +11,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 def github_exporter(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    forgejo_images: Kustomization,
     monitoring_namespace: Kustomization,
     monitoring_crds: Kustomization,
     grafana_instance: Kustomization,
@@ -25,7 +24,6 @@ def github_exporter(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            forgejo_images,
             monitoring_namespace,
             # ServiceMonitor
             monitoring_crds,

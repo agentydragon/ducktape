@@ -113,7 +113,6 @@ def haku_console(
     artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
     local_path_provisioner: Kustomization,
-    forgejo_images: Kustomization,
     agent_machine_access_tf: Kustomization,
     reflector: Kustomization,
     external_creds: Kustomization,
@@ -144,7 +143,6 @@ def haku_console(
             # The Cluster operator and the storage class its PVCs bind.
             cnpg,
             local_path_provisioner,
-            forgejo_images,
             # TF creates the Authentik clients and haku-console-oidc Secret;
             # the console does OIDC discovery synchronously at startup.
             agent_machine_access_tf,

@@ -12,10 +12,9 @@ def home_assistant(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     local_path_provisioner: Kustomization,
-    seaweedfs_operator: Kustomization,
     volsync: Kustomization,
     external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
+    seaweedfs_operator: Kustomization,
     monitoring_crds: Kustomization,
     sso_providers_tf: Kustomization,
 ) -> Kustomization:
@@ -28,10 +27,10 @@ def home_assistant(
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
             local_path_provisioner,
-            seaweedfs_operator,
             volsync,
             external_secrets_config,
-            forgejo_images,
+            # Bucket, S3Identity and S3Credentials CRDs
+            seaweedfs_operator,
             # ServiceMonitor + PrometheusRule
             monitoring_crds,
             sso_providers_tf,
