@@ -135,20 +135,6 @@ py_test(
 )
 
 py_library(
-    name = "scenario",
-    srcs = ["scenario.py"],
-    deps = [
-        ":ids",
-        ":income",
-        ":money",
-        ":tlh",
-        "//finance/augur/model:asset_key",
-        "//finance/augur/model:series",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "runtime",
     srcs = ["runtime.py"],
     deps = [
@@ -178,22 +164,6 @@ py_test(
 py_library(
     name = "enums",
     srcs = ["enums.py"],
-)
-
-py_test(
-    name = "scenario_test",
-    srcs = ["scenario_test.py"],
-    deps = [
-        ":ids",
-        ":income",
-        ":scenario",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
 )
 
 py_library(

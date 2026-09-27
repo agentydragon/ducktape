@@ -7,10 +7,10 @@ submit ordered actions for many paths at once.
 
 ## Preparation and dependencies
 
-The authored records in <scenario.py> describe holdings, contracts, cashflows and
-policies in exact decimals. The compiler's per-table pieces in <compiler/> lower them
-into the records defined in <prepared.py>; preparation does not fetch market evidence,
-fit a model or load tax law independently. Prepared records own exact monetary terms,
+Callers build the records defined in <prepared.py> directly, converting exact decimals
+through a `Currency` (<money.py>) and the helpers in <fixed_point.py>, which are exact or
+raise; preparation does not fetch market evidence, fit a model or load tax law
+independently. Prepared records own exact monetary terms,
 quantized market paths and variable-length resolved tax rules; a world declares them
 directly and keeps no authoring objects.
 
@@ -33,9 +33,7 @@ supplied paths (+ rules)
 
 Each declaration refuses what it cannot execute where it is declared: an unknown
 account, a missing or unusable series, a cashflow outside the horizon, a lifecycle
-event before its purchase. The compiler's per-table pieces (`compile_lots`,
-`compile_housing`, `compile_recurring_obligation`, …) lower authored records into
-the prepared records these declarations take.
+event before its purchase.
 
 The batch form drives one such world per selected path:
 
@@ -143,8 +141,8 @@ comparing stopped books with completed horizons.
 
 ## The app
 
-`ProductService` lowers each request once into a `Situation` of prepared declarations
-(<../product/scenarios.py>), samples the series it reads, and composes one world per
+`ProductService` prepares each request once into a `Situation` of prepared declarations
+(<../product/scenarios.py>, over the portfolio <../product/holdings.py> checked at startup), samples the series it reads, and composes one world per
 path with the app household (<../policy/cash_band_household.py>) tracked on it;
 <../product/simulation.py> steps each to the horizon. The household proposes its funding
 sales, pays every due claim in full in observed order — a claim the cash those sales
