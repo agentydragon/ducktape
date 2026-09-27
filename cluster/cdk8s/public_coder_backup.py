@@ -144,11 +144,7 @@ def _repository_store(scope: Construct) -> None:
             k8s.PolicyRule(
                 api_groups=[""],
                 resources=["secrets"],
-                resource_names=[
-                    "public-coder-agent-volsync-s3",
-                    _S3_CREDENTIALS_SECRET_NAME,
-                    _RESTIC_PASSWORD_SECRET_NAME,
-                ],
+                resource_names=[_S3_CREDENTIALS_SECRET_NAME, _RESTIC_PASSWORD_SECRET_NAME],
                 verbs=["get"],
             )
         ],
