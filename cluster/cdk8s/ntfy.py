@@ -314,8 +314,8 @@ def ntfy(
     root: Path,
     cnpg: Kustomization,
     external_secrets_config: Kustomization,
-    gateway: Kustomization,
     monitoring_crds: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     """Generate ntfy's namespace, CNPG cluster, auth ESO, and app resources.
 
@@ -336,7 +336,13 @@ def ntfy(
         description="Self-hosted ntfy for Android and cluster alert notifications.",
         timeout="10m",
         decryption=sops_decryption(resources),
-        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_config, gateway, monitoring_crds),
+        depends_on=flux_kustomization_depends_on_many(
+            cnpg,
+            external_secrets_config,
+            monitoring_crds,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+            kyverno,
+        ),
     )
     write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=resources))
     return kustomization

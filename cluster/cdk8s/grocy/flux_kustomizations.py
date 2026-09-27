@@ -12,7 +12,6 @@ def grocy_sf(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     forgejo_images: Kustomization,
-    gateway: Kustomization,
     cert_manager_environment: Kustomization,
     authentik: Kustomization,
     volsync: Kustomization,
@@ -23,9 +22,7 @@ def grocy_sf(
         name,
         artifact,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(
-            forgejo_images, gateway, cert_manager_environment, authentik, volsync
-        ),
+        depends_on=flux_kustomization_depends_on_many(forgejo_images, cert_manager_environment, authentik, volsync),
     )
 
 
@@ -34,7 +31,6 @@ def grocy_mcp_sf(
     artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_config: Kustomization,
     forgejo_images: Kustomization,
-    gateway: Kustomization,
     grocy_sf: Kustomization,
     valkey: Kustomization,
     agent_machine_access_tf: Kustomization,
@@ -50,7 +46,6 @@ def grocy_mcp_sf(
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_config,
             forgejo_images,
-            gateway,
             grocy_sf,
             valkey,
             agent_machine_access_tf,
@@ -82,7 +77,6 @@ def grocy_vallejo(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     forgejo_images: Kustomization,
-    gateway: Kustomization,
     cert_manager_environment: Kustomization,
     authentik: Kustomization,
     volsync: Kustomization,
@@ -93,9 +87,7 @@ def grocy_vallejo(
         name,
         artifact,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(
-            forgejo_images, gateway, cert_manager_environment, authentik, volsync
-        ),
+        depends_on=flux_kustomization_depends_on_many(forgejo_images, cert_manager_environment, authentik, volsync),
     )
 
 
@@ -104,7 +96,6 @@ def grocy_mcp_vallejo(
     artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_config: Kustomization,
     forgejo_images: Kustomization,
-    gateway: Kustomization,
     grocy_vallejo: Kustomization,
     valkey: Kustomization,
     agent_machine_access_tf: Kustomization,
@@ -120,7 +111,6 @@ def grocy_mcp_vallejo(
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_config,
             forgejo_images,
-            gateway,
             grocy_vallejo,
             valkey,
             agent_machine_access_tf,

@@ -217,7 +217,6 @@ def sdr(
     artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_config: Kustomization,
     forgejo_images: Kustomization,
-    gateway: Kustomization,
     authentik: Kustomization,
 ) -> Kustomization:
     name = "sdr"
@@ -229,5 +228,5 @@ def sdr(
         # Temporarily disabled until the radio is set up again after relocation.
         suspend=True,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_config, forgejo_images, gateway, authentik),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_config, forgejo_images, authentik),
     )
