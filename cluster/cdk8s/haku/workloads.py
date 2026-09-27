@@ -5,8 +5,6 @@ impersonates, and that identity's Role; and the Flux Kustomization for this dire
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
@@ -16,10 +14,8 @@ from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
     GitRepositorySpecSecretRef,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -146,15 +142,11 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def haku_workloads(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
+def haku_workloads(chart: Chart, directory: RenderedDirectory) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         timeout="5m",
         # Don't gate on the inner haku-state-workloads Kustomization's readiness — it's
         # NotReady until Haku first seeds k8s/, which would otherwise wedge this wrapper.

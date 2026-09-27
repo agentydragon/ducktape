@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
-
 import numpy as np
 import polars as pl
 import pytest
@@ -13,29 +11,30 @@ from finance.augur.model.exogenous import LevelFrames
 from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityDistributionKey
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series, level_series_demand
 from finance.augur.sim.ids import AccountId, AgentId, BondId
-from finance.augur.sim.scenario import BondHolding
+from finance.augur.sim.money import USD
+from finance.augur.sim.prepared import PreparedBond, PreparedFixedAmount, PreparedIndexedCoupon
 from finance.augur.sim.testing.security_distributions import FUND, HORIZON, PER_UNIT, PRICE, SYMBOL
 
 
-def demand(*, bonds: tuple[BondHolding, ...]) -> tuple[LevelSeriesKey, ...]:
+def demand(*, bonds: tuple[PreparedBond, ...]) -> tuple[LevelSeriesKey, ...]:
     return level_series_demand(
         lots=(), tlh_portfolios=(), bonds=bonds, distributions=(), amounts=(), tender_policies=(), purchases=()
     )
 
 
-def bond(*, indexed: bool) -> BondHolding:
-    """One dated bond, with nothing priced beside it."""
-    return BondHolding(
+def bond(*, indexed: bool) -> PreparedBond:
+    """One dated $100 4% semiannual bond, with nothing priced beside it."""
+    return PreparedBond(
         bond_id=BondId("test-bond"),
         agent_id=AgentId("test-investor"),
         account_id=AccountId("cash"),
-        face_value=Decimal(100),
-        purchase_price=Decimal(100),
-        annual_coupon_rate=0.04,
+        issuer_jurisdiction_id=None,
+        face_value=10_000,
+        purchase_price=10_000,
+        coupon=PreparedIndexedCoupon(annual_rate_ppb=40_000_000) if indexed else PreparedFixedAmount(amount=200),
         coupon_period_months=6,
         purchase_month_index=0,
         maturity_month_index=12,
-        inflation_indexed=indexed,
     )
 
 
@@ -71,7 +70,7 @@ def _payout_paths(*, bad_month_value: float | None = None) -> ExternalSeriesCont
 
 
 def _compile(paths: ExternalSeriesContext) -> None:
-    compile_series(paths, rollout_count=1, horizon_months=HORIZON, currency_quantum=Decimal("0.01"))
+    compile_series(paths, rollout_count=1, horizon_months=HORIZON, currency=USD)
 
 
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])

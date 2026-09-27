@@ -6,8 +6,6 @@ forced through, its root CA and the trust bundle its clients read (trust model a
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_clusterwide_crds.io.cilium import (
@@ -25,12 +23,10 @@ from cilium_clusterwide_crds.io.cilium import (
 )
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium, egress_fences
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "mitmproxy"
@@ -272,6 +268,23 @@ class Mitmproxy(Construct):
         )
 
 
+def namespace_chart(app: App) -> Chart:
+    chart = Chart(app, "namespace", disable_resource_name_hashes=True)
+    k8s.KubeNamespace(
+        chart,
+        "namespace",
+        metadata=k8s.ObjectMeta(
+            name=NAMESPACE,
+            labels={
+                "goldilocks.fairwinds.com/enabled": "true",
+                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
+                "name": NAMESPACE,
+            },
+        ),
+    )
+    return chart
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     Mitmproxy(chart, NAME)
@@ -279,28 +292,12 @@ def chart(app: App) -> Chart:
 
 
 def agents_mitmproxy(
-    flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path, cert_manager_trust: Kustomization
+    flux_chart: Chart, directory: RenderedDirectory, cert_manager_trust: Kustomization
 ) -> Kustomization:
-    """Write the directory and return its Flux node."""
-    write_namespace(
-        root,
-        OUTPUT_DIR,
-        name=NAMESPACE,
-        labels={
-            "goldilocks.fairwinds.com/enabled": "true",
-            "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-            "name": NAMESPACE,
-        },
-    )
-    write_charts(root, OUTPUT_DIR, egress_fences.mitmproxy_cloud_api, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=["namespace.k8s.yaml", f"{NAME}.k8s.yaml", "cnp-cloud-api-egress.k8s.yaml"]),
-    )
     return flux_kustomization(
         flux_chart,
         "agents-mitmproxy",
-        artifact,
+        directory,
         retry_interval=None,
         wait=None,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,

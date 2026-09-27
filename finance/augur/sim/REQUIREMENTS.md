@@ -97,6 +97,15 @@ Compact population outcomes and selected financial traces must agree. Preserve
 intended spending, attempted requests, actual non-tax consumption, cuts, sale
 proceeds, taxes, unpaid claims and termination separately. Report the population
 and time basis of each statistic; stopped books are not completed-horizon wealth.
+A real (deflated) figure is a reduction with a stated base date, not a second
+accounting currency.
+
+A household comparison starts every cell from the supplied holdings, basis, cash and
+tax state, and records the trades and costs that establish each target, rather than
+resetting each cell to an already-rebalanced tax-free book. A comparison against a
+tax-free control holds timing, instruments, rebalancing and withdrawal conventions
+constant before attributing a difference to tax. A policy selected on some draws is
+evaluated on fresh ones, and a model's winner is not an unconditional recommendation.
 
 Studies identify policy conventions, path source/model and fit window, product
 construction, taxes, fees and uncertainty. Reproductions pin paper-specific rules

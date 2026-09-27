@@ -80,8 +80,8 @@ under their own rules, not this purchase-price-index valuation.
 
 ## What the encoder has to preserve
 
-`sim/compiler/execution.py` and `sim/external_series.py` prepare typed integer facts directly
-from the scenario and supplied paths. Native serialization is private to the boundary:
+<../holdings.py>, <../scenarios.py> and `sim/external_series.py` prepare typed integer facts
+directly from the request, the deployment's portfolio and the supplied paths. Native serialization is private to the boundary:
 
 - security prices, home values and PE marks cross as integer currency quanta;
 - distribution rates retain sub-quantum precision until multiplied by holdings;

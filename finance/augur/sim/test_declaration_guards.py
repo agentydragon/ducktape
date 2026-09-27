@@ -182,7 +182,8 @@ def test_a_pool_holds_one_opening_lot_per_purchase_month() -> None:
         world.hold(lot(LotId("test-twin")))
 
 
-# A par bond paying a fixed semiannual coupon over two whole periods.
+# A par bond paying a fixed semiannual coupon over two whole periods. Its issuer is
+# non-governmental: `None` is a real issuer state that no jurisdiction exempts, not a missing value.
 BOND = PreparedBond(
     bond_id=BondId("test-bond"),
     agent_id=HOLDER,
@@ -203,11 +204,20 @@ BOND = PreparedBond(
         (replace(BOND, purchase_price=99), "invalid bond terms"),
         (replace(BOND, coupon=PreparedFixedAmount(amount=-1)), "invalid bond terms"),
         (replace(BOND, coupon_period_months=5), "invalid bond terms"),
+        (replace(BOND, maturity_month_index=BOND.purchase_month_index), "invalid bond terms"),
         (replace(BOND, coupon=PreparedIndexedCoupon(annual_rate_ppb=50_000_000)), "inflation"),
         (replace(BOND, issuer_jurisdiction_id=JurisdictionId("test-unknown")), "unknown issuer"),
         (replace(BOND, account_id=AccountId("test-undeclared")), "unknown account"),
     ],
-    ids=["non-par", "negative-coupon", "part-period", "missing-index", "unknown-issuer", "unknown-account"],
+    ids=[
+        "non-par",
+        "negative-coupon",
+        "part-period",
+        "matures-at-purchase",
+        "missing-index",
+        "unknown-issuer",
+        "unknown-account",
+    ],
 )
 def test_a_dated_bond_is_bought_at_par_over_whole_coupon_periods(invalid: PreparedBond, match: str) -> None:
     composed().hold(BOND)

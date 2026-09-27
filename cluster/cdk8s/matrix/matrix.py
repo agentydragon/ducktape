@@ -9,7 +9,6 @@ Reflector copies into this namespace.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
@@ -32,18 +31,10 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRules,
     HttpRouteSpecRulesBackendRefs,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cnpg
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.gateway_api.http_route import RouteMatch
@@ -59,7 +50,7 @@ _SYNAPSE_PORT = 8008
 _ELEMENT = "element-web"
 _ELEMENT_LABELS = {"app.kubernetes.io/name": _ELEMENT}
 _ELEMENT_CONFIG_MAP = "element-web-config"
-_SOPS_FILES = (
+SOPS_FILES = (
     "synapse-signing-key.sops.yaml",
     "synapse-registration-secret.sops.yaml",
     "synapse-macaroon-secret.sops.yaml",
@@ -359,21 +350,13 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml", *_SOPS_FILES])
-    )
-
-
-def matrix(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cnpg: Kustomization) -> Kustomization:
+def matrix(chart: Chart, directory: RenderedDirectory, cnpg: Kustomization) -> Kustomization:
     name = "matrix"
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         timeout="10m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(cnpg),
     )

@@ -22,7 +22,6 @@ from collections.abc import Callable, Iterable
 
 # ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass, field
-from decimal import Decimal
 from typing import Any, NamedTuple
 
 import numpy as np
@@ -39,23 +38,27 @@ from finance.augur.model.series import (
     RentKey,
     SecurityDistributionKey,
     SecurityKey,
+    parse_level_series_key,
 )
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.sim.fixed_point import round_ppb, sampled_array_to_per_unit_rate, sampled_array_to_quanta
-from finance.augur.sim.prepared import PreparedSeries
-from finance.augur.sim.scenario import (
-    AmountSpec,
-    BondHolding,
-    InitialLot,
-    PrivateEquityTenderPolicy,
-    ScheduledPropertyPurchase,
-    SecurityDistribution,
-    SeriesIndexedAmount,
-    TlhPortfolioSpec,
+from finance.augur.sim.holdings import asset_key
+from finance.augur.sim.money import Currency
+from finance.augur.sim.prepared import (
+    PreparedAmount,
+    PreparedBond,
+    PreparedDistribution,
+    PreparedIndexedAmount,
+    PreparedIndexedCoupon,
+    PreparedLot,
+    PreparedSeries,
+    PreparedTlhPortfolio,
+    _PropertyPurchase,
+    _TenderPolicy,
 )
 
 _MONEY_SERIES_KINDS = (SecurityKey, SecurityDistributionKey, HomeValueKey)
-INDEX_SERIES_KINDS = (InflationKey, RentKey)
+_INDEX_SERIES_KINDS = (InflationKey, RentKey)
 
 
 class UnsupportedScenarioError(ValueError):
@@ -113,13 +116,13 @@ def materialize_sampled_exogenous(bundle: SampledExogenousBundle) -> ExternalSer
 
 def level_series_demand(
     *,
-    lots: Iterable[InitialLot],
-    tlh_portfolios: Iterable[TlhPortfolioSpec],
-    bonds: Iterable[BondHolding],
-    distributions: Iterable[SecurityDistribution],
-    amounts: Iterable[AmountSpec],
-    tender_policies: Iterable[PrivateEquityTenderPolicy],
-    purchases: Iterable[ScheduledPropertyPurchase],
+    lots: Iterable[PreparedLot],
+    tlh_portfolios: Iterable[PreparedTlhPortfolio],
+    bonds: Iterable[PreparedBond],
+    distributions: Iterable[PreparedDistribution],
+    amounts: Iterable[PreparedAmount],
+    tender_policies: Iterable[_TenderPolicy],
+    purchases: Iterable[_PropertyPurchase],
 ) -> tuple[LevelSeriesKey, ...]:
     """Every level series these declarations REFERENCE — their exogenous demand.
 
@@ -142,9 +145,9 @@ def level_series_demand(
 
     # Holdings are marked every month off their asset-price series.
     for lot in lots:
-        add(asset_price_key_or_none(lot.asset))
+        add(asset_price_key_or_none(asset_key(lot.asset_id)))
     for portfolio in tlh_portfolios:
-        add(asset_price_key_or_none(portfolio.asset))
+        add(asset_price_key_or_none(asset_key(portfolio.asset_id)))
     # A TIPS' principal rides CPI, so an inflation-indexed bond DEMANDS inflation even when
     # nothing else does. Without this, the declaration rejects a missing inflation path for
     # any holding that does not happen to want CPI for another reason — a CPI-indexed spend,
@@ -152,12 +155,12 @@ def level_series_demand(
     #
     # Demand side only: `compile_series` carries only what was SAMPLED, so a TIPS whose inflation
     # nobody sampled is refused where it is held rather than priced off an all-NaN row.
-    if any(bond.inflation_indexed for bond in bonds):
+    if any(isinstance(bond.coupon, PreparedIndexedCoupon) for bond in bonds):
         add(InflationKey())
     # A distributing security demands TWO series: its price (already demanded by the lots that
     # hold it) and its dollars-per-unit payout, which nothing else references.
     for distribution in distributions:
-        add(SecurityDistributionKey(symbol=asset_price_key(distribution.asset).symbol))
+        add(SecurityDistributionKey(symbol=asset_price_key(asset_key(distribution.asset_id)).symbol))
     for amount in amounts:
         _add_amount_series_key(amount, add)
     for pe_policy in tender_policies:
@@ -200,9 +203,9 @@ def materialize_level_rows(
     return tuple(rows)
 
 
-def _add_amount_series_key(amount: Any, add: Any) -> None:
-    if isinstance(amount, SeriesIndexedAmount):
-        add(amount.series)
+def _add_amount_series_key(amount: PreparedAmount, add: Callable[[LevelSeriesKey], None]) -> None:
+    if isinstance(amount, PreparedIndexedAmount):
+        add(parse_level_series_key(amount.series_id))
 
 
 def _frame_values(
@@ -231,7 +234,7 @@ def external_series_cubes(
     series_index_by_id: dict[LevelSeriesKey, int],
     rollout_count: int,
     horizon_months: int,
-    currency_quantum: object,
+    currency: Currency,
 ) -> tuple[Float64[np.ndarray, " series rollout snapshot"], Int64[np.ndarray, " series rollout snapshot"]]:
     """Materialize heterogeneous and money values together.
 
@@ -254,7 +257,7 @@ def external_series_cubes(
         keep = rows.in_bounds & np.isfinite(rows.values)
         if keep.any():
             money_values[index, rows.rollout_position[keep], rows.month_index[keep]] = quantize(
-                rows.values[keep], quantum=currency_quantum
+                rows.values[keep], quantum=currency.quantum
             )
     return values, money_values
 
@@ -297,7 +300,7 @@ def _series_values(
         )
     if isinstance(key, _MONEY_SERIES_KINDS):
         return money
-    if isinstance(key, INDEX_SERIES_KINDS):
+    if isinstance(key, _INDEX_SERIES_KINDS):
         return round_ppb(levels)
     raise UnsupportedScenarioError(f"level series {key.wire_id!r} has no execution input representation")
 
@@ -318,7 +321,7 @@ def _level_series(
 
 
 def compile_series(
-    external_series: ExternalSeriesContext, *, rollout_count: int, horizon_months: int, currency_quantum: Decimal
+    external_series: ExternalSeriesContext, *, rollout_count: int, horizon_months: int, currency: Currency
 ) -> tuple[PreparedSeries, ...]:
     """The sampled level series as integer paths.
 
@@ -334,6 +337,6 @@ def compile_series(
         series_index_by_id={key: index for index, key in enumerate(keys)},
         rollout_count=rollout_count,
         horizon_months=horizon_months,
-        currency_quantum=currency_quantum,
+        currency=currency,
     )
     return _level_series(keys, levels, money)

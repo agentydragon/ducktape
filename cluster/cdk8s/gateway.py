@@ -164,9 +164,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def gateway(
-    chart: Chart, directory: RenderedDirectory, cert_manager: Kustomization, kyverno: Kustomization
-) -> Kustomization:
+def gateway(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart, "gateway", directory, timeout="5m", depends_on=flux_kustomization_depends_on_many(cert_manager, kyverno)
+        chart, "gateway", directory, timeout="5m", depends_on=flux_kustomization_depends_on_many(kyverno)
     )

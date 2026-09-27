@@ -9,8 +9,8 @@ package(default_visibility = [
 py_library(
     name = "provider_config",
     srcs = ["provider_config.py"],
-    # CLEANUP(added 2026-09-27): remove the app packages when the app's model selection is
-    #   decided (finance/augur/plans/consolidation.md, open question 'The app after step 6').
+    # CLEANUP(added 2026-09-27): drop the app packages from this visibility once nothing under
+    #   `//finance/augur/{api,product}` depends on this target.
     visibility = [
         "//finance/augur/api:__pkg__",
         "//finance/augur/product:__pkg__",
@@ -34,8 +34,8 @@ py_library(
 py_library(
     name = "independent",
     srcs = ["independent.py"],
-    # CLEANUP(added 2026-09-27): remove the app packages when the app's model selection is
-    #   decided (finance/augur/plans/consolidation.md, open question 'The app after step 6').
+    # CLEANUP(added 2026-09-27): drop the app packages from this visibility once nothing under
+    #   `//finance/augur/{api,product}` depends on this target.
     visibility = [
         "//finance/augur/api:__pkg__",
         "//finance/augur/product:__pkg__",
@@ -58,8 +58,8 @@ py_library(
 py_library(
     name = "private_equity_risk",
     srcs = ["private_equity_risk.py"],
-    # CLEANUP(added 2026-09-27): remove the app packages when the app's model selection is
-    #   decided (finance/augur/plans/consolidation.md, open question 'The app after step 6').
+    # CLEANUP(added 2026-09-27): drop the app packages from this visibility once nothing under
+    #   `//finance/augur/{api,calibration,product}` depends on this target.
     visibility = [
         "//finance/augur/api:__pkg__",
         "//finance/augur/calibration:__pkg__",
@@ -82,8 +82,8 @@ py_library(
 py_library(
     name = "sample_sanity",
     srcs = ["sample_sanity.py"],
-    # CLEANUP(added 2026-09-27): remove the app package when the app's model selection is
-    #   decided (finance/augur/plans/consolidation.md, open question 'The app after step 6').
+    # CLEANUP(added 2026-09-27): drop `//finance/augur/api` from this visibility once nothing
+    #   under it depends on this target.
     visibility = [
         "//finance/augur/api:__pkg__",
         "//finance/augur/study:__subpackages__",
@@ -101,8 +101,8 @@ py_library(
 py_library(
     name = "state_space",
     srcs = ["state_space.py"],
-    # CLEANUP(added 2026-09-27): remove the app package when the app's model selection is
-    #   decided (finance/augur/plans/consolidation.md, open question 'The app after step 6').
+    # CLEANUP(added 2026-09-27): drop `//finance/augur/api` from this visibility once nothing
+    #   under it depends on this target.
     visibility = [
         "//finance/augur/api:__pkg__",
         "//finance/augur/study:__subpackages__",
@@ -133,8 +133,8 @@ py_library(
 py_library(
     name = "trained_private_equity",
     srcs = ["trained_private_equity.py"],
-    # CLEANUP(added 2026-09-27): remove the app package when the app's model selection is
-    #   decided (finance/augur/plans/consolidation.md, open question 'The app after step 6').
+    # CLEANUP(added 2026-09-27): drop `//finance/augur/api` from this visibility once nothing
+    #   under it depends on this target.
     visibility = [
         "//finance/augur/api:__pkg__",
         "//finance/augur/study:__subpackages__",

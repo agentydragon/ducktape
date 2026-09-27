@@ -6,7 +6,6 @@ from collections.abc import Sequence
 
 # ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import NamedTuple
 
 import numpy as np
@@ -15,6 +14,7 @@ from jaxtyping import Int64
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode
 from finance.augur.sim.fixed_point import round_ppb, sampled_array_to_quanta
+from finance.augur.sim.money import Currency
 from finance.augur.sim.prepared import PreparedSeries
 
 # Sentinel for absent sampled private-equity regimes.
@@ -53,7 +53,7 @@ def compile_pe_channels(
     private_equity: PrivateEquityBundle,
     rollout_count: int,
     horizon_months: int,
-    currency_quantum: object,
+    currency: Currency,
 ) -> PEChannels:
     """Materialize per-issuer PE channel arrays from the typed `PrivateEquityBundle`.
 
@@ -89,7 +89,7 @@ def compile_pe_channels(
             raise ValueError(
                 f"private-equity mark series for issuer {issuer_id!r} produced a negative or non-finite value"
             )
-        mark_quanta[issuer_idx] = sampled_array_to_quanta(mark_values, quantum=currency_quantum)
+        mark_quanta[issuer_idx] = sampled_array_to_quanta(mark_values, quantum=currency.quantum)
         regime_codes[issuer_idx] = private_equity.issuer_int_matrix(
             issuer_id, "regime_code", rollout_count=rollout_count, horizon_months=horizon_months
         )
@@ -118,7 +118,7 @@ def compile_pe_channels(
         if executable_recovery.size and (executable_recovery < 0.0).any():
             raise ValueError("private-equity forced-recovery cashout series produced a negative value")
         forced_recovery_cashout_quanta[issuer_idx] = sampled_array_to_quanta(
-            forced_recovery_values, quantum=currency_quantum
+            forced_recovery_values, quantum=currency.quantum
         )
     return PEChannels(
         execution=PEExecutionChannels(
@@ -141,7 +141,7 @@ def compile_private_equity_series(
     *,
     rollout_count: int,
     horizon_months: int,
-    quantum: Decimal,
+    currency: Currency,
 ) -> tuple[PreparedSeries, ...]:
     """The ten per-issuer private-equity channels, in the execution input's typed integer units.
 
@@ -154,7 +154,7 @@ def compile_private_equity_series(
         private_equity=bundle,
         rollout_count=rollout_count,
         horizon_months=horizon_months,
-        currency_quantum=quantum,
+        currency=currency,
     )
     channels = pe_channels.execution
     snapshots = horizon_months + 1
@@ -173,7 +173,7 @@ def compile_private_equity_series(
             ("forced_sale", round_ppb(channels.forced_sale_fractions[index])),
             ("liquidity_blocked", channels.liquidity_blocked[index].astype(np.int64)),
             ("forced_recovery", channels.forced_recovery_cashout_quanta[index]),
-            ("company_valuation", sampled_array_to_quanta(valuation, quantum=quantum)),
+            ("company_valuation", sampled_array_to_quanta(valuation, quantum=currency.quantum)),
         ):
             series.append(
                 PreparedSeries(

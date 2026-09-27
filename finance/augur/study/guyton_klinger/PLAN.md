@@ -3,7 +3,7 @@
 Proposed STUDY consumer, not an implemented reproduction. The
 [source contract](README.md) owns primary evidence, study versions,
 the declared three-sleeve adaptation and remaining convention decisions. This plan
-owns the proposed code and leaves as its slices land; the [roadmap](../../plans/roadmap.md) owns
+owns the proposed code and leaves as its slices land; the [Augur plan](../../PLAN.md) owns
 cross-component dependencies.
 
 ## Composition on current Augur primitives
