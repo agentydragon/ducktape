@@ -169,7 +169,12 @@ export function useOpenChronologicalDebug(): (cursor?: string) => void {
 export function ChronologicalDebugLink({ observationCursor }: { observationCursor?: string }): JSX.Element {
   const open = useOpenChronologicalDebug();
   return (
-    <Button variant="subtle" size="compact-xs" onClick={() => open(observationCursor)}>
+    <Button
+      variant="subtle"
+      size="compact-xs"
+      style={{ alignSelf: "flex-start" }}
+      onClick={() => open(observationCursor)}
+    >
       {observationCursor === undefined ? "Debug history" : "Inspect chronological context"}
     </Button>
   );
