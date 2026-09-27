@@ -44,7 +44,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecVolumesSecret,
 )
 
-from cluster.cdk8s import cilium, forgejo_images, namespaces
+from cluster.cdk8s import cilium, forgejo_images, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -57,7 +57,6 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cpap-sync"
 _IMAGE = "git.allegedly.works/ducktape-ci/cpap-sync:unset"
 _GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/cpap-gateway:unset"
 _LABELS = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "sync"}
-_NODE_SELECTOR = {"kubernetes.io/hostname": "optiplex"}  # the host the CPAP card's USB WiFi adapter is attached to
 _CARD_SERVICE = "cpap-card"
 _GATEWAY = "cpap-gateway"
 _GATEWAY_PORT = 18080
@@ -95,7 +94,8 @@ def _gateway_vm(chart: Chart) -> None:
             template=VirtualMachineSpecTemplate(
                 metadata=k8s.ObjectMeta(labels={"kubevirt.io/domain": _GATEWAY} | labels),
                 spec=VirtualMachineSpecTemplateSpec(
-                    node_selector=_NODE_SELECTOR,
+                    # The host the CPAP card's USB WiFi adapter is attached to.
+                    node_selector=node_scheduling.OPTIPLEX.node_selector,
                     domain=VirtualMachineSpecTemplateSpecDomain(
                         cpu=VirtualMachineSpecTemplateSpecDomainCpu(cores=2),
                         resources=VirtualMachineSpecTemplateSpecDomainResources(
@@ -215,7 +215,7 @@ def chart(app: App) -> Chart:
                         metadata=k8s.ObjectMeta(labels=_LABELS),
                         spec=k8s.PodSpec(
                             restart_policy="OnFailure",
-                            node_selector=_NODE_SELECTOR,
+                            node_selector=node_scheduling.OPTIPLEX.node_selector,
                             automount_service_account_token=False,
                             volumes=[k8s.Volume(name="workdir", empty_dir=k8s.EmptyDirVolumeSource())],
                             containers=[

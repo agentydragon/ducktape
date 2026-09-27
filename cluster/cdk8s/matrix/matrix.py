@@ -32,7 +32,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesBackendRefs,
 )
 
-from cluster.cdk8s import cnpg, namespaces
+from cluster.cdk8s import cnpg, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
 from cluster.cdk8s.helm import helm_release
@@ -45,7 +45,6 @@ NAMESPACE = "matrix"
 SYNAPSE = "matrix-synapse"
 _NAME = "matrix"
 _DB_NAME = "matrix-db"
-_ZONE = "hil-ovh"
 _HELM_REPOSITORY = "ananace-charts"
 _SYNAPSE_PORT = 8008
 _ELEMENT = "element-web"
@@ -99,7 +98,7 @@ def _database(scope: Construct) -> None:
         # shape this had before the namespace was parked: Synapse's media store is on
         # SeaweedFS now, whose CSI node plugin only runs on the OVH nodes, so the app
         # moved there and R5 requires the database to follow it.
-        node_selector={"topology.kubernetes.io/zone": _ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh",
         size="10Gi",
         # CNPG auto-generates credentials in secret matrix-db-app
@@ -175,7 +174,7 @@ def _synapse(scope: Construct) -> None:
                 # has no top-level key of that name, so a selector placed there is silently
                 # ignored (which is why the previous `region: proxmox` never pinned
                 # anything, and Synapse only landed on wyrm2 by chance).
-                "nodeSelector": {"topology.kubernetes.io/zone": _ZONE}
+                "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR
             },
             # macaroonSecretKey and registrationSharedSecret injected via valuesFrom;
             # extraConfig with oidc_providers is injected via valuesFrom from the
@@ -210,7 +209,7 @@ def _synapse(scope: Construct) -> None:
                     # Keep Synapse's Redis in the same zone as Synapse; it is a subchart, so
                     # this key is separate from synapse.nodeSelector above. Without it the
                     # placement is luck, and a cross-site hop for every pub/sub round trip.
-                    "nodeSelector": {"topology.kubernetes.io/zone": _ZONE},
+                    "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
                     "persistence": {"enabled": False},
                     "resources": {
                         "requests": {"cpu": "50m", "memory": "64Mi"},

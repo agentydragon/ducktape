@@ -35,6 +35,7 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.property import Housing, Purchase, Sale
 from finance.augur.sim.results import Rejected
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -363,7 +364,7 @@ def test_paid_groups_update_entities_but_a_failed_year_end_does_not_reset_intere
         world.track(
             Biller(
                 PreparedObligation(
-                    month=11,
+                    schedule=Once(month=11),
                     obligation_id="unfundable",
                     obligation_type="cash_spend",
                     from_account=ref(ALICE),

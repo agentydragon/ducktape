@@ -38,7 +38,7 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
@@ -50,8 +50,6 @@ _LABELS = {"app.kubernetes.io/name": _NAME}
 _IMAGE = "lscr.io/linuxserver/grocy:v4.6.0-ls318"
 _CONFIG_CLAIM = "grocy-config-ovh"
 _BACKUP = "grocy-config-ovh-backup"
-_ZONE = "hil-ovh"
-_ZONE_KEY = "topology.kubernetes.io/zone"
 _HTTP_PORT = 80
 
 
@@ -225,7 +223,7 @@ def _destination_mover_zone_affinity() -> ReplicationDestinationSpecRsyncTlsMove
                     ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
                         match_expressions=[
                             ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                key=_ZONE_KEY, operator="In", values=[_ZONE]
+                                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.HIL_OVH_ZONE]
                             )
                         ]
                     )
@@ -243,7 +241,7 @@ def _source_mover_zone_affinity() -> ReplicationSourceSpecRsyncTlsMoverAffinity:
                     ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
                         match_expressions=[
                             ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                key=_ZONE_KEY, operator="In", values=[_ZONE]
+                                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.HIL_OVH_ZONE]
                             )
                         ]
                     )
@@ -276,7 +274,7 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
             template=k8s.PodTemplateSpec(
                 spec=k8s.PodSpec(
                     restart_policy="Never",
-                    node_selector={_ZONE_KEY: _ZONE},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     containers=[
                         k8s.Container(

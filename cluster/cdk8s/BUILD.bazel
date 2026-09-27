@@ -114,6 +114,7 @@ py_library(
     srcs = ["fleet_rules.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":pod_policy",
         "@pypi//cdk8s",
         "@pypi//constructs",
         "@pypi//jsii",
@@ -131,13 +132,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
-)
-
-py_library(
-    name = "container_security",
-    srcs = ["container_security.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = ["@pypi//cdk8s_plus_34"],
 )
 
 py_library(
@@ -176,6 +170,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":local_path_provisioner",
+        ":node_scheduling",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/cnpg:cnpg_cluster",
         "@pypi//cdk8s",
@@ -243,6 +238,7 @@ py_library(
         ":generation",
         ":manifest_roots",
         ":model_rosters",
+        ":node_scheduling",
         ":openclaw_gateway",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -260,13 +256,8 @@ py_library(
         ":artifact_generators",
         ":flux",
         ":manifest_roots",
-        "//cluster/cdk8s/providers/external_secrets:external_secret",
-        "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//cluster/cdk8s/providers/external_secrets:secretstore",
-        "//cluster/cdk8s/providers/volsync:replicationsource",
+        ":restic_backup",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
     ],
 )
 
@@ -348,11 +339,23 @@ py_library(
         ":artifact_generators",
         ":flux",
         ":manifest_roots",
+        ":restic_backup",
+        "//cluster/cdk8s/providers/volsync:replicationsource",
+        "//cluster/cdk8s/seaweedfs:s3",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "restic_backup",
+    srcs = ["restic_backup.py"],
+    deps = [
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/external_secrets:secretstore",
+        "//cluster/cdk8s/providers/volsync:replication_source",
         "//cluster/cdk8s/providers/volsync:replicationsource",
-        "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -452,12 +455,30 @@ py_library(
 )
 
 py_library(
-    name = "pod_spec_patches",
-    srcs = ["pod_spec_patches.py"],
+    name = "pod_policy",
+    srcs = ["pod_policy.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":node_scheduling",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_pod_policy",
+    srcs = ["test_pod_policy.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":node_scheduling",
+        ":pod_policy",
+        "//cluster/cdk8s/providers/keda:scaledjob",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -471,7 +492,7 @@ py_library(
         ":flux",
         ":forgejo_images",
         ":manifest_roots",
-        ":pod_spec_patches",
+        ":pod_policy",
         ":probes",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/external_secrets:single_secret_store",
@@ -650,7 +671,7 @@ py_library(
         ":flux",
         ":forgejo_images",
         ":manifest_roots",
-        ":pod_spec_patches",
+        ":pod_policy",
         ":probes",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/cilium:network_policy",
@@ -751,7 +772,7 @@ py_library(
         ":forgejo_images",
         ":gateway",
         ":manifest_roots",
-        ":pod_spec_patches",
+        ":pod_policy",
         ":probes",
         ":public_coder_proxy",
         "//aiquota:api",
@@ -853,6 +874,7 @@ py_library(
         ":gateway",
         ":generation",
         ":manifest_roots",
+        ":node_scheduling",
         ":valkey",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
@@ -1001,7 +1023,7 @@ py_library(
         ":gateway",
         ":manifest_roots",
         ":node_scheduling",
-        ":pod_spec_patches",
+        ":pod_policy",
         ":probes",
         "//cluster/cdk8s/providers/external_secrets:clustersecretstore",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
@@ -1115,6 +1137,7 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "//cluster/cdk8s/providers/flux:kustomization",
@@ -1134,6 +1157,7 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -1163,6 +1187,7 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "@pypi//cdk8s",
@@ -1191,6 +1216,7 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "//cluster/cdk8s/providers/flux:kustomization",
@@ -1263,6 +1289,7 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "@pypi//cdk8s",
     ],
@@ -1533,6 +1560,7 @@ py_library(
         ":flux",
         ":generation",
         ":manifest_roots",
+        ":node_scheduling",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/kubevirt:virtualmachine",
@@ -1626,6 +1654,7 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "@pypi//cdk8s",

@@ -20,7 +20,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
-from cluster.cdk8s import cnpg, namespaces
+from cluster.cdk8s import cnpg, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.helm import helm_release
@@ -32,7 +32,6 @@ from cluster.cdk8s.valkey import valkey_instance
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/langfuse"
 _NAME = "langfuse"
 _NAMESPACE = "langfuse"
-_ZONE = "hil-ovh"
 _S3_CREDENTIALS_SECRET = "langfuse-seaweedfs-credentials"
 _VALKEY = "langfuse-valkey-ovh"
 
@@ -47,7 +46,7 @@ def _database(scope: Construct) -> None:
         "database",
         name="langfuse-db",
         namespace=_NAMESPACE,
-        node_selector={"topology.kubernetes.io/zone": _ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh-ssd",
         size="10Gi",
         # CNPG auto-generates credentials in secret langfuse-db-app
@@ -121,7 +120,6 @@ def _secret_key_ref(name: str, key: str) -> dict[str, object]:
 
 
 def _values() -> dict[str, object]:
-    control_plane = "node-role.kubernetes.io/control-plane"
     resources = {"requests": {"cpu": "100m", "memory": "1Gi"}, "limits": {"cpu": "1", "memory": "2Gi"}}
     return {
         "langfuse": {
@@ -136,22 +134,12 @@ def _values() -> dict[str, object]:
                 # binding in Authentik (tf/gitops/sso-providers/provider_langfuse.tf).
                 "signUpDisabled": False
             },
-            "nodeSelector": {"topology.kubernetes.io/zone": _ZONE},
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             # Langfuse is stateless at the pod level and uses external storage. Allow
             # control-plane nodes as overflow capacity, while the affinity below keeps
             # ordinary placement on workers.
-            "tolerations": [{"key": control_plane, "operator": "Exists", "effect": "NoSchedule"}],
-            # Prefer ordinary workers when this workload tolerates control planes.
-            "affinity": {
-                "nodeAffinity": {
-                    "preferredDuringSchedulingIgnoredDuringExecution": [
-                        {
-                            "weight": 100,
-                            "preference": {"matchExpressions": [{"key": control_plane, "operator": "DoesNotExist"}]},
-                        }
-                    ]
-                }
-            },
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
+            "affinity": node_scheduling.PREFER_WORKERS,
             "nextauth": {
                 "url": "https://langfuse.allegedly.works",
                 "secret": _secret_key_ref("langfuse-secrets", "nextauth-secret"),

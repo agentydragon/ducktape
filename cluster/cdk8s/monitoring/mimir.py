@@ -7,6 +7,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -18,18 +19,6 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/mimir"
 _NAMESPACE = "monitoring"
 _CREDENTIALS_SECRET = "mimir-seaweedfs-credentials"
 _S3_ENDPOINT = "seaweedfs-s3.seaweedfs.svc:8333"
-_ZONE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh"}
-# Prefer ordinary workers when this workload tolerates control planes.
-_PREFER_WORKERS_NODE_AFFINITY = {
-    "preferredDuringSchedulingIgnoredDuringExecution": [
-        {
-            "weight": 100,
-            "preference": {
-                "matchExpressions": [{"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}]
-            },
-        }
-    ]
-}
 
 
 def _s3(bucket: str) -> dict[str, object]:
@@ -50,8 +39,8 @@ def _component(replicas: int, cpu: str, memory: str, **extra: object) -> dict[st
         "replicas": replicas,
         **extra,
         "resources": {"requests": {"cpu": cpu, "memory": memory}},
-        "nodeSelector": _ZONE_SELECTOR,
-        "affinity": {"nodeAffinity": _PREFER_WORKERS_NODE_AFFINITY},
+        "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
+        "affinity": node_scheduling.PREFER_WORKERS,
     }
 
 
@@ -154,13 +143,13 @@ def _values() -> dict[str, object]:
             "replicas": 2,
             "persistentVolume": {"storageClass": "local-path-ovh", "size": "10Gi"},
             "resources": {"requests": {"cpu": "100m", "memory": "256Mi"}},
-            "nodeSelector": _ZONE_SELECTOR,
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             # 2 ingesters + RF=2 + RF=2 on the 2 kimsufi workers gives all-pairs
             # placement; zone-aware would just add a second StatefulSet and
             # rollout-operator coupling for no behavioural win at this scale.
             "zoneAwareReplication": {"enabled": False},
             "affinity": {
-                "nodeAffinity": _PREFER_WORKERS_NODE_AFFINITY,
+                "nodeAffinity": node_scheduling.PREFER_WORKERS.node_affinity,
                 "podAntiAffinity": {
                     "requiredDuringSchedulingIgnoredDuringExecution": [
                         {

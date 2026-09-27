@@ -9,6 +9,7 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -53,7 +54,7 @@ def helmrelease_chart(app: App) -> Chart:
             "service": {"port": _PORT, "containerPort": _PORT},
             "enabledControllers": ["cloud-node", "cloud-node-lifecycle", "node-csr-approval"],
             "tolerations": [
-                {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"},
+                node_scheduling.CONTROL_PLANE_TOLERATION,
                 {"key": "node.cloudprovider.kubernetes.io/uninitialized", "operator": "Exists", "effect": "NoSchedule"},
             ],
             "transformations": [

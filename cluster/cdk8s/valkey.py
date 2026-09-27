@@ -24,6 +24,7 @@ from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
     RedisReplicationSpecTolerations,
 )
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -106,7 +107,7 @@ def valkey_instance(
         tolerations=tolerations,
         node_affinity_match=[
             RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                key="topology.kubernetes.io/zone", operator="In", values=["hil-ovh"]
+                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.HIL_OVH_ZONE]
             )
         ],
         # Prefer ordinary workers, for an instance that tolerates control planes.
@@ -116,7 +117,7 @@ def valkey_instance(
                 preference=RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference(
                     match_expressions=[
                         RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions(
-                            key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
+                            key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="DoesNotExist"
                         )
                     ]
                 ),

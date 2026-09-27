@@ -47,7 +47,7 @@ from clickhouse_keeper_installation_crds.com.altinity.clickhouse_keeper import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
-from cluster.cdk8s import public_coder_proxy
+from cluster.cdk8s import node_scheduling, public_coder_proxy
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.haku import console_config
@@ -70,7 +70,7 @@ _INTERSERVER_PORT = 9009
 _CLICKHOUSE_UID = 101  # the images' `clickhouse` user
 _STORAGE_CLASS = "local-path-ovh-hdd-retain"
 _ANY_ADDRESS = ["0.0.0.0/0", "::/0"]
-_HDD_NODE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh", "storage.allegedly.works/tier": "hdd"}
+_HDD_NODE_SELECTOR = {**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "hdd"}
 _RUNTIME_DEFAULT_SECCOMP = {"type": "RuntimeDefault"}
 _CONTAINER_SECURITY_CONTEXT = {
     "allowPrivilegeEscalation": False,
@@ -412,13 +412,7 @@ def keeper_chart(app: App) -> Chart:
                         spec={
                             "nodeSelector": _HDD_NODE_SELECTOR,
                             # Three-member Keeper quorum needs distinct HDD-tier hosts; use all workers.
-                            "tolerations": [
-                                {
-                                    "key": "node-role.kubernetes.io/control-plane",
-                                    "operator": "Exists",
-                                    "effect": "NoSchedule",
-                                }
-                            ],
+                            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
                             "affinity": _one_per_host(_KEEPER_LABELS),
                             "securityContext": {"fsGroup": _CLICKHOUSE_UID, "seccompProfile": _RUNTIME_DEFAULT_SECCOMP},
                             "containers": [

@@ -29,7 +29,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
 )
 
-from cluster.cdk8s import cnpg, namespaces
+from cluster.cdk8s import cnpg, namespaces, node_scheduling
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
@@ -231,27 +231,8 @@ def _deployment(scope: Construct) -> None:
                     # Stateless: all state is in study-casino-db (CNPG), no local storage. Allow
                     # control-plane nodes as overflow capacity, but prefer workers to keep
                     # ordinary application I/O away from etcd disks.
-                    tolerations=[
-                        k8s.Toleration(
-                            key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                        )
-                    ],
-                    affinity=k8s.Affinity(
-                        node_affinity=k8s.NodeAffinity(
-                            preferred_during_scheduling_ignored_during_execution=[
-                                k8s.PreferredSchedulingTerm(
-                                    weight=100,
-                                    preference=k8s.NodeSelectorTerm(
-                                        match_expressions=[
-                                            k8s.NodeSelectorRequirement(
-                                                key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
-                                            )
-                                        ]
-                                    ),
-                                )
-                            ]
-                        )
-                    ),
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
+                    affinity=node_scheduling.PREFER_WORKERS,
                     containers=[
                         k8s.Container(
                             name="app",
