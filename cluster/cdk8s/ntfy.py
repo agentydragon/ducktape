@@ -126,8 +126,17 @@ def _auth_external_secret(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "auth-external-secret",
-        name=_AUTH_SECRET,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_AUTH_SECRET,
+            namespace=NAMESPACE,
+            annotations={
+                "description": "Derives ntfy bcrypt users and declarative tokens from SOPS values.",
+                # Sprig bcrypt uses a fresh salt on every render. Keep this ExternalSecret
+                # OnChange and bump the generation on deliberate credential rotation instead
+                # of regenerating hashes on every ESO refresh.
+                "ntfy.ducktape.io/auth-generation": "1",
+            },
+        ),
         refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
         store=SecretStoreRef.cluster(SECRET_STORE),
         data=[
@@ -151,13 +160,6 @@ def _auth_external_secret(scope: Construct) -> None:
                 ),
             },
         ),
-        annotations={
-            "description": "Derives ntfy bcrypt users and declarative tokens from SOPS values.",
-            # Sprig bcrypt uses a fresh salt on every render. Keep this ExternalSecret
-            # OnChange and bump the generation on deliberate credential rotation instead
-            # of regenerating hashes on every ESO refresh.
-            "ntfy.ducktape.io/auth-generation": "1",
-        },
     )
 
 
@@ -166,8 +168,14 @@ def _alertmanager_webhook_secret(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "alertmanager-webhook-external-secret",
-        name="alertmanager-ntfy-webhook",
-        namespace="monitoring",
+        metadata=ApiObjectMetadata(
+            name="alertmanager-ntfy-webhook",
+            namespace="monitoring",
+            annotations={
+                "description": "Alertmanager bearer credential for the self-hosted ntfy instance",
+                "ntfy.ducktape.io/auth-generation": "1",
+            },
+        ),
         refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
         store=SecretStoreRef.cluster(SECRET_STORE),
         data=[remote_data(_AUTH_SOURCE_SECRET, "alertmanager-token", secret_key="alertmanager_token")],
@@ -178,10 +186,6 @@ def _alertmanager_webhook_secret(scope: Construct) -> None:
             type="Opaque",
             data={"address": f"https://{HOSTNAME}/alerts", "token": "{{ .alertmanager_token }}"},
         ),
-        annotations={
-            "description": "Alertmanager bearer credential for the self-hosted ntfy instance",
-            "ntfy.ducktape.io/auth-generation": "1",
-        },
     )
 
 

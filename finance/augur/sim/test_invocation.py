@@ -13,12 +13,12 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import mul_div
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.prepared import PreparedAccount, PreparedObligation
 from finance.augur.sim.results import Finished
-from finance.augur.sim.scenario import ORDINARY_INCOME
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import Capture, World
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from cdk8s import ApiObjectMetadata
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization as _Kustomization,
@@ -29,8 +30,6 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRef,
 )
 
-from cluster.cdk8s.metadata import metadata
-
 
 class Kustomization(_Kustomization):
     """Flux's `Kustomization`. `source_ref`, `interval` and `prune` are the only fields
@@ -42,8 +41,7 @@ class Kustomization(_Kustomization):
         scope: Construct,
         id: str,
         *,
-        name: str,
-        namespace: str,
+        metadata: ApiObjectMetadata,
         source_ref: KustomizationSpecSourceRef,
         interval: str,
         prune: bool,
@@ -71,12 +69,11 @@ class Kustomization(_Kustomization):
         kube_config: KustomizationSpecKubeConfig | None = None,
         name_prefix: str | None = None,
         name_suffix: str | None = None,
-        annotations: dict[str, str] | None = None,
     ) -> None:
         super().__init__(
             scope,
             id,
-            metadata=metadata(name, namespace, annotations=annotations),
+            metadata=metadata,
             spec=KustomizationSpec(
                 source_ref=source_ref,
                 interval=interval,

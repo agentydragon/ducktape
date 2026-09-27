@@ -8,7 +8,7 @@ canonical registry credential.
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ISecret, Secret, k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -50,7 +50,7 @@ def chart(app: App) -> Chart:
             },
         ),
     )
-    terraform.gitops_terraform(chart, "terraform", name=NAME, variables={})
+    terraform.gitops_terraform(chart, "terraform", name=NAME, variables=None)
     # Flux's own copy, for the image-automation ImageRepositories that scan the registry.
     forgejo_images_creds_external_secret(chart, "flux-system-creds", namespace="flux-system")
     return chart
@@ -98,8 +98,7 @@ def forgejo_images_creds_external_secret(scope: Construct, id: str, *, namespace
     return ExternalSecret(
         scope,
         id,
-        name=SECRET_NAME,
-        namespace=namespace,
+        metadata=ApiObjectMetadata(name=SECRET_NAME, namespace=namespace),
         refresh="1h",
         store=SecretStoreRef.cluster("kubernetes-forgejo-images-secret-store"),
         data_from=[DataFrom.from_extract(SECRET_NAME)],

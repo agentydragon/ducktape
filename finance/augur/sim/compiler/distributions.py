@@ -2,7 +2,8 @@
 
 from collections.abc import Iterable
 
-from finance.augur.sim.scenario import SecurityDistribution, TransferIncomeCategory
+from finance.augur.sim.income import TransferIncomeCategory
+from finance.augur.sim.scenario import SecurityDistribution
 
 
 def distribution_income_categories(distributions: Iterable[SecurityDistribution]) -> set[TransferIncomeCategory]:

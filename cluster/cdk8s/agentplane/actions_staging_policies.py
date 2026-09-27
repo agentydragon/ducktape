@@ -394,16 +394,18 @@ def add_staging_action_policies(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "coinbase-external-secret",
-        name=_COINBASE_SECRET,
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_COINBASE_SECRET,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "ESO copy of the view-only Coinbase CDP key from external-creds, read by claude-ai's sandboxes."
+            },
+        ),
         refresh="1h",
         store=external_creds.STORE,
         data=[remote_data(_COINBASE_SECRET, key) for key in ("api_key", "api_secret")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        annotations={
-            "description": "ESO copy of the view-only Coinbase CDP key from external-creds, read by claude-ai's sandboxes."
-        },
     )
     coinbase_reader = Role(
         scope,

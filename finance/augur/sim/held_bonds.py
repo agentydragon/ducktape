@@ -8,11 +8,11 @@ from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, BondCashflowOutcome, BondState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AgentId
+from finance.augur.sim.income import InterestIncome
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.observations import FixedCoupon, HeldBond, IndexedCoupon
 from finance.augur.sim.prepared import PreparedBond, PreparedFixedAmount, PreparedIndexedCoupon
-from finance.augur.sim.scenario import InterestIncome
 
 
 class BondStatement(Statement):

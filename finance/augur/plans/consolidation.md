@@ -28,24 +28,21 @@ These graduate into `README.md` and `AGENTS.md` with step 1.
 1. **Conventions.** Add a "Using Augur" section to `README.md`, built around one short
    canonical loop: build the world, declare state, sample paths from the model the caller
    chooses, step or act each month, read results. Add the rules above to `AGENTS.md`.
-2. **Shared vocabulary out of `sim/scenario.py`.** This is a pure move with no behaviour
-   change: money types to `sim/money.py`, filing status, income and deduction categories,
-   and the tax profile to the tax modules.
-3. **Real preparation logic out of `sim/compiler/`**, beside its consumers, with behaviour
+2. **Real preparation logic out of `sim/compiler/`**, beside its consumers, with behaviour
    unchanged:
    - tax rules and profile (`compile_profile`, `compile_income_sources`) to the tax modules;
    - series demand (`level_series_demand`) to the series code;
    - private-equity, bond and distribution preparation beside the matching `World.declare_*`.
-4. **Callers declare worlds directly,** one PR per group:
+3. **Callers declare worlds directly,** one PR per group:
    - `study/guyton_klinger`, `study/trinity`;
    - `x/allocation_glide`, `x/bond_policies`, `x/bounded_spending`,
      `x/joint_spending_allocation`, `x/monthly_actions`;
    - the `sim/` tests that build worlds from scenario records;
    - the app: `product/scenarios.py`, `product/simulation.py`, `api/portfolio*.py`. Its API
      output must not change, and its existing tests are the check.
-5. **Delete `sim/scenario.py` and `sim/compiler/`,** and remove the lowering step from
+4. **Delete `sim/scenario.py` and `sim/compiler/`,** and remove the lowering step from
    `sim/README.md` and `sim/DESIGN.md`.
-6. **Move unvetted models to `x/`,** each with its training code from `fit/`:
+5. **Move unvetted models to `x/`,** each with its training code from `fit/`:
    - `structural_macro`, until it is shown to be good enough for core;
    - the VECM, the state-space models and the private-equity samplers;
    - `sample_sanity`;
@@ -55,18 +52,18 @@ These graduate into `README.md` and `AGENTS.md` with step 1.
    Historical replay (`model/historical_windows.py`) and the market-path infrastructure stay
    in core.
 
-7. **Plans and notes.** Fold the remaining files under `plans/` into one short plan that
+6. **Plans and notes.** Fold the remaining files under `plans/` into one short plan that
    holds only live work. Delete resolved `debug/` notes after moving any durable lesson.
    Update `SPEC.md` and `sim/DESIGN.md` to describe what exists.
 
-Step 1 goes first, so later steps have a written target. Steps 2–5 are in order. Step 6
-can follow step 1, and step 7 runs alongside.
+Step 1 goes first, so later steps have a written target. Steps 2–4 are in order. Step 5
+can follow step 1, and step 6 runs alongside.
 
 ## Open questions
 
 - **Dollars helper.** The `Prepared*` facts are integer money quanta, so should `sim/money.py`
   keep a small `Decimal` dollars → quanta helper for callers? Nothing more than that.
-- **The app after step 6.** The app picks its economy model through `model/provider_config.py`,
+- **The app after step 5.** The app picks its economy model through `model/provider_config.py`,
   a union of every provider's configuration. Once the fitted models are in `x/`, core can no
   longer import them, and that union is the pattern the rules above rule out. Deciding the
   app's model selection is part of deciding the app's future, which is not decided.

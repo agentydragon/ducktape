@@ -98,8 +98,7 @@ def _external_secrets(chart: Chart) -> None:
     ExternalSecret(
         chart,
         "forgejo-images-creds",
-        name=forgejo_images.SECRET_NAME,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name=forgejo_images.SECRET_NAME, namespace=NAMESPACE),
         refresh="1h",
         store=SecretStoreRef.cluster("kubernetes-flux-system-secret-store"),
         data_from=[DataFrom.from_extract(forgejo_images.SECRET_NAME)],
@@ -116,8 +115,7 @@ def _external_secrets(chart: Chart) -> None:
     ExternalSecret(
         chart,
         "activitywatch-read-token",
-        name="activitywatch-read-token",
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name="activitywatch-read-token", namespace=NAMESPACE),
         refresh="1h",
         store=SecretStoreRef.cluster("kubernetes-activitywatch-secret-store"),
         data=[remote_data("activitywatch-read-token", "token")],
@@ -125,8 +123,7 @@ def _external_secrets(chart: Chart) -> None:
     ExternalSecret(
         chart,
         "coinbase-api-credentials",
-        name="coinbase-api-credentials",
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name="coinbase-api-credentials", namespace=NAMESPACE),
         refresh="1h",
         store=external_creds.STORE,
         data=[remote_data("coinbase-api-credentials", key) for key in ("api_key", "api_secret")],

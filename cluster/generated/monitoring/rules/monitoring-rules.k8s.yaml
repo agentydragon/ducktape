@@ -1,8 +1,6 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  labels:
-    release: kube-prometheus-stack
   name: control-plane-io-alerts
   namespace: monitoring
 spec:
@@ -71,8 +69,6 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  labels:
-    release: kube-prometheus-stack
   name: external-secrets-alerts
   namespace: monitoring
 spec:
@@ -125,8 +121,6 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  labels:
-    release: kube-prometheus-stack
   name: flux-alerts
   namespace: monitoring
 spec:
@@ -175,8 +169,6 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  labels:
-    release: kube-prometheus-stack
   name: github-quota-alerts
   namespace: monitoring
 spec:
@@ -223,8 +215,6 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  labels:
-    release: kube-prometheus-stack
   name: grocy-mcp-alerts
   namespace: monitoring
 spec:
@@ -244,8 +234,6 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  labels:
-    release: kube-prometheus-stack
   name: mcp-auth-alerts
   namespace: monitoring
 spec:
@@ -264,8 +252,6 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  labels:
-    release: kube-prometheus-stack
   name: roaming-node-alerts
   namespace: monitoring
 spec:

@@ -10,9 +10,9 @@ from pydantic import ValidationError
 
 from finance.augur.model.series import LocationId, RentKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
+from finance.augur.sim.income import InterestIncome
 from finance.augur.sim.scenario import (
     DistributionTaxSlice,
-    InterestIncome,
     MortgageFinancing,
     RecurringObligation,
     RecurringPropertyCashflow,

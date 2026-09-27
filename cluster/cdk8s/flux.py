@@ -20,7 +20,7 @@ from collections.abc import Sequence
 from typing import cast
 
 import jsii
-from cdk8s import ApiObject, App, Chart
+from cdk8s import ApiObject, ApiObjectMetadata, App, Chart
 from constructs import IValidation
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDecryption,
@@ -166,9 +166,7 @@ def flux_kustomization(
     return Kustomization(
         chart,
         name,
-        name=name,
-        namespace=namespace,
-        annotations=metadata_annotations or None,
+        metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=metadata_annotations or None),
         source_ref=source_ref,
         path=path,
         interval=interval,

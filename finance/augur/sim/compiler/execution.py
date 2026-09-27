@@ -39,6 +39,7 @@ from finance.augur.sim.fixed_point import (
     sampled_array_to_quanta,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId
+from finance.augur.sim.income import InterestIncome
 from finance.augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
 from finance.augur.sim.locations import Location
 from finance.augur.sim.prepared import (
@@ -77,7 +78,6 @@ from finance.augur.sim.scenario import (
     FixedAmount,
     InitialAccountBalance,
     InitialLot,
-    InterestIncome,
     MortgageInterestDeductionPolicy,
     PrimaryResidenceAssignment,
     PrivateEquityTenderPolicy,

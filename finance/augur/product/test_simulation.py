@@ -36,20 +36,15 @@ from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId, PropertyId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import Currency
 from finance.augur.sim.runtime import load_jurisdictions_for
-from finance.augur.sim.scenario import (
-    ORDINARY_INCOME,
-    Currency,
-    InitialAccountBalance,
-    InitialLot,
-    PropertySaleEvent,
-    ScheduledPropertyPurchase,
-    TaxProfile,
-)
+from finance.augur.sim.scenario import InitialAccountBalance, InitialLot, PropertySaleEvent, ScheduledPropertyPurchase
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import Capture, World
 

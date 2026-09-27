@@ -42,6 +42,7 @@ from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.held_bonds import BondStatement, HeldBonds
 from finance.augur.sim.holdings import Holdings, private_issuer
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, PortfolioId, PropertyId
+from finance.augur.sim.income import InterestIncome, TransferIncomeCategory
 from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios, TlhStatement
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, is_quantity_scale, position_value
@@ -73,7 +74,6 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.property import Housing, Properties, mortgage_terms
 from finance.augur.sim.property_tax import PropertyTaxAuthority, PropertyTaxBill
-from finance.augur.sim.scenario import InterestIncome, TransferIncomeCategory
 from finance.augur.sim.tax_authority import Assessment, TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw
 from finance.augur.sim.tlh import ModeledRealizations, TlhMarketUpdate, TlhOpening, TlhPortfolio

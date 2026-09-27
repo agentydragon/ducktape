@@ -409,8 +409,6 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  labels:
-    release: kube-prometheus-stack
   name: tana-mcp-facade
   namespace: tana-mcp
 spec:

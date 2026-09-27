@@ -338,8 +338,7 @@ def _github_token(chart: Chart, name: str) -> None:
     ExternalSecret(
         chart,
         name,
-        name=name,
-        namespace=NAME,
+        metadata=ApiObjectMetadata(name=name, namespace=NAME),
         refresh="1h",
         store=external_creds.STORE,
         data=[remote_data("github-agentydragon-agent", "token", secret_key="GITHUB_TOKEN")],

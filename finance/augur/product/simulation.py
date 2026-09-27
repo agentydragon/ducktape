@@ -10,7 +10,7 @@ from finance.augur.product.metrics import ProductMetricArrays, product_row
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput, event_log
 from finance.augur.sim.events import EventLog
 from finance.augur.sim.ids import AgentId
-from finance.augur.sim.scenario import Currency
+from finance.augur.sim.money import Currency
 from finance.augur.sim.world import Capture, World
 
 

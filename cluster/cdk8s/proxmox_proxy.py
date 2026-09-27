@@ -99,7 +99,7 @@ def chart(app: App) -> Chart:
             selector=k8s.LabelSelector(match_labels=_LABELS),
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(annotations={"reloader.stakater.com/auto": "true"}, labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
                     node_selector={"topology.kubernetes.io/region": "proxmox"},
                     containers=[

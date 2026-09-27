@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -183,8 +183,7 @@ def _rotation(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "github-pat",
-        name=_GITHUB_PAT_SECRET,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name=_GITHUB_PAT_SECRET, namespace=NAMESPACE),
         refresh="1h",
         store=external_creds.STORE,
         data=[remote_data("github-agentydragon-2", "token")],

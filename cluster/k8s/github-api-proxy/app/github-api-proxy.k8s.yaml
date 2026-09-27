@@ -283,8 +283,6 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  labels:
-    release: kube-prometheus-stack
   name: github-api-proxy
   namespace: github-api-proxy
 spec:
