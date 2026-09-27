@@ -30,7 +30,6 @@ def github_branch_protection(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     tofu_controller: Kustomization,
-    tofu_state_db: Kustomization,
     github_secrets_sync_secrets: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
@@ -41,7 +40,6 @@ def github_branch_protection(
         depends_on=flux_kustomization_depends_on_many(
             # tofu-controller runs the Terraform CR.
             tofu_controller,
-            tofu_state_db,
             # Provides github-secrets-sync-pat (Administration:R/W on ducktape).
             github_secrets_sync_secrets,
         ),

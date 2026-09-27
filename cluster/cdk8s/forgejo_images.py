@@ -70,7 +70,6 @@ def forgejo_images(
     external_secrets_config: Kustomization,
     forgejo: Kustomization,
     tofu_controller: Kustomization,
-    tofu_state_db: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -83,7 +82,6 @@ def forgejo_images(
             # Forgejo API must be up (provider target)
             forgejo,
             tofu_controller,
-            tofu_state_db,
         ),
         description=(
             "ducktape-ci Forgejo registry tenant — shared credential (read by "
@@ -99,8 +97,8 @@ def forgejo_images_creds_external_secret(scope: Construct, id: str, *, namespace
         scope,
         id,
         metadata=ApiObjectMetadata(name=SECRET_NAME, namespace=namespace),
-        refresh="1h",
-        store=SecretStoreRef.cluster("kubernetes-forgejo-images-secret-store"),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster("kubernetes-forgejo-images-secret-store"),
         data_from=[DataFrom.from_extract(SECRET_NAME)],
         template=ExternalSecretSpecTargetTemplate(
             type="kubernetes.io/dockerconfigjson", merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE

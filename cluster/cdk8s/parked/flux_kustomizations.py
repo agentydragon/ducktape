@@ -62,7 +62,6 @@ def haku_cloud_agent(
     external_creds: Kustomization,
     external_secrets_config: Kustomization,
     tofu_controller: Kustomization,
-    tofu_state_db: Kustomization,
 ) -> Kustomization:
     name = "haku-cloud-agent"
     return flux_kustomization(
@@ -76,9 +75,7 @@ def haku_cloud_agent(
         suspend=True,
         timeout="10m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(
-            external_creds, external_secrets_config, tofu_controller, tofu_state_db
-        ),
+        depends_on=flux_kustomization_depends_on_many(external_creds, external_secrets_config, tofu_controller),
     )
 
 

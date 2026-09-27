@@ -83,7 +83,8 @@ def mint_bearer_secret(
         metadata=ApiObjectMetadata(
             name=name, namespace=namespace, annotations={"description": description} if description else None
         ),
-        refresh=refresh,
+        refresh_interval=refresh if isinstance(refresh, str) else None,
+        refresh_policy=refresh if isinstance(refresh, ExternalSecretSpecRefreshPolicy) else None,
         data_from=[DataFrom.from_password_generator(generator)],
         creation_policy=creation_policy,
         deletion_policy=deletion_policy,
@@ -125,7 +126,7 @@ def mint_db_role_secret(
         scope,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
-        refresh="8760h",
+        refresh_interval="8760h",
         data_from=[DataFrom.from_password_generator(generator)],
         template=ExternalSecretSpecTargetTemplate(type=secret_type, data=data),
     )

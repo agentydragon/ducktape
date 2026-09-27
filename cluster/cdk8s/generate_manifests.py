@@ -632,7 +632,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, seaweedfs_filer_db_artifact, cnpg_kustomization
     )
     tofu_state_db_artifact = artifact("tofu-state-db", tofu_state_db.OUTPUT_DIR)
-    tofu_state_db_kustomization = tofu_state_db.tofu_state_db(flux_chart, tofu_state_db_artifact, cnpg_kustomization)
+    tofu_state_db.tofu_state_db(flux_chart, tofu_state_db_artifact, cnpg_kustomization)
     seaweedfs_secrets_artifact = artifact("seaweedfs-secrets", seaweedfs_s3_config.OUTPUT_DIR)
     seaweedfs_secrets_kustomization = seaweedfs_s3_config.seaweedfs_secrets(
         flux_chart, seaweedfs_secrets_artifact, external_secrets_operator_kustomization
@@ -661,18 +661,15 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         dns_automation_artifact,
         tofu_controller_kustomization,
-        tofu_state_db_kustomization,
         external_creds_kustomization,
         external_secrets_config_kustomization,
     )
     forgejo_agentydragon_artifact = artifact("forgejo-agentydragon", forgejo_gitops_modules.AGENTYDRAGON_DIR)
     forgejo_gitops_modules.forgejo_agentydragon(
-        flux_chart, forgejo_agentydragon_artifact, tofu_controller_kustomization, tofu_state_db_kustomization
+        flux_chart, forgejo_agentydragon_artifact, tofu_controller_kustomization
     )
     infra_drift_artifact = artifact("infra-drift", drift_watch.OUTPUT_DIR)
-    drift_watch.infra_drift(
-        flux_chart, infra_drift_artifact, tofu_controller_kustomization, tofu_state_db_kustomization
-    )
+    drift_watch.infra_drift(flux_chart, infra_drift_artifact, tofu_controller_kustomization)
     alloy_otlp_bearer_artifact = artifact("alloy-otlp-bearer", alloy_otlp_bearer.OUTPUT_DIR)
     alloy_otlp_bearer.alloy_otlp_bearer(flux_chart, alloy_otlp_bearer_artifact, external_secrets_config_kustomization)
     github_secrets_sync_secrets_artifact = artifact(
@@ -717,34 +714,19 @@ def generate_manifests(root: Path) -> None:
     atuin_user_provisioner.atuin_user_provisioner(flux_chart, atuin_user_provisioner_artifact, atuin_kustomization)
     agent_machine_access_tf_artifact = artifact("agent-machine-access-tf", agent_machine_access.OUTPUT_DIR)
     agent_machine_access_tf_kustomization = agent_machine_access.agent_machine_access_tf(
-        flux_chart,
-        agent_machine_access_tf_artifact,
-        tofu_controller_kustomization,
-        tofu_state_db_kustomization,
-        authentik_kustomization,
+        flux_chart, agent_machine_access_tf_artifact, tofu_controller_kustomization, authentik_kustomization
     )
     sso_providers_tf_artifact = artifact("sso-providers-tf", sso_providers.OUTPUT_DIR)
     sso_providers_tf_kustomization = sso_providers.sso_providers_tf(
-        flux_chart,
-        sso_providers_tf_artifact,
-        tofu_controller_kustomization,
-        tofu_state_db_kustomization,
-        authentik_kustomization,
+        flux_chart, sso_providers_tf_artifact, tofu_controller_kustomization, authentik_kustomization
     )
     gatus_sso_tf_artifact = artifact("gatus-sso-tf", gatus_sso.OUTPUT_DIR)
-    gatus_sso.gatus_sso_tf(
-        flux_chart,
-        gatus_sso_tf_artifact,
-        tofu_controller_kustomization,
-        tofu_state_db_kustomization,
-        authentik_kustomization,
-    )
+    gatus_sso.gatus_sso_tf(flux_chart, gatus_sso_tf_artifact, tofu_controller_kustomization, authentik_kustomization)
     flux_webhook_token_artifact = artifact("flux-webhook-token", flux_webhook_token.OUTPUT_DIR)
     flux_webhook_token_kustomization = flux_webhook_token.flux_webhook_token(
         flux_chart,
         flux_webhook_token_artifact,
         tofu_controller_kustomization,
-        tofu_state_db_kustomization,
         github_secrets_sync_secrets_kustomization,
     )
     github_branch_protection_artifact = artifact("github-branch-protection", github_branch_protection.OUTPUT_DIR)
@@ -752,7 +734,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         github_branch_protection_artifact,
         tofu_controller_kustomization,
-        tofu_state_db_kustomization,
         github_secrets_sync_secrets_kustomization,
     )
     monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
@@ -924,33 +905,20 @@ def generate_manifests(root: Path) -> None:
         external_creds_kustomization,
         external_secrets_config_kustomization,
         tofu_controller_kustomization,
-        tofu_state_db_kustomization,
     )
     forgejo_agentydragon_repos_artifact = artifact(
         "forgejo-agentydragon-repos", forgejo_gitops_modules.AGENTYDRAGON_REPOS_DIR
     )
     forgejo_agentydragon_repos_kustomization = forgejo_gitops_modules.forgejo_agentydragon_repos(
-        flux_chart,
-        forgejo_agentydragon_repos_artifact,
-        forgejo_kustomization,
-        tofu_controller_kustomization,
-        tofu_state_db_kustomization,
+        flux_chart, forgejo_agentydragon_repos_artifact, forgejo_kustomization, tofu_controller_kustomization
     )
     budget_ledger_artifact = artifact("budget-ledger", forgejo_gitops_modules.BUDGET_LEDGER_DIR)
     forgejo_gitops_modules.budget_ledger(
-        flux_chart,
-        budget_ledger_artifact,
-        forgejo_kustomization,
-        tofu_controller_kustomization,
-        tofu_state_db_kustomization,
+        flux_chart, budget_ledger_artifact, forgejo_kustomization, tofu_controller_kustomization
     )
     forgejo_claude_artifact = artifact("forgejo-claude", forgejo_gitops_modules.CLAUDE_DIR)
     forgejo_claude_kustomization = forgejo_gitops_modules.forgejo_claude(
-        flux_chart,
-        forgejo_claude_artifact,
-        forgejo_kustomization,
-        tofu_controller_kustomization,
-        tofu_state_db_kustomization,
+        flux_chart, forgejo_claude_artifact, forgejo_kustomization, tofu_controller_kustomization
     )
     forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
     forgejo_images_kustomization = forgejo_images.forgejo_images(
@@ -959,7 +927,6 @@ def generate_manifests(root: Path) -> None:
         external_secrets_config_kustomization,
         forgejo_kustomization,
         tofu_controller_kustomization,
-        tofu_state_db_kustomization,
     )
     haku_ci_artifact = artifact("haku-ci", haku_ci_runner.OUTPUT_DIR)
     haku_ci_runner.haku_ci(flux_chart, haku_ci_artifact, keda_kustomization)
@@ -1090,7 +1057,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         github_secrets_sync_artifact,
         tofu_controller_kustomization,
-        tofu_state_db_kustomization,
         github_secrets_sync_secrets_kustomization,
         forgejo_images_kustomization,
         seaweedfs_pr_visuals_bucket_kustomization,
@@ -1183,7 +1149,6 @@ def generate_manifests(root: Path) -> None:
         haku_state_artifact,
         forgejo_kustomization,
         tofu_controller_kustomization,
-        tofu_state_db_kustomization,
         agentplane_index_kustomization,
     )
     monitoring_alloy_otlp_bearer_token_tf_artifact = artifact(
@@ -1193,7 +1158,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         monitoring_alloy_otlp_bearer_token_tf_artifact,
         tofu_controller_kustomization,
-        tofu_state_db_kustomization,
         authentik_jwt_rotation_kustomization,
     )
     litellm_artifact = artifact("litellm", litellm_namespace.OUTPUT_DIR)
@@ -1219,11 +1183,7 @@ def generate_manifests(root: Path) -> None:
     )
     cpap_data_artifact = artifact("cpap-data", forgejo_gitops_modules.CPAP_DATA_DIR)
     forgejo_gitops_modules.cpap_data(
-        flux_chart,
-        cpap_data_artifact,
-        forgejo_kustomization,
-        tofu_controller_kustomization,
-        tofu_state_db_kustomization,
+        flux_chart, cpap_data_artifact, forgejo_kustomization, tofu_controller_kustomization
     )
     grocy_mcp_sf_artifact = artifact("grocy-mcp-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", grocy_mcp.BASE_DIR)
     grocy_flux_kustomizations.grocy_mcp_sf(
@@ -1299,11 +1259,7 @@ def generate_manifests(root: Path) -> None:
     haku_workloads.haku_workloads(flux_chart, haku_workloads_artifact, haku_state_kustomization)
     litellm_keys_tf_artifact = artifact("litellm-keys-tf", litellm_keys.OUTPUT_DIR)
     litellm_keys_tf_kustomization = litellm_keys.litellm_keys_tf(
-        flux_chart,
-        litellm_keys_tf_artifact,
-        litellm_kustomization,
-        tofu_controller_kustomization,
-        tofu_state_db_kustomization,
+        flux_chart, litellm_keys_tf_artifact, litellm_kustomization, tofu_controller_kustomization
     )
     haku_openclaw_spike_app_artifact = artifact(
         "haku-openclaw-spike-app", f"{HAND_WRITTEN_ROOT}/agents/haku-openclaw-spike/app"
