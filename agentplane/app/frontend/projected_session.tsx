@@ -513,7 +513,9 @@ function LifecycleGroupView({
     <CollapsibleRows
       id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:lifecycle`}
       summary={
-        <Text size="xs" c="dimmed">
+        // Unlike RunView's inline-flex Flex, a plain Text defaults to a block <p> -- inside
+        // <summary>, that wraps the label to its own line below the disclosure triangle.
+        <Text span size="xs" c="dimmed">
           {summarizeLifecycleGroup(entities)}
         </Text>
       }
