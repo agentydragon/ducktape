@@ -33,7 +33,7 @@ from flux_receiver_crds.io.fluxcd.toolkit.notification import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -102,18 +102,5 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
 
 
-def haku_ui_image_webhook(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, haku_state: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        artifact,
-        retry_interval=None,
-        wait=None,
-        depends_on=[
-            # haku-state provisions the forgejo-webhook-token Secret (the Receiver's secretRef)
-            # and the Forgejo package webhook that targets this receiver.
-            flux_kustomization_depends_on(haku_state)
-        ],
-    )
+def haku_ui_image_webhook(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
+    return flux_kustomization(chart, NAME, artifact, retry_interval=None, wait=None)

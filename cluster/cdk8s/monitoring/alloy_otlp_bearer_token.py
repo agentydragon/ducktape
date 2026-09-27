@@ -28,10 +28,7 @@ def write_manifests(root: Path) -> None:
 
 
 def alloy_otlp_bearer_token_tf(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    tofu_controller: Kustomization,
-    authentik_jwt_rotation: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -47,10 +44,5 @@ def alloy_otlp_bearer_token_tf(
             )
         ],
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(
-            tofu_controller,
-            # authentik-jwt-rotation owns the agents-infra namespace this secret's
-            # rotator runs in, and rotates the alloy-otlp bearer token committed here.
-            authentik_jwt_rotation,
-        ),
+        depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )

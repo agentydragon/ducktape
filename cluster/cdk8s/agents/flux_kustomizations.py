@@ -66,30 +66,9 @@ def authentik_jwt_rotation(
     )
 
 
-def forgejo_token_rotation(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    authentik_jwt_rotation: Kustomization,
-    forgejo_claude: Kustomization,
-    haku_state: Kustomization,
-    forgejo_agentydragon_repos: Kustomization,
-) -> Kustomization:
+def forgejo_token_rotation(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     name = "forgejo-token-rotation"
-    return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        retry_interval=None,
-        wait=None,
-        depends_on=flux_kustomization_depends_on_many(
-            # owns the agents-infra namespace
-            authentik_jwt_rotation,
-            forgejo_claude,
-            haku_state,
-            forgejo_agentydragon_repos,
-        ),
-        timeout="2m",
-    )
+    return flux_kustomization(chart, name, artifact, retry_interval=None, wait=None, timeout="2m")
 
 
 def haku_egress_proxy(
@@ -140,8 +119,6 @@ def plaid_mcp(
     local_path_provisioner: Kustomization,
     external_secrets_operator: Kustomization,
     valkey: Kustomization,
-    agent_machine_access_tf: Kustomization,
-    reflector: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     name = "plaid-mcp"
@@ -156,8 +133,6 @@ def plaid_mcp(
             local_path_provisioner,
             external_secrets_operator,
             valkey,
-            agent_machine_access_tf,
-            reflector,
             # ServiceMonitor
             monitoring_crds,
         ),
@@ -232,11 +207,9 @@ def agent_shared_secrets(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts)
 def tana_mcp(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_creds: Kustomization,
     external_secrets_operator: Kustomization,
     valkey: Kustomization,
     monitoring_crds: Kustomization,
-    kyverno: Kustomization,
 ) -> Kustomization:
     name = "tana-mcp"
     return flux_kustomization(
@@ -246,12 +219,9 @@ def tana_mcp(
         timeout="5m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            external_creds,
             external_secrets_operator,
             valkey,
             # ServiceMonitor + PrometheusRule
             monitoring_crds,
-            # Kyverno's failurePolicy: Fail webhooks admit the Namespace, Deployment and HTTPRoute.
-            kyverno,
         ),
     )

@@ -308,7 +308,7 @@ def write_manifests(root: Path) -> None:
 def public_coder_agent_backup(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_public_coder_agent_backups_bucket: Kustomization,
+    seaweedfs_operator: Kustomization,
     external_secrets_operator: Kustomization,
     volsync: Kustomization,
 ) -> Kustomization:
@@ -318,9 +318,7 @@ def public_coder_agent_backup(
         artifact,
         timeout="5m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(
-            seaweedfs_public_coder_agent_backups_bucket, external_secrets_operator, volsync
-        ),
+        depends_on=flux_kustomization_depends_on_many(seaweedfs_operator, external_secrets_operator, volsync),
         description=(
             "Restic/VolSync backup of Public Coder's worker-local OpenClaw state "
             "to its dedicated private SeaweedFS S3 bucket."

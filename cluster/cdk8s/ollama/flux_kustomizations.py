@@ -15,7 +15,6 @@ def ollama(
     cert_manager_environment: Kustomization,
     nvidia_runtimeclass: Kustomization,
     external_secrets_operator: Kustomization,
-    reflector: Kustomization,
 ) -> Kustomization:
     name = "ollama"
     return flux_kustomization(
@@ -37,6 +36,5 @@ def ollama(
             nvidia_runtimeclass,
             # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
             external_secrets_operator,
-            reflector,
         ),
     )

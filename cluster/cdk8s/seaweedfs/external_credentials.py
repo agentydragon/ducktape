@@ -58,10 +58,7 @@ def write_manifests(root: Path) -> None:
 
 
 def seaweedfs_external_credentials(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_secrets: Kustomization,
-    seaweedfs_cluster: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_cluster: Kustomization
 ) -> Kustomization:
     name = "seaweedfs-external-credentials"
     return flux_kustomization(
@@ -69,7 +66,7 @@ def seaweedfs_external_credentials(
         name,
         artifact,
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(seaweedfs_secrets, seaweedfs_cluster),
+        depends_on=flux_kustomization_depends_on_many(seaweedfs_cluster),
         timeout="5m",
         description="Externally managed SeaweedFS S3 credential source Secrets and grants.",
     )

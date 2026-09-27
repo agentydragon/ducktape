@@ -139,7 +139,7 @@ def write_manifests(root: Path) -> None:
 
 
 def cert_manager(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, reflector: Kustomization, monitoring_crds: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -147,10 +147,7 @@ def cert_manager(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            # TODO: drop this edge. It ordered the reflected cert-manager-issuer-config
-            # ConfigMap that postBuild read; neither exists any more.
-            reflector,
             # the ServiceMonitor/PodMonitor CRD
-            monitoring_crds,
+            monitoring_crds
         ),
     )
