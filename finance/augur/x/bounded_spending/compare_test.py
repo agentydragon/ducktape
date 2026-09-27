@@ -20,6 +20,7 @@ from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot, PreparedObligation
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.world import World
 from finance.augur.study.trinity.replay import EQUITY, HORIZON_MONTHS, Situation, situation
 from finance.augur.x.bounded_spending.compare import _write_consumption_distribution, compare
@@ -73,7 +74,7 @@ def early_claim_failure() -> Finished:
         world.track(
             Biller(
                 PreparedObligation(
-                    month=0,
+                    schedule=Once(month=0),
                     obligation_id="test-large-bill",
                     obligation_type=ObligationType.OUTSIDE_RENT,
                     from_account=AccountRef(agent_id=AgentId("retiree"), account_id=AccountId("checking")),
