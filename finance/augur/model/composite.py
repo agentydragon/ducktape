@@ -12,6 +12,7 @@ from finance.augur.model.exogenous import (
     validate_sample_satisfies_request,
 )
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
+from finance.augur.model.provenance import Composed, ModelIdentity, ModelKind
 from finance.augur.model.series import IssuerId, LevelSeriesKey
 
 
@@ -44,13 +45,13 @@ class CompositeModel:
         macro_bundle = self.macro.sample(macro_request)
         pe_bundle = self.private_equity.sample(pe_request)
         sampled = SampledExogenousBundle(
+            identity=ModelIdentity(
+                name=self.label,
+                kind=ModelKind.COMPOSITE,
+                paths=Composed(components=(macro_bundle.identity, pe_bundle.identity)),
+            ),
             levels=merge_level_frames(macro_bundle.levels, pe_bundle.levels),
             private_equity=PrivateEquityBundle.combine([macro_bundle.private_equity, pe_bundle.private_equity]),
-            model_id=self.label,
-            provenance={
-                "macro_provenance": dict(macro_bundle.provenance),
-                "private_equity_provenance": dict(pe_bundle.provenance),
-            },
         )
         validate_sample_satisfies_request(request, sampled)
         return sampled

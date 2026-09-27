@@ -28,6 +28,7 @@ from finance.augur.model.exogenous import (
     merge_level_frames,
     validate_sample_satisfies_request,
 )
+from finance.augur.model.provenance import Composed, ModelIdentity, ModelKind
 from finance.augur.model.schemas import FrozenModel
 from finance.augur.model.series import IssuerId, LevelSeriesKey
 
@@ -50,6 +51,7 @@ class MirroringSampler:
 
     inner: Sampler
     mirror_series: tuple[MirrorLevelSeries, ...]
+    label: str = "mirroring"
 
     def __post_init__(self) -> None:
         emittable = self.inner.emittable_level_keys()
@@ -88,10 +90,11 @@ class MirroringSampler:
         ]
         mirror_levels = assemble_level_frames(target_blocks, rollout_count=rollout_count, horizon_months=horizon_months)
         merged = SampledExogenousBundle(
+            identity=ModelIdentity(
+                name=self.label, kind=ModelKind.MIRRORING, paths=Composed(components=(bundle.identity,))
+            ),
             levels=merge_level_frames(bundle.levels, mirror_levels),
             private_equity=bundle.private_equity,
-            model_id=bundle.model_id,
-            provenance=bundle.provenance,
         )
         anchors = {
             mirror.target: mirror.initial_level for mirror in self.mirror_series if mirror.initial_level is not None

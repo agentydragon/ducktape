@@ -45,7 +45,8 @@ a separate modeling approximation, not a numerical requirement of valuation.
 
 Experiments can materialize market paths once, then construct different product
 choices without loading or sampling again. Market arrays retain the opening
-observation, aligned rollout/month axes, source dates or seeds, and provenance.
+observation, aligned rollout/month axes, and the identity of the model that produced
+them, including its source dates or seeds.
 Construction does not mutate them. Missing corporate/equity paths reject instead
 of being synthesized from unrelated inputs. CPI and equity indices must be finite
 and positive; equity indices start at one before a product's opening price is
@@ -60,7 +61,7 @@ changes. This separation does not add dividend taxes or tradable bonds.
 Historical replay materializes caller-selected starting dates in caller order. A
 date's path is unchanged by partitioning, reordering or extending the selection;
 duplicate or unavailable starts reject. Output rollout indices are batch-local,
-and provenance retains their ordered historical dates. Historical windows are
+and the identity retains their ordered historical dates. Historical windows are
 not random seeds or independent Monte Carlo draws.
 
 ## What is fitted, and on what
@@ -79,6 +80,12 @@ single estimate, and `fit_macro_var` inner-joins the three series, so the shorte
 start. Equity is a marginal and keeps its own much longer history; `rate_beta`, the one
 parameter linking equity to the macro state, pays the common-window cost and comes out
 indistinguishable from zero (gap 2).
+
+Every sample says which of these it drew with: its identity names the macro VAR and the equity
+marginal as separate fitted blocks, each with its own window from the checked-in fit, under a
+digest of their fitted values. A block the config overrides is stated rather than fitted and
+reports no window, and `rate_beta` never reports one, because its fitted value is not what the
+paths use.
 
 ### The 1955 window is a choice, and the alternative is measured
 

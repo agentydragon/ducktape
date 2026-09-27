@@ -37,12 +37,8 @@ from finance.augur.model.historical_windows import (
     MacroHistory,
     load_macro_history,
 )
-from finance.augur.model.structural_macro import (
-    PERCENT_TO_DECIMAL,
-    FitWindowProvenance,
-    MacroVarSpec,
-    StructuralMacroFittedDefaults,
-)
+from finance.augur.model.provenance import FitWindow
+from finance.augur.model.structural_macro import PERCENT_TO_DECIMAL, MacroVarSpec, StructuralMacroFittedDefaults
 from finance.evidence.loading import MonthlyLevel, read_french_market_levels, read_monthly_levels
 from finance.evidence.sources import FRED_CPI, FRED_FEDFUNDS, FRED_GS10, FRENCH_FACTORS, YAHOO_VFINX
 
@@ -146,7 +142,7 @@ def fit_structural_macro_defaults(evidence_dir: Path, *, macro_window: MacroFitW
             transition=macro_fit.transition,
             shock_cholesky=macro_fit.shock_cholesky,
         ),
-        macro_state_fit=FitWindowProvenance(
+        macro_state_fit=FitWindow(
             source=macro_source,
             first_month=macro_fit.first_month,
             last_month=macro_fit.latest_month,
@@ -154,13 +150,13 @@ def fit_structural_macro_defaults(evidence_dir: Path, *, macro_window: MacroFitW
         ),
         equity_monthly_log_return_mu=equity_fit.monthly_log_mu,
         equity_monthly_log_return_sigma=equity_fit.monthly_log_sigma,
-        equity_fit=FitWindowProvenance(
+        equity_fit=FitWindow(
             source=FRENCH_FACTORS.provenance_label,
             first_month=equity_fit.first_month,
             last_month=equity_fit.last_month,
             sample_months=equity_fit.sample_months,
         ),
-        rate_beta_fit=FitWindowProvenance(
+        rate_beta_fit=FitWindow(
             source=f"{YAHOO_VFINX.provenance_label},{FRED_FEDFUNDS.provenance_label}",
             first_month=beta_fit.first_month,
             last_month=beta_fit.last_month,

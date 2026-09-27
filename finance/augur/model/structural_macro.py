@@ -49,7 +49,6 @@ configured `Sampler.sample` composes this with `product_paths.construct_products
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Literal
 
 import numpy as np
@@ -62,6 +61,17 @@ from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExoge
 from finance.augur.model.float64 import LEVEL_DTYPE
 from finance.augur.model.market_paths import MarketPaths
 from finance.augur.model.product_paths import construct_products, validate_product_symbols
+from finance.augur.model.provenance import (
+    Drawn,
+    FittedArtifact,
+    FittedComponent,
+    FitWindow,
+    ModelIdentity,
+    ModelKind,
+    NoArtifact,
+    SeedDerivation,
+    stable_identity_digest,
+)
 from finance.augur.model.schemas import FrozenModel
 from finance.augur.model.series import InflationKey, IssuerId, LevelSeriesKey, SecurityDistributionKey, SecurityKey
 from finance.augur.model.series_model import derive_stream_rollout_seeds
@@ -90,9 +100,9 @@ class EquityProcess(FrozenModel):
     # factors, `Mkt-RF + RF`, dividends included) — see `fit/calibrated/trained_structural_macro
     # .yaml`'s `equity_fit` for the window/sample count, and SPEC.md gap 3 for why a century
     # rather than a shorter window is the deliberate choice.
-    monthly_log_return_mu: float = Field(default_factory=lambda: _fitted_defaults().equity_monthly_log_return_mu)
+    monthly_log_return_mu: float = Field(default_factory=lambda: fitted_defaults().equity_monthly_log_return_mu)
     monthly_log_return_sigma: NonNegativeFloat = Field(
-        default_factory=lambda: _fitted_defaults().equity_monthly_log_return_sigma
+        default_factory=lambda: fitted_defaults().equity_monthly_log_return_sigma
     )
     # ZERO by POLICY, not by fit — the fitted coupling's sign is not stable across windows and
     # neither window explains half a percent of variance (SPEC.md gap 2 has the numbers; the
@@ -136,21 +146,10 @@ class MacroVarSpec(FrozenModel):
         return self
 
 
-class FitWindowProvenance(FrozenModel):
-    """A fitted block's evidence window, checked in as data rather than left to a comment
-    beside the numbers: which series it came from, the window it was fitted on, and how many
-    months that window covered."""
-
-    source: str
-    first_month: date
-    last_month: date
-    sample_months: int
-
-
 class StructuralMacroFittedDefaults(FrozenModel):
     """The structural-macro fit, checked in whole: written by `bb run
     //finance/augur/fit:train -- --model structural_macro ...` to
-    `fit/calibrated/trained_structural_macro.yaml` and loaded (via `_fitted_defaults` below)
+    `fit/calibrated/trained_structural_macro.yaml` and loaded (via `fitted_defaults` below)
     as `StructuralMacroProviderConfig`'s and `EquityProcess`'s shipped defaults.
 
     Deployment-specific fields are deliberately absent — which equity symbol and which
@@ -159,16 +158,16 @@ class StructuralMacroFittedDefaults(FrozenModel):
     """
 
     macro_state: MacroVarSpec
-    macro_state_fit: FitWindowProvenance
+    macro_state_fit: FitWindow
 
     equity_monthly_log_return_mu: float
     equity_monthly_log_return_sigma: NonNegativeFloat
-    equity_fit: FitWindowProvenance
+    equity_fit: FitWindow
 
     # `EquityProcess.rate_beta` stays a policy-set 0.0 rather than this fitted value — see its
     # field comment. Recorded here so that policy is checkable against real evidence instead
     # of asserted, and so a future refit's rate_beta finding is a reviewable diff.
-    rate_beta_fit: FitWindowProvenance
+    rate_beta_fit: FitWindow
     rate_beta_fitted_value: float
     rate_beta_r_squared: float
 
@@ -179,7 +178,7 @@ class StructuralMacroFittedDefaults(FrozenModel):
 _BUNDLED_STRUCTURAL_MACRO_RUNFILE = "finance/augur/fit/calibrated/trained_structural_macro.yaml"
 
 
-def _fitted_defaults() -> StructuralMacroFittedDefaults:
+def fitted_defaults() -> StructuralMacroFittedDefaults:
     path = get_required_path(own_repo_rlocation(_BUNDLED_STRUCTURAL_MACRO_RUNFILE))
     return StructuralMacroFittedDefaults.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
 
@@ -199,7 +198,7 @@ class StructuralMacroProviderConfig(FrozenModel):
     # trailing-year log inflation; all three states are annualized decimals. Why one JOINT
     # process rather than three independent ones — persistence, the Fed's inflation reaction,
     # correlated innovations — is SPEC.md's "What is fitted, and on what" and gap 1.
-    macro_state: MacroVarSpec = Field(default_factory=lambda: _fitted_defaults().macro_state)
+    macro_state: MacroVarSpec = Field(default_factory=lambda: fitted_defaults().macro_state)
 
     # The CPI level's arbitrary base. Only RATIOS of it are ever read (an amount indexed from
     # month a to month b), so the value is a unit choice; it is the inflation RATE inside
@@ -231,6 +230,7 @@ class StructuralMacroModel:
         validate_product_symbols(
             equity=config.equity.instrument if config.equity is not None else None, instruments=config.instruments
         )
+        self._artifact = _fitted_artifact(config)
 
     def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
         keys: set[LevelSeriesKey] = {InflationKey()}
@@ -272,13 +272,40 @@ class StructuralMacroModel:
             if config.equity is not None
             else None,
             corporate_yields={},
-            model_id=self.label,
-            provenance={
-                "exogenous_provider_label": self.label,
-                "rollout_seeds": request.rollout_seeds,
-                "notes": ("joint VAR(1) macro state fitted on FRED FEDFUNDS/GS10/CPIAUCSL 1955-2026",),
-            },
+            identity=ModelIdentity(
+                name=self.label,
+                kind=ModelKind.STRUCTURAL_MACRO,
+                paths=Drawn(
+                    artifact=self._artifact,
+                    rollout_seeds=request.rollout_seeds,
+                    seed_derivation=SeedDerivation.PER_ROLLOUT,
+                ),
+            ),
         )
+
+
+def _fitted_artifact(config: StructuralMacroProviderConfig) -> FittedArtifact | NoArtifact:
+    """The checked-in fit's blocks this config draws with, each with its own window.
+
+    A block counts as fitted only while the config still carries the fit's values; an override
+    is stated, and its window no longer describes it. `rate_beta` is never among them: it is
+    zero by policy, so its fitted value is not what the paths use.
+    """
+
+    fitted = fitted_defaults()
+    values: dict[str, object] = {}
+    components: list[FittedComponent] = []
+    if config.macro_state == fitted.macro_state:
+        values["macro_state"] = fitted.macro_state
+        components.append(FittedComponent(name="macro_state", window=fitted.macro_state_fit))
+    equity = config.equity
+    fitted_equity = (fitted.equity_monthly_log_return_mu, fitted.equity_monthly_log_return_sigma)
+    if equity is not None and (equity.monthly_log_return_mu, equity.monthly_log_return_sigma) == fitted_equity:
+        values["equity"] = fitted_equity
+        components.append(FittedComponent(name="equity", window=fitted.equity_fit))
+    if not components:
+        return NoArtifact()
+    return FittedArtifact(digest=stable_identity_digest(values), components=tuple(components))
 
 
 def _macro_state_path(

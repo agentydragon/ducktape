@@ -37,6 +37,7 @@ from finance.augur.model.testing import (
     int_matrix_with_month_override,
     int_matrix_with_step,
     level_matrix_with_step,
+    stipulated_identity,
 )
 from finance.augur.policy.cash_band_household import CashBandHousehold, ManagedSleeve, SecuritySleeve
 from finance.augur.policy.funding import ClaimPayer
@@ -140,7 +141,7 @@ class MissingRequiredExogenousModel:
         self.sample_requests.append(request)
         # Empty bundle (all roles default to typed-empty frames) — models the
         # provider that fails to satisfy the request's required level series.
-        return SampledExogenousBundle()
+        return SampledExogenousBundle(identity=stipulated_identity("missing_required_fixture"))
 
 
 @pytest.fixture
@@ -543,7 +544,7 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
     model = ConstantFrameModel(
         levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
         private_equity={issuer_id: PrivateEquityChannels(mark_usd_per_unit=mark_by_rollout)},
-        model_id="pe_mark_by_rollout_fixture",
+        name="pe_mark_by_rollout_fixture",
     )
     product = make_product_service(model)
     scenario = ScenarioKey(
@@ -582,7 +583,7 @@ def test_selected_detail_executes_financially_once(
         ConstantFrameModel(
             levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
             private_equity={IssuerId("private_holding_a"): PrivateEquityChannels(mark_usd_per_unit=25.0)},
-            model_id="flat_selected_detail",
+            name="flat_selected_detail",
         )
     )
     original = service.execute
@@ -991,7 +992,7 @@ def test_product_rollout_collapse_revalues_unsold_private_equity(make_product_se
                     liquidity_blocked=event_matrix_with_step(default=False, override=True, month=1),
                 )
             },
-            model_id="collapsed_pe_fixture",
+            name="collapsed_pe_fixture",
         )
     )
 
@@ -1040,7 +1041,7 @@ def test_product_rollout_includes_private_equity_opportunity_trace(make_product_
                     ),
                 )
             },
-            model_id="tender_opportunity_fixture",
+            name="tender_opportunity_fixture",
         )
     )
 

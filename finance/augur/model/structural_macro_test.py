@@ -17,6 +17,7 @@ import pytest
 import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
+from finance.augur.model import structural_macro
 from finance.augur.model.bond_fund import MINIMUM_ANNUAL_YIELD, BondFundSpec
 from finance.augur.model.equity import EquitySpec
 from finance.augur.model.exogenous import (
@@ -26,6 +27,7 @@ from finance.augur.model.exogenous import (
     validate_sample_satisfies_request,
 )
 from finance.augur.model.historical_windows import HistoricalWindowsModel, MacroHistory
+from finance.augur.model.provenance import Drawn, FittedArtifact, FittedComponent, NoArtifact, SeedDerivation
 from finance.augur.model.provider_config import ProviderConfig
 from finance.augur.model.series import (
     InflationKey,
@@ -41,6 +43,7 @@ from finance.augur.model.structural_macro import (
     MacroStateMatrix,
     MacroVarSpec,
     StructuralMacroProviderConfig,
+    fitted_defaults,
 )
 
 ZERO_SHOCKS: MacroStateMatrix = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
@@ -572,6 +575,78 @@ def test_macro_shocks_are_correlated_across_states() -> None:
     # Lower-triangular, so state 0's innovation cannot depend on states 1-2's draws.
     assert cholesky[0][1] == 0.0
     assert cholesky[0][2] == 0.0
+
+
+def _shipped(**updates: object) -> StructuralMacroProviderConfig:
+    """The checked-in fit, with an equity sleeve so both of its fitted blocks are drawn with."""
+
+    fields: dict[str, object] = {
+        "equity": EquityProcess(instrument=EquitySpec(symbol=EQUITY, initial_price_usd=500.0)),
+        "instruments": (BondFundSpec(symbol=BOND, maturity_years=6.0),),
+        **updates,
+    }
+    return StructuralMacroProviderConfig.model_validate(fields)
+
+
+def _artifact(
+    config: StructuralMacroProviderConfig, *, seeds: tuple[int, ...] = SEEDS, horizon_months: int = 12
+) -> FittedArtifact | NoArtifact:
+    paths = (
+        config.realize_model()
+        .sample(ExogenousSamplingRequest(horizon_months=horizon_months, rollout_seeds=seeds))
+        .identity.paths
+    )
+    assert isinstance(paths, Drawn)
+    assert paths.rollout_seeds == seeds
+    assert paths.seed_derivation is SeedDerivation.PER_ROLLOUT
+    return paths.artifact
+
+
+def test_the_identity_reports_the_macro_and_equity_fits_with_their_own_windows() -> None:
+    """The equity marginal keeps its own, longer record while the VAR shares one window, so a
+    single window for the model would misstate one of them. `rate_beta` is absent: its fitted
+    value is not what the paths use."""
+
+    fitted = fitted_defaults()
+    artifact = _artifact(_shipped())
+
+    assert isinstance(artifact, FittedArtifact)
+    assert artifact.components == (
+        FittedComponent(name="macro_state", window=fitted.macro_state_fit),
+        FittedComponent(name="equity", window=fitted.equity_fit),
+    )
+    assert fitted.macro_state_fit != fitted.equity_fit
+
+
+def test_an_overridden_block_is_stated_rather_than_fitted() -> None:
+    stated_macro = _artifact(_shipped(macro_state=_diagonal_var()))
+    assert isinstance(stated_macro, FittedArtifact)
+    assert [component.name for component in stated_macro.components] == ["equity"]
+
+    # No equity sleeve and a hand-set VAR: nothing the paths use came from the fit.
+    assert _artifact(_config()) == NoArtifact()
+
+
+def test_the_digest_moves_with_the_fitted_values_and_nothing_else(monkeypatch: pytest.MonkeyPatch) -> None:
+    baseline = _artifact(_shipped())
+    assert isinstance(baseline, FittedArtifact)
+
+    # Not the request, the instruments priced off the paths, the CPI base, or a stated coupling.
+    assert _artifact(_shipped(), seeds=(5,), horizon_months=3) == baseline
+    restated = _shipped(
+        instruments=(),
+        initial_inflation_level=250.0,
+        equity=EquityProcess(instrument=EquitySpec(symbol=CASH, initial_price_usd=1.0), rate_beta=0.5),
+    )
+    assert _artifact(restated) == baseline
+
+    fitted = fitted_defaults()
+    refit = fitted.model_copy(update={"equity_monthly_log_return_mu": fitted.equity_monthly_log_return_mu + 0.001})
+    monkeypatch.setattr(structural_macro, "fitted_defaults", lambda: refit)
+    moved = _artifact(_shipped())
+    assert isinstance(moved, FittedArtifact)
+    assert moved.components == baseline.components
+    assert moved.digest != baseline.digest
 
 
 if __name__ == "__main__":

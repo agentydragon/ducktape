@@ -6,6 +6,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.independent import IndependentProviderConfig
+from finance.augur.model.provenance import Drawn, ModelIdentity, ModelKind, NoArtifact, SeedDerivation
 from finance.augur.model.provider_config import ProviderConfig
 from finance.augur.model.series import SP500_SYMBOL, HomeValueKey, InflationKey, LocationId, RentKey, SecurityKey
 
@@ -87,7 +88,12 @@ def test_independent_model_samples_levels_and_events(example_config: Independent
     }
     # IndependentModel doesn't sample PE channels — the typed PE bundle stays empty.
     assert sampled.private_equity.is_empty()
-    assert sampled.model_id == "independent"
+    # Hand-set GBM parameters: nothing is fitted, so there is no artifact and no fit window.
+    assert sampled.identity == ModelIdentity(
+        name="independent",
+        kind=ModelKind.INDEPENDENT,
+        paths=Drawn(artifact=NoArtifact(), rollout_seeds=(7, 8), seed_derivation=SeedDerivation.PER_ROLLOUT),
+    )
 
 
 def test_independent_provider_config_roundtrips_through_discriminated_union(

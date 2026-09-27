@@ -4,8 +4,9 @@ import pytest_bazel
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.mirroring import MirroringSampler, MirrorLevelSeries
+from finance.augur.model.provenance import Composed, ModelIdentity, ModelKind
 from finance.augur.model.series import HomeValueKey, LocationId, RentKey
-from finance.augur.model.testing import ConstantFrameModel, level_matrix_with_step
+from finance.augur.model.testing import ConstantFrameModel, level_matrix_with_step, stipulated_identity
 
 _SOURCE = HomeValueKey(location_id=LocationId("vallejo_ca"))
 _TARGET = HomeValueKey(location_id=LocationId("mare_island_vallejo_ca"))
@@ -49,6 +50,23 @@ def test_mirror_reanchors_to_initial_level_while_tracking_source_returns() -> No
     target_path = sampled.level_matrix(_TARGET, rollout_count=2, horizon_months=3)
     np.testing.assert_allclose(target_path[:, 0], 700_000.0)
     np.testing.assert_allclose(target_path / target_path[:, :1], source_path / source_path[:, :1])
+
+
+def test_mirror_reports_itself_wrapping_the_inner_model() -> None:
+    sampler = MirroringSampler(
+        inner=_inner_with_source(), mirror_series=(MirrorLevelSeries(target=_TARGET, source=_SOURCE),)
+    )
+    identity = sampler.sample(
+        ExogenousSamplingRequest(
+            rollout_seeds=(7,), horizon_months=1, **level_series_request_channels(frozenset({_TARGET}))
+        )
+    ).identity
+
+    assert identity == ModelIdentity(
+        name="mirroring",
+        kind=ModelKind.MIRRORING,
+        paths=Composed(components=(stipulated_identity("constant_frame_fixture"),)),
+    )
 
 
 def test_mirror_source_must_be_emittable_by_the_inner_model() -> None:

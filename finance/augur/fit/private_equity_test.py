@@ -15,6 +15,14 @@ from finance.augur.fit.private_equity import (
     train_from_config,
 )
 from finance.augur.model.exogenous import ExogenousSamplingRequest
+from finance.augur.model.provenance import (
+    Drawn,
+    FittedArtifact,
+    FittedComponent,
+    ModelKind,
+    SeedDerivation,
+    WindowNotRecorded,
+)
 from finance.augur.model.series import IssuerId
 from finance.augur.model.trained_private_equity import (
     TrainedPrivateEquityModel,
@@ -234,6 +242,51 @@ priors:
     )
     assert events.dtype.kind == "b"
     assert events.shape == (3, 9)
+    assert bundle.identity.kind is ModelKind.TRAINED_PRIVATE_EQUITY
+    paths = bundle.identity.paths
+    assert isinstance(paths, Drawn)
+    assert (paths.rollout_seeds, paths.seed_derivation) == ((1, 2, 3), SeedDerivation.PER_ROLLOUT)
+    assert isinstance(paths.artifact, FittedArtifact)
+    # The artifact records its as-of date and observation counts, not the span the fit read.
+    assert paths.artifact.components == (
+        FittedComponent(name="private_equity:private_company_a", window=WindowNotRecorded()),
+    )
+
+
+def test_runtime_digest_follows_the_fitted_values_not_the_fit_notes(
+    broad_scale_prior: TrainedPrivateEquityScalePrior,
+) -> None:
+    artifact = TrainedPrivateEquityModelArtifact(
+        issuer_id=PRIVATE_COMPANY_A,
+        as_of_date=date(2026, 5, 27),
+        current_mark_usd=100.0,
+        monthly_log_return_mu=0.01,
+        monthly_log_return_sigma=0.05,
+        tender_interval_months_median=6.0,
+        tender_interval_log_sigma=0.1,
+        provenance={"observation_count": 3},
+        scale_prior=broad_scale_prior,
+    )
+
+    def digest(artifact: TrainedPrivateEquityModelArtifact, *, seeds: tuple[int, ...]) -> str:
+        paths = (
+            TrainedPrivateEquityModel(artifact=artifact)
+            .sample(
+                ExogenousSamplingRequest(
+                    horizon_months=2,
+                    rollout_seeds=seeds,
+                    required_private_equity_issuers=frozenset({PRIVATE_COMPANY_A}),
+                )
+            )
+            .identity.paths
+        )
+        assert isinstance(paths, Drawn)
+        assert isinstance(paths.artifact, FittedArtifact)
+        return paths.artifact.digest
+
+    baseline = digest(artifact, seeds=(1,))
+    assert digest(artifact.model_copy(update={"provenance": {"observation_count": 4}}), seeds=(2, 3)) == baseline
+    assert digest(artifact.model_copy(update={"monthly_log_return_mu": 0.02}), seeds=(1,)) != baseline
 
 
 def test_runtime_private_marks_forward_fill_between_tenders(broad_scale_prior: TrainedPrivateEquityScalePrior) -> None:

@@ -30,6 +30,7 @@ from finance.augur.model.private_equity_risk import (
     _scale_reverting_drift,
     _seed_from_rollout_seeds,
 )
+from finance.augur.model.provenance import Drawn, ModelIdentity, ModelKind, NoArtifact, SeedDerivation
 from finance.augur.model.provider_config import ProviderConfig
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.model.series_model import derive_stream_rollout_seeds
@@ -499,6 +500,34 @@ def test_valuation_channel_on_anchors_columns_zero() -> None:
     assert mark[0, 0] == pytest.approx(100.0)
     # The coupled valuation is a strictly positive market cap, never the all-zeros sentinel.
     assert np.all(valuation > 0.0)
+
+
+def test_the_identity_says_a_rollout_moves_with_its_batch_and_it_does() -> None:
+    """Stated priors, nothing fitted, and every stream is one generator seeded by the whole
+    batch — so a rollout re-run alone is a different path, and the identity has to say so."""
+
+    model = PrivateEquityRiskProviderConfig(issuers={ACME: _valuation_issuer()}).realize_model()
+
+    def valuation(seeds: tuple[int, ...]) -> tuple[SampledExogenousBundle, np.ndarray]:
+        sampled = model.sample(
+            ExogenousSamplingRequest(
+                horizon_months=6, rollout_seeds=seeds, required_private_equity_issuers=frozenset({ACME})
+            )
+        )
+        channel = str(PrivateEquityFloatChannel.COMPANY_VALUATION_USD)
+        return sampled, sampled.private_equity.issuer_float_matrix(
+            "acme", channel, rollout_count=len(seeds), horizon_months=6
+        )
+
+    alone, alone_valuation = valuation((7,))
+    _, batched_valuation = valuation((7, 8))
+
+    assert alone.identity == ModelIdentity(
+        name="private_equity_risk",
+        kind=ModelKind.PRIVATE_EQUITY_RISK,
+        paths=Drawn(artifact=NoArtifact(), rollout_seeds=(7,), seed_derivation=SeedDerivation.BATCH_MIXED),
+    )
+    assert not np.array_equal(alone_valuation[0], batched_valuation[0])
 
 
 def test_valuation_channel_on_is_deterministic_under_fixed_seeds() -> None:

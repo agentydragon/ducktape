@@ -10,11 +10,18 @@ import numpy.typing as npt
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
+from finance.augur.model.provenance import ModelIdentity, ModelKind, Stipulated
 from finance.augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 
 type LevelOverride = float | npt.NDArray[np.float64] | Callable[[ExogenousSamplingRequest], npt.NDArray[np.float64]]
 type IntOverride = int | npt.NDArray[np.int64] | Callable[[ExogenousSamplingRequest], npt.NDArray[np.int64]]
 type EventOverride = bool | npt.NDArray[np.bool_] | Callable[[ExogenousSamplingRequest], npt.NDArray[np.bool_]]
+
+
+def stipulated_identity(name: str) -> ModelIdentity:
+    """The identity of fixture paths a test writes down itself."""
+
+    return ModelIdentity(name=name, kind=ModelKind.STIPULATED, paths=Stipulated())
 
 
 @dataclass(frozen=True)
@@ -51,8 +58,7 @@ class ConstantFrameModel:
 
     levels: Mapping[LevelSeriesKey, LevelOverride] = field(default_factory=dict)
     private_equity: Mapping[IssuerId, PrivateEquityChannels] = field(default_factory=dict)
-    model_id: str = "constant_frame_fixture"
-    provenance: Mapping[str, object] = field(default_factory=dict)
+    name: str = "constant_frame_fixture"
     sample_requests: list[ExogenousSamplingRequest] = field(default_factory=list)
 
     def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
@@ -77,10 +83,9 @@ class ConstantFrameModel:
             for issuer_id in sorted(request.required_private_equity_issuers)
         ]
         return SampledExogenousBundle(
+            identity=stipulated_identity(self.name),
             levels=frames,
             private_equity=PrivateEquityBundle.combine(pe_parts) if pe_parts else PrivateEquityBundle.empty(),
-            model_id=self.model_id,
-            provenance=dict(self.provenance),
         )
 
     def _require_level(self, key: LevelSeriesKey) -> LevelOverride:

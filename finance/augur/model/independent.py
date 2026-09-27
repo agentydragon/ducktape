@@ -20,7 +20,7 @@ from finance.augur.model.gbm import GeometricBrownian
 from finance.augur.model.level_series_groups import LevelSeriesGroups
 from finance.augur.model.path_models.scenarios import HistoricalSeries
 from finance.augur.model.series import IssuerId, LevelSeriesKey
-from finance.augur.model.series_model import ScalarSeriesSpec, sample_independent_levels
+from finance.augur.model.series_model import ScalarSeriesSpec, sample_independent
 
 
 class IndependentProviderConfig(LevelSeriesGroups[ScalarSeriesSpec]):
@@ -69,8 +69,7 @@ class IndependentModel(LevelSeriesGroups[ScalarSeriesSpec]):
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         # The inherited role groups carry only level series. This provider does not
         # synthesize the typed PE protocol bundle.
-        frames = sample_independent_levels(self, request)
-        return SampledExogenousBundle(levels=frames, model_id=self.label)
+        return sample_independent(self, request, name=self.label)
 
     def predictive(self, historical: HistoricalSeries, t: int, *, horizon: int = 1) -> dist.Distribution | None:
         """Joint predictive over the cumulative `horizon`-step log-return at origin t, for the

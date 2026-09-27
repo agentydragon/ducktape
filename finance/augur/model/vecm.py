@@ -51,7 +51,16 @@ from finance.augur.model.evidence import EvidenceMetadata
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
 from finance.augur.model.float64 import LEVEL_DTYPE
 from finance.augur.model.path_models.scenarios import HistoricalSeries
-from finance.augur.model.provenance import stable_identity_digest
+from finance.augur.model.provenance import (
+    Drawn,
+    FittedArtifact,
+    FittedComponent,
+    ModelIdentity,
+    ModelKind,
+    SeedDerivation,
+    WindowNotRecorded,
+    stable_identity_digest,
+)
 from finance.augur.model.schemas import FrozenModel
 from finance.augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key
 
@@ -200,7 +209,7 @@ class VecmConfig:
 class VecmModel:
     """VECM joint exogenous model — Sampler, Fittable, Scorable.
 
-    Holds three groups of state:
+    Holds two groups of state:
 
     1. Fit results (factor_names, n_factors, params, train_log_levels):
        populated by `fit(historical)` or `from_trained_state(...)`. Define the
@@ -208,9 +217,6 @@ class VecmModel:
     2. Deployment-layer config (latest_observations): set by
        `VecmProviderConfig.realize_model` from YAML. Defines how
        multipliers scale to absolute levels.
-    3. Provenance ids (model_version_id, evidence_set_id,
-       calibration_artifact_id): set after fit or load via
-       `_compute_provenance`. Surface as bundle metadata.
     """
 
     label: str = "vecm"
@@ -224,12 +230,6 @@ class VecmModel:
 
     # Deployment-layer config.
     latest_observations: dict[str, ExogenousObservedPoint] = field(default_factory=dict)
-    evidence_metadata: EvidenceMetadata = field(default_factory=EvidenceMetadata)
-
-    # Provenance.
-    model_version_id: str = ""
-    evidence_set_id: str = ""
-    calibration_artifact_id: str = ""
 
     # ──────────────────────── Fittable ────────────────────────
 
@@ -315,17 +315,21 @@ class VecmModel:
             horizon_months=horizon_months,
         )
         return SampledExogenousBundle(
+            identity=ModelIdentity(
+                name=self.label,
+                kind=ModelKind.VECM,
+                paths=Drawn(
+                    # One joint fit whose trained state carries no month axis, so its window is
+                    # not known here.
+                    artifact=FittedArtifact(
+                        digest=stable_identity_digest({"trained_state": self.to_trained_state()}),
+                        components=(FittedComponent(name="factors", window=WindowNotRecorded()),),
+                    ),
+                    rollout_seeds=request.rollout_seeds,
+                    seed_derivation=SeedDerivation.PER_ROLLOUT,
+                ),
+            ),
             levels=frames,
-            model_id=self.label,
-            provenance={
-                "model_version_id": self.model_version_id,
-                "scenario_generator_id": "vecm_numpyro",
-                "scenario_generator_version_id": "vecm_numpyro:v1",
-                "evidence_set_id": self.evidence_set_id,
-                "calibration_artifact_id": self.calibration_artifact_id,
-                "notes": ("sampled by VecmModel (NumPyro)",),
-                "exogenous_provider_label": self.label,
-            },
         )
 
     # ──────────────────────── Persistence ────────────────────────
@@ -348,24 +352,19 @@ class VecmModel:
         trained_state: VecmTrainedState,
         *,
         latest_observations: Mapping[str, ExogenousObservedPoint],
-        evidence_metadata: EvidenceMetadata,
-        evidence_source_id: str,
         config: VecmConfig | None = None,
     ) -> VecmModel:
-        """Rebuild post-fit state from `to_trained_state(...)`'s output, attach
-        deployment-layer config from the runtime YAML, and compute provenance ids."""
+        """Rebuild post-fit state from `to_trained_state(...)`'s output and attach
+        deployment-layer config from the runtime YAML."""
         factor_names = tuple(parse_level_series_key(name) for name in trained_state.factor_names)
-        model = cls(
+        return cls(
             config=config or VecmConfig(),
             factor_names=factor_names,
             n_factors=len(factor_names),
             params={name: np.asarray(value, dtype=np.float32) for name, value in trained_state.params.items()},
             train_log_levels=np.asarray(trained_state.train_log_levels, dtype=LEVEL_DTYPE),
             latest_observations=dict(latest_observations),
-            evidence_metadata=evidence_metadata,
         )
-        model._compute_provenance(evidence_source_id)
-        return model
 
     # ──────────────────────── Internal: forecast ────────────────────────
 
@@ -453,22 +452,6 @@ class VecmModel:
             raise ValueError(f"VECM factor {key.wire_id!r} requires a positive hard-start observation")
         return point.value
 
-    def _compute_provenance(self, evidence_source_id: str) -> None:
-        self.model_version_id = "model_version:" + stable_identity_digest(
-            {"label": self.label, "class": type(self).__qualname__}
-        )
-        self.evidence_set_id = "evidence_set:" + stable_identity_digest(
-            {
-                "evidence_source_id": evidence_source_id,
-                "factor_names": [factor.wire_id for factor in self.factor_names],
-                "latest_observations": self.latest_observations,
-                "evidence_metadata": self.evidence_metadata,
-            }
-        )
-        self.calibration_artifact_id = "calibration_artifact:" + stable_identity_digest(
-            {"model_id": self.label, "model_version_id": self.model_version_id, "evidence_set_id": self.evidence_set_id}
-        )
-
 
 def _yaml_value(array: np.ndarray) -> float | tuple[float, ...]:
     """A fitted param as its natural YAML shape: a bare scalar for a 0-d array (e.g.
@@ -511,10 +494,4 @@ class VecmProviderConfig(FrozenModel):
         return self
 
     def realize_model(self) -> VecmModel:
-        evidence_source_id = "vecm_trained_state:" + stable_identity_digest({"trained_state": self.trained_state})
-        return VecmModel.from_trained_state(
-            self.trained_state,
-            latest_observations=self.latest_observations,
-            evidence_metadata=self.evidence_metadata,
-            evidence_source_id=evidence_source_id,
-        )
+        return VecmModel.from_trained_state(self.trained_state, latest_observations=self.latest_observations)

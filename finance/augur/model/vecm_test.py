@@ -18,6 +18,14 @@ from numpyro import distributions as dist
 from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment, ObservationUnits
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.path_models.scenarios import HistoricalSeries
+from finance.augur.model.provenance import (
+    Drawn,
+    FittedArtifact,
+    FittedComponent,
+    ModelKind,
+    SeedDerivation,
+    WindowNotRecorded,
+)
 from finance.augur.model.series import (
     SP500_SYMBOL,
     HomeValueKey,
@@ -138,7 +146,6 @@ class TestVecmModel:
             "rent:san_francisco_ca": _observation(3000.0, ObservationUnits.USD_PER_MONTH),
             "inflation": _observation(320.0, ObservationUnits.INDEX_POINTS),
         }
-        model._compute_provenance(evidence_source_id="test")
 
         sampled = model.sample(
             ExogenousSamplingRequest(
@@ -164,7 +171,13 @@ class TestVecmModel:
         assert sampled.level_matrix(
             HomeValueKey(location_id=LocationId("san_francisco_ca")), rollout_count=2, horizon_months=12
         )[:, 0].tolist() == [1_000_000.0, 1_000_000.0]
-        assert sampled.provenance["scenario_generator_id"] == "vecm_numpyro"
+        assert sampled.identity.kind is ModelKind.VECM
+        paths = sampled.identity.paths
+        assert isinstance(paths, Drawn)
+        assert (paths.rollout_seeds, paths.seed_derivation) == ((7, 8), SeedDerivation.PER_ROLLOUT)
+        assert isinstance(paths.artifact, FittedArtifact)
+        # The trained state has no month axis, so the fit's window cannot be reported.
+        assert paths.artifact.components == (FittedComponent(name="factors", window=WindowNotRecorded()),)
         # Note: VECM-rejects-PE was previously asserted by calling
         # `model.sample(required_level_series={"private_equity:..."})`. With the
         # typed boundary, PE has no `LevelSeriesKey` variant — the rejection now
@@ -188,7 +201,6 @@ class TestVecmModel:
             "security:SPY": _observation(5500.0, ObservationUnits.USD_PER_UNIT),
             "inflation": _observation(320.0, ObservationUnits.INDEX_POINTS),
         }
-        model._compute_provenance(evidence_source_id="test")
 
         cov = model._cov_np()
         assert cov[1, 1] == pytest.approx(0.005**2 * (1 + 0.9**2))
@@ -204,6 +216,41 @@ class TestVecmModel:
         inflation = sampled.level_matrix(InflationKey(), rollout_count=512, horizon_months=1)
         monthly_log_return = np.log(inflation[:, 1] / inflation[:, 0])
         assert float(np.std(monthly_log_return, ddof=1)) < 0.02
+
+    def test_digest_follows_the_trained_state_not_the_anchors_or_the_request(self) -> None:
+        def model(*, alpha: float, sp500_anchor: float) -> VecmModel:
+            return VecmModel(
+                factor_names=(SecurityKey(symbol=SP500_SYMBOL), InflationKey()),
+                n_factors=2,
+                train_log_levels=np.zeros((1, 2), dtype=np.float64),
+                params={
+                    "beta_tail_auto_loc": np.array([0.0], dtype=np.float64),
+                    "alpha_auto_loc": np.array([alpha, 0.0], dtype=np.float64),
+                    "const_coint_auto_loc": np.array(0.0, dtype=np.float64),
+                    "log_diag_auto_loc": np.log(np.array([0.05, 0.005], dtype=np.float64)),
+                    "offdiag_flat_auto_loc": np.array([0.1], dtype=np.float64),
+                },
+                latest_observations={
+                    "security:SPY": _observation(sp500_anchor, ObservationUnits.USD_PER_UNIT),
+                    "inflation": _observation(320.0, ObservationUnits.INDEX_POINTS),
+                },
+            )
+
+        def digest(model: VecmModel, *, seeds: tuple[int, ...]) -> str:
+            paths = model.sample(
+                ExogenousSamplingRequest(
+                    horizon_months=1,
+                    rollout_seeds=seeds,
+                    **level_series_request_channels(frozenset({SecurityKey(symbol=SP500_SYMBOL)})),
+                )
+            ).identity.paths
+            assert isinstance(paths, Drawn)
+            assert isinstance(paths.artifact, FittedArtifact)
+            return paths.artifact.digest
+
+        baseline = digest(model(alpha=0.0, sp500_anchor=5500.0), seeds=(1,))
+        assert digest(model(alpha=0.0, sp500_anchor=6000.0), seeds=(2, 3)) == baseline
+        assert digest(model(alpha=0.01, sp500_anchor=5500.0), seeds=(1,)) != baseline
 
     def test_sample_anchors_crypto_factors_to_latest_close(self) -> None:
         rng = np.random.default_rng(456)
@@ -235,7 +282,6 @@ class TestVecmModel:
             "security:btc": _observation(65_000.0, ObservationUnits.USD_PER_UNIT),
             "security:eth": _observation(3_200.0, ObservationUnits.USD_PER_UNIT),
         }
-        model._compute_provenance(evidence_source_id="test")
 
         sampled = model.sample(
             ExogenousSamplingRequest(

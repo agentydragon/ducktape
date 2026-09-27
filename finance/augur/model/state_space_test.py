@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -16,6 +15,14 @@ from finance.augur.model.conditioning import (
     ObservationUnits,
 )
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
+from finance.augur.model.provenance import (
+    Drawn,
+    FittedArtifact,
+    FittedComponent,
+    ModelKind,
+    SeedDerivation,
+    WindowNotRecorded,
+)
 from finance.augur.model.series import (
     SP500_SYMBOL,
     HomeValueKey,
@@ -63,10 +70,35 @@ def test_state_space_samples_all_available_series_and_hard_anchors(tmp_path: Pat
     assert sampled.private_equity.issuer_bool_matrix(
         "private_company_a", "sale_opportunity_active", rollout_count=2, horizon_months=3
     ).shape == (2, 4)
-    source_manifest = cast(dict[str, Any], sampled.provenance["source_manifest"])
-    prior_manifest = cast(dict[str, Any], sampled.provenance["prior_manifest"])
-    assert source_manifest["source_ids"] == ["fixture:public"]
-    assert prior_manifest["kind"] == "fixture"
+    assert sampled.identity.kind is ModelKind.STATE_SPACE
+    paths = sampled.identity.paths
+    assert isinstance(paths, Drawn)
+    assert (paths.rollout_seeds, paths.seed_derivation) == ((7, 8), SeedDerivation.PER_ROLLOUT)
+    assert isinstance(paths.artifact, FittedArtifact)
+    # The public factors are one joint fit and the private-equity mark another, and the artifact
+    # records neither window as data.
+    assert paths.artifact.components == (
+        FittedComponent(name="factors", window=WindowNotRecorded()),
+        FittedComponent(name=PrivateEquityAssetKey(issuer_id=PRIVATE_COMPANY_A).wire_id, window=WindowNotRecorded()),
+    )
+
+
+def test_state_space_digest_follows_the_fitted_artifact_not_the_conditioning(tmp_path: Path) -> None:
+    def digest(provider: StateSpaceProviderConfig) -> str:
+        paths = (
+            provider.realize_model()
+            .sample(ExogenousSamplingRequest(rollout_seeds=(1,), horizon_months=1))
+            .identity.paths
+        )
+        assert isinstance(paths, Drawn)
+        assert isinstance(paths.artifact, FittedArtifact)
+        return paths.artifact.digest
+
+    baseline = digest(_provider(tmp_path / "baseline", sp500_anchor=100.0))
+
+    # Conditioning moves where the paths start, not what was fitted.
+    assert digest(_provider(tmp_path / "conditioned", sp500_anchor=200.0)) == baseline
+    assert digest(_provider(tmp_path / "refit", sp500_anchor=100.0, pe_tender_interval_months_median=7.0)) != baseline
 
 
 def test_state_space_conditioning_changes_sampled_paths(tmp_path: Path) -> None:

@@ -30,6 +30,7 @@ import polars as pl
 
 from finance.augur.frames import concat_frames
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
+from finance.augur.model.provenance import ModelIdentity
 from finance.augur.model.series import (
     AssetPriceKey,
     HomeValueKey,
@@ -237,30 +238,17 @@ class ExogenousSamplingRequest:
 
 @dataclass(frozen=True)
 class SampledExogenousBundle:
-    """Polars-native joint sample of exogenous levels and PE protocol.
+    """Polars-native joint sample of exogenous levels and PE protocol, and the model behind it.
 
     `levels` holds one frame per kind (see `LevelFrames`); `private_equity` carries the
-    typed PE protocol bundle per issuer.
-
-    Everything a consumer READS is a typed field. What used to be one
-    `metadata: Mapping[str, object]` carried two unrelated things under one type: load-bearing
-    data that consumers reached for by string key, and free-form provenance nobody parses. The
-    load-bearing data now lives in the typed level and private-equity protocol bundles; `model_id`
-    is explicit, while `provenance` keeps the descriptive remainder and is named for what it is,
-    so a future field cannot quietly hide in it again.
+    typed PE protocol bundle per issuer; `identity` is the model that produced both, which can
+    differ from the preset id the caller asked for (a composite reports itself and its parts).
+    Every field is typed: there is no free-form map for provenance to hide in.
     """
 
+    identity: ModelIdentity
     levels: LevelFrames = field(default_factory=LevelFrames.empty)
     private_equity: PrivateEquityBundle = field(default_factory=PrivateEquityBundle.empty)
-    # The provider's own label for what produced this sample, which can differ from the preset
-    # id the caller asked for (a composite reports itself, not its macro half). `None` is a
-    # real state: a sampler is not obliged to name itself, and the caller falls back to the id
-    # it requested.
-    model_id: str | None = None
-    # Descriptive only — version ids, generator names, training window, anchors, notes. Nothing
-    # branches on it; it exists to be logged and read by humans. Anything that acquires a
-    # programmatic consumer stops belonging here and becomes a field.
-    provenance: Mapping[str, object] = field(default_factory=dict)
 
     def level_matrix(self, key: LevelSeriesKey, *, rollout_count: int, horizon_months: int) -> np.ndarray:
         """Return one level series as a `(rollout, month)` matrix."""
@@ -460,13 +448,6 @@ def anchor_sampled_series_levels(
 
     level_anchors_typed = dict(level_series_anchors)
     pe_anchors_typed = {IssuerId(str(issuer)): float(value) for issuer, value in dict(private_equity_anchors).items()}
-    # Provenance, not data: what was anchored and to what, recorded for a human reading a run.
-    provenance_extras: dict[str, object] = {}
-    if level_anchors_typed:
-        provenance_extras["level_anchors"] = {key.wire_id: float(value) for key, value in level_anchors_typed.items()}
-    if pe_anchors_typed:
-        provenance_extras["private_equity_anchors"] = pe_anchors_typed
-
     private_equity = _anchor_private_equity_marks(sampled.private_equity, pe_anchors_typed)
 
     # Partition anchors by kind -> {sub-id-or-None: target month-0 value}.
@@ -475,6 +456,7 @@ def anchor_sampled_series_levels(
         anchors_by_kind[key.kind][key.subid] = float(value)
 
     return SampledExogenousBundle(
+        identity=sampled.identity,
         levels=LevelFrames(
             by_kind={
                 kind: _anchor_level_frame(sampled.levels.frame(kind), kind, anchors_by_kind[kind])
@@ -482,8 +464,6 @@ def anchor_sampled_series_levels(
             }
         ),
         private_equity=private_equity,
-        model_id=sampled.model_id,
-        provenance={**sampled.provenance, **provenance_extras},
     )
 
 

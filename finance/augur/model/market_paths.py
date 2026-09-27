@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from finance.augur.model.bond_fund import YieldCurve
+from finance.augur.model.provenance import ModelIdentity
 
 
 @dataclass(frozen=True)
@@ -20,7 +21,7 @@ class MarketPaths:
     The equity index is total return, normalized to one at opening. Corporate
     yields are present only when observed/modeled, never filled from Treasuries.
     Short rates retain the source values before product-construction guards.
-    Provenance identifies the source paths, including historical dates or seeds.
+    `identity` names the model behind the paths, including their historical dates or seeds.
     """
 
     short_rate: np.ndarray
@@ -28,8 +29,7 @@ class MarketPaths:
     cpi_level: np.ndarray
     equity_total_return_index: np.ndarray | None
     corporate_yields: Mapping[YieldCurve, np.ndarray]
-    model_id: str
-    provenance: Mapping[str, object]
+    identity: ModelIdentity
 
     def __post_init__(self) -> None:
         shape = self.short_rate.shape

@@ -43,7 +43,16 @@ from finance.augur.model.private_equity_protocol import (
     neutral_private_equity_issuer_bundle,
     observed_private_equity_mark_matrix,
 )
-from finance.augur.model.provenance import stable_identity_digest
+from finance.augur.model.provenance import (
+    Drawn,
+    FittedArtifact,
+    FittedComponent,
+    ModelIdentity,
+    ModelKind,
+    SeedDerivation,
+    WindowNotRecorded,
+    stable_identity_digest,
+)
 from finance.augur.model.schemas import FrozenModel
 from finance.augur.model.series import SP500_SYMBOL, IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
 from finance.augur.model.series_model import derive_stream_rollout_seeds
@@ -140,11 +149,7 @@ class StateSpaceProviderConfig(FrozenModel):
     current_mortgage30_rate_pct: float
 
     def realize_model(self) -> StateSpaceModel:
-        return StateSpaceModel.from_path(
-            self.trained_artifact_path,
-            conditioning=self.conditioning,
-            evidence_source_id=str(self.trained_artifact_path),
-        )
+        return StateSpaceModel.from_path(self.trained_artifact_path, conditioning=self.conditioning)
 
 
 @dataclass
@@ -152,24 +157,17 @@ class StateSpaceModel:
     artifact: StateSpaceModelArtifact
     conditioning: ExogenousConditioningContext
     label: str = "state_space"
-    model_version_id: str = ""
-    evidence_set_id: str = ""
-    calibration_artifact_id: str = ""
 
     def __post_init__(self) -> None:
         self._conditioned_start_levels()
 
     @classmethod
-    def from_path(
-        cls, path: Path, *, conditioning: ExogenousConditioningContext, evidence_source_id: str
-    ) -> StateSpaceModel:
+    def from_path(cls, path: Path, *, conditioning: ExogenousConditioningContext) -> StateSpaceModel:
         try:
             artifact = StateSpaceModelArtifact.model_validate_json(path.read_text(encoding="utf-8"))
         except Exception as error:
             raise ValueError(f"failed to load trained state-space model {path}: {error}") from error
-        model = cls(artifact=artifact, conditioning=conditioning)
-        model._compute_provenance(evidence_source_id)
-        return model
+        return cls(artifact=artifact, conditioning=conditioning)
 
     @classmethod
     def fit(
@@ -308,21 +306,17 @@ class StateSpaceModel:
             PrivateEquityBundle.combine(private_equity_parts) if private_equity_parts else PrivateEquityBundle.empty()
         )
         sampled = SampledExogenousBundle(
+            identity=ModelIdentity(
+                name=self.label,
+                kind=ModelKind.STATE_SPACE,
+                paths=Drawn(
+                    artifact=self._fitted_artifact(),
+                    rollout_seeds=request.rollout_seeds,
+                    seed_derivation=SeedDerivation.PER_ROLLOUT,
+                ),
+            ),
             levels=frames,
             private_equity=private_equity,
-            model_id=self.label,
-            provenance={
-                "model_version_id": self.model_version_id,
-                "scenario_generator_id": "state_space_numpy",
-                "scenario_generator_version_id": "state_space_numpy:v1",
-                "evidence_set_id": self.evidence_set_id,
-                "calibration_artifact_id": self.calibration_artifact_id,
-                "trained_through_month": self.artifact.trained_through_month,
-                "conditioning_start_at": self.conditioning.start_at.isoformat(),
-                "source_manifest": self.artifact.source_manifest,
-                "prior_manifest": self.artifact.prior_manifest,
-                "exogenous_provider_label": self.label,
-            },
         )
         validate_sample_satisfies_request(request, sampled)
         return sampled
@@ -452,15 +446,25 @@ class StateSpaceModel:
                 indexes.append((factor_index[factor_name], scale_prior))
         return tuple(indexes)
 
-    def _compute_provenance(self, evidence_source_id: str) -> None:
-        self.model_version_id = "model_version:" + stable_identity_digest(
-            {"label": self.label, "class": type(self).__qualname__, "schema_version": self.artifact.schema_version}
-        )
-        self.evidence_set_id = "evidence_set:" + stable_identity_digest(
-            {"evidence_source_id": evidence_source_id, "conditioning": self.conditioning}
-        )
-        self.calibration_artifact_id = "calibration_artifact:" + stable_identity_digest(
-            {"model_id": self.label, "model_version_id": self.model_version_id, "evidence_set_id": self.evidence_set_id}
+    def _fitted_artifact(self) -> FittedArtifact:
+        """The artifact's fitted values, less its free-form manifests.
+
+        The public factors are one joint fit and each private-equity mark its own. The artifact
+        records no window as typed data (`trained_through_month` is only the public fit's last
+        month), so no component can report one.
+        """
+
+        return FittedArtifact(
+            digest=stable_identity_digest(
+                self.artifact.model_dump(mode="json", exclude={"source_manifest", "prior_manifest"})
+            ),
+            components=(
+                FittedComponent(name="factors", window=WindowNotRecorded()),
+                *(
+                    FittedComponent(name=PrivateEquityMarkKey(issuer_id=issuer).wire_id, window=WindowNotRecorded())
+                    for issuer in self.artifact.private_equity_factor_issuers
+                ),
+            ),
         )
 
 

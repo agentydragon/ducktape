@@ -228,8 +228,9 @@ trajectory.
 
 Current Augur alignment:
 
-- `SampledExogenousBundle.metadata` carries exogenous model id, seed, rollout count,
-  horizon, event stream ids, notes, and source metadata.
+- `SampledExogenousBundle.identity` names the model that drew the paths: its family,
+  fitted-artifact digest and per-block fit windows, and the rollout seeds or replayed
+  window starts. A composite names its components.
 - Original `rollout_id` is used in actions, policy decisions, observations, ledger
   entries, balance snapshots, accounting details, monthly columns, and selected
   trajectory UI.
@@ -378,7 +379,8 @@ parameters, code, and limitations produced it.
 
 Current Augur alignment:
 
-- `SampledExogenousBundle.metadata` has source metadata.
+- `SampledExogenousBundle.identity` carries a content digest of the fitted parameters
+  a sampler drew with.
 - `ScenarioSetRunResponse` includes request, market request, report spec,
   market metadata, and warnings.
 - `augur/model/markets/data.py` separates evidence loading from historical
@@ -387,7 +389,8 @@ Current Augur alignment:
 Gap:
 
 - No model inventory exists.
-- No evidence/calibration artifact hash is required.
+- The artifact digest identifies fitted parameters, not the evidence set; the VECM,
+  state-space and trained private-equity artifacts do not record their fit windows.
 - Warnings are generic strings rather than typed limitations.
 
 Recommended vocabulary:

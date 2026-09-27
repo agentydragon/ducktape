@@ -17,8 +17,8 @@ aligned monthly data and a 30-year horizon give 840 of them, and consecutive win
 of 360 months — so the effective sample is closer to **3 independent observations** than to 840.
 A "P[ruin] = 4%" from this is not a probability. It is "34 of the 840 historical starting months
 would have failed", and those 34 are almost certainly one contiguous episode counted 34 times.
-`window_count` and `independent_window_estimate` are on the result so a caller cannot quietly
-forget that.
+`window_count` and `independent_window_estimate` are on the model, and a sampled bundle's identity
+is `Replayed` rather than `Drawn`, so a caller cannot quietly forget that.
 
 Use the two together and disagree loudly: the fitted model gives smooth probabilities over
 scenarios that never happened, and this gives a handful of scenarios that definitely did. When
@@ -49,6 +49,7 @@ from finance.augur.model.equity import EquitySpec
 from finance.augur.model.exogenous import SampledExogenousBundle
 from finance.augur.model.market_paths import MarketPaths
 from finance.augur.model.product_paths import construct_products
+from finance.augur.model.provenance import ModelIdentity, ModelKind, Replayed
 from finance.augur.model.schemas import FrozenModel
 from finance.evidence import loading, sources
 from finance.evidence.loading import MonthlyLevel, evidence_dir_from_env
@@ -168,7 +169,7 @@ class HistoricalWindowsModel:
 
         A date's values do not change when other windows are selected, reordered or split
         into another batch. Duplicate dates reject to prevent silently overweighting history.
-        `provenance.window_starts` records the date corresponding to every output row.
+        The identity's `window_starts` records the date corresponding to every output row.
         """
 
         dates = tuple(window_starts)
@@ -200,20 +201,15 @@ class HistoricalWindowsModel:
                 YieldCurve.CORPORATE_AAA: self.history.corporate_aaa_yield[windows],
                 YieldCurve.CORPORATE_BAA: self.history.corporate_baa_yield[windows],
             },
-            model_id=self.label,
-            provenance={
-                "exogenous_provider_label": self.label,
-                "window_months": horizon_months,
-                "record_start": self.history.months[0].isoformat(),
-                "record_end": self.history.months[-1].isoformat(),
-                "window_starts": tuple(month.isoformat() for month in dates),
-                "distinct_windows_available": available,
-                "independent_window_estimate": round(self.independent_window_estimate(horizon_months), 2),
-                "notes": (
-                    "Rollouts are OVERLAPPING historical windows, not independent draws. A "
-                    "percentile over them is a count of historical starting months, not a probability.",
+            identity=ModelIdentity(
+                name=self.label,
+                kind=ModelKind.HISTORICAL_WINDOWS,
+                paths=Replayed(
+                    record_first_month=self.history.months[0],
+                    record_last_month=self.history.months[-1],
+                    window_starts=dates,
                 ),
-            },
+            ),
         )
 
 

@@ -28,6 +28,7 @@ from finance.augur.model.historical_windows import (
     macro_history_from_levels,
     splice_at_seam,
 )
+from finance.augur.model.provenance import ModelIdentity, ModelKind, Replayed
 from finance.augur.model.series import (
     InflationKey,
     LevelSeriesKey,
@@ -258,17 +259,6 @@ def test_mismatched_history_lengths_are_rejected() -> None:
         )
 
 
-def test_the_provenance_says_the_rollouts_are_not_independent() -> None:
-    """A percentile over overlapping windows is a count of starting months, not a probability.
-    Carried on the bundle so a consumer that logs provenance cannot lose the caveat."""
-
-    model = _model()
-    bundle = model.materialize(window_starts=model.window_starts(120)[:4], horizon_months=120)
-
-    assert bundle.provenance["distinct_windows_available"] == 480
-    assert "not independent draws" in str(bundle.provenance["notes"]).lower()
-
-
 def _levels(start_year: int, values: list[float]) -> list[MonthlyLevel]:
     return [MonthlyLevel(month=m, value=v) for m, v in zip(_month_seq(len(values), start_year), values, strict=True)]
 
@@ -448,15 +438,22 @@ def test_out_of_order_months_are_rejected() -> None:
         )
 
 
-def test_the_provenance_names_the_span_the_rollouts_came_from() -> None:
-    """A replay result is about a period. Reporting the window count without it leaves the
-    reader unable to tell a 1926-1995 answer from a 1926-2026 one."""
+def test_the_identity_says_the_rollouts_are_replayed_windows_of_a_named_span() -> None:
+    """A replay result is about a period, and its rollouts are overlapping windows rather than
+    draws. The identity carries both, so a reader can tell a 1926-1995 answer from a 1926-2026
+    one and a count of starting months from a probability."""
 
     bundle = _model().materialize(window_starts=(date(1989, 12, 1), date(1970, 1, 1)), horizon_months=360)
 
-    assert bundle.provenance["record_start"] == "1970-01-01"
-    assert bundle.provenance["record_end"] == "2019-12-01"
-    assert bundle.provenance["window_starts"] == ("1989-12-01", "1970-01-01")
+    assert bundle.identity == ModelIdentity(
+        name="historical_windows",
+        kind=ModelKind.HISTORICAL_WINDOWS,
+        paths=Replayed(
+            record_first_month=date(1970, 1, 1),
+            record_last_month=date(2019, 12, 1),
+            window_starts=(date(1989, 12, 1), date(1970, 1, 1)),
+        ),
+    )
 
 
 def test_the_config_cuts_the_record_before_the_sampler_sees_it(tmp_path: Path) -> None:

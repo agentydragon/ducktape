@@ -11,11 +11,22 @@ import numpy as np
 from pydantic import Field
 
 from finance.augur.dates import months_between
+from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from finance.augur.model.float64 import LEVEL_DTYPE
 from finance.augur.model.private_equity_protocol import (
     neutral_private_equity_issuer_bundle,
     observed_private_equity_mark_matrix,
+)
+from finance.augur.model.provenance import (
+    Drawn,
+    FittedArtifact,
+    FittedComponent,
+    ModelIdentity,
+    ModelKind,
+    SeedDerivation,
+    WindowNotRecorded,
+    stable_identity_digest,
 )
 from finance.augur.model.schemas import FrozenModel
 from finance.augur.model.series import IssuerId, LevelSeriesKey
@@ -105,6 +116,24 @@ class TrainedPrivateEquityModel(FrozenModel):
             levels = observed_private_equity_mark_matrix(levels, events)
 
         return SampledExogenousBundle(
+            identity=ModelIdentity(
+                name=self.label,
+                kind=ModelKind.TRAINED_PRIVATE_EQUITY,
+                paths=Drawn(
+                    # The artifact records its as-of date and observation counts, not the span of
+                    # observations the fit read.
+                    artifact=FittedArtifact(
+                        digest=stable_identity_digest(self.artifact.model_dump(mode="json", exclude={"provenance"})),
+                        components=(
+                            FittedComponent(
+                                name=PrivateEquityAssetKey(issuer_id=issuer).wire_id, window=WindowNotRecorded()
+                            ),
+                        ),
+                    ),
+                    rollout_seeds=request.rollout_seeds,
+                    seed_derivation=SeedDerivation.PER_ROLLOUT,
+                ),
+            ),
             private_equity=neutral_private_equity_issuer_bundle(
                 issuer,
                 observed_mark=levels,
@@ -112,11 +141,6 @@ class TrainedPrivateEquityModel(FrozenModel):
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,
             ),
-            model_id=self.label,
-            provenance={
-                "private_equity_model_schema_version": self.artifact.schema_version,
-                "private_equity_issuers": (issuer,),
-            },
         )
 
 

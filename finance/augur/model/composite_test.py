@@ -15,13 +15,16 @@ from finance.augur.model.exogenous import (
 )
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.private_equity_protocol import neutral_private_equity_issuer_bundle
+from finance.augur.model.provenance import Composed, ModelIdentity, ModelKind
 from finance.augur.model.series import InflationKey, IssuerId, LevelSeriesKey
+from finance.augur.model.testing import stipulated_identity
 
 
 @dataclass(frozen=True)
 class _StaticSampler:
     """Test fixture: emit a constant level frame + (optionally) one PE issuer bundle."""
 
+    name: str = "static_fixture"
     levels: dict[LevelSeriesKey, float] = field(default_factory=dict)
     pe_issuer_marks: dict[IssuerId, float] = field(default_factory=dict)
     sample_requests: list[ExogenousSamplingRequest] = field(default_factory=list)
@@ -54,6 +57,7 @@ class _StaticSampler:
             for issuer_id, mark in self.pe_issuer_marks.items()
         ]
         return SampledExogenousBundle(
+            identity=stipulated_identity(self.name),
             levels=frames,
             private_equity=PrivateEquityBundle.combine(pe_parts) if pe_parts else PrivateEquityBundle.empty(),
         )
@@ -80,6 +84,21 @@ def test_composite_merges_macro_and_private_equity_series() -> None:
     assert macro.sample_requests[0].required_level_series == frozenset({InflationKey()})
     assert macro.sample_requests[0].required_private_equity_issuers == frozenset()
     assert private_equity.sample_requests[0].required_private_equity_issuers == frozenset({"private_company_a"})
+
+
+def test_composite_reports_itself_and_each_component_in_its_role() -> None:
+    model = CompositeModel(
+        macro=_StaticSampler(name="macro_fixture", levels={InflationKey(): 1.0}),
+        private_equity=_StaticSampler(name="pe_fixture", pe_issuer_marks={IssuerId("private_company_a"): 687.69}),
+    )
+
+    identity = model.sample(ExogenousSamplingRequest(horizon_months=1, rollout_seeds=(7,))).identity
+
+    assert identity == ModelIdentity(
+        name="composite",
+        kind=ModelKind.COMPOSITE,
+        paths=Composed(components=(stipulated_identity("macro_fixture"), stipulated_identity("pe_fixture"))),
+    )
 
 
 def test_composite_rejects_missing_required_private_equity_issuer() -> None:

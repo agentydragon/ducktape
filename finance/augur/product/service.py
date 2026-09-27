@@ -256,7 +256,7 @@ class ProductService:
             compose(situation, MarketPath(series, rollout_id, rollout_count=len(seeds)))
             for rollout_id in range(len(seeds))
         )
-        return situation, worlds, sampled.model_id or scenario_key.model_id
+        return situation, worlds, sampled.identity.name
 
     @overload
     def _simulate_product_summary(

@@ -15,6 +15,7 @@ from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.historical_windows import HistoricalWindowsModel, MacroHistory
 from finance.augur.model.market_paths import MarketPaths
 from finance.augur.model.product_paths import construct_products
+from finance.augur.model.provenance import Drawn, NoArtifact, Replayed, SeedDerivation
 from finance.augur.model.series import InflationKey, SecurityDistributionKey, SecurityKey, SecuritySymbol
 from finance.augur.model.structural_macro import (
     EquityProcess,
@@ -96,15 +97,16 @@ def _check_two_constructions(paths: MarketPaths) -> None:
     assert SecurityDistributionKey(symbol=equity.symbol) not in first.levels.series_keys()
     for actual, expected in zip(inputs, before, strict=True):
         np.testing.assert_array_equal(actual, expected)
-    for name, value in paths.provenance.items():
-        assert first.provenance[name] == value
+    assert first.identity == second.identity == paths.identity
 
 
 def test_historical_markets_are_reusable_and_keep_observed_credit(historical: HistoricalWindowsModel) -> None:
     dates = (date(2000, 4, 1), date(2000, 1, 1))
     paths = historical.market_paths(window_starts=dates, horizon_months=12)
     _check_two_constructions(paths)
-    assert paths.provenance["window_starts"] == tuple(month.isoformat() for month in dates)
+    assert paths.identity.paths == Replayed(
+        record_first_month=date(2000, 1, 1), record_last_month=date(2001, 4, 1), window_starts=dates
+    )
     assert paths.short_rate[1, 0] == -0.01
     for curve, expected in ((YieldCurve.CORPORATE_AAA, 0.063), (YieldCurve.CORPORATE_BAA, 0.086)):
         fund = BondFundSpec(symbol=SecuritySymbol("test_credit"), maturity_years=5, yield_curve=curve)
@@ -117,7 +119,10 @@ def test_structural_markets_are_reusable_but_do_not_invent_credit(structural: St
     request = ExogenousSamplingRequest(horizon_months=12, rollout_seeds=(71, 12))
     paths = structural.sample_market(request)
     _check_two_constructions(paths)
-    assert paths.provenance["rollout_seeds"] == (71, 12)
+    # The fixture states every block itself, so nothing it draws with is the checked-in fit.
+    assert paths.identity.paths == Drawn(
+        artifact=NoArtifact(), rollout_seeds=(71, 12), seed_derivation=SeedDerivation.PER_ROLLOUT
+    )
     assert paths.short_rate[0, 0] == -0.01
     with pytest.raises(ValueError, match=r"cannot produce.*no credit factor"):
         construct_products(

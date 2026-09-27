@@ -18,6 +18,7 @@ from pydantic import TypeAdapter
 
 from finance.augur.fit.main import main as train_main
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
+from finance.augur.model.provenance import Drawn, FittedArtifact, ModelKind
 from finance.augur.model.provider_config import ProviderConfig
 from finance.augur.model.series import HomeValueKey, LevelSeriesKey, RentKey
 from finance.augur.model.state_space import StateSpaceProviderConfig
@@ -59,7 +60,9 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path, synthetic_
         )
     )
 
-    assert str(sampled.provenance["model_version_id"]).startswith("model_version:")
+    assert sampled.identity.kind is ModelKind.VECM
+    assert isinstance(sampled.identity.paths, Drawn)
+    assert isinstance(sampled.identity.paths.artifact, FittedArtifact)
     assert sampled.levels.series_keys() == set(required_level_series)
     for home_loc in home_locations:
         assert sampled.level_matrix(HomeValueKey(location_id=home_loc), rollout_count=2, horizon_months=12).shape == (
@@ -101,8 +104,9 @@ def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path
         )
     )
 
-    assert str(sampled.provenance["model_version_id"]).startswith("model_version:")
-    assert sampled.provenance["source_manifest"]
+    assert sampled.identity.kind is ModelKind.STATE_SPACE
+    assert isinstance(sampled.identity.paths, Drawn)
+    assert isinstance(sampled.identity.paths.artifact, FittedArtifact)
     assert sampled.levels.series_keys() >= set(required_level_series)
 
 

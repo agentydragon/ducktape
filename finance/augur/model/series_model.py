@@ -21,7 +21,6 @@ from pydantic import BaseModel, Field
 from finance.augur.model.deterministic import Constant, Deterministic
 from finance.augur.model.exogenous import (
     ExogenousSamplingRequest,
-    LevelFrames,
     SampledExogenousBundle,
     Sampler,
     assemble_level_frames,
@@ -35,34 +34,44 @@ from finance.augur.model.level_series_groups import (
     PropertyValueGroups,
     SecurityDistributionGroups,
 )
+from finance.augur.model.provenance import Drawn, ModelIdentity, ModelKind, NoArtifact, SeedDerivation
 from finance.augur.model.series import IssuerId, LevelSeriesKey
 
 ScalarSeriesSpec = Annotated[Constant | Deterministic | GeometricBrownian, Field(discriminator="kind")]
 
 
-def sample_independent_levels(
-    groups: LevelSeriesGroups[ScalarSeriesSpec], request: ExogenousSamplingRequest
-) -> LevelFrames:
-    """Sample every level spec the groups carry into the assembled per-kind frames.
+def sample_independent(
+    groups: LevelSeriesGroups[ScalarSeriesSpec], request: ExogenousSamplingRequest, *, name: str
+) -> SampledExogenousBundle:
+    """Sample every level spec the groups carry; the specs are stated, so nothing is fitted.
 
     Seed substreams are keyed on the stable wire id so a series' path is identical
     regardless of config-dict ordering. Shared by `IndependentSeriesModels` (sim/bench) and
     `IndependentModel` (the YAML provider).
     """
 
-    return assemble_level_frames(
-        (
-            (
-                key,
-                spec.sample_levels(
-                    rollout_seeds=derive_stream_rollout_seeds(request.rollout_seeds, stream_id=key.wire_id),
-                    horizon_months=request.horizon_months,
-                ),
-            )
-            for key, spec in groups.by_level_key().items()
+    return SampledExogenousBundle(
+        identity=ModelIdentity(
+            name=name,
+            kind=ModelKind.INDEPENDENT,
+            paths=Drawn(
+                artifact=NoArtifact(), rollout_seeds=request.rollout_seeds, seed_derivation=SeedDerivation.PER_ROLLOUT
+            ),
         ),
-        rollout_count=request.rollout_count,
-        horizon_months=request.horizon_months,
+        levels=assemble_level_frames(
+            (
+                (
+                    key,
+                    spec.sample_levels(
+                        rollout_seeds=derive_stream_rollout_seeds(request.rollout_seeds, stream_id=key.wire_id),
+                        horizon_months=request.horizon_months,
+                    ),
+                )
+                for key, spec in groups.by_level_key().items()
+            ),
+            rollout_count=request.rollout_count,
+            horizon_months=request.horizon_months,
+        ),
     )
 
 
@@ -78,7 +87,7 @@ class IndependentSeriesModels(LevelSeriesGroups[ScalarSeriesSpec]):
     kind: Literal["independent"] = "independent"
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        return SampledExogenousBundle(levels=sample_independent_levels(self, request))
+        return sample_independent(self, request, name=self.kind)
 
     def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
         return frozenset(self.by_level_key())

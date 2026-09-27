@@ -57,8 +57,7 @@ def test_state_space_private_equity_artifact_models_price_and_sale_event(
     assert sampled.private_equity.issuer_bool_matrix(
         "private_company_a", "sale_opportunity_active", rollout_count=2, horizon_months=12
     ).shape == (2, 13)
-    source_manifest = cast(dict[str, Any], sampled.provenance["source_manifest"])
-    private_sources = cast(dict[str, Any], source_manifest["private_equity"])
+    private_sources = cast(dict[str, Any], model.artifact.source_manifest["private_equity"])
     assert "private_equity:private_company_a" in private_sources
 
 

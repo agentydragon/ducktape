@@ -24,7 +24,7 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.model.series_model import IndependentSeriesModels, SeriesModelBundle
-from finance.augur.model.testing import ConstantFrameModel
+from finance.augur.model.testing import ConstantFrameModel, stipulated_identity
 
 
 def test_scalar_models_are_owned_by_model_modules() -> None:
@@ -154,7 +154,7 @@ def test_sample_compatibility_accepts_required_subset_and_extra_series() -> None
         rollout_count=1,
         horizon_months=2,
     )
-    sampled = SampledExogenousBundle(levels=frames)
+    sampled = SampledExogenousBundle(identity=stipulated_identity("extra_series_fixture"), levels=frames)
 
     validate_sample_satisfies_request(request, sampled)
 
@@ -168,7 +168,7 @@ def test_sample_compatibility_rejects_missing_required_level_series() -> None:
         rollout_seeds=(101,),
         **level_series_request_channels(frozenset({HomeValueKey(location_id=LocationId("prices_of_tea_china"))})),
     )
-    sampled = SampledExogenousBundle()
+    sampled = SampledExogenousBundle(identity=stipulated_identity("empty_fixture"))
 
     with pytest.raises(ValueError, match=r"missing required level series: \['home_value:prices_of_tea_china'\]"):
         validate_sample_satisfies_request(request, sampled)

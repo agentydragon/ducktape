@@ -8,6 +8,7 @@ import pytest_bazel
 
 from finance.augur.model.bond_fund import YieldCurve
 from finance.augur.model.market_paths import MarketPaths
+from finance.augur.model.testing import stipulated_identity
 
 
 @pytest.fixture
@@ -18,8 +19,7 @@ def paths() -> MarketPaths:
         cpi_level=np.full((2, 4), 100.0),
         equity_total_return_index=np.ones((2, 4)),
         corporate_yields={YieldCurve.CORPORATE_AAA: np.full((2, 4), 0.06)},
-        model_id="test_market",
-        provenance={},
+        identity=stipulated_identity("test_market"),
     )
 
 

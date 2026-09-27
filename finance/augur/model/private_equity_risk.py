@@ -19,6 +19,7 @@ from finance.augur.model.exogenous import (
 )
 from finance.augur.model.float64 import LEVEL_DTYPE
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
+from finance.augur.model.provenance import Drawn, ModelIdentity, ModelKind, NoArtifact, SeedDerivation
 from finance.augur.model.schemas import FrozenModel
 from finance.augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.model.series_model import derive_stream_rollout_seeds
@@ -443,9 +444,17 @@ class PrivateEquityRiskModel:
             )
 
         sampled = SampledExogenousBundle(
+            identity=ModelIdentity(
+                name=self.label,
+                kind=ModelKind.PRIVATE_EQUITY_RISK,
+                paths=Drawn(
+                    artifact=NoArtifact(),
+                    rollout_seeds=request.rollout_seeds,
+                    # Every stream is vectorized over one generator seeded by the whole batch.
+                    seed_derivation=SeedDerivation.BATCH_MIXED,
+                ),
+            ),
             private_equity=PrivateEquityBundle.combine(pe_bundle_parts),
-            model_id=self.label,
-            provenance={"private_equity_issuers": tuple(sorted(self.issuers))},
         )
         validate_sample_satisfies_request(request, sampled)
         return sampled

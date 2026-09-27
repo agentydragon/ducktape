@@ -26,6 +26,13 @@ home-value prices are positive. Prices used exclusively by reduced-form TLH
 portfolios may be zero, allowing worthless exposure to be liquidated; negative
 prices are invalid. Per-unit security distributions may explicitly be zero.
 
+Every sampled path bundle names the model that produced it: its family, the
+fitted artifact it drew with (a digest that moves only with the fitted values)
+and each fitted block's evidence window, and the seeds or historical windows
+behind its rollouts. A fact the model cannot supply, such as an unfitted model's
+artifact or a window its artifact does not record, is stated as absent rather
+than defaulted, and a composite names its components.
+
 A supplied return series must be interpreted according to its product
 construction. The existing total-return equity proxy is not a taxable
 price-plus-dividend model. Current held dated-bond principal is not a tradable
