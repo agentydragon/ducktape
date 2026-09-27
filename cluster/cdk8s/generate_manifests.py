@@ -289,7 +289,6 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_cluster.write_manifests(root)
     egress_fences.write_manifests(root)
     dns_automation.write_manifests(root, mesh)
-    litellm_keys.write_manifests(root)
     litellm_namespace.write_manifests(root)
     litellm_proxy.write_manifests(root)
     agentplane_index_workers.write_manifests(root)
@@ -356,7 +355,6 @@ def generate_manifests(root: Path) -> None:
     grafana_instance.write_manifests(root)
     grafana_app.write_manifests(root)
     github_exporter_app.write_manifests(root)
-    langfuse_app.write_manifests(root)
     forgejo_app.write_manifests(root)
     forgejo_budget_namespace.write_manifests(root)
     home_assistant_app.write_manifests(root)
@@ -382,7 +380,6 @@ def generate_manifests(root: Path) -> None:
     gatus_app.write_manifests(root)
     activitywatch_app.write_manifests(root)
     cli_proxy_api.write_manifests(root)
-    matrix.write_manifests(root)
     matrix_user_provisioner.write_manifests(root)
     study_casino_app.write_manifests(root)
     github_api_proxy.write_manifests(root)
@@ -843,7 +840,11 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     matrix_app_artifact = artifact("matrix-app", matrix.OUTPUT_DIR)
-    matrix_kustomization = matrix.matrix(flux_chart, matrix_app_artifact, cnpg_kustomization)
+    matrix_kustomization = matrix.matrix(
+        flux_chart,
+        write_directory(root, matrix_app_artifact, matrix.chart, siblings=matrix.SOPS_FILES),
+        cnpg_kustomization,
+    )
     headlamp_app_artifact = artifact("headlamp-app", headlamp.OUTPUT_DIR)
     headlamp.headlamp(flux_chart, headlamp_app_artifact)
     grafana_instance_artifact = artifact("grafana-instance", grafana_instance.OUTPUT_DIR)
@@ -858,7 +859,11 @@ def generate_manifests(root: Path) -> None:
     )
     langfuse_artifact = artifact("langfuse", langfuse_app.OUTPUT_DIR)
     langfuse_app.langfuse(
-        flux_chart, langfuse_artifact, cnpg_kustomization, valkey_kustomization, seaweedfs_operator_kustomization
+        flux_chart,
+        write_directory(root, langfuse_artifact, langfuse_app.chart, siblings=["langfuse-secrets.sops.yaml"]),
+        cnpg_kustomization,
+        valkey_kustomization,
+        seaweedfs_operator_kustomization,
     )
     vector_talos_logs_artifact = artifact("vector-talos-logs", vector_talos_logs.OUTPUT_DIR)
     vector_talos_logs.vector_talos_logs(flux_chart, vector_talos_logs_artifact, loki_kustomization)
@@ -1183,7 +1188,12 @@ def generate_manifests(root: Path) -> None:
     haku_workloads.haku_workloads(flux_chart, haku_workloads_artifact)
     litellm_keys_tf_artifact = artifact("litellm-keys-tf", litellm_keys.OUTPUT_DIR)
     litellm_keys.litellm_keys_tf(
-        flux_chart, litellm_keys_tf_artifact, litellm_kustomization, tofu_controller_kustomization
+        flux_chart,
+        write_directory(
+            root, litellm_keys_tf_artifact, litellm_keys.keys_chart, siblings=["litellm-clients-sops-age-key.sops.yaml"]
+        ),
+        litellm_kustomization,
+        tofu_controller_kustomization,
     )
     haku_openclaw_spike_app_artifact = artifact(
         "haku-openclaw-spike-app", f"{HAND_WRITTEN_ROOT}/agents/haku-openclaw-spike/app"
