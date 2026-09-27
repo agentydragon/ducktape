@@ -16,6 +16,8 @@ from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsRelabelings,
+    ServiceMonitorSpecNamespaceSelector,
+    ServiceMonitorSpecSelector,
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -73,8 +75,8 @@ class TalosEtcdMetrics(Construct):
             self,
             "servicemonitor",
             metadata=ApiObjectMetadata(name="talos-etcd", namespace=NAMESPACE, labels=_LABELS),
-            namespace_selector=[NAMESPACE],
-            selector={"app.kubernetes.io/name": _NAME},
+            namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=[NAMESPACE]),
+            selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": _NAME}),
             endpoints=[
                 ServiceMonitorSpecEndpoints(
                     port=_PORT_NAME,

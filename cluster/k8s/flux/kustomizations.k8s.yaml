@@ -1447,7 +1447,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: gateway
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/website
@@ -1467,7 +1467,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: gateway
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/proxmox-proxy
@@ -1602,7 +1602,7 @@ spec:
       namespace: flux-system
     - name: authentik
       namespace: ducktape-flux
-    - name: gateway
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./k8s
@@ -1761,9 +1761,9 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
     - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/ntfy
@@ -1783,8 +1783,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: gateway
-      namespace: ducktape-flux
     - name: cert-manager-environment
       namespace: ducktape-flux
     - name: nvidia-runtimeclass
@@ -2506,8 +2504,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: gateway
-      namespace: ducktape-flux
     - name: sso-providers-tf
       namespace: ducktape-flux
   interval: 10m
@@ -2591,8 +2587,6 @@ spec:
     - name: ntfy
       namespace: ducktape-flux
     - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: gateway
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/flux-webhook
@@ -2761,7 +2755,7 @@ spec:
       namespace: ducktape-flux
     - name: seaweedfs-cluster
       namespace: ducktape-flux
-    - name: gateway
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs/public-s3
@@ -3052,8 +3046,6 @@ spec:
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
     - name: local-path-provisioner
       namespace: ducktape-flux
   interval: 10m
@@ -3079,8 +3071,6 @@ spec:
     - name: cnpg
       namespace: ducktape-flux
     - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
       namespace: ducktape-flux
     - name: local-path-provisioner
       namespace: ducktape-flux
@@ -3195,10 +3185,6 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux
     - name: local-path-provisioner
@@ -3267,13 +3253,9 @@ spec:
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
     - name: cert-manager-environment
       namespace: ducktape-flux
     - name: sso-providers-tf
-      namespace: ducktape-flux
-    - name: forgejo-images
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/cli-proxy-api
@@ -3300,8 +3282,6 @@ spec:
       namespace: ducktape-flux
     - name: kubevirt
       namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/cpap-sync
   prune: true
@@ -3322,8 +3302,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
     - name: flux-image-automation-ghcr
       namespace: ducktape-flux
   interval: 10m
@@ -3372,8 +3350,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
     - name: grafana-instance
@@ -3404,8 +3380,6 @@ spec:
       namespace: ducktape-flux
     - name: github-secrets-sync-secrets
       namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
     - name: seaweedfs-pr-visuals-bucket
       namespace: ducktape-flux
   interval: 10m
@@ -3426,10 +3400,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
     - name: cert-manager-environment
       namespace: ducktape-flux
     - name: authentik
@@ -3454,10 +3424,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
     - name: cert-manager-environment
       namespace: ducktape-flux
     - name: authentik
@@ -3525,11 +3491,9 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
-    - name: forgejo-images
+    - name: seaweedfs-operator
       namespace: ducktape-flux
     - name: monitoring-crds
-      namespace: ducktape-flux
-    - name: gateway
       namespace: ducktape-flux
     - name: sso-providers-tf
       namespace: ducktape-flux
@@ -3552,8 +3516,6 @@ metadata:
 spec:
   dependsOn:
     - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
       namespace: ducktape-flux
     - name: matrix
       namespace: ducktape-flux
@@ -3589,9 +3551,7 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
+    - name: seaweedfs-operator
       namespace: ducktape-flux
     - name: cert-manager
       namespace: ducktape-flux
@@ -3618,10 +3578,6 @@ metadata:
 spec:
   dependsOn:
     - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
       namespace: ducktape-flux
     - name: authentik
       namespace: ducktape-flux
@@ -3674,8 +3630,6 @@ metadata:
 spec:
   dependsOn:
     - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: forgejo-images
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/google-mcp
@@ -3810,8 +3764,6 @@ spec:
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
     - name: cli-proxy-api
       namespace: ducktape-flux
     - name: external-secrets-operator
@@ -3864,10 +3816,6 @@ spec:
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
     - name: grocy-sf
       namespace: ducktape-flux
     - name: valkey
@@ -3896,8 +3844,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
     - name: grocy-sf
       namespace: ducktape-flux
   interval: 10m
@@ -3919,10 +3865,6 @@ metadata:
 spec:
   dependsOn:
     - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
       namespace: ducktape-flux
     - name: grocy-vallejo
       namespace: ducktape-flux
@@ -3952,8 +3894,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
     - name: grocy-vallejo
       namespace: ducktape-flux
   interval: 10m
@@ -3975,8 +3915,6 @@ metadata:
 spec:
   dependsOn:
     - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
       namespace: ducktape-flux
     - name: home-assistant
       namespace: ducktape-flux
@@ -4000,8 +3938,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
     - name: authentik-jwt-rotation
       namespace: ducktape-flux
     - name: forgejo-claude
@@ -4175,8 +4111,6 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
     - name: external-creds
       namespace: ducktape-flux
     - name: external-secrets-config
@@ -4378,10 +4312,6 @@ spec:
       namespace: ducktape-flux
     - name: local-path-provisioner
       namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
     - name: agent-machine-access-tf
       namespace: ducktape-flux
     - name: reflector
@@ -4474,8 +4404,6 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: kubevirt
-      namespace: ducktape-flux
-    - name: forgejo-images
       namespace: ducktape-flux
     - name: external-creds
       namespace: ducktape-flux

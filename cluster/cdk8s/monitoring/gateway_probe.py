@@ -21,6 +21,7 @@ from cdk8s_plus_34 import k8s
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitorSpecPodMetricsEndpoints,
     PodMonitorSpecPodMetricsEndpointsRelabelings,
+    PodMonitorSpecSelector,
 )
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRuleSpecGroupsRules
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
@@ -236,7 +237,7 @@ def chart(app: App, mesh: Mesh) -> Chart:
         chart,
         "pod-monitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
-        selector=_LABELS,
+        selector=PodMonitorSpecSelector(match_labels=_LABELS),
         pod_metrics_endpoints=[
             _own_node_endpoint(
                 Dial.OWN_PUBLIC, {name: f"{h.public_ip}:{_GATEWAY_PORT}" for name, h in public_nodes.items()}

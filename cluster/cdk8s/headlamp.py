@@ -109,9 +109,7 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
 
 
-def headlamp(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, gateway: Kustomization, sso_providers_tf: Kustomization
-) -> Kustomization:
+def headlamp(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, sso_providers_tf: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart, NAME, artifact, timeout="10m", depends_on=flux_kustomization_depends_on_many(gateway, sso_providers_tf)
+        chart, NAME, artifact, timeout="10m", depends_on=flux_kustomization_depends_on_many(sso_providers_tf)
     )

@@ -347,7 +347,7 @@ class App(Construct):
             self,
             "networkpolicy-runner",
             metadata=ApiObjectMetadata(name="agentplane-runner", namespace=namespace),
-            selector=_RUNNER_LABELS,
+            endpoint_selector=_RUNNER_LABELS,
             ingress=[IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": namespace}, ports=[_RUNNER_PORT])],
             egress=[
                 dns_egress,
@@ -361,7 +361,7 @@ class App(Construct):
             self,
             "networkpolicy-app",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            selector=_LABELS,
+            endpoint_selector=_LABELS,
             ingress=[IngressRule.from_gateway(CONTAINER_PORT)],
             egress=[
                 dns_egress,

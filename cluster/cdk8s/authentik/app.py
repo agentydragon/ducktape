@@ -21,6 +21,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRulesFiltersResponseHeaderModifierSet
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
 from cluster.cdk8s.authentik import db
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
@@ -254,7 +255,7 @@ def _network_policy(chart: Chart) -> None:
         chart,
         "server-ingress",
         metadata=ApiObjectMetadata(name="authentik-server-ingress", namespace=NAMESPACE),
-        selector=_SERVER_LABELS,
+        endpoint_selector=_SERVER_LABELS,
         ingress=[
             IngressRule.from_gateway(_HTTP, _HTTPS),
             # Outposts sync their config from the server API.
@@ -285,7 +286,7 @@ def _pod_monitor(chart: Chart) -> None:
         chart,
         "server-podmonitor",
         metadata=ApiObjectMetadata(name="authentik-server", namespace=NAMESPACE),
-        selector=_SERVER_LABELS,
+        selector=PodMonitorSpecSelector(match_labels=_SERVER_LABELS),
         # TODO: Consider adding bearer token auth if Authentik metrics require authentication.
         pod_metrics_endpoints=[Endpoint.plain(port="metrics")],
     )

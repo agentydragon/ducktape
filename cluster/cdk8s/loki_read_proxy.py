@@ -207,7 +207,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        selector=_LABELS,
+        endpoint_selector=_LABELS,
         # Haku agent sandboxes → proxy (namespace-filtered log reads)
         ingress=[IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": "haku-sandbox"}, ports=[_PORT])],
         egress=[

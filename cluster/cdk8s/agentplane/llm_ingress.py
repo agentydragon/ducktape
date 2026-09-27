@@ -172,7 +172,7 @@ class LlmIngress(Construct):
             self,
             "networkpolicy",
             metadata=ApiObjectMetadata(name=_NAME, namespace=self.env.namespace),
-            selector=_LABELS,
+            endpoint_selector=_LABELS,
             ingress=[
                 IngressRule.from_endpoints(
                     cilium.endpoint_labels(self.env.namespace, "agentplane-egress"), ports=[CONTAINER_PORT]

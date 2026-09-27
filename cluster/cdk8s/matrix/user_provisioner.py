@@ -88,7 +88,6 @@ def matrix_user_provisioner(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
     matrix: Kustomization,
 ) -> Kustomization:
     name = "matrix-user-provisioner"
@@ -109,7 +108,6 @@ def matrix_user_provisioner(
         ],
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_config,
-            forgejo_images,
             # Synapse is deployed and healthy; also carries the registration shared secret, admin and bot passwords
             matrix,
         ),

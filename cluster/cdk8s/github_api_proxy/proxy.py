@@ -45,6 +45,7 @@ from gateway_api_tlsroute_crds.io.k8s.networking.gateway import (
     TlsRouteSpecRules,
     TlsRouteSpecRulesBackendRefs,
 )
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.cert_manager.cluster_ca import LONG_LIVED_CA
@@ -385,7 +386,7 @@ def _network_policy(scope: Construct) -> None:
         scope,
         "network-policy",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        selector=_LABELS,
+        endpoint_selector=_LABELS,
         ingress=[
             IngressRule.from_gateway(_PROXY_PORT),
             IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy"), ports=[_METRICS_PORT]),
@@ -477,7 +478,7 @@ def _monitoring(scope: Construct) -> None:
         scope,
         "pod-monitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        selector=_LABELS,
+        selector=PodMonitorSpecSelector(match_labels=_LABELS),
         pod_metrics_endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
     PrometheusRule(

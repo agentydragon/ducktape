@@ -227,15 +227,13 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
 
 
-def website(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, gateway: Kustomization) -> Kustomization:
+def website(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno: Kustomization) -> Kustomization:
     name = "website"
     return flux_kustomization(
         chart,
         name,
         artifact,
         timeout="5m",
-        depends_on=[
-            # TLS is owned by the shared Gateway; Website only supplies an HTTPRoute.
-            flux_kustomization_depends_on(gateway)
-        ],
+        # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+        depends_on=[flux_kustomization_depends_on(kyverno)],
     )

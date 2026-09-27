@@ -149,7 +149,7 @@ def _readonly_provisioner(chart: Chart) -> None:
                 )
             },
         ),
-        selector=_PROVISIONER_LABELS,
+        endpoint_selector=_PROVISIONER_LABELS,
         # Cilium exposes Kubernetes pod labels with the k8s: prefix.
         egress=[cilium.dns_egress(), EgressRule.to_endpoints({"k8s:cnpg.io/cluster": _CLUSTER}, 5432)],
     )
