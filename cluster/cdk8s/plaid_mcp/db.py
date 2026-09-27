@@ -61,7 +61,7 @@ def _cluster(chart: Chart) -> None:
                 " financial data."
             )
         },
-        node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh",
         size="5Gi",
         managed=ClusterSpecManaged(
@@ -175,7 +175,7 @@ def _readonly_provisioner(chart: Chart) -> None:
                 metadata=k8s.ObjectMeta(labels=_PROVISIONER_LABELS),
                 spec=k8s.PodSpec(
                     restart_policy="Never",
-                    node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     containers=[
                         k8s.Container(
                             name="psql",

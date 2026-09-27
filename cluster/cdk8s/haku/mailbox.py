@@ -109,7 +109,7 @@ def _add_store(chart: Chart) -> None:
         "db",
         name="haku-mailbox-db",
         namespace=NAMESPACE,
-        node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh",
         size="10Gi",
         # CNPG auto-generates credentials in secret haku-mailbox-db-app.
@@ -142,7 +142,7 @@ def _add_deployment(chart: Chart) -> None:
                     # OVH-only resilience: inbound mail must not depend on Proxmox, and the CNPG
                     # store is pinned to hil-ovh -- co-locate with it (same pin as other
                     # OVH-pinned apps, e.g. paperless).
-                    node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     security_context=k8s.PodSecurityContext(
                         run_as_non_root=True, run_as_user=1000, run_as_group=1000, fs_group=1000
                     ),

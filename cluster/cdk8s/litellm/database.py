@@ -30,7 +30,7 @@ def _chart(app: App) -> Chart:
         "cluster",
         name=_CLUSTER_NAME,
         namespace="litellm",
-        node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh",
         size="5Gi",
         # CNPG auto-generates credentials in secret litellm-db-app.

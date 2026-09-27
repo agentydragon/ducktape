@@ -222,7 +222,7 @@ def _destination_mover_zone_affinity() -> ReplicationDestinationSpecRsyncTlsMove
                     ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
                         match_expressions=[
                             ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.ZONE]
+                                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.HIL_OVH_ZONE]
                             )
                         ]
                     )
@@ -240,7 +240,7 @@ def _source_mover_zone_affinity() -> ReplicationSourceSpecRsyncTlsMoverAffinity:
                     ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
                         match_expressions=[
                             ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.ZONE]
+                                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.HIL_OVH_ZONE]
                             )
                         ]
                     )
@@ -284,7 +284,7 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
             template=k8s.PodTemplateSpec(
                 spec=k8s.PodSpec(
                     restart_policy="Never",
-                    node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     containers=[
                         k8s.Container(

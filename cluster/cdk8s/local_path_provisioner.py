@@ -55,7 +55,7 @@ def _storage_class(scope: Construct, name: str, *, reclaim_policy: str, topology
 
 
 def _storage_classes(scope: Construct) -> None:
-    ovh_hdd = {node_scheduling.ZONE_LABEL: node_scheduling.ZONE, _TIER: "hdd"}
+    ovh_hdd = {**node_scheduling.HIL_OVH_NODE_SELECTOR, _TIER: "hdd"}
     # DEPRECATED alias, re-pinned to the same media as local-path-ovh-hdd (KS-5 7200rpm HDD).
     # New OVH PVCs should target local-path-ovh-{hdd,ssd} explicitly; this stays only for the
     # ~40 existing bound PVCs referencing it. Adding the tier key means a re-provisioned PVC
@@ -81,10 +81,7 @@ def _storage_classes(scope: Construct) -> None:
     # on HDD. Reserved for fsync/latency-critical data (Forgejo git, forgejo-db,
     # seaweedfs-filer-db). See cluster/docs/plans/ovh_storage_tiering.md.
     _storage_class(
-        scope,
-        _OVH_SSD,
-        reclaim_policy="Delete",
-        topology={node_scheduling.ZONE_LABEL: node_scheduling.ZONE, _TIER: "ssd"},
+        scope, _OVH_SSD, reclaim_policy="Delete", topology={**node_scheduling.HIL_OVH_NODE_SELECTOR, _TIER: "ssd"}
     )
     _storage_class(scope, "local-path-proxmox", reclaim_policy="Delete", topology={_REGION: "proxmox"})
     # Home automation is intentionally hardware- and LAN-pinned: integrations use the

@@ -83,7 +83,7 @@ def _database(chart: Chart) -> None:
         "database-cluster",
         name=_DB_CLUSTER,
         namespace=NAME,
-        node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh-ssd",
         size="20Gi",
         initdb=ClusterSpecBootstrapInitdb(database="ducktape", owner=_DB_OWNER),

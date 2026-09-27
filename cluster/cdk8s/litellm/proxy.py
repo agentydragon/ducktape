@@ -181,7 +181,7 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
             image_pull_secret_name="forgejo-images-creds",
             service_account_name="litellm",
             termination_grace_period_seconds=90,
-            node_affinity=Node.labeled(NodeLabelQuery.is_(node_scheduling.ZONE_LABEL, node_scheduling.ZONE)),
+            node_affinity=Node.labeled(NodeLabelQuery.is_(node_scheduling.ZONE_LABEL, node_scheduling.HIL_OVH_ZONE)),
             tolerations=(
                 Node.tainted(
                     NodeTaintQuery.exists(node_scheduling.CONTROL_PLANE_TAINT_KEY, effect=TaintEffect.NO_SCHEDULE)

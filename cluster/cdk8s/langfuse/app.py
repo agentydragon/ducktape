@@ -52,7 +52,7 @@ def _database(scope: Construct) -> None:
         "database",
         name="langfuse-db",
         namespace=_NAMESPACE,
-        node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh-ssd",
         size="10Gi",
         # CNPG auto-generates credentials in secret langfuse-db-app
@@ -140,7 +140,7 @@ def _values() -> dict[str, object]:
                 # binding in Authentik (tf/gitops/sso-providers/provider_langfuse.tf).
                 "signUpDisabled": False
             },
-            "nodeSelector": {node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             # Langfuse is stateless at the pod level and uses external storage. Allow
             # control-plane nodes as overflow capacity, while the affinity below keeps
             # ordinary placement on workers.

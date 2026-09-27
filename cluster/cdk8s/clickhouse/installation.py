@@ -70,7 +70,7 @@ _INTERSERVER_PORT = 9009
 _CLICKHOUSE_UID = 101  # the images' `clickhouse` user
 _STORAGE_CLASS = "local-path-ovh-hdd-retain"
 _ANY_ADDRESS = ["0.0.0.0/0", "::/0"]
-_HDD_NODE_SELECTOR = {node_scheduling.ZONE_LABEL: node_scheduling.ZONE, "storage.allegedly.works/tier": "hdd"}
+_HDD_NODE_SELECTOR = {**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "hdd"}
 _RUNTIME_DEFAULT_SECCOMP = {"type": "RuntimeDefault"}
 _CONTAINER_SECURITY_CONTEXT = {
     "allowPrivilegeEscalation": False,

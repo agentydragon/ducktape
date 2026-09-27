@@ -114,7 +114,7 @@ def chart(app: App) -> Chart:
                 metadata=k8s.ObjectMeta(labels={"app": NAME}),
                 spec=k8s.PodSpec(
                     restart_policy="OnFailure",
-                    node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     containers=[
                         k8s.Container(
                             name="provisioner",

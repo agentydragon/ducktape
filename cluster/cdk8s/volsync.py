@@ -104,7 +104,7 @@ def chart(app: App) -> Chart:
                 )
             )
         ],
-        values={"manageCRDs": True, "nodeSelector": {node_scheduling.ZONE_LABEL: node_scheduling.ZONE}},
+        values={"manageCRDs": True, "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR},
     )
     return chart
 

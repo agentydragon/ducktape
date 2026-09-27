@@ -50,7 +50,7 @@ def chart(app: App) -> Chart:
         },
         # Existing SSD-local replicas remain pinned by their PVs. Prefer a worker for
         # any future placement that is not constrained by an existing claim.
-        node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh-ssd",
         size="2Gi",
         # QoS / eviction protection. Without these the instance pods are BestEffort -- the

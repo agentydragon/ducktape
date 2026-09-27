@@ -298,7 +298,7 @@ ENV = Environment(
         hostname=_HOSTNAME,
         oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane-staging/",
         reach_incluster_authentik=True,
-        runner_zone=node_scheduling.ZONE,
+        runner_zone=node_scheduling.HIL_OVH_ZONE,
         oidc_session_secret_name=_OIDC_SESSION_SECRET,
     ),
     actions=ActionsProps(

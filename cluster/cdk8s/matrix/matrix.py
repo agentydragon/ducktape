@@ -104,7 +104,7 @@ def _database(scope: Construct) -> None:
         # shape this had before the namespace was parked: Synapse's media store is on
         # SeaweedFS now, whose CSI node plugin only runs on the OVH nodes, so the app
         # moved there and R5 requires the database to follow it.
-        node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh",
         size="10Gi",
         # CNPG auto-generates credentials in secret matrix-db-app
@@ -180,7 +180,7 @@ def _synapse(scope: Construct) -> None:
                 # has no top-level key of that name, so a selector placed there is silently
                 # ignored (which is why the previous `region: proxmox` never pinned
                 # anything, and Synapse only landed on wyrm2 by chance).
-                "nodeSelector": {node_scheduling.ZONE_LABEL: node_scheduling.ZONE}
+                "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR
             },
             # macaroonSecretKey and registrationSharedSecret injected via valuesFrom;
             # extraConfig with oidc_providers is injected via valuesFrom from the
@@ -215,7 +215,7 @@ def _synapse(scope: Construct) -> None:
                     # Keep Synapse's Redis in the same zone as Synapse; it is a subchart, so
                     # this key is separate from synapse.nodeSelector above. Without it the
                     # placement is luck, and a cross-site hop for every pub/sub round trip.
-                    "nodeSelector": {node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+                    "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
                     "persistence": {"enabled": False},
                     "resources": {
                         "requests": {"cpu": "50m", "memory": "64Mi"},

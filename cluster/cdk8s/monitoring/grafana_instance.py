@@ -60,7 +60,7 @@ def _database(chart: Chart) -> None:
         "database",
         name=_DB_NAME,
         namespace=_NAMESPACE,
-        node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh",
         size="2Gi",
         # Created by pg_basebackup from the retired grafana-db, so this never initializes

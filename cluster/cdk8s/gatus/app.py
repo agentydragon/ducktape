@@ -62,7 +62,7 @@ def _database(scope: Construct) -> None:
         "database",
         name=_DB_NAME,
         namespace=_NAMESPACE,
-        node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh",
         size="1Gi",
         # CNPG auto-generates credentials in secret gatus-db-app
@@ -109,7 +109,7 @@ def _helm_release(scope: Construct) -> None:
             # The ServiceMonitor is its own object below, to avoid blocking
             # Gatus deploys on monitoring-stack readiness.
             "serviceMonitor": {"enabled": False},
-            "nodeSelector": {node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             # Gatus is stateless at the pod level (state moved to gatus-db above). Allow
             # control-plane nodes as overflow capacity, while the affinity below keeps
             # ordinary placement on workers.

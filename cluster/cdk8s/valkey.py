@@ -107,7 +107,7 @@ def valkey_instance(
         tolerations=tolerations,
         node_affinity_match=[
             RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.ZONE]
+                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.HIL_OVH_ZONE]
             )
         ],
         # Prefer ordinary workers, for an instance that tolerates control planes.

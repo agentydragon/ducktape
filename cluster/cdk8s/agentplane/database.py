@@ -79,7 +79,7 @@ class Db(Construct):
             name=_CLUSTER_NAME,
             namespace=env.namespace,
             instances=env.db.instances,
-            node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+            node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
             storage_class=_STORAGE_CLASS,
             size=_STORAGE_SIZE,
             # Electric's WAL-loss recovery purges every shape, then stays unready while

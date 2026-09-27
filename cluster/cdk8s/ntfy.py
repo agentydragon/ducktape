@@ -186,7 +186,7 @@ def _database(scope: Construct) -> None:
         "database",
         name=_DATABASE_CLUSTER,
         namespace=NAMESPACE,
-        node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh-hdd",
         size="2Gi",
         initdb=cnpg.same_owner_initdb(NAME),

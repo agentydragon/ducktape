@@ -321,7 +321,7 @@ def _values() -> dict[str, object]:
                     }
                 },
                 # Chart auto-generates podAntiAffinity when replicas > 1
-                "nodeSelector": {node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+                "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
                 # The replica with its local PVC on a control plane must survive the
                 # default taint until monitoring-state migration. Prefer workers for
                 # any placement not constrained by that PVC.

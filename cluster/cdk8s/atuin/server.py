@@ -29,7 +29,7 @@ def _database(chart: Chart) -> None:
         "database",
         name=_DB_CLUSTER,
         namespace=NAMESPACE,
-        node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh-ssd",
         size="2Gi",
         initdb=cnpg.same_owner_initdb(NAME),
@@ -55,7 +55,7 @@ def _server(chart: Chart) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
-                    node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     containers=[
                         k8s.Container(
                             name=NAME,

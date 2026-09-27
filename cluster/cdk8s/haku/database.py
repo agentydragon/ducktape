@@ -57,7 +57,7 @@ class Db(Construct):
             # while ownership moves between them. Removing this Cluster is a deliberate
             # `kubectl delete`, never a manifest edit.
             annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
-            node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+            node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
             storage_class="local-path-ovh",
             size="2Gi",
             initdb=cnpg.same_owner_initdb(DATABASE),

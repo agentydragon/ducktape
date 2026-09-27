@@ -39,7 +39,7 @@ def _component(replicas: int, cpu: str, memory: str, **extra: object) -> dict[st
         "replicas": replicas,
         **extra,
         "resources": {"requests": {"cpu": cpu, "memory": memory}},
-        "nodeSelector": {node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+        "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
         "affinity": node_scheduling.PREFER_WORKERS,
     }
 
@@ -143,7 +143,7 @@ def _values() -> dict[str, object]:
             "replicas": 2,
             "persistentVolume": {"storageClass": "local-path-ovh", "size": "10Gi"},
             "resources": {"requests": {"cpu": "100m", "memory": "256Mi"}},
-            "nodeSelector": {node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             # 2 ingesters + RF=2 + RF=2 on the 2 kimsufi workers gives all-pairs
             # placement; zone-aware would just add a second StatefulSet and
             # rollout-operator coupling for no behavioural win at this scale.

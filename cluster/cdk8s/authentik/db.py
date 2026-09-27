@@ -20,7 +20,7 @@ NAME = "authentik-db-ovh"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/db"
 # The database is on node-local `local-path-ovh` storage and cannot move; Authentik's server
 # selects the same zone to stay beside it.
-NODE_SELECTOR = {node_scheduling.ZONE_LABEL: node_scheduling.ZONE}
+NODE_SELECTOR = node_scheduling.HIL_OVH_NODE_SELECTOR
 DATABASE = "authentik"
 # The credentials CNPG generated for the retired `authentik-db`, which this cluster was
 # cloned from; the role's password came with the clone.

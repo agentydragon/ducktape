@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from cdk8s import ApiObjectMetadata
 from cnpg_cluster_crds.io.cnpg.postgresql import (
@@ -33,7 +33,7 @@ _CONTROL_PLANE_TOLERATION = ClusterSpecAffinityTolerations(
 )
 
 
-def _affinity(*, node_selector: dict[str, str], storage_class: str) -> ClusterSpecAffinity:
+def _affinity(*, node_selector: Mapping[str, str], storage_class: str) -> ClusterSpecAffinity:
     """One instance per node within `node_selector`, required: instances sharing a node
     share its failure, and preferred anti-affinity lets the scheduler co-locate them. A
     Cluster tolerates control-plane nodes exactly when its storage is SSD, since OVH's
@@ -64,7 +64,7 @@ def cluster(
     namespace: str,
     storage_class: str,
     size: str,
-    node_selector: dict[str, str],
+    node_selector: Mapping[str, str],
     initdb: ClusterSpecBootstrapInitdb | None = None,
     instances: int = 2,
     image_name: str | None = POSTGRES_IMAGE,

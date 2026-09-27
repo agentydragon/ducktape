@@ -138,7 +138,7 @@ def _values() -> dict[str, object]:
         },
         # Pin to OVH kimsufi nodes: required by the seaweedfs-ovh CSI (OVH-only) and
         # co-located with the OVH-HA forgejo-db (cnpg_conventions R5).
-        "nodeSelector": {node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+        "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
         "affinity": {
             "nodeAffinity": node_scheduling.PREFER_WORKERS.node_affinity,
             # Keep the two replicas on different hosts so a single node loss can't take

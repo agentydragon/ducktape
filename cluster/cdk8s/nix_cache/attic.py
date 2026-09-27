@@ -52,7 +52,7 @@ def _database(scope: Construct) -> None:
         name=_DB,
         namespace=NAMESPACE,
         image_name=None,
-        node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh",
         size="2Gi",
         # CNPG generates the credentials in Secret attic-db-app.
@@ -90,7 +90,7 @@ def _server(scope: Construct) -> None:
                 metadata=k8s.ObjectMeta(labels=_SELECTOR),
                 spec=k8s.PodSpec(
                     # Co-located with SeaweedFS and attic-db on OVH kimsufi workers.
-                    node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     # Stateless S3-backed service; allow control-plane nodes as overflow capacity.
                     tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     containers=[

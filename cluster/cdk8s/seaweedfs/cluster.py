@@ -218,7 +218,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     "memory": SeaweedSpecMasterRequests.from_string("128Mi"),
                 },
                 limits={"memory": SeaweedSpecMasterLimits.from_string("512Mi")},
-                node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+                node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                 tolerations=[
                     SeaweedSpecMasterTolerations(
                         key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
@@ -341,7 +341,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     "memory": SeaweedSpecFilerRequests.from_string("384Mi"),
                 },
                 limits={"memory": SeaweedSpecFilerLimits.from_string("768Mi")},
-                node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+                node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                 affinity=SeaweedSpecFilerAffinity(
                     # Hard anti-affinity -- one filer per host, so the 2 replicas never share a
                     # node and a single node loss can't take out both.
@@ -410,7 +410,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 # outside the pod gets "connection refused". Bind to 0.0.0.0 so probes (and
                 # the Service ClusterIP) reach the API.
                 extra_args=["-ip.bind=0.0.0.0"],
-                node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+                node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                 # Allow kimsufi CPs as scheduling targets so s3 can spread across OVH hosts
                 # when desirable. Stateless gateway -- no I/O contention.
                 tolerations=[

@@ -72,7 +72,7 @@ def base_chart(app: App) -> Chart:
                     # The OAuth state Valkey instances use local-path-ovh and are pinned to
                     # hil-ovh. Keep the MCP client in the same site: valkey-glide's default
                     # 250 ms request timeout is too small for the current cross-site path.
-                    node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     # Stateless (config only, no PVC). Allow control-plane nodes as overflow
                     # capacity, but prefer workers to keep ordinary application I/O away from
                     # etcd disks.

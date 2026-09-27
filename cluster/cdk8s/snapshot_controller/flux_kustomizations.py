@@ -35,7 +35,7 @@ def snapshot_controller(chart: Chart) -> Kustomization:
                 ),
                 patch=(
                     "- op: add\n  path: /spec/template/spec/nodeSelector\n  value:\n    "
-                    f"{node_scheduling.ZONE_LABEL}: {node_scheduling.ZONE}"
+                    f"{node_scheduling.ZONE_LABEL}: {node_scheduling.HIL_OVH_ZONE}"
                 ),
             )
         ],

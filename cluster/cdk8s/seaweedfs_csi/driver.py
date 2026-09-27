@@ -36,7 +36,7 @@ _OVH_AFFINITY = {
             "nodeSelectorTerms": [
                 {
                     "matchExpressions": [
-                        {"key": node_scheduling.ZONE_LABEL, "operator": "In", "values": [node_scheduling.ZONE]}
+                        {"key": node_scheduling.ZONE_LABEL, "operator": "In", "values": [node_scheduling.HIL_OVH_ZONE]}
                     ]
                 }
             ]
@@ -184,7 +184,9 @@ def _storage_class(scope: Construct, name: str, *, description: str, parameters:
         allowed_topologies=[
             k8s.TopologySelectorTerm(
                 match_label_expressions=[
-                    k8s.TopologySelectorLabelRequirement(key=node_scheduling.ZONE_LABEL, values=[node_scheduling.ZONE])
+                    k8s.TopologySelectorLabelRequirement(
+                        key=node_scheduling.ZONE_LABEL, values=[node_scheduling.HIL_OVH_ZONE]
+                    )
                 ]
             )
         ],

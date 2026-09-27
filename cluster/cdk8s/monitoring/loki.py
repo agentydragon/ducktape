@@ -184,7 +184,7 @@ def _loki_values() -> dict[str, object]:
         "write": {
             "replicas": 2,
             "annotations": _GOLDILOCKS_OFF,
-            "nodeSelector": {node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             "affinity": node_scheduling.PREFER_WORKERS,
             "persistence": {"storageClass": "local-path-ovh", "size": "10Gi"},
             "extraEnvFrom": _CREDENTIALS_ENV_FROM,
@@ -193,7 +193,7 @@ def _loki_values() -> dict[str, object]:
         "read": {
             "replicas": 2,
             "annotations": _GOLDILOCKS_OFF,
-            "nodeSelector": {node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             "affinity": node_scheduling.PREFER_WORKERS,
             "extraEnvFrom": _CREDENTIALS_ENV_FROM,
             # Loki doesn't derive GOMEMLIMIT from its own cgroup limit yet (open
@@ -211,7 +211,7 @@ def _loki_values() -> dict[str, object]:
         "backend": {
             "replicas": 2,
             "annotations": _GOLDILOCKS_OFF,
-            "nodeSelector": {node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             "affinity": node_scheduling.PREFER_WORKERS,
             "persistence": {"volumeClaimsEnabled": False},
             "extraEnvFrom": _CREDENTIALS_ENV_FROM,
@@ -233,7 +233,7 @@ def _loki_values() -> dict[str, object]:
             # service out of ServiceMonitor discovery.
             "replicas": 1,
             "resources": {"requests": {"cpu": "10m", "memory": "32Mi"}},
-            "nodeSelector": {node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             "affinity": node_scheduling.PREFER_WORKERS,
             # nginx's DNS resolver reuses one fixed UDP source port for every
             # query; Kubernetes' conntrack-based Service NAT then pins that flow
