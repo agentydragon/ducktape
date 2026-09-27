@@ -1,5 +1,6 @@
 """Dispatch manifest generation to each component's local cdk8s helpers."""
 
+import functools
 from pathlib import Path
 
 from cdk8s import App
@@ -288,7 +289,6 @@ def generate_manifests(root: Path) -> None:
     stateful_infra.write_seaweedfs_manifests(root)
     seaweedfs_cluster.write_manifests(root)
     egress_fences.write_manifests(root)
-    dns_automation.write_manifests(root, mesh)
     litellm_keys.write_manifests(root)
     litellm_namespace.write_manifests(root)
     litellm_proxy.write_manifests(root)
@@ -377,7 +377,6 @@ def generate_manifests(root: Path) -> None:
     claude_sandbox_secrets.write_manifests(root)
     kubectl_passthrough_mcp.write_manifests(root)
     agent_shared_rbac.write_manifests(root)
-    website.write_manifests(root)
     ollama_app.write_manifests(root)
     gatus_app.write_manifests(root)
     activitywatch_app.write_manifests(root)
@@ -404,21 +403,11 @@ def generate_manifests(root: Path) -> None:
     kube_system.write_manifests(root)
     user_agentydragon.write_manifests(root)
     nvidia_runtimeclass.write_manifests(root)
-    hubble_ui.write_manifests(root)
-    reflector.write_manifests(root)
-    keda.write_manifests(root)
-    valkey.write_manifests(root)
     local_path_provisioner.write_manifests(root)
-    goldilocks.write_manifests(root)
-    headlamp.write_manifests(root)
     proxmox_proxy.write_manifests(root, mesh)
-    volsync.write_manifests(root)
-    reloader.write_manifests(root)
-    vpa.write_manifests(root)
     node_feature_discovery.write_manifests(root)
     nvidia_device_plugin.write_manifests(root)
     talos_cloud_controller_manager.write_manifests(root)
-    kube_api_proxy.write_manifests(root)
     vector_talos_logs.write_manifests(root)
     openebs_lvm_storage.write_manifests(root)
     seaweedfs_csi_driver.write_manifests(root)
@@ -451,9 +440,9 @@ def generate_manifests(root: Path) -> None:
     haku_namespace_artifact = artifact(haku_namespace.NAME, haku_namespace.OUTPUT_DIR)
     haku_namespace_kustomization = haku_namespace.haku_namespace(flux_chart, haku_namespace_artifact, root)
     hubble_ui_artifact = artifact("hubble-ui", hubble_ui.OUTPUT_DIR)
-    hubble_ui.hubble_ui(flux_chart, hubble_ui_artifact)
+    hubble_ui.hubble_ui(flux_chart, write_directory(root, hubble_ui_artifact, hubble_ui.chart))
     kube_api_proxy_artifact = artifact("kube-api-proxy", kube_api_proxy.OUTPUT_DIR)
-    kube_api_proxy.kube_api_proxy(flux_chart, kube_api_proxy_artifact)
+    kube_api_proxy.kube_api_proxy(flux_chart, write_directory(root, kube_api_proxy_artifact, kube_api_proxy.chart))
     kubevirt_cdi_operator_artifact = artifact("kubevirt-cdi-operator", f"{HAND_WRITTEN_ROOT}/kubevirt/cdi-operator")
     cdi_operator_kustomization = kubevirt_flux_kustomizations.cdi_operator(flux_chart, kubevirt_cdi_operator_artifact)
     kubevirt_operator_artifact = artifact("kubevirt-operator", f"{HAND_WRITTEN_ROOT}/kubevirt/operator")
@@ -491,7 +480,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, seaweedfs_namespace_artifact
     )
     reflector_artifact = artifact("reflector", reflector.OUTPUT_DIR)
-    reflector.reflector(flux_chart, reflector_artifact)
+    reflector.reflector(flux_chart, write_directory(root, reflector_artifact, reflector.chart))
     snapshot_controller_crds_kustomization = snapshot_controller_flux_kustomizations.snapshot_controller_crds(
         flux_chart
     )
@@ -505,7 +494,7 @@ def generate_manifests(root: Path) -> None:
     user_agentydragon_artifact = artifact("user-agentydragon", user_agentydragon.OUTPUT_DIR)
     user_agentydragon_kustomization = user_agentydragon.user_agentydragon(flux_chart, user_agentydragon_artifact)
     valkey_artifact = artifact("valkey", valkey.OUTPUT_DIR)
-    valkey_kustomization = valkey.valkey(flux_chart, valkey_artifact)
+    valkey_kustomization = valkey.valkey(flux_chart, write_directory(root, valkey_artifact, valkey.chart))
     gaffer_private_source_kustomization = gaffer_private_source_flux_kustomizations.gaffer_private_source(
         flux_chart, flux_image_automation_ghcr_kustomization
     )
@@ -520,14 +509,14 @@ def generate_manifests(root: Path) -> None:
         flux_chart, kyverno_policies_artifact, kyverno_kustomization
     )
     keda_artifact = artifact("keda", keda.OUTPUT_DIR)
-    keda_kustomization = keda.keda(flux_chart, keda_artifact, kyverno_kustomization)
+    keda_kustomization = keda.keda(flux_chart, write_directory(root, keda_artifact, keda.chart), kyverno_kustomization)
     metrics_server_artifact = artifact("metrics-server", metrics_server.OUTPUT_DIR)
     metrics_server_kustomization = metrics_server.metrics_server(
         flux_chart, write_directory(root, metrics_server_artifact, metrics_server.chart), kyverno_kustomization
     )
     cdi_artifact = artifact("cdi", kubevirt_cdi.OUTPUT_DIR)
     reloader_artifact = artifact("reloader", reloader.OUTPUT_DIR)
-    reloader.reloader(flux_chart, reloader_artifact, kyverno_kustomization)
+    reloader.reloader(flux_chart, write_directory(root, reloader_artifact, reloader.chart), kyverno_kustomization)
     cdi_kustomization = kubevirt_cdi.cdi(
         flux_chart, cdi_artifact, cdi_operator_kustomization, local_path_provisioner_kustomization
     )
@@ -579,7 +568,9 @@ def generate_manifests(root: Path) -> None:
     )
     clickhouse_artifact = artifact("clickhouse", clickhouse_installation.OUTPUT_DIR)
     vpa_artifact = artifact("vpa", vpa.OUTPUT_DIR)
-    vpa_kustomization = vpa.vpa(flux_chart, vpa_artifact, kyverno_kustomization, metrics_server_kustomization)
+    vpa_kustomization = vpa.vpa(
+        flux_chart, write_directory(root, vpa_artifact, vpa.chart), kyverno_kustomization, metrics_server_kustomization
+    )
     clickhouse_kustomization = clickhouse_installation.clickhouse(
         flux_chart, clickhouse_artifact, clickhouse_operator_kustomization
     )
@@ -608,7 +599,9 @@ def generate_manifests(root: Path) -> None:
         flux_chart, tofu_controller_artifact, cert_manager_kustomization, kyverno_kustomization
     )
     volsync_artifact = artifact("volsync", volsync.OUTPUT_DIR)
-    volsync_kustomization = volsync.volsync(flux_chart, volsync_artifact, snapshot_controller_kustomization)
+    volsync_kustomization = volsync.volsync(
+        flux_chart, write_directory(root, volsync_artifact, volsync.chart), snapshot_controller_kustomization
+    )
     agent_shared_rbac_artifact = artifact("agent-shared-rbac", agent_shared_rbac.OUTPUT_DIR)
     agent_shared_rbac.agent_shared_rbac(
         flux_chart, agent_shared_rbac_artifact, claude_rbac_kustomization, kyverno_policies_kustomization
@@ -620,7 +613,9 @@ def generate_manifests(root: Path) -> None:
     external_creds_artifact = artifact("external-creds", external_creds.OUTPUT_DIR)
     external_creds.external_creds(flux_chart, external_creds_artifact, root, claude_rbac_kustomization)
     goldilocks_artifact = artifact("goldilocks", goldilocks.OUTPUT_DIR)
-    goldilocks_kustomization = goldilocks.goldilocks(flux_chart, goldilocks_artifact, vpa_kustomization)
+    goldilocks_kustomization = goldilocks.goldilocks(
+        flux_chart, write_directory(root, goldilocks_artifact, goldilocks.chart), vpa_kustomization
+    )
     clickhouse_schema_artifact = artifact("clickhouse-schema", clickhouse_schema.OUTPUT_DIR)
     clickhouse_schema_kustomization = clickhouse_schema.clickhouse_schema(
         flux_chart, clickhouse_schema_artifact, root, clickhouse_kustomization
@@ -647,7 +642,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     website_artifact = artifact("website", website.OUTPUT_DIR)
-    website.website(flux_chart, website_artifact, kyverno_kustomization)
+    website.website(flux_chart, write_directory(root, website_artifact, website.chart), kyverno_kustomization)
     proxmox_proxy_artifact = artifact("proxmox-proxy", proxmox_proxy.OUTPUT_DIR)
     proxmox_proxy.proxmox_proxy(flux_chart, proxmox_proxy_artifact, kyverno_kustomization)
     kube_system_artifact = artifact("kube-system", kube_system.OUTPUT_DIR)
@@ -669,7 +664,10 @@ def generate_manifests(root: Path) -> None:
     )
     dns_automation_artifact = artifact("dns-automation", dns_automation.OUTPUT_DIR)
     dns_automation.dns_automation(
-        flux_chart, dns_automation_artifact, tofu_controller_kustomization, external_secrets_operator_kustomization
+        flux_chart,
+        write_directory(root, dns_automation_artifact, functools.partial(dns_automation.chart, mesh=mesh)),
+        tofu_controller_kustomization,
+        external_secrets_operator_kustomization,
     )
     forgejo_agentydragon_artifact = artifact("forgejo-agentydragon", forgejo_gitops_modules.AGENTYDRAGON_DIR)
     forgejo_gitops_modules.forgejo_agentydragon(
@@ -845,7 +843,7 @@ def generate_manifests(root: Path) -> None:
     matrix_app_artifact = artifact("matrix-app", matrix.OUTPUT_DIR)
     matrix_kustomization = matrix.matrix(flux_chart, matrix_app_artifact, cnpg_kustomization)
     headlamp_app_artifact = artifact("headlamp-app", headlamp.OUTPUT_DIR)
-    headlamp.headlamp(flux_chart, headlamp_app_artifact)
+    headlamp.headlamp(flux_chart, write_directory(root, headlamp_app_artifact, headlamp.chart))
     grafana_instance_artifact = artifact("grafana-instance", grafana_instance.OUTPUT_DIR)
     grafana_instance_kustomization = monitoring_flux_kustomizations.grafana_instance(
         flux_chart, grafana_instance_artifact, grafana_operator_kustomization, cnpg_kustomization
