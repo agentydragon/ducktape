@@ -361,6 +361,75 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
         await page.unroute("**/evidence?*", hold_old_evidence)
 
 
+async def test_a_projection_rebuild_does_not_move_a_reader_who_scrolled_up(thread_browser: ThreadBrowser) -> None:
+    """A background rebuild atomically republishes every row, view_state included, under a new
+    projection_epoch (see test_projection_epoch_replacement_retires_old_requests_and_preserves_
+    draft) -- which Electric's client models as each row being deleted and reinserted. A reader
+    scrolled away from the bottom when this lands must not be moved: nothing in the guarantee that
+    reaching the top or an off-screen resize never displaces an idle reader carves out an
+    exception for a whole-window replacement, and unlike that PR's own coverage (which only checks
+    the draft and the evidence panel survive), this checks the reader's position does too. The
+    thread here is otherwise idle -- no turn in progress, nothing streaming -- so this isolates the
+    replacement itself as the cause, not concurrent live activity."""
+    page, store, source = thread_browser.page, thread_browser.store, thread_browser.source
+    thread = await thread_browser.event_logs.open(SANDBOX, SESSION, source.attached.spec)
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
+    for number in range(40):
+        item_id = f"test-rebuild-item-{number}"
+        text = f"Later message {number}\n\n" + "A retained paragraph for the reading viewport. " * 8
+        source.append(
+            event_pb2.Event(
+                item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+            )
+        )
+        source.append(event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id=item_id, text=text)))
+    await expect(page.get_by_text("Later message 39", exact=True)).to_have_count(1)
+    await expect_history_bottom(page)
+
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    await history.hover()
+    gesture = await history.evaluate_handle(
+        "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
+    )
+    await page.mouse.wheel(0, -3_000)
+    async with asyncio.timeout(30):
+        await gesture.evaluate("gesture => gesture.ended")
+    await gesture.dispose()
+    geometry = await history.evaluate(
+        "area => ({top: area.scrollTop, bottom: area.scrollHeight - area.clientHeight - area.scrollTop})"
+    )
+    assert geometry["top"] > 0
+    assert geometry["bottom"] > 24
+    reading_anchor = await capture_reading_anchor(history)
+
+    def rebuilt_reference(reference: dict[str, object] | None) -> dict[str, object] | None:
+        return {**reference, "projection_epoch": "test-rebuilt-epoch"} if reference is not None else None
+
+    async with store._sessions() as session, session.begin():
+        rows = list(await session.scalars(select(ThreadEntity).where(ThreadEntity.thread_id == thread)))
+        for row in rows:
+            row.projection_epoch = "test-rebuilt-epoch"
+            row.text_ref = rebuilt_reference(row.text_ref)
+            row.arguments_ref = rebuilt_reference(row.arguments_ref)
+            row.output_ref = rebuilt_reference(row.output_ref)
+            row.input_ref = rebuilt_reference(row.input_ref)
+        for model in (ThreadCheckpoint, ThreadPayloadManifest, ThreadPayloadChunk, ThreadEvidence, ThreadNativeLink):
+            await session.execute(
+                update(model).where(model.thread_id == thread).values(projection_epoch="test-rebuilt-epoch")
+            )
+        await session.execute(
+            update(ThreadPayloadChunk)
+            .where(ThreadPayloadChunk.thread_id == thread, ThreadPayloadChunk.owner_id == "test-browser-item")
+            .values(text="Test rebuilt prefix")
+        )
+
+    await expect(page.get_by_text("Test rebuilt prefix", exact=True)).to_have_count(1, timeout=20_000)
+    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    await expect_reading_anchor(page, reading_anchor)
+    await page.screenshot(path=undeclared_outputs_dir() / "projection-rebuild-scrolled-up.png")
+
+
 async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
     page: Page, certificate: BrowserCertificate
 ) -> None:
