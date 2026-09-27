@@ -290,7 +290,7 @@ class Ntfy(Construct):
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=metadata(NAME, NAMESPACE, labels={"release": "kube-prometheus-stack", **_LABELS}),
+            metadata=metadata(NAME, NAMESPACE, labels=_LABELS),
             selector=_LABELS,
             endpoints=[Endpoint.plain(port="http")],
         )

@@ -373,7 +373,7 @@ def _facade(chart: Chart) -> None:
     PrometheusRule(
         chart,
         "facade-prometheusrule",
-        metadata=metadata(_FACADE, _NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=metadata(_FACADE, _NAMESPACE),
         groups=[
             group(
                 _FACADE,
