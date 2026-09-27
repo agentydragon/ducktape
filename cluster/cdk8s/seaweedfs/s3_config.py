@@ -149,10 +149,7 @@ def write_manifests(root: Path) -> None:
 
 
 def seaweedfs_secrets(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_namespace: Kustomization,
-    external_secrets_operator: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
 ) -> Kustomization:
     name = "seaweedfs-secrets"
     return flux_kustomization(
@@ -164,8 +161,7 @@ def seaweedfs_secrets(
         suspend=False,
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            seaweedfs_namespace,
             # ExternalSecret + SecretStore CRDs + ESO controller
-            external_secrets_operator,
+            external_secrets_operator
         ),
     )

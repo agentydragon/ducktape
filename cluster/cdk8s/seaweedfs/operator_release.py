@@ -19,7 +19,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -71,15 +71,6 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
 
 
-def seaweedfs_operator(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_namespace: Kustomization
-) -> Kustomization:
+def seaweedfs_operator(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     name = "seaweedfs-operator"
-    return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        suspend=False,
-        depends_on=[flux_kustomization_depends_on(seaweedfs_namespace)],
-        timeout="5m",
-    )
+    return flux_kustomization(chart, name, artifact, suspend=False, timeout="5m")

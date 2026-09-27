@@ -11,7 +11,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCh
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -53,9 +53,7 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
 
 
-def grafana_operator(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_namespace: Kustomization
-) -> Kustomization:
+def grafana_operator(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     return flux_kustomization(
         chart,
         "grafana-operator",
@@ -70,5 +68,4 @@ def grafana_operator(
             )
         ],
         timeout="5m",
-        depends_on=[flux_kustomization_depends_on(monitoring_namespace)],
     )

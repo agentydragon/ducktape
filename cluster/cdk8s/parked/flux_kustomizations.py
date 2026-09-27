@@ -83,10 +83,7 @@ def haku_cloud_agent(
 
 
 def docker_ci(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    cert_manager_environment: Kustomization,
-    claude_rbac: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cert_manager_environment: Kustomization
 ) -> Kustomization:
     name = "docker-ci"
     return flux_kustomization(
@@ -98,10 +95,8 @@ def docker_ci(
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
             # No storage dep (emptyDir, not a CSI PVC). Needs the cluster-internal-ca
-            # ClusterIssuer for the mTLS Certificates and agent-rbac-base for the
-            # claude-sandbox namespace the client Certificate lives in.
-            cert_manager_environment,
-            claude_rbac,
+            # ClusterIssuer for the mTLS Certificates.
+            cert_manager_environment
         ),
     )
 
@@ -109,7 +104,6 @@ def docker_ci(
 def gecko(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    gecko_namespace: Kustomization,
     kubevirt: Kustomization,
     cdi: Kustomization,
     external_secrets_operator: Kustomization,
@@ -128,7 +122,7 @@ def gecko(
         timeout="30m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            gecko_namespace, kubevirt, cdi, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
+            kubevirt, cdi, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
         ),
     )
 
@@ -182,8 +176,6 @@ def haku_managed_agent(
     forgejo_images: Kustomization,
     external_creds: Kustomization,
     external_secrets_config: Kustomization,
-    haku_namespace: Kustomization,
-    haku_rbac: Kustomization,
     haku_state: Kustomization,
     haku_egress_proxy: Kustomization,
 ) -> Kustomization:
@@ -202,8 +194,6 @@ def haku_managed_agent(
             external_creds,
             # provides the external-creds ClusterSecretStore
             external_secrets_config,
-            haku_namespace,
-            haku_rbac,
             # provides the haku-forgejo-git secret in haku-sandbox
             haku_state,
             # injects the egress proxy + CA the worker imports

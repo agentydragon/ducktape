@@ -393,7 +393,6 @@ def haku_workspaces(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     agent_sandbox_controller: Kustomization,
-    haku_rbac: Kustomization,
     haku_egress_proxy: Kustomization,
     kyverno_policies: Kustomization,
     external_secrets_config: Kustomization,
@@ -407,8 +406,6 @@ def haku_workspaces(
         depends_on=flux_kustomization_depends_on_many(
             # shared CRDs + controller
             agent_sandbox_controller,
-            # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs
-            haku_rbac,
             # the fence haku-sandbox is opted into
             haku_egress_proxy,
             # CleanupPolicy CRD and cleanup-controller permissions

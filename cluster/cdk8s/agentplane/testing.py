@@ -174,7 +174,6 @@ def agentplane_testing(
     agent_sandbox_controller: Kustomization,
     cert_manager_environment: Kustomization,
     cert_manager_trust: Kustomization,
-    claude_rbac: Kustomization,
     cnpg: Kustomization,
     external_secrets_config: Kustomization,
 ) -> Kustomization:
@@ -200,7 +199,6 @@ def agentplane_testing(
             agent_sandbox_controller,
             cert_manager_environment,
             cert_manager_trust,
-            claude_rbac,
             cnpg,
             external_secrets_config,
         ),

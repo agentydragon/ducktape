@@ -562,7 +562,6 @@ def write_manifests(root: Path) -> None:
 def monitoring_stack(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    monitoring_namespace: Kustomization,
     monitoring_crds: Kustomization,
     ntfy: Kustomization,
     external_secrets_config: Kustomization,
@@ -593,7 +592,6 @@ def monitoring_stack(
         ],
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(
-            monitoring_namespace,
             # The chart's Prometheus/Alertmanager CRs are rejected at admission until
             # the CRDs exist, and the chart no longer installs them itself.
             monitoring_crds,

@@ -11,7 +11,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -171,16 +171,6 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def haku_rbac(
-    flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path, haku_namespace: Kustomization
-) -> Kustomization:
+def haku_rbac(flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path) -> Kustomization:
     write_charts(root, OUTPUT_DIR, chart)
-    return flux_kustomization(
-        flux_chart,
-        NAME,
-        artifact,
-        retry_interval=None,
-        wait=None,
-        timeout="2m",
-        depends_on=[flux_kustomization_depends_on(haku_namespace)],
-    )
+    return flux_kustomization(flux_chart, NAME, artifact, retry_interval=None, wait=None, timeout="2m")

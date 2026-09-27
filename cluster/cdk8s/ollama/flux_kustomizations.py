@@ -17,7 +17,6 @@ def ollama(
     nvidia_runtimeclass: Kustomization,
     external_secrets_config: Kustomization,
     reflector: Kustomization,
-    claude_rbac: Kustomization,
 ) -> Kustomization:
     name = "ollama"
     return flux_kustomization(
@@ -41,6 +40,5 @@ def ollama(
             # langfuse ESO remains
             external_secrets_config,
             reflector,
-            claude_rbac,
         ),
     )

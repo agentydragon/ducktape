@@ -75,7 +75,6 @@ def forgejo_claude(
     forgejo: Kustomization,
     tofu_controller: Kustomization,
     tofu_state_db: Kustomization,
-    claude_rbac: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -90,8 +89,6 @@ def forgejo_claude(
             forgejo,
             tofu_controller,
             tofu_state_db,
-            # the credentials Secret lands in claude-sandbox
-            claude_rbac,
         ),
     )
 
@@ -103,7 +100,6 @@ def haku_state(
     tofu_controller: Kustomization,
     tofu_state_db: Kustomization,
     agentplane_index: Kustomization,
-    haku_namespace: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -120,7 +116,6 @@ def haku_state(
             # The git-creds Secret is reflected into agentplane-index; wait for the
             # aggregate to create that target Namespace before applying Terraform.
             agentplane_index,
-            haku_namespace,
         ),
     )
 
@@ -131,7 +126,6 @@ def budget_ledger(
     forgejo: Kustomization,
     tofu_controller: Kustomization,
     tofu_state_db: Kustomization,
-    budget_namespace: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -145,8 +139,6 @@ def budget_ledger(
             forgejo,
             tofu_controller,
             tofu_state_db,
-            # the git-creds Secret lands in the budget namespace
-            budget_namespace,
         ),
     )
 
@@ -157,7 +149,6 @@ def cpap_data(
     forgejo: Kustomization,
     tofu_controller: Kustomization,
     tofu_state_db: Kustomization,
-    cpap_sync: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -171,8 +162,6 @@ def cpap_data(
             forgejo,
             tofu_controller,
             tofu_state_db,
-            # the git-creds Secrets land in the cpap-sync namespace
-            cpap_sync,
         ),
     )
 

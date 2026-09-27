@@ -105,9 +105,7 @@ def write_manifests(root: Path) -> None:
     )
 
 
-def seaweedfs_filer_db(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_namespace: Kustomization, cnpg: Kustomization
-) -> Kustomization:
+def seaweedfs_filer_db(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cnpg: Kustomization) -> Kustomization:
     name = "seaweedfs-filer-db"
     return flux_kustomization(
         chart,
@@ -117,5 +115,5 @@ def seaweedfs_filer_db(
         # Required to apply seaweedfs-filer-db-ssd-creds.sops.yaml (the filer DB app creds
         # CNPG syncs onto the -ssd seaweedfs role); without it Flux applies the ciphertext.
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(seaweedfs_namespace, cnpg),
+        depends_on=flux_kustomization_depends_on_many(cnpg),
     )

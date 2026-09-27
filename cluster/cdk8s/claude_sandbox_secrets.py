@@ -75,10 +75,7 @@ def write_manifests(root: Path) -> None:
 
 
 def claude_sandbox_secrets(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    claude_rbac: Kustomization,
-    external_secrets_operator: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -86,5 +83,5 @@ def claude_sandbox_secrets(
         artifact,
         timeout="5m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(claude_rbac, external_secrets_operator),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
     )

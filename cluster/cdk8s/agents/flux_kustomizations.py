@@ -228,19 +228,10 @@ def public_coder_agent_app(
     )
 
 
-def agent_shared_secrets(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, claude_rbac: Kustomization
-) -> Kustomization:
+def agent_shared_secrets(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     name = "agent-shared-secrets"
     return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        retry_interval=None,
-        wait=None,
-        timeout="5m",
-        depends_on=[flux_kustomization_depends_on(claude_rbac)],
-        decryption=SOPS_DECRYPTION,
+        chart, name, artifact, retry_interval=None, wait=None, timeout="5m", decryption=SOPS_DECRYPTION
     )
 
 

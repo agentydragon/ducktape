@@ -59,7 +59,7 @@ def write_manifests(root: Path) -> None:
 
 
 def agent_shared_rbac(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, claude_rbac: Kustomization, kyverno_policies: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno_policies: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -68,7 +68,7 @@ def agent_shared_rbac(
         retry_interval=None,
         wait=None,
         timeout="2m",
-        depends_on=flux_kustomization_depends_on_many(claude_rbac, kyverno_policies),
+        depends_on=flux_kustomization_depends_on_many(kyverno_policies),
         description=(
             "Cluster-scoped agent RBAC (ClusterRoleBindings) + flux-system "
             "RoleBindings only. Namespace-scoped RoleBindings live in per-service "

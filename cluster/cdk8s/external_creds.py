@@ -9,7 +9,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, kustomize_kustomization
 from cluster.cdk8s.generation import sops_decryption, write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import SecretStoreRef
@@ -199,9 +199,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def external_creds(
-    flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path, claude_rbac: Kustomization
-) -> Kustomization:
+def external_creds(flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path) -> Kustomization:
     """Generate credential grants and Kustomize wiring; source manifests stay hand-written."""
     resources = kustomize_resources()
     write_charts(root, OUTPUT_DIR, chart)
@@ -215,7 +213,6 @@ def external_creds(
         retry_interval=None,
         wait=None,
         decryption=sops_decryption(resources),
-        depends_on=[flux_kustomization_depends_on(claude_rbac)],
         timeout="5m",
     )
     write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=resources))

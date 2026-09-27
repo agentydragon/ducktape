@@ -52,11 +52,7 @@ def write_manifests(root: Path) -> None:
 
 
 def alloy_otlp_bearer(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
-    claude_rbac: Kustomization,
-    haku_rbac: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_config: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -66,11 +62,7 @@ def alloy_otlp_bearer(
         wait=None,
         depends_on=flux_kustomization_depends_on_many(
             # ClusterSecretStore + CRDs
-            external_secrets_config,
-            # claude-sandbox namespace
-            claude_rbac,
-            # haku-sandbox namespace
-            haku_rbac,
+            external_secrets_config
         ),
         timeout="2m",
         decryption=SOPS_DECRYPTION,
