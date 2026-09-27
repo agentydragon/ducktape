@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest_bazel
 
 from finance.augur.api.finance import FinanceSnapshot
-from finance.augur.api.portfolio import (
+from finance.augur.facade.holdings import (
     HoldingKind,
     HoldingTaxLotConfig,
     LabeledTlhPortfolio,

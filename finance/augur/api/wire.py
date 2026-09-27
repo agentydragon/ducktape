@@ -14,10 +14,11 @@ from typing import Literal
 from pydantic import Field, PositiveInt
 
 from finance.augur.api.local_regulation import LocalRegulation
-from finance.augur.api.schemas import ApiModel, NonNegativeCurrencyAmount, PositiveCurrencyAmount
+from finance.augur.api.schemas import ApiModel
 from finance.augur.model.series import IssuerId, LocationId
 from finance.augur.product.wire import SpendIndex
 from finance.augur.sim.ids import PropertyId
+from finance.augur.sim.scenario import NonNegativeCurrencyAmount, PositiveCurrencyAmount
 
 
 class ActorRole(StrEnum):

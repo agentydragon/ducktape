@@ -1,0 +1,31 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "holdings",
+    srcs = ["holdings.py"],
+    deps = [
+        "//finance/augur/model:asset_key",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:scenario",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "holdings_test",
+    size = "medium",
+    srcs = ["holdings_test.py"],
+    deps = [
+        ":holdings",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:ids",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

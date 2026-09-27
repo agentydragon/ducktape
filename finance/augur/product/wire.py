@@ -16,20 +16,14 @@ from pydantic import (
     model_validator,
 )
 
-from finance.augur.api.schemas import (
-    ApiModel,
-    BasisPointPercentage,
-    Frame,
-    NonNegativeCurrencyAmount,
-    Percentage,
-    PositiveCurrencyAmount,
-)
+from finance.augur.api.schemas import ApiModel, BasisPointPercentage, Frame, Percentage
 from finance.augur.model.asset_key import AssetKey
 from finance.augur.model.series import IssuerId, LocationId, SecuritySymbol
 from finance.augur.product.metrics import OutcomeBasis
 from finance.augur.sim.events import TlhOperation
 from finance.augur.sim.fixed_point import validate_currency_quantum
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, PortfolioId, PropertyId
+from finance.augur.sim.scenario import NonNegativeCurrencyAmount, PositiveCurrencyAmount
 
 
 class SpendIndex(StrEnum):

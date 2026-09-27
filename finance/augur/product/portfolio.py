@@ -7,7 +7,8 @@ from decimal import Decimal
 from pydantic import NonNegativeFloat, NonNegativeInt
 
 from finance.augur.api.finance import FinanceSnapshot
-from finance.augur.api.portfolio import (
+from finance.augur.api.schemas import ApiModel
+from finance.augur.facade.holdings import (
     BondHoldingConfig,
     HoldingKind,
     HoldingPositionConfig,
@@ -15,7 +16,6 @@ from finance.augur.api.portfolio import (
     PortfolioConfig,
     SecurityHoldingConfig,
 )
-from finance.augur.api.schemas import ApiModel
 from finance.augur.model.asset_key import AssetKey
 from finance.augur.product.wire import CurrencyQuanta
 from finance.augur.sim.fixed_point import currency_amount_to_quanta

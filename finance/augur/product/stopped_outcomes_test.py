@@ -13,7 +13,7 @@ import numpy.typing as npt
 import pytest
 import pytest_bazel
 
-from finance.augur.api.portfolio import PortfolioConfig
+from finance.augur.facade.holdings import PortfolioConfig
 from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.series import InflationKey
 from finance.augur.model.testing import ConstantFrameModel

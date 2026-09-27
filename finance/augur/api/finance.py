@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from finance.augur.api.schemas import ApiModel, NonNegativeCurrencyAmount
+from finance.augur.api.schemas import ApiModel
+from finance.augur.sim.scenario import NonNegativeCurrencyAmount
 
 
 class FinanceSnapshot(ApiModel):

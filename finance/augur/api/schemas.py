@@ -3,9 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, NonNegativeFloat
-
-from finance.augur.sim.fixed_point import validate_currency_amount
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, NonNegativeFloat
 
 
 class ApiModel(BaseModel):
@@ -29,9 +27,6 @@ def _whole_basis_points(value: float) -> float:
 
 
 BasisPointPercentage = Annotated[Percentage, AfterValidator(_whole_basis_points)]
-type CurrencyAmount = Annotated[Decimal, BeforeValidator(validate_currency_amount)]
-type NonNegativeCurrencyAmount = Annotated[CurrencyAmount, Field(ge=0)]
-type PositiveCurrencyAmount = Annotated[CurrencyAmount, Field(gt=0)]
 
 type Frame = dict[str, list[float | int | bool | str | None]]
 """Rectangular, JSON-safe table payload: one column per key, equal-length lists."""

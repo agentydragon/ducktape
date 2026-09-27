@@ -12,7 +12,13 @@ from decimal import Decimal
 
 from finance.augur.api.config import Config
 from finance.augur.api.finance import FinanceSnapshot
-from finance.augur.api.portfolio import (
+from finance.augur.api.portfolio_source_config import (
+    FixedPortfolioSourceConfig,
+    PlaidBalanceField,
+    PlaidPortfolioSourceConfig,
+    PlaidSp500ProxyGroupConfig,
+)
+from finance.augur.facade.holdings import (
     BondHoldingConfig,
     HoldingPositionConfig,
     HoldingTaxLotConfig,
@@ -20,12 +26,6 @@ from finance.augur.api.portfolio import (
     PortfolioAccountConfig,
     PortfolioConfig,
     SecurityHoldingConfig,
-)
-from finance.augur.api.portfolio_source_config import (
-    FixedPortfolioSourceConfig,
-    PlaidBalanceField,
-    PlaidPortfolioSourceConfig,
-    PlaidSp500ProxyGroupConfig,
 )
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey
 from finance.augur.sim.ids import AccountId, LotId, PortfolioId

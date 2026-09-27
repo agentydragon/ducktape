@@ -22,8 +22,8 @@ import pytest_bazel
 from more_itertools import one
 
 from finance.augur.api.config import Config, DistributionTaxShareConfig, SecurityDistributionConfig
-from finance.augur.api.portfolio import HoldingKind, HoldingTaxLotConfig, SecurityHoldingConfig
 from finance.augur.api.wire import CatalogResponse
+from finance.augur.facade.holdings import HoldingKind, HoldingTaxLotConfig, SecurityHoldingConfig
 from finance.augur.model.deterministic import Constant
 from finance.augur.model.independent import IndependentProviderConfig
 from finance.augur.model.level_series_groups import SecurityDistributionGroups

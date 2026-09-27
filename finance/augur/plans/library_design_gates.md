@@ -31,7 +31,7 @@ graph TD
   `iso_currency_code` but no currency quantum, while every other portfolio amount is
   quantized per request by the compiler. Either the source quantizes, which needs a
   quantum at portfolio resolution and a check against the request's, or the decimal
-  cohort moves beside `HoldingTaxLotConfig` in `api/portfolio.py` under a config name
+  cohort moves beside `HoldingTaxLotConfig` in `facade/holdings.py` under a config name
   and only the sim record is `TlhCohort`.
 - **OFFERS.** Gated on GPE: which compulsory events run without a tender policy, and
   when forced proceeds become spendable. Then `Issuer` emits `TenderOffer` and

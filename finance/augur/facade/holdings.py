@@ -27,7 +27,6 @@ from pydantic import (
     model_validator,
 )
 
-from finance.augur.api.schemas import NonNegativeCurrencyAmount, PositiveCurrencyAmount
 from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId, LotId
@@ -35,6 +34,8 @@ from finance.augur.sim.scenario import (
     BondHolding,
     DistributionTaxSlice,
     InitialLot,
+    NonNegativeCurrencyAmount,
+    PositiveCurrencyAmount,
     SecurityDistribution,
     TlhPortfolioSpec,
 )

@@ -5,7 +5,8 @@ from enum import StrEnum
 
 from pydantic import Field, model_validator
 
-from finance.augur.api.schemas import ApiModel, NonNegativeCurrencyAmount, Percentage
+from finance.augur.api.schemas import ApiModel, Percentage
+from finance.augur.sim.scenario import NonNegativeCurrencyAmount
 
 
 class TaxRegime(StrEnum):

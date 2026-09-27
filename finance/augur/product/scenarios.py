@@ -10,8 +10,8 @@ from functools import partial
 from more_itertools import duplicates_everseen, one
 
 from finance.augur.api.config import Config, LocationConfig, SecurityDistributionConfig
-from finance.augur.api.portfolio import PortfolioConfig
 from finance.augur.api.wire import ActorRole, Property
+from finance.augur.facade.holdings import PortfolioConfig
 from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.model.series import InflationKey, IssuerId, LevelSeriesKey, LocationId, RentKey, SecurityKey
 from finance.augur.policy.cash_band_household import (

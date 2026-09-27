@@ -9,14 +9,6 @@ from pydantic import ValidationError
 
 from finance.augur.api.conftest import MinimalConfig
 from finance.augur.api.finance import FinanceSnapshot
-from finance.augur.api.portfolio import (
-    HoldingKind,
-    HoldingTaxLotConfig,
-    PortfolioAccountConfig,
-    PortfolioAccountType,
-    PortfolioConfig,
-    SecurityHoldingConfig,
-)
 from finance.augur.api.portfolio_source_config import (
     FixedPortfolioSourceConfig,
     PlaidCashSourceConfig,
@@ -25,6 +17,14 @@ from finance.augur.api.portfolio_source_config import (
     PortfolioSourcesConfig,
 )
 from finance.augur.api.portfolio_sources import resolve_portfolio_sources
+from finance.augur.facade.holdings import (
+    HoldingKind,
+    HoldingTaxLotConfig,
+    PortfolioAccountConfig,
+    PortfolioAccountType,
+    PortfolioConfig,
+    SecurityHoldingConfig,
+)
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey
 from finance.augur.sim.ids import AccountId, AgentId, LotId
 from finance.augur.sim.tlh import TlhAssumptions

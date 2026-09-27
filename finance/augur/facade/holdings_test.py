@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from finance.augur.api.portfolio import (
+from finance.augur.facade.holdings import (
     BondHoldingConfig,
     HoldingKind,
     HoldingTaxLotConfig,

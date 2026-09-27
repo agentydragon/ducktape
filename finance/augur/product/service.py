@@ -15,9 +15,9 @@ from typing import Any, overload
 import numpy as np
 
 from finance.augur.api.config import SecurityDistributionConfig
-from finance.augur.api.portfolio import PortfolioConfig
 from finance.augur.api.schemas import ApiModel, Frame
 from finance.augur.api.wire import Property
+from finance.augur.facade.holdings import PortfolioConfig
 from finance.augur.model.exogenous import (
     ExogenousSamplingRequest,
     Sampler,

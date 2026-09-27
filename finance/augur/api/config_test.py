@@ -25,13 +25,6 @@ from finance.augur.api.config import (
 from finance.augur.api.conftest import MinimalConfig
 from finance.augur.api.finance import FinanceSnapshot
 from finance.augur.api.local_regulation import LocalRegulation
-from finance.augur.api.portfolio import (
-    HoldingKind,
-    HoldingTaxLotConfig,
-    PortfolioAccountConfig,
-    PortfolioConfig,
-    SecurityHoldingConfig,
-)
 from finance.augur.api.portfolio_source_config import (
     FixedPortfolioSourceConfig,
     PlaidCashSourceConfig,
@@ -40,6 +33,13 @@ from finance.augur.api.portfolio_source_config import (
     PortfolioSourcesConfig,
 )
 from finance.augur.api.wire import ActorRole
+from finance.augur.facade.holdings import (
+    HoldingKind,
+    HoldingTaxLotConfig,
+    PortfolioAccountConfig,
+    PortfolioConfig,
+    SecurityHoldingConfig,
+)
 from finance.augur.model.independent import IndependentProviderConfig
 from finance.augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
 from finance.augur.model.provider_config import CompositeProviderConfig

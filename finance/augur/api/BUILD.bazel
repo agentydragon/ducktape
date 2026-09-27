@@ -9,10 +9,7 @@ package(default_visibility = ["//visibility:public"])
 py_library(
     name = "schemas",
     srcs = ["schemas.py"],
-    deps = [
-        "//finance/augur/sim:fixed_point",
-        "@pypi//pydantic",
-    ],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -49,7 +46,10 @@ py_library(
 py_library(
     name = "finance",
     srcs = ["finance.py"],
-    deps = [":schemas"],
+    deps = [
+        ":schemas",
+        "//finance/augur/sim:scenario",
+    ],
 )
 
 py_library(
@@ -57,6 +57,7 @@ py_library(
     srcs = ["local_regulation.py"],
     deps = [
         ":schemas",
+        "//finance/augur/sim:scenario",
         "@pypi//pydantic",
     ],
 )
@@ -70,6 +71,7 @@ py_library(
         "//finance/augur/model:series",
         "//finance/augur/product:wire",
         "//finance/augur/sim:ids",
+        "//finance/augur/sim:scenario",
         "@pypi//pydantic",
     ],
 )
@@ -99,9 +101,10 @@ py_library(
     srcs = ["portfolio_source_config.py"],
     deps = [
         ":finance",
-        ":portfolio",
         ":schemas",
+        "//finance/augur/facade:holdings",
         "//finance/augur/sim:ids",
+        "//finance/augur/sim:scenario",
         "//finance/augur/sim:tlh",
         "@pypi//pydantic",
     ],
@@ -113,8 +116,8 @@ py_library(
     deps = [
         ":config",
         ":finance",
-        ":portfolio",
         ":portfolio_source_config",
+        "//finance/augur/facade:holdings",
         "//finance/augur/model:series",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:scenario",
@@ -132,11 +135,11 @@ py_test(
         ":conftest",
         ":finance",
         ":local_regulation",
-        ":portfolio",
         ":portfolio_source_config",
         ":wire",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/facade:holdings",
         "//finance/augur/model:independent",
         "//finance/augur/model:private_equity_risk",
         "//finance/augur/model:provider_config",
@@ -157,11 +160,11 @@ py_test(
     deps = [
         ":conftest",
         ":finance",
-        ":portfolio",
         ":portfolio_source_config",
         ":portfolio_sources",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/facade:holdings",
         "//finance/augur/model:series",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:tlh",
@@ -181,36 +184,6 @@ py_test(
         ":local_regulation",
         "//:conftest",
         "//finance/augur:conftest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "portfolio",
-    srcs = ["portfolio.py"],
-    deps = [
-        ":schemas",
-        "//finance/augur/model:asset_key",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:ids",
-        "//finance/augur/sim:scenario",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "portfolio_test",
-    size = "medium",
-    srcs = ["portfolio_test.py"],
-    deps = [
-        ":conftest",
-        ":portfolio",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:ids",
-        "@pypi//pydantic",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
