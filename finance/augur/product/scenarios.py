@@ -50,18 +50,14 @@ from finance.augur.sim.compiler.execution import (
     compile_jurisdictions,
     compile_locations,
     compile_lots,
-    compile_private_equity_series,
     compile_property_cashflow,
     compile_property_tax,
     compile_recurring_obligation,
     compile_recurring_property_cashflow,
-    compile_series,
     compile_tender_policy,
     compile_tlh_portfolio,
 )
-from finance.augur.sim.compiler.series import level_series_demand
-from finance.augur.sim.compiler.tax import PreparedTaxProfile, compile_income_sources, compile_profile
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series, level_series_demand
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferDeductionCategory, TransferIncomeCategory
@@ -86,6 +82,7 @@ from finance.augur.sim.prepared import (
     _TenderPolicy,
 )
 from finance.augur.sim.pricing import OccupancyMode, insurance_rate, maintenance_rate
+from finance.augur.sim.private_equity_series import compile_private_equity_series
 from finance.augur.sim.property import Housing
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import (
@@ -112,9 +109,10 @@ from finance.augur.sim.scenario import (
     SetRentedFractionEvent,
     TlhPortfolioSpec,
 )
+from finance.augur.sim.tax import PreparedTaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import FilingStatus, TaxProfile
+from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_income_sources, compile_profile
 from finance.augur.sim.world import World
 
 PRIMARY_ACCOUNT_ID = AccountId("checking")

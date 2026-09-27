@@ -282,12 +282,7 @@ class LiteLLMProxy(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=ApiObjectMetadata(
-                name=self.spec.name,
-                namespace=self.spec.namespace,
-                labels=labels,
-                annotations={"reloader.stakater.com/auto": "true"},
-            ),
+            metadata=ApiObjectMetadata(name=self.spec.name, namespace=self.spec.namespace, labels=labels),
             pod_metadata=ApiObjectMetadata(labels=labels),
             replicas=self.spec.replicas,
             strategy=self.spec.strategy,

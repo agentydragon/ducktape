@@ -6,8 +6,7 @@ The proxy image tag is the placeholder "unset"; the hand-written
 cluster/k8s/github-api-proxy/app/image-pins/kustomization.yaml overrides it at `kustomize build`
 time via Flux's image-automation marker. Also hand-written in `app/`: the client credential
 SOPS Secrets, `config.json` (rendered by the `configMapGenerator`) and that
-`kustomization.yaml`. The Flux Kustomization substitutes `${LETSENCRYPT_ISSUER}`
-(`cert-manager-issuer-config`) into the server Certificate.
+`kustomization.yaml`.
 """
 
 from __future__ import annotations
@@ -48,6 +47,7 @@ from gateway_api_tlsroute_crds.io.k8s.networking.gateway import (
 )
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -198,7 +198,7 @@ def _certificates(scope: Construct) -> None:
         dns_names=[_HOSTNAME],
         private_key=CertificatePrivateKey.ecdsa_p256(rotation_policy=CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
         usages=[CertificateSpecUsages.SERVER_AUTH],
-        issuer_ref=CertificateSpecIssuerRef(name="${LETSENCRYPT_ISSUER}", kind="ClusterIssuer"),
+        issuer_ref=CertificateSpecIssuerRef(name=LETSENCRYPT_ISSUER, kind="ClusterIssuer"),
     )
     Certificate(
         scope,
@@ -292,9 +292,7 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),

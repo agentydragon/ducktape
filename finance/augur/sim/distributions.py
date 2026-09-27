@@ -1,17 +1,18 @@
 """Ordinary holding distributions, rounded once per pool and then per tax slice."""
 
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from copy import deepcopy
 
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, DistributionOutcome, JournalEntry, Posting
-from finance.augur.sim.compiler.income_sources import income_source_wire_id
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import Holdings
 from finance.augur.sim.ids import AccountId, AgentId, AssetId
+from finance.augur.sim.income import TransferIncomeCategory, income_source_wire_id
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, distribution_value, mul_div
 from finance.augur.sim.prepared import PreparedDistribution
+from finance.augur.sim.scenario import SecurityDistribution
 
 
 class Distributions:
@@ -75,3 +76,9 @@ class Distributions:
             accounting.apply_entries(entries)
             accounting.tax = tax
             self.outcomes.extend(outcomes)
+
+
+def distribution_income_categories(distributions: Iterable[SecurityDistribution]) -> set[TransferIncomeCategory]:
+    """Income sources needed by tax compilation for every distribution slice."""
+
+    return {tax_slice.income_category for distribution in distributions for tax_slice in distribution.tax_character}

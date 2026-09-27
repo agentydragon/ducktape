@@ -308,11 +308,11 @@ def _deployment(scope: Construct) -> None:
 
 def _cache_rule(prefix: str, cache_control: str) -> HttpRouteSpecRules:
     return HttpRouteSpecRules(
-        matches=[RouteMatch.path_prefix(prefix).to_spec()],
+        matches=[RouteMatch.path_prefix(prefix)],
         filters=[
             RouteFilter.response_header_modifier(
                 set=[HttpRouteSpecRulesFiltersResponseHeaderModifierSet(name="Cache-Control", value=cache_control)]
-            ).to_spec()
+            )
         ],
         backend_refs=[HttpRouteSpecRulesBackendRefs(name=_NAME, port=_PORT)],
     )

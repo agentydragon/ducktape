@@ -237,8 +237,7 @@ def _substitutions() -> list[dict]:
 
 
 def _config_map(scope: Construct) -> k8s.KubeConfigMap:
-    # No content-hash name suffix: the Deployment's `reloader.stakater.com/auto` is what rolls
-    # the proxy when this changes.
+    # No content-hash name suffix: Reloader's `autoReloadAll` rolls the proxy when this changes.
     return k8s.KubeConfigMap(
         scope,
         "config",
@@ -303,9 +302,7 @@ def _deployment(scope: Construct, config_map: k8s.KubeConfigMap, aiquota_bearer:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=NAME, namespace=NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=LABELS),

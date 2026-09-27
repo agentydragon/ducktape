@@ -237,10 +237,7 @@ class Ntfy(Construct):
                 name=NAME,
                 namespace=NAMESPACE,
                 labels=_LABELS,
-                annotations={
-                    "description": "Single ntfy server backed by the two-instance ntfy PostgreSQL cluster.",
-                    "reloader.stakater.com/auto": "true",
-                },
+                annotations={"description": "Single ntfy server backed by the two-instance ntfy PostgreSQL cluster."},
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=1,

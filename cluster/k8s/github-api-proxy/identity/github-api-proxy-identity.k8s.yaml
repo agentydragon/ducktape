@@ -20,7 +20,7 @@ spec:
     - github-proxy.allegedly.works
   issuerRef:
     kind: ClusterIssuer
-    name: ${LETSENCRYPT_ISSUER}
+    name: letsencrypt-prod
   privateKey:
     algorithm: ECDSA
     rotationPolicy: Always

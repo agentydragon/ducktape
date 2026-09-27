@@ -135,7 +135,6 @@ kind: Deployment
 metadata:
   annotations:
     description: Single ntfy server backed by the two-instance ntfy PostgreSQL cluster.
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: ntfy
   name: ntfy

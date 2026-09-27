@@ -1,42 +1,24 @@
-"""Lower authored declarations and sampled paths into the prepared records a composed world declares.
+"""Lower authored declarations into the prepared records a composed world declares.
 
-Quantize money, quantities and index levels once, per table. Unsupported inputs are
+Quantize money and quantities once, per table. Unsupported inputs are
 rejected rather than silently omitted.
 """
 
 from __future__ import annotations
 
-# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from collections.abc import Iterable, Mapping, Sequence
 from decimal import Decimal
 
-import numpy as np
-from jaxtyping import Float64, Int64
-
 from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
-from finance.augur.model.private_equity_bundle import PrivateEquityBundle
-from finance.augur.model.series import (
-    HomeValueKey,
-    InflationKey,
-    IssuerId,
-    LevelSeriesKey,
-    LocationId,
-    RentKey,
-    SecurityDistributionKey,
-    SecurityKey,
-)
+from finance.augur.model.series import LocationId
 from finance.augur.sim.bonds import coupon_amount_quanta
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.private_equity import compile_pe_channels
-from finance.augur.sim.compiler.series import external_series_cubes, materialize_level_rows
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.external_series import INDEX_SERIES_KINDS, UnsupportedScenarioError
 from finance.augur.sim.fixed_point import (
     currency_amount_to_quanta,
     quantity_scale_for_asset,
     quantity_to_quanta,
     rate_to_ppb,
-    round_ppb,
-    sampled_array_to_quanta,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId
 from finance.augur.sim.income import InterestIncome
@@ -58,7 +40,6 @@ from finance.augur.sim.prepared import (
     PreparedPropertyCashflow,
     PreparedRecurringObligation,
     PreparedRecurringPropertyCashflow,
-    PreparedSeries,
     PreparedTlhPortfolio,
     _CapitalImprovement,
     _MortgageFinancing,
@@ -96,16 +77,6 @@ from finance.augur.sim.scenario import (
 )
 from finance.augur.sim.tlh import TlhOpeningCohort
 
-_MONEY_SERIES_KINDS = (SecurityKey, SecurityDistributionKey, HomeValueKey)
-_INDEX_SERIES_KINDS = (InflationKey, RentKey)
-
-
-class UnsupportedScenarioError(ValueError):
-    """An authored input the prepared records have no representation for.
-
-    Raised rather than dropped: dropping a feature changes the answer without changing its shape.
-    """
-
 
 def _asset_id(asset: AssetKey) -> AssetId:
     """The execution input's flat asset identifier: a bare symbol, or the private-equity wire id."""
@@ -122,7 +93,7 @@ def _amount(amount: object, *, quantum: Decimal, context: str) -> PreparedAmount
         case FixedAmount():
             return PreparedFixedAmount(amount=int(currency_amount_to_quanta(amount.amount, quantum=quantum)))
         case SeriesIndexedAmount():
-            if not isinstance(amount.series, _INDEX_SERIES_KINDS):
+            if not isinstance(amount.series, INDEX_SERIES_KINDS):
                 raise UnsupportedScenarioError(
                     f"{context} is indexed by {amount.series.wire_id!r}, which the execution input's amount "
                     "schedule does not carry; only inflation and rent levels are index series"
@@ -134,114 +105,6 @@ def _amount(amount: object, *, quantum: Decimal, context: str) -> PreparedAmount
                 adjustment_period_months=int(amount.adjustment_period_months),
             )
     raise UnsupportedScenarioError(f"{context} carries an unsupported amount {amount!r}")
-
-
-def _series_values(
-    key: LevelSeriesKey, levels: Float64[np.ndarray, " rollout snapshot"], money: Int64[np.ndarray, " rollout snapshot"]
-) -> Int64[np.ndarray, " rollout snapshot"]:
-    if not np.isfinite(levels).all():
-        rollout, month = np.argwhere(~np.isfinite(levels))[0]
-        raise ValueError(
-            f"series {key.wire_id!r} has no finite level at rollout {rollout}, month {month}; "
-            "the execution input's series are dense over every rollout and snapshot"
-        )
-    if isinstance(key, SecurityDistributionKey) and np.any(levels < 0):
-        rollout, month = np.argwhere(levels < 0)[0]
-        raise ValueError(
-            f"distribution series {key.wire_id!r} has a negative payout at rollout {rollout}, month {month}"
-        )
-    if isinstance(key, _MONEY_SERIES_KINDS):
-        return money
-    if isinstance(key, _INDEX_SERIES_KINDS):
-        return round_ppb(levels)
-    raise UnsupportedScenarioError(f"level series {key.wire_id!r} has no execution input representation")
-
-
-def _level_series(
-    keys: tuple[LevelSeriesKey, ...],
-    levels: Float64[np.ndarray, " series rollout snapshot"],
-    money: Int64[np.ndarray, " series rollout snapshot"],
-) -> tuple[PreparedSeries, ...]:
-    return tuple(
-        PreparedSeries(
-            series_id=key.wire_id,
-            snapshots=levels.shape[2],
-            values=tuple(int(value) for value in _series_values(key, levels[row], money[row]).reshape(-1)),
-        )
-        for row, key in enumerate(keys)
-    )
-
-
-def compile_series(
-    external_series: ExternalSeriesContext, *, rollout_count: int, horizon_months: int, currency_quantum: Decimal
-) -> tuple[PreparedSeries, ...]:
-    """The sampled level series as integer paths.
-
-    Only sampled keys are carried; a composed world checks at `declare_pool` that the
-    series a pool needs is present.
-    """
-    rows = materialize_level_rows(
-        tuple(external_series.levels.value_rows()), rollout_count=rollout_count, horizon_months=horizon_months
-    )
-    keys = tuple(row.key for row in rows)
-    levels, money = external_series_cubes(
-        rows,
-        series_index_by_id={key: index for index, key in enumerate(keys)},
-        rollout_count=rollout_count,
-        horizon_months=horizon_months,
-        currency_quantum=currency_quantum,
-    )
-    return _level_series(keys, levels, money)
-
-
-def compile_private_equity_series(
-    issuer_ids: Sequence[IssuerId],
-    bundle: PrivateEquityBundle,
-    *,
-    rollout_count: int,
-    horizon_months: int,
-    quantum: Decimal,
-) -> tuple[PreparedSeries, ...]:
-    """The ten per-issuer private-equity channels, in the execution input's typed integer units.
-
-    `compile_pe_channels` validates raw values and quantizes money; company valuation crosses
-    the same money boundary here.
-    """
-
-    pe_channels = compile_pe_channels(
-        tuple(issuer_ids),
-        private_equity=bundle,
-        rollout_count=rollout_count,
-        horizon_months=horizon_months,
-        currency_quantum=quantum,
-    )
-    channels = pe_channels.execution
-    snapshots = horizon_months + 1
-    series = []
-    for index, issuer_id in enumerate(issuer_ids):
-        valuation = bundle.issuer_float_matrix(
-            issuer_id, "company_valuation_usd", rollout_count=rollout_count, horizon_months=horizon_months
-        )
-        for channel, values in (
-            ("mark", channels.mark_quanta[index]),
-            ("regime", channels.regime_codes[index]),
-            ("event_kind", pe_channels.event_kind_codes[index]),
-            ("sale_opportunity", channels.sale_opportunity_active[index].astype(np.int64)),
-            ("sale_capacity", round_ppb(channels.sale_capacity_fractions[index])),
-            ("eligible", round_ppb(channels.eligible_fractions[index])),
-            ("forced_sale", round_ppb(channels.forced_sale_fractions[index])),
-            ("liquidity_blocked", channels.liquidity_blocked[index].astype(np.int64)),
-            ("forced_recovery", channels.forced_recovery_cashout_quanta[index]),
-            ("company_valuation", sampled_array_to_quanta(valuation, quantum=quantum)),
-        ):
-            series.append(
-                PreparedSeries(
-                    series_id=f"private_equity_{channel}:{issuer_id}",
-                    snapshots=snapshots,
-                    values=tuple(int(value) for value in np.asarray(values, dtype=np.int64).reshape(-1)),
-                )
-            )
-    return tuple(series)
 
 
 def compile_jurisdictions(

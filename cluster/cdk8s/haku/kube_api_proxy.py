@@ -135,11 +135,7 @@ class KubeApiProxy(Construct):
                 name=NAME,
                 namespace=console.NAMESPACE,
                 labels=LABELS,
-                annotations={
-                    "description": "Fail-closed Haku Agent Kubernetes authorization boundary.",
-                    # cert-manager rotates the TLS Secret; the listener loads it once at start.
-                    "reloader.stakater.com/auto": "true",
-                },
+                annotations={"description": "Fail-closed Haku Agent Kubernetes authorization boundary."},
             ),
             pod_metadata=ApiObjectMetadata(labels=LABELS),
             select=False,
@@ -203,6 +199,8 @@ class KubeApiProxy(Construct):
                 capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]), read_only_root_filesystem=True
             ),
         )
+        # cert-manager rotates the TLS Secret; the listener loads it once at start, so Reloader's
+        # `autoReloadAll` rolls the pods on rotation.
         tls = Secret.from_secret_name(self, "tls-secret", _TLS_SECRET)
         container.mount(_TLS_DIR, Volume.from_secret(self, "tls-volume", tls), read_only=True)
         apply_pod_spec_patches(deployment)

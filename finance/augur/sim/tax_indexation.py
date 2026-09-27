@@ -12,9 +12,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from fractions import Fraction
 
-from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxRules, PreparedThresholdTax
 from finance.augur.sim.jurisdictions import StatutoryAmount
 from finance.augur.sim.money import scaled
+from finance.augur.sim.tax import PreparedTaxBracket, PreparedTaxRules, PreparedThresholdTax
 
 
 @dataclass(frozen=True)

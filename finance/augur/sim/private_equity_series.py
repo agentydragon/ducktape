@@ -1,9 +1,12 @@
-"""Quantize typed private-equity paths into the simulation engine's input channels."""
+"""Quantize typed private-equity paths into the simulation engine's input channels and prepared series."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 # ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import NamedTuple
 
 import numpy as np
@@ -11,8 +14,11 @@ from jaxtyping import Int64
 
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode
-from finance.augur.sim.compiler.helpers import NO_CODE
-from finance.augur.sim.fixed_point import sampled_array_to_quanta
+from finance.augur.sim.fixed_point import round_ppb, sampled_array_to_quanta
+from finance.augur.sim.prepared import PreparedSeries
+
+# Sentinel for absent sampled private-equity regimes.
+NO_CODE = -1
 
 
 class PEExecutionChannels[ArrayT](NamedTuple):
@@ -127,3 +133,53 @@ def compile_pe_channels(
         ),
         event_kind_codes=event_kind_codes,
     )
+
+
+def compile_private_equity_series(
+    issuer_ids: Sequence[IssuerId],
+    bundle: PrivateEquityBundle,
+    *,
+    rollout_count: int,
+    horizon_months: int,
+    quantum: Decimal,
+) -> tuple[PreparedSeries, ...]:
+    """The ten per-issuer private-equity channels, in the execution input's typed integer units.
+
+    `compile_pe_channels` validates raw values and quantizes money; company valuation crosses
+    the same money boundary here.
+    """
+
+    pe_channels = compile_pe_channels(
+        tuple(issuer_ids),
+        private_equity=bundle,
+        rollout_count=rollout_count,
+        horizon_months=horizon_months,
+        currency_quantum=quantum,
+    )
+    channels = pe_channels.execution
+    snapshots = horizon_months + 1
+    series = []
+    for index, issuer_id in enumerate(issuer_ids):
+        valuation = bundle.issuer_float_matrix(
+            issuer_id, "company_valuation_usd", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+        for channel, values in (
+            ("mark", channels.mark_quanta[index]),
+            ("regime", channels.regime_codes[index]),
+            ("event_kind", pe_channels.event_kind_codes[index]),
+            ("sale_opportunity", channels.sale_opportunity_active[index].astype(np.int64)),
+            ("sale_capacity", round_ppb(channels.sale_capacity_fractions[index])),
+            ("eligible", round_ppb(channels.eligible_fractions[index])),
+            ("forced_sale", round_ppb(channels.forced_sale_fractions[index])),
+            ("liquidity_blocked", channels.liquidity_blocked[index].astype(np.int64)),
+            ("forced_recovery", channels.forced_recovery_cashout_quanta[index]),
+            ("company_valuation", sampled_array_to_quanta(valuation, quantum=quantum)),
+        ):
+            series.append(
+                PreparedSeries(
+                    series_id=f"private_equity_{channel}:{issuer_id}",
+                    snapshots=snapshots,
+                    values=tuple(int(value) for value in np.asarray(values, dtype=np.int64).reshape(-1)),
+                )
+            )
+    return tuple(series)

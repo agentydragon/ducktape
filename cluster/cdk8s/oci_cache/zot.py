@@ -62,8 +62,7 @@ def _deployment(chart: Chart) -> None:
                     " staging on emptyDir, so the pod reschedules freely. The in-cluster Service is"
                     " intentionally unauthenticated for Docker registry-mirror compatibility; the public"
                     " endpoint is authenticated by the nginx sidecar."
-                ),
-                "reloader.stakater.com/auto": "true",
+                )
             },
         ),
         spec=k8s.DeploymentSpec(

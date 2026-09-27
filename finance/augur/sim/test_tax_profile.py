@@ -14,7 +14,6 @@ from decimal import Decimal
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.compiler.tax import compile_income_sources, compile_profile
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
 from finance.augur.sim.income import OrdinaryIncome
 from finance.augur.sim.jurisdictions import (
@@ -25,7 +24,7 @@ from finance.augur.sim.jurisdictions import (
     TaxBracket,
     load_jurisdiction,
 )
-from finance.augur.sim.tax_profile import TaxProfile
+from finance.augur.sim.tax_profile import TaxProfile, compile_income_sources, compile_profile
 
 FEDERAL_US = JurisdictionId("federal_us")
 

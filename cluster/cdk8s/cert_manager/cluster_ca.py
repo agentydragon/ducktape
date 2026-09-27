@@ -21,6 +21,7 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetConfigMap,
 )
 
+from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.providers.cert_manager.certificate import LONG_LIVED_CA, Certificate
 from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
 
@@ -53,8 +54,8 @@ def chart(app: App) -> Chart:
         spec=BundleSpec(
             sources=[
                 BundleSpecSources(secret=BundleSpecSourcesSecret(name=_ROOT_CA_SECRET, key="ca.crt")),
-                # The active issuer's root, from `config`; Flux postBuild substitutes it.
-                BundleSpecSources(secret=BundleSpecSourcesSecret(name="${LETSENCRYPT_ISSUER}-root-ca", key="ca.crt")),
+                # The active issuer's root, from `config`.
+                BundleSpecSources(secret=BundleSpecSourcesSecret(name=f"{LETSENCRYPT_ISSUER}-root-ca", key="ca.crt")),
             ],
             target=BundleSpecTarget(config_map=BundleSpecTargetConfigMap(key="ca-certificates.crt")),
         ),

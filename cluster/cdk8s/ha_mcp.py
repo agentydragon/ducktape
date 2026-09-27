@@ -190,8 +190,7 @@ class HaMcpApp(Construct):
                         "and gated by a static bearer that only agentplane-staging's Action Service holds. "
                         "The upstream HA token remains server-side, and the Action Service applies its own "
                         "per-call approval policy."
-                    ),
-                    "reloader.stakater.com/auto": "true",
+                    )
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=_APP_LABELS),

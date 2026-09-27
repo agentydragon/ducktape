@@ -15,14 +15,13 @@ from finance.augur.sim.books import (
     TaxPaymentOutcome,
     TaxSettlementOutcome,
 )
-from finance.augur.sim.compiler.income_sources import income_source_wire_id
-from finance.augur.sim.compiler.tax import PreparedTaxProfile
 from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
-from finance.augur.sim.income import TransferDeductionCategory, TransferIncomeCategory
+from finance.augur.sim.income import TransferDeductionCategory, TransferIncomeCategory, income_source_wire_id
 from finance.augur.sim.ledger import Ledger
 from finance.augur.sim.money import checked_count
 from finance.augur.sim.observations import TaxRecords
 from finance.augur.sim.prepared import PreparedAccount
+from finance.augur.sim.tax import PreparedTaxProfile
 from finance.augur.sim.tax_year import TaxBook
 
 

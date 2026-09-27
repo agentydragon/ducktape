@@ -121,7 +121,7 @@ def _worker(
     k8s.KubeDeployment(
         chart,
         f"{instance}-deployment",
-        metadata=k8s.ObjectMeta(name=instance, namespace=NAME, annotations={"reloader.stakater.com/auto": "true"}),
+        metadata=k8s.ObjectMeta(name=instance, namespace=NAME),
         spec=k8s.DeploymentSpec(
             replicas=replicas,
             selector=k8s.LabelSelector(match_labels=labels),

@@ -61,8 +61,7 @@ def _deployment(chart: Chart) -> None:
                 "description": (
                     "Read-only Postgres MCP over the Plaid sync database, fronted by mcp-oauth-facade. The"
                     " upstream MCP uses Streamable HTTP and connects with the plaid_ro role."
-                ),
-                "reloader.stakater.com/auto": "true",
+                )
             },
         ),
         spec=k8s.DeploymentSpec(
