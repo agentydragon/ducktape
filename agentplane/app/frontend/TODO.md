@@ -22,6 +22,10 @@ build time.
   one is set. Once a title exists, the id line adds clutter for no benefit; it should move somewhere less
   prominent instead -- the composer's overflow menu (`Menu.Dropdown` in `projected_session.tsx`, currently "Debug
   history" / "Shut down harness") is one candidate.
+- **Mobile topbar's only content is an inert hamburger**: `.agentplane-mobile-topbar` (`app.tsx`, `shell.css`) shows
+  below 560px width and holds only the `IconMenu2` button that opens the sidebar -- nothing else fills that bar's
+  width. Consider moving `ThreadTitle` (`thread_title.tsx`) into it on mobile, since `ProjectedSession` currently
+  renders its own title/id row inline in the thread page rather than sharing the shell's topbar.
 - **Consider squashing the "observation" naming layer**: not remembered as a deliberate design choice. `Event`
   (`protocol/event.proto`)'s payload is a `oneof` field literally named `observation`; that name then propagated
   outward into `runner/observation.py`'s `Observation` type, the archive/API layer
