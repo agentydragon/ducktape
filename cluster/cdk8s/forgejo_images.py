@@ -70,7 +70,6 @@ def forgejo_images(
     external_secrets_operator: Kustomization,
     forgejo: Kustomization,
     tofu_controller: Kustomization,
-    tofu_state_db: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -83,7 +82,6 @@ def forgejo_images(
             # Forgejo API must be up (provider target)
             forgejo,
             tofu_controller,
-            tofu_state_db,
         ),
         description=(
             "ducktape-ci Forgejo registry tenant — shared credential (read by "
