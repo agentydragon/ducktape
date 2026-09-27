@@ -263,6 +263,25 @@ def test_the_tax_character_fractions_reach_the_scenario(augur_config: Config) ->
     ]
 
 
+def test_shares_naming_one_issuer_add(augur_config: Config) -> None:
+    """A fund's disclosure lists corporate, mortgage-backed and asset-backed debt on separate lines,
+    all non-governmental; copied line by line they are one tax character."""
+
+    config = _with_bond_fund(
+        augur_config,
+        (
+            DistributionTaxShareConfig(fraction=0.4, issuer_jurisdiction_id=JurisdictionId("federal_us")),
+            DistributionTaxShareConfig(fraction=0.35),
+            DistributionTaxShareConfig(fraction=0.25),
+        ),
+    )
+
+    assert list(one(_distributions(config)).tax_character.items()) == [
+        (InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us")), rate_to_ppb(Decimal("0.4"))),
+        (InterestIncome(), rate_to_ppb(Decimal("0.6"))),
+    ]
+
+
 def test_the_payout_is_scoped_to_the_pool_that_holds_it(augur_config: Config) -> None:
     """The units paid on come from one (owner, custody account, asset) pool, and the cash lands
     in a CASH account — portfolio accounts are custody accounts and carry no cash row, so a

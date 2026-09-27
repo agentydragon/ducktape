@@ -382,8 +382,8 @@ def _distribution(
     holding_account_id: AccountId,
     payout_account_id: AccountId,
 ) -> Distribution:
-    """One pool's payout. The split must allocate the whole payout, naming each issuer once; the wire's float fractions
-    round onto the ppb grid."""
+    """One pool's payout. The split must allocate the whole payout; shares naming one issuer add, and the wire's float
+    fractions round onto the ppb grid."""
 
     total = sum(share.fraction for share in declaration.tax_character)
     # Exactly 1, not "at most 1": a short split would silently pay out less than the fund
@@ -393,16 +393,16 @@ def _distribution(
             f"security distribution on {asset.wire_id!r} allocates {total} of its payout; "
             "the tax-character fractions must sum to 1"
         )
-    issuers = [share.issuer_jurisdiction_id for share in declaration.tax_character]
-    if len(set(issuers)) != len(issuers):
-        raise ValueError(f"security distribution on {asset.wire_id!r} names an issuer more than once: {issuers}")
+    fractions: dict[JurisdictionId | None, float] = {}
+    for share in declaration.tax_character:
+        fractions[share.issuer_jurisdiction_id] = fractions.get(share.issuer_jurisdiction_id, 0.0) + share.fraction
     return Distribution(
         agent_id=agent_id,
         holding_account_id=holding_account_id,
         asset_id=_asset_id(asset),
         to_account_id=payout_account_id,
         tax_character={
-            InterestIncome(issuer_jurisdiction_id=share.issuer_jurisdiction_id): int(round_ppb(share.fraction))
-            for share in declaration.tax_character
+            InterestIncome(issuer_jurisdiction_id=issuer): int(round_ppb(fraction))
+            for issuer, fraction in fractions.items()
         },
     )
