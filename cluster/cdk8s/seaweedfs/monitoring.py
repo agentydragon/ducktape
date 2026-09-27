@@ -78,10 +78,7 @@ def write_manifests(root: Path) -> None:
 
 
 def seaweedfs_monitoring(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_cluster: Kustomization,
-    monitoring_crds: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -90,9 +87,6 @@ def seaweedfs_monitoring(
         retry_interval=None,
         wait=None,
         suspend=False,
-        depends_on=flux_kustomization_depends_on_many(
-            seaweedfs_cluster,
-            # PrometheusRule
-            monitoring_crds,
-        ),
+        # PrometheusRule
+        depends_on=flux_kustomization_depends_on_many(monitoring_crds),
     )

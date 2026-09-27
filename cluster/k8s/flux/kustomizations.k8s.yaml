@@ -2094,7 +2094,7 @@ spec:
   dependsOn:
     - name: cnpg
       namespace: ducktape-flux
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/authentik/db-backups
@@ -2120,7 +2120,9 @@ spec:
   dependsOn:
     - name: grafana-helmrepository
       namespace: ducktape-flux
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
+      namespace: ducktape-flux
+    - name: monitoring-crds
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -2160,7 +2162,7 @@ spec:
       namespace: ducktape-flux
     - name: grafana-helmrepository
       namespace: ducktape-flux
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: seaweed.seaweedfs.com/v1
@@ -2205,7 +2207,7 @@ spec:
       namespace: ducktape-flux
     - name: grafana-helmrepository
       namespace: ducktape-flux
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: seaweed.seaweedfs.com/v1
@@ -2238,7 +2240,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs/drivefs-artifacts-bucket
@@ -2264,7 +2266,7 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/seaweedfs/external-credentials
@@ -2284,7 +2286,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs/forgejo-bucket
@@ -2304,7 +2306,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs/loom-gym-bucket
@@ -2324,8 +2326,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
@@ -2344,7 +2344,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 1h
   path: ./cluster/generated/seaweedfs/pr-visuals-bucket
@@ -2364,7 +2364,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs/public-coder-agent-backups-bucket
@@ -2384,7 +2384,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs/registry-cache-bucket
@@ -2403,9 +2403,6 @@ metadata:
   name: seaweedfs-csi
   namespace: ducktape-flux
 spec:
-  dependsOn:
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs-csi
   prune: true
@@ -2428,7 +2425,7 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/vm-images-publisher
@@ -2759,8 +2756,6 @@ spec:
     - name: seaweedfs-operator
       namespace: ducktape-flux
     - name: vm-images-publisher
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
       namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
@@ -3484,8 +3479,6 @@ spec:
   dependsOn:
     - name: local-path-provisioner
       namespace: ducktape-flux
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
     - name: volsync
       namespace: ducktape-flux
     - name: external-secrets-operator
@@ -3549,8 +3542,6 @@ spec:
     - name: seaweedfs-operator
       namespace: ducktape-flux
     - name: cert-manager
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/nix-cache

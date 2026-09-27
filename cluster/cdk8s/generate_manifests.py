@@ -710,7 +710,7 @@ def generate_manifests(root: Path) -> None:
         claude_rbac_kustomization,
     )
     seaweedfs_cluster_artifact = artifact("seaweedfs-cluster", seaweedfs_cluster.OUTPUT_DIR)
-    seaweedfs_cluster_kustomization = seaweedfs_flux_kustomizations.seaweedfs_cluster(
+    seaweedfs_flux_kustomizations.seaweedfs_cluster(
         flux_chart,
         seaweedfs_cluster_artifact,
         seaweedfs_operator_kustomization,
@@ -755,11 +755,15 @@ def generate_manifests(root: Path) -> None:
     )
     authentik_db_backups_artifact = artifact("authentik-db-backups", authentik_db_backups.OUTPUT_DIR)
     authentik_db_backups.authentik_db_backups(
-        flux_chart, authentik_db_backups_artifact, cnpg_kustomization, seaweedfs_cluster_kustomization
+        flux_chart, authentik_db_backups_artifact, cnpg_kustomization, seaweedfs_operator_kustomization
     )
     monitoring_loki_artifact = artifact("monitoring-loki", loki.OUTPUT_DIR)
     loki_kustomization = loki.loki(
-        flux_chart, monitoring_loki_artifact, grafana_helmrepository_kustomization, seaweedfs_cluster_kustomization
+        flux_chart,
+        monitoring_loki_artifact,
+        grafana_helmrepository_kustomization,
+        seaweedfs_operator_kustomization,
+        monitoring_crds_kustomization,
     )
     monitoring_mimir_artifact = artifact("monitoring-mimir", mimir.OUTPUT_DIR)
     mimir_kustomization = mimir.mimir(
@@ -767,7 +771,7 @@ def generate_manifests(root: Path) -> None:
         monitoring_mimir_artifact,
         monitoring_crds_kustomization,
         grafana_helmrepository_kustomization,
-        seaweedfs_cluster_kustomization,
+        seaweedfs_operator_kustomization,
     )
     monitoring_tempo_artifact = artifact("monitoring-tempo", tempo.OUTPUT_DIR)
     tempo.tempo(
@@ -775,59 +779,57 @@ def generate_manifests(root: Path) -> None:
         monitoring_tempo_artifact,
         monitoring_crds_kustomization,
         grafana_helmrepository_kustomization,
-        seaweedfs_cluster_kustomization,
+        seaweedfs_operator_kustomization,
     )
     seaweedfs_drivefs_artifacts_bucket_artifact = artifact(
         "seaweedfs-drivefs-artifacts-bucket", seaweedfs_drivefs_artifacts_bucket.OUTPUT_DIR
     )
     (
         seaweedfs_drivefs_artifacts_bucket.seaweedfs_drivefs_artifacts_bucket(
-            flux_chart, seaweedfs_drivefs_artifacts_bucket_artifact, seaweedfs_cluster_kustomization
+            flux_chart, seaweedfs_drivefs_artifacts_bucket_artifact, seaweedfs_operator_kustomization
         )
     )
     seaweedfs_external_credentials_artifact = artifact(
         "seaweedfs-external-credentials", seaweedfs_external_credentials.OUTPUT_DIR
     )
     seaweedfs_external_credentials.seaweedfs_external_credentials(
-        flux_chart, seaweedfs_external_credentials_artifact, seaweedfs_cluster_kustomization
+        flux_chart, seaweedfs_external_credentials_artifact, seaweedfs_operator_kustomization
     )
     seaweedfs_forgejo_bucket_artifact = artifact("seaweedfs-forgejo-bucket", seaweedfs_forgejo_bucket.OUTPUT_DIR)
     seaweedfs_forgejo_bucket.seaweedfs_forgejo_bucket(
-        flux_chart, seaweedfs_forgejo_bucket_artifact, seaweedfs_cluster_kustomization
+        flux_chart, seaweedfs_forgejo_bucket_artifact, seaweedfs_operator_kustomization
     )
     seaweedfs_loom_gym_bucket_artifact = artifact("seaweedfs-loom-gym-bucket", seaweedfs_loom_gym_bucket.OUTPUT_DIR)
     seaweedfs_loom_gym_bucket.seaweedfs_loom_gym_bucket(
-        flux_chart, seaweedfs_loom_gym_bucket_artifact, seaweedfs_cluster_kustomization
+        flux_chart, seaweedfs_loom_gym_bucket_artifact, seaweedfs_operator_kustomization
     )
     seaweedfs_monitoring_artifact = artifact("seaweedfs-monitoring", seaweedfs_monitoring.OUTPUT_DIR)
-    seaweedfs_monitoring.seaweedfs_monitoring(
-        flux_chart, seaweedfs_monitoring_artifact, seaweedfs_cluster_kustomization, monitoring_crds_kustomization
-    )
+    seaweedfs_monitoring.seaweedfs_monitoring(flux_chart, seaweedfs_monitoring_artifact, monitoring_crds_kustomization)
     seaweedfs_pr_visuals_bucket_artifact = artifact(
         "seaweedfs-pr-visuals-bucket", seaweedfs_pr_visuals_bucket.OUTPUT_DIR
     )
     seaweedfs_pr_visuals_bucket.seaweedfs_pr_visuals_bucket(
-        flux_chart, seaweedfs_pr_visuals_bucket_artifact, seaweedfs_cluster_kustomization
+        flux_chart, seaweedfs_pr_visuals_bucket_artifact, seaweedfs_operator_kustomization
     )
     seaweedfs_public_coder_agent_backups_bucket_artifact = artifact(
         "seaweedfs-public-coder-agent-backups-bucket", seaweedfs_public_coder_agent_backups_bucket.OUTPUT_DIR
     )
     (
         seaweedfs_public_coder_agent_backups_bucket.seaweedfs_public_coder_agent_backups_bucket(
-            flux_chart, seaweedfs_public_coder_agent_backups_bucket_artifact, seaweedfs_cluster_kustomization
+            flux_chart, seaweedfs_public_coder_agent_backups_bucket_artifact, seaweedfs_operator_kustomization
         )
     )
     seaweedfs_registry_cache_bucket_artifact = artifact(
         "seaweedfs-registry-cache-bucket", seaweedfs_registry_cache_bucket.OUTPUT_DIR
     )
     seaweedfs_registry_cache_bucket.seaweedfs_registry_cache_bucket(
-        flux_chart, seaweedfs_registry_cache_bucket_artifact, seaweedfs_cluster_kustomization
+        flux_chart, seaweedfs_registry_cache_bucket_artifact, seaweedfs_operator_kustomization
     )
     seaweedfs_csi_artifact = artifact("seaweedfs-csi", seaweedfs_csi_driver.OUTPUT_DIR)
-    seaweedfs_csi_driver.seaweedfs_csi(flux_chart, seaweedfs_csi_artifact, seaweedfs_cluster_kustomization)
+    seaweedfs_csi_driver.seaweedfs_csi(flux_chart, seaweedfs_csi_artifact)
     vm_images_publisher_artifact = artifact("vm-images-publisher", vm_images_publisher_publisher.OUTPUT_DIR)
     vm_images_publisher_kustomization = vm_images_publisher_flux_kustomizations.vm_images_publisher(
-        flux_chart, vm_images_publisher_artifact, seaweedfs_cluster_kustomization
+        flux_chart, vm_images_publisher_artifact, seaweedfs_operator_kustomization
     )
     kubectl_passthrough_mcp_artifact = artifact("kubectl-passthrough-mcp", kubectl_passthrough_mcp.OUTPUT_DIR)
     kubectl_passthrough_mcp.kubectl_passthrough_mcp(flux_chart, kubectl_passthrough_mcp_artifact)
@@ -882,7 +884,6 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_public_s3_artifact,
         seaweedfs_operator_kustomization,
         vm_images_publisher_kustomization,
-        seaweedfs_cluster_kustomization,
         kyverno_kustomization,
     )
     haku_cloud_agent_artifact = artifact("haku-cloud-agent", f"{HAND_WRITTEN_ROOT}/parked/cloud-agent-tf")
@@ -1059,7 +1060,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         home_assistant_artifact,
         local_path_provisioner_kustomization,
-        seaweedfs_cluster_kustomization,
         volsync_kustomization,
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
@@ -1077,7 +1077,6 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
         cert_manager_kustomization,
-        seaweedfs_cluster_kustomization,
     )
     sdr_artifact = artifact("sdr", f"{HAND_WRITTEN_ROOT}/parked/sdr")
     parked_flux_kustomizations.sdr(
