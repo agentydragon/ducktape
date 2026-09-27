@@ -8,12 +8,16 @@ repository.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_issuer_crds.io.cert_manager import Issuer, IssuerSpec, IssuerSpecSelfSigned
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -113,14 +117,21 @@ def chart(app: App) -> Chart:
     return chart
 
 
+def write_manifests(root: Path) -> None:
+    write_charts(root, OUTPUT_DIR, chart)
+
+
 def external_secrets_operator(
-    chart: Chart, directory: RenderedDirectory, external_secrets_crds: Kustomization, cert_manager: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    external_secrets_crds: Kustomization,
+    cert_manager: Kustomization,
 ) -> Kustomization:
     name = "external-secrets-operator"
     return flux_kustomization(
         chart,
         name,
-        directory,
+        artifact,
         interval="10m0s",
         timeout="5m0s",
         depends_on=flux_kustomization_depends_on_many(

@@ -386,6 +386,7 @@ def generate_manifests(root: Path) -> None:
     study_casino_app.write_manifests(root)
     github_api_proxy.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
+    external_secrets_operator.write_manifests(root)
     ducktape_flux.write_manifests(root)
     flux_webhook_chart.write_manifests(root)
     flux_image_automation_ghcr.write_manifests(root)
@@ -600,10 +601,7 @@ def generate_manifests(root: Path) -> None:
     cnpg_kustomization = cnpg_operator.cnpg(flux_chart, cnpg_artifact, cert_manager_kustomization)
     external_secrets_operator_artifact = artifact("external-secrets-operator", external_secrets_operator.OUTPUT_DIR)
     external_secrets_operator_kustomization = external_secrets_operator.external_secrets_operator(
-        flux_chart,
-        write_directory(root, external_secrets_operator_artifact, external_secrets_operator.chart),
-        external_secrets_crds_kustomization,
-        cert_manager_kustomization,
+        flux_chart, external_secrets_operator_artifact, external_secrets_crds_kustomization, cert_manager_kustomization
     )
     external_secrets_config_artifact = artifact("external-secrets-config", external_secrets_config.OUTPUT_DIR)
     external_secrets_config.external_secrets_config(
