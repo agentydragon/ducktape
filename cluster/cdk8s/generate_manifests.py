@@ -318,17 +318,6 @@ def generate_manifests(root: Path) -> None:
     forgejo_images.write_manifests(root)
     gatus_sso.write_manifests(root)
     sso_providers.write_manifests(root)
-    seaweedfs_namespace.write_manifests(root)
-    seaweedfs_drivefs_artifacts_bucket.write_manifests(root)
-    seaweedfs_loom_gym_bucket.write_manifests(root)
-    seaweedfs_forgejo_bucket.write_manifests(root)
-    seaweedfs_monitoring.write_manifests(root)
-    seaweedfs_public_coder_agent_backups_bucket.write_manifests(root)
-    seaweedfs_registry_cache_bucket.write_manifests(root)
-    seaweedfs_pr_visuals_bucket.write_manifests(root)
-    seaweedfs_operator_release.write_manifests(root)
-    seaweedfs_external_credentials.write_manifests(root)
-    seaweedfs_filer_db.write_manifests(root)
     seaweedfs_s3_config.write_manifests(root)
     seaweedfs_public_s3.write_manifests(root)
     nix_cache_attic.write_manifests(root)
@@ -452,7 +441,7 @@ def generate_manifests(root: Path) -> None:
     gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart, gecko_namespace_artifact)
     seaweedfs_namespace_artifact = artifact("seaweedfs-namespace", seaweedfs_namespace.OUTPUT_DIR)
     seaweedfs_namespace_kustomization = seaweedfs_namespace.seaweedfs_namespace(
-        flux_chart, seaweedfs_namespace_artifact
+        flux_chart, write_directory(root, seaweedfs_namespace_artifact, seaweedfs_namespace.chart)
     )
     reflector_artifact = artifact("reflector", reflector.OUTPUT_DIR)
     reflector.reflector(flux_chart, reflector_artifact)
@@ -575,7 +564,9 @@ def generate_manifests(root: Path) -> None:
     )
     seaweedfs_operator_artifact = artifact("seaweedfs-operator", seaweedfs_operator_release.OUTPUT_DIR)
     seaweedfs_operator_kustomization = seaweedfs_operator_release.seaweedfs_operator(
-        flux_chart, seaweedfs_operator_artifact, seaweedfs_namespace_kustomization
+        flux_chart,
+        write_directory(root, seaweedfs_operator_artifact, seaweedfs_operator_release.chart),
+        seaweedfs_namespace_kustomization,
     )
     snapshot_controller_kustomization = snapshot_controller_flux_kustomizations.snapshot_controller(flux_chart)
     forgejo_cache_artifact = artifact("forgejo-cache", forgejo_cache.OUTPUT_DIR)
@@ -688,7 +679,16 @@ def generate_manifests(root: Path) -> None:
     )
     seaweedfs_filer_db_artifact = artifact("seaweedfs-filer-db", seaweedfs_filer_db.OUTPUT_DIR)
     seaweedfs_filer_db_kustomization = seaweedfs_filer_db.seaweedfs_filer_db(
-        flux_chart, seaweedfs_filer_db_artifact, seaweedfs_namespace_kustomization, cnpg_kustomization
+        flux_chart,
+        # The SOPS sibling (the filer DB app credentials) turns on Flux decryption.
+        write_directory(
+            root,
+            seaweedfs_filer_db_artifact,
+            seaweedfs_filer_db.chart,
+            siblings=["seaweedfs-filer-db-ssd-creds.sops.yaml"],
+        ),
+        seaweedfs_namespace_kustomization,
+        cnpg_kustomization,
     )
     tofu_state_db_artifact = artifact("tofu-state-db", tofu_state_db.OUTPUT_DIR)
     tofu_state_db.tofu_state_db(flux_chart, tofu_state_db_artifact, cnpg_kustomization)
@@ -866,46 +866,69 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_drivefs_artifacts_bucket_artifact = artifact(
         "seaweedfs-drivefs-artifacts-bucket", seaweedfs_drivefs_artifacts_bucket.OUTPUT_DIR
     )
-    (
-        seaweedfs_drivefs_artifacts_bucket.seaweedfs_drivefs_artifacts_bucket(
-            flux_chart, seaweedfs_drivefs_artifacts_bucket_artifact, seaweedfs_operator_kustomization
-        )
+    seaweedfs_drivefs_artifacts_bucket.seaweedfs_drivefs_artifacts_bucket(
+        flux_chart,
+        write_directory(root, seaweedfs_drivefs_artifacts_bucket_artifact, seaweedfs_drivefs_artifacts_bucket.chart),
+        seaweedfs_operator_kustomization,
     )
     seaweedfs_external_credentials_artifact = artifact(
         "seaweedfs-external-credentials", seaweedfs_external_credentials.OUTPUT_DIR
     )
     seaweedfs_external_credentials.seaweedfs_external_credentials(
-        flux_chart, seaweedfs_external_credentials_artifact, seaweedfs_operator_kustomization
+        flux_chart,
+        write_directory(
+            root,
+            seaweedfs_external_credentials_artifact,
+            seaweedfs_external_credentials.chart,
+            siblings=["claude-reader-credentials.sops.yaml", "drivefs-artifacts-credentials.sops.yaml"],
+        ),
+        seaweedfs_operator_kustomization,
     )
     seaweedfs_forgejo_bucket_artifact = artifact("seaweedfs-forgejo-bucket", seaweedfs_forgejo_bucket.OUTPUT_DIR)
     seaweedfs_forgejo_bucket.seaweedfs_forgejo_bucket(
-        flux_chart, seaweedfs_forgejo_bucket_artifact, seaweedfs_operator_kustomization
+        flux_chart,
+        write_directory(root, seaweedfs_forgejo_bucket_artifact, seaweedfs_forgejo_bucket.chart),
+        seaweedfs_operator_kustomization,
     )
     seaweedfs_loom_gym_bucket_artifact = artifact("seaweedfs-loom-gym-bucket", seaweedfs_loom_gym_bucket.OUTPUT_DIR)
     seaweedfs_loom_gym_bucket.seaweedfs_loom_gym_bucket(
-        flux_chart, seaweedfs_loom_gym_bucket_artifact, seaweedfs_operator_kustomization
+        flux_chart,
+        write_directory(root, seaweedfs_loom_gym_bucket_artifact, seaweedfs_loom_gym_bucket.chart),
+        seaweedfs_operator_kustomization,
     )
     seaweedfs_monitoring_artifact = artifact("seaweedfs-monitoring", seaweedfs_monitoring.OUTPUT_DIR)
-    seaweedfs_monitoring.seaweedfs_monitoring(flux_chart, seaweedfs_monitoring_artifact, monitoring_crds_kustomization)
+    seaweedfs_monitoring.seaweedfs_monitoring(
+        flux_chart,
+        write_directory(root, seaweedfs_monitoring_artifact, seaweedfs_monitoring.chart),
+        monitoring_crds_kustomization,
+    )
     seaweedfs_pr_visuals_bucket_artifact = artifact(
         "seaweedfs-pr-visuals-bucket", seaweedfs_pr_visuals_bucket.OUTPUT_DIR
     )
     seaweedfs_pr_visuals_bucket.seaweedfs_pr_visuals_bucket(
-        flux_chart, seaweedfs_pr_visuals_bucket_artifact, seaweedfs_operator_kustomization
+        flux_chart,
+        write_directory(root, seaweedfs_pr_visuals_bucket_artifact, seaweedfs_pr_visuals_bucket.chart),
+        seaweedfs_operator_kustomization,
     )
     seaweedfs_public_coder_agent_backups_bucket_artifact = artifact(
         "seaweedfs-public-coder-agent-backups-bucket", seaweedfs_public_coder_agent_backups_bucket.OUTPUT_DIR
     )
-    (
-        seaweedfs_public_coder_agent_backups_bucket.seaweedfs_public_coder_agent_backups_bucket(
-            flux_chart, seaweedfs_public_coder_agent_backups_bucket_artifact, seaweedfs_operator_kustomization
-        )
+    seaweedfs_public_coder_agent_backups_bucket.seaweedfs_public_coder_agent_backups_bucket(
+        flux_chart,
+        write_directory(
+            root,
+            seaweedfs_public_coder_agent_backups_bucket_artifact,
+            seaweedfs_public_coder_agent_backups_bucket.chart,
+        ),
+        seaweedfs_operator_kustomization,
     )
     seaweedfs_registry_cache_bucket_artifact = artifact(
         "seaweedfs-registry-cache-bucket", seaweedfs_registry_cache_bucket.OUTPUT_DIR
     )
     seaweedfs_registry_cache_bucket.seaweedfs_registry_cache_bucket(
-        flux_chart, seaweedfs_registry_cache_bucket_artifact, seaweedfs_operator_kustomization
+        flux_chart,
+        write_directory(root, seaweedfs_registry_cache_bucket_artifact, seaweedfs_registry_cache_bucket.chart),
+        seaweedfs_operator_kustomization,
     )
     seaweedfs_csi_artifact = artifact("seaweedfs-csi", seaweedfs_csi_driver.OUTPUT_DIR)
     seaweedfs_csi_driver.seaweedfs_csi(

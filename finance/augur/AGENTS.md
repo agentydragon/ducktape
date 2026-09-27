@@ -11,6 +11,26 @@ execution or market-bundle adapters. When extending API responses, project the p
 input and the canonical frames directly, as <product/projection.py> does, instead of
 adding parallel read-model tables over the captured long-form polars frames.
 
+## Conventions
+
+- **One way to declare a world:** `declare_*`, `hold` and `track` on a `World`, driven by
+  `start()`/`step()` or `ActionSession` (README § Using Augur). Do not add a second
+  declaration path beside it.
+- **Exogenous paths come first and flow one way.** Exogenous models sample market paths;
+  a `World` of simulated actors is built on them. Nothing in `sim/` feeds back into a
+  sampler.
+- **No scenario objects.** No configuration value or enum that tries to represent every use
+  case; callers compose worlds in code.
+- **No layer without a caller that needs it now.**
+- **Strategies stay with their caller.** A rule specific to one study (Guyton–Klinger, a
+  glide, a spending ladder) lives in that study under `study/` or `x/`; core does not grow
+  options to configure it.
+- **A model identifies itself with a `model_id` string, and results display that string.**
+- **Core never depends on `study/` or `x/`:** add no visibility exception for it. A model
+  moves from `x/models/` into core only on evidence that it is good enough.
+- **Money conversions are exact or raise.** Never convert through floats or ad-hoc rounding
+  (`round(x * 100)`); use the helpers README § Using Augur names.
+
 ## numpy vs jnp
 
 JAX is the sampler, not the simulator: `model/`, `fit/` and `x/models/` trace and jit;
