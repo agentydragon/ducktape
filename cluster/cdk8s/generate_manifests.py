@@ -1,5 +1,6 @@
 """Dispatch manifest generation to each component's local cdk8s helpers."""
 
+import functools
 from pathlib import Path
 
 from cdk8s import App
@@ -231,7 +232,7 @@ from cluster.cdk8s.seaweedfs import (
 )
 from cluster.cdk8s.seaweedfs_csi import driver as seaweedfs_csi_driver
 from cluster.cdk8s.snapshot_controller import flux_kustomizations as snapshot_controller_flux_kustomizations
-from cluster.cdk8s.ssh_mcp import generation as ssh_mcp_generation
+from cluster.cdk8s.ssh_mcp import config as ssh_mcp_config, generation as ssh_mcp_generation
 from cluster.cdk8s.sshpiper_crds import flux_kustomizations as sshpiper_crds_flux_kustomizations
 from cluster.cdk8s.study_casino import app as study_casino_app, flux_kustomizations as study_casino_flux_kustomizations
 from cluster.cdk8s.tofu_controller import release as tofu_controller_release
@@ -268,10 +269,8 @@ def generate_manifests(root: Path) -> None:
     haku_openclaw_spike_backup.write_manifests(root)
     haku_workloads.write_manifests(root)
     haku_ui_image_webhook.write_manifests(root)
-    haku_workspaces.write_manifests(root)
     haku_mailbox.write_manifests(root)
     haku_ci_runner.write_manifests(root)
-    agent_workspaces.write_manifests(root)
     alloy_otlp_bearer.write_manifests(root)
     public_coder_agent_config.write_manifests(root)
     public_coder_proxy.write_manifests(
@@ -283,12 +282,13 @@ def generate_manifests(root: Path) -> None:
     public_coder_sshpiper.write_manifests(
         root, app_namespace=public_coder_agent_config.NAMESPACE, app_labels=public_coder_agent_config.LABELS
     )
+    ssh_config = ssh_mcp_config.load(devbox_service)
+    ssh_mcp_generation.write_sshpiper_pipe(root, ssh_config)
     public_coder_backup.write_manifests(root)
     stateful_infra.write_seaweedfs_manifests(root)
     seaweedfs_cluster.write_manifests(root)
     egress_fences.write_manifests(root)
     dns_automation.write_manifests(root, mesh)
-    litellm_keys.write_manifests(root)
     litellm_namespace.write_manifests(root)
     litellm_proxy.write_manifests(root)
     agentplane_index_workers.write_manifests(root)
@@ -340,7 +340,6 @@ def generate_manifests(root: Path) -> None:
     vm_images_publisher_publisher.write_manifests(root)
     grafana_operator.write_manifests(root)
     cilium_monitoring.write_manifests(root)
-    gateway_probe.write_manifests(root, mesh)
     monitoring_rules.write_manifests(root)
     monitoring_stack.write_manifests(root)
     alloy.write_manifests(root)
@@ -350,7 +349,6 @@ def generate_manifests(root: Path) -> None:
     grafana_instance.write_manifests(root)
     grafana_app.write_manifests(root)
     github_exporter_app.write_manifests(root)
-    langfuse_app.write_manifests(root)
     forgejo_app.write_manifests(root)
     forgejo_budget_namespace.write_manifests(root)
     home_assistant_app.write_manifests(root)
@@ -367,7 +365,6 @@ def generate_manifests(root: Path) -> None:
     airlock.write_manifests(root)
     authentik_jwt_rotation.write_manifests(root)
     forgejo_token_rotation.write_manifests(root)
-    loki_read_proxy.write_manifests(root)
     claude_sandbox_secrets.write_manifests(root)
     kubectl_passthrough_mcp.write_manifests(root)
     agent_shared_rbac.write_manifests(root)
@@ -375,7 +372,6 @@ def generate_manifests(root: Path) -> None:
     ollama_app.write_manifests(root)
     gatus_app.write_manifests(root)
     activitywatch_app.write_manifests(root)
-    matrix.write_manifests(root)
     study_casino_app.write_manifests(root)
     github_api_proxy.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
@@ -547,7 +543,17 @@ def generate_manifests(root: Path) -> None:
     monitoring_etcd_artifact = artifact("monitoring-etcd", etcd.OUTPUT_DIR)
     etcd.etcd_monitoring(flux_chart, monitoring_etcd_artifact, root, mesh, monitoring_crds_kustomization)
     monitoring_gateway_probe_artifact = artifact("monitoring-gateway-probe", gateway_probe.OUTPUT_DIR)
-    gateway_probe.gateway_probe(flux_chart, monitoring_gateway_probe_artifact, monitoring_crds_kustomization)
+    gateway_probe.gateway_probe(
+        flux_chart,
+        write_directory(
+            root,
+            monitoring_gateway_probe_artifact,
+            functools.partial(gateway_probe.chart, mesh=mesh),
+            namespace=gateway_probe.NAMESPACE,
+            config_map_generator=[gateway_probe.CONFIG_MAP],
+        ),
+        monitoring_crds_kustomization,
+    )
     monitoring_rules_artifact = artifact("monitoring-rules", monitoring_rules.OUTPUT_DIR)
     monitoring_rules.monitoring_rules(flux_chart, monitoring_rules_artifact, monitoring_crds_kustomization)
     grafana_operator_artifact = artifact("grafana-operator", grafana_operator.OUTPUT_DIR)
@@ -650,7 +656,14 @@ def generate_manifests(root: Path) -> None:
     goldilocks.goldilocks(flux_chart, goldilocks_artifact, kyverno_kustomization)
     clickhouse_schema_artifact = artifact("clickhouse-schema", clickhouse_schema.OUTPUT_DIR)
     clickhouse_schema_kustomization = clickhouse_schema.clickhouse_schema(
-        flux_chart, clickhouse_schema_artifact, root, clickhouse_kustomization
+        flux_chart,
+        write_directory(
+            root,
+            clickhouse_schema_artifact,
+            clickhouse_schema.chart,
+            config_map_generator=[clickhouse_schema.SCHEMA_CONFIG_MAP],
+        ),
+        clickhouse_kustomization,
     )
     cert_manager_environment_artifact = artifact("cert-manager-environment", cert_manager_environment.OUTPUT_DIR)
     cert_manager_environment_kustomization = cert_manager_environment.cert_manager_environment(
@@ -891,7 +904,11 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     matrix_app_artifact = artifact("matrix-app", matrix.OUTPUT_DIR)
-    matrix_kustomization = matrix.matrix(flux_chart, matrix_app_artifact, cnpg_kustomization)
+    matrix_kustomization = matrix.matrix(
+        flux_chart,
+        write_directory(root, matrix_app_artifact, matrix.chart, siblings=matrix.SOPS_FILES),
+        cnpg_kustomization,
+    )
     headlamp_app_artifact = artifact("headlamp-app", headlamp.OUTPUT_DIR)
     headlamp.headlamp(flux_chart, headlamp_app_artifact)
     grafana_instance_artifact = artifact("grafana-instance", grafana_instance.OUTPUT_DIR)
@@ -906,7 +923,11 @@ def generate_manifests(root: Path) -> None:
     )
     langfuse_artifact = artifact("langfuse", langfuse_app.OUTPUT_DIR)
     langfuse_app.langfuse(
-        flux_chart, langfuse_artifact, cnpg_kustomization, valkey_kustomization, seaweedfs_operator_kustomization
+        flux_chart,
+        write_directory(root, langfuse_artifact, langfuse_app.chart, siblings=["langfuse-secrets.sops.yaml"]),
+        cnpg_kustomization,
+        valkey_kustomization,
+        seaweedfs_operator_kustomization,
     )
     vector_talos_logs_artifact = artifact("vector-talos-logs", vector_talos_logs.OUTPUT_DIR)
     vector_talos_logs.vector_talos_logs(
@@ -1033,7 +1054,11 @@ def generate_manifests(root: Path) -> None:
         flux_chart, authentik_jwt_rotation_artifact, external_secrets_operator_kustomization
     )
     loki_read_proxy_artifact = artifact("loki-read-proxy", loki_read_proxy.OUTPUT_DIR)
-    loki_read_proxy.loki_read_proxy(flux_chart, loki_read_proxy_artifact, external_secrets_operator_kustomization)
+    loki_read_proxy.loki_read_proxy(
+        flux_chart,
+        write_directory(root, loki_read_proxy_artifact, loki_read_proxy.chart, components=["./image-pins"]),
+        external_secrets_operator_kustomization,
+    )
     plaid_mcp_artifact = artifact("plaid-mcp", f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp")
     agents_flux_kustomizations.plaid_mcp(
         flux_chart,
@@ -1155,10 +1180,23 @@ def generate_manifests(root: Path) -> None:
     )
     ssh_mcp_artifact = artifact("ssh-mcp", ssh_mcp_generation.OUTPUT_DIR)
     ssh_mcp_generation.ssh_mcp(
-        flux_chart, ssh_mcp_artifact, root, mesh, devbox_service, external_secrets_operator_kustomization
+        flux_chart,
+        write_directory(
+            root,
+            ssh_mcp_artifact,
+            functools.partial(ssh_mcp_generation.chart, ssh_config=ssh_config, mesh=mesh),
+            siblings=ssh_mcp_generation.KEY_FILES,
+            namespace=ssh_mcp_config.NAMESPACE,
+            components=["./image-pins"],
+        ),
+        external_secrets_operator_kustomization,
     )
     google_mcp_artifact = artifact("google-mcp", google_mcp.OUTPUT_DIR)
-    google_mcp.google_mcp(flux_chart, google_mcp_artifact, root, external_secrets_operator_kustomization)
+    google_mcp.google_mcp(
+        flux_chart,
+        write_directory(root, google_mcp_artifact, google_mcp.chart, components=["./image-pins"]),
+        external_secrets_operator_kustomization,
+    )
     study_casino_artifact = artifact("study-casino", study_casino_app.OUTPUT_DIR)
     study_casino_flux_kustomizations.study_casino(
         flux_chart, study_casino_artifact, cnpg_kustomization, external_secrets_operator_kustomization
@@ -1238,8 +1276,7 @@ def generate_manifests(root: Path) -> None:
     ha_mcp_artifact = artifact("ha-mcp", ha_mcp.OUTPUT_DIR)
     ha_mcp.ha_mcp(
         flux_chart,
-        ha_mcp_artifact,
-        root,
+        write_directory(root, ha_mcp_artifact, ha_mcp.chart, components=["./image-pins"]),
         external_secrets_operator_kustomization,
         home_assistant_kustomization,
         monitoring_crds_kustomization,
@@ -1260,7 +1297,12 @@ def generate_manifests(root: Path) -> None:
     haku_workloads.haku_workloads(flux_chart, haku_workloads_artifact)
     litellm_keys_tf_artifact = artifact("litellm-keys-tf", litellm_keys.OUTPUT_DIR)
     litellm_keys.litellm_keys_tf(
-        flux_chart, litellm_keys_tf_artifact, litellm_kustomization, tofu_controller_kustomization
+        flux_chart,
+        write_directory(
+            root, litellm_keys_tf_artifact, litellm_keys.keys_chart, siblings=["litellm-clients-sops-age-key.sops.yaml"]
+        ),
+        litellm_kustomization,
+        tofu_controller_kustomization,
     )
     haku_openclaw_spike_app_artifact = artifact(
         "haku-openclaw-spike-app", f"{HAND_WRITTEN_ROOT}/agents/haku-openclaw-spike/app"
@@ -1274,7 +1316,7 @@ def generate_manifests(root: Path) -> None:
     haku_workspaces_app_artifact = artifact("haku-workspaces-app", haku_workspaces.OUTPUT_DIR)
     haku_workspaces.haku_workspaces(
         flux_chart,
-        haku_workspaces_app_artifact,
+        write_directory(root, haku_workspaces_app_artifact, haku_workspaces.chart, components=["./image-pins"]),
         agent_sandbox_controller_kustomization,
         haku_rbac_kustomization,
         haku_egress_proxy_kustomization,
@@ -1306,7 +1348,7 @@ def generate_manifests(root: Path) -> None:
     agent_workspaces_app_artifact = artifact("agent-workspaces-app", agent_workspaces.OUTPUT_DIR)
     agent_workspaces.agent_workspaces_app(
         flux_chart,
-        agent_workspaces_app_artifact,
+        write_directory(root, agent_workspaces_app_artifact, agent_workspaces.chart, components=["./image-pins"]),
         external_secrets_operator_kustomization,
         agent_sandbox_controller_kustomization,
         kyverno_policies_kustomization,

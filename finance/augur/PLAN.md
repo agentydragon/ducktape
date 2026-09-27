@@ -1,53 +1,26 @@
 # Augur plan
 
-Augur is a set of building blocks, not a framework. A caller owns the rollout loop and uses
-Augur's operations inside it, the way a PyTorch user writes their own training loop. A
-strategy specific to one study (Guyton–Klinger, a glide, a spending ladder) is caller code,
-not something core learns to configure.
+The conventions this plan's work follows are in `README.md` § Using Augur and `AGENTS.md`
+§ Conventions. An entry leaves this file when its work lands. Current guarantees and limits
+are in <SPEC.md>; capability requirements every item below must meet are in
+<sim/REQUIREMENTS.md>.
 
-An entry leaves this file when its work lands. Current guarantees and limits are in
-<SPEC.md>; capability requirements every item below must meet are in <sim/REQUIREMENTS.md>.
-
-## Consolidation before features
-
-No new features land until this section is done. Each numbered step is its own PR.
-
-### Rules
-
-These graduate into `README.md` and `AGENTS.md` with step 1.
-
-- **One way to declare a world:** build a `World` (`sim/world.py`), `declare_*` its
-  month-0 state from the `Prepared*` facts (`sim/prepared.py`), `track` its actors, then
-  `start()` and `step()`, or submit batches of actions through `ActionSession`
-  (`sim/session.py`).
-- **No scenario objects.** Nothing tries to represent every possible use case as one
-  configuration value or enum.
-- **No layer without a caller that needs it now.**
-- **A model identifies itself with a string** (`model_id`), and results display that string.
-- **Core never depends on `study/` or `x/`.** A model stays in `x/` until evidence shows it
-  is good enough for core.
-
-### Steps
-
-1. **Conventions.** Add a "Using Augur" section to `README.md`, built around one short
-   canonical loop: build the world, declare state, sample paths from the model the caller
-   chooses, step or act each month, read results. Add the rules above to `AGENTS.md`.
-
-### Open questions
+## Open questions
 
 - **The app's model selection.** The app picks its economy model through
   `x/models/provider_config.py`, a union of every provider's configuration, and reaches it and
-  the fitted models through a tombstoned visibility exception. That union is the pattern the
-  rules above rule out. Deciding the app's model selection is part of deciding the app's
+  the fitted models through a tombstoned visibility exception. That union is the pattern
+  the conventions rule out. Deciding the app's model selection is part of deciding the app's
   future, which is not decided.
 - **Held feature PRs.** #8139 (uncertain equity mean), #8141 (pinned equity mean), #8142
-  (block bootstrap) and #8143 (trading costs) wait until this plan lands. The first three
-  then target `x/`.
+  (block bootstrap) and #8143 (trading costs) waited for consolidation, which is done. The
+  first three target `x/`.
 - **Integer money, later.** Integer quanta were chosen for speed at large rollout counts, and
-  that gain was never measured. Once this plan lands, measure it. If it does not pay, `World` may
-  instead know its currency and take and return exact fixed-point `Decimal` money.
+  that gain was never measured. Now that consolidation is done, measure it. If it does not
+  pay, `World` may instead know its currency and take and return exact fixed-point `Decimal`
+  money.
 
-## After consolidation
+## Work
 
 Each item is its own reviewable change; "after X" is a content prerequisite, nothing else.
 Every change is checked against an independent calculation, never a copy of the engine's.
