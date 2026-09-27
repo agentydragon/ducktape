@@ -14,16 +14,17 @@ from cluster.cdk8s.litellm.keys import (
 )
 
 
+# One case per distinct code path, not per model: a second hand-written dict entry or a
+# second reuse of the same merged roster would just restate a literal already implied by
+# test_every_route_agentplane_can_offer_resolves below.
 @pytest.mark.parametrize(
     ("exposed_name", "expected"),
     [
-        ("anthropic-max20/ant-messages/claude-sonnet-5", "Sonnet 5"),
-        ("anthropic-api/ant-messages/claude-haiku-4-5-20251001", "Haiku 4.5"),
-        ("chatgpt/oai-responses/gpt-6-luna", "GPT-6 Luna"),
-        ("chatgpt/oai-responses/gpt-5.4", "GPT-5.4"),
-        ("antigravity/ant-messages/gemini-3.7-flash-high", "Gemini 3.7 Flash"),
-        ("ollama/oai-chat/gpt-oss-20b-512k", "GPT-OSS 20B (512K)"),
-        ("ollama/olm-chat/gpt-oss-20b-1m", "GPT-OSS 20B (1M)"),
+        ("anthropic-max20/ant-messages/claude-sonnet-5", "Sonnet 5"),  # hand-written dict + prefix strip
+        ("chatgpt/oai-responses/gpt-6-luna", "GPT-6 Luna"),  # reused from OPENCLAW_CODEX_MODELS
+        ("chatgpt/oai-responses/gpt-5.4", "GPT-5.4"),  # gap-filled: absent from OPENCLAW_CODEX_MODELS
+        ("ollama/oai-chat/gpt-oss-20b-512k", "GPT-OSS 20B (512K)"),  # computed suffix, "NK" branch
+        ("ollama/olm-chat/gpt-oss-20b-1m", "GPT-OSS 20B (1M)"),  # computed suffix, "1M" branch
     ],
 )
 def test_resolves_a_known_route_to_its_marketing_name(exposed_name: str, expected: str) -> None:
