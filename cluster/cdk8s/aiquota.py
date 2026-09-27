@@ -225,10 +225,7 @@ class Aiquota(Construct):
                 _API_NAME,
                 NAMESPACE,
                 labels=_LABELS,
-                annotations={
-                    "description": "Claude and Codex subscription quota API via the CLIProxyAPI integration.",
-                    "reloader.stakater.com/auto": "true",
-                },
+                annotations={"description": "Claude and Codex subscription quota API via the CLIProxyAPI integration."},
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=1,

@@ -78,8 +78,6 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: haku-egress-proxy
   name: haku-egress-proxy
@@ -337,7 +335,6 @@ kind: Deployment
 metadata:
   annotations:
     description: Holds Haku OpenClaw spike credentials and substitutes placeholders only for exact destination hosts.
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: haku-openclaw-spike-proxy
   name: haku-openclaw-spike-proxy

@@ -59,8 +59,7 @@ def base_chart(app: App) -> Chart:
                     "FastMCP server generating Grocy tools from Grocy's OpenAPI spec. Per-request token"
                     " exchange swaps the caller's Authentik JWT for a Grocy-proxy-scoped JWT before calling"
                     " Grocy."
-                ),
-                "reloader.stakater.com/auto": "true",
+                )
             },
         ),
         spec=k8s.DeploymentSpec(

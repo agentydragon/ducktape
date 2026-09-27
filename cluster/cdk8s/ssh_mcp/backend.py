@@ -119,7 +119,7 @@ class SshMcp(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(NAME, NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}),
+            metadata=metadata(NAME, NAMESPACE, labels=LABELS),
             pod_metadata=ApiObjectMetadata(labels=LABELS),
             replicas=1,
             select=False,

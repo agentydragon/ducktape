@@ -113,8 +113,7 @@ def _deployment(chart: Chart) -> None:
                     "Plaid self-contained link web UI. Authentik proxy outpost protects browser access; no"
                     " bespoke Plaid MCP tools are exposed in v0. The app writes access-token Secrets and syncs"
                     " linked Items into the plaid-mcp Postgres database."
-                ),
-                "reloader.stakater.com/auto": "true",
+                )
             },
         ),
         spec=k8s.DeploymentSpec(

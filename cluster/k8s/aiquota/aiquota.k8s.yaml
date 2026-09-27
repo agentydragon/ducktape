@@ -134,7 +134,6 @@ kind: Deployment
 metadata:
   annotations:
     description: Claude and Codex subscription quota API via the CLIProxyAPI integration.
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: aiquota
   name: aiquota-api

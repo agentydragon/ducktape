@@ -76,13 +76,11 @@ def _deployment(chart: Chart) -> None:
             name=_PROXY,
             namespace=NAMESPACE,
             annotations={
-                # Restart pods when the config changes (subPath mounts don't hot-reload).
-                "reloader.stakater.com/auto": "true",
                 "description": (
                     "nginx reverse proxy: HTTP 8080 → HTTPS kubernetes.default.svc:443.\n"
                     "Bridges the gap between Cilium Gateway (TLS terminate) and the\n"
                     "apiserver (requires HTTPS). Used by kubeapi.allegedly.works route.\n"
-                ),
+                )
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -98,6 +96,8 @@ def _deployment(chart: Chart) -> None:
                             image="nginxinc/nginx-unprivileged:1.31-alpine",
                             ports=[k8s.ContainerPort(container_port=_PORT)],
                             volume_mounts=[
+                                # A subPath mount doesn't hot-reload: Reloader's `autoReloadAll`
+                                # rolls the pods when the config changes.
                                 k8s.VolumeMount(
                                     name="config",
                                     mount_path="/etc/nginx/nginx.conf",

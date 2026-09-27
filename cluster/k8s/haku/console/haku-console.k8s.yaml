@@ -995,7 +995,6 @@ kind: Deployment
 metadata:
   annotations:
     description: Fail-closed Haku Agent Kubernetes authorization boundary.
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: haku-kube-api-proxy
   name: haku-kube-api-proxy

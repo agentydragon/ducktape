@@ -497,9 +497,7 @@ class Egress(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                NAME, self.env.namespace, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-            ),
+            metadata=metadata(NAME, self.env.namespace, labels=_LABELS),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=self.env.replicas.count,
             strategy=self.env.replicas.strategy,

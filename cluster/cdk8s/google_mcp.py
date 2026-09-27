@@ -114,7 +114,7 @@ class GoogleMcpApp(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(_NAME, _NAME, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}),
+            metadata=metadata(_NAME, _NAME, labels=_LABELS),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=1,
             strategy=DeploymentStrategy.recreate(),

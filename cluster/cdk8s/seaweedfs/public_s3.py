@@ -168,13 +168,12 @@ def _gateway(scope: Construct) -> None:
             namespace=namespace.NAME,
             labels=_LABELS,
             annotations={
-                "reloader.stakater.com/auto": "true",
                 "description": (
                     "Single public-facing SeaweedFS S3 gateway (s3.allegedly.works). Mounts a static config for"
                     " bootstrap and public-specific identities. Filer-backed IAM identities are also valid here,"
                     " so every credential must remain a confidential Secret even when its usual consumer is"
                     " cluster-internal."
-                ),
+                )
             },
         ),
         spec=k8s.DeploymentSpec(

@@ -120,17 +120,12 @@ def _add_deployment(chart: Chart) -> None:
     Authentication is exclusively Authentik OIDC bearer tokens (the stalwart-haku provider); no
     mailbox password exists."""
     public_url = k8s.EnvVar(name="STALWART_PUBLIC_URL", value=_PUBLIC_URL)
+    # Reloader's `autoReloadAll` restarts this on rotation of the mounted STARTTLS certificate and
+    # DB credentials so the normal server re-reads them.
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=NAME,
-            namespace=NAMESPACE,
-            labels=_LABELS,
-            # Restart on rotation of the mounted STARTTLS certificate and DB credentials so the
-            # normal server re-reads them.
-            annotations={"reloader.stakater.com/auto": "true"},
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -277,8 +272,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
                 "description": (
                     "Per-public-node port-25 TCP ingress. Preserves the sending MTA address through "
                     "PROXY protocol so Stalwart's SPF gate remains meaningful."
-                ),
-                "reloader.stakater.com/auto": "true",
+                )
             },
         ),
         spec=k8s.DaemonSetSpec(
@@ -432,8 +426,8 @@ def chart(app: App) -> Chart:
             annotations={
                 "description": (
                     "STARTTLS certificate for the inbound SMTP listener (mx.allegedly.works). Sending MTAs "
-                    "(Gmail) use opportunistic TLS; the reloader annotation on the deployment restarts the "
-                    "receiver when cert-manager rotates this."
+                    "(Gmail) use opportunistic TLS; Reloader restarts the receiver when cert-manager rotates "
+                    "this."
                 )
             },
         ),
