@@ -49,6 +49,13 @@ different conventions. Their reconciliation, non-unit step-up economics,
 posterior propagation and predictive adequacy belong to deferred PE research,
 not a claim that the old plan has certified a complete model.
 
+A headline company valuation is not a realizable holder price: sale rights,
+discounts and eligibility need a stated owner and provenance. Conditioning company
+events on a macro path specifies a joint model without validating the assumed
+dependence. A reference-class fit accounts for failed, unresolved and censored
+companies before its result transfers to one issuer; fitting a handful of current
+quotes does not establish event timing or no-liquidity tails.
+
 Adjacent sampler and fitter tests pin configuration rejection, opening anchors,
 round/mint behavior and synthetic fitting controls. The preset-shaped central
 trajectory tests describe selected parameters; their broad bands are not held-out

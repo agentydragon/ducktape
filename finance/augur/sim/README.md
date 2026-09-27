@@ -1,7 +1,7 @@
 # augur/sim
 
-Typed financial declarations, execution preparation, fixed-point helpers and
-shared result types. Financial settlement executes in the Python <world.py> (see <docs/financial_engine.md>);
+The `World` of simulated economic actors, the typed month-0 facts it is declared from
+(`Prepared*`), fixed-point money helpers and shared result types. Financial settlement executes in the Python <world.py> (see <docs/financial_engine.md>);
 experiment policies and their outer time loops are Python code.
 
 ## Experiment path
