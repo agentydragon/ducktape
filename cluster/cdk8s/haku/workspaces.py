@@ -396,7 +396,7 @@ def haku_workspaces(
     haku_rbac: Kustomization,
     haku_egress_proxy: Kustomization,
     kyverno_policies: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     name = "haku-workspaces"
     return flux_kustomization(
@@ -413,8 +413,8 @@ def haku_workspaces(
             haku_egress_proxy,
             # CleanupPolicy CRD and cleanup-controller permissions
             kyverno_policies,
-            # ESO CRDs and shared ClusterSecretStore
-            external_secrets_config,
+            # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
+            external_secrets_operator,
         ),
         description="General Haku workspaces in haku-sandbox.",
     )

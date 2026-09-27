@@ -11,7 +11,7 @@ from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomizatio
 def activitywatch(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     forgejo_images: Kustomization,
     local_path_provisioner: Kustomization,
 ) -> Kustomization:
@@ -29,5 +29,7 @@ def activitywatch(
         # Only local-path-proxmox (activitywatch-data) is used now that Syncthing and its
         # seaweedfs sync-inbox are gone -- so no seaweedfs-csi dependency, which otherwise
         # blocks the revive whenever seaweedfs-csi is degraded.
-        depends_on=flux_kustomization_depends_on_many(external_secrets_config, forgejo_images, local_path_provisioner),
+        depends_on=flux_kustomization_depends_on_many(
+            external_secrets_operator, forgejo_images, local_path_provisioner
+        ),
     )

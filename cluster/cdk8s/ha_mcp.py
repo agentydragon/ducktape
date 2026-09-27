@@ -338,7 +338,7 @@ def ha_mcp(
     flux_chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     root: Path,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     forgejo_images: Kustomization,
     home_assistant: Kustomization,
     monitoring_crds: Kustomization,
@@ -358,7 +358,7 @@ def ha_mcp(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config,
+            external_secrets_operator,
             forgejo_images,
             home_assistant,
             # the ServiceMonitor CRD

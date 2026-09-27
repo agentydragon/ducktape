@@ -90,7 +90,7 @@ def dns_automation(
     tofu_controller: Kustomization,
     tofu_state_db: Kustomization,
     external_creds: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -106,6 +106,6 @@ def dns_automation(
             )
         ],
         depends_on=flux_kustomization_depends_on_many(
-            tofu_controller, tofu_state_db, external_creds, external_secrets_config
+            tofu_controller, tofu_state_db, external_creds, external_secrets_operator
         ),
     )

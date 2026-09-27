@@ -14,7 +14,7 @@ def home_assistant(
     local_path_provisioner: Kustomization,
     seaweedfs_cluster: Kustomization,
     volsync: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     forgejo_images: Kustomization,
     monitoring_crds: Kustomization,
     gateway: Kustomization,
@@ -31,7 +31,7 @@ def home_assistant(
             local_path_provisioner,
             seaweedfs_cluster,
             volsync,
-            external_secrets_config,
+            external_secrets_operator,
             forgejo_images,
             # ServiceMonitor + PrometheusRule
             monitoring_crds,

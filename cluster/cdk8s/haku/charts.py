@@ -118,7 +118,7 @@ def haku_console(
     agent_machine_access_tf: Kustomization,
     reflector: Kustomization,
     external_creds: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     """Build the Flux graph node from its predecessor nodes."""
@@ -154,7 +154,7 @@ def haku_console(
             # into this namespace.
             reflector,
             external_creds,
-            external_secrets_config,
+            external_secrets_operator,
             # The ServiceMonitor CRD.
             monitoring_crds,
         ),

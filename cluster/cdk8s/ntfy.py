@@ -313,7 +313,7 @@ def ntfy(
     artifact: ArtifactGeneratorSpecArtifacts,
     root: Path,
     cnpg: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     gateway: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
@@ -336,7 +336,7 @@ def ntfy(
         description="Self-hosted ntfy for Android and cluster alert notifications.",
         timeout="10m",
         decryption=sops_decryption(resources),
-        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_config, gateway, monitoring_crds),
+        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, gateway, monitoring_crds),
     )
     write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=resources))
     return kustomization

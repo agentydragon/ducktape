@@ -67,7 +67,7 @@ def write_manifests(root: Path) -> None:
 def forgejo_images(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     forgejo: Kustomization,
     tofu_controller: Kustomization,
     tofu_state_db: Kustomization,
@@ -79,7 +79,7 @@ def forgejo_images(
         timeout="10m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config,
+            external_secrets_operator,
             # Forgejo API must be up (provider target)
             forgejo,
             tofu_controller,

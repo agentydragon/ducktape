@@ -87,7 +87,7 @@ def write_manifests(root: Path) -> None:
 def matrix_user_provisioner(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     forgejo_images: Kustomization,
     matrix: Kustomization,
 ) -> Kustomization:
@@ -108,7 +108,7 @@ def matrix_user_provisioner(
             )
         ],
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config,
+            external_secrets_operator,
             forgejo_images,
             # Synapse is deployed and healthy; also carries the registration shared secret, admin and bot passwords
             matrix,

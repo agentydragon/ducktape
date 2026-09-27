@@ -13,7 +13,7 @@ def nix_cache(
     artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
     external_creds: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     forgejo_images: Kustomization,
     gateway: Kustomization,
     cert_manager: Kustomization,
@@ -27,6 +27,6 @@ def nix_cache(
         timeout="5m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            cnpg, external_creds, external_secrets_config, forgejo_images, gateway, cert_manager, seaweedfs_cluster
+            cnpg, external_creds, external_secrets_operator, forgejo_images, gateway, cert_manager, seaweedfs_cluster
         ),
     )

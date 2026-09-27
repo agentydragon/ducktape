@@ -32,7 +32,7 @@ def grocy_sf(
 def grocy_mcp_sf(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     forgejo_images: Kustomization,
     gateway: Kustomization,
     grocy_sf: Kustomization,
@@ -48,7 +48,7 @@ def grocy_mcp_sf(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config,
+            external_secrets_operator,
             forgejo_images,
             gateway,
             grocy_sf,
@@ -102,7 +102,7 @@ def grocy_vallejo(
 def grocy_mcp_vallejo(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     forgejo_images: Kustomization,
     gateway: Kustomization,
     grocy_vallejo: Kustomization,
@@ -118,7 +118,7 @@ def grocy_mcp_vallejo(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config,
+            external_secrets_operator,
             forgejo_images,
             gateway,
             grocy_vallejo,

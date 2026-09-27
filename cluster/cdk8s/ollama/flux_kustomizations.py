@@ -15,7 +15,7 @@ def ollama(
     gateway: Kustomization,
     cert_manager_environment: Kustomization,
     nvidia_runtimeclass: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     reflector: Kustomization,
     claude_rbac: Kustomization,
 ) -> Kustomization:
@@ -38,8 +38,8 @@ def ollama(
             gateway,
             cert_manager_environment,
             nvidia_runtimeclass,
-            # langfuse ESO remains
-            external_secrets_config,
+            # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
+            external_secrets_operator,
             reflector,
             claude_rbac,
         ),

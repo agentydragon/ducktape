@@ -295,7 +295,7 @@ def public_coder_agent_devbox(
     kubevirt: Kustomization,
     forgejo_images: Kustomization,
     external_creds: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     agent_shared_secrets: Kustomization,
     public_coder_agent_app_kustomization: Kustomization,
 ) -> Kustomization:
@@ -310,7 +310,7 @@ def public_coder_agent_devbox(
             kubevirt,
             forgejo_images,
             external_creds,
-            external_secrets_config,
+            external_secrets_operator,
             agent_shared_secrets,
             public_coder_agent_app_kustomization,
         ),

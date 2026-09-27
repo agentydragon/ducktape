@@ -13,7 +13,7 @@ def agentplane_index(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     forgejo_images: Kustomization,
     local_path_provisioner: Kustomization,
     ollama: Kustomization,
@@ -54,7 +54,7 @@ def agentplane_index(
             )
         ],
         depends_on=flux_kustomization_depends_on_many(
-            cnpg, external_secrets_config, forgejo_images, local_path_provisioner, ollama
+            cnpg, external_secrets_operator, forgejo_images, local_path_provisioner, ollama
         ),
         description=(
             "Complete Agentplane repository-index service: namespace, ESO "
