@@ -37,7 +37,8 @@ from finance.augur.product.scenarios import (
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import RolloutRequest, ScenarioKey, SpendIndex
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId, PortfolioId
-from finance.augur.sim.scenario import InterestIncome, TlhCohort, TlhPortfolioSpec
+from finance.augur.sim.income import InterestIncome
+from finance.augur.sim.scenario import TlhCohort, TlhPortfolioSpec
 from finance.augur.sim.tlh import TlhAssumptions
 from finance.augur.x.models.independent import IndependentProviderConfig
 from finance.augur.x.models.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig

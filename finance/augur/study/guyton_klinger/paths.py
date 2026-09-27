@@ -35,6 +35,7 @@ from finance.augur.sim.fixed_point import (
     round_currency_amount,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, QualifiedDividendIncome, TransferIncomeCategory
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -47,16 +48,9 @@ from finance.augur.sim.prepared import (
     PreparedSeries,
 )
 from finance.augur.sim.runtime import load_jurisdictions_for
-from finance.augur.sim.scenario import (
-    ORDINARY_INCOME,
-    FilingStatus,
-    InterestIncome,
-    QualifiedDividendIncome,
-    TaxProfile,
-    TransferIncomeCategory,
-)
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw, FixedNominalLaw, TaxIndexation
+from finance.augur.sim.tax_profile import FilingStatus, TaxProfile
 from finance.augur.sim.world import World
 from finance.augur.study.guyton_klinger.panel import PRICED, AnnualPanel, Sleeve
 

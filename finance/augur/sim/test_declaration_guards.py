@@ -26,6 +26,7 @@ from finance.augur.sim.ids import (
     PortfolioId,
     PropertyId,
 )
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -56,7 +57,6 @@ from finance.augur.sim.prepared import (
     _RentedFraction,
 )
 from finance.augur.sim.property import Housing
-from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 

@@ -28,6 +28,7 @@ from finance.augur.sim.compiler.execution import compile_holding_pools, compile_
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId
+from finance.augur.sim.income import InterestIncome
 from finance.augur.sim.jurisdictions import (
     Jurisdiction,
     JurisdictionLevel,
@@ -37,17 +38,11 @@ from finance.augur.sim.jurisdictions import (
 )
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
-from finance.augur.sim.scenario import (
-    DistributionTaxSlice,
-    FilingStatus,
-    InitialLot,
-    InterestIncome,
-    SecurityDistribution,
-    TaxProfile,
-)
+from finance.augur.sim.scenario import DistributionTaxSlice, InitialLot, SecurityDistribution
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import FilingStatus, TaxProfile
 from finance.augur.sim.world import World
 
 BROKERAGE = AccountId("brokerage")

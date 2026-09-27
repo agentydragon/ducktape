@@ -13,8 +13,8 @@ from finance.augur.sim.actor import MonthOpened
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import Claim, Claims
 from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.payments import execute
-from finance.augur.sim.scenario import ORDINARY_INCOME
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.testing.accounting import (

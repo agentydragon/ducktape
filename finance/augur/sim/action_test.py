@@ -10,12 +10,13 @@ import pytest_bazel
 from finance.augur.sim.actions import Action, ClaimId, Consume, DecisionActions, PayClaim, Transfer
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
+from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedObligation, PreparedTransfer
 from finance.augur.sim.results import Executed, Finished, RejectedAction, Rollout, UnpaidClaims
-from finance.augur.sim.scenario import ORDINARY_INCOME, ObligationType
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 

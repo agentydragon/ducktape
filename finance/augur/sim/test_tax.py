@@ -7,9 +7,9 @@ import pytest_bazel
 
 from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxRules, PreparedThresholdTax
 from finance.augur.sim.ids import AgentId, JurisdictionId
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, QualifiedDividendIncome
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.money import MAX_COUNT
-from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, QualifiedDividendIncome
 from finance.augur.sim.tax import (
     IncomeLedger,
     NettedGains,

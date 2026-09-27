@@ -8,8 +8,8 @@ from dataclasses import dataclass, replace
 from finance.augur.sim.books import TaxAccrual
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AgentId
+from finance.augur.sim.income import TransferIncomeCategory
 from finance.augur.sim.money import checked_count, mul_div
-from finance.augur.sim.scenario import TransferIncomeCategory
 from finance.augur.sim.tax import IncomeLedger
 
 
