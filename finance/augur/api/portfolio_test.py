@@ -14,7 +14,7 @@ from finance.augur.api.portfolio import (
     PortfolioConfig,
     SecurityHoldingConfig,
 )
-from finance.augur.model.series import SecurityKey, SecuritySymbol
+from finance.augur.model.series import SecuritySymbol
 from finance.augur.sim.ids import AccountId, AgentId, BondId, LotId
 
 BROKERAGE = AccountId("brokerage")
@@ -23,7 +23,7 @@ AGENT_A = AgentId("agent_a")
 ALICE = AgentId("alice")
 
 
-def test_holding_tax_lots_expand_to_sim_initial_lots() -> None:
+def test_position_values_sum_over_its_lots() -> None:
     portfolio = PortfolioConfig(
         accounts=(PortfolioAccountConfig(account_id=TAXABLE_BROKERAGE, owner_agent_id=AGENT_A, label="Taxable"),),
         holdings=(
@@ -51,18 +51,9 @@ def test_holding_tax_lots_expand_to_sim_initial_lots() -> None:
         ),
     )
 
-    lots = portfolio.to_initial_lots()
-
     assert portfolio.holdings[0].current_value == Decimal(60_000)
     assert portfolio.holdings[0].total_cost_basis == Decimal(39_000)
     assert portfolio.total_holdings_value == Decimal(60_000)
-    assert [(lot.lot_id, lot.agent_id, lot.account_id, lot.asset, lot.purchase_month_index) for lot in lots] == [
-        ("voo_2024_05_20", "agent_a", "taxable_brokerage", SecurityKey(symbol=SecuritySymbol("VOO")), -24),
-        ("voo_2026_05_20", "agent_a", "taxable_brokerage", SecurityKey(symbol=SecuritySymbol("VOO")), 0),
-    ]
-    assert lots[0].quantity == 100.0
-    assert lots[0].cost_basis == Decimal(30_000)
-    assert lots[1].cost_basis == Decimal(9_000)
 
 
 def test_one_account_can_hold_multiple_holding_positions() -> None:
@@ -237,35 +228,6 @@ def _bond_portfolio(**overrides: object) -> PortfolioConfig:
     )
 
 
-def test_a_bond_converts_both_months_relative_to_month_zero() -> None:
-    """The whole point of the config idiom: a deployment writes "held 24 months, matures in 96"
-    and never a calendar date, so the two conversions are where a sign error would hide. A bond
-    held 24 months is `purchase_month_index=-24`, in the PAST."""
-
-    [bond] = _bond_portfolio().to_initial_bonds(coupon_account_id=AccountId("checking"))
-
-    assert bond.purchase_month_index == -24
-    assert bond.maturity_month_index == 96
-
-
-def test_a_bonds_owner_comes_through_its_custody_account() -> None:
-    """Like a lot: the account is the owner-bearing object, and the bond names no agent."""
-
-    [bond] = _bond_portfolio().to_initial_bonds(coupon_account_id=AccountId("checking"))
-
-    assert bond.agent_id == "alice"
-
-
-def test_coupons_land_in_the_named_cash_account_not_the_custody_account() -> None:
-    """The two are different things that are the same string only by coincidence. A portfolio
-    account is custody (`brokerage`) and carries no cash row, so a coupon paid into one would
-    have nowhere to go — the caller names the destination because it knows its cash topology."""
-
-    [bond] = _bond_portfolio().to_initial_bonds(coupon_account_id=AccountId("checking"))
-
-    assert bond.account_id == "checking"
-
-
 def test_a_bond_on_an_unknown_account_is_rejected() -> None:
     with pytest.raises(ValidationError, match="bonds reference unknown account_id"):
         PortfolioConfig(
@@ -298,20 +260,6 @@ def test_duplicate_bond_ids_are_rejected() -> None:
         PortfolioConfig(
             accounts=(PortfolioAccountConfig(account_id=BROKERAGE, owner_agent_id=ALICE),), bonds=(bond, bond)
         )
-
-
-def test_a_non_par_purchase_survives_config_to_be_rejected_by_the_sim() -> None:
-    """The reason `purchase_price` is carried at all despite having one legal value today.
-
-    Config is where somebody writes what they actually paid. Dropping the field would silently
-    promote a bond bought at 98.5 to par — the exact failure the sim's validator exists to make
-    loud — so the config accepts it and the conversion is what raises.
-    """
-
-    portfolio = _bond_portfolio(purchase_price=98_500)
-
-    with pytest.raises(ValidationError, match="bought away from par"):
-        portfolio.to_initial_bonds(coupon_account_id=AccountId("checking"))
 
 
 def test_bond_face_is_kept_out_of_the_holdings_value_total() -> None:

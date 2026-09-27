@@ -22,24 +22,25 @@ from finance.augur.product.simulation import (
     simulate_product_metrics,
 )
 from finance.augur.sim.actions import LotSale, Sell
-from finance.augur.sim.compiler.execution import (
-    compile_accounts,
-    compile_holding_pools,
-    compile_housing,
-    compile_jurisdictions,
-    compile_locations,
-    compile_lots,
-)
+from finance.augur.sim.books import AccountRef
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
-from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
-from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
+from finance.augur.sim.prepared import (
+    PreparedAccount,
+    PreparedHoldingPool,
+    PreparedJurisdiction,
+    PreparedLocation,
+    PreparedLot,
+    _PropertyPurchase,
+    _PropertySale,
+)
+from finance.augur.sim.property import Housing
 from finance.augur.sim.runtime import load_jurisdictions_for
-from finance.augur.sim.scenario import InitialAccountBalance, InitialLot, PropertySaleEvent, ScheduledPropertyPurchase
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
@@ -71,7 +72,7 @@ PURCHASE_PRICE = Decimal("400000.00")
 HOME_VALUE_AT_SALE_QUANTA = 60_000_001
 
 # 6.375% is 637.5 basis points -- representable as a rate, never as a whole number of them.
-FRACTIONAL_CLOSING_COST_PCT = 6.375
+FRACTIONAL_CLOSING_COST_PCT = Decimal("6.375")
 FRACTIONAL_CLOSING_COST_PROCEEDS_QUANTA = 56_175_001
 
 # Fresh, unstarted worlds, one per path: a world runs once, so every simulation composes its own.
@@ -86,27 +87,23 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
     than a feature-rich one.
     """
 
-    lot = InitialLot(
+    scale = quantity_scale_for_asset(VTI)
+    lot = PreparedLot(
         lot_id=LotId("alice-vti"),
         agent_id=AGENT,
         account_id=CHECKING,
-        asset=VTI,
-        purchase_month_index=-24,  # comfortably long-term
-        quantity=UNITS,
-        cost_basis=UNITS * LOT_BASIS,
+        asset_id=AssetId(VTI.symbol),
+        purchase_month=-24,  # comfortably long-term
+        quantity_scale=scale,
+        units=quantity_to_quanta(UNITS, scale=scale),
+        basis=USD.quanta(UNITS * LOT_BASIS),
     )
     sale = Sell(
         cause_id="sell-vti",
         agent_id=AGENT,
         proceeds_account_id=CHECKING,
-        asset_id=AssetId(VTI.symbol),
-        lots=(
-            LotSale(
-                account_id=CHECKING,
-                lot_id=lot.lot_id,
-                units=quantity_to_quanta(UNITS, scale=quantity_scale_for_asset(VTI)),
-            ),
-        ),
+        asset_id=lot.asset_id,
+        lots=(LotSale(account_id=CHECKING, lot_id=lot.lot_id, units=lot.units),),
     )
     profile = TaxProfile(agent_id=AGENT, jurisdiction_ids=[JurisdictionId("federal_us")], tax_authority_agent_id=IRS)
     jurisdictions = load_jurisdictions_for([profile])
@@ -126,28 +123,27 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
             MarketPath(series, rollout_id, rollout_count=rollout_count),
             horizon_months=HORIZON_MONTHS,
             income_sources=(ORDINARY_INCOME,),
-            jurisdictions=compile_jurisdictions(jurisdictions, bonds=(), distributions=()),
+            jurisdictions=tuple(
+                PreparedJurisdiction(jurisdiction_id=jurisdiction_id, level=jurisdiction.level)
+                for jurisdiction_id, jurisdiction in jurisdictions.items()
+            ),
         )
-        for account in compile_accounts(
-            [
-                InitialAccountBalance(agent_id=agent_id, account_id=CHECKING, balance=Decimal(0))
-                for agent_id in (AGENT, IRS)
-            ],
-            currency=USD,
-        ):
-            world.declare_account(account)
+        for agent_id in (AGENT, IRS):
+            world.declare_account(
+                PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
+            )
         world.track(TaxAuthority(compile_profile(profile, jurisdictions, currency=USD), indexation=FixedNominalLaw()))
-        for pool in compile_holding_pools(lots=[lot]):
-            world.declare_pool(pool)
-        for held in compile_lots([lot], currency=USD):
-            world.hold(held)
+        world.declare_pool(
+            PreparedHoldingPool(agent_id=AGENT, account_id=CHECKING, asset_id=lot.asset_id, quantity_scale=scale)
+        )
+        world.hold(lot)
         world.track(Scripted(ClaimPayer(AgentId(AGENT)), {SALE_MONTH: (sale,)}))
         return world
 
     return lambda: [compose(rollout_id) for rollout_id in range(rollout_count)]
 
 
-def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
+def a_property_bought_and_sold(closing_cost_pct: Decimal = Decimal(0)) -> Worlds:
     """One all-cash property, bought at what it is worth and sold while it is worth more.
 
     The home-value levels are deliberately not whole cents. A property is valued from that
@@ -156,7 +152,7 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
     observable exactly when the level is fractional.
     """
 
-    purchase = ScheduledPropertyPurchase(
+    purchase = _PropertyPurchase(
         month=0,
         cause_id="buy-house",
         property_id=PropertyId("house"),
@@ -164,10 +160,15 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
         buyer_agent_id=AGENT,
         buyer_account_id=CHECKING,
         seller_agent_id=SELLER,
+        seller_account_id=CHECKING,
         # Bought for exactly what the series says it is worth, so the sale's proceeds are
         # the home value itself rather than a figure a reader has to recompute.
-        purchase_price=PURCHASE_PRICE,
-        down_payment=PURCHASE_PRICE,
+        purchase_price=USD.quanta(PURCHASE_PRICE),
+        down_payment=USD.quanta(PURCHASE_PRICE),
+        buyer_closing_cost=0,
+        rented_fraction_ppb=0,
+        land_value_fraction_ppb=rate_to_ppb(Decimal("0.20")),
+        mortgage=None,
     )
     levels = np.full((1, HORIZON_MONTHS + 1), HOME_VALUE_AT_PURCHASE)
     levels[:, PROPERTY_SALE_MONTH] = HOME_VALUE_AT_SALE
@@ -177,8 +178,12 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
         horizon_months=HORIZON_MONTHS,
         currency=USD,
     )
-    location = Location(
-        location_id=LOCATION, display_name="Acceptance Town", jurisdiction_ids=[], annual_property_tax_rate=0.0
+    location = PreparedLocation(
+        location_id=LOCATION,
+        display_name="Acceptance Town",
+        jurisdiction_ids=(),
+        annual_property_tax_rate_ppb=0,
+        annual_special_assessment=0,
     )
 
     def compose() -> World:
@@ -187,28 +192,26 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
         world = World(
             MarketPath(series, 0, rollout_count=1), horizon_months=HORIZON_MONTHS, income_sources=(ORDINARY_INCOME,)
         )
-        for account in compile_accounts(
-            [
-                InitialAccountBalance(agent_id=agent_id, account_id=CHECKING, balance=Decimal(1_000_000))
-                for agent_id in (AGENT, SELLER)
-            ],
-            currency=USD,
-        ):
-            world.declare_account(account)
+        for agent_id in (AGENT, SELLER):
+            world.declare_account(
+                PreparedAccount(
+                    account=AccountRef(agent_id=agent_id, account_id=CHECKING),
+                    opening_balance=USD.quanta(Decimal(1_000_000)),
+                )
+            )
         world.declare_housing(
-            compile_housing(
-                purchases=[purchase],
-                initial_residences=(),
-                residence_events=(),
-                lifecycle_events=[
-                    PropertySaleEvent(
-                        month=PROPERTY_SALE_MONTH, property_id=PropertyId("house"), closing_cost_pct=closing_cost_pct
-                    )
-                ],
-                currency=USD,
+            Housing(
+                purchases=(purchase,),
+                sales=(
+                    _PropertySale(
+                        month=PROPERTY_SALE_MONTH,
+                        property_id=PropertyId("house"),
+                        closing_cost_ppb=rate_to_ppb(closing_cost_pct / 100),
+                    ),
+                ),
             ),
             (),
-            compile_locations([purchase], {LOCATION: location}, currency=USD),
+            (location,),
         )
         world.track(ClaimPayer(AgentId(AGENT)))
         return world
