@@ -1149,7 +1149,7 @@
             None of this is a big-bang rewrite. Each convention lands as a series of small PRs you can review as
             rendered diffs. The provider cleanup, the edge trim (426 edges down to 258, and 231 once #8185 lands) and
             the writer, now writing 109 directories, have landed. Ready without a decision: the edge check, the
-            render-identical cores of pod policy and the namespace helper, four stateless folds, seven more writer
+            render-identical cores of pod policy and the namespace helper, four stateless folds, eight more writer
             conversions and the ResticBackup dedupe. The fleet rules, graph checks, health-check derivation and glue
             absorption are deferred. The <code>wait</code> default and derived Orphan are postponed, and C4 and the
             steps built on it wait on your decision.
@@ -11405,28 +11405,26 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             <div class="rich">
               <p>
                 Convert the rest to the writer. Landed: #8192 (the writer), #8195, #8197 to #8200, #8201, #8203 to
-                #8206, #8210 and #8211; 109 directories now go through <code>write_directory</code>. Of the 66 nodes
-                still on the old path, 7 convert as they are, in three PRs: haku console and mailbox;
-                <code>flux-image-automation-ghcr</code>, <code>seaweedfs-secrets</code> and
-                <code>agentplane-index</code>; and the two sibling-only directories (<code>haku-forgejo-tea</code>,
-                <code>agent-shared-secrets</code>), the writer&#39;s first zero-chart use. Two more carry a dead
-                decryption like the five #8210 dropped (<code>seaweedfs-public-s3</code>,
-                <code>gaffer-private-source</code>). The six Forgejo gitops-module directories pass Terraform objects
-                between charts, where names would do (<code>gitops_terraform</code> reads only <code>.name</code>); that
-                is your call. The rest stay: 40 have a hand-written <code>kustomization.yaml</code> (call C; 8 are
-                parked); 5 copy shared bases, which the writer rejects (public-coder-agent-app and the grocy MCP and
-                user-perms overlays); 4 are nested (tofu-state, litellm, and the flux-system bootstrap&#39;s
-                <code>ducktape-flux</code> and <code>sources</code>); and 2 are special (public-coder devbox returns the
-                SSH Service another module reads; agentplane-staging derives health checks from its chart).
-                <code>write_charts</code> and <code>sops_decryption</code> go only after the glue absorption in step 11;
-                the explicit <code>path=</code> source form stays for Kustomizations that read other GitRepositories.
+                #8206, #8210, #8211 and #8213; 109 directories now go through <code>write_directory</code>. Of the 66
+                nodes still on the old path, 8 convert as they are, in three PRs: haku console and mailbox;
+                <code>flux-image-automation-ghcr</code>, <code>seaweedfs-secrets</code>,
+                <code>agentplane-index</code> and <code>seaweedfs-public-s3</code> (whose dead decryption #8213
+                dropped); and the two sibling-only directories (<code>haku-forgejo-tea</code>,
+                <code>agent-shared-secrets</code>), the writer&#39;s first zero-chart use. The six Forgejo gitops-module
+                directories pass Terraform objects between charts, where names would do (<code>gitops_terraform</code>
+                reads only <code>.name</code>); that is your call. The rest stay: 40 have a hand-written
+                <code>kustomization.yaml</code> (call C; 8 are parked); 5 copy shared bases, which the writer rejects
+                (public-coder-agent-app and the grocy MCP and user-perms overlays); 4 are nested (tofu-state, litellm,
+                and the flux-system bootstrap&#39;s <code>ducktape-flux</code> and <code>sources</code>); and 2 are
+                special (public-coder devbox returns the SSH Service another module reads; agentplane-staging derives
+                health checks from its chart). <code>write_charts</code> and <code>sops_decryption</code> go only after
+                the glue absorption in step 11; the explicit <code>path=</code> source form stays for Kustomizations
+                that read other GitRepositories.
               </p>
             </div>
           </div>
           <div class="sc">
-            <div class="rich">
-              <p>Three conversion PRs and a dead-decryption PR now; the Forgejo modules after your call.</p>
-            </div>
+            <div class="rich"><p>Three conversion PRs now; the Forgejo modules after your call.</p></div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
