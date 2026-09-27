@@ -35,6 +35,21 @@ def validate_product_symbols(*, equity: EquitySpec | None, instruments: Sequence
         raise ValueError(f"construction prices a symbol more than once: {duplicates}")
 
 
+def product_level_keys(*, equity: EquitySpec | None, instruments: Sequence[BondFundSpec]) -> frozenset[LevelSeriesKey]:
+    """The level series `construct_products` emits for these products."""
+
+    keys: set[LevelSeriesKey] = {InflationKey()}
+    for spec in instruments:
+        keys.add(SecurityKey(symbol=spec.symbol))
+        keys.add(SecurityDistributionKey(symbol=spec.symbol))
+    if equity is not None:
+        # Equity emits a PRICE only. It pays dividends in reality, but its price is total
+        # return: a payout beside it would count the dividends twice until the path is
+        # split into price return plus payout.
+        keys.add(SecurityKey(symbol=equity.symbol))
+    return frozenset(keys)
+
+
 def construct_products(
     paths: MarketPaths, *, equity: EquitySpec | None, instruments: Sequence[BondFundSpec]
 ) -> SampledExogenousBundle:

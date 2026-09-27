@@ -49,6 +49,7 @@ from finance.augur.model.equity import EquitySpec
 from finance.augur.model.exogenous import SampledExogenousBundle
 from finance.augur.model.market_paths import MarketPaths
 from finance.augur.model.product_paths import construct_products
+from finance.augur.model.provenance import stable_identity_digest
 from finance.augur.model.schemas import FrozenModel
 from finance.evidence import loading, sources
 from finance.evidence.loading import MonthlyLevel, evidence_dir_from_env
@@ -121,6 +122,25 @@ class MacroHistory:
             corporate_baa_yield=self.corporate_baa_yield[rows],
             equity_level=self.equity_level[rows],
             cpi_level=self.cpi_level[rows],
+        )
+
+    def identity_digest(self) -> str:
+        """Digest of the months and every series: equal digests mean the same record.
+
+        The span alone does not identify a record, because an evidence refresh can revise past
+        months without moving it.
+        """
+
+        return stable_identity_digest(
+            {
+                "months": [month.isoformat() for month in self.months],
+                "short_rate": self.short_rate.tolist(),
+                "term_spread": self.term_spread.tolist(),
+                "corporate_aaa_yield": self.corporate_aaa_yield.tolist(),
+                "corporate_baa_yield": self.corporate_baa_yield.tolist(),
+                "equity_level": self.equity_level.tolist(),
+                "cpi_level": self.cpi_level.tolist(),
+            }
         )
 
 

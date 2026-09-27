@@ -1,6 +1,7 @@
 # Market paths and product construction
 
-Load/select historical windows or sample structural paths, then choose products:
+Load/select historical windows, resample the same record, or sample structural paths, then
+choose products:
 
 ```python
 from finance.augur.model.bond_fund import BondFundSpec
@@ -8,6 +9,8 @@ from finance.augur.model.product_paths import construct_products
 
 market = historical.market_paths(window_starts=chosen_dates, horizon_months=360)
 # Or: market = structural.sample_market(request)
+# Or, 120-month mean blocks as in Anarkulova, Cederburg, O'Doherty & Sias (JPEF 24(3), 2025):
+# market = StationaryBootstrapModel(history=historical.history, mean_block_months=120.0).sample_market(request)
 for maturity in (2.0, 8.0):
     products = construct_products(
         market,
