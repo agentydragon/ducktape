@@ -56,12 +56,11 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import container_security, node_scheduling
+from cluster.cdk8s import container_security, node_scheduling, pod_policy
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console_config, database
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches, runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from haku.console.config import CONFIG_FILE_ENV
@@ -401,8 +400,8 @@ class Console(Construct):
         )
         # Same zone as this console's Postgres and the public ingress: unpinned, a replica
         # landed 166ms from the database, which every read pays several round trips of.
-        node_scheduling.attract_to_zone(deployment)
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
+        pod_policy.place(deployment, node_scheduling.HIL_OVH)
+        pod_policy.harden(deployment)
 
     def _add_service(self) -> None:
         Service(
@@ -470,7 +469,7 @@ class Console(Construct):
         )
         # The entrypoint writes the envsubst-rendered config here before nginx starts.
         container.mount("/etc/nginx/conf.d", Volume.from_empty_dir(self, "nginx-conf-volume", "nginx-conf"))
-        apply_pod_spec_patches(deployment)
+        pod_policy.harden(deployment)
         Service(
             self,
             "static-service",
@@ -546,8 +545,8 @@ class Console(Construct):
         )
         sql = ConfigMap.from_config_map_name(self, "indexer-sql-ref", INDEXER_SQL_CONFIG_MAP)
         container.mount(_INDEXER_SQL_DIR, Volume.from_config_map(self, "indexer-sql-volume", sql), read_only=True)
-        node_scheduling.attract_to_zone(job)
-        apply_pod_spec_patches(job)
+        pod_policy.place(job, node_scheduling.HIL_OVH)
+        pod_policy.harden(job)
         # cdk8s-plus's Container has no terminationMessagePolicy option.
         ApiObject.of(job).add_json_patch(
             JsonPatch.add("/spec/template/spec/containers/0/terminationMessagePolicy", "FallbackToLogsOnError")

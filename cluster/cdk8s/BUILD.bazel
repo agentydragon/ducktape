@@ -114,6 +114,7 @@ py_library(
     srcs = ["fleet_rules.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":pod_policy",
         "@pypi//cdk8s",
         "@pypi//constructs",
         "@pypi//jsii",
@@ -431,12 +432,30 @@ py_library(
 )
 
 py_library(
-    name = "pod_spec_patches",
-    srcs = ["pod_spec_patches.py"],
+    name = "pod_policy",
+    srcs = ["pod_policy.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":node_scheduling",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_pod_policy",
+    srcs = ["test_pod_policy.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":node_scheduling",
+        ":pod_policy",
+        "//cluster/cdk8s/providers/keda:scaledjob",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -450,7 +469,7 @@ py_library(
         ":flux",
         ":forgejo_images",
         ":manifest_roots",
-        ":pod_spec_patches",
+        ":pod_policy",
         ":probes",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/external_secrets:single_secret_store",
@@ -629,7 +648,7 @@ py_library(
         ":flux",
         ":forgejo_images",
         ":manifest_roots",
-        ":pod_spec_patches",
+        ":pod_policy",
         ":probes",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/cilium:network_policy",
@@ -730,7 +749,7 @@ py_library(
         ":forgejo_images",
         ":gateway",
         ":manifest_roots",
-        ":pod_spec_patches",
+        ":pod_policy",
         ":probes",
         ":public_coder_proxy",
         "//aiquota:api",
@@ -981,7 +1000,7 @@ py_library(
         ":gateway",
         ":manifest_roots",
         ":node_scheduling",
-        ":pod_spec_patches",
+        ":pod_policy",
         ":probes",
         "//cluster/cdk8s/providers/external_secrets:clustersecretstore",
         "//cluster/cdk8s/providers/external_secrets:external_secret",

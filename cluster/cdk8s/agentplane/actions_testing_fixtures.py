@@ -32,9 +32,8 @@ from cilium_crds.io.cilium import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import cilium, container_security
+from cluster.cdk8s import cilium, container_security, pod_policy
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy, deny_all_egress
 
 _NAMESPACE = "agentplane-testing"
@@ -86,7 +85,7 @@ def _add_mcp_everything(scope: Construct) -> None:
             read_only_root_filesystem=True, capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL])
         ),
     )
-    apply_pod_spec_patches(deployment)
+    pod_policy.harden(deployment)
     Service(
         scope,
         "mcp-everything-service",
@@ -184,7 +183,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
         # constraint).
         security_context=container_security.WRITABLE_ROOT,
     )
-    apply_pod_spec_patches(deployment)
+    pod_policy.harden(deployment)
     Service(
         scope,
         "oauth-fixture-service",

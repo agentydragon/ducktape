@@ -31,7 +31,7 @@ py_library(
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:pod_spec_patches",
+        "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

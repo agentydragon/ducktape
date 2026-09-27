@@ -30,10 +30,9 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import container_security, node_scheduling
+from cluster.cdk8s import container_security, node_scheduling, pod_policy
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.haku import console
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 
 NAME = "haku-console-migration"
 
@@ -83,8 +82,8 @@ class Migration(Construct):
             ),
             security_context=container_security.WRITABLE_ROOT,
         )
-        node_scheduling.attract_to_zone(job)
-        apply_pod_spec_patches(job)
+        pod_policy.place(job, node_scheduling.HIL_OVH)
+        pod_policy.harden(job)
         # cdk8s-plus's Container has no terminationMessagePolicy option.
         ApiObject.of(job).add_json_patch(
             JsonPatch.add("/spec/template/spec/containers/0/terminationMessagePolicy", "FallbackToLogsOnError")

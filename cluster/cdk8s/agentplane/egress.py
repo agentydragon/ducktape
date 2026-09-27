@@ -53,7 +53,7 @@ from trust_manager_crds.io.cert_manager.trust import (
 
 from agentplane.egress.database_migrate import MigrationSettings
 from agentplane.egress.main import CONFIG_FILE_ENV, Settings
-from cluster.cdk8s import cilium, container_security, node_scheduling
+from cluster.cdk8s import cilium, container_security, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import actions, database, llm_ingress
 from cluster.cdk8s.agentplane.app_settings import (
     BASIC_POLICY,
@@ -71,7 +71,6 @@ from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
@@ -554,9 +553,8 @@ class Egress(Construct):
         settings_volume = Volume.from_config_map(self, "settings-volume", settings_cm)
         deployment.containers[0].mount(_SETTINGS_PATH, settings_volume, sub_path="settings.yaml", read_only=True)
 
-        node_scheduling.attract_to_zone(deployment)
-        node_scheduling.tolerate_control_plane_taint(deployment)
-        apply_pod_spec_patches(deployment)
+        pod_policy.place(deployment, node_scheduling.HIL_OVH, tolerate_control_plane=True)
+        pod_policy.harden(deployment)
         return deployment
 
     def _add_services(self, deployment: Deployment) -> None:

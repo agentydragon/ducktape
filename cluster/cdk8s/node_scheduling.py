@@ -1,7 +1,6 @@
 """Node-scheduling facts shared across cluster/cdk8s: the OVH zone and its node selector,
 the control-plane taint, and the affinity that keeps a Pod tolerating that taint on
-workers.
-`attract_to_zone` and `tolerate_control_plane_taint` apply them to a cdk8s-plus workload.
+workers. `pod_policy.place` applies a `Placement` to a generated workload.
 
 Helm values and other `any`-typed fields take the typed structs as they are: jsii passes
 a struct there as a plain object keyed by its property names, which for these structs
@@ -11,8 +10,9 @@ are the Kubernetes field names.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 
-from cdk8s_plus_34 import Deployment, Node, NodeLabelQuery, NodeTaintQuery, TaintEffect, Workload, k8s
+from cdk8s_plus_34 import k8s
 
 ZONE_LABEL = "topology.kubernetes.io/zone"
 # The OVH nodes. Pinning to it keeps a workload off the home nodes (wyrm2, optiplex).
@@ -39,11 +39,11 @@ PREFER_WORKERS = k8s.Affinity(
 )
 
 
-def attract_to_zone(workload: Workload) -> None:
-    workload.scheduling.attract(Node.labeled(NodeLabelQuery.is_(ZONE_LABEL, HIL_OVH_ZONE)))
+@dataclass(frozen=True)
+class Placement:
+    """The nodes a Pod may run on: those carrying every label in `node_selector`."""
+
+    node_selector: Mapping[str, str]
 
 
-def tolerate_control_plane_taint(deployment: Deployment) -> None:
-    deployment.scheduling.tolerate(
-        Node.tainted(NodeTaintQuery.exists(CONTROL_PLANE_TAINT_KEY, effect=TaintEffect.NO_SCHEDULE))
-    )
+HIL_OVH = Placement(node_selector=HIL_OVH_NODE_SELECTOR)

@@ -23,10 +23,9 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import cilium, container_security, node_scheduling
+from cluster.cdk8s import cilium, container_security, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 
@@ -93,8 +92,8 @@ class Electric(Construct):
         container.mount(
             _STORAGE_DIR, Volume.from_empty_dir(self, "storage-volume", "storage", size_limit=Size.gibibytes(5))
         )
-        node_scheduling.attract_to_zone(deployment)
-        apply_pod_spec_patches(deployment)
+        pod_policy.place(deployment, node_scheduling.HIL_OVH)
+        pod_policy.harden(deployment)
 
         Service(
             self,

@@ -32,7 +32,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.action_service.main import CONFIG_FILE_ENV, Settings
-from cluster.cdk8s import cilium, container_security, node_scheduling
+from cluster.cdk8s import cilium, container_security, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import database, llm_ingress
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
@@ -41,7 +41,6 @@ from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
@@ -294,8 +293,8 @@ class Actions(Construct):
             # settings volume (runc: "not a directory").
             deployment.containers[0].mount(f"/run/secrets/{mount.name}", bearer_volume, read_only=True)
 
-        node_scheduling.attract_to_zone(deployment)
-        apply_pod_spec_patches(deployment)
+        pod_policy.place(deployment, node_scheduling.HIL_OVH)
+        pod_policy.harden(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
