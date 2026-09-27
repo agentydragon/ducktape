@@ -34,10 +34,14 @@ def settings(
     thread_preset_codex_model: str,
     action_policy_sets: list[str] | None = None,
 ) -> dict:
+    # A model both harnesses accept (e.g. a local Ollama route) names its display name once,
+    # regardless of how many harness lists reference it. dict.fromkeys dedupes while keeping
+    # each model's first-seen order.
+    all_models = dict.fromkeys((*harness_claude, *harness_codex))
     return {
         "models": {
-            "HARNESS_CLAUDE": [{"model": model, "display_name": display_name(model)} for model in harness_claude],
-            "HARNESS_CODEX": [{"model": model, "display_name": display_name(model)} for model in harness_codex],
+            "models": [{"model": model, "display_name": display_name(model)} for model in all_models],
+            "harnesses": {"HARNESS_CLAUDE": harness_claude, "HARNESS_CODEX": harness_codex},
         },
         # Rendered into the image-owned agent-instruction template; deployments may use
         # different service names.

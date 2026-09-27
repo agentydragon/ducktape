@@ -63,7 +63,13 @@ async function render(
   vi.spyOn(api, "GET").mockImplementation(async (path) => {
     const data =
       path === "/models"
-        ? { HARNESS_CLAUDE: [{ model: "test-claude", display_name: "Test Claude" }], HARNESS_CODEX: codexModels }
+        ? {
+            models: [{ model: "test-claude", display_name: "Test Claude" }, ...codexModels],
+            harnesses: {
+              HARNESS_CLAUDE: ["test-claude"],
+              HARNESS_CODEX: codexModels.map((option) => option.model),
+            },
+          }
         : path === "/presets"
           ? [preset]
           : path === "/sandboxes/templates"

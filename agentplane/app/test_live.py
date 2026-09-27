@@ -26,7 +26,7 @@ from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.api import ModelOption, create_app
+from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import Replica, stored_login
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
@@ -77,10 +77,13 @@ from util.net import pick_free_port
 # gazelle:include_dep @pypi//httpx
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
-MODELS = {
-    Harness.CLAUDE: [ModelOption(model="test-claude-model", display_name="Test Claude Model")],
-    Harness.CODEX: [ModelOption(model="test-codex-model", display_name="Test Codex Model")],
-}
+MODELS = ModelCatalog(
+    models=[
+        ModelOption(model="test-claude-model", display_name="Test Claude Model"),
+        ModelOption(model="test-codex-model", display_name="Test Codex Model"),
+    ],
+    harnesses={Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]},
+)
 
 
 @pytest.fixture

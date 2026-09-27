@@ -16,7 +16,7 @@ import httpx2
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Path, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from agentplane.action_service.catalog import ActionGroupView
 from agentplane.action_service.client import OperatorActionServiceClient
@@ -102,15 +102,35 @@ class ModelOption(BaseModel):
     display_name: str = Field(description='Short human name for the session form, e.g. "Sonnet 5".')
 
 
-# The models each agent harness may be opened with: the app's configuration, offered to the session form.
-# A thread carries its harness and model; a sandbox is a Pod and carries neither.
-ModelCatalog = dict[Harness, list[ModelOption]]
+class ModelCatalog(BaseModel):
+    """The app's configuration: every model it can open a session with, and which harnesses
+    accept it. A thread carries its harness and model; a sandbox is a Pod and carries neither.
+
+    `models` holds each model's metadata once; `harnesses` references it by `model` id, so a
+    model two harnesses both accept (e.g. a local Ollama route) names its display name only once.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    models: list[ModelOption]
+    harnesses: dict[Harness, list[str]]
+
+    @model_validator(mode="after")
+    def _check_consistency(self) -> ModelCatalog:
+        ids = [option.model for option in self.models]
+        if len(ids) != len(set(ids)):
+            raise ValueError(f"ModelCatalog.models has duplicate model ids: {ids}")
+        known = set(ids)
+        for harness, referenced in self.harnesses.items():
+            if unknown := [model for model in referenced if model not in known]:
+                raise ValueError(f"{harness} references models outside ModelCatalog.models: {unknown}")
+        return self
 
 
 def _models(request: Request) -> ModelCatalog:
     models = request.app.state.models
-    if not isinstance(models, dict):
-        raise TypeError(f"app.state.models is {type(models).__name__}, not a dict")
+    if not isinstance(models, ModelCatalog):
+        raise TypeError(f"app.state.models is {type(models).__name__}, not a ModelCatalog")
     return models
 
 
@@ -708,8 +728,7 @@ async def thread_command(
     if thread is None:
         raise ThreadNotFoundError(thread_id)
     if command.HasField("change_model") and (
-        not command.change_model.model
-        or command.change_model.model not in {option.model for option in catalog[thread.harness]}
+        not command.change_model.model or command.change_model.model not in catalog.harnesses[thread.harness]
     ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="model is incompatible with this thread's harness"
@@ -874,11 +893,11 @@ def create_app(
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
     and an app given neither answers 401 to everything but /healthz."""
-    if set(catalog) != set(Harness) or not all(catalog.values()):
+    if set(catalog.harnesses) != set(Harness) or not all(catalog.harnesses.values()):
         raise ValueError(f"the model catalog needs a non-empty list for every harness: {catalog=}")
     configured_presets = presets or PresetCatalog()
     for name, preset in configured_presets.threads.items():
-        if preset.model not in {option.model for option in catalog[preset.harness]}:
+        if preset.model not in catalog.harnesses[preset.harness]:
             raise ValueError(f"ThreadPreset {name!r} names model {preset.model!r} outside the configured catalog")
     app = FastAPI(title="Agentplane", version="0")
     app.state.inventory = inventory

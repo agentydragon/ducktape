@@ -50,8 +50,8 @@ async def test_ollama_tool_call(client: Client, sandbox: Sandboxes, harness: pro
     case_id = _id((harness, route))
     evidence: dict[str, object] = {"case": case_id, "route": route, "status": "started"}
     try:
-        offered = (await client.models())[Harness(protocol_pb2.Harness.Name(harness))]
-        assert route in {option.model for option in offered}, f"route absent from offered models for {case_id}"
+        offered = (await client.models()).harnesses[Harness(protocol_pb2.Harness.Name(harness))]
+        assert route in offered, f"route absent from offered models for {case_id}"
         view = await sandbox("accept-ollama-smoke")
         evidence["sandbox"] = view.name
         agent = await Agent.open(client, sandbox=view.name, harness=harness, model=route)

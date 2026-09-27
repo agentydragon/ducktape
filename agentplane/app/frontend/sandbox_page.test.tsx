@@ -77,8 +77,8 @@ async function render(
     if (path === "/models") {
       return Promise.resolve(
         Response.json({
-          HARNESS_CLAUDE: [{ model: "test-model", display_name: "Test Model" }],
-          HARNESS_CODEX: [],
+          models: [{ model: "test-model", display_name: "Test Model" }],
+          harnesses: { HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] },
         })
       );
     }

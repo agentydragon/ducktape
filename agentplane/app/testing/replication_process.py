@@ -37,7 +37,7 @@ from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.api import ModelOption, create_app
+from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -283,13 +283,13 @@ async def _serve(
             SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core),
             bridge,
             store,
-            {
-                harness: [
+            ModelCatalog(
+                models=[
                     ModelOption(model="test-model-before", display_name="Test Model Before"),
                     ModelOption(model="test-model-after", display_name="Test Model After"),
-                ]
-                for harness in Harness
-            },
+                ],
+                harnesses={harness: ["test-model-before", "test-model-after"] for harness in Harness},
+            ),
             EgressInventory(namespace=NAMESPACE, custom_objects=custom, default_policies=[]),
             DecisionsClient(decisions_http),
             index,

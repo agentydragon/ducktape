@@ -25,6 +25,7 @@ import {
   displayableError,
   findThread,
   listSessions,
+  modelsForHarness,
   openSession,
   RunnerUnavailableError,
   type Condition,
@@ -230,7 +231,7 @@ export function SandboxPage({
         setError(displayableError(failure));
         return;
       }
-      const offered = data?.[harness] ?? [];
+      const offered = data ? modelsForHarness(data, harness) : [];
       setModels(offered);
       setModel((current) =>
         current && offered.some((option) => option.model === current) ? current : (offered[0]?.model ?? null)

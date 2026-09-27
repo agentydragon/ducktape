@@ -45,6 +45,7 @@ import {
   displayableError,
   getThread,
   models,
+  modelsForHarness,
   type EvidencePage,
   type ModelOption,
   type NativeFramePage,
@@ -1160,7 +1161,7 @@ function ProjectedSessionBody({
     let active = true;
     void models().then(
       (catalog) => {
-        if (active) setModelOptions(catalog[thread.harness] ?? []);
+        if (active) setModelOptions(modelsForHarness(catalog, thread.harness));
       },
       (reason: unknown) => {
         if (active) setModelError(displayableError(reason));

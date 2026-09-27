@@ -24,6 +24,7 @@ import {
   api,
   displayableError,
   models,
+  modelsForHarness,
   type Condition,
   type ModelCatalog,
   type NewSandbox,
@@ -101,7 +102,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [thread, setThread] = useState<ThreadDefaults>(EMPTY_THREAD);
   const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
-  const modelOptions = thread.harness ? (modelCatalog?.[thread.harness] ?? []) : [];
+  const modelOptions = thread.harness && modelCatalog ? modelsForHarness(modelCatalog, thread.harness) : [];
   // The namespace's policies; ticking some grants them to this sandbox alone.
   const [policies, setPolicies] = useState<string[]>([]);
   const [templates, setTemplates] = useState<string[]>([]);
@@ -163,7 +164,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     if (!modelCatalog) return;
     setThread((current) => {
       if (!current.harness) return current;
-      const offered = modelCatalog[current.harness];
+      const offered = modelsForHarness(modelCatalog, current.harness);
       if (current.model && offered.some((option) => option.model === current.model)) return current;
       return { ...current, model: offered[0]?.model ?? null };
     });
