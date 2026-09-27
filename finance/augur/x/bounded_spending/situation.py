@@ -8,7 +8,7 @@ the Trinity experiment.
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import rate_to_ppb
 from finance.augur.sim.ids import AssetId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.world import World
 from finance.augur.study.trinity.replay import (
@@ -33,9 +33,7 @@ def compose(case: Situation, rollout_id: int, *, equity_share: float) -> World:
     world = World(
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
-        income_sources=(ORDINARY_INCOME, InterestIncome(issuer_jurisdiction_id=None))
-        if holds_bonds
-        else (ORDINARY_INCOME,),
+        income_sources=(ORDINARY_INCOME, InterestIncome(character=Taxable())) if holds_bonds else (ORDINARY_INCOME,),
     )
     for agent_id in (RETIREE, WORLD):
         world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
@@ -46,6 +44,6 @@ def compose(case: Situation, rollout_id: int, *, equity_share: float) -> World:
             holding_account_id=BROKERAGE,
             asset_id=AssetId(BONDS),
             to_account_id=CHECKING,
-            tax_character={InterestIncome(): rate_to_ppb(1)},
+            tax_character={InterestIncome(character=Taxable()): rate_to_ppb(1)},
         )
     return world

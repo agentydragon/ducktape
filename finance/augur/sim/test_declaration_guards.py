@@ -28,8 +28,15 @@ from finance.augur.sim.ids import (
     PortfolioId,
     PropertyId,
 )
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferIncomeCategory
-from finance.augur.sim.jurisdictions import JurisdictionLevel
+from finance.augur.sim.income import (
+    ORDINARY_INCOME,
+    InterestCharacter,
+    InterestIncome,
+    Municipal,
+    Taxable,
+    TransferIncomeCategory,
+    Treasury,
+)
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAmount,
@@ -60,7 +67,6 @@ STOCK = AssetId("test-stock")
 LOT = LotId("test-lot")
 SCALE = 1000
 HORIZON = 2
-TAX_HOME = JurisdictionId("test-jurisdiction")
 LOCATION = PreparedLocation(
     location_id=LocationId("test-market"),
     display_name="Test market",
@@ -68,8 +74,9 @@ LOCATION = PreparedLocation(
     annual_property_tax_rate_ppb=0,
     annual_special_assessment=0,
 )
-# A payout that is all interest from a non-governmental issuer.
-WHOLLY_INTEREST: Mapping[TransferIncomeCategory, int] = {InterestIncome(): 1_000_000_000}
+TAXABLE = Taxable()
+# A payout that is all taxable interest.
+WHOLLY_INTEREST: Mapping[TransferIncomeCategory, int] = {InterestIncome(character=TAXABLE): 1_000_000_000}
 FLAT = TlhAssumptions(
     peak_annual_yield=0, floor_annual_yield=0, maturity_decay_exponent=1, drawdown_sensitivity=0, short_term_fraction=1
 )
@@ -92,8 +99,7 @@ def composed(*series: PreparedSeries, horizon_months: int = HORIZON) -> World:
     world = World(
         MarketPath(series, 0, rollout_count=1),
         horizon_months=horizon_months,
-        income_sources=(ORDINARY_INCOME, InterestIncome(issuer_jurisdiction_id=None)),
-        jurisdictions={TAX_HOME: JurisdictionLevel.STATE},
+        income_sources=(ORDINARY_INCOME, InterestIncome(character=Taxable())),
     )
     for account in (ref(HOLDER), ref(HOLDER, BROKERAGE), ref(COUNTERPARTY)):
         world.declare_account(account=account, opening_balance=0)
@@ -186,8 +192,7 @@ def test_a_pool_holds_one_opening_lot_per_purchase_month() -> None:
         lot(world, LotId("test-twin"))
 
 
-# A par bond paying a fixed semiannual coupon over two whole periods. Its issuer is
-# non-governmental: `None` is a real issuer state that no jurisdiction exempts, not a missing value.
+# A par bond paying a fixed semiannual coupon over two whole periods.
 COUPON = PreparedFixedAmount(amount=3)
 
 
@@ -195,7 +200,7 @@ def bond(
     world: World,
     *,
     account_id: AccountId = CHECKING,
-    issuer_jurisdiction_id: JurisdictionId | None = None,
+    character: InterestCharacter = TAXABLE,
     purchase_price: int = 100,
     coupon: PreparedFixedAmount | PreparedIndexedCoupon = COUPON,
     coupon_period_months: int = 6,
@@ -205,7 +210,7 @@ def bond(
         bond_id=BondId("test-bond"),
         agent_id=HOLDER,
         account_id=account_id,
-        issuer_jurisdiction_id=issuer_jurisdiction_id,
+        character=character,
         face_value=100,
         purchase_price=purchase_price,
         coupon=coupon,
@@ -223,7 +228,7 @@ def bond(
         (partial(bond, coupon_period_months=5), "invalid bond terms"),
         (partial(bond, maturity_month_index=-6), "invalid bond terms"),
         (partial(bond, coupon=PreparedIndexedCoupon(annual_rate_ppb=50_000_000)), "inflation"),
-        (partial(bond, issuer_jurisdiction_id=JurisdictionId("test-unknown")), "unknown issuer"),
+        (partial(bond, character=Municipal(state=JurisdictionId("test-state"))), "undeclared income source"),
         (partial(bond, account_id=AccountId("test-undeclared")), "unknown account"),
     ],
     ids=[
@@ -232,7 +237,7 @@ def bond(
         "part-period",
         "matures-at-purchase",
         "missing-index",
-        "unknown-issuer",
+        "undeclared-income",
         "unknown-account",
     ],
 )
@@ -320,13 +325,12 @@ def test_a_distribution_pays_whoever_holds_the_security_not_a_cash_account() -> 
 @pytest.mark.parametrize(
     ("tax_character", "match"),
     [
-        ({InterestIncome(): 400_000_000}, "tax character"),
-        ({InterestIncome(issuer_jurisdiction_id=JurisdictionId("test-unknown")): 1_000_000_000}, "unknown"),
-        ({InterestIncome(issuer_jurisdiction_id=TAX_HOME): 1_000_000_000}, "undeclared income"),
+        ({InterestIncome(character=Taxable()): 400_000_000}, "tax character"),
+        ({InterestIncome(character=Treasury()): 1_000_000_000}, "undeclared income"),
     ],
-    ids=["incomplete", "unknown-issuer", "undeclared-source"],
+    ids=["incomplete", "undeclared-source"],
 )
-def test_a_distribution_splits_its_tax_character_across_known_reported_issuers(
+def test_a_distribution_splits_its_whole_payout_across_declared_income_sources(
     tax_character: Mapping[TransferIncomeCategory, int], match: str
 ) -> None:
     with pytest.raises(ValueError, match=match):
@@ -390,7 +394,7 @@ def flow(
     ("invalid", "match"),
     [
         (partial(flow, from_account=ref(AgentId("test-stranger"))), "unknown declared account"),
-        (partial(flow, income_category=InterestIncome(issuer_jurisdiction_id=TAX_HOME)), "undeclared income source"),
+        (partial(flow, income_category=InterestIncome(character=Treasury())), "undeclared income source"),
         (partial(flow, schedule=Once(month=HORIZON)), "outside the horizon"),
         (partial(flow, schedule=Recurring(start_month=1, end_month=0)), "before start month"),
         (partial(flow, property_id=PropertyId("test-unbought")), "undeclared property"),

@@ -6,8 +6,16 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.ids import AgentId, JurisdictionId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, QualifiedDividendIncome
-from finance.augur.sim.jurisdictions import JurisdictionLevel
+from finance.augur.sim.income import (
+    ORDINARY_INCOME,
+    InterestCharacter,
+    InterestIncome,
+    Municipal,
+    QualifiedDividendIncome,
+    Taxable,
+    Treasury,
+)
+from finance.augur.sim.jurisdictions import InterestExemptions
 from finance.augur.sim.money import MAX_COUNT
 from finance.augur.sim.tax import (
     IncomeLedger,
@@ -32,8 +40,7 @@ NIIT = PreparedThresholdTax(rate_ppb=38_000_000, threshold=20_000_000)
 def federal() -> PreparedTaxRules:
     return PreparedTaxRules(
         jurisdiction_id=JurisdictionId("test_federal"),
-        exempt_interest_from_levels=(JurisdictionLevel.STATE,),
-        exempts_own_issue=False,
+        exempt_interest=InterestExemptions(treasury=False, municipal="all"),
         ordinary_brackets=(
             PreparedTaxBracket(1_160_000, 100_000_000),
             PreparedTaxBracket(4_715_000, 120_000_000),
@@ -101,7 +108,7 @@ def test_carryforward_offsets_short_before_long() -> None:
 
 
 def test_income_retains_exempt_sources_and_resets_only_one_taxpayer(federal: PreparedTaxRules) -> None:
-    state_coupon = InterestIncome(issuer_jurisdiction_id=JurisdictionId("test_state"))
+    state_coupon = InterestIncome(character=Municipal(state=JurisdictionId("test_state")))
     income = IncomeLedger([ORDINARY_INCOME, state_coupon])
     income.enroll(AgentId("test_household"))
     income.enroll(AgentId("test_other"))
@@ -111,13 +118,32 @@ def test_income_retains_exempt_sources_and_resets_only_one_taxpayer(federal: Pre
     income.deduct_from_ordinary(AgentId("test_household"), 40)
     assert income.ordinary(AgentId("test_household")) == 60
     assert income.by_source[AgentId("test_household"), state_coupon] == 20
-    assert not taxes_interest_from(federal, JurisdictionId("test_state"), JurisdictionLevel.STATE)
-    assert taxes_interest_from(federal, None, None)
-    assert taxes_interest_from(federal, JurisdictionId("test_unknown"), None)
     income.reset(AgentId("test_household"))
     assert income.ordinary(AgentId("test_household")) == 0
     assert income.by_source[AgentId("test_household"), state_coupon] == 0
     assert income.ordinary(AgentId("test_other")) == 500
+
+
+EVERY_MUNI = InterestExemptions(treasury=False, municipal="all")
+TREASURIES_AND_HOME_MUNIS = InterestExemptions(treasury=True, municipal={JurisdictionId("test_home")})
+
+
+@pytest.mark.parametrize(
+    ("exemptions", "character", "taxed"),
+    [
+        (EVERY_MUNI, Treasury(), True),
+        (EVERY_MUNI, Municipal(state=JurisdictionId("test_away")), False),
+        (EVERY_MUNI, Taxable(), True),
+        (TREASURIES_AND_HOME_MUNIS, Treasury(), False),
+        (TREASURIES_AND_HOME_MUNIS, Municipal(state=JurisdictionId("test_home")), False),
+        (TREASURIES_AND_HOME_MUNIS, Municipal(state=JurisdictionId("test_away")), True),
+        (TREASURIES_AND_HOME_MUNIS, Taxable(), True),
+    ],
+)
+def test_a_jurisdiction_taxes_every_interest_character_it_does_not_exempt(
+    federal: PreparedTaxRules, exemptions: InterestExemptions, character: InterestCharacter, taxed: bool
+) -> None:
+    assert taxes_interest_from(replace(federal, exempt_interest=exemptions), character) == taxed
 
 
 def test_untaxed_recipients_do_not_acquire_income_rows() -> None:
@@ -170,7 +196,7 @@ def test_niit_is_a_separate_component_of_the_total(federal: PreparedTaxRules) ->
 
 
 def test_interest_and_qualified_dividends_are_investment_income() -> None:
-    assert is_investment_income(InterestIncome(issuer_jurisdiction_id=JurisdictionId("test_state")))
+    assert is_investment_income(InterestIncome(character=Municipal(state=JurisdictionId("test_state"))))
     assert is_investment_income(QualifiedDividendIncome())
     assert not is_investment_income(ORDINARY_INCOME)
 
@@ -189,8 +215,7 @@ def test_interest_and_qualified_dividends_are_investment_income() -> None:
 def test_state_surtax_on_taxable_income_above_a_million(facts: TaxFacts, surtax: int, total: int) -> None:
     rules = PreparedTaxRules(
         jurisdiction_id=JurisdictionId("test_state"),
-        exempt_interest_from_levels=(JurisdictionLevel.FEDERAL,),
-        exempts_own_issue=True,
+        exempt_interest=InterestExemptions(treasury=True, municipal={JurisdictionId("test_state")}),
         ordinary_brackets=(PreparedTaxBracket(None, 100_000_000),),
         long_term_capital_gain_brackets=(),
         standard_deduction=536_300,

@@ -132,7 +132,7 @@ def seen() -> list[Observation]:
 def test_the_years_income_accumulates_from_the_months_already_opened(seen: list[Observation]) -> None:
     # Wages move when the month opens, before its mail is posted.
     assert [records(o).income for o in seen[:12]] == [
-        (("ordinary", HOUSEHOLD_WAGE * (month + 1)), ("interest:corporate", 0)) for month in range(12)
+        (("ordinary", HOUSEHOLD_WAGE * (month + 1)), ("interest:taxable", 0)) for month in range(12)
     ]
 
 
@@ -162,7 +162,7 @@ def test_the_close_resets_the_year_and_posts_the_assessment_until_the_true_up_se
         first_month.capital_loss_carryforward,
         first_month.liabilities,
     ) == (
-        (("ordinary", HOUSEHOLD_WAGE), ("interest:corporate", 0)),
+        (("ordinary", HOUSEHOLD_WAGE), ("interest:taxable", 0)),
         0,
         0,
         600_000,

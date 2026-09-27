@@ -8,8 +8,8 @@ from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, BondCashflowOutcome, BondState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
-from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId
-from finance.augur.sim.income import InterestIncome
+from finance.augur.sim.ids import AccountId, AgentId, BondId
+from finance.augur.sim.income import InterestCharacter, InterestIncome
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.observations import FixedCoupon, HeldBond, IndexedCoupon
@@ -23,7 +23,7 @@ class Bond:
     bond_id: BondId
     agent_id: AgentId
     account_id: AccountId
-    issuer_jurisdiction_id: JurisdictionId | None
+    character: InterestCharacter
     face_value: int
     purchase_price: int
     coupon: PreparedFixedAmount | PreparedIndexedCoupon
@@ -83,7 +83,7 @@ class HeldBonds:
                 HeldBond(
                     bond_id=bond.bond_id,
                     account_id=bond.account_id,
-                    issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
+                    character=bond.character,
                     face_value=bond.face_value,
                     purchase_price=bond.purchase_price,
                     coupon=coupon,
@@ -134,9 +134,7 @@ class HeldBonds:
             income = checked_count(coupon + accretion, "money addition")
             tax = deepcopy(accounting.tax)
             if income:
-                tax.income.accrue(
-                    bond.agent_id, InterestIncome(issuer_jurisdiction_id=bond.issuer_jurisdiction_id), income
-                )
+                tax.income.accrue(bond.agent_id, InterestIncome(character=bond.character), income)
             changed = coupon != 0 or accretion != 0 or redemption != 0
             cause = f"bond:{bond.bond_id}:m{month}"
             if paid:
@@ -156,7 +154,7 @@ class HeldBonds:
                         bond_id=bond.bond_id,
                         agent_id=bond.agent_id,
                         account_id=bond.account_id,
-                        issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
+                        character=bond.character,
                         coupon=coupon,
                         accretion=accretion,
                         redemption=redemption,

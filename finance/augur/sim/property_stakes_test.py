@@ -209,7 +209,6 @@ def compose(case: Situation, rollout_id: int) -> World:
         MarketPath(series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions={id_: rules.level for id_, rules in jurisdictions.items()},
     )
     for opened, balance in case.accounts:
         world.declare_account(account=opened, opening_balance=balance)

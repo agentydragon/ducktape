@@ -132,9 +132,6 @@ def _compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions={
-            jurisdiction_id: jurisdiction.level for jurisdiction_id, jurisdiction in sorted(jurisdictions.items())
-        },
     )
     for agent_id in (ALICE, *(("irs",) if case.tax_profiles else ())):
         world.declare_account(

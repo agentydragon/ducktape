@@ -29,20 +29,15 @@ from finance.augur.model.series import (
 )
 from finance.augur.product.funding import Policy
 from finance.augur.product.holdings import opening_holdings
-from finance.augur.product.scenarios import (
-    PRIMARY_ACCOUNT_ID,
-    TAX_AUTHORITY_AGENT_ID,
-    Situation,
-    build_situation,
-    jurisdiction_levels,
-)
+from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, TAX_AUTHORITY_AGENT_ID, Situation, build_situation
 from finance.augur.product.wire import FundingPolicy, ScenarioKey, SecuritySleeveWeight, SleeveWeight, SpendIndex
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId
+from finance.augur.sim.income import Taxable
 from finance.augur.sim.jurisdictions import (
+    InterestExemptions,
     Jurisdiction,
-    JurisdictionLevel,
     StatutoryAmount,
     StatutoryIndexation,
     TaxBracket,
@@ -157,7 +152,6 @@ def run(
         ),
         horizon_months=situation.horizon_months,
         income_sources=situation.income_sources,
-        jurisdictions=jurisdiction_levels(jurisdictions, bonds=(), distributions=situation.distributions),
     )
     for account, balance in situation.accounts:
         world.declare_account(account=account, opening_balance=balance)
@@ -378,7 +372,7 @@ def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim()
     config = FundingPolicy(sleeve_weights=(SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),))
     rule = Jurisdiction(
         jurisdiction_id=JurisdictionId("test-flat"),
-        level=JurisdictionLevel.FEDERAL,
+        exempt_interest=InterestExemptions(treasury=False, municipal=set()),
         ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
         ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
         standard_deduction={FilingStatus.SINGLE: Decimal(0)},
@@ -400,7 +394,9 @@ def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim()
         horizon=13,
         lots=(lot(LotId("fund"), BROKERAGE, FIRST, Decimal(20)),),
         distributions=(
-            SecurityDistributionConfig(symbol=FIRST.symbol, tax_character=(DistributionTaxShareConfig(fraction=1.0),)),
+            SecurityDistributionConfig(
+                symbol=FIRST.symbol, tax_character=(DistributionTaxShareConfig(fraction=1.0, character=Taxable()),)
+            ),
         ),
     )
     profile = TaxProfile(

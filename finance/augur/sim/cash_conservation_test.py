@@ -321,7 +321,6 @@ def property_sale_world() -> World:
         ),
         horizon_months=PROPERTY_HORIZON,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions={FEDERAL: jurisdictions[FEDERAL].level},
     )
     for agent_id, balance in (
         (ALICE, Decimal(1_000_000)),

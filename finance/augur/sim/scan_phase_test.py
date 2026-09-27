@@ -73,18 +73,10 @@ def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, 
     return ref(agent_id), money(balance)
 
 
-def world_for(
-    *accounts: tuple[AccountRef, int],
-    horizon_months: int,
-    jurisdiction_ids: tuple[JurisdictionId, ...] = (),
-    series: tuple[PreparedSeries, ...] = (),
-) -> World:
-    """An empty world holding the declared cash accounts and the tax vocabulary its taxpayers share."""
+def world_for(*accounts: tuple[AccountRef, int], horizon_months: int, series: tuple[PreparedSeries, ...] = ()) -> World:
+    """An empty world holding the declared cash accounts."""
     world = World(
-        MarketPath(series, 0, rollout_count=1),
-        horizon_months=horizon_months,
-        income_sources=(ORDINARY_INCOME,),
-        jurisdictions={id_: load_jurisdiction(id_).level for id_ in jurisdiction_ids},
+        MarketPath(series, 0, rollout_count=1), horizon_months=horizon_months, income_sources=(ORDINARY_INCOME,)
     )
     for opened, balance in accounts:
         world.declare_account(account=opened, opening_balance=balance)
@@ -232,7 +224,7 @@ def test_security_sale_books_proceeds_and_a_long_term_gain() -> None:
         horizon_months=horizon,
         currency=USD,
     )
-    world = world_for(account(ALICE), account(IRS), horizon_months=horizon, jurisdiction_ids=(FEDERAL,), series=series)
+    world = world_for(account(ALICE), account(IRS), horizon_months=horizon, series=series)
     taxed_by(world, FEDERAL)
     world.declare_pool(
         agent_id=ALICE, account_id=AccountId("brokerage"), asset_id=AssetId(SP500.symbol), quantity_scale=scale
@@ -380,13 +372,7 @@ def test_year_end_tax_accrues_and_the_following_year_settles_it() -> None:
     # accrues a federal + CA liability, and the following year's estimated-tax and true-up claims
     # settle it.
     horizon = 36
-    world = world_for(
-        account(AgentId("payroll")),
-        account(ALICE),
-        account(IRS),
-        horizon_months=horizon,
-        jurisdiction_ids=(FEDERAL, CALIFORNIA),
-    )
+    world = world_for(account(AgentId("payroll")), account(ALICE), account(IRS), horizon_months=horizon)
     world.declare_flow(
         schedule=Recurring(start_month=0, end_month=35),
         cause_id="alice_paycheck",

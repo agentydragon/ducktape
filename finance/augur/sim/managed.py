@@ -1,6 +1,6 @@
 """Settle the Python TLH component's cash and tax effects, never its private cohorts."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Literal
@@ -12,9 +12,8 @@ from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, DistributionO
 from finance.augur.sim.distributions import Distribution
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import gain_account
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, PortfolioId
-from finance.augur.sim.income import InterestIncome, TransferIncomeCategory, income_source_wire_id
-from finance.augur.sim.jurisdictions import JurisdictionLevel
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, PortfolioId
+from finance.augur.sim.income import TransferIncomeCategory, income_source_wire_id
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.observations import TlhPortfolioObservation
 
@@ -88,13 +87,8 @@ class TlhStatement(Statement):
 
 
 class ManagedPortfolios:
-    def __init__(
-        self,
-        income_sources: Sequence[TransferIncomeCategory],
-        jurisdictions: Mapping[JurisdictionId, JurisdictionLevel],
-    ) -> None:
+    def __init__(self, income_sources: Sequence[TransferIncomeCategory]) -> None:
         self.income_sources = income_sources
-        self.jurisdictions = jurisdictions
         self.specs: dict[PortfolioId, Portfolio] = {}
         self.marks: dict[PortfolioId, TlhPortfolioObservation] = {}
         # This month's outcomes, cleared by `begin_month`; marks are the state.
@@ -188,18 +182,8 @@ class ManagedPortfolios:
             operation = "contribution" if isinstance(action, Contribute) else "redemption"
         row = effects.observation
         self.validate_observation(row)
-        for credit in effects.income:
-            source = credit.income_category
-            if (
-                credit.amount < 0
-                or source not in self.income_sources
-                or (
-                    isinstance(source, InterestIncome)
-                    and source.issuer_jurisdiction_id is not None
-                    and source.issuer_jurisdiction_id not in self.jurisdictions
-                )
-            ):
-                raise ValueError("component income needs a declared income source and nonnegative amount")
+        if any(credit.amount < 0 or credit.income_category not in self.income_sources for credit in effects.income):
+            raise ValueError("component income needs a declared income source and nonnegative amount")
         if not cause or row.owner_agent_id != actor:
             raise ValueError("component effects need a cause and the component's owner")
         if row.portfolio_id not in self.marks:

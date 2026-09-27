@@ -85,7 +85,6 @@ def _compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions={FEDERAL: federal.level},
     )
     openings = [(ALICE, Decimal(0)), (IRS, Decimal(0))]
     if case.wages:

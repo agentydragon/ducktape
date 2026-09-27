@@ -106,9 +106,6 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
             MarketPath(series, rollout_id, rollout_count=rollout_count),
             horizon_months=HORIZON_MONTHS,
             income_sources=(ORDINARY_INCOME,),
-            jurisdictions={
-                jurisdiction_id: jurisdiction.level for jurisdiction_id, jurisdiction in jurisdictions.items()
-            },
         )
         for agent_id in (AGENT, IRS):
             world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)

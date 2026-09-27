@@ -2,7 +2,7 @@
 
 import json
 import subprocess
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from decimal import Decimal
 from pathlib import Path
 
@@ -20,8 +20,8 @@ from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import (
+    InterestExemptions,
     Jurisdiction,
-    JurisdictionLevel,
     StatutoryAmount,
     StatutoryIndexation,
     TaxBracket,
@@ -52,7 +52,6 @@ from util.bazel.runfiles import get_required_path
 
 RETIREE = AgentId("retiree")
 WORLD = AgentId("world")
-UNTAXED: Mapping[JurisdictionId, JurisdictionLevel] = {}
 
 
 def _series(paths: ExternalSeriesContext, *, rollout_count: int, horizon_months: int) -> tuple[PreparedSeries, ...]:
@@ -60,20 +59,13 @@ def _series(paths: ExternalSeriesContext, *, rollout_count: int, horizon_months:
 
 
 def _books(
-    series: tuple[PreparedSeries, ...],
-    rollout_id: int,
-    *,
-    rollout_count: int,
-    horizon_months: int,
-    retiree_cash: int,
-    jurisdictions: Mapping[JurisdictionId, JurisdictionLevel] = UNTAXED,
+    series: tuple[PreparedSeries, ...], rollout_id: int, *, rollout_count: int, horizon_months: int, retiree_cash: int
 ) -> World:
     """A retiree with `retiree_cash` quanta in checking and a counterparty; nothing else declared."""
     world = World(
         MarketPath(series, rollout_id, rollout_count=rollout_count),
         horizon_months=horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=jurisdictions,
     )
     for name, balance in ((RETIREE, retiree_cash), (WORLD, 0)):
         world.declare_account(
@@ -251,7 +243,7 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
     stock = SecurityKey(symbol=SecuritySymbol("synthetic-tax-stock"))
     rules = Jurisdiction(
         jurisdiction_id=JurisdictionId("synthetic-flat-tax"),
-        level=JurisdictionLevel.FEDERAL,
+        exempt_interest=InterestExemptions(treasury=False, municipal=set()),
         ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
         ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
         standard_deduction={FilingStatus.SINGLE: Decimal(0)},
@@ -287,14 +279,7 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
     scale = quantity_scale_for_asset(stock)
 
     def compose(rollout_id: int) -> World:
-        world = _books(
-            series,
-            rollout_id,
-            rollout_count=1,
-            horizon_months=13,
-            retiree_cash=0,
-            jurisdictions={rules.jurisdiction_id: rules.level},
-        )
+        world = _books(series, rollout_id, rollout_count=1, horizon_months=13, retiree_cash=0)
         world.track(TaxAuthority(profile, indexation=FixedNominalLaw()))
         world.declare_pool(
             agent_id=RETIREE, account_id=AccountId("brokerage"), asset_id=AssetId(stock.symbol), quantity_scale=scale

@@ -153,10 +153,7 @@ def holder(
 def compose(case: Holder, channels: Sequence[PreparedSeries]) -> World:
     jurisdictions = {FEDERAL: load_jurisdiction(FEDERAL)} if case.taxed else {}
     world = World(
-        MarketPath(channels, 0, rollout_count=1),
-        horizon_months=case.horizon_months,
-        income_sources=(ORDINARY_INCOME,),
-        jurisdictions={id_: jurisdiction.level for id_, jurisdiction in jurisdictions.items()},
+        MarketPath(channels, 0, rollout_count=1), horizon_months=case.horizon_months, income_sources=(ORDINARY_INCOME,)
     )
     for opened, balance in case.accounts:
         world.declare_account(account=opened, opening_balance=balance)

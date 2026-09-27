@@ -1,6 +1,6 @@
 """The authority a taxpayer's profile names: estimated instalments, the year's assessment at its close, a true-up."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 
 from finance.augur.sim.accounting import Accounting, TaxLiabilityStatement
 from finance.augur.sim.actor import Actor, MonthOpened
@@ -9,7 +9,6 @@ from finance.augur.sim.claims import Demand, TaxPayment, TaxTrueUp
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AccountId, JurisdictionId
 from finance.augur.sim.income import OrdinaryIncome, QualifiedDividendIncome
-from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.market_path import MarketStatement
 from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
 from finance.augur.sim.mortgage import Mortgage
@@ -142,17 +141,8 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement | MarketStatement, 
             )
         return assessments
 
-    def assessments(
-        self,
-        book: TaxBook,
-        month: int,
-        mortgages: Sequence[Mortgage],
-        jurisdictions: Mapping[JurisdictionId, JurisdictionLevel],
-    ) -> list[TaxAccrual]:
-        """Quote the year's close, one row per profile jurisdiction, without mutating the book.
-
-        `jurisdictions` is the world's vocabulary: each jurisdiction's level says whose interest a rule exempts.
-        """
+    def assessments(self, book: TaxBook, month: int, mortgages: Sequence[Mortgage]) -> list[TaxAccrual]:
+        """Quote the year's close, one row per profile jurisdiction, without mutating the book."""
         profile = self.profile
         agent = profile.agent_id
         income = book.income.copy()
@@ -169,11 +159,7 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement | MarketStatement, 
                     continue
                 if not (
                     isinstance(source, OrdinaryIncome | QualifiedDividendIncome)
-                    or taxes_interest_from(
-                        rules,
-                        source.issuer_jurisdiction_id,
-                        jurisdictions.get(source.issuer_jurisdiction_id) if source.issuer_jurisdiction_id else None,
-                    )
+                    or taxes_interest_from(rules, source.character)
                 ):
                     continue
                 if isinstance(source, QualifiedDividendIncome):
@@ -254,20 +240,14 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement | MarketStatement, 
             for rules, facts, assessment in annual
         ]
 
-    def close_month(
-        self,
-        accounting: Accounting,
-        month: int,
-        mortgages: Sequence[Mortgage],
-        jurisdictions: Mapping[JurisdictionId, JurisdictionLevel],
-    ) -> None:
+    def close_month(self, accounting: Accounting, month: int, mortgages: Sequence[Mortgage]) -> None:
         """At the tax year's last month, post the assessment as expense against liability and reset the year.
 
         `mortgages` are the contracts whose interest paid this year the deductions read.
         """
         if month % 12 != 11:
             return
-        rows = self.assessments(accounting.tax, month, mortgages, jurisdictions)
+        rows = self.assessments(accounting.tax, month, mortgages)
         # One group, so a bad jurisdiction does not commit the jurisdictions assessed before it.
         accounting.apply_entries(
             [

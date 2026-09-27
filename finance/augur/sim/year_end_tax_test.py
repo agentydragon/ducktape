@@ -25,7 +25,14 @@ from finance.augur.sim.fixed_point import (
     round_currency_amount,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferIncomeCategory
+from finance.augur.sim.income import (
+    ORDINARY_INCOME,
+    InterestCharacter,
+    InterestIncome,
+    Municipal,
+    Taxable,
+    TransferIncomeCategory,
+)
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
@@ -109,9 +116,9 @@ def monthly(
     return Monthly(cause_id, payer, payee, money(amount), ORDINARY_INCOME if income else None, end_month)
 
 
-def monthly_interest(cause_id: str, issuer: JurisdictionId | None, amount: Decimal) -> Monthly:
-    """A year of monthly coupons from `issuer`'s debt (`None`: a corporate issuer) into Alice's checking."""
-    return Monthly(cause_id, PAYROLL, ALICE, money(amount), InterestIncome(issuer_jurisdiction_id=issuer), 11)
+def monthly_interest(cause_id: str, character: InterestCharacter, amount: Decimal) -> Monthly:
+    """A year of monthly coupons of `character` into Alice's checking."""
+    return Monthly(cause_id, PAYROLL, ALICE, money(amount), InterestIncome(character=character), 11)
 
 
 def sell_into_cash(asset: SecurityKey) -> CashBandHousehold:
@@ -183,7 +190,6 @@ def compose(case: Situation, indexation: TaxIndexation) -> World:
                 ]
             )
         ),
-        jurisdictions={id_: rules.level for id_, rules in jurisdictions.items()},
     )
     for opened in case.accounts:
         world.declare_account(
@@ -414,8 +420,8 @@ def test_niit_taxes_the_magi_excess_but_not_muni_interest_and_settles_in_the_tru
             accounts=(Checking(ALICE), Checking(PAYROLL), Checking(IRS)),
             recurring_transfers=(
                 monthly("alice_paycheck", PAYROLL, ALICE, Decimal(15_000), income=True),
-                monthly_interest("alice_corporate_coupon", None, Decimal(2_500)),
-                monthly_interest("alice_muni_coupon", CALIFORNIA, Decimal(4_000)),
+                monthly_interest("alice_corporate_coupon", Taxable(), Decimal(2_500)),
+                monthly_interest("alice_muni_coupon", Municipal(state=CALIFORNIA), Decimal(4_000)),
             ),
         ),
         indexation,

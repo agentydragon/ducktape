@@ -16,6 +16,7 @@ from finance.augur.api.portfolio import (
 )
 from finance.augur.model.series import SecuritySymbol
 from finance.augur.sim.ids import AccountId, AgentId, BondId, LotId
+from finance.augur.sim.income import Taxable
 
 BROKERAGE = AccountId("brokerage")
 TAXABLE_BROKERAGE = AccountId("taxable_brokerage")
@@ -214,7 +215,7 @@ def _bond_portfolio(**overrides: object) -> PortfolioConfig:
     bond = {
         "bond_id": "tips_rung",
         "account_id": "brokerage",
-        "issuer_jurisdiction_id": "federal_us",
+        "character": {"kind": "treasury"},
         "face_value": 100_000,
         "purchase_price": 100_000,
         "annual_coupon_rate": 0.02,
@@ -236,6 +237,7 @@ def test_a_bond_on_an_unknown_account_is_rejected() -> None:
                 BondHoldingConfig(
                     bond_id=BondId("orphan"),
                     account_id=AccountId("nowhere"),
+                    character=Taxable(),
                     face_value=Decimal(1_000),
                     purchase_price=Decimal(1_000),
                     annual_coupon_rate=0.01,
@@ -251,6 +253,7 @@ def test_duplicate_bond_ids_are_rejected() -> None:
     bond = BondHoldingConfig(
         bond_id=BondId("rung"),
         account_id=BROKERAGE,
+        character=Taxable(),
         face_value=Decimal(1_000),
         purchase_price=Decimal(1_000),
         annual_coupon_rate=0.01,

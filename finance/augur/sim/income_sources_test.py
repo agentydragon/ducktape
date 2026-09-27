@@ -21,7 +21,14 @@ from finance.augur.sim.actions import DecisionActions, PayClaim
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferIncomeCategory, income_source_sort_key
+from finance.augur.sim.income import (
+    ORDINARY_INCOME,
+    InterestIncome,
+    Municipal,
+    TransferIncomeCategory,
+    Treasury,
+    income_source_sort_key,
+)
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
@@ -42,10 +49,10 @@ FILED_IN = (JurisdictionId("federal_us"), JurisdictionId("california"))
 
 # 31 USC 3124 bars a state from taxing interest on federal obligations, so this source is
 # federally taxable and exempt in California — the split the ledger has to keep. An in-state
-# muni is exempt at both levels: IRC 103 federally, own-issue in California.
-TREASURY = InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us"))
-MUNI = InterestIncome(issuer_jurisdiction_id=JurisdictionId("california"))
-TREASURY_SOURCE = "interest:federal_us"
+# muni is exempt at both levels: IRC 103 federally, and California exempts its own munis.
+TREASURY = InterestIncome(character=Treasury())
+MUNI = InterestIncome(character=Municipal(state=JurisdictionId("california")))
+TREASURY_SOURCE = "interest:treasury"
 ORDINARY_SOURCE = "ordinary"
 
 # Through December of the first year, so the year-end assessment has fired.
@@ -93,7 +100,6 @@ def compose(payments: tuple[Payment, ...]) -> World:
         income_sources=tuple(
             sorted({ORDINARY_INCOME, *(payment.source for payment in payments)}, key=income_source_sort_key)
         ),
-        jurisdictions={id_: jurisdictions[id_].level for id_ in sorted(jurisdictions)},
     )
     for agent_id, balance in (
         *((recipient, OPENING_CASH) for recipient in recipients),
@@ -247,9 +253,9 @@ def test_treasury_interest_is_federally_taxed_and_state_exempt() -> None:
 
 
 def test_in_state_muni_interest_is_exempt_everywhere() -> None:
-    """IRC 103 excludes it federally; California exempts its own issue. "In-state" is not
-    stored anywhere — it is `issuer == california`, decided by the jurisdiction reading
-    the row rather than by the instrument."""
+    """IRC 103 excludes it federally; California exempts its own munis. "In-state" is not
+    stored anywhere — it is California's rule for `Municipal(state=california)`, decided by
+    the jurisdiction reading the row rather than by the instrument."""
 
     tax = _tax_by_jurisdiction(run(Payment(AgentId("alice"), MUNI, ALICE_WAGES)))
 

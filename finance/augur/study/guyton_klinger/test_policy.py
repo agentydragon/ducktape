@@ -19,8 +19,7 @@ import pytest_bazel
 from finance.augur.sim.actions import Action, Buy, Consume, LotSale, PayClaim, Sell, Transfer
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AssetId, LotId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
-from finance.augur.sim.jurisdictions import JurisdictionLevel
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Treasury
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import Currency
 from finance.augur.sim.prepared import PreparedSeries
@@ -117,8 +116,7 @@ def world(paths: list[Path], rollout_id: int) -> World:
     result = World(
         MarketPath(series, rollout_id, rollout_count=len(paths)),
         horizon_months=12 * years,
-        income_sources=(ORDINARY_INCOME, InterestIncome(issuer_jurisdiction_id=FEDERAL)) if path.taxed else (),
-        jurisdictions={FEDERAL: JurisdictionLevel.FEDERAL, CALIFORNIA: JurisdictionLevel.STATE} if path.taxed else {},
+        income_sources=(ORDINARY_INCOME, InterestIncome(character=Treasury())) if path.taxed else (),
     )
     accounts = [
         AccountRef(agent_id=RETIREE, account_id=CHECKING),
@@ -159,7 +157,7 @@ def world(paths: list[Path], rollout_id: int) -> World:
             holding_account_id=BROKERAGE,
             asset_id=AssetId(Sleeve.BONDS),
             to_account_id=INCOME[Sleeve.BONDS],
-            tax_character={InterestIncome(issuer_jurisdiction_id=FEDERAL): 10**9},
+            tax_character={InterestIncome(character=Treasury()): 10**9},
         )
     lots = [
         (Sleeve.CASH, "cash", OPENING_UNITS[Sleeve.CASH]),

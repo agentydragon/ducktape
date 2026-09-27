@@ -32,16 +32,6 @@ Every change is checked against an independent calculation, never a copy of the 
   California's unequal proportions) and the true-up, with the safe-harbor rule only as it
   sets the amounts; no penalties.
 - **SALT phase-out:** the SALT cap's income phase-out.
-- **Interest tax character:** interest is tagged with its issuer's jurisdiction
-  (`InterestIncome.issuer_jurisdiction_id`), and each jurisdiction derives exemption from the
-  issuer's level and whether the issuer is itself (`Jurisdiction.taxes_interest_from`). A CA
-  muni is recorded as issued by `california`, which did not issue it; exemption belongs to the
-  obligation's legal regime, not its issuer. Tag interest with a tax character instead:
-  `Treasury`, `Municipal(state)` or `Taxable`, the three regimes products hold today. Each
-  jurisdiction's data lists the characters it exempts (federal: any `municipal`; California:
-  `treasury` and `municipal: california`). `character` replaces `issuer_jurisdiction_id` on
-  `InterestIncome`, bond declarations, bond observations and book rows, and fund tax shares;
-  shares of one character add. The issuer-level lookup and the declared-issuer checks go.
 - **NIIT:** net rental income becomes net investment income (`OrdinaryIncome` merges rent with
   wages today); Form 8960 line 9 deductions.
 - **Housing basis:** `Properties.sell` leaves out the closing costs `sim/property.py`

@@ -17,8 +17,8 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_sc
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import (
+    InterestExemptions,
     Jurisdiction,
-    JurisdictionLevel,
     StatutoryAmount,
     StatutoryIndexation,
     TaxBracket,
@@ -41,7 +41,7 @@ STEADY = SecuritySymbol("test-steady")
 SECURITIES = (GROWTH, STEADY)
 _FLAT_TAX = Jurisdiction(
     jurisdiction_id=JurisdictionId("test-flat-tax"),
-    level=JurisdictionLevel.FEDERAL,
+    exempt_interest=InterestExemptions(treasury=False, municipal=set()),
     ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
     ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
     standard_deduction={FilingStatus.SINGLE: Decimal(0)},
@@ -102,7 +102,6 @@ def compose(situation: Situation, rollout_id: int) -> World:
         MarketPath(situation.series, rollout_id, rollout_count=situation.rollout_count),
         horizon_months=situation.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions={_FLAT_TAX.jurisdiction_id: _FLAT_TAX.level} if situation.taxable else {},
     )
     for name in (RETIREE, COUNTERPARTY, TAX_AUTHORITY):
         world.declare_account(

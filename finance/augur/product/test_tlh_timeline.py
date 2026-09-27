@@ -47,7 +47,6 @@ def compose(price: int) -> World:
         ),
         horizon_months=1,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions={FEDERAL_US: FEDERAL.level},
     )
     for agent_id, balance in ((OWNER, 10), (AgentId("irs"), 0)):
         world.declare_account(

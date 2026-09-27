@@ -8,7 +8,7 @@ import pytest_bazel
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.held_bonds import Bond, HeldBonds
 from finance.augur.sim.ids import AccountId, BondId
-from finance.augur.sim.income import InterestIncome
+from finance.augur.sim.income import InterestIncome, Taxable
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedFixedAmount, PreparedIndexedCoupon, PreparedSeries
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, accounting
@@ -20,7 +20,7 @@ def nominal() -> Bond:
         bond_id=BondId("test_bond"),
         agent_id=HOUSEHOLD,
         account_id=AccountId("checking"),
-        issuer_jurisdiction_id=None,
+        character=Taxable(),
         face_value=1000,
         purchase_price=1000,
         coupon=PreparedFixedAmount(amount=10),
@@ -50,7 +50,7 @@ def test_no_month_zero_coupon_and_redemption_keeps_the_maturity_coupon(nominal: 
     assert bonds.cashflows[-1].coupon == 10
     assert bonds.cashflows[-1].redemption == 1000
     assert not bonds.snapshots(3, 2)[0].active
-    assert accounting.tax.income.by_source[HOUSEHOLD, InterestIncome()] == 20
+    assert accounting.tax.income.by_source[HOUSEHOLD, InterestIncome(character=Taxable())] == 20
     assert accounting.ledger.trial_balance() == 0
 
 
@@ -60,12 +60,12 @@ def test_tips_deflation_changes_income_but_redemption_has_a_face_floor(nominal: 
     bonds.advance(accounting, 0)
     bonds.advance(accounting, 1)
     assert (bonds.cashflows[-1].principal, bonds.cashflows[-1].coupon, bonds.cashflows[-1].accretion) == (900, 9, -100)
-    assert accounting.tax.income.by_source[HOUSEHOLD, InterestIncome()] == -91
+    assert accounting.tax.income.by_source[HOUSEHOLD, InterestIncome(character=Taxable())] == -91
     bonds.advance(accounting, 2)
     assert (bonds.cashflows[-1].principal, bonds.cashflows[-1].coupon, bonds.cashflows[-1].redemption) == (800, 8, 1000)
     # Current held-bond contract accrues index changes only before maturity.
     assert bonds.cashflows[-1].accretion == 0
-    assert accounting.tax.income.by_source[HOUSEHOLD, InterestIncome()] == -83
+    assert accounting.tax.income.by_source[HOUSEHOLD, InterestIncome(character=Taxable())] == -83
     assert accounting.ledger.balance(CASH) == 1117
 
 

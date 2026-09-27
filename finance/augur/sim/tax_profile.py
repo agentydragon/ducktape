@@ -9,15 +9,8 @@ from pydantic import BaseModel, Field
 
 from finance.augur.sim.fixed_point import rate_to_ppb
 from finance.augur.sim.ids import CHECKING, AccountId, AgentId, JurisdictionId
-from finance.augur.sim.income import InterestIncome, OrdinaryIncome, TransferIncomeCategory, income_source_sort_key
-from finance.augur.sim.jurisdictions import (
-    Jurisdiction,
-    StatutoryAmount,
-    StatutoryIndexation,
-    TaxBracket,
-    ThresholdTax,
-    load_jurisdiction,
-)
+from finance.augur.sim.income import OrdinaryIncome, TransferIncomeCategory, income_source_sort_key
+from finance.augur.sim.jurisdictions import Jurisdiction, StatutoryAmount, StatutoryIndexation, TaxBracket, ThresholdTax
 from finance.augur.sim.money import Currency, NonNegativeCurrencyAmount
 from finance.augur.sim.tax import PreparedTaxBracket, PreparedTaxProfile, PreparedTaxRules, PreparedThresholdTax
 
@@ -80,12 +73,7 @@ def section_121_exclusion_for(filing_status: FilingStatus) -> Decimal:
 def compile_income_sources(named: Iterable[TransferIncomeCategory]) -> tuple[TransferIncomeCategory, ...]:
     """Ordinary income plus every category the cashflows, held bonds or fund distributions name, in reporting order."""
 
-    sources = sorted({OrdinaryIncome(), *named}, key=income_source_sort_key)
-    # Every named issuer must resolve, including issuers found only on cashflows.
-    for source in sources:
-        if isinstance(source, InterestIncome) and source.issuer_jurisdiction_id is not None:
-            load_jurisdiction(source.issuer_jurisdiction_id)
-    return tuple(sources)
+    return tuple(sorted({OrdinaryIncome(), *named}, key=income_source_sort_key))
 
 
 def _agreed_capital_loss_offset_cap(
@@ -137,8 +125,7 @@ def compile_profile(
         rules.append(
             PreparedTaxRules(
                 jurisdiction_id=jurisdiction_id,
-                exempt_interest_from_levels=tuple(sorted(jurisdiction.exempt_interest_from_levels)),
-                exempts_own_issue=jurisdiction.exempts_own_issue,
+                exempt_interest=jurisdiction.exempt_interest,
                 ordinary_brackets=_brackets(
                     jurisdiction.ordinary_income_brackets[profile.filing_status], currency=currency
                 ),

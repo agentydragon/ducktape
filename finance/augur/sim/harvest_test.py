@@ -129,7 +129,6 @@ def compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions={FEDERAL: jurisdictions[FEDERAL].level},
     )
     for agent_id, account_id in ((ALICE, BROKERAGE), (ALICE, CHECKING), (IRS, CHECKING)):
         world.declare_account(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=0)

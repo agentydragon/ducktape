@@ -33,7 +33,13 @@ from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferDeductionCategory, TransferIncomeCategory
+from finance.augur.sim.income import (
+    ORDINARY_INCOME,
+    InterestIncome,
+    Municipal,
+    TransferDeductionCategory,
+    TransferIncomeCategory,
+)
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
@@ -85,7 +91,7 @@ RENT = RentKey(location_id=LocationId("test_location"))
 HOME_VALUE = HomeValueKey(location_id=LocationId(SF))
 # $500k house, 20% land: the building basis §168 depreciates, and the ceiling on the total.
 BUILDING_BASIS_QUANTA = 400_000 * 100
-MUNI_INTEREST = InterestIncome(issuer_jurisdiction_id=CALIFORNIA)
+MUNI_INTEREST = InterestIncome(character=Municipal(state=CALIFORNIA))
 SF_LOCATION = PreparedLocation(
     location_id=SF,
     display_name="San Francisco, CA",
@@ -370,7 +376,6 @@ def compose(situation: Situation, rollout_id: int) -> World:
         MarketPath(situation.series, rollout_id, rollout_count=situation.rollout_count),
         horizon_months=situation.horizon_months,
         income_sources=situation.income_sources,
-        jurisdictions={id_: jurisdictions[id_].level for id_ in jurisdiction_ids},
     )
     for opened, balance in situation.accounts:
         world.declare_account(account=opened, opening_balance=balance)

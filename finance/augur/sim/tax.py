@@ -10,12 +10,16 @@ from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
 from finance.augur.sim.income import (
     ORDINARY_INCOME,
+    InterestCharacter,
     InterestIncome,
+    Municipal,
     OrdinaryIncome,
     QualifiedDividendIncome,
+    Taxable,
     TransferIncomeCategory,
+    Treasury,
 )
-from finance.augur.sim.jurisdictions import JurisdictionLevel, StatutoryAmount
+from finance.augur.sim.jurisdictions import InterestExemptions, StatutoryAmount
 from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
 
 
@@ -40,8 +44,7 @@ class PreparedTaxRules:
     """One jurisdiction's rules resolved for a taxpayer's filing status; money is integer quanta."""
 
     jurisdiction_id: JurisdictionId
-    exempt_interest_from_levels: tuple[JurisdictionLevel, ...]
-    exempts_own_issue: bool
+    exempt_interest: InterestExemptions
     ordinary_brackets: tuple[PreparedTaxBracket, ...]
     long_term_capital_gain_brackets: tuple[PreparedTaxBracket, ...]
     standard_deduction: int
@@ -150,14 +153,17 @@ class IncomeLedger:
         return clone
 
 
-def taxes_interest_from(
-    rules: PreparedTaxRules, issuer_jurisdiction_id: JurisdictionId | None, issuer_level: JurisdictionLevel | None
-) -> bool:
-    if issuer_jurisdiction_id is None or issuer_level is None:
-        return True
-    if issuer_jurisdiction_id == rules.jurisdiction_id:
-        return not rules.exempts_own_issue
-    return issuer_level not in rules.exempt_interest_from_levels
+def taxes_interest_from(rules: PreparedTaxRules, character: InterestCharacter) -> bool:
+    exempt = rules.exempt_interest
+    match character:
+        case Treasury():
+            return not exempt.treasury
+        case Municipal(state=state):
+            return exempt.municipal != "all" and state not in exempt.municipal
+        case Taxable():
+            return True
+        case _:
+            assert_never(character)
 
 
 def is_investment_income(source: TransferIncomeCategory) -> bool:

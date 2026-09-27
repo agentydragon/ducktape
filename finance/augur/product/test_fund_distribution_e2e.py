@@ -39,8 +39,8 @@ from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, resolve_primary_
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import RolloutRequest, ScenarioKey, SpendIndex
 from finance.augur.sim.fixed_point import rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId, PortfolioId
-from finance.augur.sim.income import InterestIncome
+from finance.augur.sim.ids import AccountId, AgentId, LotId, PortfolioId
+from finance.augur.sim.income import InterestIncome, Taxable, Treasury
 from finance.augur.sim.tlh import TlhAssumptions
 from finance.augur.x.models.independent import IndependentProviderConfig
 from finance.augur.x.models.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
@@ -55,10 +55,10 @@ _MONTHLY_PAYOUT_USD = _UNITS * _PER_UNIT_USD
 # An aggregate fund: part Treasury (state-exempt), part corporate (exempt nowhere). The mixed
 # case a single tag cannot express, and the reason the declaration is a vector.
 _AGGREGATE = (
-    DistributionTaxShareConfig(fraction=0.4, issuer_jurisdiction_id=JurisdictionId("federal_us")),
-    DistributionTaxShareConfig(fraction=0.6),
+    DistributionTaxShareConfig(fraction=0.4, character=Treasury()),
+    DistributionTaxShareConfig(fraction=0.6, character=Taxable()),
 )
-_ALL_TREASURY = (DistributionTaxShareConfig(fraction=1.0, issuer_jurisdiction_id=JurisdictionId("federal_us")),)
+_ALL_TREASURY = (DistributionTaxShareConfig(fraction=1.0, character=Treasury()),)
 
 
 def _with_bond_fund_series(model: ProviderConfig, *, distributes: bool) -> ProviderConfig:
@@ -258,27 +258,27 @@ def test_the_tax_character_fractions_reach_the_scenario(augur_config: Config) ->
     config = _with_bond_fund(augur_config, _AGGREGATE)
 
     assert list(one(_distributions(config)).tax_character.items()) == [
-        (InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us")), rate_to_ppb(Decimal("0.4"))),
-        (InterestIncome(), rate_to_ppb(Decimal("0.6"))),
+        (InterestIncome(character=Treasury()), rate_to_ppb(Decimal("0.4"))),
+        (InterestIncome(character=Taxable()), rate_to_ppb(Decimal("0.6"))),
     ]
 
 
-def test_shares_naming_one_issuer_add(augur_config: Config) -> None:
+def test_shares_of_one_character_add(augur_config: Config) -> None:
     """A fund's disclosure lists corporate, mortgage-backed and asset-backed debt on separate lines,
-    all non-governmental; copied line by line they are one tax character."""
+    all taxable; copied line by line they are one tax character."""
 
     config = _with_bond_fund(
         augur_config,
         (
-            DistributionTaxShareConfig(fraction=0.4, issuer_jurisdiction_id=JurisdictionId("federal_us")),
-            DistributionTaxShareConfig(fraction=0.35),
-            DistributionTaxShareConfig(fraction=0.25),
+            DistributionTaxShareConfig(fraction=0.4, character=Treasury()),
+            DistributionTaxShareConfig(fraction=0.35, character=Taxable()),
+            DistributionTaxShareConfig(fraction=0.25, character=Taxable()),
         ),
     )
 
     assert list(one(_distributions(config)).tax_character.items()) == [
-        (InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us")), rate_to_ppb(Decimal("0.4"))),
-        (InterestIncome(), rate_to_ppb(Decimal("0.6"))),
+        (InterestIncome(character=Treasury()), rate_to_ppb(Decimal("0.4"))),
+        (InterestIncome(character=Taxable()), rate_to_ppb(Decimal("0.6"))),
     ]
 
 

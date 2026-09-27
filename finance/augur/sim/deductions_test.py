@@ -209,10 +209,7 @@ def small_home(*, mortgage_interest_policies: tuple[_MortgageInterestDeduction, 
 def compose(case: Situation) -> World:
     jurisdictions = {id_: load_jurisdiction(id_) for id_ in (FEDERAL, CALIFORNIA)}
     world = World(
-        MarketPath((), 0, rollout_count=1),
-        horizon_months=case.horizon_months,
-        income_sources=(ORDINARY_INCOME,),
-        jurisdictions={id_: rules.level for id_, rules in jurisdictions.items()},
+        MarketPath((), 0, rollout_count=1), horizon_months=case.horizon_months, income_sources=(ORDINARY_INCOME,)
     )
     for opened, balance in (
         account(ALICE, case.down_payment + 50_000),

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from functools import partial
@@ -57,7 +57,6 @@ from finance.augur.sim.external_series import ExternalSeriesContext, compile_ser
 from finance.augur.sim.fixed_point import rate_to_ppb, round_currency_amount, round_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferDeductionCategory, TransferIncomeCategory
-from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, load_jurisdiction
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import Currency
@@ -213,7 +212,6 @@ class Situation:
     # Every series the declarations read, which is what the request samples.
     level_series: tuple[LevelSeriesKey, ...]
     private_equity_issuers: frozenset[IssuerId]
-    jurisdictions: Mapping[JurisdictionId, JurisdictionLevel]
     income_sources: tuple[TransferIncomeCategory, ...]
     # Each declared account with its opening balance.
     accounts: tuple[tuple[AccountRef, int], ...]
@@ -390,11 +388,10 @@ def build_situation(
             for position in holdings.portfolio.holdings
             if isinstance(position.asset, PrivateEquityAssetKey)
         ),
-        jurisdictions=jurisdiction_levels(jurisdictions, bonds=bonds, distributions=holdings.distributions),
         income_sources=compile_income_sources(
             (
                 *(cashflow.income_category for cashflow in cashflows if cashflow.income_category is not None),
-                *(InterestIncome(issuer_jurisdiction_id=bond.issuer_jurisdiction_id) for bond in bonds),
+                *(InterestIncome(character=bond.character) for bond in bonds),
                 *(category for distribution in holdings.distributions for category in distribution.tax_character),
             )
         ),
@@ -409,32 +406,6 @@ def build_situation(
         tender_policy=tender_policy,
         obligations=tuple(obligations),
     )
-
-
-def jurisdiction_levels(
-    jurisdictions: Mapping[JurisdictionId, Jurisdiction],
-    *,
-    bonds: Iterable[Bond],
-    distributions: Iterable[Distribution],
-) -> dict[JurisdictionId, JurisdictionLevel]:
-    """The level of every jurisdiction an interest-exemption rule can name.
-
-    An issuer's level resolves whether or not a tax profile names it, so a Treasury coupon is
-    state-exempt for a holder who files only in California. So the registry is the profiles' own
-    `jurisdictions`, plus every issuer a bond or fund distribution names.
-    """
-
-    levels = {jurisdiction_id: jurisdiction.level for jurisdiction_id, jurisdiction in jurisdictions.items()}
-    issuers = {bond.issuer_jurisdiction_id for bond in bonds} | {
-        category.issuer_jurisdiction_id
-        for distribution in distributions
-        for category in distribution.tax_character
-        if isinstance(category, InterestIncome)
-    }
-    for issuer_id in issuers:
-        if issuer_id is not None and issuer_id not in levels:
-            levels[issuer_id] = load_jurisdiction(issuer_id).level
-    return {jurisdiction_id: levels[jurisdiction_id] for jurisdiction_id in sorted(levels)}
 
 
 def paths(situation: Situation, sampled: ExternalSeriesContext, *, rollout_count: int) -> tuple[PreparedSeries, ...]:
@@ -455,12 +426,7 @@ def paths(situation: Situation, sampled: ExternalSeriesContext, *, rollout_count
 
 def compose(situation: Situation, market: MarketPath) -> World:
     """One path's world: the household's books, holdings, home and counterparties, and the household tracked."""
-    world = World(
-        market,
-        horizon_months=situation.horizon_months,
-        income_sources=situation.income_sources,
-        jurisdictions=situation.jurisdictions,
-    )
+    world = World(market, horizon_months=situation.horizon_months, income_sources=situation.income_sources)
     for account, balance in situation.accounts:
         world.declare_account(account=account, opening_balance=balance)
     world.track(TaxAuthority(situation.tax_profile, indexation=FixedNominalLaw()))
@@ -498,7 +464,7 @@ def compose(situation: Situation, market: MarketPath) -> World:
             bond_id=bond.bond_id,
             agent_id=bond.agent_id,
             account_id=bond.account_id,
-            issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
+            character=bond.character,
             face_value=bond.face_value,
             purchase_price=bond.purchase_price,
             coupon=bond.coupon,

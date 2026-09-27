@@ -28,7 +28,8 @@ from pydantic import (
 from finance.augur.api.schemas import NonNegativeCurrencyAmount, PositiveCurrencyAmount
 from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
-from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId, LotId, PortfolioId
+from finance.augur.sim.ids import AccountId, AgentId, BondId, LotId, PortfolioId
+from finance.augur.sim.income import InterestCharacter
 from finance.augur.sim.tlh import TlhAssumptions
 
 _ID_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
@@ -174,14 +175,12 @@ class BondHoldingConfig(PortfolioConfigModel):
     bond_id: BondId = Field(pattern=_ID_PATTERN)
     account_id: AccountId = Field(pattern=_ID_PATTERN)
     label: str | None = None
-    issuer_jurisdiction_id: JurisdictionId | None = Field(
-        default=None,
+    character: InterestCharacter = Field(
         description=(
-            "The taxing authority that issued the debt — `federal_us` for a Treasury, "
-            "`california` for a CA muni, `None` for a corporate issuer. Whether the holder "
-            "owes tax on the coupon is a relation between this issuer and the holder's own "
-            "jurisdictions, never a property of the bond: in-state is holder-relative."
-        ),
+            "The coupon's tax character. Whether the holder owes tax on it is each of the "
+            "holder's jurisdictions' rule for that character, never a property of the bond: "
+            "in-state is holder-relative."
+        )
     )
     face_value: PositiveCurrencyAmount
     # Carried even though the sim requires it to equal face today. Preparing the bond rejects a

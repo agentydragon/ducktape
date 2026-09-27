@@ -80,12 +80,7 @@ def frozen_world(*, horizon_months: int) -> World:
     """A taxed agent whose one obligation is larger than everything they have."""
 
     jurisdictions = {FEDERAL: load_jurisdiction(FEDERAL)}
-    world = World(
-        MarketPath((), 0, rollout_count=1),
-        horizon_months=horizon_months,
-        income_sources=(ORDINARY_INCOME,),
-        jurisdictions={FEDERAL: jurisdictions[FEDERAL].level},
-    )
+    world = World(MarketPath((), 0, rollout_count=1), horizon_months=horizon_months, income_sources=(ORDINARY_INCOME,))
     for agent_id in (ALICE, VENDOR, IRS):
         account(world, agent_id)
     world.track(

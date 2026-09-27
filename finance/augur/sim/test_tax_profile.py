@@ -15,16 +15,16 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
-from finance.augur.sim.income import OrdinaryIncome
+from finance.augur.sim.income import Municipal, OrdinaryIncome, Taxable, Treasury
 from finance.augur.sim.jurisdictions import (
     Jurisdiction,
-    JurisdictionLevel,
     StatutoryAmount,
     StatutoryIndexation,
     TaxBracket,
     load_jurisdiction,
 )
 from finance.augur.sim.money import USD, Currency
+from finance.augur.sim.tax import taxes_interest_from
 from finance.augur.sim.tax_profile import TaxProfile, compile_income_sources, compile_profile
 
 FEDERAL_US = JurisdictionId("federal_us")
@@ -120,10 +120,15 @@ def test_profile_order_routes_and_jurisdiction_specific_rules_survive_preparatio
     assert bob.prior_year_tax == 12_345
     assert alice.section_121_exclusion == bob.section_121_exclusion == 25_000_000
     california, federal = alice.jurisdictions
-    assert california.exempt_interest_from_levels == (JurisdictionLevel.FEDERAL,)
-    assert california.exempts_own_issue
-    assert federal.exempt_interest_from_levels == (JurisdictionLevel.STATE,)
-    assert not federal.exempts_own_issue
+    # 31 USC 3124 and California's exemption of its own munis; IRC 103 federally exempts every state's.
+    characters = (
+        Treasury(),
+        Municipal(state=JurisdictionId("california")),
+        Municipal(state=JurisdictionId("test_state")),
+        Taxable(),
+    )
+    assert [taxes_interest_from(california, character) for character in characters] == [False, False, True, True]
+    assert [taxes_interest_from(federal, character) for character in characters] == [True, False, False, True]
     assert california.section_1250_rate_ppb == 0
     assert federal.section_1250_rate_ppb == 250_000_000
     assert california.long_term_capital_gain_brackets == ()

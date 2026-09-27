@@ -21,10 +21,10 @@ from finance.augur.sim.books import AccountRef, Book, SecurityLotState
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, currency_amount_to_quanta, quantity_scale_for_asset
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable
 from finance.augur.sim.jurisdictions import (
+    InterestExemptions,
     Jurisdiction,
-    JurisdictionLevel,
     StatutoryAmount,
     StatutoryIndexation,
     TaxBracket,
@@ -50,7 +50,7 @@ BROKERAGE = AccountId("brokerage")
 SYNTHETIC = JurisdictionId("synthetic")
 TAX = Jurisdiction(
     jurisdiction_id=SYNTHETIC,
-    level=JurisdictionLevel.FEDERAL,
+    exempt_interest=InterestExemptions(treasury=False, municipal=set()),
     ordinary_income_brackets={"single": [TaxBracket(upper="Infinity", rate=Decimal("0.2"))]},
     ltcg_brackets={"single": [TaxBracket(upper="Infinity", rate=Decimal("0.1"))]},
     standard_deduction={"single": Decimal(0)},
@@ -172,7 +172,6 @@ def compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME, *case.interest_sources),
-        jurisdictions={SYNTHETIC: TAX.level} if case.taxed else {},
     )
     for opened, balance in case.accounts:
         world.declare_account(account=opened, opening_balance=balance)
@@ -206,7 +205,7 @@ def compose(case: Situation, rollout_id: int) -> World:
             holding_account_id=BROKERAGE,
             asset_id=AssetId(asset.symbol),
             to_account_id=CHECKING,
-            tax_character={InterestIncome(): 1_000_000_000},
+            tax_character={InterestIncome(character=Taxable()): 1_000_000_000},
         )
     for contribution in case.transfers:
         world.declare_flow(
@@ -375,7 +374,7 @@ def test_empty_buyable_pool_pays_coupon_only_after_first_purchase() -> None:
             claims=(),
             taxed=False,
             distributions=(STOCK,),
-            interest_sources=(InterestIncome(issuer_jurisdiction_id=None),),
+            interest_sources=(InterestIncome(character=Taxable()),),
         )
     )
     first = lots(output, 1)

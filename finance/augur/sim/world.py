@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
-from types import MappingProxyType
 from typing import Literal
 
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode
@@ -42,24 +41,14 @@ from finance.augur.sim.distributions import Distribution, Distributions
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.held_bonds import Bond, BondStatement, HeldBonds
 from finance.augur.sim.holdings import Holdings, Lot, Pool, private_issuer
-from finance.augur.sim.ids import (
-    AccountId,
-    AgentId,
-    AssetId,
-    BondId,
-    JurisdictionId,
-    LiabilityId,
-    LotId,
-    PortfolioId,
-    PropertyId,
-)
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, LiabilityId, LotId, PortfolioId, PropertyId
 from finance.augur.sim.income import (
+    InterestCharacter,
     InterestIncome,
     TransferDeductionCategory,
     TransferIncomeCategory,
     income_source_wire_id,
 )
-from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios, Portfolio, TlhStatement
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, is_quantity_scale, position_value
@@ -93,7 +82,6 @@ from finance.augur.sim.tlh import (
 type Capture = Literal["summary", "dense", "forensic"]
 
 _NO_REALIZATIONS = ModeledRealizations()
-_NO_JURISDICTIONS: Mapping[JurisdictionId, JurisdictionLevel] = MappingProxyType({})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -124,17 +112,12 @@ class World:
     """
 
     def __init__(
-        self,
-        market: MarketPath,
-        *,
-        horizon_months: int,
-        income_sources: Sequence[TransferIncomeCategory] = (),
-        jurisdictions: Mapping[JurisdictionId, JurisdictionLevel] = _NO_JURISDICTIONS,
+        self, market: MarketPath, *, horizon_months: int, income_sources: Sequence[TransferIncomeCategory] = ()
     ) -> None:
         """An empty world on one market path; declare books and track actors before `start`.
 
-        `income_sources` and `jurisdictions` (each jurisdiction's level) are the tax vocabulary
-        every taxpayer shares; an untaxed composition leaves both empty.
+        `income_sources` is the tax vocabulary every taxpayer shares; an untaxed composition
+        leaves it empty.
         """
         if horizon_months <= 0:
             raise ValueError("horizon must be positive")
@@ -151,7 +134,6 @@ class World:
         self.specs: dict[PortfolioId, Portfolio] = {}
         self.portfolios: dict[PortfolioId, TlhPortfolio] = {}
         self.income_sources = tuple(income_sources)
-        self.jurisdictions = dict(jurisdictions)
         self.accounting = Accounting(income_sources)
         self.holdings = Holdings()
         # Domains nothing declared, tracked or attached are absent, not empty.
@@ -275,7 +257,7 @@ class World:
         bond_id: BondId,
         agent_id: AgentId,
         account_id: AccountId,
-        issuer_jurisdiction_id: JurisdictionId | None,
+        character: InterestCharacter,
         face_value: int,
         purchase_price: int,
         coupon: PreparedFixedAmount | PreparedIndexedCoupon,
@@ -283,13 +265,13 @@ class World:
         purchase_month_index: int,
         maturity_month_index: int,
     ) -> None:
-        """A dated bond held at month zero; a `None` issuer is non-governmental."""
+        """A dated bond held at month zero."""
         self._composing()
         bond = Bond(
             bond_id=bond_id,
             agent_id=agent_id,
             account_id=account_id,
-            issuer_jurisdiction_id=issuer_jurisdiction_id,
+            character=character,
             face_value=face_value,
             purchase_price=purchase_price,
             coupon=coupon,
@@ -322,11 +304,12 @@ class World:
             raise ValueError(f"issuer {issuer!r} has a tender event and a sale opportunity in different months")
 
     def _check_bond(self, bond: Bond) -> None:
-        """Bought at par, a nonnegative coupon on whole periods, and indexed only on an index the path carries."""
+        """Bought at par, a nonnegative coupon on whole periods, indexed only on an index the path carries, and
+        paying interest of a declared character."""
         if AccountRef(agent_id=bond.agent_id, account_id=bond.account_id) not in self.accounting.declared:
             raise ValueError(f"bond {bond.bond_id!r} references an unknown account")
-        if bond.issuer_jurisdiction_id is not None and bond.issuer_jurisdiction_id not in self.jurisdictions:
-            raise ValueError(f"bond {bond.bond_id!r} has unknown issuer")
+        if InterestIncome(character=bond.character) not in self.income_sources:
+            raise ValueError(f"bond {bond.bond_id!r} has undeclared income source")
         term = bond.maturity_month_index - bond.purchase_month_index
         coupon = bond.coupon.amount if isinstance(bond.coupon, PreparedFixedAmount) else bond.coupon.annual_rate_ppb
         if (
@@ -399,15 +382,8 @@ class World:
             or sum(tax_character.values()) != MONEY_FACTOR_SCALE
         ):
             raise ValueError("invalid distribution tax character split")
-        for source in tax_character:
-            if (
-                isinstance(source, InterestIncome)
-                and source.issuer_jurisdiction_id is not None
-                and source.issuer_jurisdiction_id not in self.jurisdictions
-            ):
-                raise ValueError("distribution has unknown issuer")
-            if source not in self.income_sources:
-                raise ValueError("distribution has undeclared income source")
+        if any(source not in self.income_sources for source in tax_character):
+            raise ValueError("distribution has undeclared income source")
         if self.distributions is None:
             self.distributions = Distributions(
                 (), {(spec.owner_agent_id, spec.account_id, spec.asset_id) for spec in self.specs.values()}
@@ -461,7 +437,7 @@ class World:
             TlhOpening(month=-1, price=self.market.value(f"security:{asset_id}", 0), cohorts=tuple(initial_cohorts)),
         )
         if self.managed is None:
-            self.managed = ManagedPortfolios(self.income_sources, self.jurisdictions)
+            self.managed = ManagedPortfolios(self.income_sources)
         self.managed.open(self.accounting, spec, self.statement(spec, portfolio, 0))
         self.holdings.reserve(*slot)
         if self.distributions is not None:
@@ -1318,7 +1294,7 @@ class World:
             if self.properties is not None:
                 self.properties.accrue(self.accounting, self.month)
             for authority in self.tax_authorities:
-                authority.close_month(self.accounting, self.month, mortgages, self.jurisdictions)
+                authority.close_month(self.accounting, self.month, mortgages)
             if self.properties is not None and (self.month + 1) % 12 == 0:
                 self.properties.reset_year()
         self.month += 1
