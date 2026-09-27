@@ -32,6 +32,12 @@ build time.
   instead -- e.g. a vertical-dots button, shown only on hover (desktop) or tap (mobile), holding this and other
   message-level debug actions -- mirroring the composer's existing `Menu` + `IconDotsVertical` pattern
   (`projected_session.tsx`, "Debug history" / "Shut down harness").
+- **A pending sent message shows in its own box below the thread, not inline as a message**: a `submitInput`
+  command still `outcome: "pending"` renders in the "Pending commands" region (`projected_session.tsx`'s
+  `hasPendingCommands` `Stack`, ~line 1326) as a bordered `Paper` with a "Saved · awaiting effect" caption, separate
+  from the conversation history -- rather than where the confirmed message will eventually land, styled like the
+  `confirmed_input` bubble (`.agentplane-user-bubble`, same file ~line 349). Consider rendering it inline in the
+  history instead, using that same bubble style but visually marked pending (italic, reduced opacity, or similar).
 - **Consider squashing the "observation" naming layer**: not remembered as a deliberate design choice. `Event`
   (`protocol/event.proto`)'s payload is a `oneof` field literally named `observation`; that name then propagated
   outward into `runner/observation.py`'s `Observation` type, the archive/API layer
