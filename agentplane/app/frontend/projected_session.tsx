@@ -721,6 +721,14 @@ function commandOutcomeLabel(operation: string, outcome: string): string {
 // How close the top of the loaded rows comes to the viewport's before the page before them loads.
 const LOAD_OLDER_WITHIN = 80;
 
+// Traces VirtualizedHistory's scroll-anchor bookkeeping to the console: off by default (this ran
+// hot enough, once, to matter) -- flip on with localStorage.setItem("agentplane:debugScroll", "1")
+// when chasing a reader-position bug, then reload.
+const SCROLL_DEBUG = typeof window !== "undefined" && window.localStorage?.getItem("agentplane:debugScroll") === "1";
+function scrollDebug(...args: unknown[]): void {
+  if (SCROLL_DEBUG) console.debug("[scroll-anchor]", ...args);
+}
+
 function VirtualizedHistory({
   threadId,
   rows,
@@ -752,6 +760,13 @@ function VirtualizedHistory({
   const previousCount = useRef(rows.length);
   const previousFirstKey = useRef<string | null>(null);
   const readingAnchor = useRef<{ key: string; offset: number } | null>(null);
+  // Widened around a just-landed older page so every one of its rows mounts and measures in the
+  // same pass, rather than progressively as scrolling reveals more of it -- each of *those* later
+  // corrections is itself a visible, uncalled-for jump (see restoreAnchor/restoringScroll below).
+  const [pageOverscan, setPageOverscan] = useState(0);
+  // Bumped once per page landed above the reader; drives the effect that measures it (widened)
+  // before restoreAnchor ever runs for it.
+  const [pagePrepended, setPagePrepended] = useState(0);
   // The row holding the entity a reading anchor was taken at. A run keeps its key while steps
   // stream into it, but gains a new first step when older history loads into it.
   const anchorIndex = (key: string): number =>
@@ -804,7 +819,7 @@ function VirtualizedHistory({
     estimateSize: () => 180,
     getItemKey: (index) => rowKey(rows[index]),
     measureElement: (element) => element.getBoundingClientRect().height,
-    overscan: 5,
+    overscan: 5 + pageOverscan,
     onChange: (instance, sync) => {
       // A card can resize before virtual-core applies its measured transform. Wait for
       // that measurement rather than guessing how many animation frames it requires.
@@ -860,10 +875,12 @@ function VirtualizedHistory({
       : undefined;
     if (first && firstRow) {
       readingAnchor.current = { key: rowKey(firstRow), offset: first.getBoundingClientRect().top - viewportTop };
+      scrollDebug("captureReadingAnchor", readingAnchor.current);
     }
   };
   const restoreAnchor = (anchor: { key: string; offset: number }, awaitMeasurement = false) => {
     const index = anchorIndex(anchor.key);
+    scrollDebug("restoreAnchor called", anchor, "index", index, "awaitMeasurement", awaitMeasurement);
     if (index < 0) return;
     cancelRestoration();
     restoringAnchor.current = anchor.key;
@@ -877,6 +894,7 @@ function VirtualizedHistory({
       return correction;
     };
     const correction = correctFromDom();
+    scrollDebug("restoreAnchor correction", correction);
     if (correction === null) virtualizer.scrollToIndex(index, { align: "start" });
     // Waiting for measurement assumes the row is mounted and in place. One scrolled to by its
     // estimate needs the frames, whose pending state keeps a clamped scroll from reading as the bottom.
@@ -903,11 +921,40 @@ function VirtualizedHistory({
       readingAnchor.current &&
       (previousCount.current === 0 || previousFirstKey.current !== firstKey)
     ) {
-      restoreAnchor(readingAnchor.current);
+      const added = rows.length - previousCount.current;
+      if (added > 0 && previousCount.current > 0) {
+        // A page landed above the reader. Widen overscan to mount and measure all of it (next
+        // effect below, once this commit lands) before restoreAnchor ever runs for it -- rather
+        // than letting restoreAnchor guess via estimateSize now and chase a correction once the
+        // real heights are known.
+        scrollDebug("page prepended, widening overscan by", added);
+        setPageOverscan((current) => Math.max(current, added));
+        setPagePrepended((current) => current + 1);
+      } else {
+        restoreAnchor(readingAnchor.current);
+      }
     }
     previousCount.current = rows.length;
     previousFirstKey.current = firstKey;
   }, [rows, virtualizer]);
+  // pagePrepended is a monotonic counter, not derived from pageOverscan's value, so a second page
+  // landing while the first's widened mount hasn't narrowed back yet still triggers this.
+  useLayoutEffect(() => {
+    if (pagePrepended === 0) return;
+    if (readingAnchor.current) restoreAnchor(readingAnchor.current);
+    // Narrow back once this settles -- measurement itself is synchronous on mount, but
+    // restoreAnchor's own correction can still take a couple of frames to land.
+    let frame: number;
+    const tick = () => {
+      if (restoringScroll()) {
+        frame = requestAnimationFrame(tick);
+        return;
+      }
+      setPageOverscan(0);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [pagePrepended]);
   useLayoutEffect(() => {
     const element = viewport.current;
     const content = contents.current;
@@ -941,6 +988,13 @@ function VirtualizedHistory({
     const element = viewport.current;
     if (!element) return;
     const onScrollEnd = () => {
+      scrollDebug(
+        "onScrollEnd",
+        "restoringAnchor",
+        restoringAnchor.current,
+        "captureNextScroll",
+        captureNextScroll.current
+      );
       if (restoringAnchor.current !== null || !captureNextScroll.current) return;
       captureReadingAnchor(element);
       captureNextScroll.current = false;
@@ -1009,6 +1063,17 @@ function VirtualizedHistory({
         const element = event.currentTarget;
         const followed = followPreviousBottom(element);
         recentBottoms.current = [element.scrollHeight - element.clientHeight];
+        scrollDebug(
+          "onScroll",
+          "scrollTop",
+          element.scrollTop,
+          "followed",
+          followed,
+          "restoringAnchor",
+          restoringAnchor.current,
+          "captureNextScroll",
+          captureNextScroll.current
+        );
         if (followed) {
           previousScrollTop.current = element.scrollTop;
           return;
@@ -1022,7 +1087,15 @@ function VirtualizedHistory({
         if (!captureNextScroll.current && !pointerScrolling.current && touchY.current === null) return;
         captureNextScroll.current = true;
         scrolledSinceInput.current = true;
-        if (element.scrollTop < LOAD_OLDER_WITHIN) history.loadOlder();
+        // Keep the anchor current through the gesture, not just once it settles at scrollend: an
+        // older page can land, and prepend rows, while this gesture is still moving. Restoring to
+        // a stale anchor from an earlier, already-settled gesture would pull the reader back to
+        // where they were reading before, not where this gesture has since taken them.
+        captureReadingAnchor(element);
+        if (element.scrollTop < LOAD_OLDER_WITHIN) {
+          scrollDebug("calling loadOlder from onScroll");
+          history.loadOlder();
+        }
       }}
     >
       {history.loadingOlder && (
