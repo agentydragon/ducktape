@@ -1,8 +1,9 @@
 """Budget planner configuration: bucket taxonomy and merchant-classification rules.
 
-The augur framework knows nothing about specific user merchants. The deployment's
-augur `Config` YAML carries the full rule list (merchants, PFC fallbacks, account
-IDs), which augur loads at startup. This file just defines the schemas it populates.
+The framework knows nothing about specific user merchants. The deployment's config
+YAML (the `budget:` block of the augur `Config`, also read by the Beancount exporter)
+carries the full rule list (merchants, PFC fallbacks, account IDs), loaded at startup.
+This file just defines the schemas it populates.
 """
 
 from __future__ import annotations
@@ -11,13 +12,15 @@ from datetime import date
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import Field, model_validator
-
-from finance.augur.api.schemas import ApiModel
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 _ID_PATTERN = r"^[a-z0-9][a-z0-9_]*$"
 # Beancount account: a root type followed by one or more capitalized segments.
 _BEANCOUNT_ACCOUNT_PATTERN = r"^(Assets|Liabilities|Equity|Income|Expenses)(:[A-Z0-9][A-Za-z0-9-]*)+$"
+
+
+class FrozenModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class TransferDirection(StrEnum):
@@ -46,7 +49,7 @@ class BucketKind(StrEnum):
     INCOME = "income"
 
 
-class BucketDef(ApiModel):
+class BucketDef(FrozenModel):
     """One named spending bucket. Rules route transactions to a `bucket_id`."""
 
     id: str = Field(pattern=_ID_PATTERN)
@@ -89,7 +92,7 @@ _EXPECTED_DIRECTION: dict[BucketKind, TransferDirection] = {
 }
 
 
-class _RuleBase(ApiModel):
+class _RuleBase(FrozenModel):
     bucket_id: str = Field(pattern=_ID_PATTERN)
 
 
@@ -123,35 +126,35 @@ class PfcRule(_RuleBase):
 # (all_of / any_of / not) nest arbitrarily. A `MatchRule` pairs a condition with a bucket.
 
 
-class MerchantSubstringCondition(ApiModel):
+class MerchantSubstringCondition(FrozenModel):
     """Case-insensitive substring match against `merchant_name` (NULL treated as empty)."""
 
     kind: Literal["merchant_substring"] = "merchant_substring"
     pattern: str = Field(min_length=1)
 
 
-class NameSubstringCondition(ApiModel):
+class NameSubstringCondition(FrozenModel):
     """Case-insensitive substring match against the raw `name` descriptor."""
 
     kind: Literal["name_substring"] = "name_substring"
     pattern: str = Field(min_length=1)
 
 
-class MerchantRegexCondition(ApiModel):
+class MerchantRegexCondition(FrozenModel):
     """Case-insensitive POSIX regex against `merchant_name` (NULL treated as empty)."""
 
     kind: Literal["merchant_regex"] = "merchant_regex"
     pattern: str = Field(min_length=1)
 
 
-class NameRegexCondition(ApiModel):
+class NameRegexCondition(FrozenModel):
     """Case-insensitive POSIX regex against the raw `name` descriptor."""
 
     kind: Literal["name_regex"] = "name_regex"
     pattern: str = Field(min_length=1)
 
 
-class PfcCondition(ApiModel):
+class PfcCondition(FrozenModel):
     """Plaid personal_finance_category match; `detailed` optional (primary alone suffices)."""
 
     kind: Literal["pfc"] = "pfc"
@@ -159,7 +162,7 @@ class PfcCondition(ApiModel):
     detailed: str | None = None
 
 
-class AmountCondition(ApiModel):
+class AmountCondition(FrozenModel):
     """Inclusive numeric bound on the signed Plaid amount (positive = outflow), or its abs value.
 
     At least one of `min`/`max` is required. Set `use_abs` to bound abs(amount) instead
@@ -179,7 +182,7 @@ class AmountCondition(ApiModel):
         return self
 
 
-class DateCondition(ApiModel):
+class DateCondition(FrozenModel):
     """Match on the transaction date (ISO yyyy-mm-dd). Either an exact `on`, or an inclusive
     `min`/`max` range with at least one bound; `on` is mutually exclusive with min/max.
 
@@ -204,28 +207,28 @@ class DateCondition(ApiModel):
         return self
 
 
-class AccountCondition(ApiModel):
+class AccountCondition(FrozenModel):
     """Match when the transaction's account_id is one of `account_ids`."""
 
     kind: Literal["account"] = "account"
     account_ids: tuple[str, ...] = Field(min_length=1)
 
 
-class AllOfCondition(ApiModel):
+class AllOfCondition(FrozenModel):
     """AND: every sub-condition must match."""
 
     kind: Literal["all_of"] = "all_of"
     conditions: tuple[Condition, ...] = Field(min_length=1)
 
 
-class AnyOfCondition(ApiModel):
+class AnyOfCondition(FrozenModel):
     """OR: at least one sub-condition must match."""
 
     kind: Literal["any_of"] = "any_of"
     conditions: tuple[Condition, ...] = Field(min_length=1)
 
 
-class NotCondition(ApiModel):
+class NotCondition(FrozenModel):
     """NOT: matches when the inner condition does not."""
 
     kind: Literal["not"] = "not"
@@ -262,7 +265,7 @@ class MatchRule(_RuleBase):
 Rule = MerchantSubstringRule | NameSubstringRule | PfcRule | MatchRule
 
 
-class Override(ApiModel):
+class Override(FrozenModel):
     """Manual per-transaction classification, keyed on Plaid `transaction_id`.
 
     Highest priority -- pre-empts every rule -- and NOT direction-gated: an explicit
@@ -279,7 +282,7 @@ class Override(ApiModel):
     note: str = Field(min_length=1)
 
 
-class MatchOverride(ApiModel):
+class MatchOverride(FrozenModel):
     """Condition-keyed manual classification. Like `Override` -- highest priority, applied
     before rules, and NOT direction-gated (so both signed legs of a flow can land in one
     bucket) -- but matched by transaction *content* (date / amount / descriptor / account)
@@ -298,7 +301,7 @@ class MatchOverride(ApiModel):
     note: str = Field(min_length=1)
 
 
-class BudgetSourceConfig(ApiModel):
+class BudgetSourceConfig(FrozenModel):
     """Where to pull transactions from, scoped to a user's accounts."""
 
     database_url_env: str = "AUGUR_PLAID_DATABASE_URL"
@@ -314,7 +317,7 @@ class BudgetSourceConfig(ApiModel):
     coverage_starts: date | None = None
 
 
-class FundingAccountDef(ApiModel):
+class FundingAccountDef(FrozenModel):
     """Maps a Plaid account to its Beancount funding (asset/liability) account.
 
     The funding account is the leg opposite the bucket's contra account in each
@@ -326,7 +329,7 @@ class FundingAccountDef(ApiModel):
     account: str = Field(pattern=_BEANCOUNT_ACCOUNT_PATTERN)
 
 
-class BudgetConfig(ApiModel):
+class BudgetConfig(FrozenModel):
     """Top-level budget planner config (optional; absent = budget endpoints return 400)."""
 
     source: BudgetSourceConfig

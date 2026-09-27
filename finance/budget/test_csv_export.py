@@ -6,9 +6,9 @@ from datetime import date
 
 import pytest_bazel
 
-from finance.augur.budget.csv_export import build_summary_csv, build_transactions_csv
-from finance.augur.budget.schema import BucketKind
-from finance.augur.budget.wire import (
+from finance.budget.csv_export import build_summary_csv, build_transactions_csv
+from finance.budget.schema import BucketKind
+from finance.budget.wire import (
     BucketMonthly,
     BucketView,
     BudgetSnapshotResponse,

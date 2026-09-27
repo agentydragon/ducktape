@@ -7,18 +7,17 @@ from typing import Annotated, Literal
 
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveInt
 
-from finance.augur.api.schemas import ApiModel
-from finance.augur.budget.schema import BucketKind
+from finance.budget.schema import BucketKind, FrozenModel
 
 
-class TrailingMonthsWindow(ApiModel):
+class TrailingMonthsWindow(FrozenModel):
     """Trailing N calendar months ending in the month containing today."""
 
     kind: Literal["trailing_months"] = "trailing_months"
     months: PositiveInt = Field(le=60)
 
 
-class CoverageWindow(ApiModel):
+class CoverageWindow(FrozenModel):
     """Full available history without gaps -- from `BudgetSourceConfig.coverage_starts` to today.
 
     The server rejects this with 400 when no coverage_starts is configured on the deployment.
@@ -30,7 +29,7 @@ class CoverageWindow(ApiModel):
 WindowSpec = Annotated[TrailingMonthsWindow | CoverageWindow, Field(discriminator="kind")]
 
 
-class BucketView(ApiModel):
+class BucketView(FrozenModel):
     id: str
     label: str
     kind: BucketKind
@@ -41,7 +40,7 @@ class BucketView(ApiModel):
     family: str | None
 
 
-class BucketMonthly(ApiModel):
+class BucketMonthly(FrozenModel):
     """One bucket's monthly trend plus a day-normalized monthly average over the window."""
 
     bucket_id: str
@@ -56,7 +55,7 @@ class BucketMonthly(ApiModel):
     transaction_count: NonNegativeInt
 
 
-class LumpyView(ApiModel):
+class LumpyView(FrozenModel):
     transaction_id: str
     date: date
     amount: float
@@ -65,15 +64,15 @@ class LumpyView(ApiModel):
     bucket_id: str
 
 
-class BudgetSnapshotRequest(ApiModel):
+class BudgetSnapshotRequest(FrozenModel):
     window: WindowSpec
 
 
-class HiddenBudgetAdjustment(ApiModel):
+class HiddenBudgetAdjustment(FrozenModel):
     kind: Literal["hidden"] = "hidden"
 
 
-class OverrideBudgetAdjustment(ApiModel):
+class OverrideBudgetAdjustment(FrozenModel):
     kind: Literal["override"] = "override"
     monthly: NonNegativeFloat
 
@@ -81,12 +80,12 @@ class OverrideBudgetAdjustment(ApiModel):
 BudgetAdjustment = Annotated[HiddenBudgetAdjustment | OverrideBudgetAdjustment, Field(discriminator="kind")]
 
 
-class BudgetSummaryCsvRequest(ApiModel):
+class BudgetSummaryCsvRequest(FrozenModel):
     window: WindowSpec
     adjustments: dict[str, BudgetAdjustment] = Field(default_factory=dict)
 
 
-class BudgetSnapshotResponse(ApiModel):
+class BudgetSnapshotResponse(FrozenModel):
     months: tuple[date, ...]
     buckets: tuple[BucketView, ...]
     monthly_by_bucket: tuple[BucketMonthly, ...]
@@ -114,7 +113,7 @@ class BudgetSnapshotResponse(ApiModel):
     )
 
 
-class TransactionView(ApiModel):
+class TransactionView(FrozenModel):
     transaction_id: str
     date: date
     amount: float
@@ -127,11 +126,11 @@ class TransactionView(ApiModel):
     bucket_id: str
 
 
-class BudgetTransactionsRequest(ApiModel):
+class BudgetTransactionsRequest(FrozenModel):
     bucket_id: str
     window: WindowSpec
 
 
-class BudgetTransactionsResponse(ApiModel):
+class BudgetTransactionsResponse(FrozenModel):
     bucket_id: str
     transactions: tuple[TransactionView, ...]

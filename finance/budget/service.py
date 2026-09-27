@@ -12,10 +12,10 @@ from datetime import date
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from finance.augur.budget.csv_export import build_summary_csv, build_transactions_csv
-from finance.augur.budget.schema import BudgetConfig
-from finance.augur.budget.sql_read_model import read_budget_bucket_transactions, read_budget_snapshot
-from finance.augur.budget.wire import (
+from finance.budget.csv_export import build_summary_csv, build_transactions_csv
+from finance.budget.schema import BudgetConfig
+from finance.budget.sql_read_model import read_budget_bucket_transactions, read_budget_snapshot
+from finance.budget.wire import (
     BudgetAdjustment,
     BudgetSnapshotResponse,
     BudgetTransactionsResponse,
