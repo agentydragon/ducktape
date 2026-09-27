@@ -59,11 +59,13 @@ index_series:
 # prices the whole sleeve coherently: a fund's price falls and its payout climbs (slowly,
 # over its duration) off the same state. Instruments are ROWS, not extra random walks — a
 # symbol, a duration, and a spread over the curve at that duration. `macro_state` and
-# equity's `monthly_log_return_mu`/`sigma` default to the checked-in fit
+# equity's `mean`/`monthly_log_return_sigma` default to the checked-in fit
 # (fit/calibrated/trained_structural_macro.yaml) when omitted, as here.
 type: structural_macro
 equity:
   instrument: {symbol: VOO, initial_price_usd: 520.0}
+  # To replace the fitted drift, pin a long-run expected annual return and cite it:
+  # mean: {kind: pinned, annual_arithmetic_mean: 0.0875, citation: "AAA C-3 Phase 2 RBC report, March 2005, pp. 23-25"}
 instruments:
   - {symbol: VMFXX, maturity_years: 0.0, initial_price_usd: 1.0} # cash, as an MMF holding
   - {symbol: VGIT, maturity_years: 5.3, initial_price_usd: 59.0} # intermediate Treasuries

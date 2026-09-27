@@ -49,12 +49,13 @@ configured `Sampler.sample` composes this with `product_paths.construct_products
 
 from __future__ import annotations
 
+import math
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 
 import numpy as np
 import yaml
-from pydantic import Field, NonNegativeFloat, PositiveFloat, model_validator
+from pydantic import Field, NonNegativeFloat, PositiveFloat, StringConstraints, model_validator
 
 from finance.augur.model.bond_fund import MINIMUM_ANNUAL_YIELD, BondFundSpec
 from finance.augur.model.equity import EquitySpec
@@ -77,20 +78,68 @@ PERCENT_TO_DECIMAL = 0.01
 MINIMUM_MONTHS = 240
 
 
+class FittedEquityMean(FrozenModel):
+    """The equity drift a fit estimated, already in the model's own units."""
+
+    kind: Literal["fitted"] = "fitted"
+    monthly_log_return_mu: float = Field(
+        default_factory=lambda: _fitted_defaults().equity_monthly_log_return_mu,
+        description=(
+            "Mean monthly log return. Defaults to the checked-in fit on the CRSP value-weighted total US "
+            "market (Ken French's factors, `Mkt-RF + RF`, dividends included): `fit/calibrated/"
+            "trained_structural_macro.yaml`'s `equity_fit` has the window and sample count, and SPEC.md gap 3 "
+            "why a century rather than a shorter window is the deliberate choice."
+        ),
+    )
+
+
+class PinnedEquityMean(FrozenModel):
+    """A caller's long-run equity mean, in the unit published assumptions use, with its source.
+
+    The pin is the EXPECTED one-year total return, an arithmetic mean. A compound (geometric) or
+    median return, which many sources quote instead, is a lower number and is not this one. The
+    model draws monthly LOG returns, so the pin is converted to the drift (`monthly_log_drift`)
+    rather than copied into it.
+    """
+
+    kind: Literal["pinned"] = "pinned"
+    annual_arithmetic_mean: float = Field(
+        ge=-0.25,
+        le=0.25,
+        allow_inf_nan=False,
+        description=(
+            "Expected annual total return, nominal and gross of fees like the index it drives, as a decimal: "
+            "0.0875 is 8.75%/yr. The bounds are far wider than any long-run equity mean a source would state; "
+            "what they catch is a percent where the decimal belongs."
+        ),
+    )
+    citation: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] = Field(
+        description="Where the mean comes from, so every result sampled on it can say."
+    )
+
+    def monthly_log_drift(self, *, monthly_log_sigma: float) -> float:
+        """The drift `μ` at which i.i.d. `N(μ, σ²)` monthly log returns have this annual arithmetic mean.
+
+        Twelve such months sum to `N(12μ, 12σ²)`, and a lognormal's mean is `exp(mean + variance / 2)`,
+        so `E[R_annual] = exp(12μ + 6σ²) - 1`. Solved for the drift, `μ = ln(1 + E[R_annual]) / 12 - σ² / 2`:
+        the same mean needs a lower drift at a higher volatility, which is why a pin states the mean and
+        leaves the drift to the model's volatility.
+        """
+
+        return math.log1p(self.annual_arithmetic_mean) / MONTHS_PER_YEAR - monthly_log_sigma**2 / 2
+
+
 class EquityProcess(FrozenModel):
     """Structural-macro return dynamics bound to an experiment's equity description.
 
     Log returns combine drift, an independent equity shock and `rate_beta` times
     the short-rate change. That last term is the only equity/macro coupling, and
     its default is zero; the macro state's own innovations are jointly fitted.
+    The drift is a fit's unless the caller pins a cited long-run mean.
     """
 
     instrument: EquitySpec
-    # Defaults to the checked-in fit on the CRSP value-weighted total US market (Ken French's
-    # factors, `Mkt-RF + RF`, dividends included) — see `fit/calibrated/trained_structural_macro
-    # .yaml`'s `equity_fit` for the window/sample count, and SPEC.md gap 3 for why a century
-    # rather than a shorter window is the deliberate choice.
-    monthly_log_return_mu: float = Field(default_factory=lambda: _fitted_defaults().equity_monthly_log_return_mu)
+    mean: FittedEquityMean | PinnedEquityMean = Field(default_factory=FittedEquityMean, discriminator="kind")
     monthly_log_return_sigma: NonNegativeFloat = Field(
         default_factory=lambda: _fitted_defaults().equity_monthly_log_return_sigma
     )
@@ -101,6 +150,24 @@ class EquityProcess(FrozenModel):
     # dressed as structure — load-bearing per SPEC.md: a question that turns on bond/equity
     # correlation is not answered here.
     rate_beta: float = 0.0
+
+    @model_validator(mode="after")
+    def _reject_a_pin_beside_a_rate_term(self) -> EquityProcess:
+        """A pin is converted for i.i.d. lognormal months. A `rate_beta` term adds the short rate's
+        change to every month — drift and variance the conversion never sees — so the paths would not
+        have the mean the pin, and the sample's provenance, report."""
+
+        if isinstance(self.mean, PinnedEquityMean) and self.rate_beta != 0.0:
+            raise ValueError(f"a pinned equity mean needs rate_beta 0.0; got {self.rate_beta=}")
+        return self
+
+    @property
+    def monthly_log_return_mu(self) -> float:
+        """The drift the walk samples: the fitted one as is, a pin converted at this volatility."""
+
+        if isinstance(self.mean, PinnedEquityMean):
+            return self.mean.monthly_log_drift(monthly_log_sigma=self.monthly_log_return_sigma)
+        return self.mean.monthly_log_return_mu
 
 
 type MacroStateVector = tuple[float, float, float]
@@ -151,7 +218,8 @@ class StructuralMacroFittedDefaults(FrozenModel):
     """The structural-macro fit, checked in whole: written by `bb run
     //finance/augur/fit:train -- --model structural_macro ...` to
     `fit/calibrated/trained_structural_macro.yaml` and loaded (via `_fitted_defaults` below)
-    as `StructuralMacroProviderConfig`'s and `EquityProcess`'s shipped defaults.
+    as the shipped defaults of `StructuralMacroProviderConfig`, `EquityProcess` and
+    `FittedEquityMean`.
 
     Deployment-specific fields are deliberately absent — which equity symbol and which
     instruments a scenario prices are not fit outputs, so they stay on
@@ -264,6 +332,14 @@ class StructuralMacroModel:
 
         state = _macro_state_path(config.macro_state, request, rollouts=rollouts, months=months)
         short_rate = np.maximum(state[SHORT_RATE], MINIMUM_ANNUAL_YIELD)
+        provenance: dict[str, object] = {
+            "exogenous_provider_label": self.label,
+            "rollout_seeds": request.rollout_seeds,
+            "notes": ("joint VAR(1) macro state fitted on FRED FEDFUNDS/GS10/CPIAUCSL 1955-2026",),
+        }
+        if config.equity is not None:
+            # Which mean the equity walk ran on: a fit's drift, or a caller's pin with its citation.
+            provenance["equity_mean"] = config.equity.mean
         return MarketPaths(
             short_rate=state[SHORT_RATE],
             term_spread=state[TERM_SPREAD],
@@ -273,11 +349,7 @@ class StructuralMacroModel:
             else None,
             corporate_yields={},
             model_id=self.label,
-            provenance={
-                "exogenous_provider_label": self.label,
-                "rollout_seeds": request.rollout_seeds,
-                "notes": ("joint VAR(1) macro state fitted on FRED FEDFUNDS/GS10/CPIAUCSL 1955-2026",),
-            },
+            provenance=provenance,
         )
 
 

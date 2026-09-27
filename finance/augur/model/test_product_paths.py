@@ -54,7 +54,6 @@ def structural() -> StructuralMacroModel:
         initial_inflation_level=137.0,
         equity=EquityProcess(
             instrument=EquitySpec(symbol=TEST_EQUITY, initial_price_usd=517.3),
-            monthly_log_return_mu=0.003,
             monthly_log_return_sigma=0.01,
             rate_beta=-0.7,
         ),

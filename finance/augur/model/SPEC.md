@@ -25,6 +25,14 @@ additional market shocks.
 
 **Per-rollout seeding.** A rollout's path depends only on its own seed, never on the batch.
 
+**The equity mean is the fit's unless the caller pins one, with its source.** A pin is a
+long-run expected (arithmetic) annual total return, nominal and gross of fees like the fitted
+index, plus a required citation. It is converted to the monthly log drift at the model's own
+volatility: twelve i.i.d. lognormal months have `E[R_annual] = exp(12μ + 6σ²) − 1`. It moves
+nothing but the equity walk's drift, and without one the walk is the fitted one bit for bit.
+Each sample's provenance names the mean it ran on, with the pin's citation. A pin requires
+`rate_beta` zero, where that formula is the walk's actual mean.
+
 ## Instrument and forecast responsibilities
 
 Equity identity and opening price are shared descriptions, independent of fitted return
@@ -273,7 +281,8 @@ how much they move an allocation answer.
    series over 1980–2026 gives 12.29% at 15.7%, so restricting to the recent past would raise
    the drift ~2pp and cut the volatility ~2.5pp. Nothing forces a century — it is a choice,
    and the honest reason for it is that a 30-year horizon should be priced against a record
-   containing more than one regime.
+   containing more than one regime. A study that wants a different mean on purpose — a
+   prudent one, say — pins it with its source rather than picking a window that produces it.
 
    _Correction:_ an earlier revision claimed a 4pp window effect, measured as MITTX (1973–)
    against VFINX (1980–). That was wrong. MITTX returns 7.17%/yr while its own market returns

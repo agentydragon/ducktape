@@ -30,6 +30,7 @@ from finance.augur.model.path_models.scenarios import HistoricalSeries, historic
 from finance.augur.model.series import SP500_KEY, SP500_SYMBOL, InflationKey, LevelSeriesKey
 from finance.augur.model.structural_macro import (
     EquityProcess,
+    FittedEquityMean,
     StructuralMacroFittedDefaults,
     StructuralMacroProviderConfig,
 )
@@ -141,7 +142,7 @@ def _check_structural_macro(artifact: StructuralMacroFittedDefaults) -> None:
                 # The fit names no instrument; its equity is bound to `SP500_KEY`, where every
                 # artifact's broad market is read.
                 instrument=EquitySpec(symbol=SP500_SYMBOL, initial_price_usd=100.0),
-                monthly_log_return_mu=artifact.equity_monthly_log_return_mu,
+                mean=FittedEquityMean(monthly_log_return_mu=artifact.equity_monthly_log_return_mu),
                 monthly_log_return_sigma=artifact.equity_monthly_log_return_sigma,
             ),
         ).realize_model()

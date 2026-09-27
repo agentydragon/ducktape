@@ -345,6 +345,7 @@ py_test(
         ":historical_windows",
         ":provider_config",
         ":series",
+        ":series_model",
         ":structural_macro",
         "//:conftest",
         "//finance/augur:conftest",

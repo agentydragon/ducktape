@@ -10,6 +10,7 @@ independently.
 
 from __future__ import annotations
 
+import math
 from datetime import date
 
 import numpy as np
@@ -34,16 +35,20 @@ from finance.augur.model.series import (
     SecurityKey,
     SecuritySymbol,
 )
+from finance.augur.model.series_model import derive_stream_rollout_seeds
 from finance.augur.model.structural_macro import (
     INFLATION_RATE,
     SHORT_RATE,
     EquityProcess,
+    FittedEquityMean,
     MacroStateMatrix,
     MacroVarSpec,
+    PinnedEquityMean,
     StructuralMacroProviderConfig,
 )
 
 ZERO_SHOCKS: MacroStateMatrix = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+TEST_CITATION = "test-only citation: a hand-picked mean with no source"
 
 
 def _diagonal_var(
@@ -344,6 +349,170 @@ def test_equity_ignores_rates_by_default() -> None:
     rising = _series(_sample(_rising_rates().model_copy(update={"equity": equity})), SecurityKey(symbol=EQUITY))
     falling = _series(_sample(_falling_rates().model_copy(update={"equity": equity})), SecurityKey(symbol=EQUITY))
     assert np.array_equal(rising, falling)
+
+
+@pytest.mark.parametrize(
+    ("annual_arithmetic_mean", "monthly_log_sigma", "monthly_log_drift"),
+    [
+        # (ln e^0.09 - 6 * 0.05^2) / 12 = (0.09 - 0.015) / 12
+        (math.expm1(0.09), 0.05, 0.00625),
+        # A prudent 8.75% at a century's volatility: (ln 1.0875 - 6 * 0.0529^2) / 12 = (0.0838815 - 0.0167905) / 12
+        (0.0875, 0.0529, 0.0055909187),
+        # No volatility, no drag: the arithmetic mean is the geometric one.
+        (math.expm1(0.12), 0.0, 0.01),
+    ],
+)
+def test_a_pinned_annual_mean_becomes_the_monthly_log_drift(
+    annual_arithmetic_mean: float, monthly_log_sigma: float, monthly_log_drift: float
+) -> None:
+    """The conversion against hand-computed drifts, then run forward through
+    `E[R_annual] = exp(12μ + 6σ²) - 1`: the drift reproduces the mean it was solved from."""
+
+    equity = EquityProcess(
+        instrument=EquitySpec(symbol=EQUITY, initial_price_usd=500.0),
+        mean=PinnedEquityMean(annual_arithmetic_mean=annual_arithmetic_mean, citation=TEST_CITATION),
+        monthly_log_return_sigma=monthly_log_sigma,
+    )
+
+    assert equity.monthly_log_return_mu == pytest.approx(monthly_log_drift, abs=1e-10)
+    assert math.expm1(12.0 * equity.monthly_log_return_mu + 6.0 * monthly_log_sigma**2) == pytest.approx(
+        annual_arithmetic_mean, rel=1e-12
+    )
+
+
+def test_the_simulated_annual_arithmetic_mean_is_the_pinned_one() -> None:
+    """End to end through the sampler at the fitted volatility: simulated one-year gross returns
+    average to the pin within four standard errors.
+
+    Non-overlapping years of i.i.d. months are independent, so 2000 rollouts of 20 years are 40000
+    draws and a standard error near 0.1pp; a correct model misses four of them about once in 16000
+    seeds. The band is also narrower than the volatility drag, so a conversion that dropped the
+    drag — landing near 10.6% here, not 8.75% — fails.
+    """
+
+    pinned = 0.0875
+    equity = EquityProcess(
+        instrument=EquitySpec(symbol=EQUITY, initial_price_usd=500.0),
+        mean=PinnedEquityMean(annual_arithmetic_mean=pinned, citation=TEST_CITATION),
+    )
+    index = (
+        StructuralMacroProviderConfig(equity=equity)
+        .realize_model()
+        .sample_market(ExogenousSamplingRequest(horizon_months=240, rollout_seeds=tuple(range(2000))))
+        .equity_total_return_index
+    )
+    assert index is not None
+    annual = (index[:, 12::12] / index[:, :-1:12]).ravel()
+    tolerance = 4.0 * float(np.std(annual, ddof=1)) / math.sqrt(annual.size)
+
+    assert tolerance < (1.0 + pinned) * math.expm1(6.0 * equity.monthly_log_return_sigma**2)
+    assert float(np.mean(annual)) - 1.0 == pytest.approx(pinned, abs=tolerance)
+
+
+def test_a_pin_moves_only_the_equity_drift() -> None:
+    """Same seeds, fitted macro shocks: CPI and every bond path are the unpinned model's to the bit,
+    and the equity walk's log gap to it grows by exactly the drift difference each month — the same
+    shocks at the same volatility, shifted."""
+
+    instrument = EquitySpec(symbol=EQUITY, initial_price_usd=500.0)
+    fitted = EquityProcess(instrument=instrument)
+    pinned = EquityProcess(
+        instrument=instrument, mean=PinnedEquityMean(annual_arithmetic_mean=0.05, citation=TEST_CITATION)
+    )
+    fitted_bundle, pinned_bundle = (
+        _sample(
+            StructuralMacroProviderConfig(instruments=(BondFundSpec(symbol=BOND, maturity_years=6.0),), equity=equity)
+        )
+        for equity in (fitted, pinned)
+    )
+
+    for key in (InflationKey(), SecurityKey(symbol=BOND), SecurityDistributionKey(symbol=BOND)):
+        np.testing.assert_array_equal(_series(pinned_bundle, key), _series(fitted_bundle, key))
+    log_gap = np.log(
+        _series(pinned_bundle, SecurityKey(symbol=EQUITY)) / _series(fitted_bundle, SecurityKey(symbol=EQUITY))
+    )
+    drift_gap = pinned.monthly_log_return_mu - fitted.monthly_log_return_mu
+    np.testing.assert_allclose(
+        log_gap, np.broadcast_to(drift_gap * np.arange(HORIZON + 1), log_gap.shape), rtol=0.0, atol=1e-12
+    )
+
+
+def test_without_a_pin_the_equity_walk_is_the_fitted_one_to_the_bit() -> None:
+    """No pin samples what this model always sampled: the fitted drift and volatility on the equity
+    stream's own seeded normals. Compared bitwise rather than within a tolerance, because a seed is
+    promised to reproduce a reported path exactly, and a change that moved it only in the last bits
+    would pass any tolerance."""
+
+    equity = EquityProcess(instrument=EquitySpec(symbol=EQUITY, initial_price_usd=500.0))
+    normals = np.stack(
+        [
+            np.random.default_rng(seed).standard_normal(HORIZON + 1)
+            for seed in derive_stream_rollout_seeds(SEEDS, stream_id="structural_macro:equity")
+        ]
+    )
+    log_returns = FittedEquityMean().monthly_log_return_mu + equity.monthly_log_return_sigma * normals
+    log_returns[:, 0] = 0.0
+
+    np.testing.assert_array_equal(
+        _series(_sample(_config(equity=equity)), SecurityKey(symbol=EQUITY)),
+        500.0 * np.exp(np.cumsum(log_returns, axis=1)),
+    )
+
+
+def test_the_sample_says_which_mean_it_ran_on() -> None:
+    """A deployment reaches a pin through YAML, and the sample's provenance carries it, citation
+    included — or the fitted drift when there is none — so no result loses where its mean came from."""
+
+    adapter: TypeAdapter[ProviderConfig] = TypeAdapter(ProviderConfig)
+    parsed = adapter.validate_python(
+        {
+            "type": "structural_macro",
+            "equity": {
+                "instrument": {"symbol": "EQ", "initial_price_usd": 500.0},
+                "mean": {"kind": "pinned", "annual_arithmetic_mean": 0.0875, "citation": TEST_CITATION},
+            },
+        }
+    )
+    assert isinstance(parsed, StructuralMacroProviderConfig)
+    unpinned = _config(equity=EquityProcess(instrument=EquitySpec(symbol=EQUITY, initial_price_usd=500.0)))
+
+    assert _sample(parsed).provenance["equity_mean"] == PinnedEquityMean(
+        annual_arithmetic_mean=0.0875, citation=TEST_CITATION
+    )
+    assert _sample(unpinned).provenance["equity_mean"] == FittedEquityMean()
+
+
+@pytest.mark.parametrize(
+    ("pin", "rate_beta", "rejected"),
+    [
+        pytest.param({"annual_arithmetic_mean": 0.0875}, 0.0, "citation", id="no-citation"),
+        pytest.param({"annual_arithmetic_mean": 0.0875, "citation": "  "}, 0.0, "citation", id="blank-citation"),
+        pytest.param(
+            {"annual_arithmetic_mean": 8.75, "citation": TEST_CITATION}, 0.0, "annual_arithmetic_mean", id="a-percent"
+        ),
+        pytest.param(
+            {"annual_arithmetic_mean": -1.0, "citation": TEST_CITATION}, 0.0, "annual_arithmetic_mean", id="total-loss"
+        ),
+        pytest.param(
+            {"annual_arithmetic_mean": math.nan, "citation": TEST_CITATION}, 0.0, "annual_arithmetic_mean", id="nan"
+        ),
+        pytest.param({"annual_arithmetic_mean": 0.0875, "citation": TEST_CITATION}, -0.5, "rate_beta", id="rate-term"),
+    ],
+)
+def test_a_pin_needs_a_source_a_decimal_mean_and_no_rate_term(
+    pin: dict[str, object], rate_beta: float, rejected: str
+) -> None:
+    """Each case fails on its own field. A blank citation is as untraceable as none, 8.75 is the
+    likeliest slip for 8.75%, and a rate term would give the walk a mean other than the pin's."""
+
+    with pytest.raises(ValidationError, match=rejected):
+        EquityProcess.model_validate(
+            {
+                "instrument": {"symbol": "EQ", "initial_price_usd": 500.0},
+                "mean": {"kind": "pinned", **pin},
+                "rate_beta": rate_beta,
+            }
+        )
 
 
 def test_emissions_are_exactly_the_declared_keys() -> None:
