@@ -521,10 +521,6 @@ metadata:
   name: gaffer-private-source
   namespace: flux-system
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: flux-image-automation-ghcr
       namespace: ducktape-flux
@@ -2654,10 +2650,6 @@ metadata:
   name: seaweedfs-public-s3
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: seaweedfs-operator
       namespace: ducktape-flux

@@ -1,9 +1,9 @@
 # cdk8s adoption: remaining work
 
-Review baseline: `origin/devel` at `eec338cb4e` (2026-09-24). This is a source
+Review baseline: `origin/devel` at `90125370b0` (2026-09-27). This is a source
 audit, not a fresh synthesis, CI result, or live-cluster health report.
 
-The central chart contains 180 Flux Kustomizations. The broad resource conversion,
+The central chart contains 181 Flux Kustomizations. The broad resource conversion,
 ArtifactGenerator wiring, two output roots, and removal of redundant single-file
 Kustomize wrappers are implemented. They are no longer migration waves.
 
@@ -21,39 +21,15 @@ not approve a new abstraction, resource owner, authorization grant, or deploymen
 
 ### A. Split generic cdk8s builders from ducktape's cluster-specific wiring
 
-`cluster/cdk8s/<provider>.py` (`cilium.py`, `flux.py`, `cnpg.py`, `gateway.py`, ...) and
-`crd_bindings/<provider>/` today mix three things across two disconnected locations: raw
-`cdk8s_import` bindings, CRD-schema-shaped ergonomic constructors with no ducktape fact
-in them, and this cluster's own topology/secret/namespace values.
-[The builder-authoring skill](../skills/cdk8s_builders/SKILL.md) states the target shape
-for the middle piece; this closes the gap between that skill and the actual layout.
+Each CRD family's `cdk8s_import` bindings and generic constructors live in
+`cluster/cdk8s/providers/<name>/`, in the shape
+[the builder-authoring skill](../skills/cdk8s_builders/SKILL.md) states. Kinds still
+built raw at several call sites, each its own call: Flux `HelmRepository` (about 31
+sites) and `GitRepository` (8), then `CiliumClusterwideNetworkPolicy`, `CleanupPolicy`,
+`SandboxWarmPool`, Terraform and `VirtualMachine` (2 or 3 each).
 
-1. Create `cluster/cdk8s/providers/<name>/` per CRD/provider family: the `cdk8s_import`
-   BUILD target (moved from `crd_bindings/<name>/`) plus generic constructor functions
-   for that CRD — cdk8s-plus's own conventions (reference-passing, named factories for
-   recurring value fragments, a tiered escape hatch, one constructor per resource kind),
-   not a different style invented for this repo. No ducktape namespace, secret name,
-   hostname, or topology fact belongs here; a parameter that would need one stays
-   required, with no default.
-2. Using the same skill, add the `providers/` modules this repo doesn't have yet for
-   CRDs `cdk8s_plus_34` doesn't cover and that are still hand-built raw at their call
-   sites: KEDA (`ScaledJob`, `TriggerAuthentication`), Agentplane's own CRDs
-   (`EgressPolicy`, `EgressCredential`, `EgressBinding`, `ActionPolicySet`,
-   `ActionPolicyBinding`), cert-manager (`Certificate`, `ClusterIssuer`), kyverno
-   (`ClusterPolicy`), the agent-sandbox `SandboxTemplate`, and a shared
-   `ServiceMonitor`/`PodMonitor` constructor.
-3. Point every existing ducktape-specific module at the matching `providers/` package
-   instead of constructing the CRD's generated dataclasses inline, and update its
-   consumers to the new import. Land `external_secrets/` first (already fully generic —
-   a pure move, proves the BUILD/gazelle mechanics) before touching a high-consumer-count
-   module; `flux.py` (~150 call sites) goes last, and keeps its existing call sites
-   unchanged by re-exporting a `functools.partial`-bound constructor rather than pushing
-   a new required keyword to every one of them.
-
-Done: `crd_bindings/` no longer exists as a tree separate from `providers/`; no
-ducktape-specific module builds a CRD's generated dataclasses raw at more than one call
-site; `//cluster/cdk8s:test_generate_manifests` shows no rendered-output diff across the
-whole migration.
+Done: no ducktape-specific module builds a CRD's generated dataclasses raw at more than
+one call site, with no rendered-output diff from `//cluster/cdk8s:test_generate_manifests`.
 
 ### B. Restore dependency-update ownership
 
@@ -74,8 +50,7 @@ passes the generation gate, and leaves no independently editable duplicate pin.
 ### C. Convert useful YAML seams
 
 Start with Grocy's household overlays, then Airlock's typed configuration and the
-rotator rosters; Haku CI's shared runner/Pod values is another independent slice.
-The remainder backlog names the existing models, semantic hazards, and acceptance
+rotator rosters. The remainder backlog names the existing models, semantic hazards, and acceptance
 conditions. Authentik blueprints need a separate ownership decision consistent with
 `cluster/docs/sso.md`; embedding their text in Python is not completion.
 
@@ -90,7 +65,7 @@ ConfigMap rollout behavior; serialization changes can change hashes and restart 
 
 ### D. Close validation gaps before moving checks
 
-`fleet_rules.add_fleet_rules` has 11 production registration sites, not universal
+`fleet_rules.add_fleet_rules` has 12 production registration sites, not universal
 coverage. `resolved_references` only rejects a reference when the same name exists as
 the other kind in that chart. Unknown names pass; namespace is not part of its lookup.
 It does not establish that every Secret or ConfigMap reference resolves.
@@ -125,19 +100,11 @@ Prefer fluent constructs when they remove independent selectors, names, ports or
 references. Preserve exact behavior with typed core/CRD bindings when the fluent layer
 would require several compensating patches. Treat these as targeted improvements:
 
-- `forgejo/cache.py`: expose the used toleration through `valkey_instance` using the
-  imported CRD's type instead of a raw `/spec/tolerations` patch.
 - `seaweedfs/s3.py`: use generated structs for grant/access patch values; keep the
   useful Bucket/Identity API and assess its chart-local grant mutation separately.
-- `haku/{console,migration}.py`: check the pinned fluent container API before retaining
-  positional `containers/0/terminationMessagePolicy` patches.
 - Keep the shared typed pod-seccomp patch while the pinned API requires it. Review
   Kyverno's schema-gap patches and Helm's explicit-null patch against their actual
   schemas; do not erase them merely to reduce a count.
-- The ServiceMonitor/PodMonitor helper is covered by the `providers/` builder work above;
-  preserve differences in auth, labels and timeouts across ntfy, aiquota and LiteLLM when
-  it lands. A helper earns its place by owning that relationship, not just shortening
-  constructor syntax.
 
 Done per slice: fewer separately authored facts or untyped values, no loss of expressible
 Kubernetes fields, and a reviewed rendered diff.
@@ -146,14 +113,10 @@ Kubernetes fields, and a reviewed rendered diff.
 
 The existing target is `chart(app, ...values) -> Chart`, with synthesis/writing outside
 resource construction and Flux nodes receiving already-built dependencies and values.
-`litellm/proxy.py:litellm` still accepts `root`, constructs and writes its workload,
-then returns its Flux node. Separate that concrete exception first.
 
-Keep the explicit forward Flux graph. Its 1,648-line entry point is a navigation cost,
-not proof that a registry or graph framework is needed. Extract an area only when its
-inputs/outputs form a clear boundary. Keep the current small `write_charts` helper
-unless a concrete composition/validation requirement justifies a different writer;
-callables used immediately by this helper do not by themselves justify a fleet rewrite.
+Keep the explicit forward Flux graph. Its long entry point is a navigation cost, not
+proof that a registry or graph framework is needed. Extract an area only when its
+inputs/outputs form a clear boundary.
 
 Use an Environment object for repeated deployments (Agentplane, Grocy); constants and
 direct parameters remain suitable for a singleton. Use a function for a repeated
