@@ -61,8 +61,28 @@ class RenderedDirectory:
 
 
 def artifact_directory(artifact: ArtifactGeneratorSpecArtifacts) -> str:
-    """The repo-relative directory `artifact` copies first: its consumer's Kustomization directory."""
-    return artifact.copy[0].to.removeprefix("@artifact/").removesuffix("/")
+    """The repo-relative directory `artifact` copies first: its consumer's Kustomization directory.
+    Later copies are shared bases the Kustomization references.
+
+    Raises on any shape `artifact_generators.artifact` does not build -- no copies, or a copy
+    that is not one whole directory copied to the same path -- since the Kustomization's `path`
+    would otherwise silently point at the wrong directory.
+    """
+    directories = []
+    for copy in artifact.copy:
+        directory = copy.to.removeprefix("@artifact/").removesuffix("/")
+        if (
+            not directory
+            or copy.to != f"@artifact/{directory}/"
+            or copy.from_ != f"@repo/{directory}/**"
+            or copy.exclude is not None
+            or copy.strategy is not None
+        ):
+            raise ValueError(f"{artifact.name=}: not a whole-directory copy: {copy.from_=} {copy.to=}")
+        directories.append(directory)
+    if not directories:
+        raise ValueError(f"{artifact.name=} copies nothing")
+    return directories[0]
 
 
 @jsii.implements(IValidation)
