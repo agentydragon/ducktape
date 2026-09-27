@@ -136,6 +136,9 @@ _UPSTREAM_DEFINER: dict[str, str] = {
     "groq": "oai",  # OpenAI-compatible chat at api.groq.com/openai/v1
     "gemini": "goog",
     "ollama": "olm",
+    # LiteLLM's native Ollama chat adapter has its own provider prefix. It speaks
+    # the same Ollama wire shape, so public `olm-chat` route names remain unchanged.
+    "ollama_chat": "olm",
     # The in-process Tana adapter speaks Anthropic Messages on the wire while using its
     # own LiteLLM provider prefix for dispatch.
     "tana": "ant",
