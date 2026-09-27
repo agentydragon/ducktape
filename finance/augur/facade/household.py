@@ -112,12 +112,16 @@ class Untaxed(_Declaration):
 
 
 class BiasDirection(StrEnum):
-    """Which way leaving something out of the portfolio moves a run's results."""
+    """Which way leaving something out of the portfolio moves a run's results, in level or in spread."""
 
-    # Results understate the household, as when an asset is counted at zero.
-    CONSERVATIVE = "conservative"
-    # Results overstate it, as when a debt is left out.
+    # Results overstate the household, as when a debt is left out.
     OPTIMISTIC = "optimistic"
+    # Results understate it, as when an asset is counted at zero.
+    PESSIMISTIC = "pessimistic"
+    # Outcomes spread wider than they would, as when a hedge is left out.
+    WIDER = "wider"
+    # Outcomes spread narrower than they would, as when a volatile holding is counted at a fixed value.
+    NARROWER = "narrower"
     UNKNOWN = "unknown"
 
 

@@ -95,7 +95,7 @@ FILING = FilingProfile(filing_status=FilingStatus.SINGLE, jurisdiction_ids={Juri
 TAXED = Taxed(filing=FILING, prior_year_tax=Decimal(0))
 UNTAXED = Untaxed(reason="test household holds only tax-free accounts")
 EXCLUDED = Excluded(
-    label="test private holding", reason="no market price: counted at zero", direction=BiasDirection.CONSERVATIVE
+    label="test private holding", reason="no market price: counted at zero", direction=BiasDirection.PESSIMISTIC
 )
 RESERVED = ReservedLiability(label="test tax already owed", earmarked=Decimal(10_000), reason="test bills held for it")
 SCOPE = DeclaredScope(excluded=(EXCLUDED,), reserved=(RESERVED,))
@@ -150,7 +150,8 @@ def test_free_text_must_say_something(declaration: BaseModel, field: str) -> Non
 
 
 def test_bias_direction_is_a_closed_choice() -> None:
-    assert _rejected_fields(Excluded, {**dict(EXCLUDED), "direction": "pessimistic"}) == {"direction"}
+    # A natural synonym is refused, not read as `pessimistic`.
+    assert _rejected_fields(Excluded, {**dict(EXCLUDED), "direction": "conservative"}) == {"direction"}
 
 
 def test_a_taxed_household_files_with_some_authority() -> None:
