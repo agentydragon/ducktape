@@ -9,6 +9,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
+    RenderedDirectory,
     flux_kustomization,
     flux_kustomization_depends_on,
     flux_kustomization_depends_on_many,
@@ -195,19 +196,16 @@ def public_coder_agent_app(
     )
 
 
-def agent_shared_secrets(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, claude_rbac: Kustomization
-) -> Kustomization:
+def agent_shared_secrets(chart: Chart, directory: RenderedDirectory, claude_rbac: Kustomization) -> Kustomization:
     name = "agent-shared-secrets"
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         retry_interval=None,
         wait=None,
         timeout="5m",
         depends_on=[flux_kustomization_depends_on(claude_rbac)],
-        decryption=SOPS_DECRYPTION,
     )
 
 
