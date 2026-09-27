@@ -267,7 +267,7 @@ def _synapse_routes(scope: Construct) -> None:
             hostnames=["allegedly.works"],
             rules=[
                 HttpRouteSpecRules(
-                    matches=[RouteMatch.path_prefix(prefix).to_spec()],
+                    matches=[RouteMatch.path_prefix(prefix)],
                     backend_refs=[HttpRouteSpecRulesBackendRefs(name=SYNAPSE, port=_SYNAPSE_PORT)],
                 )
                 for prefix in ("/_matrix", "/.well-known/matrix")
