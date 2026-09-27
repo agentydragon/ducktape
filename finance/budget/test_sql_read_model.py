@@ -18,8 +18,8 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
-from finance.augur.budget import sql_read_model
-from finance.augur.budget.schema import (
+from finance.budget import sql_read_model
+from finance.budget.schema import (
     AccountCondition,
     AllOfCondition,
     AmountCondition,
@@ -41,7 +41,6 @@ from finance.augur.budget.schema import (
     Rule,
     TransferDirection,
 )
-from finance.augur.dates import DAYS_PER_MONTH
 from finance.plaid.db.schema import AccountRow, LinkRow, TransactionRow, async_session_factory
 from util.bazel.runfiles import get_required_path
 from util.testing.postgres import force_drop_database
@@ -368,8 +367,8 @@ async def test_sql_budget_snapshot_preserves_classification_and_aggregation_sema
         "other_in": 0,
     }
     days = (date(2026, 4, 30) - date(2026, 3, 15)).days + 1
-    assert _averages_by_bucket(response)["groceries"] == pytest.approx(1000.0 / days * DAYS_PER_MONTH)
-    assert _averages_by_bucket(response)["income"] == pytest.approx(-5000.0 / days * DAYS_PER_MONTH)
+    assert _averages_by_bucket(response)["groceries"] == pytest.approx(1000.0 / days * sql_read_model.DAYS_PER_MONTH)
+    assert _averages_by_bucket(response)["income"] == pytest.approx(-5000.0 / days * sql_read_model.DAYS_PER_MONTH)
     assert [row.transaction_id for row in response.lumpy] == ["grocery_lumpy"]
     assert response.coverage_starts == date(2026, 3, 15)
 

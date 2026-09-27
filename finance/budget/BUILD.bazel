@@ -5,10 +5,7 @@ package(default_visibility = ["//visibility:public"])
 py_library(
     name = "schema",
     srcs = ["schema.py"],
-    deps = [
-        "//finance/augur/api:schemas",
-        "@pypi//pydantic",
-    ],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -16,7 +13,6 @@ py_library(
     srcs = ["wire.py"],
     deps = [
         ":schema",
-        "//finance/augur/api:schemas",
         "@pypi//pydantic",
     ],
 )
@@ -27,7 +23,6 @@ py_library(
     deps = [
         ":schema",
         ":wire",
-        "//finance/augur:dates",
         "@pypi//sqlalchemy",
     ],
 )
@@ -44,8 +39,6 @@ py_test(
         ":schema",
         ":sql_read_model",
         "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur:dates",
         "//finance/plaid/db:schema",
         "//util/bazel:runfiles",
         "//util/testing:postgres",
@@ -74,7 +67,6 @@ py_test(
         ":schema",
         ":wire",
         "//:conftest",
-        "//finance/augur:conftest",
         "@pypi//pytest_bazel",
     ],
 )

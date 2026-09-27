@@ -11,7 +11,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from finance.augur.budget.schema import (
+from finance.budget.schema import (
     AccountCondition,
     AllOfCondition,
     AmountCondition,
@@ -32,7 +32,7 @@ from finance.augur.budget.schema import (
     Rule,
     TransferDirection,
 )
-from finance.augur.budget.wire import (
+from finance.budget.wire import (
     BucketMonthly,
     BucketView,
     BudgetSnapshotResponse,
@@ -40,7 +40,9 @@ from finance.augur.budget.wire import (
     LumpyView,
     TransactionView,
 )
-from finance.augur.dates import DAYS_PER_MONTH
+
+# Mean Gregorian month in days; converts a window's per-day average into `window_monthly_avg`.
+DAYS_PER_MONTH = 365.2425 / 12.0
 
 
 def _month_start(d: date) -> date:

@@ -6,9 +6,9 @@ from datetime import date
 
 import pytest_bazel
 
-from finance.augur.budget.csv_export import build_summary_csv, build_transactions_csv
-from finance.augur.budget.schema import BucketKind
-from finance.augur.budget.wire import (
+from finance.budget.csv_export import build_summary_csv, build_transactions_csv
+from finance.budget.schema import BucketKind
+from finance.budget.wire import (
     BucketMonthly,
     BucketView,
     BudgetSnapshotResponse,
@@ -54,7 +54,7 @@ def test_build_summary_csv_emits_bucket_by_month_matrix() -> None:
 
 def test_build_summary_csv_blanks_missing_family_and_preserves_inflow_sign() -> None:
     response = _snapshot(
-        bucket=BucketView(id="reimbursements", label="Anthem reimbursements", kind=BucketKind.INFLOW, family=None),
+        bucket=BucketView(id="reimbursements", label="Insurance reimbursements", kind=BucketKind.INFLOW, family=None),
         monthly=BucketMonthly(
             bucket_id="reimbursements", monthly_amounts=(-450.5,), window_monthly_avg=-450.5, transaction_count=1
         ),
@@ -62,7 +62,7 @@ def test_build_summary_csv_blanks_missing_family_and_preserves_inflow_sign() -> 
 
     row = build_summary_csv(response, {}).strip().split("\n")[1]
 
-    assert row == "Anthem reimbursements,inflow,,-450.50,-450.50,1"
+    assert row == "Insurance reimbursements,inflow,,-450.50,-450.50,1"
 
 
 def test_build_summary_csv_quotes_labels_with_commas() -> None:
