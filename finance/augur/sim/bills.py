@@ -1,5 +1,7 @@
 """Scheduled and recurring obligations as the counterparties that demand them."""
 
+from dataclasses import dataclass, field
+
 from finance.augur.sim.actor import Actor, MonthOpened
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import Demand, OrdinaryDeduction
@@ -17,6 +19,7 @@ class Bill(Demand):
     deduction: OrdinaryDeduction | None
 
 
+@dataclass(kw_only=True)
 class Biller(Actor[MonthOpened | PropertyStatement, Bill]):
     """One obligation: bills its payer in the months it is due.
 
@@ -24,29 +27,16 @@ class Biller(Actor[MonthOpened | PropertyStatement, Bill]):
     only while the property is held, deducting by the share that is let.
     """
 
-    def __init__(
-        self,
-        *,
-        obligation_id: str,
-        obligation_type: str,
-        from_account: AccountRef,
-        to_account: AccountRef,
-        amount_due: PreparedAmount,
-        property_id: PropertyId | None,
-        deduction_category: TransferDeductionCategory | None,
-        deductible_fraction_ppb: int,
-        schedule: Schedule,
-    ) -> None:
-        self.obligation_id = obligation_id
-        self.obligation_type = obligation_type
-        self.from_account = from_account
-        self.to_account = to_account
-        self.amount_due = amount_due
-        self.property_id = property_id
-        self.deduction_category = deduction_category
-        self.deductible_fraction_ppb = deductible_fraction_ppb
-        self.schedule = schedule
-        self.property: PropertyStatement | None = None
+    obligation_id: str
+    obligation_type: str
+    from_account: AccountRef
+    to_account: AccountRef
+    amount_due: PreparedAmount
+    property_id: PropertyId | None
+    deduction_category: TransferDeductionCategory | None
+    deductible_fraction_ppb: int
+    schedule: Schedule
+    property: PropertyStatement | None = field(init=False, default=None)
 
     def handle(self, message: MonthOpened | PropertyStatement) -> list[Bill]:
         if isinstance(message, PropertyStatement):
