@@ -146,6 +146,10 @@ def _ollama_container() -> k8s.Container:
             k8s.EnvVar(name="OLLAMA_NOPRUNE", value="true"),
             k8s.EnvVar(name="OLLAMA_NUM_PARALLEL", value="1"),
             k8s.EnvVar(name="OLLAMA_MAX_LOADED_MODELS", value="1"),
+            # Mixed CUDA/Vulkan discovery can reverse the CUDA runner's device
+            # order during duplicate removal. Keep the desktop margin on PCI GPU0.
+            k8s.EnvVar(name="OLLAMA_VULKAN", value="false"),
+            k8s.EnvVar(name="CUDA_DEVICE_ORDER", value="PCI_BUS_ID"),
             # Operator-approved desktop headroom: 2 GiB on GPU0, no extra
             # placement margin on GPU1. Verify actual free VRAM after loading.
             k8s.EnvVar(name="LLAMA_ARG_FIT_TARGET", value="2048,0"),

@@ -93,6 +93,10 @@ spec:
               value: "1"
             - name: OLLAMA_MAX_LOADED_MODELS
               value: "1"
+            - name: OLLAMA_VULKAN
+              value: "false"
+            - name: CUDA_DEVICE_ORDER
+              value: PCI_BUS_ID
             - name: LLAMA_ARG_FIT_TARGET
               value: 2048,0
             - name: OLLAMA_HOST

@@ -50,7 +50,10 @@ One loaded model and one inference slot avoid concurrent KV-cache growth.
 `LLAMA_ARG_FIT_TARGET=2048,0` requests the operator-approved 2 GiB desktop-GPU
 headroom and no additional placement margin on GPU1. These are placement targets,
 not exclusive reservations. This differs from the host experiments' 8/2 GiB targets;
-record actual placement and headroom when comparing throughput. Ollama retains
+record actual placement and headroom when comparing throughput. Vulkan discovery is
+disabled and CUDA uses PCI bus ordering: mixed-backend duplicate removal was observed
+to list PCI GPU1 before GPU0, which could reverse the runner's margin mapping. Verify
+the runner's `CUDA_VISIBLE_DEVICES` and physical GPU headroom after loading. Ollama retains
 its 40Gi RAM limit, Q8 KV and 128K context. Stop exclusive host experiments before
 resuming this Deployment.
 
