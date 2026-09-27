@@ -24,22 +24,14 @@ from constructs import Construct
 
 class ClusterIssuer(_ClusterIssuer):
     @classmethod
-    def self_signed(cls, scope: Construct, id: str, *, name: str) -> ClusterIssuer:
-        return cls(
-            scope,
-            id,
-            metadata=ApiObjectMetadata(name=name),
-            spec=ClusterIssuerSpec(self_signed=ClusterIssuerSpecSelfSigned()),
-        )
+    def self_signed(cls, scope: Construct, id: str, *, metadata: ApiObjectMetadata) -> ClusterIssuer:
+        return cls(scope, id, metadata=metadata, spec=ClusterIssuerSpec(self_signed=ClusterIssuerSpecSelfSigned()))
 
     @classmethod
-    def ca(cls, scope: Construct, id: str, *, name: str, secret_name: str) -> ClusterIssuer:
+    def ca(cls, scope: Construct, id: str, *, metadata: ApiObjectMetadata, secret_name: str) -> ClusterIssuer:
         """Issues from an existing CA keypair Secret (`secret_name`'s `tls.crt`/`tls.key`)."""
         return cls(
-            scope,
-            id,
-            metadata=ApiObjectMetadata(name=name),
-            spec=ClusterIssuerSpec(ca=ClusterIssuerSpecCa(secret_name=secret_name)),
+            scope, id, metadata=metadata, spec=ClusterIssuerSpec(ca=ClusterIssuerSpecCa(secret_name=secret_name))
         )
 
     @classmethod
@@ -48,7 +40,7 @@ class ClusterIssuer(_ClusterIssuer):
         scope: Construct,
         id: str,
         *,
-        name: str,
+        metadata: ApiObjectMetadata,
         server: str,
         email: str,
         private_key_secret_name: str,
@@ -57,7 +49,7 @@ class ClusterIssuer(_ClusterIssuer):
         return cls(
             scope,
             id,
-            metadata=ApiObjectMetadata(name=name),
+            metadata=metadata,
             spec=ClusterIssuerSpec(
                 acme=ClusterIssuerSpecAcme(
                     server=server,

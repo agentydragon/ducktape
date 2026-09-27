@@ -30,12 +30,11 @@ _ROOT_CA_SECRET = "cluster-root-ca-secret"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    bootstrap = ClusterIssuer.self_signed(chart, "bootstrap", name="cluster-ca-bootstrap")
+    bootstrap = ClusterIssuer.self_signed(chart, "bootstrap", metadata=ApiObjectMetadata(name="cluster-ca-bootstrap"))
     Certificate(
         chart,
         "root-ca",
-        name="cluster-root-ca",
-        namespace="cert-manager",
+        metadata=ApiObjectMetadata(name="cluster-root-ca", namespace="cert-manager"),
         is_ca=True,
         common_name="cluster-root-ca",
         secret_name=_ROOT_CA_SECRET,
@@ -44,7 +43,9 @@ def chart(app: App) -> Chart:
         issuer_ref=CertificateSpecIssuerRef(name=bootstrap.name, kind="ClusterIssuer"),
     )
     # Issues internal service certificates from the root CA.
-    ClusterIssuer.ca(chart, "internal", name="cluster-internal-ca", secret_name=_ROOT_CA_SECRET)
+    ClusterIssuer.ca(
+        chart, "internal", metadata=ApiObjectMetadata(name="cluster-internal-ca"), secret_name=_ROOT_CA_SECRET
+    )
     Bundle(
         chart,
         "bundle",

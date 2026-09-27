@@ -1,4 +1,4 @@
-"""Test-only exogenous path model fixtures."""
+"""Test-only exogenous path model fixtures and market-path checks."""
 
 from __future__ import annotations
 
@@ -7,10 +7,26 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import numpy.typing as npt
+from polars.testing import assert_frame_equal
 
+from finance.augur.model.bond_fund import BondFundSpec
+from finance.augur.model.equity import EquitySpec
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
+from finance.augur.model.market_paths import MarketPaths
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
-from finance.augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode, PrivateEquityRegimeCode
+from finance.augur.model.product_paths import construct_products
+from finance.augur.model.series import (
+    InflationKey,
+    IssuerId,
+    LevelSeriesKey,
+    PrivateEquityEventKindCode,
+    PrivateEquityRegimeCode,
+    SecurityDistributionKey,
+    SecurityKey,
+    SecuritySymbol,
+)
+
+TEST_EQUITY = SecuritySymbol("test_equity")
 
 type LevelOverride = float | npt.NDArray[np.float64] | Callable[[ExogenousSamplingRequest], npt.NDArray[np.float64]]
 type IntOverride = int | npt.NDArray[np.int64] | Callable[[ExogenousSamplingRequest], npt.NDArray[np.int64]]
@@ -205,3 +221,44 @@ def _check_shape(matrix: np.ndarray, request: ExogenousSamplingRequest) -> None:
     expected = (request.rollout_count, request.horizon_months + 1)
     if matrix.shape != expected:
         raise ValueError(f"constant fixture matrix has shape {matrix.shape}; expected {expected}")
+
+
+def check_two_constructions(paths: MarketPaths) -> None:
+    """Products built on one `MarketPaths` share its market series and leave it untouched.
+
+    Callers patch their market source to fail when called, so this also checks that product
+    construction never reloads or resamples markets.
+    """
+
+    assert paths.equity_total_return_index is not None
+    inputs = [
+        paths.short_rate,
+        paths.term_spread,
+        paths.cpi_level,
+        paths.equity_total_return_index,
+        *paths.corporate_yields.values(),
+    ]
+    before = [array.copy() for array in inputs]
+    equity = EquitySpec(symbol=TEST_EQUITY, initial_price_usd=517.3)
+    short = BondFundSpec(symbol=SecuritySymbol("test_fund"), maturity_years=2.0, initial_price_usd=98.7)
+    long = BondFundSpec(symbol=SecuritySymbol("test_fund"), maturity_years=8.0, initial_price_usd=98.7)
+    first = construct_products(paths, equity=equity, instruments=(short,))
+    second = construct_products(paths, equity=equity, instruments=(long,))
+    repeated = construct_products(paths, equity=equity, instruments=(short,))
+    for key in first.levels.series_keys():
+        assert_frame_equal(first.levels.frame(key.kind), repeated.levels.frame(key.kind))
+    for key in (SecurityKey(symbol=equity.symbol), InflationKey()):
+        np.testing.assert_array_equal(
+            first.level_matrix(key, rollout_count=paths.rollout_count, horizon_months=paths.horizon_months),
+            second.level_matrix(key, rollout_count=paths.rollout_count, horizon_months=paths.horizon_months),
+        )
+    key = SecurityKey(symbol=short.symbol)
+    assert not np.array_equal(
+        first.level_matrix(key, rollout_count=paths.rollout_count, horizon_months=paths.horizon_months),
+        second.level_matrix(key, rollout_count=paths.rollout_count, horizon_months=paths.horizon_months),
+    )
+    assert SecurityDistributionKey(symbol=equity.symbol) not in first.levels.series_keys()
+    for actual, expected in zip(inputs, before, strict=True):
+        np.testing.assert_array_equal(actual, expected)
+    for name, value in paths.provenance.items():
+        assert first.provenance[name] == value

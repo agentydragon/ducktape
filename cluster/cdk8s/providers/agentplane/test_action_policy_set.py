@@ -10,7 +10,7 @@ def test_exact_actions() -> None:
         chart,
         "test",
         metadata=ApiObjectMetadata(name="test-set"),
-        auto_approve_if=[AutoApproveIf.exact_actions(actions={"github": ["get_me"]}).to_spec()],
+        auto_approve_if=[AutoApproveIf.exact_actions(actions={"github": ["get_me"]})],
     )
     (manifest,) = Cdk8sTesting.synth(chart)
     assert manifest["spec"]["autoApproveIf"] == [{"type": "exact_actions", "actions": {"github": ["get_me"]}}]
@@ -25,7 +25,7 @@ def test_github_repository() -> None:
         auto_approve_if=[
             AutoApproveIf.github_repository(
                 owner="agentydragon", repository="ducktape", actions={"github": ["get_file_contents"]}
-            ).to_spec()
+            )
         ],
     )
     (manifest,) = Cdk8sTesting.synth(chart)
@@ -45,7 +45,7 @@ def test_github_public_repository() -> None:
         chart,
         "test",
         metadata=ApiObjectMetadata(name="test-set"),
-        auto_approve_if=[AutoApproveIf.github_public_repository(actions={"github": ["get_file_contents"]}).to_spec()],
+        auto_approve_if=[AutoApproveIf.github_public_repository(actions={"github": ["get_file_contents"]})],
     )
     (manifest,) = Cdk8sTesting.synth(chart)
     assert manifest["spec"]["autoApproveIf"] == [

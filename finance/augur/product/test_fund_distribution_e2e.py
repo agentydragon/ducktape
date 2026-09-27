@@ -25,9 +25,7 @@ from finance.augur.api.config import Config, DistributionTaxShareConfig, Securit
 from finance.augur.api.portfolio import HoldingKind, HoldingTaxLotConfig, SecurityHoldingConfig
 from finance.augur.api.wire import CatalogResponse
 from finance.augur.model.deterministic import Constant
-from finance.augur.model.independent import IndependentProviderConfig
 from finance.augur.model.level_series_groups import SecurityDistributionGroups
-from finance.augur.model.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.conftest import MakeProductService
 from finance.augur.product.scenarios import (
@@ -41,6 +39,8 @@ from finance.augur.product.wire import RolloutRequest, ScenarioKey, SpendIndex
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId, PortfolioId
 from finance.augur.sim.scenario import InterestIncome, TlhCohort, TlhPortfolioSpec
 from finance.augur.sim.tlh import TlhAssumptions
+from finance.augur.x.models.independent import IndependentProviderConfig
+from finance.augur.x.models.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
 
 _SYMBOL = SecuritySymbol("bnd")
 _UNITS = 2_000.0

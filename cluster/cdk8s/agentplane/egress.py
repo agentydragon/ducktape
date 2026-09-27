@@ -127,7 +127,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
             "Agentplane destinations. It conveys no LiteLLM credential or operator, Agent, or "
             "Thread authority."
         ),
-        source=Source.authenticated_workload_token().to_spec(),
+        source=Source.authenticated_workload_token(),
         targets=[
             EgressCredentialSpecTargets(
                 header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
@@ -144,7 +144,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
             "not narrow what the token itself may do — the rule's hosts and methods are the only "
             "limit it adds, so treat anything the token can reach on those hosts as reachable."
         ),
-        source=Source.secret_ref(name=GITHUB_PAT_SECRET, key="token").to_spec(),
+        source=Source.secret_ref(name=GITHUB_PAT_SECRET, key="token"),
         targets=[
             EgressCredentialSpecTargets(
                 header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
@@ -165,7 +165,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
             "as that account and by nothing here: what the sandbox may do is the RBAC bound to "
             "it, and this proxy adds only the rule's hosts, methods and paths on top."
         ),
-        source=Source.projected_workload_token(audience=KUBERNETES_AUDIENCE).to_spec(),
+        source=Source.projected_workload_token(audience=KUBERNETES_AUDIENCE),
         targets=[
             EgressCredentialSpecTargets(
                 header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
