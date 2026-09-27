@@ -15,7 +15,9 @@ quantized market paths and variable-length resolved tax rules; a world declares 
 directly and keeps no authoring objects.
 
 `sim/` owns declarations, execution, and common books/results. Preparation does not depend on the executor.
-`model/` and `fit/` sample and fit; `policy/` contains proposal helpers.
+`model/` holds historical replay, market paths and instrument pricing; `fit/` shared
+evidence loading and scoring; `x/models/` the experimental fitted providers with their
+training code; `policy/` proposal helpers.
 Neither financial settlement nor preparation depends on the app's `product/`
 or HTTP modules.
 
@@ -24,7 +26,7 @@ or HTTP modules.
 ```text
 supplied paths (+ rules)
     -> World(MarketPath(series, rollout_id, ...), horizon_months=...)
-    -> world.declare_account / declare_pool / hold / declare_portfolio / declare_distribution
+    -> world.declare_account / declare_pool / hold / declare_portfolio / declare_distribution  # Prepared* records
     -> world.declare_housing / declare_flow / declare_deduction / declare_tender_policy
     -> world.track(agent | mortgage | biller | tax_authority); world.start()
     -> world.step()  # open: statements and dues to the agent; MonthOpened -> ordered actions; close
@@ -156,6 +158,13 @@ every experiment.
 
 ## Rejected designs
 
+- **A scenario object.** One configuration value meant to represent every use case,
+  compiled into declarations, made every use case fit one schema. Callers build the
+  `Prepared*` facts they need and declare them.
+- **A facade that runs the rollout loop.** Augur is building blocks: the caller owns
+  the loop and uses `World`'s operations inside it, as a PyTorch user writes their own
+  training loop. A strategy particular to one study is caller code, not something core
+  learns to configure.
 - **Explicit guarded composition without a `World`.** Consistency checks across
   agents, contracts and tax treatment need one registration point; every sketch of
   the lighter form reinvented it.

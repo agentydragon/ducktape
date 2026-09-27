@@ -13,14 +13,18 @@ described in <sim/DESIGN.md> and the module documentation.
 
 Market generation and financial settlement are separate. Experiments choose
 datasets, models, fitting, sampling and product construction; execution consumes
-already supplied paths. Forecast-only evaluation does not require simulator
+already supplied paths, which assume the simulated actors do not move market prices.
+Forecast-only evaluation does not require simulator
 instrument declarations. Sharing a model does not imply it supports every
-instrument or that its forecasts are adequate for a particular decision.
+instrument or that its forecasts are adequate for a particular decision. Fitted
+market models are experimental (`x/models/`); core supplies historical replay and
+the market-path and instrument-pricing infrastructure.
 
-A caller prepares its declarations, rules and supplied paths as typed records of
-exact monetary terms, resolved tax rules and integer paths, which a composed world
-declares. Execution does not reread the caller's inputs or load evidence/tax
-configuration. Missing or non-finite required paths reject;
+A caller builds its declarations, rules and supplied paths as `Prepared*` records
+(`sim/prepared.py`) of exact integer money, resolved tax rules and integer paths, and
+declares them on a `World` (`declare_*`, `hold`, `track`). There is no scenario
+object or compile step between the two. Execution does not reread the caller's
+inputs or load evidence/tax configuration. Missing or non-finite required paths reject;
 they are not synthesized as zero observations. Ordinary public-security and
 home-value prices are positive. Prices used exclusively by reduced-form TLH
 portfolios may be zero, allowing worthless exposure to be liquidated; negative
@@ -57,10 +61,10 @@ separate native spending-amount or allocation-weight callback API.
 The action session supports one decision-making household with scripted
 counterparties, public securities, reduced-form TLH portfolios, cash, due claims
 and held dated bonds, and services a mortgage that exists at month zero as a
-tracked contract. It does not support household housing purchases or PE actions.
-Configured scenario adapters use Python-controlled financial steps while retaining
-their scripted housing/PE events; they do not provide an alternative executable
-policy interface.
+tracked contract. It does not support household housing purchases or PE actions:
+a world still runs those from configured strategies declared on it
+(`World.declare_housing`'s scripted lifecycle, `World.declare_tender_policy`), which
+are not an alternative executable policy interface.
 
 For each active path, the common session:
 
@@ -117,8 +121,8 @@ lots' actual basis, including residual basis on full disposal. Acquisition basis
 comes from the actual settled purchase. FIFO is a caller's selection rule, not
 the only possible exact-lot request.
 
-An opening lot supplies its exact remaining total cost basis in the scenario's
-currency quantum. That total need not divide into currency-quantized per-unit
+An opening lot supplies its exact remaining total cost basis in integer currency
+quanta. That total need not divide into currency-quantized per-unit
 amounts. Imports, execution and recorded lot state retain the total without
 deriving and re-quantizing a per-unit basis; sales apportion it and full
 liquidation consumes the remainder.
@@ -133,6 +137,8 @@ contributions, gross-cash withdrawals or liquidation. Modeled losses reduce the
 same basis later consumed by redemptions; new contributions do not inherit prior
 loss adjustments. Component value is counted once in household wealth.
 Canonical accounting settles its financial effects and determines household tax.
+A portfolio owns its whole (owner, account, index) slot: that account cannot also hold
+lots or a pool of the index it tracks.
 The approximation does not reconstruct constituent trades or establish statutory
 TLH fidelity. A month's harvest stands even if a later payment that month fails.
 Its statement also says whether it accepts a contribution at the current mark: at a
@@ -186,8 +192,11 @@ taxed at the federal long-term capital-gain rates and as ordinary income in Cali
 the declaration is trusted without a holding-period test. The code does not yet cover
 this scope: NIIT's net investment income leaves out net rental income and the investment
 deductions IRS Form 8960 allows; the bundled tables are 2024 law; a taxpayer starts with no
-year-to-date income, gains or payments; the SALT cap has no income phase-out; and estimated payments are equal quarters of one
-aggregate prior-year amount rather than per-jurisdiction schedules.
+year-to-date income, gains or payments; the SALT cap has no income phase-out; estimated payments are equal quarters of one
+aggregate prior-year amount rather than per-jurisdiction schedules; fund capital-gain and
+return-of-capital distributions are not processed; one capital-loss carryforward serves every
+jurisdiction; and a property sale's gain basis leaves out the buyer's closing costs that its
+purchase capitalized.
 
 ## Outputs and observation boundaries
 
