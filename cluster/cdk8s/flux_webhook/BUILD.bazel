@@ -9,7 +9,6 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:ntfy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
@@ -17,7 +16,6 @@ py_library(
         "//cluster/cdk8s/providers/flux:alert",
         "//cluster/cdk8s/providers/flux:provider",
         "//cluster/cdk8s/providers/flux:receiver",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

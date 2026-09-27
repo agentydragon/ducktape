@@ -307,16 +307,12 @@ def generate_manifests(root: Path) -> None:
     forgejo_db.write_manifests(root)
     home_assistant_namespace.write_manifests(root)
     forgejo_gitops_modules.write_manifests(root)
-    drift_watch.write_manifests(root)
     github_secrets_sync_secrets.write_manifests(root)
     seaweedfs_s3_config.write_manifests(root)
     seaweedfs_public_s3.write_manifests(root)
     nix_cache_attic.write_manifests(root)
     vm_images_publisher_publisher.write_manifests(root)
     alloy.write_manifests(root)
-    loki.write_manifests(root)
-    mimir.write_manifests(root)
-    tempo.write_manifests(root)
     grafana_instance.write_manifests(root)
     grafana_app.write_manifests(root)
     github_exporter_app.write_manifests(root)
@@ -345,7 +341,6 @@ def generate_manifests(root: Path) -> None:
     github_api_proxy.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
     ducktape_flux.write_manifests(root)
-    flux_webhook_chart.write_manifests(root)
     flux_image_automation_ghcr.write_manifests(root)
     flux_sources.write_manifests(root)
     gaffer_private_source.write_manifests(root)
@@ -731,7 +726,9 @@ def generate_manifests(root: Path) -> None:
         flux_chart, forgejo_agentydragon_artifact, tofu_controller_kustomization
     )
     infra_drift_artifact = artifact("infra-drift", drift_watch.OUTPUT_DIR)
-    drift_watch.infra_drift(flux_chart, infra_drift_artifact, tofu_controller_kustomization)
+    drift_watch.infra_drift(
+        flux_chart, write_directory(root, infra_drift_artifact, drift_watch.chart), tofu_controller_kustomization
+    )
     alloy_otlp_bearer_artifact = artifact("alloy-otlp-bearer", alloy_otlp_bearer.OUTPUT_DIR)
     alloy_otlp_bearer.alloy_otlp_bearer(
         flux_chart,
@@ -841,7 +838,7 @@ def generate_manifests(root: Path) -> None:
     monitoring_loki_artifact = artifact("monitoring-loki", loki.OUTPUT_DIR)
     loki_kustomization = loki.loki(
         flux_chart,
-        monitoring_loki_artifact,
+        write_directory(root, monitoring_loki_artifact, loki.chart),
         grafana_helmrepository_kustomization,
         seaweedfs_operator_kustomization,
         monitoring_crds_kustomization,
@@ -849,7 +846,7 @@ def generate_manifests(root: Path) -> None:
     monitoring_mimir_artifact = artifact("monitoring-mimir", mimir.OUTPUT_DIR)
     mimir_kustomization = mimir.mimir(
         flux_chart,
-        monitoring_mimir_artifact,
+        write_directory(root, monitoring_mimir_artifact, mimir.chart),
         monitoring_crds_kustomization,
         grafana_helmrepository_kustomization,
         seaweedfs_operator_kustomization,
@@ -857,7 +854,7 @@ def generate_manifests(root: Path) -> None:
     monitoring_tempo_artifact = artifact("monitoring-tempo", tempo.OUTPUT_DIR)
     tempo.tempo(
         flux_chart,
-        monitoring_tempo_artifact,
+        write_directory(root, monitoring_tempo_artifact, tempo.chart),
         monitoring_crds_kustomization,
         grafana_helmrepository_kustomization,
         seaweedfs_operator_kustomization,
@@ -964,7 +961,10 @@ def generate_manifests(root: Path) -> None:
     gatus_flux_kustomizations.gatus(flux_chart, gatus_artifact, cnpg_kustomization, monitoring_crds_kustomization)
     flux_webhook_artifact = artifact("flux-webhook", flux_webhook_chart.OUTPUT_DIR)
     flux_webhook_chart.flux_webhook(
-        flux_chart, flux_webhook_artifact, ntfy_kustomization, external_secrets_operator_kustomization
+        flux_chart,
+        write_directory(root, flux_webhook_artifact, flux_webhook_chart.chart),
+        ntfy_kustomization,
+        external_secrets_operator_kustomization,
     )
     langfuse_artifact = artifact("langfuse", langfuse_app.OUTPUT_DIR)
     langfuse_app.langfuse(
