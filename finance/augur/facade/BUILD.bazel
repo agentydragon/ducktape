@@ -1,0 +1,24 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "estimate",
+    srcs = ["estimate.py"],
+    deps = [
+        "@pypi//numpy",
+        "@pypi//statsmodels",
+    ],
+)
+
+py_test(
+    name = "test_estimate",
+    srcs = ["test_estimate.py"],
+    deps = [
+        ":estimate",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
