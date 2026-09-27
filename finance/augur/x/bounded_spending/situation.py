@@ -10,14 +10,18 @@ from finance.augur.sim.fixed_point import rate_to_ppb
 from finance.augur.sim.ids import AssetId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedDistribution,
-    PreparedDistributionSlice,
-    PreparedHoldingPool,
-)
+from finance.augur.sim.prepared import PreparedDistribution, PreparedDistributionSlice
 from finance.augur.sim.world import World
-from finance.augur.study.trinity.replay import BONDS, BROKERAGE, CHECKING, RETIREE, WORLD, Situation, opening_lots
+from finance.augur.study.trinity.replay import (
+    BONDS,
+    BROKERAGE,
+    CHECKING,
+    RETIREE,
+    WORLD,
+    Situation,
+    hold_lots,
+    opening_lots,
+)
 
 
 def compose(case: Situation, rollout_id: int, *, equity_share: float) -> World:
@@ -26,7 +30,7 @@ def compose(case: Situation, rollout_id: int, *, equity_share: float) -> World:
     The bond payout names its (corporate) interest source; nothing here is taxed.
     """
     lots = opening_lots(equity_share)
-    holds_bonds = any(lot.asset_id == str(BONDS) for lot in lots)
+    holds_bonds = any(lot.symbol == BONDS for lot in lots)
     world = World(
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
@@ -35,20 +39,8 @@ def compose(case: Situation, rollout_id: int, *, equity_share: float) -> World:
         else (ORDINARY_INCOME,),
     )
     for agent_id in (RETIREE, WORLD):
-        world.declare_account(
-            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
-        )
-    for lot in lots:
-        world.declare_pool(
-            PreparedHoldingPool(
-                agent_id=lot.agent_id,
-                account_id=lot.account_id,
-                asset_id=lot.asset_id,
-                quantity_scale=lot.quantity_scale,
-            )
-        )
-    for lot in lots:
-        world.hold(lot)
+        world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
+    hold_lots(world, lots)
     if holds_bonds:
         world.declare_distribution(
             PreparedDistribution(

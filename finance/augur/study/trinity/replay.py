@@ -156,12 +156,9 @@ from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
-    PreparedAccount,
     PreparedDistribution,
     PreparedDistributionSlice,
-    PreparedHoldingPool,
     PreparedIndexedAmount,
-    PreparedLot,
     PreparedObligation,
     PreparedSeries,
 )
@@ -298,7 +295,17 @@ def situation(
     )
 
 
-def opening_lots(equity_share: float, *, portfolio: Decimal = INITIAL_PORTFOLIO) -> tuple[PreparedLot, ...]:
+@dataclass(frozen=True, kw_only=True)
+class OpeningLot:
+    """One sleeve's retiree-held brokerage lot, bought the month before the window opens."""
+
+    symbol: SecuritySymbol
+    quantity_scale: int
+    units: int
+    basis: int
+
+
+def opening_lots(equity_share: float, *, portfolio: Decimal = INITIAL_PORTFOLIO) -> tuple[OpeningLot, ...]:
     """`equity_share` of `portfolio` in stocks and the rest in bonds, bought at `UNIT_PRICE` the month before."""
     if not 0 <= equity_share <= 1:
         raise ValueError("equity_share must be finite and in [0, 1]")
@@ -313,12 +320,8 @@ def opening_lots(equity_share: float, *, portfolio: Decimal = INITIAL_PORTFOLIO)
         )
         scale = quantity_scale_for_asset(SecurityKey(symbol=symbol))
         lots.append(
-            PreparedLot(
-                lot_id=LotId(f"{symbol}_initial"),
-                agent_id=RETIREE,
-                account_id=BROKERAGE,
-                asset_id=AssetId(symbol),
-                purchase_month=-1,
+            OpeningLot(
+                symbol=symbol,
                 quantity_scale=scale,
                 # What `basis` buys: a float share's unrounded value is no exact quantity.
                 units=quantity_for_value(
@@ -330,7 +333,26 @@ def opening_lots(equity_share: float, *, portfolio: Decimal = INITIAL_PORTFOLIO)
     return tuple(lots)
 
 
-def compose(case: Situation, rollout_id: int, *, lots: Sequence[PreparedLot], annual_withdrawal: Decimal) -> World:
+def hold_lots(world: World, lots: Sequence[OpeningLot]) -> None:
+    """Each lot's pool, then the lots themselves."""
+    for lot in lots:
+        world.declare_pool(
+            agent_id=RETIREE, account_id=BROKERAGE, asset_id=AssetId(lot.symbol), quantity_scale=lot.quantity_scale
+        )
+    for lot in lots:
+        world.hold_lot(
+            lot_id=LotId(f"{lot.symbol}_initial"),
+            agent_id=RETIREE,
+            account_id=BROKERAGE,
+            asset_id=AssetId(lot.symbol),
+            purchase_month=-1,
+            quantity_scale=lot.quantity_scale,
+            units=lot.units,
+            basis=lot.basis,
+        )
+
+
+def compose(case: Situation, rollout_id: int, *, lots: Sequence[OpeningLot], annual_withdrawal: Decimal) -> World:
     """One window's books: `lots` in the brokerage, drawn down by `annual_withdrawal` at the start of
     each year and indexed to CPI thereafter — the paper's inflation-adjusted Table 3 rather than
     its constant-dollar Table 1.
@@ -339,7 +361,7 @@ def compose(case: Situation, rollout_id: int, *, lots: Sequence[PreparedLot], an
     policy. Exact exhaustion after the final paid withdrawal is a success. The all-stock
     cell holds no bond lot and so declares no payout.
     """
-    holds_bonds = any(lot.asset_id == str(BONDS) for lot in lots)
+    holds_bonds = any(lot.symbol == BONDS for lot in lots)
     world = World(
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
@@ -349,20 +371,8 @@ def compose(case: Situation, rollout_id: int, *, lots: Sequence[PreparedLot], an
         else (ORDINARY_INCOME,),
     )
     for agent_id in (RETIREE, WORLD):
-        world.declare_account(
-            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
-        )
-    for lot in lots:
-        world.declare_pool(
-            PreparedHoldingPool(
-                agent_id=lot.agent_id,
-                account_id=lot.account_id,
-                asset_id=lot.asset_id,
-                quantity_scale=lot.quantity_scale,
-            )
-        )
-    for lot in lots:
-        world.hold(lot)
+        world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
+    hold_lots(world, lots)
     for month in range(0, case.horizon_months, MONTHS_PER_YEAR):
         world.track(
             Biller(

@@ -9,35 +9,11 @@ from typing import Literal
 
 from finance.augur.model.series import LocationId
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.ids import (
-    AccountId,
-    AgentId,
-    AssetId,
-    BondId,
-    JurisdictionId,
-    LiabilityId,
-    LotId,
-    PortfolioId,
-    PropertyId,
-)
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, PortfolioId, PropertyId
 from finance.augur.sim.income import TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.schedule import Schedule
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedAccount:
-    account: AccountRef
-    opening_balance: int
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedHoldingPool:
-    agent_id: AgentId
-    account_id: AccountId
-    asset_id: AssetId
-    quantity_scale: int
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -103,35 +79,9 @@ class PreparedObligation:
 
 
 @dataclass(frozen=True, kw_only=True)
-class PreparedLot:
-    lot_id: LotId
-    agent_id: AgentId
-    account_id: AccountId
-    asset_id: AssetId
-    purchase_month: int
-    quantity_scale: int
-    units: int
-    basis: int
-
-
-@dataclass(frozen=True, kw_only=True)
 class PreparedIndexedCoupon:
     annual_rate_ppb: int
     kind: Literal["indexed"] = "indexed"
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedBond:
-    bond_id: BondId
-    agent_id: AgentId
-    account_id: AccountId
-    issuer_jurisdiction_id: JurisdictionId | None
-    face_value: int
-    purchase_price: int
-    coupon: PreparedFixedAmount | PreparedIndexedCoupon
-    coupon_period_months: int
-    purchase_month_index: int
-    maturity_month_index: int
 
 
 @dataclass(frozen=True, kw_only=True)

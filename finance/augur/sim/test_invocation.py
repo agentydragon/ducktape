@@ -15,7 +15,7 @@ from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD, mul_div
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.prepared import PreparedAccount, PreparedObligation
+from finance.augur.sim.prepared import PreparedObligation
 from finance.augur.sim.results import Finished
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
@@ -29,9 +29,7 @@ def _retiree(market: MarketPath) -> World:
     world = World(market, horizon_months=HORIZON, income_sources=(ORDINARY_INCOME,))
     for name, balance in ((AgentId("retiree"), 10_000), (AgentId("world"), 0)):
         world.declare_account(
-            PreparedAccount(
-                account=AccountRef(agent_id=name, account_id=AccountId("checking")), opening_balance=balance
-            )
+            account=AccountRef(agent_id=name, account_id=AccountId("checking")), opening_balance=balance
         )
     return world
 

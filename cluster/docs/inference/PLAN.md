@@ -285,7 +285,10 @@ state. The [serial queue](runs/2026-09-26_qwen38_queue/README.md) completed its 
 frozen task at 128K/Q8 with Q4 and Terminus-2:
 [reward 1.0, six verifier checks passed, two compactions](runs/2026-09-26_qwen38_q4_terminus_result/README.md)
 in 7h 40m total. Q5 and IQ4_XS downloads finished at 04:48 Pacific. The matched
-IQ4_XS task started at 12:10 and has no result yet. The KV sweep, native 256K and Q5
+[IQ4_XS attempt](runs/2026-09-26_qwen38_iq4_terminus_result/README.md) also passed all
+six verifier tests after three compactions, but exhausted its eight-hour agent limit
+while still testing. Its wrapper exited cleanly; decode averaged 40.79 tokens/s
+versus Q4's 24.74, without earlier agent completion. The KV sweep, native 256K and Q5
 comparison remain follow-ups. Desktop RAM/VRAM reserves remain enforced; overlapping
 download traffic in Q4's first hour is a latency confounder. Its wrapper guard failed
 after the passing result because the Kubernetes API was unreachable; distinguish
@@ -318,9 +321,12 @@ intuition.
 Terminal-Bench 4.0 is a substantial agent evaluation, worth a carefully controlled
 rerun. The first predetermined CPU-only task passed with Terminus-2 at 128K,
 preserving original task verifiers and deadlines and recovering after two natural
-compactions. IQ4 now repeats that task serially. Compare its completion, token use,
-history recovery and elapsed time before choosing the next predetermined or practical
-OpenCode task. One success establishes feasibility, not a suite-level pass rate.
+compactions. IQ4 passed the same verifier after three compactions but timed out
+while testing. Audit late-run stopping behavior and deadline communication, then
+broaden to a different predetermined task serially. Follow the
+[settings audit](runs/2026-09-26_qwen38_queue/SETTINGS_AUDIT.md) for separate sampling
+and reasoning-history comparisons. Two passing solutions on one shared task establish
+feasibility, not a suite-level pass rate or equivalent quant quality.
 Reserve up to 24–48 hours for a subsequent
 bounded batch and analysis. This is a compute budget,
 not a promise to finish every selected task. Record unfinished work explicitly.

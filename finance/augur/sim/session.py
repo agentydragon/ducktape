@@ -67,9 +67,9 @@ class _Record:
                 value = world.bonds.held_principal(bond, world.month, mark)
                 series.values.append(0 if value is None else value)
         keys = {
-            (AccountRef(agent_id=lot.spec.agent_id, account_id=lot.spec.account_id), lot.spec.asset_id)
+            (AccountRef(agent_id=lot.agent_id, account_id=lot.account_id), lot.asset_id)
             for lot in world.holdings.lots
-            if lot.spec.agent_id == self.actor
+            if lot.agent_id == self.actor
         }
         keys.update(
             (AccountRef(agent_id=row.owner_agent_id, account_id=row.account_id), row.asset_id)

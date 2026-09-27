@@ -7,7 +7,9 @@ funded price and its lifecycle follows it, a cashflow or bill falls inside the h
 the path carries, and an issuer's protocol path stays in range.
 """
 
+from collections.abc import Callable
 from dataclasses import replace
+from functools import partial
 
 import pytest
 import pytest_bazel
@@ -30,17 +32,13 @@ from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedBond,
     PreparedDistribution,
     PreparedDistributionSlice,
     PreparedFixedAmount,
-    PreparedHoldingPool,
     PreparedIndexedAmount,
     PreparedIndexedCoupon,
     PreparedJurisdiction,
     PreparedLocation,
-    PreparedLot,
     PreparedObligation,
     PreparedPropertyCashflow,
     PreparedRecurringTransfer,
@@ -103,21 +101,31 @@ def composed(*series: PreparedSeries, horizon_months: int = HORIZON) -> World:
         jurisdictions=(TAX_HOME,),
     )
     for account in (ref(HOLDER), ref(HOLDER, BROKERAGE), ref(COUNTERPARTY)):
-        world.declare_account(PreparedAccount(account=account, opening_balance=0))
+        world.declare_account(account=account, opening_balance=0)
     return world
 
 
-def pool(*, account_id: AccountId = BROKERAGE, quantity_scale: int = SCALE) -> PreparedHoldingPool:
-    return PreparedHoldingPool(agent_id=HOLDER, account_id=account_id, asset_id=STOCK, quantity_scale=quantity_scale)
+def pool(
+    world: World, *, account_id: AccountId = BROKERAGE, asset_id: AssetId = STOCK, quantity_scale: int = SCALE
+) -> None:
+    world.declare_pool(agent_id=HOLDER, account_id=account_id, asset_id=asset_id, quantity_scale=quantity_scale)
 
 
-def lot(lot_id: LotId = LOT, *, account_id: AccountId = BROKERAGE, quantity_scale: int = SCALE) -> PreparedLot:
-    return PreparedLot(
+def lot(
+    world: World,
+    lot_id: LotId = LOT,
+    *,
+    account_id: AccountId = BROKERAGE,
+    asset_id: AssetId = STOCK,
+    purchase_month: int = -2,
+    quantity_scale: int = SCALE,
+) -> None:
+    world.hold_lot(
         lot_id=lot_id,
         agent_id=HOLDER,
         account_id=account_id,
-        asset_id=STOCK,
-        purchase_month=-2,
+        asset_id=asset_id,
+        purchase_month=purchase_month,
         quantity_scale=quantity_scale,
         units=quantity_scale,
         basis=100,
@@ -126,10 +134,10 @@ def lot(lot_id: LotId = LOT, *, account_id: AccountId = BROKERAGE, quantity_scal
 
 @pytest.mark.parametrize("bad", [0, -1], ids=["zero", "negative"])
 def test_a_pool_admits_no_quote_that_is_not_a_price_and_holds_nothing_when_it_refuses(bad: int) -> None:
-    composed(prices(100, 100, 100)).declare_pool(pool())
+    pool(composed(prices(100, 100, 100)))
     world = composed(prices(100, 100, bad))  # the unusable mark is in the terminal snapshot
     with pytest.raises(ValueError, match=f"non-positive value {bad}"):
-        world.declare_pool(pool())
+        pool(world)
     # The refusal precedes every holding built on that quote: nothing was admitted.
     assert not world.holdings.pools
     assert world.managed is None
@@ -138,7 +146,7 @@ def test_a_pool_admits_no_quote_that_is_not_a_price_and_holds_nothing_when_it_re
 
 def test_a_public_pool_needs_its_price_series_on_the_path() -> None:
     with pytest.raises(ValueError, match="missing public security series"):
-        composed().declare_pool(pool())
+        pool(composed())
 
 
 def test_a_path_admits_only_dense_series_named_once() -> None:
@@ -161,54 +169,67 @@ def test_a_world_needs_a_positive_horizon_every_series_covers() -> None:
 def test_a_lot_needs_a_declared_pool_on_its_own_quantity_scale() -> None:
     world = composed(prices(100, 100, 100))
     with pytest.raises(ValueError, match="references no declared holding pool"):
-        world.hold(lot())
+        lot(world)
     with pytest.raises(ValueError, match="invalid holding pool quantity scale"):
-        world.declare_pool(pool(quantity_scale=7))  # units are counted on a power-of-ten grid
-    world.declare_pool(pool())
+        pool(world, quantity_scale=7)  # units are counted on a power-of-ten grid
+    pool(world)
     with pytest.raises(ValueError, match="mixed quantity scale"):
-        world.hold(lot(quantity_scale=10))
-    world.hold(lot())
-    assert [held.spec.lot_id for held in world.holdings.lots] == ["test-lot"]
+        lot(world, quantity_scale=10)
+    lot(world)
+    assert [held.lot_id for held in world.holdings.lots] == ["test-lot"]
 
 
 def test_a_pool_holds_one_opening_lot_per_purchase_month() -> None:
     world = composed(prices(100, 100, 100))
-    world.declare_pool(pool())
-    world.declare_pool(pool(account_id=CHECKING))
-    world.hold(lot(LotId("test-first")))
+    pool(world)
+    pool(world, account_id=CHECKING)
+    lot(world, LotId("test-first"))
     # Another month in the pool, or the same month in another pool, leaves FIFO ordered by month.
-    world.hold(replace(lot(LotId("test-older")), purchase_month=-3))
-    world.hold(lot(LotId("test-elsewhere"), account_id=CHECKING))
-    with pytest.raises(ValueError, match=r"'test-first' and 'test-twin' share holding\.purchase_month=-2"):
-        world.hold(lot(LotId("test-twin")))
+    lot(world, LotId("test-older"), purchase_month=-3)
+    lot(world, LotId("test-elsewhere"), account_id=CHECKING)
+    with pytest.raises(ValueError, match="'test-first' and 'test-twin' share purchase_month=-2"):
+        lot(world, LotId("test-twin"))
 
 
 # A par bond paying a fixed semiannual coupon over two whole periods. Its issuer is
 # non-governmental: `None` is a real issuer state that no jurisdiction exempts, not a missing value.
-BOND = PreparedBond(
-    bond_id=BondId("test-bond"),
-    agent_id=HOLDER,
-    account_id=CHECKING,
-    issuer_jurisdiction_id=None,
-    face_value=100,
-    purchase_price=100,
-    coupon=PreparedFixedAmount(amount=3),
-    coupon_period_months=6,
-    purchase_month_index=-6,
-    maturity_month_index=6,
-)
+COUPON = PreparedFixedAmount(amount=3)
+
+
+def bond(
+    world: World,
+    *,
+    account_id: AccountId = CHECKING,
+    issuer_jurisdiction_id: JurisdictionId | None = None,
+    purchase_price: int = 100,
+    coupon: PreparedFixedAmount | PreparedIndexedCoupon = COUPON,
+    coupon_period_months: int = 6,
+    maturity_month_index: int = 6,
+) -> None:
+    world.hold_bond(
+        bond_id=BondId("test-bond"),
+        agent_id=HOLDER,
+        account_id=account_id,
+        issuer_jurisdiction_id=issuer_jurisdiction_id,
+        face_value=100,
+        purchase_price=purchase_price,
+        coupon=coupon,
+        coupon_period_months=coupon_period_months,
+        purchase_month_index=-6,
+        maturity_month_index=maturity_month_index,
+    )
 
 
 @pytest.mark.parametrize(
     ("invalid", "match"),
     [
-        (replace(BOND, purchase_price=99), "invalid bond terms"),
-        (replace(BOND, coupon=PreparedFixedAmount(amount=-1)), "invalid bond terms"),
-        (replace(BOND, coupon_period_months=5), "invalid bond terms"),
-        (replace(BOND, maturity_month_index=BOND.purchase_month_index), "invalid bond terms"),
-        (replace(BOND, coupon=PreparedIndexedCoupon(annual_rate_ppb=50_000_000)), "inflation"),
-        (replace(BOND, issuer_jurisdiction_id=JurisdictionId("test-unknown")), "unknown issuer"),
-        (replace(BOND, account_id=AccountId("test-undeclared")), "unknown account"),
+        (partial(bond, purchase_price=99), "invalid bond terms"),
+        (partial(bond, coupon=PreparedFixedAmount(amount=-1)), "invalid bond terms"),
+        (partial(bond, coupon_period_months=5), "invalid bond terms"),
+        (partial(bond, maturity_month_index=-6), "invalid bond terms"),
+        (partial(bond, coupon=PreparedIndexedCoupon(annual_rate_ppb=50_000_000)), "inflation"),
+        (partial(bond, issuer_jurisdiction_id=JurisdictionId("test-unknown")), "unknown issuer"),
+        (partial(bond, account_id=AccountId("test-undeclared")), "unknown account"),
     ],
     ids=[
         "non-par",
@@ -220,10 +241,10 @@ BOND = PreparedBond(
         "unknown-account",
     ],
 )
-def test_a_dated_bond_is_bought_at_par_over_whole_coupon_periods(invalid: PreparedBond, match: str) -> None:
-    composed().hold(BOND)
+def test_a_dated_bond_is_bought_at_par_over_whole_coupon_periods(invalid: Callable[[World], None], match: str) -> None:
+    bond(composed())
     with pytest.raises(ValueError, match=match):
-        composed().hold(invalid)
+        invalid(composed())
 
 
 PURCHASE = _PropertyPurchase(
@@ -282,8 +303,8 @@ DISTRIBUTION = PreparedDistribution(
 
 def holding_stock(*, payout: PreparedSeries) -> World:
     world = composed(prices(100, 100, 100), payout)
-    world.declare_pool(pool())
-    world.hold(lot())
+    pool(world)
+    lot(world)
     return world
 
 
@@ -350,7 +371,7 @@ def test_a_zero_mark_is_valid_only_where_the_asset_is_held_exclusively_through_a
     # An ordinary purchase pool sharing the quote restores the positive-price requirement:
     # managed ownership is pool-scoped.
     with pytest.raises(ValueError, match="non-positive value"):
-        composed(prices(0, 0, 0)).declare_pool(pool())
+        pool(composed(prices(0, 0, 0)))
 
 
 def cpi(*levels: int) -> PreparedSeries:
@@ -637,19 +658,19 @@ def test_a_managed_portfolio_holds_its_pool_alone_whichever_is_declared_first() 
     managed_first = composed(prices(100, 100, 100))
     managed_first.declare_portfolio(MANAGED)
     with pytest.raises(ValueError, match=SOLE_OWNER):
-        managed_first.declare_pool(pool())
+        pool(managed_first)
     with pytest.raises(ValueError, match="references no declared holding pool"):
-        managed_first.hold(lot())
+        lot(managed_first)
     # Ownership is pool-scoped: the same security in another account is an ordinary holding.
-    managed_first.declare_pool(pool(account_id=CHECKING))
-    managed_first.hold(lot(account_id=CHECKING))
+    pool(managed_first, account_id=CHECKING)
+    lot(managed_first, account_id=CHECKING)
 
     lot_first = holding_stock(payout=payouts(0, 0, 0))
     with pytest.raises(ValueError, match=SOLE_OWNER):
         lot_first.declare_portfolio(MANAGED)
     assert lot_first.managed is None
     pool_first = composed(prices(100, 100, 100))
-    pool_first.declare_pool(pool())
+    pool(pool_first)
     with pytest.raises(ValueError, match=SOLE_OWNER):
         pool_first.declare_portfolio(MANAGED)
 
@@ -684,8 +705,8 @@ def issuer_paths(**overrides: tuple[int, ...]) -> tuple[PreparedSeries, ...]:
 def holding_private(*series: PreparedSeries) -> None:
     world = composed(*series)
     asset_id = AssetId(f"private_equity:{ISSUER}")
-    world.declare_pool(PreparedHoldingPool(agent_id=HOLDER, account_id=BROKERAGE, asset_id=asset_id, quantity_scale=1))
-    world.hold(replace(lot(), asset_id=asset_id, quantity_scale=1))
+    pool(world, asset_id=asset_id, quantity_scale=1)
+    lot(world, asset_id=asset_id, quantity_scale=1)
 
 
 @pytest.mark.parametrize(

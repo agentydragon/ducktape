@@ -33,7 +33,6 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
-    PreparedAccount,
     PreparedJurisdiction,
     PreparedLocation,
     PreparedRecurringTransfer,
@@ -103,8 +102,9 @@ MULTI_PROPERTY_LOCATIONS = (
 )
 
 
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return AccountRef(agent_id=agent_id, account_id=CHECKING), money(balance)
 
 
 def financing(
@@ -170,7 +170,7 @@ class Situation:
     """What Alice owns, what happens to it, and the market each property is valued in."""
 
     horizon_months: int
-    accounts: tuple[PreparedAccount, ...]
+    accounts: tuple[tuple[AccountRef, int], ...]
     housing: Housing
     rollout_count: int = 1
     locations: tuple[PreparedLocation, ...] = LOCATIONS
@@ -206,8 +206,8 @@ def compose(case: Situation, rollout_id: int) -> World:
             PreparedJurisdiction(jurisdiction_id=id_, level=rules.level) for id_, rules in jurisdictions.items()
         ),
     )
-    for opening in case.accounts:
-        world.declare_account(opening)
+    for opened, balance in case.accounts:
+        world.declare_account(account=opened, opening_balance=balance)
     if case.jurisdiction_ids:
         world.track(
             TaxAuthority(
