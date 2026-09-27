@@ -71,7 +71,7 @@ reconstruct tax schedules from padded arrays or reread jurisdiction rules.
 
 | Directory   | Purpose                                                                                                                                 |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `model/`    | Runtime exogenous-provider configs, sim-facing exogenous model APIs, simple fixture provider, and the active VECM provider.             |
+| `model/`    | Runtime exogenous-provider configs, sim-facing exogenous model APIs, simple fixture provider, and fitted macro providers.               |
 | `fit/`      | Offline exogenous-model fitting entry points and config templates.                                                                      |
 | `api/`      | `Config` schema, wire request/response shapes, `Backend`, HTTP server, catalog/settings/calibration assembly, OpenAPI schema export.    |
 | `sim/`      | Deterministic trajectory evaluation over typed scenarios and sampled external-series bundles.                                           |
@@ -116,9 +116,11 @@ bazelisk run //finance/augur:dev
 
 The public fixture config uses a composite exogenous provider: an independent
 macro block plus a deterministic `private_equity_risk` fixture issuer. Fitted
-macro models are selected in `Config.exogenous_provider` YAML, e.g. `type:
-vecm` with a trained blob path or `type: state_space` with a trained artifact
-path plus grouped conditioning observations.
+macro models are selected per preset in `Config.models`, e.g. `type:
+structural_macro`, which defaults to the checked-in fit, or `type: state_space`
+with a trained artifact path plus grouped conditioning observations. A checked-in
+fit either passes `//finance/augur/fit/calibrated:sanity_test` or is listed in
+its `QUARANTINED` and is not to be used as a model.
 
 ## Profiling
 

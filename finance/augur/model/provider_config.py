@@ -13,19 +13,15 @@ Each example below is one value in the `models` map (e.g. under `current_model:`
 # Composite provider: a macro model owns public liquid/macro series, while a
 # trained private-equity component owns the complete PE protocol series for each
 # issuer: `private_equity:*` prices, auxiliary liquidity/control levels, and tender
-# opportunity events. VECM intentionally does not synthesize PE fallbacks.
+# opportunity events. `structural_macro` (its own example is below) models public
+# markets only, so it synthesizes no PE fallbacks.
 type: composite
 macro:
-  type: vecm
-  # Written whole by `bb run //finance/augur/fit:train -- --model vecm ...` — see
-  # fit/calibrated/trained_vecm_provider.yaml for the real shape. Not hand-authored;
-  # a deployment copies the block the fit target wrote.
-  trained_state: {factor_names: [...], train_log_levels: [[...]], params: {...}}
-  latest_observations:
-    security:SPY: {value: 550.0, units: usd_per_unit, observed_at: '2026-05-01', source_id: 'public:SPY', treatment: hard_start}
-    # One explicitly selected source observation for every fitted factor.
-  evidence_metadata: {} # auxiliary source evidence; never an anchor fallback
-  current_mortgage30_rate_pct: 6.5
+  type: structural_macro
+  equity:
+    instrument: {symbol: SPY, initial_price_usd: 500.0}
+  instruments:
+    - {symbol: BOND_FUND, maturity_years: 6.0, initial_price_usd: 100.0}
 private_equity:
   type: trained_private_equity
   trained_model_path: /etc/augur/private_equity_model.json

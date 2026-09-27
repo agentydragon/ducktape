@@ -1,5 +1,9 @@
+load("//devinfra/python:defs.bzl", "py_test")
+
 package(default_visibility = ["//visibility:public"])
 
+# Quarantined: fails `sanity_test` (reason and numbers in its `QUARANTINED`). Kept as a real
+# sample of the typed observation boundary, never as a model.
 filegroup(
     name = "trained_vecm_provider",
     srcs = ["trained_vecm_provider.yaml"],
@@ -13,4 +17,30 @@ filegroup(
 filegroup(
     name = "trained_structural_macro_blob",
     srcs = ["trained_structural_macro.yaml"],
+)
+
+py_test(
+    name = "sanity_test",
+    size = "medium",
+    srcs = ["sanity_test.py"],
+    # Every checked-in artifact, so a new one is checked without editing this rule.
+    data = glob(["*.yaml"]),
+    deps = [
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/fit:conftest",
+        "//finance/augur/fit:model",
+        "//finance/augur/model:equity",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
+        "//finance/augur/model:structural_macro",
+        "//finance/augur/model:vecm",
+        "//finance/augur/model/path_models:scenarios",
+        "@pypi//numpy",
+        "@pypi//numpyro",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
 )
