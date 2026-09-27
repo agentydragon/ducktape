@@ -41,3 +41,14 @@
   background-color: var(--mantine-color-blue-light);
   max-width: min(34rem, 80%);
 }
+
+/* Every row stays in normal flow (no virtualizer transform), so the browser's own scroll anchoring
+   can keep the reader's row fixed when something else resizes -- that requires the anchor and
+   everything around it to be real, positioned document flow, not absolutely-positioned windowed
+   items. `content-visibility` is what keeps this affordable at thread length: the browser skips
+   layout/paint for a row's subtree while it is off-screen, using `contain-intrinsic-size` as its
+   placeholder height (then the real one, remembered, once it has been laid out at least once). */
+.agentplane-history-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 180px;
+}

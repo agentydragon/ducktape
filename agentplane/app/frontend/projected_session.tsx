@@ -15,7 +15,6 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { create } from "@bufbuild/protobuf";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
@@ -721,7 +720,14 @@ function commandOutcomeLabel(operation: string, outcome: string): string {
 // How close the top of the loaded rows comes to the viewport's before the page before them loads.
 const LOAD_OLDER_WITHIN = 80;
 
-function VirtualizedHistory({
+/** The transcript view. Every row is real, positioned document flow -- `content-visibility` (see
+ * `.agentplane-history-row`) keeps that affordable at thread length, and native `overflow-anchor`
+ * (the browser's own default, not this component's code) is what keeps the reader's row fixed
+ * when a card resizes somewhere else: above them while they read, or during a prepended page of
+ * older rows. This component's own job is the one thing the browser has no notion of: following
+ * the tail while the reader is there, including through a still-streaming last card, and
+ * disengaging/re-engaging that following on the reader's own gestures. */
+function ThreadHistory({
   threadId,
   rows,
   running,
@@ -740,95 +746,28 @@ function VirtualizedHistory({
   const previousScrollTop = useRef(0);
   // Every bottom the viewport has had since the last scroll event or content resize was handled.
   // A return to the bottom lands on whichever one was current when it ran; a card can grow in
-  // that task or an earlier one before the browser dispatches the scroll event.
+  // that task or an earlier one before the browser dispatches the scroll event -- and so can the
+  // browser's own scroll-anchor compensation, which is indistinguishable from a user gesture
+  // except by this same test.
   const recentBottoms = useRef<number[]>([]);
   const pointerScrolling = useRef(false);
   const captureNextScroll = useRef(false);
   const scrolledSinceInput = useRef(false);
   const touchY = useRef<number | null>(null);
-  const restorationFrame = useRef<number | null>(null);
-  const restoringAnchor = useRef<string | null>(null);
-  const restorationSize = useRef<number | null>(null);
   const previousCount = useRef(rows.length);
-  const previousFirstKey = useRef<string | null>(null);
-  const readingAnchor = useRef<{ key: string; offset: number } | null>(null);
-  // The row holding the entity a reading anchor was taken at. A run keeps its key while steps
-  // stream into it, but gains a new first step when older history loads into it.
-  const anchorIndex = (key: string): number =>
-    rows.findIndex((row) => row.entities.some((entity) => `${entity.entityKind}:${entity.entityId}` === key));
-  const anchorElement = (key: string): HTMLElement | null => {
-    const index = anchorIndex(key);
-    if (index < 0) return null;
-    return (
-      viewport.current?.querySelector<HTMLElement>(`[data-thread-anchor="${rows[index].entities[0].cursor}"]`) ?? null
-    );
-  };
-  const cancelRestoration = () => {
-    if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
-    restorationFrame.current = null;
-    restorationSize.current = null;
-    restoringAnchor.current = null;
-  };
   const recordBottom = (element: HTMLDivElement) => {
     const bottom = element.scrollHeight - element.clientHeight;
     if (!recentBottoms.current.includes(bottom)) recentBottoms.current.push(bottom);
   };
-  // Restoring to a row that is not mounted scrolls to its estimated offset. When the rows above it
-  // measure shorter than estimated, that offset lies past the end and the browser clamps it: the
-  // restoration's own scroll lands on the bottom, which is not the reader returning there.
-  const restoringScroll = () => restorationFrame.current !== null;
   const followPreviousBottom = (element: HTMLDivElement) => {
-    // A programmatic return to the old bottom can be delivered after a card grows. Preserve
-    // it before restoring a stale reader anchor, while an explicit user gesture owns its scroll,
-    // as does a restoration still settling.
-    if (captureNextScroll.current || restoringScroll()) return false;
+    // A programmatic return to the old bottom can be delivered after a card grows; an explicit
+    // user gesture owns its scroll instead.
+    if (captureNextScroll.current) return false;
     if (!recentBottoms.current.some((bottom) => Math.abs(element.scrollTop - bottom) <= 2)) return false;
     atBottom.current = true;
-    cancelRestoration();
     element.scrollTop = element.scrollHeight;
     return true;
   };
-  function correctRestoration(): number | null {
-    const anchor = readingAnchor.current;
-    const element = viewport.current;
-    if (!anchor || !element || restoringAnchor.current !== anchor.key) return null;
-    const row = anchorElement(anchor.key);
-    if (!row) return null;
-    const correction = row.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.offset;
-    element.scrollTop += correction;
-    return correction;
-  }
-  const virtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => viewport.current,
-    estimateSize: () => 180,
-    getItemKey: (index) => rowKey(rows[index]),
-    measureElement: (element) => element.getBoundingClientRect().height,
-    overscan: 5,
-    onChange: (instance, sync) => {
-      // A card can resize before virtual-core applies its measured transform. Wait for
-      // that measurement rather than guessing how many animation frames it requires.
-      if (viewport.current && followPreviousBottom(viewport.current)) return;
-      if (atBottom.current) {
-        restorationSize.current = null;
-        restoringAnchor.current = null;
-        return;
-      }
-      if (sync || restorationSize.current === null || instance.getTotalSize() === restorationSize.current) return;
-      restorationSize.current = null;
-      if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
-      restorationFrame.current = requestAnimationFrame(() => {
-        restorationFrame.current = null;
-        if (viewport.current && followPreviousBottom(viewport.current)) return;
-        if (correctRestoration() !== null) {
-          restoringAnchor.current = null;
-        }
-      });
-    },
-  });
-  // ResizeObserver below preserves the first visible row explicitly. This is an
-  // instance hook in the pinned virtual-core version, rather than an option.
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
   const expectUserScroll = () => {
     if (captureNextScroll.current) return;
     captureNextScroll.current = true;
@@ -836,8 +775,7 @@ function VirtualizedHistory({
   };
   // A gesture asks for the page before the oldest row as its scroll events reach the top. This asks
   // where no scroll event will: rows too few to scroll, a gesture that ended at the top, a page that
-  // landed with the reader still there. A gesture or restoration in progress has not settled where
-  // the reader is, and until the tail shows there is no top to reach.
+  // landed with the reader still there.
   const loadOlderAtTop = () => {
     const element = viewport.current;
     if (
@@ -845,104 +783,36 @@ function VirtualizedHistory({
       rows.length > 0 &&
       history.olderAvailable &&
       !captureNextScroll.current &&
-      restoringAnchor.current === null &&
       element.scrollTop < LOAD_OLDER_WITHIN
     )
       history.loadOlder();
   };
-  const captureReadingAnchor = (element: HTMLDivElement) => {
-    const viewportTop = element.getBoundingClientRect().top;
-    const first = [...element.querySelectorAll<HTMLElement>("[data-thread-anchor]")].find(
-      (candidate) => candidate.getBoundingClientRect().bottom > viewportTop
-    );
-    const firstRow = first
-      ? rows.find((row) => row.entities[0].cursor.toString() === first.dataset.threadAnchor)
-      : undefined;
-    if (first && firstRow) {
-      readingAnchor.current = { key: rowKey(firstRow), offset: first.getBoundingClientRect().top - viewportTop };
-    }
-  };
-  const restoreAnchor = (anchor: { key: string; offset: number }, awaitMeasurement = false) => {
-    const index = anchorIndex(anchor.key);
-    if (index < 0) return;
-    cancelRestoration();
-    restoringAnchor.current = anchor.key;
-    const correctFromDom = (): number | null => {
-      const element = viewport.current;
-      const row = anchorElement(anchor.key);
-      if (!element || !row) return null;
-      const currentOffset = row.getBoundingClientRect().top - element.getBoundingClientRect().top;
-      const correction = currentOffset - anchor.offset;
-      element.scrollTop += correction;
-      return correction;
-    };
-    const correction = correctFromDom();
-    if (correction === null) virtualizer.scrollToIndex(index, { align: "start" });
-    // Waiting for measurement assumes the row is mounted and in place. One scrolled to by its
-    // estimate needs the frames, whose pending state keeps a clamped scroll from reading as the bottom.
-    if (awaitMeasurement && correction !== null && Math.abs(correction) <= 2) {
-      restorationSize.current = virtualizer.getTotalSize();
-      return;
-    }
-    restorationFrame.current = requestAnimationFrame(() => {
-      if (restoringAnchor.current === anchor.key) correctFromDom();
-      restorationFrame.current = requestAnimationFrame(() => {
-        if (restoringAnchor.current === anchor.key) restoringAnchor.current = null;
-        restorationFrame.current = null;
-      });
-    });
-  };
   useLayoutEffect(() => {
     const element = viewport.current;
-    const firstKey = rows[0] ? rowKey(rows[0]) : null;
     if (element && atBottom.current && rows.length > previousCount.current) element.scrollTop = element.scrollHeight;
-    if (
-      element &&
-      !atBottom.current &&
-      rows.length > 0 &&
-      readingAnchor.current &&
-      (previousCount.current === 0 || previousFirstKey.current !== firstKey)
-    ) {
-      restoreAnchor(readingAnchor.current);
-    }
     previousCount.current = rows.length;
-    previousFirstKey.current = firstKey;
-  }, [rows, virtualizer]);
+  }, [rows]);
   useLayoutEffect(() => {
     const element = viewport.current;
     const content = contents.current;
     if (!element || !content) return;
     recordBottom(element);
+    // The reader's position when they are *not* following is native overflow-anchor's job: it is
+    // what keeps a row fixed when something else -- a card streaming above it, a prepended page --
+    // resizes while the reader is idle. This observer's job is the opposite direction: follow the
+    // tail while the reader is there, including while its last card is still streaming.
     const observer = new ResizeObserver(() => {
-      // A scrollbar drag or programmatic equivalent can reach the old bottom in the same task
-      // that grows the last card, before the browser dispatches its scroll event. Preserve that
-      // user choice across the resize without interpreting arbitrary layout movement as intent.
       if (followPreviousBottom(element) || atBottom.current) element.scrollTop = element.scrollHeight;
-      // Content can resize while a wheel, touch, or key scroll is still settling. Its
-      // measured rows do not describe the reader's final position yet; scrollend will
-      // capture that position before a later resize restoration is eligible.
-      else if (!captureNextScroll.current && readingAnchor.current) restoreAnchor(readingAnchor.current, true);
       recentBottoms.current = [element.scrollHeight - element.clientHeight];
     });
     observer.observe(content);
-    // A body arriving for a remounted or streaming card is a DOM mutation, and the scroll event
-    // of a return to the bottom that follows it in the same frame precedes the ResizeObserver
-    // delivery for it. The mutation callback runs before any later task, so record its bottom.
-    const mutations = new MutationObserver(() => recordBottom(element));
-    mutations.observe(content, { subtree: true, childList: true, characterData: true, attributes: true });
-    return () => {
-      observer.disconnect();
-      mutations.disconnect();
-    };
-  }, [rows, virtualizer]);
-  // The observers above re-subscribe on every render's rows; a restoration in flight outlives that.
-  useLayoutEffect(() => cancelRestoration, []);
+    return () => observer.disconnect();
+  }, [rows]);
   useLayoutEffect(() => {
     const element = viewport.current;
     if (!element) return;
     const onScrollEnd = () => {
-      if (restoringAnchor.current !== null || !captureNextScroll.current) return;
-      captureReadingAnchor(element);
+      if (!captureNextScroll.current) return;
       captureNextScroll.current = false;
       loadOlderAtTop();
     };
@@ -956,9 +826,8 @@ function VirtualizedHistory({
       role="region"
       aria-label="Thread history"
       tabIndex={0}
-      style={{ overflowY: "auto", overflowAnchor: "none", flex: 1, minHeight: 0 }}
+      style={{ overflowY: "auto", flex: 1, minHeight: 0 }}
       onWheel={(event) => {
-        cancelRestoration();
         const element = event.currentTarget;
         const canScroll =
           (event.deltaY < 0 && element.scrollTop > 0) ||
@@ -971,7 +840,6 @@ function VirtualizedHistory({
         }
       }}
       onKeyDown={(event) => {
-        cancelRestoration();
         if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) expectUserScroll();
         if (["ArrowUp", "PageUp", "Home"].includes(event.key)) atBottom.current = false;
       }}
@@ -979,7 +847,6 @@ function VirtualizedHistory({
         if (!scrolledSinceInput.current) captureNextScroll.current = false;
       }}
       onPointerDown={() => {
-        cancelRestoration();
         pointerScrolling.current = true;
         expectUserScroll();
       }}
@@ -992,7 +859,6 @@ function VirtualizedHistory({
         if (!scrolledSinceInput.current) captureNextScroll.current = false;
       }}
       onTouchStart={(event) => {
-        cancelRestoration();
         touchY.current = event.touches[0]?.clientY ?? null;
       }}
       onTouchMove={(event) => {
@@ -1013,12 +879,10 @@ function VirtualizedHistory({
           previousScrollTop.current = element.scrollTop;
           return;
         }
-        if (!restoringScroll() && element.scrollHeight - element.scrollTop - element.clientHeight < 24) {
+        if (element.scrollHeight - element.scrollTop - element.clientHeight < 24) {
           atBottom.current = true;
-          cancelRestoration();
         } else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
         previousScrollTop.current = element.scrollTop;
-        if (restoringAnchor.current !== null) return;
         if (!captureNextScroll.current && !pointerScrolling.current && touchY.current === null) return;
         captureNextScroll.current = true;
         scrolledSinceInput.current = true;
@@ -1046,32 +910,17 @@ function VirtualizedHistory({
           </Paper>
         </div>
       )}
-      <div ref={contents} style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-        {virtualizer.getVirtualItems().map((item) => {
-          const row = rows[item.index];
-          return row ? (
-            <div
-              key={item.key}
-              data-index={item.index}
-              data-thread-anchor={row.entities[0].cursor.toString()}
-              ref={virtualizer.measureElement}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                transform: `translateY(${item.start}px)`,
-                paddingBottom: 8,
-              }}
-            >
-              <HistoryRowView
-                threadId={threadId}
-                row={row}
-                live={(entity) => running && entity.turnId === activeTurn}
-              />
-            </div>
-          ) : null;
-        })}
+      <div ref={contents}>
+        {rows.map((row) => (
+          <div
+            key={rowKey(row)}
+            data-thread-anchor={row.entities[0].cursor.toString()}
+            className="agentplane-history-row"
+            style={{ paddingBottom: 8 }}
+          >
+            <HistoryRowView threadId={threadId} row={row} live={(entity) => running && entity.turnId === activeTurn} />
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -1239,13 +1088,7 @@ function ProjectedSessionBody({
         style={{ flex: 1, minHeight: 0 }}
         data-projection-cursor={view ? decimalBigInt(view.revisionCursor).toString() : undefined}
       >
-        <VirtualizedHistory
-          threadId={threadId}
-          rows={rows}
-          running={running}
-          activeTurn={activeTurn}
-          history={history}
-        />
+        <ThreadHistory threadId={threadId} rows={rows} running={running} activeTurn={activeTurn} history={history} />
         {hasPendingCommands && (
           <Stack role="region" aria-label="Pending commands" gap="xs">
             {projectedCommands.map((row) => (

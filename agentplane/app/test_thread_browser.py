@@ -888,6 +888,67 @@ async def expect_history_bottom(page: Page) -> None:
     )
 
 
+async def test_a_card_still_streaming_off_screen_does_not_move_a_reader_who_scrolled_past_it(
+    thread_browser: ThreadBrowser,
+) -> None:
+    """`test-browser-item` (from `thread_source`) never completes: it keeps streaming under later
+    messages the reader scrolls down past to read. SPEC.md's general streaming/idle-resize
+    guarantee -- a card resizing off-screen, above an idle reader, must not move them -- is
+    exercised elsewhere only by a synthetic minHeight resize (test_thread_follows_bottom_until_
+    reader_scrolls_up) or by growth below the reader's anchor (test_a_growing_thread_stays_one_
+    shape...). This drives the resize with real streaming deltas on an off-screen, middle-of-thread
+    row instead."""
+    page, source = thread_browser.page, thread_browser.source
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
+    for number in range(30):
+        item_id = f"test-scroll-past-item-{number}"
+        text = f"Later message {number}\n\n" + "A retained paragraph for the reading viewport. " * 8
+        source.append(
+            event_pb2.Event(
+                item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+            )
+        )
+        source.append(event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id=item_id, text=text)))
+    await expect(page.get_by_text("Later message 29", exact=True)).to_have_count(1)
+    await expect_history_bottom(page)
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    await history.hover()
+    gesture = await history.evaluate_handle(
+        "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
+    )
+    await page.mouse.wheel(0, -3_000)
+    async with asyncio.timeout(30):
+        await gesture.evaluate("gesture => gesture.ended")
+    await gesture.dispose()
+    # Disengaged from the bottom, past the still-streaming card at the top -- at neither end.
+    geometry = await history.evaluate(
+        "area => ({top: area.scrollTop, bottom: area.scrollHeight - area.clientHeight - area.scrollTop})"
+    )
+    assert geometry["top"] > 0
+    assert geometry["bottom"] > 24
+    reading_anchor = await history.evaluate(
+        """area => {
+            const top = area.getBoundingClientRect().top;
+            const item = [...area.querySelectorAll('[data-thread-anchor]')].find(
+                item => item.getBoundingClientRect().bottom > top
+            );
+            return {cursor: item.dataset.threadAnchor, offset: item.getBoundingClientRect().top - top};
+        }"""
+    )
+    updated = source.append(
+        event_pb2.Event(
+            text_delta=event_pb2.TextDelta(
+                item_id="test-browser-item", text="\n\n" + "More text streaming off-screen above. " * 20
+            )
+        )
+    )
+    await expect_projected_cursor(page, updated.cursor)
+    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    await expect_reading_anchor(page, reading_anchor)
+    await page.screenshot(path=undeclared_outputs_dir() / "thread-streaming-scrolled-past.png")
+
+
 @pytest.mark.parametrize("raw", [False, True], ids=["desktop-normal", "phone-raw"])
 async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     thread_browser: ThreadBrowser, raw: bool, request: pytest.FixtureRequest
