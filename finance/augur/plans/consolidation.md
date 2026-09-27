@@ -28,16 +28,7 @@ These graduate into `README.md` and `AGENTS.md` with step 1.
 1. **Conventions.** Add a "Using Augur" section to `README.md`, built around one short
    canonical loop: build the world, declare state, sample paths from the model the caller
    chooses, step or act each month, read results. Add the rules above to `AGENTS.md`.
-2. **Callers declare worlds directly,** one PR per group:
-   - `study/guyton_klinger`, `study/trinity`;
-   - `x/allocation_glide`, `x/bond_policies`, `x/bounded_spending`,
-     `x/joint_spending_allocation`, `x/monthly_actions`;
-   - the `sim/` tests that build worlds from scenario records;
-   - the app: `product/scenarios.py`, `product/simulation.py`, `api/portfolio*.py`. Its API
-     output must not change, and its existing tests are the check.
-3. **Delete `sim/scenario.py` and `sim/compiler/`,** and remove the lowering step from
-   `sim/README.md` and `sim/DESIGN.md`.
-4. **Move unvetted models to `x/`,** each with its training code from `fit/`:
+2. **Move unvetted models to `x/`,** each with its training code from `fit/`:
    - `structural_macro`, until it is shown to be good enough for core;
    - the VECM, the state-space models and the private-equity samplers;
    - `sample_sanity`;
@@ -47,18 +38,18 @@ These graduate into `README.md` and `AGENTS.md` with step 1.
    Historical replay (`model/historical_windows.py`) and the market-path infrastructure stay
    in core.
 
-5. **Plans and notes.** Fold the remaining files under `plans/` into one short plan that
+3. **Plans and notes.** Fold the remaining files under `plans/` into one short plan that
    holds only live work. Delete resolved `debug/` notes after moving any durable lesson.
    Update `SPEC.md` and `sim/DESIGN.md` to describe what exists.
 
-Step 1 goes first, so later steps have a written target. Steps 2–3 are in order. Step 4
-can follow step 1, and step 5 runs alongside.
+Step 1 goes first, so later steps have a written target. Step 2 can follow step 1, and
+step 3 runs alongside.
 
 ## Open questions
 
 - **Dollars helper.** The `Prepared*` facts are integer money quanta, so should `sim/money.py`
   keep a small `Decimal` dollars → quanta helper for callers? Nothing more than that.
-- **The app after step 4.** The app picks its economy model through `model/provider_config.py`,
+- **The app after step 2.** The app picks its economy model through `model/provider_config.py`,
   a union of every provider's configuration. Once the fitted models are in `x/`, core can no
   longer import them, and that union is the pattern the rules above rule out. Deciding the
   app's model selection is part of deciding the app's future, which is not decided.

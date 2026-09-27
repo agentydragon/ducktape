@@ -58,7 +58,7 @@ from finance.augur.sim.prepared import (
 )
 
 _MONEY_SERIES_KINDS = (SecurityKey, SecurityDistributionKey, HomeValueKey)
-INDEX_SERIES_KINDS = (InflationKey, RentKey)
+_INDEX_SERIES_KINDS = (InflationKey, RentKey)
 
 
 class UnsupportedScenarioError(ValueError):
@@ -300,7 +300,7 @@ def _series_values(
         )
     if isinstance(key, _MONEY_SERIES_KINDS):
         return money
-    if isinstance(key, INDEX_SERIES_KINDS):
+    if isinstance(key, _INDEX_SERIES_KINDS):
         return round_ppb(levels)
     raise UnsupportedScenarioError(f"level series {key.wire_id!r} has no execution input representation")
 
