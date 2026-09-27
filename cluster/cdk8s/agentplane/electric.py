@@ -6,6 +6,7 @@ from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ContainerPort,
     ContainerResources,
+    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
     Deployment,
@@ -23,7 +24,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import cilium, container_security, node_scheduling, pod_policy
+from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.probes import http_probe
@@ -85,7 +86,8 @@ class Electric(Construct):
                 cpu=CpuResources(request=Cpu.millis(100)),
                 memory=MemoryResources(request=Size.mebibytes(256), limit=Size.gibibytes(1)),
             ),
-            security_context=container_security.WRITABLE_ROOT,
+            # Writable: its root filesystem writes are unaudited.
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         # Shape logs are a cache of Postgres: a restart starts them empty, and each reader refetches
         # on its shape's 409.

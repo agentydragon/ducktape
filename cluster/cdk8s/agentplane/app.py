@@ -37,6 +37,7 @@ from cdk8s_plus_34 import (
     ConfigMap,
     ContainerPort,
     ContainerResources,
+    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
     Deployment,
@@ -62,7 +63,7 @@ from constructs import Construct
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from agentplane.app.main import CONFIG_FILE_ENV, Settings
 from agentplane.app.oidc import OIDCSettings
-from cluster.cdk8s import cilium, container_security, node_scheduling, pod_policy
+from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import actions, database, egress, electric, llm_ingress, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
@@ -295,7 +296,8 @@ class App(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            security_context=container_security.WRITABLE_ROOT,
+            # Writable: its root filesystem writes are unaudited.
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         config = ConfigMap.from_config_map_name(self, "app-config-ref", "agentplane-app-config")
         volume = Volume.from_config_map(self, "config-volume", config)

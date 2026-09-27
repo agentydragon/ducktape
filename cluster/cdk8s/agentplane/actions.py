@@ -10,6 +10,7 @@ from cdk8s_plus_34 import (
     ConfigMap,
     ContainerPort,
     ContainerResources,
+    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
     Deployment,
@@ -32,7 +33,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.action_service.main import CONFIG_FILE_ENV, Settings
-from cluster.cdk8s import cilium, container_security, node_scheduling, pod_policy
+from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import database, llm_ingress
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
@@ -254,7 +255,8 @@ class Actions(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            security_context=container_security.WRITABLE_ROOT,
+            # Writable: its root filesystem writes are unaudited.
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
 
         oauth_secret = Secret.from_secret_name(self, "mcp-oauth-secret", "agentplane-mcp-oauth")
