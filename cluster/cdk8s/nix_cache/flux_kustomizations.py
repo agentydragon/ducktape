@@ -14,7 +14,6 @@ def nix_cache(
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
     seaweedfs_operator: Kustomization,
-    seaweedfs_cluster: Kustomization,
 ) -> Kustomization:
     name = "nix-cache"
     return flux_kustomization(
@@ -23,7 +22,5 @@ def nix_cache(
         artifact,
         timeout="5m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(
-            cnpg, external_secrets_operator, seaweedfs_operator, seaweedfs_cluster
-        ),
+        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, seaweedfs_operator),
     )

@@ -37,7 +37,7 @@ def write_manifests(root: Path) -> None:
 
 
 def seaweedfs_forgejo_bucket(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_cluster: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_operator: Kustomization
 ) -> Kustomization:
     name = "seaweedfs-forgejo-bucket"
     return flux_kustomization(
@@ -47,6 +47,6 @@ def seaweedfs_forgejo_bucket(
         # live-verified there. Keep this small Kustomization for the cluster-global
         # S3Identity that the namespaced S3Credentials references.
         artifact,
-        depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
+        depends_on=[flux_kustomization_depends_on(seaweedfs_operator)],
         timeout="5m",
     )
