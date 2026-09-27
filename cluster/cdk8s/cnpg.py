@@ -8,6 +8,7 @@ from cdk8s import ApiObjectMetadata
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecAffinity,
     ClusterSpecAffinityTolerations,
+    ClusterSpecBootstrap,
     ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecMonitoring,
@@ -17,6 +18,7 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecProbesLiveness,
     ClusterSpecProbesLivenessIsolationCheck,
     ClusterSpecResources,
+    ClusterSpecStorage,
 )
 from constructs import Construct
 
@@ -83,11 +85,10 @@ def cluster(
         scope,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=annotations),
-        storage_class=storage_class,
-        size=size,
+        storage=ClusterSpecStorage(storage_class=storage_class, size=size),
         instances=instances,
         image_name=image_name,
-        initdb=initdb,
+        bootstrap=None if initdb is None else ClusterSpecBootstrap(initdb=initdb),
         affinity=_affinity(node_selector=node_selector, storage_class=storage_class),
         managed=managed,
         postgresql=postgresql,
