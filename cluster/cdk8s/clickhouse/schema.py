@@ -10,9 +10,10 @@ Job or its schema.
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration
+from cdk8s import ApiObjectMetadata, App, Chart, Duration
 from cdk8s_plus_34 import ConfigMap, Job, PodSecurityContextProps, RestartPolicy, Secret
 
+from cluster.cdk8s import pod_policy
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
@@ -23,7 +24,6 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on,
 )
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 
 NAME = "clickhouse-schema"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/schema"
@@ -70,7 +70,7 @@ def chart(app: App) -> Chart:
             )
         ],
     )
-    ApiObject.of(job).add_json_patch(runtime_default_seccomp_patch())
+    pod_policy.harden(job)
     add_fleet_rules(chart)
     return chart
 

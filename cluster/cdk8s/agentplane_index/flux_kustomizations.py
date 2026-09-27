@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def agentplane_index(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
     kyverno: Kustomization,
@@ -20,7 +19,7 @@ def agentplane_index(
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         timeout="10m",
         # The haku-state index worker reads haku-forgejo-git, which the haku-state
         # Terraform reflects into this Namespace; waiting for that worker would hold

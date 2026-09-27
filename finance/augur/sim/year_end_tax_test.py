@@ -1,10 +1,9 @@
 """What a filer owes at a year end, and what paying it does to their cash."""
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 from fractions import Fraction
-from functools import partial
 from typing import Any
 
 import numpy as np
@@ -62,12 +61,12 @@ def wage(annual: int) -> Decimal:
     return round_currency_amount(Decimal(annual) / 12, quantum=QUANTUM)
 
 
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> Callable[[World], None]:
-    return partial(
-        World.declare_account,
-        account=AccountRef(agent_id=agent_id, account_id=CHECKING),
-        opening_balance=money(balance),
-    )
+@dataclass(frozen=True)
+class Checking:
+    """A party's checking account and its opening balance in dollars."""
+
+    agent_id: AgentId
+    balance: Decimal | int = 0
 
 
 @dataclass(frozen=True)
@@ -79,10 +78,6 @@ class Lot:
     quantity: Decimal | int
     cost_basis: int
     purchase_month: int
-
-
-def lot(lot_id: LotId, asset: SecurityKey, *, quantity: Decimal | int, cost_basis: int, purchase_month: int) -> Lot:
-    return Lot(lot_id, asset, quantity, cost_basis, purchase_month)
 
 
 def sale(cause_id: str, lot_id: LotId, asset: SecurityKey, *, quantity: Decimal | int) -> Sell:
@@ -149,7 +144,7 @@ class Situation:
     """Alice's accounts, the wages and rent that move without her asking, and what she holds."""
 
     horizon_months: int
-    accounts: tuple[Callable[[World], None], ...]
+    accounts: tuple[Checking, ...]
     jurisdiction_ids: tuple[JurisdictionId, ...] = (FEDERAL, CALIFORNIA)
     prior_year_tax: Decimal | int = 0
     recurring_transfers: tuple[Monthly, ...] = ()
@@ -201,8 +196,10 @@ def compose(case: Situation, indexation: TaxIndexation) -> World:
         ),
         jurisdictions={id_: rules.level for id_, rules in jurisdictions.items()},
     )
-    for declare in case.accounts:
-        declare(world)
+    for opened in case.accounts:
+        world.declare_account(
+            account=AccountRef(agent_id=opened.agent_id, account_id=CHECKING), opening_balance=money(opened.balance)
+        )
     if case.jurisdiction_ids:
         world.track(
             TaxAuthority(
@@ -318,7 +315,7 @@ def test_year_end_tax_accrual_federal_and_california_single_filer(indexation: Ta
     rollout = run(
         Situation(
             horizon_months=12,
-            accounts=(account(ALICE), account(PAYROLL), account(IRS)),
+            accounts=(Checking(ALICE), Checking(PAYROLL), Checking(IRS)),
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, wage(200_000), income=True),),
         ),
         indexation,
@@ -374,8 +371,8 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
     rollout = run(
         Situation(
             horizon_months=12,
-            accounts=(account(ALICE), account(PAYROLL), account(IRS)),
-            lots=(lot(LotId("alice_long_vti"), VTI, quantity=100, cost_basis=8000, purchase_month=-24),),
+            accounts=(Checking(ALICE), Checking(PAYROLL), Checking(IRS)),
+            lots=(Lot(LotId("alice_long_vti"), VTI, quantity=100, cost_basis=8000, purchase_month=-24),),
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, wage(50_000), income=True),),
             sales={6: (sale("alice_long_sale", LotId("alice_long_vti"), VTI, quantity=100),)},
             prices={VTI: [280.0] * 13},
@@ -417,7 +414,7 @@ def test_niit_taxes_the_magi_excess_but_not_muni_interest_and_settles_in_the_tru
     rollout = run(
         Situation(
             horizon_months=13,
-            accounts=(account(ALICE), account(PAYROLL), account(IRS)),
+            accounts=(Checking(ALICE), Checking(PAYROLL), Checking(IRS)),
             recurring_transfers=(
                 monthly("alice_paycheck", PAYROLL, ALICE, Decimal(15_000), income=True),
                 monthly_interest("alice_corporate_coupon", None, Decimal(2_500)),
@@ -460,7 +457,7 @@ def test_california_surtax_on_taxable_income_above_a_million(
     rollout = run(
         Situation(
             horizon_months=12,
-            accounts=(account(ALICE), account(PAYROLL), account(IRS)),
+            accounts=(Checking(ALICE), Checking(PAYROLL), Checking(IRS)),
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, monthly_wage, income=True),),
         ),
         indexation,
@@ -487,9 +484,9 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics(indexation: TaxIndexa
     rollout = run(
         Situation(
             horizon_months=13,
-            accounts=(account(ALICE, 1000), account(PAYROLL), account(IRS)),
+            accounts=(Checking(ALICE, 1000), Checking(PAYROLL), Checking(IRS)),
             prior_year_tax=4000,
-            lots=(lot(LotId("alice_long_vti"), VTI, quantity=100, cost_basis=8000, purchase_month=-24),),
+            lots=(Lot(LotId("alice_long_vti"), VTI, quantity=100, cost_basis=8000, purchase_month=-24),),
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, wage(50_000), income=True),),
             sales={6: (sale("alice_long_sale", LotId("alice_long_vti"), VTI, quantity=100),)},
             prices={VTI: [280.0] * 14},
@@ -535,11 +532,11 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics(indexation: Tax
     rollout = run(
         Situation(
             horizon_months=12,
-            accounts=(account(ALICE), account(PAYROLL), account(IRS)),
+            accounts=(Checking(ALICE), Checking(PAYROLL), Checking(IRS)),
             jurisdiction_ids=(FEDERAL,),
             lots=(
-                lot(LotId("alice_long_vti"), VTI, quantity=100, cost_basis=10000, purchase_month=-24),
-                lot(LotId("alice_short_ixus"), IXUS, quantity=10, cost_basis=500, purchase_month=0),
+                Lot(LotId("alice_long_vti"), VTI, quantity=100, cost_basis=10000, purchase_month=-24),
+                Lot(LotId("alice_short_ixus"), IXUS, quantity=10, cost_basis=500, purchase_month=0),
             ),
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, wage(50_000), income=True),),
             sales={
@@ -579,10 +576,10 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(in
     rollout = run(
         Situation(
             horizon_months=13,
-            accounts=(account(ALICE), account(PAYROLL), account(LANDLORD), account(IRS)),
+            accounts=(Checking(ALICE), Checking(PAYROLL), Checking(LANDLORD), Checking(IRS)),
             jurisdiction_ids=(FEDERAL,),
             prior_year_tax=2000,
-            lots=(lot(LotId("alice_vti_seed"), VTI, quantity=100, cost_basis=10000, purchase_month=-24),),
+            lots=(Lot(LotId("alice_vti_seed"), VTI, quantity=100, cost_basis=10000, purchase_month=-24),),
             recurring_transfers=(
                 monthly("alice_paycheck", PAYROLL, ALICE, wage(50_000), income=True),
                 monthly("alice_rent", ALICE, LANDLORD, wage(50_000), income=False),
@@ -627,7 +624,7 @@ def test_explicit_empty_tax_profiles_means_no_year_end_accrual(indexation: TaxIn
     rollout = run(
         Situation(
             horizon_months=12,
-            accounts=(account(ALICE), account(PAYROLL)),
+            accounts=(Checking(ALICE), Checking(PAYROLL)),
             jurisdiction_ids=(),
             recurring_transfers=(
                 monthly("alice_paycheck", PAYROLL, ALICE, Decimal(5000), income=True, end_month=None),
@@ -648,7 +645,7 @@ def test_year_end_tax_payment_debits_agent_cash(indexation: TaxIndexation) -> No
     rollout = run(
         Situation(
             horizon_months=13,
-            accounts=(account(ALICE), account(PAYROLL), account(IRS)),
+            accounts=(Checking(ALICE), Checking(PAYROLL), Checking(IRS)),
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, wage(200_000), income=True),),
         ),
         indexation,
@@ -685,7 +682,7 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded(indexation: TaxIn
     rollout = run(
         Situation(
             horizon_months=13,
-            accounts=(account(ALICE), account(PAYROLL), account(IRS)),
+            accounts=(Checking(ALICE), Checking(PAYROLL), Checking(IRS)),
             recurring_transfers=(
                 monthly("alice_paycheck", PAYROLL, ALICE, wage(500_000), income=True),
                 # Spend it all on rent, with payroll as the sink.
@@ -720,7 +717,7 @@ def test_cpi_indexed_amounts_follow_each_januarys_cpi() -> None:
     rollout = run(
         Situation(
             horizon_months=24,
-            accounts=(account(ALICE), account(PAYROLL), account(IRS)),
+            accounts=(Checking(ALICE), Checking(PAYROLL), Checking(IRS)),
             recurring_transfers=(
                 monthly("alice_paycheck", PAYROLL, ALICE, Decimal(12_500), income=True, end_month=23),
             ),

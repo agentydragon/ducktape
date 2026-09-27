@@ -905,6 +905,9 @@ spec:
               memory: 1024Mi
           securityContext:
             allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: false
