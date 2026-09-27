@@ -5,8 +5,6 @@ OpenClaw image, and the ImagePolicy selecting its newest CI tag.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
     GitRepository,
@@ -39,10 +37,8 @@ from flux_imageupdateautomation_crds.io.fluxcd.toolkit.image import (
     ImageUpdateAutomationSpecUpdate,
     ImageUpdateAutomationSpecUpdateStrategy,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 _OPENCLAW = "openclaw"
@@ -137,10 +133,6 @@ def openclaw_chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, automation_chart, openclaw_chart)
-
-
-def flux_image_automation_ghcr(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
+def flux_image_automation_ghcr(chart: Chart, directory: RenderedDirectory) -> Kustomization:
     name = "flux-image-automation-ghcr"
-    return flux_kustomization(chart, name, artifact, retry_interval=None, wait=None)
+    return flux_kustomization(chart, name, directory, retry_interval=None, wait=None)

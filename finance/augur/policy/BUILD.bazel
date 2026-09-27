@@ -112,6 +112,7 @@ py_test(
         "//finance/augur/sim:ids",
         "//finance/augur/sim:market_path",
         "//finance/augur/sim:prepared",
+        "//finance/augur/sim:schedule",
         "//finance/augur/sim:tlh",
         "//finance/augur/sim:world",
         "@pypi//more_itertools",
