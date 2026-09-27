@@ -113,9 +113,6 @@ def haku_console(
     artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
     local_path_provisioner: Kustomization,
-    agent_machine_access_tf: Kustomization,
-    reflector: Kustomization,
-    external_creds: Kustomization,
     external_secrets_config: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
@@ -143,13 +140,6 @@ def haku_console(
             # The Cluster operator and the storage class its PVCs bind.
             cnpg,
             local_path_provisioner,
-            # TF creates the Authentik clients and haku-console-oidc Secret;
-            # the console does OIDC discovery synchronously at startup.
-            agent_machine_access_tf,
-            # Copies aiquota's bearer, the ActivityWatch read token and the egress proxy's CA
-            # into this namespace.
-            reflector,
-            external_creds,
             external_secrets_config,
             # The ServiceMonitor CRD.
             monitoring_crds,

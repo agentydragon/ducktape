@@ -326,7 +326,6 @@ def cli_proxy_api(
     artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_config: Kustomization,
     cert_manager_environment: Kustomization,
-    sso_providers_tf: Kustomization,
 ) -> Kustomization:
     name = "cli-proxy-api"
     return flux_kustomization(
@@ -336,7 +335,5 @@ def cli_proxy_api(
         retry_interval=None,
         timeout="5m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config, cert_manager_environment, sso_providers_tf
-        ),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_config, cert_manager_environment),
     )

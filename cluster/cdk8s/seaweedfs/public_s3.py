@@ -283,10 +283,8 @@ def write_manifests(root: Path) -> None:
 def seaweedfs_public_s3(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_external_credentials: Kustomization,
-    seaweedfs_drivefs_artifacts_bucket: Kustomization,
+    seaweedfs_operator: Kustomization,
     vm_images_publisher: Kustomization,
-    seaweedfs_secrets: Kustomization,
     seaweedfs_cluster: Kustomization,
     kyverno: Kustomization,
 ) -> Kustomization:
@@ -299,10 +297,9 @@ def seaweedfs_public_s3(
         # gateway configuration now contains only the credential-free anonymous read.
         artifact,
         depends_on=flux_kustomization_depends_on_many(
-            seaweedfs_external_credentials,
-            seaweedfs_drivefs_artifacts_bucket,
+            # S3Identity, S3Credentials, S3Policy and S3PolicyBinding CRDs
+            seaweedfs_operator,
             vm_images_publisher,
-            seaweedfs_secrets,
             seaweedfs_cluster,
             # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
             kyverno,

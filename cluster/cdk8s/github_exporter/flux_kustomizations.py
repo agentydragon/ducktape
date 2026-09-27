@@ -15,7 +15,6 @@ def github_exporter(
     monitoring_crds: Kustomization,
     grafana_instance: Kustomization,
     external_secrets_config: Kustomization,
-    external_creds: Kustomization,
 ) -> Kustomization:
     name = "github-exporter"
     return flux_kustomization(
@@ -29,7 +28,6 @@ def github_exporter(
             monitoring_crds,
             grafana_instance,
             external_secrets_config,
-            external_creds,
         ),
         description="GitHub API rate-limit metrics for the human and agent accounts.",
     )

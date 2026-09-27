@@ -28,18 +28,8 @@ def write_manifests(root: Path) -> None:
 
 
 def github_secrets_sync(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    tofu_controller: Kustomization,
-    github_secrets_sync_secrets: Kustomization,
-    seaweedfs_pr_visuals_bucket: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
-        chart,
-        NAME,
-        artifact,
-        timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(
-            tofu_controller, github_secrets_sync_secrets, seaweedfs_pr_visuals_bucket
-        ),
+        chart, NAME, artifact, timeout="10m", depends_on=flux_kustomization_depends_on_many(tofu_controller)
     )

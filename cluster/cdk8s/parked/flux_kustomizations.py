@@ -59,7 +59,6 @@ def buildbuddy_executor(chart: Chart) -> Kustomization:
 def haku_cloud_agent(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_creds: Kustomization,
     external_secrets_config: Kustomization,
     tofu_controller: Kustomization,
 ) -> Kustomization:
@@ -75,7 +74,7 @@ def haku_cloud_agent(
         suspend=True,
         timeout="10m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(external_creds, external_secrets_config, tofu_controller),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_config, tofu_controller),
     )
 
 
@@ -151,7 +150,6 @@ def haku_dispatch(
     external_secrets_config: Kustomization,
     external_secrets_operator: Kustomization,
     litellm: Kustomization,
-    litellm_keys_tf: Kustomization,
 ) -> Kustomization:
     name = "haku-dispatch"
     return flux_kustomization(
@@ -168,7 +166,7 @@ def haku_dispatch(
         path="./haku/x/dispatch/deploy",
         deletion_policy=KustomizationSpecDeletionPolicy.WAIT_FOR_TERMINATION,
         depends_on=flux_kustomization_depends_on_many(
-            cnpg, local_path_provisioner, external_secrets_config, external_secrets_operator, litellm, litellm_keys_tf
+            cnpg, local_path_provisioner, external_secrets_config, external_secrets_operator, litellm
         ),
     )
 
@@ -176,11 +174,9 @@ def haku_dispatch(
 def haku_managed_agent(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_creds: Kustomization,
     external_secrets_config: Kustomization,
     haku_namespace: Kustomization,
     haku_rbac: Kustomization,
-    haku_state: Kustomization,
     haku_egress_proxy: Kustomization,
 ) -> Kustomization:
     name = "haku-managed-agent"
@@ -193,14 +189,10 @@ def haku_managed_agent(
         timeout="5m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            # provides the canonical AnkiWeb credential and source-side grant
-            external_creds,
             # provides the external-creds ClusterSecretStore
             external_secrets_config,
             haku_namespace,
             haku_rbac,
-            # provides the haku-forgejo-git secret in haku-sandbox
-            haku_state,
             # injects the egress proxy + CA the worker imports
             haku_egress_proxy,
         ),

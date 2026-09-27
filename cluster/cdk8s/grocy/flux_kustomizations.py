@@ -31,8 +31,6 @@ def grocy_mcp_sf(
     external_secrets_config: Kustomization,
     grocy_sf: Kustomization,
     valkey: Kustomization,
-    agent_machine_access_tf: Kustomization,
-    reflector: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     name = "grocy-mcp-sf"
@@ -45,8 +43,6 @@ def grocy_mcp_sf(
             external_secrets_config,
             grocy_sf,
             valkey,
-            agent_machine_access_tf,
-            reflector,
             # the ServiceMonitor/PodMonitor CRD
             monitoring_crds,
         ),
@@ -93,8 +89,6 @@ def grocy_mcp_vallejo(
     external_secrets_config: Kustomization,
     grocy_vallejo: Kustomization,
     valkey: Kustomization,
-    agent_machine_access_tf: Kustomization,
-    reflector: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     name = "grocy-mcp-vallejo"
@@ -107,8 +101,6 @@ def grocy_mcp_vallejo(
             external_secrets_config,
             grocy_vallejo,
             valkey,
-            agent_machine_access_tf,
-            reflector,
             # the ServiceMonitor/PodMonitor CRD
             monitoring_crds,
         ),

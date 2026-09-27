@@ -17,7 +17,6 @@ def home_assistant(
     external_secrets_config: Kustomization,
     seaweedfs_operator: Kustomization,
     monitoring_crds: Kustomization,
-    sso_providers_tf: Kustomization,
 ) -> Kustomization:
     name = "home-assistant"
     return flux_kustomization(
@@ -35,7 +34,6 @@ def home_assistant(
             seaweedfs_operator,
             # ServiceMonitor + PrometheusRule
             monitoring_crds,
-            sso_providers_tf,
         ),
         description=(
             "Home Assistant with encrypted Restic/VolSync backups and its dedicated private SeaweedFS S3 bucket."

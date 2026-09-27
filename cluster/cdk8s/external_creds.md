@@ -22,8 +22,9 @@ contract.
   `namespace` field.
 - The consumer owns its `external-creds-reader` ServiceAccount and
   ExternalSecret.
-- The consumer Flux Kustomization depends on both `external-creds` and
-  `external-secrets-config`. Static suppliers do not depend on ESO or consumer
+- The consumer Flux Kustomization depends on `external-secrets-config` but not
+  on `external-creds`: its ExternalSecret retries until the source Secret and
+  RoleBinding exist. Static suppliers do not depend on ESO or consumer
   namespaces: a RoleBinding may name a ServiceAccount before that namespace or
   identity exists.
 
