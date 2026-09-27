@@ -1,0 +1,34 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "strategy",
+    srcs = ["strategy.py"],
+    deps = [
+        "//finance/augur/policy:cash_band",
+        "//finance/augur/policy:cash_band_household",
+        "//finance/augur/sim:ids",
+    ],
+)
+
+py_test(
+    name = "test_strategy",
+    srcs = ["test_strategy.py"],
+    deps = [
+        ":strategy",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/policy:cash_band_household",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:bills",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:tlh",
+        "//finance/augur/sim:world",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
