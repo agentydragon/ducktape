@@ -31,6 +31,15 @@ construction. The existing total-return equity proxy is not a taxable
 price-plus-dividend model. Current held dated-bond principal is not a tradable
 market quote. Product/tax assumptions must remain explicit.
 
+Market paths can be checked against plausibility bands before they produce an
+answer. Each band bounds one percentile of equity wealth, inflation or a rate at
+one horizon and cites its source. Breaching a refusing band, or lacking the
+series a refusing band reads, stops the answer unless the caller records an
+override naming that band; every use of an override is logged. A flagging
+band's breach is reported with its direction: too optimistic, too pessimistic,
+too wide or too narrow. No band passes unchecked, but where the sample cannot
+resolve a band's percentile, its pass does not establish the tail.
+
 Identical prepared paths and ordered decisions produce reproducible financial
 results. Original `rollout_id` values survive result selection/reordering;
 an array position is not another identity. A policy's random choices and memory

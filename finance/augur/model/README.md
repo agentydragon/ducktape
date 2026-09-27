@@ -27,6 +27,22 @@ Preserving existing outputs isolates this boundary change; it does not make the
 current approximations a correctness oracle or a compatibility requirement.
 Financial corrections can land independently with independently justified tests.
 
+## Plausibility gate
+
+Check market paths against sourced bands before any answer is built on them:
+
+```python
+from finance.augur.model.plausibility import BandFile, evaluate, require_plausible
+
+result = evaluate(market, BandFile.from_yaml(band_path))
+print(result)  # every band: value, limits, verdict, breach direction
+require_plausible(result)  # RefusalError unless every REFUSE band was checked and held
+```
+
+`plausibility.py` defines the band-file schema and the verdicts. Sample at least
+`BandFile.horizon_months`. An `Override` naming refused bands, with a reason, lets
+`require_plausible` pass and logs a warning for each band it accepts.
+
 Fitted VECM and state-space inputs carry dated `ExogenousObservedPoint` records
 with actual source units. Evidence loaders choose each factor's anchor explicitly;
 runtime providers never search source-name fallbacks. Auxiliary observations and

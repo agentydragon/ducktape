@@ -743,3 +743,40 @@ py_test(
         "@pypi//pyyaml",
     ],
 )
+
+py_library(
+    name = "plausibility",
+    srcs = ["plausibility.py"],
+    deps = [
+        ":bond_fund",
+        ":market_paths",
+        ":schemas",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_plausibility",
+    srcs = ["test_plausibility.py"],
+    data = ["testdata/plausibility_bands_fixture.yaml"],
+    deps = [
+        ":conftest",
+        ":equity",
+        ":exogenous",
+        ":historical_windows",
+        ":market_paths",
+        ":plausibility",
+        ":series",
+        ":structural_macro",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/study/trinity:synthetic",
+        "//util/bazel:runfiles",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
