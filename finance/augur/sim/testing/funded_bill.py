@@ -84,7 +84,7 @@ def situation(rollout_count: int = 2) -> Situation:
         [(STOCK, prices)], rollout_count=rollout_count, horizon_months=HORIZON
     )
     return Situation(
-        series=compile_series(paths, rollout_count=rollout_count, horizon_months=HORIZON, currency_quantum=USD.quantum),
+        series=compile_series(paths, rollout_count=rollout_count, horizon_months=HORIZON, currency=USD),
         rollout_count=rollout_count,
     )
 
@@ -112,8 +112,7 @@ def compose(case: Situation, rollout_id: int) -> World:
     )
     world.track(
         TaxAuthority(
-            compile_profile(profile, {_FLAT_TAX.jurisdiction_id: _FLAT_TAX}, quantum=USD.quantum),
-            indexation=FixedNominalLaw(),
+            compile_profile(profile, {_FLAT_TAX.jurisdiction_id: _FLAT_TAX}, currency=USD), indexation=FixedNominalLaw()
         )
     )
     scale = quantity_scale_for_asset(STOCK)

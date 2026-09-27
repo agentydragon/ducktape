@@ -17,6 +17,7 @@ from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, income_source_sort_key
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedBond,
@@ -97,7 +98,7 @@ def cpi_series(paths: Sequence[Sequence[float]]) -> tuple[PreparedSeries, ...]:
         ),
         rollout_count=rollouts,
         horizon_months=snapshots - 1,
-        currency_quantum=QUANTUM,
+        currency=USD,
     )
 
 
@@ -145,7 +146,7 @@ def compose(case: Situation, rollout_id: int = 0) -> World:
         world.declare_account(account)
     for agent_id in case.taxpayers:
         profile = TaxProfile(agent_id=agent_id, jurisdiction_ids=list(filed_in), tax_authority_agent_id=AgentId("irs"))
-        world.track(TaxAuthority(compile_profile(profile, rules, quantum=QUANTUM), indexation=FixedNominalLaw()))
+        world.track(TaxAuthority(compile_profile(profile, rules, currency=USD), indexation=FixedNominalLaw()))
     for bond in case.bonds:
         world.hold(bond)
     return world

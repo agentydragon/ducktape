@@ -24,6 +24,7 @@ from finance.augur.sim.external_series import ExternalSeriesContext, compile_ser
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot, PreparedSeries
 from finance.augur.sim.private_equity_series import compile_pe_channels
 from finance.augur.sim.world import World
@@ -71,7 +72,7 @@ def vti_series(*levels: float) -> tuple[PreparedSeries, ...]:
         ),
         rollout_count=1,
         horizon_months=len(levels) - 1,
-        currency_quantum=QUANTUM,
+        currency=USD,
     )
 
 
@@ -145,7 +146,7 @@ def test_private_equity_channel_lowering_refuses_values_that_are_not_amounts(
             private_equity=private_equity_bundle(channel=channel, month=1, value=bad_value),
             rollout_count=1,
             horizon_months=HORIZON,
-            currency_quantum=QUANTUM,
+            currency=USD,
         )
 
 

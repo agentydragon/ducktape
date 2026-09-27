@@ -32,6 +32,7 @@ from finance.augur.sim.fixed_point import (
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedDistribution,
@@ -89,9 +90,7 @@ def situation(construction: DatedConstruction | ProxyConstruction, *, annual_spe
         horizon_months=horizon_months,
     )
     return Situation(
-        series=compile_series(
-            paths, rollout_count=rollout_count, horizon_months=horizon_months, currency_quantum=QUANTUM
-        ),
+        series=compile_series(paths, rollout_count=rollout_count, horizon_months=horizon_months, currency=USD),
         rollout_count=rollout_count,
         horizon_months=horizon_months,
         annual_spending=int(currency_amount_to_quanta(annual_spending, quantum=QUANTUM)),

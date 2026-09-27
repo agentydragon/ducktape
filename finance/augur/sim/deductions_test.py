@@ -30,6 +30,7 @@ from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityI
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedJurisdiction,
@@ -235,7 +236,7 @@ def compose(case: Situation) -> World:
                     tax_authority_agent_id=IRS,
                 ),
                 jurisdictions,
-                quantum=QUANTUM,
+                currency=USD,
             ),
             indexation=FixedNominalLaw(),
         )

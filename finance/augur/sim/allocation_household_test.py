@@ -30,7 +30,7 @@ from finance.augur.sim.jurisdictions import (
     TaxBracket,
 )
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.money import MAX_COUNT
+from finance.augur.sim.money import MAX_COUNT, USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedDistribution,
@@ -192,7 +192,7 @@ def compose(case: Situation, rollout_id: int) -> World:
                 compile_profile(
                     TaxProfile(agent_id=ALICE, jurisdiction_ids=[SYNTHETIC], tax_authority_agent_id=WORLD),
                     {SYNTHETIC: TAX},
-                    quantum=QUANTUM,
+                    currency=USD,
                 ),
                 indexation=FixedNominalLaw(),
             )

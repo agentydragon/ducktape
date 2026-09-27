@@ -8,7 +8,7 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 from finance.augur.sim.distributions import distribution_income_categories
-from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
+from finance.augur.sim.fixed_point import rate_to_ppb
 from finance.augur.sim.held_bonds import bond_income_categories
 from finance.augur.sim.ids import CHECKING, AccountId, AgentId, JurisdictionId
 from finance.augur.sim.income import InterestIncome, OrdinaryIncome, TransferIncomeCategory, income_source_sort_key
@@ -20,13 +20,8 @@ from finance.augur.sim.jurisdictions import (
     ThresholdTax,
     load_jurisdiction,
 )
-from finance.augur.sim.money import NonNegativeCurrencyAmount
-from finance.augur.sim.scenario import (
-    BondHolding,
-    RecurringPropertyCashflow,
-    ScheduledPropertyCashflow,
-    SecurityDistribution,
-)
+from finance.augur.sim.money import Currency, NonNegativeCurrencyAmount
+from finance.augur.sim.prepared import PreparedBond, PreparedDistribution, PreparedFlow
 from finance.augur.sim.tax import PreparedTaxBracket, PreparedTaxProfile, PreparedTaxRules, PreparedThresholdTax
 
 
@@ -86,10 +81,7 @@ def section_121_exclusion_for(filing_status: FilingStatus) -> Decimal:
 
 
 def compile_income_sources(
-    *,
-    flows: Iterable[ScheduledPropertyCashflow | RecurringPropertyCashflow],
-    bonds: Iterable[BondHolding],
-    distributions: Iterable[SecurityDistribution],
+    *, flows: Iterable[PreparedFlow], bonds: Iterable[PreparedBond], distributions: Iterable[PreparedDistribution]
 ) -> tuple[TransferIncomeCategory, ...]:
     """Ordinary income plus every category cashflows, held bonds or fund distributions name, in reporting order."""
 
@@ -110,7 +102,7 @@ def compile_income_sources(
 
 
 def _agreed_capital_loss_offset_cap(
-    profile: TaxProfile, jurisdictions: Mapping[JurisdictionId, Jurisdiction], *, quantum: Decimal
+    profile: TaxProfile, jurisdictions: Mapping[JurisdictionId, Jurisdiction], *, currency: Currency
 ) -> int:
     """Netting runs once per taxpayer; reject jurisdictions requiring different offset caps, now or once indexed."""
 
@@ -126,15 +118,13 @@ def _agreed_capital_loss_offset_cap(
             f"tax profile for {profile.agent_id!r} spans jurisdictions that cap the capital-loss "
             f"ordinary offset differently ({caps}); one netting per taxpayer cannot answer for both"
         )
-    return int(currency_amount_to_quanta(next(iter(caps.values()))[0], quantum=quantum))
+    return currency.quanta(next(iter(caps.values()))[0])
 
 
-def _brackets(brackets: Sequence[TaxBracket], *, quantum: Decimal) -> tuple[PreparedTaxBracket, ...]:
+def _brackets(brackets: Sequence[TaxBracket], *, currency: Currency) -> tuple[PreparedTaxBracket, ...]:
     return tuple(
         PreparedTaxBracket(
-            upper=None
-            if bracket.upper == "Infinity"
-            else int(currency_amount_to_quanta(bracket.upper, quantum=quantum)),
+            upper=None if bracket.upper == "Infinity" else currency.quanta(bracket.upper),
             rate_ppb=rate_to_ppb(bracket.rate),
         )
         for bracket in brackets
@@ -142,21 +132,18 @@ def _brackets(brackets: Sequence[TaxBracket], *, quantum: Decimal) -> tuple[Prep
 
 
 def _threshold_tax(
-    tax: ThresholdTax | None, filing_status: FilingStatus, *, quantum: Decimal
+    tax: ThresholdTax | None, filing_status: FilingStatus, *, currency: Currency
 ) -> PreparedThresholdTax | None:
     if tax is None:
         return None
-    return PreparedThresholdTax(
-        rate_ppb=rate_to_ppb(tax.rate),
-        threshold=int(currency_amount_to_quanta(tax.threshold[filing_status], quantum=quantum)),
-    )
+    return PreparedThresholdTax(rate_ppb=rate_to_ppb(tax.rate), threshold=currency.quanta(tax.threshold[filing_status]))
 
 
 def compile_profile(
-    profile: TaxProfile, jurisdictions: Mapping[JurisdictionId, Jurisdiction], *, quantum: Decimal
+    profile: TaxProfile, jurisdictions: Mapping[JurisdictionId, Jurisdiction], *, currency: Currency
 ) -> PreparedTaxProfile:
     """One taxpayer's routing and quantized rules, as a composed world enrolls them."""
-    offset_cap = _agreed_capital_loss_offset_cap(profile, jurisdictions, quantum=quantum)
+    offset_cap = _agreed_capital_loss_offset_cap(profile, jurisdictions, currency=currency)
     rules = []
     for jurisdiction_id in profile.jurisdiction_ids:
         jurisdiction = jurisdictions[jurisdiction_id]
@@ -166,25 +153,23 @@ def compile_profile(
                 exempt_interest_from_levels=tuple(sorted(jurisdiction.exempt_interest_from_levels)),
                 exempts_own_issue=jurisdiction.exempts_own_issue,
                 ordinary_brackets=_brackets(
-                    jurisdiction.ordinary_income_brackets[profile.filing_status], quantum=quantum
+                    jurisdiction.ordinary_income_brackets[profile.filing_status], currency=currency
                 ),
                 long_term_capital_gain_brackets=(
-                    _brackets(jurisdiction.ltcg_brackets[profile.filing_status], quantum=quantum)
+                    _brackets(jurisdiction.ltcg_brackets[profile.filing_status], currency=currency)
                     if jurisdiction.ltcg_brackets is not None
                     else ()
                 ),
-                standard_deduction=int(
-                    currency_amount_to_quanta(jurisdiction.standard_deduction[profile.filing_status], quantum=quantum)
-                ),
+                standard_deduction=currency.quanta(jurisdiction.standard_deduction[profile.filing_status]),
                 max_capital_loss_ordinary_offset=offset_cap,
                 section_1250_rate_ppb=rate_to_ppb(
                     SECTION_1250_FEDERAL_CAP_RATE if jurisdiction_id == SECTION_1250_FEDERAL_JURISDICTION_ID else 0
                 ),
                 net_investment_income_tax=_threshold_tax(
-                    jurisdiction.net_investment_income_tax, profile.filing_status, quantum=quantum
+                    jurisdiction.net_investment_income_tax, profile.filing_status, currency=currency
                 ),
                 taxable_income_surtax=_threshold_tax(
-                    jurisdiction.taxable_income_surtax, profile.filing_status, quantum=quantum
+                    jurisdiction.taxable_income_surtax, profile.filing_status, currency=currency
                 ),
                 law_year=jurisdiction.law_year,
                 indexed=frozenset(
@@ -199,9 +184,7 @@ def compile_profile(
         tax_authority_agent_id=profile.tax_authority_agent_id,
         payment_account_id=profile.payment_account_id,
         tax_authority_account_id=profile.tax_authority_account_id,
-        prior_year_tax=int(currency_amount_to_quanta(profile.prior_year_tax, quantum=quantum)),
-        section_121_exclusion=int(
-            currency_amount_to_quanta(section_121_exclusion_for(profile.filing_status), quantum=quantum)
-        ),
+        prior_year_tax=currency.quanta(profile.prior_year_tax),
+        section_121_exclusion=currency.quanta(section_121_exclusion_for(profile.filing_status)),
         jurisdictions=tuple(rules),
     )

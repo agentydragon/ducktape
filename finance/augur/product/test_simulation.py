@@ -118,7 +118,7 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
         ),
         rollout_count=rollout_count,
         horizon_months=HORIZON_MONTHS,
-        currency_quantum=USD.quantum,
+        currency=USD,
     )
 
     def compose(rollout_id: int) -> World:
@@ -133,15 +133,13 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
                 InitialAccountBalance(agent_id=agent_id, account_id=CHECKING, balance=Decimal(0))
                 for agent_id in (AGENT, IRS)
             ],
-            quantum=USD.quantum,
+            currency=USD,
         ):
             world.declare_account(account)
-        world.track(
-            TaxAuthority(compile_profile(profile, jurisdictions, quantum=USD.quantum), indexation=FixedNominalLaw())
-        )
+        world.track(TaxAuthority(compile_profile(profile, jurisdictions, currency=USD), indexation=FixedNominalLaw()))
         for pool in compile_holding_pools(lots=[lot]):
             world.declare_pool(pool)
-        for held in compile_lots([lot], quantum=USD.quantum):
+        for held in compile_lots([lot], currency=USD):
             world.hold(held)
         world.track(Scripted(ClaimPayer(AgentId(AGENT)), {SALE_MONTH: (sale,)}))
         return world
@@ -177,7 +175,7 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
         ExternalSeriesContext.from_level_blocks([(HOME_VALUE, levels)], rollout_count=1, horizon_months=HORIZON_MONTHS),
         rollout_count=1,
         horizon_months=HORIZON_MONTHS,
-        currency_quantum=USD.quantum,
+        currency=USD,
     )
     location = Location(
         location_id=LOCATION, display_name="Acceptance Town", jurisdiction_ids=[], annual_property_tax_rate=0.0
@@ -194,7 +192,7 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
                 InitialAccountBalance(agent_id=agent_id, account_id=CHECKING, balance=Decimal(1_000_000))
                 for agent_id in (AGENT, SELLER)
             ],
-            quantum=USD.quantum,
+            currency=USD,
         ):
             world.declare_account(account)
         world.declare_housing(
@@ -207,10 +205,10 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
                         month=PROPERTY_SALE_MONTH, property_id=PropertyId("house"), closing_cost_pct=closing_cost_pct
                     )
                 ],
-                quantum=USD.quantum,
+                currency=USD,
             ),
             (),
-            compile_locations([purchase], {LOCATION: location}, quantum=USD.quantum),
+            compile_locations([purchase], {LOCATION: location}, currency=USD),
         )
         world.track(ClaimPayer(AgentId(AGENT)))
         return world

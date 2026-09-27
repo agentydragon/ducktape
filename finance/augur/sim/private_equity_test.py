@@ -33,6 +33,7 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, L
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedHoldingPool,
@@ -178,7 +179,7 @@ def compose(case: Holder, channels: Sequence[PreparedSeries]) -> World:
                 compile_profile(
                     TaxProfile(agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS),
                     jurisdictions,
-                    quantum=QUANTUM,
+                    currency=USD,
                 ),
                 indexation=FixedNominalLaw(),
             )

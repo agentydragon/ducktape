@@ -24,6 +24,7 @@ from finance.augur.sim.jurisdictions import (
     TaxBracket,
 )
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedHoldingPool,
@@ -93,9 +94,7 @@ def situation(
     paths: ExternalSeriesContext, *, rollout_count: int, horizon_months: int, taxable: bool, annual_bill: int = 100_000
 ) -> Situation:
     return Situation(
-        series=compile_series(
-            paths, rollout_count=rollout_count, horizon_months=horizon_months, currency_quantum=QUANTUM
-        ),
+        series=compile_series(paths, rollout_count=rollout_count, horizon_months=horizon_months, currency=USD),
         rollout_count=rollout_count,
         horizon_months=horizon_months,
         taxable=taxable,
@@ -131,7 +130,7 @@ def compose(situation: Situation, rollout_id: int) -> World:
         )
         world.track(
             TaxAuthority(
-                compile_profile(profile, {_FLAT_TAX.jurisdiction_id: _FLAT_TAX}, quantum=QUANTUM),
+                compile_profile(profile, {_FLAT_TAX.jurisdiction_id: _FLAT_TAX}, currency=USD),
                 indexation=FixedNominalLaw(),
             )
         )

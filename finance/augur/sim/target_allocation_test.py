@@ -22,6 +22,7 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_sc
 from finance.augur.sim.holdings import Disposition
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedHoldingPool,
@@ -99,9 +100,7 @@ def compose(case: Situation) -> World:
         horizon_months=HORIZON,
     )
     world = World(
-        MarketPath(
-            compile_series(paths, rollout_count=1, horizon_months=HORIZON, currency_quantum=QUANTUM), 0, rollout_count=1
-        ),
+        MarketPath(compile_series(paths, rollout_count=1, horizon_months=HORIZON, currency=USD), 0, rollout_count=1),
         horizon_months=HORIZON,
     )
     world.declare_account(PreparedAccount(account=ref(ALICE), opening_balance=money(case.opening_cash)))

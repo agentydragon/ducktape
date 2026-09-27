@@ -27,6 +27,7 @@ from finance.augur.sim.jurisdictions import (
     TaxBracket,
 )
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedHoldingPool,
@@ -42,7 +43,6 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
 from finance.augur.sim.world import World
-from finance.augur.study.trinity.replay import QUANTUM
 from finance.augur.x.bounded_spending.python_policy import (
     BatchPolicy,
     Observation,
@@ -62,7 +62,7 @@ WORLD = AgentId("world")
 
 
 def _series(paths: ExternalSeriesContext, *, rollout_count: int, horizon_months: int) -> tuple[PreparedSeries, ...]:
-    return compile_series(paths, rollout_count=rollout_count, horizon_months=horizon_months, currency_quantum=QUANTUM)
+    return compile_series(paths, rollout_count=rollout_count, horizon_months=horizon_months, currency=USD)
 
 
 def _books(
@@ -294,7 +294,7 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
             prior_year_tax=Decimal(0),
         ),
         {rules.jurisdiction_id: rules},
-        quantum=QUANTUM,
+        currency=USD,
     )
     scale = quantity_scale_for_asset(stock)
 

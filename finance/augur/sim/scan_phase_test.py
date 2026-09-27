@@ -27,6 +27,7 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, L
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedHoldingPool,
@@ -109,7 +110,7 @@ def taxed_by(world: World, *jurisdiction_ids: JurisdictionId, prior_year_tax: De
                     prior_year_tax=prior_year_tax,
                 ),
                 {id_: load_jurisdiction(id_) for id_ in jurisdiction_ids},
-                quantum=QUANTUM,
+                currency=USD,
             ),
             indexation=FixedNominalLaw(),
         )
@@ -240,7 +241,7 @@ def test_security_sale_books_proceeds_and_a_long_term_gain() -> None:
         ),
         rollout_count=1,
         horizon_months=horizon,
-        currency_quantum=QUANTUM,
+        currency=USD,
     )
     world = world_for(account(ALICE), account(IRS), horizon_months=horizon, jurisdiction_ids=(FEDERAL,), series=series)
     taxed_by(world, FEDERAL)

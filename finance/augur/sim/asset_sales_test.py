@@ -21,6 +21,7 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, L
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -106,7 +107,7 @@ def _situation(
         horizon_months=horizon,
     )
     return Situation(
-        series=compile_series(paths, rollout_count=rollouts, horizon_months=horizon, currency_quantum=QUANTUM),
+        series=compile_series(paths, rollout_count=rollouts, horizon_months=horizon, currency=USD),
         rollout_count=rollouts,
         horizon_months=horizon,
         lots=tuple(lots),
@@ -135,9 +136,7 @@ def _compose(case: Situation, rollout_id: int) -> World:
             PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")), opening_balance=0)
         )
     for profile in case.tax_profiles:
-        world.track(
-            TaxAuthority(compile_profile(profile, jurisdictions, quantum=QUANTUM), indexation=FixedNominalLaw())
-        )
+        world.track(TaxAuthority(compile_profile(profile, jurisdictions, currency=USD), indexation=FixedNominalLaw()))
     for pool in {
         (lot.account_id, lot.asset_id): PreparedHoldingPool(
             agent_id=ALICE, account_id=lot.account_id, asset_id=lot.asset_id, quantity_scale=lot.quantity_scale
@@ -432,7 +431,7 @@ def test_gbm_sales_diverge_and_same_seed_reproduces_all_cash() -> None:
         """One seed per path, drawn from the situation's own series model rather than a stipulated curve."""
         paths = materialize_external_series(bundle, rollout_seeds=tuple(range(rollout_count)), horizon_months=6)
         return Situation(
-            series=compile_series(paths, rollout_count=rollout_count, horizon_months=6, currency_quantum=QUANTUM),
+            series=compile_series(paths, rollout_count=rollout_count, horizon_months=6, currency=USD),
             rollout_count=rollout_count,
             horizon_months=6,
             lots=(_lot(LotId("seed"), 5, Decimal(500), 0),),

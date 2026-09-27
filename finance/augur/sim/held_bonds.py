@@ -13,7 +13,6 @@ from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.observations import FixedCoupon, HeldBond, IndexedCoupon
 from finance.augur.sim.prepared import PreparedBond, PreparedFixedAmount, PreparedIndexedCoupon
-from finance.augur.sim.scenario import BondHolding
 
 
 class BondStatement(Statement):
@@ -149,7 +148,7 @@ class HeldBonds:
                 )
 
 
-def bond_income_categories(bonds: Iterable[BondHolding]) -> set[InterestIncome]:
+def bond_income_categories(bonds: Iterable[PreparedBond]) -> set[InterestIncome]:
     """Interest sources needed by tax compilation, including issuer jurisdiction."""
 
     return {InterestIncome(issuer_jurisdiction_id=bond.issuer_jurisdiction_id) for bond in bonds}

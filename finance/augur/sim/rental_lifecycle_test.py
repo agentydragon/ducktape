@@ -36,6 +36,7 @@ from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityI
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -130,7 +131,7 @@ def series(
         rollout_count=rollout_count,
         horizon_months=horizon_months,
     )
-    return compile_series(paths, rollout_count=rollout_count, horizon_months=horizon_months, currency_quantum=QUANTUM)
+    return compile_series(paths, rollout_count=rollout_count, horizon_months=horizon_months, currency=USD)
 
 
 def recurring_transfer(
@@ -380,9 +381,7 @@ def compose(situation: Situation, rollout_id: int) -> World:
     for opening in situation.accounts:
         world.declare_account(opening)
     for profile in situation.tax_profiles:
-        world.track(
-            TaxAuthority(compile_profile(profile, jurisdictions, quantum=QUANTUM), indexation=FixedNominalLaw())
-        )
+        world.track(TaxAuthority(compile_profile(profile, jurisdictions, currency=USD), indexation=FixedNominalLaw()))
     for salt in situation.salt_policies:
         world.declare_deduction(salt)
     for interest in situation.mortgage_interest_policies:

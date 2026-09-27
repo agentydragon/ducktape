@@ -21,6 +21,7 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_sc
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -187,9 +188,7 @@ def _run(
     paths = ExternalSeriesContext.from_level_blocks(
         [(VTI, np.asarray(prices, dtype=np.float64))], rollout_count=rollout_count, horizon_months=case.horizon_months
     )
-    series = compile_series(
-        paths, rollout_count=rollout_count, horizon_months=case.horizon_months, currency_quantum=QUANTUM
-    )
+    series = compile_series(paths, rollout_count=rollout_count, horizon_months=case.horizon_months, currency=USD)
     session = ActionSession(
         {id_: compose(case, id_, series=series, rollout_count=rollout_count) for id_ in range(rollout_count)},
         AgentId("alice"),

@@ -18,6 +18,7 @@ py_library(
         "//finance/augur/sim:income",
         "//finance/augur/sim:jurisdictions",
         "//finance/augur/sim:market_path",
+        "//finance/augur/sim:money",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:tax_authority",
         "//finance/augur/sim:tax_indexation",

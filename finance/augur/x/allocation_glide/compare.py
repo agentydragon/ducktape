@@ -22,6 +22,7 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_sc
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedHoldingPool,
@@ -62,8 +63,7 @@ def situation() -> Situation:
         [(GROWTH, growth), (STEADY, steady), (InflationKey(), cpi)], rollout_count=3, horizon_months=HORIZON_MONTHS
     )
     return Situation(
-        series=compile_series(paths, rollout_count=3, horizon_months=HORIZON_MONTHS, currency_quantum=QUANTUM),
-        rollout_count=3,
+        series=compile_series(paths, rollout_count=3, horizon_months=HORIZON_MONTHS, currency=USD), rollout_count=3
     )
 
 
