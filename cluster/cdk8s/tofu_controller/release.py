@@ -63,14 +63,12 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def tofu_controller(
-    chart: Chart, directory: RenderedDirectory, cert_manager: Kustomization, kyverno: Kustomization
-) -> Kustomization:
+def tofu_controller(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         directory,
         interval="10m0s",
         timeout="10m0s",
-        depends_on=flux_kustomization_depends_on_many(cert_manager, kyverno),
+        depends_on=flux_kustomization_depends_on_many(kyverno),
     )

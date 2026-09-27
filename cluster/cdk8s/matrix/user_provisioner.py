@@ -7,22 +7,13 @@ cluster/k8s/matrix/user-provisioner/image-pins/kustomization.yaml overrides it a
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.env_helpers import secret_env_var
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
-from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.matrix.matrix import NAMESPACE, SYNAPSE
 
@@ -76,25 +67,14 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml"], components=["./image-pins"]),
-    )
-
-
 def matrix_user_provisioner(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_operator: Kustomization,
-    matrix: Kustomization,
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, matrix: Kustomization
 ) -> Kustomization:
     name = "matrix-user-provisioner"
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         wait=None,
         timeout="5m",
         # The job registers users against Synapse's admin API, so it must not start

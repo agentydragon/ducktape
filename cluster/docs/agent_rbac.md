@@ -30,7 +30,7 @@ Contains:
 
 ### 2. `shared-rbac` — cluster-scoped bindings
 
-Depends on: `agent-rbac-base`, `kyverno-policies`.
+Depends on: `agent-rbac-base`.
 
 Contains:
 
