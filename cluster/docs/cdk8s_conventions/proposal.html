@@ -1053,12 +1053,14 @@
     <div class="eyebrow">cluster/cdk8s · design proposal · draft</div>
     <h1>Ducktape cdk8s Conventions</h1>
     <p class="lede">
-      Nine conventions to replace the 39 mechanism combinations that the generator&#39;s 199 shared helpers use today.
+      Nine conventions to replace the 38 mechanism combinations that the generator&#39;s 198 shared helpers use today.
       Each was chosen against the jobs the cluster does often or will need soon, checked against what cdk8s can and
       cannot do from Python, and aligned with the move to admission-only Flux dependencies.
     </p>
     <div class="meta">
-      <span>baseline <b>origin/devel aaaa3a5b90 (examples synthesized at 85fb8d0d)</b></span
+      <span
+        >baseline
+        <b>origin/devel aaaa3a5b90; cleanup wave re-measured at 2411690fa3; examples synthesized at 85fb8d0d</b></span
       ><span>date <b>2026-09-27</b></span
       ><span>branch <b>claude/jolly-darwin-al6qse</b></span
       ><span>status <b>awaiting your decisions</b></span>
@@ -1149,11 +1151,14 @@
           <p>
             None of this is a big-bang rewrite. Each convention lands as a series of small PRs you can review as
             rendered diffs. The provider cleanup, the edge trim (426 edges down to 249, and 222 once #8185 lands), the
-            writer, now writing 100 directories, and three stateless folds (181 units down to 171) have landed. Ready
-            without a decision, cleanups first: the render-identical cores of pod policy and the namespace helper, eight
-            more writer conversions and the ResticBackup dedupe. The edge check waits until they land. The fleet rules,
-            graph checks, health-check derivation and glue absorption are deferred. The <code>wait</code> default and
-            derived Orphan are postponed, and C4 and the steps built on it wait on your decision.
+            writer, now writing 108 directories, three stateless folds (181 units down to 171), and the cleanups (the
+            cores of pod policy and the namespace helper, the scheduling constants, eight more writer conversions and
+            the ResticBackup dedupe) have landed. Ready without a decision: #8185&#39;s namespace edges,
+            <code>PREFER_WORKERS</code> on the two Agentplane services that tolerate the control plane (#8244), and the
+            per-area <code>harden()</code> and <code>place()</code> PRs on the raw and CRD-embedded workloads. The edge
+            check you deferred behind the cleanups is unblocked. The fleet rules, graph checks, health-check derivation
+            and glue absorption are deferred. The <code>wait</code> default and derived Orphan are postponed, and C4 and
+            the steps built on it wait on your decision.
           </p>
         </div>
       </div>
@@ -1551,7 +1556,7 @@
           <div class="sub">
             <div class="rich">
               <p>
-                Root causes 1 and 8: 199 shared helpers use 39 mechanism combinations, and each dedup PR proposed one
+                Root causes 1 and 8: 198 shared helpers use 38 mechanism combinations, and each dedup PR proposed one
                 more; #8113 and #8114 landed theirs. The rule landed in
                 <code>cluster/cdk8s/AGENTS.md:82-86</code> (#8167). Choosing among shapes the tree already has keeps the
                 learning cost and the migration diff small.
@@ -1662,7 +1667,7 @@
             <div class="rich">
               <p>
                 The owner&#39;s layering rule (#5099), confirmed by the KEDA incident (#7952) and written down at
-                <code>cluster/cdk8s/AGENTS.md:344-354</code>.
+                <code>cluster/cdk8s/AGENTS.md:345-355</code>.
               </p>
             </div>
           </div>
@@ -1844,9 +1849,9 @@
                 <td>
                   <div class="rich">
                     <p>
-                      <code>WRITABLE_ROOT</code> (<code>container_security.py:10-12</code>) and the drop-ALL constants
-                      and TypedDict spread that #8115 and #8109 proposed each reach one pod dialect and hide which
-                      fields they set. Every author still has to remember to use them.
+                      Like <code>WRITABLE_ROOT</code>, which <code>harden()</code> replaced (#8243), the drop-ALL
+                      constants and TypedDict spread that #8115 and #8109 proposed each reach one pod dialect and hide
+                      which fields they set. Every author still has to remember to use them.
                     </p>
                   </div>
                 </td>
@@ -1898,7 +1903,7 @@
                   <div class="rich">
                     <p>
                       Kyverno mutates Pods the generator does not author and guards admission
-                      (<code>kyverno/policies.py:152-346</code>). Used as the default for generated objects, it would
+                      (<code>kyverno/policies.py:153-347</code>). Used as the default for generated objects, it would
                       make the snapshot and the fleet rules misstate what runs.
                     </p>
                   </div>
@@ -1956,7 +1961,7 @@
                 <td>
                   <div class="rich">
                     <p>
-                      Today&#39;s default: ntfy&#39;s port is written 6 times in one module (<code>ntfy.py:68</code> and
+                      Today&#39;s default: ntfy&#39;s port is written 6 times in one module (<code>ntfy.py:67</code> and
                       five reuses), <code>external-creds-reader</code> 31 times, and <code>-app</code>/<code>-rw</code>
                       names are derived by hand 12 times.
                     </p>
@@ -2188,7 +2193,7 @@
                     <p>
                       No node function takes <code>root</code> today: the entry point writes each directory, with
                       <code>write_directory</code> or a module&#39;s <code>write_manifests</code>, before calling its
-                      node (<code>generate_manifests.py:744-752</code>).
+                      node (<code>generate_manifests.py:752-760</code>).
                       <code>cluster/cdk8s/AGENTS.md:107-108</code> says a node writes no file, and
                       <code>AGENTS.md:140-141</code> that a Kustomization never builds the chart it describes.
                     </p>
@@ -2201,7 +2206,7 @@
                 <td>
                   <div class="rich">
                     <p>
-                      Today&#39;s join: <code>SOPS_DECRYPTION</code> passed by hand at 26 nodes, 39 health-check entries
+                      Today&#39;s join: <code>SOPS_DECRYPTION</code> passed by hand at 22 nodes, 39 health-check entries
                       typed out, and 22 of 40 stateful units without <code>deletionPolicy: Orphan</code>.
                     </p>
                   </div>
@@ -2412,7 +2417,7 @@
                     <p>
                       A renamed setting fails at runtime. The ConfigMap key, mount directory and
                       <code>CONFIG_FILE_ENV</code> path are spelled separately today (<code
-                        >agentplane/actions.py:159-165, 189, 269-271</code
+                        >agentplane/actions.py:159-165, 189, 270-272</code
                       >).
                     </p>
                   </div>
@@ -2860,7 +2865,7 @@
                   <p>
                     Untyped merges hide typos and ordering. jsii structs have no copy-with-changes, so the Python form
                     would be partial dicts, against the typed-structs rule
-                    (<code>cluster/cdk8s/AGENTS.md:315-318</code>).
+                    (<code>cluster/cdk8s/AGENTS.md:316-319</code>).
                   </p>
                 </div>
               </td>
@@ -3050,11 +3055,11 @@
       <h2><span class="sec-no">03</span>Why it feels wrong</h2>
       <div class="stats">
         <div class="stat">
-          <span class="n">199</span
+          <span class="n">198</span
           ><span class="l">shared helpers in <code>cluster/cdk8s</code>, each classified by mechanism</span>
         </div>
         <div class="stat">
-          <span class="n">39</span><span class="l">distinct mechanism combinations among them</span>
+          <span class="n">38</span><span class="l">distinct mechanism combinations among them</span>
         </div>
         <div class="stat">
           <span class="n">12 / 191</span><span class="l">charts that register fleet rules today</span>
@@ -3088,15 +3093,15 @@
             </div>
             <div class="bar">
               <span class="k">construct class</span
-              ><span class="track"><span class="fill" style="width: 78%"></span></span><span class="v">39</span>
+              ><span class="track"><span class="fill" style="width: 80%"></span></span><span class="v">40</span>
             </div>
             <div class="bar">
-              <span class="k">constant</span><span class="track"><span class="fill" style="width: 66%"></span></span
-              ><span class="v">33</span>
+              <span class="k">constant</span><span class="track"><span class="fill" style="width: 70%"></span></span
+              ><span class="v">35</span>
             </div>
             <div class="bar">
               <span class="k">resource function</span
-              ><span class="track"><span class="fill" style="width: 56%"></span></span><span class="v">28</span>
+              ><span class="track"><span class="fill" style="width: 58%"></span></span><span class="v">29</span>
             </div>
             <div class="bar">
               <span class="k">composite function</span
@@ -3107,28 +3112,28 @@
               ><span class="track"><span class="fill" style="width: 36%"></span></span><span class="v">18</span>
             </div>
             <div class="bar">
+              <span class="k">other</span><span class="track"><span class="fill" style="width: 26%"></span></span
+              ><span class="v">13</span>
+            </div>
+            <div class="bar">
               <span class="k">validation</span><span class="track"><span class="fill" style="width: 22%"></span></span
               ><span class="v">11</span>
-            </div>
-            <div class="bar">
-              <span class="k">other</span><span class="track"><span class="fill" style="width: 22%"></span></span
-              ><span class="v">11</span>
-            </div>
-            <div class="bar">
-              <span class="k">writer</span><span class="track"><span class="fill" style="width: 20%"></span></span
-              ><span class="v">10</span>
-            </div>
-            <div class="bar">
-              <span class="k">mutator</span><span class="track"><span class="fill" style="width: 20%"></span></span
-              ><span class="v">10</span>
             </div>
             <div class="bar">
               <span class="k">JSON patch</span><span class="track"><span class="fill" style="width: 18%"></span></span
               ><span class="v">9</span>
             </div>
             <div class="bar">
+              <span class="k">writer</span><span class="track"><span class="fill" style="width: 14%"></span></span
+              ><span class="v">7</span>
+            </div>
+            <div class="bar">
               <span class="k">method on construct</span
               ><span class="track"><span class="fill" style="width: 14%"></span></span><span class="v">7</span>
+            </div>
+            <div class="bar">
+              <span class="k">mutator</span><span class="track"><span class="fill" style="width: 12%"></span></span
+              ><span class="v">6</span>
             </div>
             <div class="bar">
               <span class="k">pydantic model</span
@@ -3149,7 +3154,7 @@
                 A helper counts once for each mechanism it uses, so a construct class that also patches and mutates
                 appears in three rows. The counts come from the inventory step, which classified every shared helper
                 from its source; each helper a later commit added, removed or re-shaped was re-classified on
-                <code>aaaa3a5b90</code>.
+                <code>2411690fa3</code>.
               </p>
             </div>
           </div>
@@ -3157,14 +3162,14 @@
         <div class="panel">
           <h3>One service, many conventions</h3>
           <div class="rich">
-            <p><code>ntfy.py</code> (324 lines) is a typical small HTTP service. It uses:</p>
+            <p><code>ntfy.py</code> (323 lines) is a typical small HTTP service. It uses:</p>
             <ul>
               <li>
                 construct classes: <code>Deployment</code>, <code>Service</code>, <code>ServiceMonitor</code>,
                 <code>ExternalSecret</code>;
               </li>
               <li>resource functions: <code>https_route</code>, <code>cnpg.cluster</code>;</li>
-              <li>a mutator that writes a JSON patch: <code>apply_pod_spec_patches</code>;</li>
+              <li>a mutator that writes a JSON patch: <code>pod_policy.harden</code>;</li>
               <li>
                 value factories: <code>http_probe</code>, <code>cnpg.same_owner_initdb</code>, and a module-local
                 <code>_secret_env</code>;
@@ -3172,8 +3177,8 @@
               <li>an opt-in validation: <code>fleet_rules.add_fleet_rules(chart)</code>;</li>
               <li>
                 a Flux node that takes the <code>RenderedDirectory</code> the entry point&#39;s
-                <code>write_directory</code> call returns (<code>ntfy.py:303-324</code>,
-                <code>generate_manifests.py:744-752</code>).
+                <code>write_directory</code> call returns (<code>ntfy.py:302-323</code>,
+                <code>generate_manifests.py:752-760</code>).
               </li>
             </ul>
             <p>
@@ -3189,7 +3194,7 @@
         <li>
           <div class="rich">
             <p>
-              No target shape per job, so each helper author chose one. 199 shared helpers use 39 mechanism
+              No target shape per job, so each helper author chose one. 198 shared helpers use 38 mechanism
               combinations. <code>providers/</code> is uniform apart from seaweedfs: its <code>Identity</code> and
               <code>Bucket</code> are plain Constructs taking
               <code>name=, namespace=</code> (<code>providers/seaweedfs/s3.py:59-73,89-108</code>), while the other 21
@@ -3198,25 +3203,25 @@
             <ul>
               <li>
                 six policy functions that each build and return one object take its identity six ways:
-                <code>cnpg.cluster(scope, id, *, name=, namespace=)</code> (<code>cnpg.py:58-63</code>),
+                <code>cnpg.cluster(scope, id, *, name=, namespace=)</code> (<code>cnpg.py:59-64</code>),
                 <code>gitops_terraform(scope, id, *, name=)</code> (<code>terraform.py:51-55</code>),
                 <code>https_route(scope, id, *, metadata=)</code> (<code>gateway.py:51-55</code>),
                 <code>helm_release(scope, name, namespace)</code> with a derived id (<code>helm.py:36-39,73</code>),
                 <code>valkey_instance(scope, *, name=, namespace=)</code> with <code>name</code> as the id
-                (<code>valkey.py:74-78,95</code>), and
+                (<code>valkey.py:75-79,96</code>), and
                 <code>flux_kustomization(chart, name, source)</code> (<code>flux.py:132-135</code>);
               </li>
               <li>
                 reading a Secret key into env has the shared <code>env_helpers</code> pair
                 (<code>env_helpers.py:8-17</code>, 50 calls) and 11 module-local copies, 10 raw and one fluent (for
-                example <code>haku_egress_proxy.py:57</code>, <code>ntfy.py:78</code>).
+                example <code>haku_egress_proxy.py:57</code>, <code>ntfy.py:77</code>).
               </li>
             </ul>
             <p>
               &#39;One shape per job&#39; (<code>cluster/cdk8s/AGENTS.md:82-86</code>) asks for one mechanism per job
               but points at whatever the tree already does, and &#39;One helper per repeated shape&#39;
-              (<code>:87-94</code>) names shapes, not mechanisms; its own examples mix a mutator
-              (<code>node_scheduling.py</code>), a JSON patch (<code>pod_spec_patches.py</code>) and value factories.
+              (<code>:87-94</code>) names shapes, not mechanisms; its own examples mix mutators that write JSON patches
+              (<code>pod_policy.py</code>), constants (<code>node_scheduling.py</code>) and value factories.
             </p>
           </div>
         </li>
@@ -3250,12 +3255,12 @@
             </p>
             <ul>
               <li>
-                one port is written 6 times in one module (<code>ntfy.py:68</code> defines it; 220, 248, 252, 265-266
-                and 283 reuse it);
+                one port is written 6 times in one module (<code>ntfy.py:67</code> defines it; 219, 247, 251, 264-265
+                and 282 reuse it);
               </li>
               <li>
                 <code>&lt;cluster&gt;-app</code> and <code>&lt;name&gt;-rw.&lt;ns&gt;.svc</code> are derived by hand 12
-                times (<code>terraform.py:33</code>, <code>atuin/user_provisioner.py:35-36</code>);
+                times (<code>terraform.py:33</code>, <code>atuin/user_provisioner.py:36-37</code>);
               </li>
               <li>the <code>external-creds-reader</code> literal appears 31 times;</li>
               <li>
@@ -3273,24 +3278,25 @@
         <li>
           <div class="rich">
             <p>
-              Cross-cutting pod policy was written against one dialect. <code>apply_pod_spec_patches</code> and
-              <code>attract_to_zone</code> take a cdk8s-plus
-              <code>Workload</code> (<code>pod_spec_patches.py:20-21</code>, <code>node_scheduling.py:13-14</code>), but
-              54 workloads are raw <code>k8s.Kube*</code>, and <code>SandboxTemplate</code> and
-              <code>ScaledJob</code> embed their own pod types. Hardening is carried four ways:
+              Cross-cutting pod policy reaches every dialect but is applied to one. <code>pod_policy.harden()</code> and
+              <code>place()</code> find a workload&#39;s pod spec through
+              <code>POD_SPEC_PATHS</code> (<code>pod_policy.py:19-30</code>), the table the fleet rules also read, yet
+              all 20 <code>harden()</code> and 8 <code>place()</code> calls are on cdk8s-plus workloads; the 54 raw
+              <code>k8s.Kube*</code> workloads, <code>SandboxTemplate</code> and <code>ScaledJob</code> get neither.
+              Hardening is carried three ways:
             </p>
             <ul>
               <li>constructor keywords;</li>
-              <li><code>WRITABLE_ROOT</code> (<code>container_security.py:10-12</code>);</li>
-              <li>the fluent-only patch;</li>
+              <li><code>harden()</code>;</li>
               <li>
-                literal structs (<code>nix_cache/attic.py:266-279</code>, <code>agent_workspaces.py:91-113</code>).
+                literal structs (<code>nix_cache/attic.py:263-276</code>, <code>agent_workspaces.py:91-113</code>).
               </li>
             </ul>
             <p>
-              Placement literals are spread wider still: 14 modules keep a local zone constant,
-              <code>&#34;hil-ovh&#34;</code> appears 35 times, Helm values and raw CR dicts carry 26
-              <code>nodeSelector</code> keys in 17 modules, and the control-plane taint key is spelled in 33 modules.
+              Placement facts are each named once in <code>node_scheduling.py</code>, yet one placement renders two
+              ways: <code>place()</code> writes a required zone affinity, while the raw pod specs, CNPG clusters,
+              Seaweed specs and Helm values that take <code>HIL_OVH_NODE_SELECTOR</code> write a
+              <code>nodeSelector</code> (decision 8).
             </p>
           </div>
         </li>
@@ -3298,14 +3304,13 @@
           <div class="rich">
             <p>
               Enforcement depends on the author remembering. Fleet rules are registered per chart by an explicit
-              <code>add_fleet_rules</code> call (<code>fleet_rules.py:147-148</code>) on 12 of 191 charts, and
-              <code>pod_hardening</code> does not walk <code>ScaledJob</code> (<code>fleet_rules.py:25-33</code>). Node
-              facts are restated at each node:
+              <code>add_fleet_rules</code> call (<code>fleet_rules.py:143-144</code>) on 12 of 191 charts. Node facts
+              are restated at each node:
             </p>
             <ul>
               <li>
-                <code>SOPS_DECRYPTION</code> is passed by hand at 26 nodes, against 21 that derive it from
-                <code>write_directory</code>&#39;s SOPS siblings and 3 <code>sops_decryption</code> calls;
+                <code>SOPS_DECRYPTION</code> is passed by hand at 22 nodes, against 26 that derive it from
+                <code>write_directory</code>&#39;s SOPS siblings and 1 <code>sops_decryption</code> call;
               </li>
               <li>
                 39 health-check entries are typed out (for example <code>dns_automation.py:87-94</code>), against 1
@@ -3328,12 +3333,12 @@
           <div class="rich">
             <p>
               Writers come in three shapes. <code>generation.write_directory</code> (<code>generation.py:66-95</code>)
-              writes 100 directories and returns the <code>flux.RenderedDirectory</code> its node reads, so no node
+              writes 108 directories and returns the <code>flux.RenderedDirectory</code> its node reads, so no node
               function takes <code>root</code>, as <code>cluster/cdk8s/AGENTS.md:140-141</code> requires. The rest come
-              from 63 module-writer calls at <code>generate_manifests.py:256-336</code>, through
-              <code>write_charts</code> or a module&#39;s own <code>App</code> (6 modules); they list their files in a
-              hand-written <code>kustomization.yaml</code>, write their own (20 <code>write_yaml</code> sites, for
-              example <code>tofu_state/db.py:87-97</code>) or leave Flux to generate one, and hold 22
+              from 57 module-writer calls at <code>generate_manifests.py:256-330</code>, through
+              <code>write_charts</code> or a module&#39;s own <code>App</code> (5 modules); they list their files in a
+              hand-written <code>kustomization.yaml</code>, write their own (16 <code>write_yaml</code> sites, for
+              example <code>tofu_state/db.py:87-97</code>) or leave Flux to generate one, and hold 18
               <code>&lt;id&gt;.k8s.yaml</code> literals. Adding a directory touches three places in
               <code>generate_manifests.py</code>, four when it keeps a module writer.
             </p>
@@ -3347,7 +3352,7 @@
             <ul>
               <li>the external-creds roster;</li>
               <li><code>single_secret_store</code> per-pair stores built from the consumer&#39;s chart;</li>
-              <li>app-owned ESO-ServiceAccount stores (<code>ntfy.py:82-112</code>);</li>
+              <li>app-owned ESO-ServiceAccount stores (<code>ntfy.py:81-111</code>);</li>
               <li>reflector mirrors;</li>
               <li>ClusterExternalSecret.</li>
             </ul>
@@ -3443,7 +3448,7 @@
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
             >The writer derives decryption for its directories; elsewhere <code>SOPS_DECRYPTION</code> is passed by hand
-            at 26 nodes and <code>sops_decryption</code> at 3; 39 health-check entries are typed out; 22 of 40 stateful
+            at 22 nodes and <code>sops_decryption</code> at 1; 39 health-check entries are typed out; 22 of 40 stateful
             Kustomizations lack Orphan.</span
           >
         </div>
@@ -3451,8 +3456,8 @@
           <span class="nid">N3</span><span class="nname">Packaging and writing directories</span
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
-            >Three writer shapes, of which only <code>write_directory</code> (100 directories) returns a
-            <code>RenderedDirectory</code>; 22 <code>&lt;id&gt;.k8s.yaml</code> literals; a new directory touches three
+            >Three writer shapes, of which only <code>write_directory</code> (108 directories) returns a
+            <code>RenderedDirectory</code>; 18 <code>&lt;id&gt;.k8s.yaml</code> literals; a new directory touches three
             places in <code>generate_manifests.py</code>.</span
           >
         </div>
@@ -3494,8 +3499,10 @@
           ><span class="chip chip-planned">planned</span
           ><span class="ntoday"
             >Only authentik-db-ovh has Barman backups: six objects in a unit of their own, with its names as literals in
-            two modules. A VolSync restic backup is a copied module of about 13 objects and about 10 names that must
-            agree.</span
+            two modules. <code>ResticBackup</code> (<code>restic_backup.py</code>) builds the VolSync Restic backups of
+            public-coder and haku-openclaw-spike: seven objects, five of whose names it derives from the namespace.
+            grocy and home-assistant build their ReplicationSources in their app modules (<code>grocy/app.py:345</code>,
+            <code>home_assistant/app.py:563</code>).</span
           >
         </div>
         <div class="need">
@@ -3511,17 +3518,20 @@
           <span class="nid">N10</span><span class="nname">Workload hardening across pod dialects</span
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
-            >Carried four ways: constructor keywords, <code>WRITABLE_ROOT</code>, the fluent-only
-            <code>apply_pod_spec_patches</code>, and literal structs on raw and CRD pod specs.</span
+            >Carried three ways: constructor keywords, <code>pod_policy.harden()</code> on the 20 cdk8s-plus workloads,
+            and literal structs on raw and CRD pod specs; 39 containers in 27 generated workloads state no
+            securityContext.</span
           >
         </div>
         <div class="need">
           <span class="nid">N11</span><span class="nname">Placement and scheduling</span
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
-            >The fluent-only <code>attract_to_zone</code>, 14 local zone constants and 35
-            <code>&#34;hil-ovh&#34;</code> literals, plus 26 <code>nodeSelector</code> dicts in Helm values and
-            ClickHouse pod templates, and the control-plane key spelled in 33 modules.</span
+            ><code>node_scheduling.py</code> names the zone, its node selector, the control-plane toleration and
+            <code>PREFER_WORKERS</code> once, and no other module spells <code>&#34;hil-ovh&#34;</code> or the
+            control-plane key in code. <code>place()</code> pins its 8 cdk8s-plus workloads with a required zone
+            affinity; the 9 raw pod specs and the Helm values that take <code>HIL_OVH_NODE_SELECTOR</code> render a
+            <code>nodeSelector</code>.</span
           >
         </div>
         <div class="need">
@@ -3573,17 +3583,19 @@
           ><span class="ntoday"
             >ServiceMonitors built through <code>Endpoint</code> factories and 12 PrometheusRules through
             <code>Rule</code> factories, while the scrape ingress is spelled three ways
-            (<code>plaid_mcp/reader.py:213</code>, <code>github_api_proxy/proxy.py:392</code>,
-            <code>monitoring/loki.py:466</code>).</span
+            (<code>plaid_mcp/reader.py:213</code>, <code>github_api_proxy/proxy.py:391</code>,
+            <code>monitoring/loki.py:451</code>).</span
           >
         </div>
         <div class="need">
           <span class="nid">N18</span><span class="nname">Namespaces with policy labels</span
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
-            >63 Namespace constructions write label dicts per module, with
-            <code>goldilocks.fairwinds.com/enabled: &#34;true&#34;</code> 39 times and
-            <code>rbac.ducktape.io/agent-readable-logs</code> 24 times.</span
+            >38 sites build their Namespaces through <code>namespaces.namespace</code>, whose <code>Vpa</code> and
+            <code>AgentReadable</code> StrEnums <code>kyverno/policies.py</code> reads too; 21
+            <code>k8s.KubeNamespace</code> sites (20 with no Goldilocks label), 6 cdk8s-plus
+            <code>Namespace</code> sites and 8 <code>write_namespace</code> calls still write label dicts. 39 Namespaces
+            render <code>goldilocks.fairwinds.com/enabled: &#34;true&#34;</code>.</span
           >
         </div>
         <div class="need">
@@ -3617,7 +3629,7 @@
           ><span class="chip chip-occasional">occasional</span
           ><span class="ntoday"
             >One frozen <code>Environment</code> per namespace for Agentplane, and the grocy households spelled as
-            literals in two files (<code>grocy/app.py:379-385</code>, <code>grocy/mcp.py:218-223</code>).</span
+            literals in two files (<code>grocy/app.py:368-374</code>, <code>grocy/mcp.py:205-210</code>).</span
           >
         </div>
         <div class="need">
@@ -3632,8 +3644,10 @@
           <span class="nid">N24</span><span class="nname">Helm releases</span
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
-            ><code>helm.helm_release</code> is a resource function with policy defaults and untyped values dicts that
-            spell placement and Secret references by hand.</span
+            ><code>helm.helm_release</code> is a resource function with policy defaults and untyped values dicts;
+            placement on OVH comes from the shared <code>HIL_OVH_NODE_SELECTOR</code>,
+            <code>CONTROL_PLANE_TOLERATION</code> and <code>PREFER_WORKERS</code>, while Secret references and the other
+            node selectors are spelled by hand.</span
           >
         </div>
         <div class="need">
@@ -5006,7 +5020,7 @@
               <p>
                 Decryption already derives from the writer&#39;s <code>siblings</code> (<code>flux.py:174-178</code>)
                 and health checks from rendered identities (<code>flux.py:119-129</code>); deriving Orphan there too
-                makes a forgotten decryption or Orphan impossible once every node takes its directory, and the 26
+                makes a forgotten decryption or Orphan impossible once every node takes its directory, and the 22
                 hand-passed decryption blocks and 22 missing Orphans show forgetting is the failure mode. Health checks
                 are derived only for admission targets, and a directory whose state lives in a HelmRelease (loki, mimir,
                 matrix) passes <code>deletion_policy=ORPHAN</code> itself, because detection sees only generated kinds.
@@ -5020,7 +5034,7 @@
                 <code>write_directory</code> (#8197) is the one writer that returns a value: it names files from chart
                 ids, derives decryption from its <code>siblings</code>, and takes components and configMapGenerator
                 entries, so hand-written kustomization glue can be absorbed (#7920). Converting the remaining module
-                writers removes the 22 file-name literals, and the writer is where the fleet rules attach (C6). One
+                writers removes the 18 file-name literals, and the writer is where the fleet rules attach (C6). One
                 component is one <code>write_directory</code> call (#7094 rule 3).
               </p>
             </div>
@@ -5327,7 +5341,7 @@
             <div class="rich">
               <p>
                 Requests and limits are stated at construction, and the existing rule requiring cpu and memory requests
-                and a memory limit (<code>fleet_rules.py:36-54</code>) holds everywhere once the writer attaches it. The
+                and a memory limit (<code>fleet_rules.py:32-50</code>) holds everywhere once the writer attaches it. The
                 namespace&#39;s VPA decision is the <code>vpa</code> keyword on <code>namespaces.namespace</code> (X1).
               </p>
             </div>
@@ -5650,8 +5664,8 @@ def https_route(
               <div class="rich">
                 <ul>
                   <li>
-                    <code>cnpg.cluster</code>&#39;s <code>node_selector: dict</code> and nameless outputs
-                    (<code>cnpg.py:58-102</code>).
+                    <code>cnpg.cluster</code>&#39;s <code>node_selector</code> mapping and nameless outputs
+                    (<code>cnpg.py:59-103</code>).
                   </li>
                   <li>
                     <code>https_route</code>&#39;s <code>backend: str, port: int</code> (<code>gateway.py:51-65</code>).
@@ -5793,8 +5807,8 @@ class PostgresBackup(Construct):
                   <code>MintedSecret</code> (the 14 <code>mint_bearer_secret</code> and
                   <code>mint_db_role_secret</code> calls, and Agentplane Dex&#39;s own generator pairs),
                   <code>PrivateBucket</code> (bucket, identity, credentials, grant), <code>PostgresBackup</code>,
-                  <code>ResticBackup</code> (the copied VolSync modules), <code>SettingsFile</code>, and each app&#39;s
-                  top-level Construct (<code>Ntfy</code>, the agentplane constructs that take the
+                  <code>ResticBackup</code> (<code>restic_backup.py</code>, landed in #8230), <code>SettingsFile</code>,
+                  and each app&#39;s top-level Construct (<code>Ntfy</code>, the agentplane constructs that take the
                   <code>Environment</code>).
                 </p>
               </div>
@@ -5822,19 +5836,16 @@ class PostgresBackup(Construct):
                     #8114&#39;s <code>mint_bearer_secret</code> and
                     <code>mint_db_role_secret</code> (<code>external_secrets/minted_secret.py:37-132</code>), which
                     return <code>None</code> at their 14 call sites, and the Password helper Agentplane&#39;s Dex keeps
-                    beside them (<code>agentplane/dex.py:65-70</code>).
+                    beside them (<code>agentplane/dex.py:64-69</code>).
                   </li>
                   <li>
                     <code>IdentityRef</code>, <code>Identity</code> and <code>Bucket</code> with
                     <code>credentials()</code>/<code>grant()</code> methods (<code>seaweedfs/s3.py:122-241</code>).
                   </li>
-                  <li>
-                    The ~13-object backup groups (<code>authentik/db_backups.py:39-111</code>,
-                    <code>public_coder_backup.py:66-287</code>).
-                  </li>
+                  <li>The hand-built Barman backup group (<code>authentik/db_backups.py:39-111</code>).</li>
                   <li>
                     The ConfigMap, volume, mount and <code>CONFIG_FILE_ENV</code> quartet (<code
-                      >agentplane/actions.py:159-165, 189, 269-271</code
+                      >agentplane/actions.py:159-165, 189, 270-272</code
                     >).
                   </li>
                   <li>
@@ -6079,24 +6090,24 @@ def service(household: str) -&gt; ServiceRef:  # household_chart() builds its Se
               <div class="rich">
                 <ul>
                   <li>
-                    Ports written up to 6 times per service (<code>ntfy.py:68, 220, 248, 252, 265-266, 283</code>;
+                    Ports written up to 6 times per service (<code>ntfy.py:67, 219, 247, 251, 264-265, 282</code>;
                     <code>home_assistant/app.py:95, 276, 313, 678</code>).
                   </li>
                   <li>
                     12 hand derivations of <code>-app</code> and <code>-rw</code> (<code>terraform.py:33</code>,
-                    <code>atuin/user_provisioner.py:35-36</code>, <code>attic.py:115</code>), and 8 spellings of the
+                    <code>atuin/user_provisioner.py:36-37</code>, <code>attic.py:112</code>), and 8 spellings of the
                     SeaweedFS S3 endpoint.
                   </li>
                   <li><code>cilium.endpoint_labels</code> called with a string name at 30 of 38 sites.</li>
                   <li>The consumer re-declaring bearer names (<code>agentplane/staging.py:75-78</code>).</li>
                   <li>
                     <code>env_helpers.secret_env_var</code>/<code>secret_env_value</code> (#8113, 11 modules on devel)
-                    and the 7 local <code>_secret_env</code> variants left beside them (<code>forgejo/app.py:118</code>,
-                    <code>haku_egress_proxy.py:57</code>, <code>ntfy.py:78</code>, ...).
+                    and the 7 local <code>_secret_env</code> variants left beside them (<code>forgejo/app.py:119</code>,
+                    <code>haku_egress_proxy.py:57</code>, <code>ntfy.py:77</code>, ...).
                   </li>
                   <li>
                     Hand-typed probe URLs (<code>cluster/k8s/gatus/config.yaml:192-204</code>) and household literals in
-                    two files (<code>grocy/app.py:379-385</code>, <code>grocy/mcp.py:218-223</code>).
+                    two files (<code>grocy/app.py:368-374</code>, <code>grocy/mcp.py:205-210</code>).
                   </li>
                 </ul>
               </div>
@@ -6110,7 +6121,7 @@ def service(household: str) -&gt; ServiceRef:  # household_chart() builds its Se
                   This is the root-cause fix for re-spelled strings, and &#39;identity-only&#39; is the guard that keeps
                   a reference from growing into the spec record PLAN.md F forbids. <code>target_port</code> exists
                   because Cilium egress must name the Pods&#39; port
-                  (<code>cluster/docs/cilium_network_policy.md</code>, <code>gatus/app.py:176-178</code>) while 5 routes
+                  (<code>cluster/docs/cilium_network_policy.md</code>, <code>gatus/app.py:149-151</code>) while 5 routes
                   target port 80 on Pods that listen elsewhere. Checked in a scratch environment: references are
                   hashable; <code>SecretKey</code> renders the same secretKeyRef through <code>k8s.EnvVar</code> and
                   cdk8s-plus <code>EnvValue</code>; <code>Port</code> renders a matching ContainerPort and ServicePort;
@@ -6305,26 +6316,17 @@ def place(workload: Construct, placement: Placement, *, tolerate_control_plane: 
               <div class="rich">
                 <ul>
                   <li>
-                    <code>apply_pod_spec_patches</code> and
-                    <code>runtime_default_seccomp_patch</code> (<code>pod_spec_patches.py</code>; its dead
-                    <code>CRON_JOB_POD_SPEC_PATH</code> already went in #8099).
-                  </li>
-                  <li>
-                    <code>attract_to_zone</code> and
-                    <code>tolerate_control_plane_taint</code> (<code>node_scheduling.py:10-20</code>).
-                  </li>
-                  <li>
-                    <code>WRITABLE_ROOT</code> (<code>container_security.py:10-12</code>): its 11 sites keep only
-                    <code>read_only_root_filesystem=False</code>.
-                  </li>
-                  <li>
-                    The literal hardening structs on raw and CRD pods (<code>attic.py:106-113, 266-279</code>;
+                    The literal hardening structs on raw and CRD pods (<code>attic.py:103-110, 263-276</code>;
                     <code>agent_workspaces.py:91-113</code>).
                   </li>
                   <li>
-                    14 local zone constants, 26 hand-written <code>nodeSelector</code> dicts in Helm values and
-                    ClickHouse pod templates, and about 15 hand-written prefer-workers affinities
-                    (<code>gatus/app.py:117-134</code>, <code>grocy/mcp.py:87</code>, ...).
+                    Placement stated in raw pod specs: <code>node_selector=HIL_OVH_NODE_SELECTOR</code> in 9 of them,
+                    beside <code>CONTROL_PLANE_TOLERATION</code> where the Pod tolerates the control plane
+                    (<code>attic.py:94-96</code>).
+                  </li>
+                  <li>
+                    The mutators, <code>WRITABLE_ROOT</code> and the per-module placement literals: landed in #8233 and
+                    #8243.
                   </li>
                 </ul>
               </div>
@@ -6341,8 +6343,10 @@ def place(workload: Construct, placement: Placement, *, tolerate_control_plane: 
                   three rendered Pod seccomp, per-container drop-ALL, no escalation, the nodeSelector and the
                   toleration. An explicit <code>NET_ADMIN</code> add and
                   <code>readOnlyRootFilesystem: false</code> survived, and a second <code>place()</code> raised. The two
-                  Agentplane services that tolerate the control plane do so &#39;to schedule there under pressure&#39;
-                  (<code>node_scheduling.py:1-4</code>), which is what <code>PREFER_WORKERS</code> states.
+                  Agentplane services that tolerate the control plane (<code>agentplane/egress.py:558</code>,
+                  <code>agentplane/llm_ingress.py:154</code>) want control-plane nodes only under pressure, which is
+                  what <code>PREFER_WORKERS</code> states: it keeps such a Pod on ordinary workers unless they are full
+                  (<code>node_scheduling.py:25</code>).
                 </p>
                 <p>
                   Fill-if-absent is chosen over raise-if-set because cdk8s-plus always renders a container
@@ -6450,13 +6454,9 @@ class FleetRules:
                 <ul>
                   <li>
                     The 12 opt-in <code>add_fleet_rules</code> calls, some inside <code>chart()</code> and some after it
-                    returns (<code>ntfy.py:299</code>, <code>fleet_rules.py:147-148</code>).
+                    returns (<code>ntfy.py:298</code>, <code>fleet_rules.py:143-144</code>).
                   </li>
                   <li>The <code>cluster/cdk8s/AGENTS.md:48-50</code> note about registration timing.</li>
-                  <li>
-                    <code>fleet_rules</code>&#39; private kind list (<code>fleet_rules.py:16, 25-33</code>), which
-                    misses ScaledJob.
-                  </li>
                   <li>
                     For generated directories, the after-the-fact graph check over <code>kustomize build</code> output
                     (<code>cluster/validation/dependencies.py:14-62</code>), which misses the units
@@ -6763,19 +6763,18 @@ flux_chart.node.add_validation(AdmissionGraph(flux_chart, directories))</code></
                 <ul>
                   <li>
                     The writers the nodes held, and <code>kustomization.yaml</code> resources listed by hand in the
-                    directories <code>write_directory</code> writes: landed in #8192 and the conversion PRs. The 22
+                    directories <code>write_directory</code> writes: landed in #8192 and the conversion PRs. The 18
                     <code>.k8s.yaml</code> literals are in the directories a module&#39;s own
-                    <code>write_manifests</code> still writes (<code>forgejo/app.py:465</code>,
+                    <code>write_manifests</code> still writes (<code>forgejo/app.py:454</code>,
                     <code>home_assistant/app.py:692</code>, ...).
                   </li>
                   <li>
-                    <code>SOPS_DECRYPTION</code> passed at 26 nodes and the 3
-                    <code>sops_decryption(resources)</code> calls outside the writer
-                    (<code>generation.py:98-102</code>); 39 typed-out health-check entries
-                    (<code>dns_automation.py:87-94</code>); the 22 missing Orphans.
+                    <code>SOPS_DECRYPTION</code> passed at 22 nodes and the one
+                    <code>sops_decryption(resources)</code> call outside the writer (<code>generation.py:98-102</code>);
+                    39 typed-out health-check entries (<code>dns_automation.py:87-94</code>); the 22 missing Orphans.
                   </li>
                   <li>
-                    The <code>find_all</code> walk spelled three times (<code>fleet_rules.py:137-139</code>,
+                    The <code>find_all</code> walk spelled three times (<code>fleet_rules.py:133-135</code>,
                     <code>flux.py:98-100</code>, <code>flux.py:123</code>), which becomes one <code>api_objects</code>.
                   </li>
                   <li>
@@ -6969,10 +6968,10 @@ def copy(scope: Construct, id: str, *, credential: Credential, target: SecretRef
                   </li>
                   <li>
                     ESO-ServiceAccount stores with hand-kept allowlists (<code>external_secrets/config.py:43-192</code>;
-                    forgejo-images lists 34 namespaces) and app-owned stores (<code>ntfy.py:82-112</code>).
+                    forgejo-images lists 34 namespaces) and app-owned stores (<code>ntfy.py:81-111</code>).
                   </li>
                   <li>
-                    Reflector mirrors (<code>aiquota.py:191-211</code>) and ClusterExternalSecret used for copying.
+                    Reflector mirrors (<code>aiquota.py:190-210</code>) and ClusterExternalSecret used for copying.
                   </li>
                   <li>
                     17 copies of the reader ServiceAccount, including three owners of flux-system&#39;s, and hand-typed
@@ -10713,7 +10712,9 @@ CONFIG = {
         <li>
           <div class="q">
             <div class="rich">
-              <p>Replace required nodeAffinity with a nodeSelector at the 8 <code>attract_to_zone</code> sites?</p>
+              <p>
+                Replace the required nodeAffinity <code>place()</code> renders with a nodeSelector, at its 8 call sites?
+              </p>
             </div>
           </div>
           <div>
@@ -10796,9 +10797,10 @@ CONFIG = {
             <span class="lbl">Recommendation</span>
             <div class="rich">
               <p>
-                Yes, in the PR that routes namespaces through <code>namespaces.namespace(vpa=...)</code>. Goldilocks
-                runs on-by-default (<code>goldilocks.py:43</code>), so the label adds nothing, and the required
-                <code>vpa</code> keyword states the per-namespace decision that
+                Yes, as one change to <code>namespaces.namespace</code>, which renders
+                <code>enabled: &#34;true&#34;</code> beside every update mode today. Goldilocks runs on-by-default
+                (<code>goldilocks.py:37</code>), so the label adds nothing, and the required <code>vpa</code> keyword
+                states the per-namespace decision that
                 <code>check_goldilocks_explicit_decision</code> (<code>cluster/validation/checks.py:151-176</code>)
                 exists to force. That check and
                 <code>check_goldilocks_namespace_labels</code> (<code>checks.py:85-101</code>), which demands
@@ -10998,7 +11000,7 @@ CONFIG = {
                   <p>
                     It uses the right mechanism (C8). Rebase it onto the <code>write_directory</code> form, where the
                     external-creds siblings are every entry&#39;s
-                    <code>secret_file</code> (<code>generate_manifests.py:609</code>), and express each entry as
+                    <code>secret_file</code> (<code>generate_manifests.py:615</code>), and express each entry as
                     <code>Credential(source=..., consumers=...)</code>, which replaces
                     <code>secret_file: str | None</code>; each consumer&#39;s only new edge is
                     <code>external-secrets-operator</code>. If it converts the resigner&#39;s ServiceAccount to
@@ -11108,14 +11110,13 @@ CONFIG = {
           <div class="st">
             <div class="rich">
               <p>
-                <strong>Deferred by the owner: cleanups of what is wrong or inconsistent today land first.</strong>
-                Edge-justification check, stacked on #8185 when it comes. Every edge must be one of: a CRD provider of a
-                kind the dependent renders, including kinds its Helm charts render (a table: 7 to
-                <code>monitoring-crds</code>, <code>cnpg</code> and <code>cert-manager-trust</code> to
-                <code>cert-manager</code>) and kinds from an external repo (<code>gaffer-private</code> to
-                <code>tofu-controller</code>); a <code>Fail</code> webhook operator; an input a
-                <code>Fail</code> webhook needs (the three <code>kyverno-policies</code> edges: Kyverno rejects a
-                <code>CleanupPolicy</code> until the cleanup-controller ClusterRoles that
+                <strong>Unblocked: the cleanups you put first have landed.</strong> Edge-justification check, stacked on
+                #8185 when it comes. Every edge must be one of: a CRD provider of a kind the dependent renders,
+                including kinds its Helm charts render (a table: 7 to <code>monitoring-crds</code>,
+                <code>cnpg</code> and <code>cert-manager-trust</code> to <code>cert-manager</code>) and kinds from an
+                external repo (<code>gaffer-private</code> to <code>tofu-controller</code>); a <code>Fail</code> webhook
+                operator; an input a <code>Fail</code> webhook needs (the three <code>kyverno-policies</code> edges:
+                Kyverno rejects a <code>CleanupPolicy</code> until the cleanup-controller ClusterRoles that
                 <code>kyverno-policies</code> renders exist); the bootstrap edge <code>artifact-generators</code> to
                 <code>flux-system</code>; or a registered exception with one of #7094 rule 2&#39;s two reasons (the five
                 #8191 kept, moved from comments into the table). Two tables hold what is not settled: the 27 direct
@@ -11211,26 +11212,32 @@ CONFIG = {
             <div class="rich">
               <p>
                 <code>namespaces.namespace(scope, id, *, name, vpa, agent_readable)</code>, with StrEnum label choices
-                shared with <code>kyverno/policies.py</code> (X1). Ready now for the 54 labeled Namespaces, with values
-                that render today&#39;s labels exactly. The 22 unlabeled ones (mostly Helm-installed operators),
-                deleting the 39 <code>enabled: &#34;true&#34;</code> labels and the two goldilocks checks wait on
-                decision 11, after which they are one line in the helper and the checks.
+                shared with <code>kyverno/policies.py</code> (X1), landed with identical render at 38 sites (#8229,
+                #8232, #8237, #8238). Left: the 22 unlabeled Namespaces (mostly Helm-installed operators), the three
+                labeled <code>enabled: &#34;true&#34;</code> with no update mode (<code>claude-sandbox</code>,
+                <code>home-assistant</code>, <code>ntfy</code>), deleting the 39
+                <code>enabled: &#34;true&#34;</code> labels and the two goldilocks checks wait on decision 11, after
+                which they are one line in the helper and the checks. The six cdk8s-plus <code>Namespace</code> sites
+                render <code>spec: {}</code>, so they wait on your open question, cdk8s-plus or
+                <code>KubeNamespace</code>; the eight <code>write_namespace</code> sites stay with call C.
               </p>
             </div>
           </div>
           <div class="sc">
             <div class="rich">
               <p>
-                <code>namespaces.py</code> and the 73 construction sites (59 <code>k8s.KubeNamespace</code>, 6
-                cdk8s-plus <code>Namespace</code>, 8 <code>write_namespace</code>): the helper with one area, then two
-                or three area PRs.
+                <code>namespaces.py</code>, the two checks and the 35 sites left: 21 <code>k8s.KubeNamespace</code> (20
+                with no Goldilocks label), 6 cdk8s-plus <code>Namespace</code> and 8 <code>write_namespace</code>.
               </p>
             </div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
             <div class="rich">
-              <p>None for the ready part: identical render. Decision 11&#39;s part is labels only.</p>
+              <p>
+                Decision 11&#39;s part is labels only; a cdk8s-plus site moved to <code>KubeNamespace</code> stops
+                rendering <code>spec: {}</code>.
+              </p>
             </div>
           </div>
         </li>
@@ -11239,28 +11246,31 @@ CONFIG = {
             <div class="rich">
               <p>
                 <code>pod_policy.py</code> (<code>harden</code>, <code>place</code>, <code>POD_SPEC_PATHS</code>) and
-                <code>node_scheduling.py</code> (<code>Placement</code>, <code>HIL_OVH</code>,
-                <code>CONTROL_PLANE_TOLERATION</code>, <code>PREFER_WORKERS</code>): repoint the 30 calls (18
-                <code>apply_pod_spec_patches</code>, 8 <code>attract_to_zone</code>, 2
-                <code>tolerate_control_plane_taint</code>, 2 <code>runtime_default_seccomp_patch</code>); delete
-                <code>pod_spec_patches.py</code>, the mutators and <code>WRITABLE_ROOT</code> (its 11 sites keep
-                <code>read_only_root_filesystem=False</code>); <code>fleet_rules</code> reads the shared table and gains
-                ScaledJob. Ready now with <code>place()</code> still emitting today&#39;s required zone affinity, so the
-                core renders identically. Two small PRs follow: drop-ALL on the two containers that lack it (litellm,
-                ha-mcp&#39;s <code>facade</code>) and <code>PREFER_WORKERS</code> on the two Agentplane services that
-                tolerate the control plane. Decision 8 then flips one line in <code>place()</code>.
+                <code>node_scheduling.py</code>&#39;s <code>Placement</code> and <code>HIL_OVH</code> landed, with
+                drop-ALL on litellm and ha-mcp&#39;s <code>facade</code> (#8243): the 20 cdk8s-plus workloads call
+                <code>harden()</code>, 8 of them <code>place()</code>, the mutators and <code>WRITABLE_ROOT</code> are
+                gone, and <code>fleet_rules</code> reads the shared table, ScaledJob included.
+                <code>place()</code> still renders the required zone affinity. Left: <code>PREFER_WORKERS</code> on the
+                two Agentplane services that tolerate the control plane (#8244, open); decision 8 then flips one line in
+                <code>place()</code>.
               </p>
             </div>
           </div>
           <div class="sc">
             <div class="rich">
-              <p>About 30 call sites in agentplane, haku, ntfy and litellm; a 300 to 400 line core PR.</p>
+              <p>
+                #8244: two <code>place()</code> calls. Decision 8: one line in <code>place()</code>, rendered at its 8
+                call sites.
+              </p>
             </div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
             <div class="rich">
-              <p>None for the core. The two follow-ups change a securityContext and scheduling on four workloads.</p>
+              <p>
+                Low. #8244 adds a worker preference to two Deployments; decision 8 turns the required zone affinity of 8
+                workloads into a nodeSelector that admits the same nodes. Each rolls its Pods once.
+              </p>
             </div>
           </div>
         </li>
@@ -11268,13 +11278,12 @@ CONFIG = {
           <div class="st">
             <div class="rich">
               <p>
-                Per-area PRs after step 8: first a render-identical constants PR (<code>&#34;hil-ovh&#34;</code> at 35
-                sites in 31 files, 14 local zone constants, the control-plane key spelled in 33 files, the
-                prefer-workers affinity hand-written in 15); then <code>harden()</code> and <code>place()</code> on the
-                raw and CRD-embedded workloads, deleting the literal hardening structs; Helm values take
-                <code>HIL_OVH.node_selector</code>, <code>[CONTROL_PLANE_TOLERATION]</code> and
-                <code>PREFER_WORKERS</code>. The provisioner Jobs stay out, as do the required affinities that are not
-                zone affinities.
+                Per-area PRs after step 8. The render-identical constants PR landed (#8233): the zone, its node
+                selector, the control-plane toleration and <code>PREFER_WORKERS</code> are each named once in
+                <code>node_scheduling.py</code>, which raw pod specs, CRs and Helm values import. Left:
+                <code>harden()</code> and <code>place()</code> on the raw and CRD-embedded workloads, deleting the
+                literal hardening structs and the placement keywords raw pod specs state themselves. The provisioner
+                Jobs stay out, as do the required affinities that are not zone affinities.
               </p>
             </div>
           </div>
@@ -11282,8 +11291,8 @@ CONFIG = {
             <div class="rich">
               <p>
                 54 raw workloads in 42 files plus <code>SandboxTemplate</code> and the haku-ci <code>ScaledJob</code>,
-                and 26 Helm <code>nodeSelector</code> dicts in 17 files, in five or six area PRs (agents, apps,
-                platform, ...).
+                none of which calls <code>harden()</code> or <code>place()</code> yet, in five or six area PRs (agents,
+                apps, platform, ...).
               </p>
             </div>
           </div>
@@ -11293,6 +11302,8 @@ CONFIG = {
               <p>
                 Medium per container that had no securityContext: 39 containers in 27 workloads gain drop-ALL and no
                 escalation. Review the render diff container by container, the haku-ci runner first.
+                <code>place()</code> renders the required zone affinity until decision 8, so the 9 raw pod specs that
+                state <code>HIL_OVH_NODE_SELECTOR</code> render identically under it only after the flip.
               </p>
             </div>
           </div>
@@ -11302,21 +11313,18 @@ CONFIG = {
             <div class="rich">
               <p>
                 Convert the rest to the writer. Landed: #8192 (the writer), #8195, #8197 to #8200, #8201, #8203 to
-                #8206, #8210, #8211 and #8213; 100 directories now go through <code>write_directory</code>, after the
-                folds merged 12 of them into 3. Of the 65 nodes still on the old path, 8 convert as they are, in three
-                PRs: haku console and mailbox; <code>flux-image-automation-ghcr</code>, <code>seaweedfs-secrets</code>,
-                <code>agentplane-index</code> and <code>seaweedfs-public-s3</code> (whose dead decryption #8213
-                dropped); and the two sibling-only directories (<code>haku-forgejo-tea</code>,
-                <code>agent-shared-secrets</code>), the writer&#39;s first zero-chart use. The six Forgejo gitops-module
-                directories pass Terraform objects between charts, where names would do (<code>gitops_terraform</code>
-                reads only <code>.name</code>); that is your call. The rest stay: 40 have a hand-written
-                <code>kustomization.yaml</code> (call C; 9 are parked, two of them in a code package&#39;s
-                <code>deploy/</code>); 5 copy shared bases, which the writer rejects (public-coder-agent-app and the
-                grocy MCP and user-perms overlays); 2 have their module write a <code>kustomization.yaml</code> listing
-                nested directories (tofu-state, litellm); and 4 are special (public-coder devbox returns the SSH Service
-                another module reads; agentplane-staging derives health checks from its chart, and agentplane-testing
-                shares its environment writer; <code>artifact-generators</code> reads the ducktape GitRepository,
-                because it applies the ArtifactGenerators every artifact comes from). <code>write_charts</code> and
+                #8206, #8210, #8211, #8213, #8227, #8231 and #8235; 108 directories now go through
+                <code>write_directory</code>, after the folds merged 12 of them into 3. Of the 57 nodes still on the old
+                path, the six Forgejo gitops-module directories pass Terraform objects between charts, where names would
+                do (<code>gitops_terraform</code> reads only <code>.name</code>); that is your call. The rest stay: 40
+                have a hand-written <code>kustomization.yaml</code> (call C; 9 are parked, two of them in a code
+                package&#39;s <code>deploy/</code>); 5 copy shared bases, which the writer rejects
+                (public-coder-agent-app and the grocy MCP and user-perms overlays); 2 have their module write a
+                <code>kustomization.yaml</code> listing nested directories (tofu-state, litellm); and 4 are special
+                (public-coder devbox returns the SSH Service another module reads; agentplane-staging derives health
+                checks from its chart, and agentplane-testing shares its environment writer;
+                <code>artifact-generators</code> reads the ducktape GitRepository, because it applies the
+                ArtifactGenerators every artifact comes from). <code>write_charts</code> and
                 <code>sops_decryption</code> leave the modules&#39; own <code>write_manifests</code> only after the glue
                 absorption in step 11 (the writer itself calls both); the explicit <code>path=</code> source form stays
                 for Kustomizations that read other GitRepositories.
@@ -11324,7 +11332,7 @@ CONFIG = {
             </div>
           </div>
           <div class="sc">
-            <div class="rich"><p>Three conversion PRs now; the Forgejo modules after your call.</p></div>
+            <div class="rich"><p>The Forgejo modules, after your call.</p></div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
@@ -11583,32 +11591,24 @@ CONFIG = {
           <div class="st">
             <div class="rich">
               <p>
-                Backups. Ready now: <code>ResticBackup</code> replaces the near-copies
-                <code>public_coder_backup.py</code> and <code>haku_openclaw_spike_backup.py</code>, with the bucket kept
-                outside the composite. After decisions 1 and 10:
-                <code>PostgresBackup</code> (<code>cnpg_backup.py</code>) takes a <code>PostgresRef</code> and builds a
-                <code>PrivateBucket</code>, for authentik first (whose fold is step 14), then one PR per other OVH
-                database you want covered (N8); only <code>authentik-db-ovh</code> has backups today, and enabling the
-                plugin restarts a single-instance cluster.
+                Backups. <code>ResticBackup</code> replaced the near-copies in <code>public_coder_backup.py</code> and
+                <code>haku_openclaw_spike_backup.py</code>, with the bucket kept outside the composite (#8230). After
+                decisions 1 and 10: <code>PostgresBackup</code> (<code>cnpg_backup.py</code>) takes a
+                <code>PostgresRef</code> and builds a <code>PrivateBucket</code>, for authentik first (whose fold is
+                step 14), then one PR per other OVH database you want covered (N8); only
+                <code>authentik-db-ovh</code> has backups today, and enabling the plugin restarts a single-instance
+                cluster.
               </p>
             </div>
           </div>
           <div class="sc">
             <div class="rich">
-              <p>
-                One render-identical ResticBackup PR (about 250 lines net removed); <code>cnpg_backup.py</code> plus one
-                PR per database.
-              </p>
+              <p><code>cnpg_backup.py</code> plus one PR per database.</p>
             </div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
-            <div class="rich">
-              <p>
-                None for ResticBackup. Medium for PostgresBackup: new buckets and identities are created; no existing
-                data moves.
-              </p>
-            </div>
+            <div class="rich"><p>Medium: new buckets and identities are created; no existing data moves.</p></div>
           </div>
         </li>
         <li>
@@ -11669,9 +11669,9 @@ CONFIG = {
             <p>
               § Shape of a generator, &#39;One helper per repeated shape&#39;
               (<code>cluster/cdk8s/AGENTS.md:87-94</code>): replace the example list (<code>node_scheduling.py</code>,
-              <code>pod_spec_patches.py</code>, <code>api_resource.custom_resource</code>) with the nine-row convention
-              table; &#39;One shape per job&#39; (<code>AGENTS.md:82-86</code>) already makes a second shape for the
-              same job a review finding.
+              <code>pod_policy.py</code>, <code>api_resource.custom_resource</code>) with the nine-row convention table;
+              &#39;One shape per job&#39; (<code>AGENTS.md:82-86</code>) already makes a second shape for the same job a
+              review finding.
             </p>
           </div>
         </li>
@@ -11733,7 +11733,7 @@ CONFIG = {
             <ul>
               <li>
                 Replace the pod-level seccomp patch recipe and the note that <code>scheduling.attract</code> renders
-                required node affinity (<code>AGENTS.md:277-291</code>) with
+                required node affinity (<code>AGENTS.md:277-292</code>) with
                 <code>pod_policy.harden</code>/<code>place</code>.
               </li>
               <li>
@@ -12164,6 +12164,11 @@ CONFIG = {
               the provider cleanup, the writer and the edge trims had landed. The examples keep their earlier synthesis
               at 85fb8d0d; E8 and E10 to E13 were also re-run on aaaa3a5b90.
             </li>
+            <li>
+              Burn-down, after the cleanup wave: the counts that wave changed (pod policy, placement, namespaces, the
+              writer, backups, the helper census) were re-measured on devel 2411690fa3; the example excerpts were not
+              re-cut.
+            </li>
           </ul>
           <p>
             The page is rendered by <code>cluster/docs/cdk8s_conventions/render.py</code> from
@@ -12292,14 +12297,14 @@ CONFIG = {
     },
     {
       "title": "N2 \u00b7 Derive node facts from the directory",
-      "today": "The writer derives decryption for its directories; elsewhere `SOPS_DECRYPTION` is passed by hand at 26 nodes and `sops_decryption` at 3; 39 health-check entries are typed out; 22 of 40 stateful Kustomizations lack Orphan.",
-      "note": "Decryption already derives from the writer's `siblings` (`flux.py:174-178`) and health checks from rendered identities (`flux.py:119-129`); deriving Orphan there too makes a forgotten decryption or Orphan impossible once every node takes its directory, and the 26 hand-passed decryption blocks and 22 missing Orphans show forgetting is the failure mode. Health checks are derived only for admission targets, and a directory whose state lives in a HelmRelease (loki, mimir, matrix) passes `deletion_policy=ORPHAN` itself, because detection sees only generated kinds.",
+      "today": "The writer derives decryption for its directories; elsewhere `SOPS_DECRYPTION` is passed by hand at 22 nodes and `sops_decryption` at 1; 39 health-check entries are typed out; 22 of 40 stateful Kustomizations lack Orphan.",
+      "note": "Decryption already derives from the writer's `siblings` (`flux.py:174-178`) and health checks from rendered identities (`flux.py:119-129`); deriving Orphan there too makes a forgotten decryption or Orphan impossible once every node takes its directory, and the 22 hand-passed decryption blocks and 22 missing Orphans show forgetting is the failure mode. Health checks are derived only for admission targets, and a directory whose state lives in a HelmRelease (loki, mimir, matrix) passes `deletion_policy=ORPHAN` itself, because detection sees only generated kinds.",
       "conventions": "C7"
     },
     {
       "title": "N3 \u00b7 Packaging and writing directories",
-      "today": "Three writer shapes, of which only `write_directory` (100 directories) returns a `RenderedDirectory`; 22 `<id>.k8s.yaml` literals; a new directory touches three places in `generate_manifests.py`.",
-      "note": "`write_directory` (#8197) is the one writer that returns a value: it names files from chart ids, derives decryption from its `siblings`, and takes components and configMapGenerator entries, so hand-written kustomization glue can be absorbed (#7920). Converting the remaining module writers removes the 22 file-name literals, and the writer is where the fleet rules attach (C6). One component is one `write_directory` call (#7094 rule 3).",
+      "today": "Three writer shapes, of which only `write_directory` (108 directories) returns a `RenderedDirectory`; 18 `<id>.k8s.yaml` literals; a new directory touches three places in `generate_manifests.py`.",
+      "note": "`write_directory` (#8197) is the one writer that returns a value: it names files from chart ids, derives decryption from its `siblings`, and takes components and configMapGenerator entries, so hand-written kustomization glue can be absorbed (#7920). Converting the remaining module writers removes the 18 file-name literals, and the writer is where the fleet rules attach (C6). One component is one `write_directory` call (#7094 rule 3).",
       "conventions": "C7, C6"
     },
     {
@@ -12328,7 +12333,7 @@ CONFIG = {
     },
     {
       "title": "N8 \u00b7 Backups (Barman, VolSync)",
-      "today": "Only authentik-db-ovh has Barman backups: six objects in a unit of their own, with its names as literals in two modules. A VolSync restic backup is a copied module of about 13 objects and about 10 names that must agree.",
+      "today": "Only authentik-db-ovh has Barman backups: six objects in a unit of their own, with its names as literals in two modules. `ResticBackup` (`restic_backup.py`) builds the VolSync Restic backups of public-coder and haku-openclaw-spike: seven objects, five of whose names it derives from the namespace. grocy and home-assistant build their ReplicationSources in their app modules (`grocy/app.py:345`, `home_assistant/app.py:563`).",
       "note": "The ObjectStore name and the plugin's `barmanObjectName` both derive from one `PostgresRef`. A backup is `cluster(wal_archive=True)` plus one `PostgresBackup` from `cnpg_backup.py`, rendered in the unit that owns the database, so authentik-db-backups can fold into that unit once its Orphan is derived (E10).",
       "conventions": "C3, C2, C4"
     },
@@ -12340,13 +12345,13 @@ CONFIG = {
     },
     {
       "title": "N10 \u00b7 Workload hardening across pod dialects",
-      "today": "Carried four ways: constructor keywords, `WRITABLE_ROOT`, the fluent-only `apply_pod_spec_patches`, and literal structs on raw and CRD pod specs.",
+      "today": "Carried three ways: constructor keywords, `pod_policy.harden()` on the 20 cdk8s-plus workloads, and literal structs on raw and CRD pod specs; 39 containers in 27 generated workloads state no securityContext.",
       "note": "In a scratch environment, `harden()` reached a cdk8s-plus Deployment, a raw CronJob with an initContainer and the real `SandboxTemplate` binding, filling only unset fields, and the writer-attached rule caught a container added after the call. A pure PodSpec function would need every fluent workload converted to raw first; chart-rendered Pods stay with their chart values and Kyverno.",
       "conventions": "C5, C6"
     },
     {
       "title": "N11 \u00b7 Placement and scheduling",
-      "today": "The fluent-only `attract_to_zone`, 14 local zone constants and 35 `\"hil-ovh\"` literals, plus 26 `nodeSelector` dicts in Helm values and ClickHouse pod templates, and the control-plane key spelled in 33 modules.",
+      "today": "`node_scheduling.py` names the zone, its node selector, the control-plane toleration and `PREFER_WORKERS` once, and no other module spells `\"hil-ovh\"` or the control-plane key in code. `place()` pins its 8 cdk8s-plus workloads with a required zone affinity; the 9 raw pod specs and the Helm values that take `HIL_OVH_NODE_SELECTOR` render a `nodeSelector`.",
       "note": "One `Placement` value feeds `place()` and `cnpg.cluster`'s affinity, and `place()` renders a nodeSelector on every dialect and raises on a second placement (checked in a scratch environment). Helm values and operator CRs embed the same typed values (`HIL_OVH.node_selector`, `[CONTROL_PLANE_TOLERATION]`, `PREFER_WORKERS`; X1), which render wire-shaped inside `any`-typed values.",
       "conventions": "C5, C2"
     },
@@ -12382,13 +12387,13 @@ CONFIG = {
     },
     {
       "title": "N17 \u00b7 Monitoring",
-      "today": "ServiceMonitors built through `Endpoint` factories and 12 PrometheusRules through `Rule` factories, while the scrape ingress is spelled three ways (`plaid_mcp/reader.py:213`, `github_api_proxy/proxy.py:392`, `monitoring/loki.py:466`).",
+      "today": "ServiceMonitors built through `Endpoint` factories and 12 PrometheusRules through `Rule` factories, while the scrape ingress is spelled three ways (`plaid_mcp/reader.py:213`, `github_api_proxy/proxy.py:391`, `monitoring/loki.py:451`).",
       "note": "`Endpoint` factories (#8098) and `Rule` (#8148) have the C1 shape, and `GrafanaDashboard` stays C1 with its JSON as a sibling file. The metrics token is a `MintedSecret` `SecretKey`, scrape admission is one exported `SCRAPERS` constant, a ServiceMonitor selects the Service's own labels, and a metric name an alert reads and the app emits is a constant in the app's module.",
       "conventions": "C1, C3, C4"
     },
     {
       "title": "N18 \u00b7 Namespaces with policy labels",
-      "today": "63 Namespace constructions write label dicts per module, with `goldilocks.fairwinds.com/enabled: \"true\"` 39 times and `rbac.ducktape.io/agent-readable-logs` 24 times.",
+      "today": "38 sites build their Namespaces through `namespaces.namespace`, whose `Vpa` and `AgentReadable` StrEnums `kyverno/policies.py` reads too; 21 `k8s.KubeNamespace` sites (20 with no Goldilocks label), 6 cdk8s-plus `Namespace` sites and 8 `write_namespace` calls still write label dicts. 39 Namespaces render `goldilocks.fairwinds.com/enabled: \"true\"`.",
       "note": "`namespaces.namespace(scope, id, *, name, vpa: Vpa, agent_readable: AgentReadable | None)` renders the labels from StrEnums that `kyverno/policies.py`, the reader of those keys, imports too (X1). Labels are metadata, so no patch or mutator is involved, and under decision 11 the `vpa` keyword carries the Goldilocks decision that 39 `enabled: \"true\"` labels restate today.",
       "conventions": "C2"
     },
@@ -12412,7 +12417,7 @@ CONFIG = {
     },
     {
       "title": "N22 \u00b7 Environments / repeated deployments",
-      "today": "One frozen `Environment` per namespace for Agentplane, and the grocy households spelled as literals in two files (`grocy/app.py:379-385`, `grocy/mcp.py:218-223`).",
+      "today": "One frozen `Environment` per namespace for Agentplane, and the grocy households spelled as literals in two files (`grocy/app.py:368-374`, `grocy/mcp.py:205-210`).",
       "note": "The frozen `Environment` per namespace stays as `cluster/cdk8s/AGENTS.md:37-51` has it, and composites take it. A repeated deployment exports its references as a pure function of the `Environment` or instance key that the chart function also calls (`grocy.app.service(household)`), with the keys in one constant, so a probe or client reaches every instance without re-spelling it (X3).",
       "conventions": "C3, C4"
     },
@@ -12424,7 +12429,7 @@ CONFIG = {
     },
     {
       "title": "N24 \u00b7 Helm releases",
-      "today": "`helm.helm_release` is a resource function with policy defaults and untyped values dicts that spell placement and Secret references by hand.",
+      "today": "`helm.helm_release` is a resource function with policy defaults and untyped values dicts; placement on OVH comes from the shared `HIL_OVH_NODE_SELECTOR`, `CONTROL_PLANE_TOLERATION` and `PREFER_WORKERS`, while Secret references and the other node selectors are spelled by hand.",
       "note": "`helm_release` keeps its policy defaults, and values stay dicts because no chart here ships a schema; placement, env and Secret references go into them as the typed values used everywhere else (`HIL_OVH.node_selector`, `SecretKey.value_from()`; X1). Hardening of chart-rendered Pods is enforced by neither `harden()` nor the fleet rules; it is the chart's own values plus Kyverno admission. A chart that holds state or renders custom resources says so at its node (`deletion_policy=ORPHAN`) and writer (`chart_kinds`), because detection sees only generated kinds.",
       "conventions": "C2, C4, C5, C7"
     },
@@ -12461,7 +12466,7 @@ CONFIG = {
     {
       "title": "N30 \u00b7 Requests, limits and VPA policy",
       "today": "Requests and limits are written per container, the rule requiring them runs on 12 of 191 charts, and the VPA decision is a label dict per namespace.",
-      "note": "Requests and limits are stated at construction, and the existing rule requiring cpu and memory requests and a memory limit (`fleet_rules.py:36-54`) holds everywhere once the writer attaches it. The namespace's VPA decision is the `vpa` keyword on `namespaces.namespace` (X1).",
+      "note": "Requests and limits are stated at construction, and the existing rule requiring cpu and memory requests and a memory limit (`fleet_rules.py:32-50`) holds everywhere once the writer attaches it. The namespace's VPA decision is the `vpa` keyword on `namespaces.namespace` (X1).",
       "conventions": "C2, C6"
     },
     {
