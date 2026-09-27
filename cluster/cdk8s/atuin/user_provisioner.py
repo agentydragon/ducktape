@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import textwrap
-from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.atuin.server import DB_APP_SECRET, NAMESPACE
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "atuin-user-provisioner"
@@ -153,13 +150,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def atuin_user_provisioner(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, atuin: Kustomization
-) -> Kustomization:
+def atuin_user_provisioner(chart: Chart, directory: RenderedDirectory, atuin: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart, NAME, artifact, retry_interval=None, wait=None, depends_on=flux_kustomization_depends_on_many(atuin)
+        chart, NAME, directory, retry_interval=None, wait=None, depends_on=flux_kustomization_depends_on_many(atuin)
     )

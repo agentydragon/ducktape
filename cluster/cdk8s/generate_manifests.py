@@ -285,8 +285,6 @@ def generate_manifests(root: Path) -> None:
     litellm_namespace.write_manifests(root)
     litellm_proxy.write_manifests(root)
     agentplane_index_workers.write_manifests(root)
-    atuin_server.write_manifests(root)
-    atuin_user_provisioner.write_manifests(root)
     litellm_database.write_manifests(root)
     litellm_secrets.write_manifests(root)
     agents_namespaces.write_manifests(root)
@@ -296,18 +294,10 @@ def generate_manifests(root: Path) -> None:
     authentik_db.write_manifests(root)
     authentik_app.write_manifests(root)
     authentik_proxy_routes.write_manifests(root)
-    authentik_db_backups.write_manifests(root)
     forgejo_namespace.write_manifests(root)
     forgejo_db.write_manifests(root)
-    forgejo_cache.write_manifests(root)
     home_assistant_namespace.write_manifests(root)
-    github_branch_protection.write_manifests(root)
-    agent_machine_access.write_manifests(root)
     forgejo_gitops_modules.write_manifests(root)
-    github_secrets_sync_gitops_module.write_manifests(root)
-    forgejo_images.write_manifests(root)
-    gatus_sso.write_manifests(root)
-    sso_providers.write_manifests(root)
     seaweedfs_s3_config.write_manifests(root)
     seaweedfs_public_s3.write_manifests(root)
     nix_cache_attic.write_manifests(root)
@@ -317,7 +307,6 @@ def generate_manifests(root: Path) -> None:
     grafana_app.write_manifests(root)
     github_exporter_app.write_manifests(root)
     forgejo_app.write_manifests(root)
-    forgejo_budget_namespace.write_manifests(root)
     home_assistant_app.write_manifests(root)
     home_assistant_backup.write_manifests(root)
     grocy_app.write_manifests(root)
@@ -367,7 +356,9 @@ def generate_manifests(root: Path) -> None:
         flux_chart, flux_image_automation_ghcr_artifact
     )
     budget_namespace_artifact = artifact("budget-namespace", forgejo_budget_namespace.OUTPUT_DIR)
-    forgejo_budget_namespace.budget_namespace(flux_chart, budget_namespace_artifact)
+    forgejo_budget_namespace.budget_namespace(
+        flux_chart, write_directory(root, budget_namespace_artifact, forgejo_budget_namespace.chart)
+    )
     haku_namespace_artifact = artifact(haku_namespace.NAME, haku_namespace.OUTPUT_DIR)
     haku_namespace.haku_namespace(flux_chart, write_directory(root, haku_namespace_artifact, haku_namespace.chart))
     hubble_ui_artifact = artifact("hubble-ui", hubble_ui.OUTPUT_DIR)
@@ -542,7 +533,9 @@ def generate_manifests(root: Path) -> None:
     )
     snapshot_controller_flux_kustomizations.snapshot_controller(flux_chart)
     forgejo_cache_artifact = artifact("forgejo-cache", forgejo_cache.OUTPUT_DIR)
-    forgejo_cache.forgejo_cache(flux_chart, forgejo_cache_artifact, valkey_kustomization)
+    forgejo_cache.forgejo_cache(
+        flux_chart, write_directory(root, forgejo_cache_artifact, forgejo_cache.chart), valkey_kustomization
+    )
     haku_forgejo_tea_artifact = artifact(haku_forgejo_tea.NAME, haku_forgejo_tea.OUTPUT_DIR)
     haku_forgejo_tea.haku_forgejo_tea(flux_chart, haku_forgejo_tea_artifact)
     claude_rbac_artifact = artifact("claude-rbac", agent_rbac_base.OUTPUT_DIR)
@@ -693,7 +686,9 @@ def generate_manifests(root: Path) -> None:
         flux_chart, docker_ci_artifact, cert_manager_kustomization, kyverno_kustomization
     )
     atuin_artifact = artifact("atuin", atuin_server.OUTPUT_DIR)
-    atuin_kustomization = atuin_server.atuin(flux_chart, atuin_artifact, cnpg_kustomization)
+    atuin_kustomization = atuin_server.atuin(
+        flux_chart, write_directory(root, atuin_artifact, atuin_server.chart), cnpg_kustomization
+    )
     authentik_artifact = artifact("authentik", f"{HAND_WRITTEN_ROOT}/authentik")
     authentik_flux_kustomizations.authentik(
         flux_chart, authentik_artifact, cnpg_kustomization, monitoring_crds_kustomization
@@ -755,15 +750,25 @@ def generate_manifests(root: Path) -> None:
         flux_chart, seaweedfs_cluster_artifact, seaweedfs_operator_kustomization
     )
     atuin_user_provisioner_artifact = artifact("atuin-user-provisioner", atuin_user_provisioner.OUTPUT_DIR)
-    atuin_user_provisioner.atuin_user_provisioner(flux_chart, atuin_user_provisioner_artifact, atuin_kustomization)
+    atuin_user_provisioner.atuin_user_provisioner(
+        flux_chart,
+        write_directory(root, atuin_user_provisioner_artifact, atuin_user_provisioner.chart),
+        atuin_kustomization,
+    )
     agent_machine_access_tf_artifact = artifact("agent-machine-access-tf", agent_machine_access.OUTPUT_DIR)
     agent_machine_access.agent_machine_access_tf(
-        flux_chart, agent_machine_access_tf_artifact, tofu_controller_kustomization
+        flux_chart,
+        write_directory(root, agent_machine_access_tf_artifact, agent_machine_access.chart),
+        tofu_controller_kustomization,
     )
     sso_providers_tf_artifact = artifact("sso-providers-tf", sso_providers.OUTPUT_DIR)
-    sso_providers.sso_providers_tf(flux_chart, sso_providers_tf_artifact, tofu_controller_kustomization)
+    sso_providers.sso_providers_tf(
+        flux_chart, write_directory(root, sso_providers_tf_artifact, sso_providers.chart), tofu_controller_kustomization
+    )
     gatus_sso_tf_artifact = artifact("gatus-sso-tf", gatus_sso.OUTPUT_DIR)
-    gatus_sso.gatus_sso_tf(flux_chart, gatus_sso_tf_artifact, tofu_controller_kustomization)
+    gatus_sso.gatus_sso_tf(
+        flux_chart, write_directory(root, gatus_sso_tf_artifact, gatus_sso.chart), tofu_controller_kustomization
+    )
     flux_webhook_token_artifact = artifact("flux-webhook-token", flux_webhook_token.OUTPUT_DIR)
     flux_webhook_token.flux_webhook_token(
         flux_chart,
@@ -772,7 +777,9 @@ def generate_manifests(root: Path) -> None:
     )
     github_branch_protection_artifact = artifact("github-branch-protection", github_branch_protection.OUTPUT_DIR)
     github_branch_protection.github_branch_protection(
-        flux_chart, github_branch_protection_artifact, tofu_controller_kustomization
+        flux_chart,
+        write_directory(root, github_branch_protection_artifact, github_branch_protection.chart),
+        tofu_controller_kustomization,
     )
     monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
     monitoring_stack.monitoring_stack(
@@ -809,7 +816,10 @@ def generate_manifests(root: Path) -> None:
     )
     authentik_db_backups_artifact = artifact("authentik-db-backups", authentik_db_backups.OUTPUT_DIR)
     authentik_db_backups.authentik_db_backups(
-        flux_chart, authentik_db_backups_artifact, cnpg_kustomization, seaweedfs_operator_kustomization
+        flux_chart,
+        write_directory(root, authentik_db_backups_artifact, authentik_db_backups.chart),
+        cnpg_kustomization,
+        seaweedfs_operator_kustomization,
     )
     monitoring_loki_artifact = artifact("monitoring-loki", loki.OUTPUT_DIR)
     loki.loki(
@@ -996,7 +1006,11 @@ def generate_manifests(root: Path) -> None:
     forgejo_gitops_modules.forgejo_claude(flux_chart, forgejo_claude_artifact, tofu_controller_kustomization)
     forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
     forgejo_images.forgejo_images(
-        flux_chart, forgejo_images_artifact, external_secrets_operator_kustomization, tofu_controller_kustomization
+        flux_chart,
+        # The SOPS sibling (the tenant's canonical registry credential) turns on Flux decryption.
+        write_directory(root, forgejo_images_artifact, forgejo_images.chart, siblings=["registry-creds.sops.yaml"]),
+        external_secrets_operator_kustomization,
+        tofu_controller_kustomization,
     )
     haku_ci_artifact = artifact("haku-ci", haku_ci_runner.OUTPUT_DIR)
     haku_ci_runner.haku_ci(
@@ -1118,7 +1132,9 @@ def generate_manifests(root: Path) -> None:
     )
     github_secrets_sync_artifact = artifact("github-secrets-sync", github_secrets_sync_gitops_module.OUTPUT_DIR)
     github_secrets_sync_gitops_module.github_secrets_sync(
-        flux_chart, github_secrets_sync_artifact, tofu_controller_kustomization
+        flux_chart,
+        write_directory(root, github_secrets_sync_artifact, github_secrets_sync_gitops_module.chart),
+        tofu_controller_kustomization,
     )
     grocy_sf_artifact = artifact("grocy-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/app")
     grocy_sf_kustomization = grocy_flux_kustomizations.grocy_sf(
