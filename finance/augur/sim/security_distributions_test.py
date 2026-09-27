@@ -35,6 +35,7 @@ from finance.augur.sim.prepared import (
     PreparedSeries,
 )
 from finance.augur.sim.results import Finished, Paid, Rollout
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -109,7 +110,7 @@ def _bill(amount: Decimal) -> PreparedObligation:
     """A one-off required payment from alice to the tax authority's cash account."""
 
     return PreparedObligation(
-        month=0,
+        schedule=Once(month=0),
         obligation_id="bill",
         obligation_type=ObligationType.CASH_SPEND,
         from_account=AccountRef(agent_id=ALICE, account_id=CHECKING),

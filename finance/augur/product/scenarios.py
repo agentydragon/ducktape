@@ -67,8 +67,8 @@ from finance.augur.sim.prepared import (
     PreparedJurisdiction,
     PreparedLocation,
     PreparedLot,
+    PreparedObligation,
     PreparedPropertyCashflow,
-    PreparedRecurringObligation,
     PreparedRecurringPropertyCashflow,
     PreparedSeries,
     PreparedTlhPortfolio,
@@ -87,6 +87,7 @@ from finance.augur.sim.pricing import OccupancyMode, insurance_rate, maintenance
 from finance.augur.sim.private_equity_series import compile_private_equity_series
 from finance.augur.sim.property import Housing
 from finance.augur.sim.runtime import load_jurisdictions_for
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.tax import PreparedTaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -199,7 +200,7 @@ class Situation:
     home: Home | None
     distributions: tuple[PreparedDistribution, ...]
     tender_policy: _TenderPolicy | None
-    obligations: tuple[PreparedRecurringObligation, ...]
+    obligations: tuple[PreparedObligation, ...]
 
 
 def build_situation(
@@ -222,9 +223,8 @@ def build_situation(
         _empty_account(TAX_AUTHORITY_AGENT_ID, TAX_AUTHORITY_ACCOUNT_ID),
     ]
     obligations = [
-        PreparedRecurringObligation(
-            start_month=0,
-            end_month=end_month,
+        PreparedObligation(
+            schedule=Recurring(start_month=0, end_month=end_month),
             obligation_id=SPEND_OBLIGATION_ID,
             obligation_type=ObligationType.CASH_SPEND,
             from_account=primary,
@@ -240,9 +240,8 @@ def build_situation(
         assert scenario_key.rental_location_id is not None  # wire validator guarantees
         accounts.append(_empty_account(LANDLORD_AGENT_ID, LANDLORD_ACCOUNT_ID))
         obligations.append(
-            PreparedRecurringObligation(
-                start_month=0,
-                end_month=end_month,
+            PreparedObligation(
+                schedule=Recurring(start_month=0, end_month=end_month),
                 obligation_id=RENT_OBLIGATION_ID,
                 obligation_type=ObligationType.OUTSIDE_RENT,
                 from_account=primary,
@@ -519,7 +518,7 @@ class PropertyExpenseWiring:
     """Payees and obligations for recurring property expenses."""
 
     accounts: tuple[PreparedAccount, ...]
-    obligations: tuple[PreparedRecurringObligation, ...]
+    obligations: tuple[PreparedObligation, ...]
 
 
 def _wire_property_expenses(
@@ -546,10 +545,9 @@ def _wire_property_expenses(
 
     def bill(
         obligation_id: str, obligation_type: ObligationType, payee: AccountRef, monthly_amount: Decimal
-    ) -> PreparedRecurringObligation:
-        return PreparedRecurringObligation(
-            start_month=0,
-            end_month=horizon_months - 1,
+    ) -> PreparedObligation:
+        return PreparedObligation(
+            schedule=Recurring(start_month=0, end_month=horizon_months - 1),
             obligation_id=obligation_id,
             obligation_type=obligation_type,
             from_account=AccountRef(agent_id=primary_agent_id, account_id=PRIMARY_ACCOUNT_ID),
@@ -562,7 +560,7 @@ def _wire_property_expenses(
         )
 
     accounts: list[PreparedAccount] = []
-    obligations: list[PreparedRecurringObligation] = []
+    obligations: list[PreparedObligation] = []
     if property_.hoa_monthly > 0:
         accounts.append(_empty_account(HOA_AGENT_ID, HOA_ACCOUNT_ID))
         obligations.append(

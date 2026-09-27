@@ -105,8 +105,8 @@ def sops_decryption(resources: Sequence[str]) -> KustomizationSpecDecryption | N
 def write_namespace(
     root: Path, directory: str, *, name: str, labels: Mapping[str, str], annotations: Mapping[str, str] | None = None
 ) -> None:
-    """Write `namespace.k8s.yaml` into `directory`, whose hand-written `kustomization.yaml`
-    lists it, so the Namespace stays owned by that directory's Kustomization."""
+    """Write only `namespace.k8s.yaml` into `directory`; its `kustomization.yaml`, hand-written or
+    generated elsewhere, lists it, so the Namespace stays owned by that directory's Kustomization."""
     out_dir = root / directory
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))

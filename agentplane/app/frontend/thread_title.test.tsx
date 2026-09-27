@@ -97,7 +97,7 @@ it("waits for the thread before taking typing, with the thread id as its placeho
 
 it("commits the trimmed name on Enter", async () => {
   const { input, onRenamed } = await render(THREAD);
-  expect(container.textContent).toContain(THREAD.id);
+  expect(container.textContent).not.toContain(THREAD.id);
 
   await type(input, "  Test typed name  ");
   await press(input, "Enter");

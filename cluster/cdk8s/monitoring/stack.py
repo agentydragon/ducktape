@@ -274,7 +274,7 @@ def _values() -> dict[str, object]:
             },
             "rules": {
                 "alertmanager": True,
-                # Static Talos etcd endpoints are scraped by monitoring/etcd; keep the
+                # Static Talos etcd endpoints are scraped through cluster/cdk8s/etcd.py; keep the
                 # chart's stock etcd rule bundle disabled until the scrape is verified.
                 "etcd": False,
                 "configReloaders": True,
@@ -440,7 +440,7 @@ def _values() -> dict[str, object]:
         "kubeControllerManager": {"enabled": True, "serviceMonitor": _CONTROL_PLANE_SERVICE_MONITOR},
         # `serviceMonitor.authorization: null` is patched in below.
         "coreDns": {"enabled": True, "serviceMonitor": {}},
-        # Static Talos etcd endpoints are managed in cluster/generated/monitoring/etcd.
+        # Static Talos etcd endpoints are managed in cluster/cdk8s/etcd.py.
         "kubeEtcd": {"enabled": False},
         "kubeScheduler": {"enabled": True, "serviceMonitor": _CONTROL_PLANE_SERVICE_MONITOR},
         # kube-proxy is intentionally absent: Cilium runs kube-proxy replacement,
