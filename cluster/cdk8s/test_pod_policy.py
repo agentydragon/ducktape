@@ -95,7 +95,7 @@ def test_harden_fills_only_what_each_dialect_leaves_unset(chart: Chart) -> None:
     assert scaled_pod["containers"][0]["securityContext"] == {"allowPrivilegeEscalation": True}
 
 
-def test_place_requires_the_placement_and_appends_the_control_plane_toleration(chart: Chart) -> None:
+def test_place_requires_the_placement_and_tolerates_the_control_plane_as_overflow(chart: Chart) -> None:
     deployment = _deployment(chart)
     existing = k8s.Toleration(key="example.test/roaming", operator="Exists")
     cron_job = _cron_job(chart, tolerations=[existing])
@@ -104,15 +104,20 @@ def test_place_requires_the_placement_and_appends_the_control_plane_toleration(c
 
     required = {"key": "example.test/zone", "operator": "In", "values": ["zone-a"]}
     cron_pod = cron_job.to_json()["spec"]["jobTemplate"]["spec"]["template"]["spec"]
-    for pod in (_deployment_pod(deployment), cron_pod):
-        assert pod["affinity"] == {
-            "nodeAffinity": {
-                "requiredDuringSchedulingIgnoredDuringExecution": {
-                    "nodeSelectorTerms": [{"matchExpressions": [required]}]
-                }
-            }
-        }
+    required_affinity = {"nodeSelectorTerms": [{"matchExpressions": [required]}]}
+    assert _deployment_pod(deployment)["affinity"] == {
+        "nodeAffinity": {"requiredDuringSchedulingIgnoredDuringExecution": required_affinity}
+    }
     assert "tolerations" not in _deployment_pod(deployment)
+    workers_first = {"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}
+    assert cron_pod["affinity"] == {
+        "nodeAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": required_affinity,
+            "preferredDuringSchedulingIgnoredDuringExecution": [
+                {"weight": 100, "preference": {"matchExpressions": [workers_first]}}
+            ],
+        }
+    }
     assert cron_pod["tolerations"] == [
         {"key": "example.test/roaming", "operator": "Exists"},
         {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"},
