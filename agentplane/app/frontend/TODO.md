@@ -26,6 +26,12 @@ build time.
   below 560px width and holds only the `IconMenu2` button that opens the sidebar -- nothing else fills that bar's
   width. Consider moving `ThreadTitle` (`thread_title.tsx`) into it on mobile, since `ProjectedSession` currently
   renders its own title/id row inline in the thread page rather than sharing the shell's topbar.
+- **Per-message evidence icon is always-on visual noise**: `EvidenceToggle` (`projected_session.tsx`, the
+  magnifying-glass `IconZoomCode` button) renders unconditionally at every one of its 7 call sites, one per
+  message/entity, whether or not a reader is looking at that row. Consider a per-message overflow affordance
+  instead -- e.g. a vertical-dots button, shown only on hover (desktop) or tap (mobile), holding this and other
+  message-level debug actions -- mirroring the composer's existing `Menu` + `IconDotsVertical` pattern
+  (`projected_session.tsx`, "Debug history" / "Shut down harness").
 - **Consider squashing the "observation" naming layer**: not remembered as a deliberate design choice. `Event`
   (`protocol/event.proto`)'s payload is a `oneof` field literally named `observation`; that name then propagated
   outward into `runner/observation.py`'s `Observation` type, the archive/API layer
