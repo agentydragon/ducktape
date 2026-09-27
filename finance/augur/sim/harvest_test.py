@@ -20,14 +20,7 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD, position_value
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedSeries,
-    PreparedTlhPortfolio,
-)
+from finance.augur.sim.prepared import PreparedJurisdiction, PreparedSeries, PreparedTlhPortfolio
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -56,6 +49,18 @@ PARAMS = TlhAssumptions(
 type Intent = Callable[[Observation], Action]
 
 
+@dataclass(frozen=True, kw_only=True)
+class Lot:
+    """A lot Alice opens holding in her brokerage account."""
+
+    lot_id: LotId
+    asset_id: AssetId
+    purchase_month: int
+    quantity_scale: int
+    units: int
+    basis: int
+
+
 @dataclass(frozen=True)
 class Situation:
     """Alice's SP500 sleeve, held as a managed TLH portfolio or as a plain lot, and any other lot she holds."""
@@ -63,20 +68,18 @@ class Situation:
     series: tuple[PreparedSeries, ...]
     rollout_count: int
     horizon_months: int
-    sleeve: PreparedLot
+    sleeve: Lot
     with_harvest: bool
     assumptions: TlhAssumptions
-    extra_lots: tuple[PreparedLot, ...] = ()
+    extra_lots: tuple[Lot, ...] = ()
 
 
 def _lot(
     lot_id: LotId, asset: SecurityKey, *, quantity: Decimal | int, cost_basis: Decimal, purchase_month: int
-) -> PreparedLot:
+) -> Lot:
     scale = quantity_scale_for_asset(asset)
-    return PreparedLot(
+    return Lot(
         lot_id=lot_id,
-        agent_id=ALICE,
-        account_id=BROKERAGE,
         asset_id=AssetId(asset.symbol),
         purchase_month=purchase_month,
         quantity_scale=scale,
@@ -93,7 +96,7 @@ def situation(
     cost_basis_per_unit: int = 1,
     purchase_month: int = 0,
     short_term_fraction: float = 1.0,
-    extra_lots: tuple[PreparedLot, ...] = (),
+    extra_lots: tuple[Lot, ...] = (),
 ) -> Situation:
     """The sleeve is 1000 units at $1 cost basis by default, so its market value is easy to reason about."""
     rollouts = len(next(iter(levels.values())))
@@ -129,9 +132,7 @@ def compose(case: Situation, rollout_id: int) -> World:
         jurisdictions=(PreparedJurisdiction(jurisdiction_id=FEDERAL, level=jurisdictions[FEDERAL].level),),
     )
     for agent_id, account_id in ((ALICE, BROKERAGE), (ALICE, CHECKING), (IRS, CHECKING)):
-        world.declare_account(
-            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=0)
-        )
+        world.declare_account(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=0)
     world.track(
         TaxAuthority(
             compile_profile(
@@ -148,15 +149,19 @@ def compose(case: Situation, rollout_id: int) -> World:
         )
     )
     lots = case.extra_lots if case.with_harvest else (case.sleeve, *case.extra_lots)
-    for pool in {
-        lot.asset_id: PreparedHoldingPool(
-            agent_id=ALICE, account_id=BROKERAGE, asset_id=lot.asset_id, quantity_scale=lot.quantity_scale
-        )
-        for lot in lots
-    }.values():
-        world.declare_pool(pool)
+    for asset_id, quantity_scale in {lot.asset_id: lot.quantity_scale for lot in lots}.items():
+        world.declare_pool(agent_id=ALICE, account_id=BROKERAGE, asset_id=asset_id, quantity_scale=quantity_scale)
     for lot in lots:
-        world.hold(lot)
+        world.hold_lot(
+            lot_id=lot.lot_id,
+            agent_id=ALICE,
+            account_id=BROKERAGE,
+            asset_id=lot.asset_id,
+            purchase_month=lot.purchase_month,
+            quantity_scale=lot.quantity_scale,
+            units=lot.units,
+            basis=lot.basis,
+        )
     if case.with_harvest:
         # The statement values the sleeve's lot at the opening mark, as the plain lot would be.
         opening_price = world.market.value(f"security:{case.sleeve.asset_id}", 0)

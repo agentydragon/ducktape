@@ -1,5 +1,8 @@
 """The deployment's opening positions as the prepared facts a world declares.
 
+The records here are the app's own: each is what one path's world is told, in quanta, and
+declares itself onto that world.
+
 `opening_holdings` checks them once, when the service starts. Money becomes quanta per
 request, in the request's currency; everything else is prepared once.
 """
@@ -22,20 +25,86 @@ from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.sim.bonds import coupon_amount_quanta
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, round_ppb
-from finance.augur.sim.ids import AccountId, AgentId, AssetId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, JurisdictionId, LotId
 from finance.augur.sim.income import InterestIncome
 from finance.augur.sim.money import Currency
 from finance.augur.sim.prepared import (
-    PreparedBond,
     PreparedDistribution,
     PreparedDistributionSlice,
     PreparedFixedAmount,
-    PreparedHoldingPool,
     PreparedIndexedCoupon,
-    PreparedLot,
     PreparedTlhPortfolio,
 )
 from finance.augur.sim.tlh import TlhOpeningCohort
+from finance.augur.sim.world import World
+
+
+@dataclass(frozen=True, kw_only=True)
+class Pool:
+    agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
+    quantity_scale: int
+
+    def declare(self, world: World) -> None:
+        world.declare_pool(
+            agent_id=self.agent_id,
+            account_id=self.account_id,
+            asset_id=self.asset_id,
+            quantity_scale=self.quantity_scale,
+        )
+
+
+@dataclass(frozen=True, kw_only=True)
+class Lot:
+    lot_id: LotId
+    agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
+    purchase_month: int
+    quantity_scale: int
+    units: int
+    basis: int
+
+    def declare(self, world: World) -> None:
+        world.hold_lot(
+            lot_id=self.lot_id,
+            agent_id=self.agent_id,
+            account_id=self.account_id,
+            asset_id=self.asset_id,
+            purchase_month=self.purchase_month,
+            quantity_scale=self.quantity_scale,
+            units=self.units,
+            basis=self.basis,
+        )
+
+
+@dataclass(frozen=True, kw_only=True)
+class Bond:
+    bond_id: BondId
+    agent_id: AgentId
+    account_id: AccountId
+    issuer_jurisdiction_id: JurisdictionId | None
+    face_value: int
+    purchase_price: int
+    coupon: PreparedFixedAmount | PreparedIndexedCoupon
+    coupon_period_months: int
+    purchase_month_index: int
+    maturity_month_index: int
+
+    def declare(self, world: World) -> None:
+        world.hold_bond(
+            bond_id=self.bond_id,
+            agent_id=self.agent_id,
+            account_id=self.account_id,
+            issuer_jurisdiction_id=self.issuer_jurisdiction_id,
+            face_value=self.face_value,
+            purchase_price=self.purchase_price,
+            coupon=self.coupon,
+            coupon_period_months=self.coupon_period_months,
+            purchase_month_index=self.purchase_month_index,
+            maturity_month_index=self.maturity_month_index,
+        )
 
 
 @dataclass(frozen=True)
@@ -115,9 +184,9 @@ def rounded_units(quantity: float, *, scale: int) -> int:
     return int((Decimal(str(quantity)) * scale).quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
-def prepared_lots(portfolio: PortfolioConfig, *, currency: Currency) -> tuple[PreparedLot, ...]:
+def prepared_lots(portfolio: PortfolioConfig, *, currency: Currency) -> tuple[Lot, ...]:
     return tuple(
-        PreparedLot(
+        Lot(
             lot_id=lot.lot_id,
             agent_id=owner,
             account_id=position.account_id,
@@ -131,12 +200,12 @@ def prepared_lots(portfolio: PortfolioConfig, *, currency: Currency) -> tuple[Pr
     )
 
 
-def holding_pools(portfolio: PortfolioConfig) -> tuple[PreparedHoldingPool, ...]:
+def holding_pools(portfolio: PortfolioConfig) -> tuple[Pool, ...]:
     """Every pool a lot names, once."""
 
-    pools: dict[tuple[AgentId, AccountId, AssetId], PreparedHoldingPool] = {}
+    pools: dict[tuple[AgentId, AccountId, AssetId], Pool] = {}
     for owner, position, _ in opening_lots(portfolio):
-        pool = PreparedHoldingPool(
+        pool = Pool(
             agent_id=owner,
             account_id=position.account_id,
             asset_id=_asset_id(position.asset),
@@ -146,9 +215,7 @@ def holding_pools(portfolio: PortfolioConfig) -> tuple[PreparedHoldingPool, ...]
     return tuple(pools.values())
 
 
-def prepared_bonds(
-    portfolio: PortfolioConfig, *, coupon_account_id: AccountId, currency: Currency
-) -> tuple[PreparedBond, ...]:
+def prepared_bonds(portfolio: PortfolioConfig, *, coupon_account_id: AccountId, currency: Currency) -> tuple[Bond, ...]:
     """Each bond, owned through its custody account, its coupons landing in `coupon_account_id`.
 
     Both months are relative to month 0: a bond bought 24 months ago and maturing in 96 is
@@ -206,11 +273,11 @@ def _check_bond_terms(bond: BondHoldingConfig) -> None:
 
 def _prepared_bond(
     bond: BondHoldingConfig, *, owner: AgentId, coupon_account_id: AccountId, currency: Currency
-) -> PreparedBond:
+) -> Bond:
     # The wire's coupon rate is a float, so it rounds onto the ppb grid.
     rate_ppb = int(round_ppb(bond.annual_coupon_rate))
     face = currency.quanta(bond.face_value)
-    return PreparedBond(
+    return Bond(
         bond_id=bond.bond_id,
         agent_id=owner,
         account_id=coupon_account_id,

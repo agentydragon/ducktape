@@ -23,13 +23,7 @@ from finance.augur.sim.holdings import Disposition
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedLot,
-    PreparedRecurringObligation,
-    PreparedRecurringTransfer,
-)
+from finance.augur.sim.prepared import PreparedRecurringObligation, PreparedRecurringTransfer
 from finance.augur.sim.world import World
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
@@ -79,9 +73,11 @@ class Situation:
     weights: tuple[int, int] = (1, 1)
 
 
-def lot(lot_id: LotId, asset: SecurityKey, quantity: Decimal | int) -> PreparedLot:
+def hold(world: World, lot_id: LotId, asset: SecurityKey, quantity: Decimal | int) -> None:
+    """Alice's pool of `asset` and her `quantity` of it, bought at `PRICE` in month zero."""
     scale = quantity_scale_for_asset(asset)
-    return PreparedLot(
+    world.declare_pool(agent_id=ALICE, account_id=CHECKING, asset_id=AssetId(asset.symbol), quantity_scale=scale)
+    world.hold_lot(
         lot_id=lot_id,
         agent_id=ALICE,
         account_id=CHECKING,
@@ -103,19 +99,11 @@ def compose(case: Situation) -> World:
         MarketPath(compile_series(paths, rollout_count=1, horizon_months=HORIZON, currency=USD), 0, rollout_count=1),
         horizon_months=HORIZON,
     )
-    world.declare_account(PreparedAccount(account=ref(ALICE), opening_balance=money(case.opening_cash)))
+    world.declare_account(account=ref(ALICE), opening_balance=money(case.opening_cash))
     # Funded only for what it owes, so an unfunded counterparty can never fail a rollout.
-    world.declare_account(
-        PreparedAccount(account=ref(LANDLORD), opening_balance=money(Decimal(case.income) * (HORIZON + 1)))
-    )
-    lots = (lot(LotId("stock"), VTI, case.stock_units), lot(LotId("bond"), BND, case.bond_units))
-    for holding in lots:
-        world.declare_pool(
-            PreparedHoldingPool(
-                agent_id=ALICE, account_id=CHECKING, asset_id=holding.asset_id, quantity_scale=holding.quantity_scale
-            )
-        )
-        world.hold(holding)
+    world.declare_account(account=ref(LANDLORD), opening_balance=money(Decimal(case.income) * (HORIZON + 1)))
+    hold(world, LotId("stock"), VTI, case.stock_units)
+    hold(world, LotId("bond"), BND, case.bond_units)
     if case.rent:
         start, end = case.rent_months
         world.track(

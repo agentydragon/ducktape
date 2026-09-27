@@ -28,15 +28,7 @@ from finance.augur.sim.jurisdictions import (
 )
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedObligation,
-    PreparedSeries,
-    PreparedTransfer,
-)
+from finance.augur.sim.prepared import PreparedJurisdiction, PreparedObligation, PreparedSeries, PreparedTransfer
 from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -83,9 +75,7 @@ def _books(
     )
     for name, balance in ((RETIREE, retiree_cash), (WORLD, 0)):
         world.declare_account(
-            PreparedAccount(
-                account=AccountRef(agent_id=name, account_id=AccountId("checking")), opening_balance=balance
-            )
+            account=AccountRef(agent_id=name, account_id=AccountId("checking")), opening_balance=balance
         )
     return world
 
@@ -309,24 +299,17 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
         )
         world.track(TaxAuthority(profile, indexation=FixedNominalLaw()))
         world.declare_pool(
-            PreparedHoldingPool(
-                agent_id=RETIREE,
-                account_id=AccountId("brokerage"),
-                asset_id=AssetId(stock.symbol),
-                quantity_scale=scale,
-            )
+            agent_id=RETIREE, account_id=AccountId("brokerage"), asset_id=AssetId(stock.symbol), quantity_scale=scale
         )
-        world.hold(
-            PreparedLot(
-                lot_id=LotId("tax-lot"),
-                agent_id=RETIREE,
-                account_id=AccountId("brokerage"),
-                asset_id=AssetId(stock.symbol),
-                purchase_month=-24,
-                quantity_scale=scale,
-                units=quantity_to_quanta(10, scale=scale),
-                basis=40_000,
-            )
+        world.hold_lot(
+            lot_id=LotId("tax-lot"),
+            agent_id=RETIREE,
+            account_id=AccountId("brokerage"),
+            asset_id=AssetId(stock.symbol),
+            purchase_month=-24,
+            quantity_scale=scale,
+            units=quantity_to_quanta(10, scale=scale),
+            basis=40_000,
         )
         return world
 

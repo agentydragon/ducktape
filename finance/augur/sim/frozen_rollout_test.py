@@ -21,15 +21,7 @@ from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedObligation,
-    PreparedSeries,
-    _TenderPolicy,
-)
+from finance.augur.sim.prepared import PreparedJurisdiction, PreparedObligation, PreparedSeries, _TenderPolicy
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -63,8 +55,8 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
-def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=money(balance))
+def account(world: World, agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> None:
+    world.declare_account(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=money(balance))
 
 
 def unfundable(*, month: int, payer: AgentId, amount: Decimal | int) -> PreparedObligation:
@@ -94,7 +86,7 @@ def frozen_world(*, horizon_months: int) -> World:
         jurisdictions=(PreparedJurisdiction(jurisdiction_id=FEDERAL, level=jurisdictions[FEDERAL].level),),
     )
     for agent_id in (ALICE, VENDOR, IRS):
-        world.declare_account(account(agent_id))
+        account(world, agent_id)
     world.track(
         TaxAuthority(
             compile_profile(
@@ -134,22 +126,19 @@ def private_equity_world(*, freeze: bool) -> World:
         horizon_months=PE_MARK_MONTHS,
         income_sources=(ORDINARY_INCOME,),
     )
-    for opening in (account(PE_OWNER, balance=Decimal(100)), account(PE_OWNER, PRIVATE), account(VENDOR)):
-        world.declare_account(opening)
-    world.declare_pool(
-        PreparedHoldingPool(agent_id=PE_OWNER, account_id=PRIVATE, asset_id=PE_ASSET_ID, quantity_scale=PE_SCALE)
-    )
-    world.hold(
-        PreparedLot(
-            lot_id=LotId("pe-acme"),
-            agent_id=PE_OWNER,
-            account_id=PRIVATE,
-            asset_id=PE_ASSET_ID,
-            purchase_month=-12,
-            quantity_scale=PE_SCALE,
-            units=quantity_to_quanta(10, scale=PE_SCALE),
-            basis=money(100),
-        )
+    account(world, PE_OWNER, balance=Decimal(100))
+    account(world, PE_OWNER, PRIVATE)
+    account(world, VENDOR)
+    world.declare_pool(agent_id=PE_OWNER, account_id=PRIVATE, asset_id=PE_ASSET_ID, quantity_scale=PE_SCALE)
+    world.hold_lot(
+        lot_id=LotId("pe-acme"),
+        agent_id=PE_OWNER,
+        account_id=PRIVATE,
+        asset_id=PE_ASSET_ID,
+        purchase_month=-12,
+        quantity_scale=PE_SCALE,
+        units=quantity_to_quanta(10, scale=PE_SCALE),
+        basis=money(100),
     )
     world.declare_tender_policy(
         _TenderPolicy(owner_agent_id=PE_OWNER, proceeds_account_id=CHECKING, liquid_net_worth_floor=0)

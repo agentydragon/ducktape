@@ -174,7 +174,7 @@ def test_largest_finite_threshold_is_not_an_open_bracket_sentinel() -> None:
 
 
 def test_nothing_named_still_declares_ordinary_income() -> None:
-    assert compile_income_sources(flows=(), bonds=(), distributions=()) == (OrdinaryIncome(),)
+    assert compile_income_sources(()) == (OrdinaryIncome(),)
 
 
 if __name__ == "__main__":

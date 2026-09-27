@@ -378,7 +378,6 @@ py_test(
         "//finance/augur/sim:events",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:observations",
-        "//finance/augur/sim:prepared",
         "//finance/augur/sim:results",
         "//finance/augur/sim:session",
         "//finance/augur/sim:world",
@@ -536,6 +535,7 @@ py_library(
         "//finance/augur/sim:money",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:tlh",
+        "//finance/augur/sim:world",
     ],
 )
 

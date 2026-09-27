@@ -1,9 +1,10 @@
 """What a filer owes at a year end, and what paying it does to their cash."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 from fractions import Fraction
+from functools import partial
 from typing import Any
 
 import numpy as np
@@ -29,14 +30,7 @@ from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedRecurringTransfer,
-    PreparedSeries,
-)
+from finance.augur.sim.prepared import PreparedJurisdiction, PreparedRecurringTransfer, PreparedSeries
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -67,24 +61,27 @@ def wage(annual: int) -> Decimal:
     return round_currency_amount(Decimal(annual) / 12, quantum=QUANTUM)
 
 
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
-
-
-def lot(
-    lot_id: LotId, asset: SecurityKey, *, quantity: Decimal | int, cost_basis: int, purchase_month: int
-) -> PreparedLot:
-    scale = quantity_scale_for_asset(asset)
-    return PreparedLot(
-        lot_id=lot_id,
-        agent_id=ALICE,
-        account_id=CHECKING,
-        asset_id=AssetId(asset.symbol),
-        purchase_month=purchase_month,
-        quantity_scale=scale,
-        units=quantity_to_quanta(quantity, scale=scale),
-        basis=money(cost_basis),
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> Callable[[World], None]:
+    return partial(
+        World.declare_account,
+        account=AccountRef(agent_id=agent_id, account_id=CHECKING),
+        opening_balance=money(balance),
     )
+
+
+@dataclass(frozen=True)
+class Lot:
+    """One of Alice's opening lots, held in checking."""
+
+    lot_id: LotId
+    asset: SecurityKey
+    quantity: Decimal | int
+    cost_basis: int
+    purchase_month: int
+
+
+def lot(lot_id: LotId, asset: SecurityKey, *, quantity: Decimal | int, cost_basis: int, purchase_month: int) -> Lot:
+    return Lot(lot_id, asset, quantity, cost_basis, purchase_month)
 
 
 def sale(cause_id: str, lot_id: LotId, asset: SecurityKey, *, quantity: Decimal | int) -> Sell:
@@ -146,11 +143,11 @@ class Situation:
     """Alice's accounts, the wages and rent that move without her asking, and what she holds."""
 
     horizon_months: int
-    accounts: tuple[PreparedAccount, ...]
+    accounts: tuple[Callable[[World], None], ...]
     jurisdiction_ids: tuple[JurisdictionId, ...] = (FEDERAL, CALIFORNIA)
     prior_year_tax: Decimal | int = 0
     recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
-    lots: tuple[PreparedLot, ...] = ()
+    lots: tuple[Lot, ...] = ()
     sales: Mapping[int, tuple[Sell, ...]] = field(default_factory=dict)
     # The holding Alice sells to fund her claims; with none, she only pays them.
     funded_by: SecurityKey | None = None
@@ -200,8 +197,8 @@ def compose(case: Situation, indexation: TaxIndexation) -> World:
             PreparedJurisdiction(jurisdiction_id=id_, level=rules.level) for id_, rules in jurisdictions.items()
         ),
     )
-    for opening in case.accounts:
-        world.declare_account(opening)
+    for declare in case.accounts:
+        declare(world)
     if case.jurisdiction_ids:
         world.track(
             TaxAuthority(
@@ -219,15 +216,25 @@ def compose(case: Situation, indexation: TaxIndexation) -> World:
                 indexation=indexation,
             )
         )
-    for pool in {
-        held.asset_id: PreparedHoldingPool(
-            agent_id=ALICE, account_id=CHECKING, asset_id=held.asset_id, quantity_scale=held.quantity_scale
+    for asset in dict.fromkeys(held.asset for held in case.lots):
+        world.declare_pool(
+            agent_id=ALICE,
+            account_id=CHECKING,
+            asset_id=AssetId(asset.symbol),
+            quantity_scale=quantity_scale_for_asset(asset),
         )
-        for held in case.lots
-    }.values():
-        world.declare_pool(pool)
     for held in case.lots:
-        world.hold(held)
+        scale = quantity_scale_for_asset(held.asset)
+        world.hold_lot(
+            lot_id=held.lot_id,
+            agent_id=ALICE,
+            account_id=CHECKING,
+            asset_id=AssetId(held.asset.symbol),
+            purchase_month=held.purchase_month,
+            quantity_scale=scale,
+            units=quantity_to_quanta(held.quantity, scale=scale),
+            basis=money(held.cost_basis),
+        )
     for flow in case.recurring_transfers:
         world.declare_flow(flow)
     return world

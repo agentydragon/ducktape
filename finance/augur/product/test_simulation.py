@@ -30,15 +30,7 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, L
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLocation,
-    PreparedLot,
-    _PropertyPurchase,
-    _PropertySale,
-)
+from finance.augur.sim.prepared import PreparedJurisdiction, PreparedLocation, _PropertyPurchase, _PropertySale
 from finance.augur.sim.property import Housing
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -88,22 +80,13 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
     """
 
     scale = quantity_scale_for_asset(VTI)
-    lot = PreparedLot(
-        lot_id=LotId("alice-vti"),
-        agent_id=AGENT,
-        account_id=CHECKING,
-        asset_id=AssetId(VTI.symbol),
-        purchase_month=-24,  # comfortably long-term
-        quantity_scale=scale,
-        units=quantity_to_quanta(UNITS, scale=scale),
-        basis=USD.quanta(UNITS * LOT_BASIS),
-    )
+    lot_id, asset_id, units = LotId("alice-vti"), AssetId(VTI.symbol), quantity_to_quanta(UNITS, scale=scale)
     sale = Sell(
         cause_id="sell-vti",
         agent_id=AGENT,
         proceeds_account_id=CHECKING,
-        asset_id=lot.asset_id,
-        lots=(LotSale(account_id=CHECKING, lot_id=lot.lot_id, units=lot.units),),
+        asset_id=asset_id,
+        lots=(LotSale(account_id=CHECKING, lot_id=lot_id, units=units),),
     )
     profile = TaxProfile(agent_id=AGENT, jurisdiction_ids=[JurisdictionId("federal_us")], tax_authority_agent_id=IRS)
     jurisdictions = load_jurisdictions_for([profile])
@@ -129,14 +112,19 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
             ),
         )
         for agent_id in (AGENT, IRS):
-            world.declare_account(
-                PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
-            )
+            world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
         world.track(TaxAuthority(compile_profile(profile, jurisdictions, currency=USD), indexation=FixedNominalLaw()))
-        world.declare_pool(
-            PreparedHoldingPool(agent_id=AGENT, account_id=CHECKING, asset_id=lot.asset_id, quantity_scale=scale)
+        world.declare_pool(agent_id=AGENT, account_id=CHECKING, asset_id=asset_id, quantity_scale=scale)
+        world.hold_lot(
+            lot_id=lot_id,
+            agent_id=AGENT,
+            account_id=CHECKING,
+            asset_id=asset_id,
+            purchase_month=-24,  # comfortably long-term
+            quantity_scale=scale,
+            units=units,
+            basis=USD.quanta(UNITS * LOT_BASIS),
         )
-        world.hold(lot)
         world.track(Scripted(ClaimPayer(AgentId(AGENT)), {SALE_MONTH: (sale,)}))
         return world
 
@@ -194,10 +182,8 @@ def a_property_bought_and_sold(closing_cost_pct: Decimal = Decimal(0)) -> Worlds
         )
         for agent_id in (AGENT, SELLER):
             world.declare_account(
-                PreparedAccount(
-                    account=AccountRef(agent_id=agent_id, account_id=CHECKING),
-                    opening_balance=USD.quanta(Decimal(1_000_000)),
-                )
+                account=AccountRef(agent_id=agent_id, account_id=CHECKING),
+                opening_balance=USD.quanta(Decimal(1_000_000)),
             )
         world.declare_housing(
             Housing(

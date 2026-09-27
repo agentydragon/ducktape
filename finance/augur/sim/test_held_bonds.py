@@ -6,17 +6,17 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.accounting import Accounting
-from finance.augur.sim.held_bonds import HeldBonds
+from finance.augur.sim.held_bonds import Bond, HeldBonds
 from finance.augur.sim.ids import AccountId, BondId
 from finance.augur.sim.income import InterestIncome
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedBond, PreparedFixedAmount, PreparedIndexedCoupon, PreparedSeries
+from finance.augur.sim.prepared import PreparedFixedAmount, PreparedIndexedCoupon, PreparedSeries
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, accounting
 
 
 @pytest.fixture
-def nominal() -> PreparedBond:
-    return PreparedBond(
+def nominal() -> Bond:
+    return Bond(
         bond_id=BondId("test_bond"),
         agent_id=HOUSEHOLD,
         account_id=AccountId("checking"),
@@ -30,14 +30,14 @@ def nominal() -> PreparedBond:
     )
 
 
-def bond_books(bond: PreparedBond, levels: tuple[int, ...]) -> tuple[Accounting, HeldBonds]:
+def bond_books(bond: Bond, levels: tuple[int, ...]) -> tuple[Accounting, HeldBonds]:
     market = MarketPath(
         (PreparedSeries(series_id="inflation", snapshots=len(levels), values=levels),), 0, rollout_count=1
     )
     return accounting(), HeldBonds((bond,), market)
 
 
-def test_no_month_zero_coupon_and_redemption_keeps_the_maturity_coupon(nominal: PreparedBond) -> None:
+def test_no_month_zero_coupon_and_redemption_keeps_the_maturity_coupon(nominal: Bond) -> None:
     accounting, bonds = bond_books(nominal, (100, 100, 100, 100))
     assert bonds.snapshots(0, 0)[0].principal == 1000
     bonds.advance(accounting, 0)
@@ -54,7 +54,7 @@ def test_no_month_zero_coupon_and_redemption_keeps_the_maturity_coupon(nominal: 
     assert accounting.ledger.trial_balance() == 0
 
 
-def test_tips_deflation_changes_income_but_redemption_has_a_face_floor(nominal: PreparedBond) -> None:
+def test_tips_deflation_changes_income_but_redemption_has_a_face_floor(nominal: Bond) -> None:
     bond = replace(nominal, coupon=PreparedIndexedCoupon(annual_rate_ppb=120_000_000))
     accounting, bonds = bond_books(bond, (100, 90, 80, 80))
     bonds.advance(accounting, 0)
@@ -69,7 +69,7 @@ def test_tips_deflation_changes_income_but_redemption_has_a_face_floor(nominal: 
     assert accounting.ledger.balance(CASH) == 1117
 
 
-def test_stopped_bond_snapshot_uses_the_last_observed_index(nominal: PreparedBond) -> None:
+def test_stopped_bond_snapshot_uses_the_last_observed_index(nominal: Bond) -> None:
     bond = replace(nominal, coupon=PreparedIndexedCoupon(annual_rate_ppb=0), maturity_month_index=3)
     _, bonds = bond_books(bond, (100, 110, 200, 300))
     assert bonds.snapshots(2, 1)[0].principal == 1100

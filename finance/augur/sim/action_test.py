@@ -15,7 +15,7 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedAccount, PreparedObligation, PreparedTransfer
+from finance.augur.sim.prepared import PreparedObligation, PreparedTransfer
 from finance.augur.sim.results import Executed, Finished, RejectedAction, Rollout, UnpaidClaims
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
@@ -40,7 +40,7 @@ def compose(rollout_id: int, *, obligation_id: str = "one-cent-bill") -> World:
         MarketPath((), rollout_id, rollout_count=ROLLOUT_COUNT), horizon_months=4, income_sources=(ORDINARY_INCOME,)
     )
     for account, balance in ((ALICE, Decimal("0.05")), (WORLD, Decimal(0))):
-        world.declare_account(PreparedAccount(account=account, opening_balance=quanta(balance)))
+        world.declare_account(account=account, opening_balance=quanta(balance))
     world.declare_flow(
         PreparedTransfer(
             month=0,

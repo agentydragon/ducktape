@@ -25,12 +25,9 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
-    PreparedAccount,
     PreparedDistribution,
     PreparedDistributionSlice,
-    PreparedHoldingPool,
     PreparedJurisdiction,
-    PreparedLot,
     PreparedObligation,
     PreparedSeries,
 )
@@ -98,8 +95,8 @@ def _paths(payout: np.ndarray | None) -> tuple[PreparedSeries, ...]:
     )
 
 
-def _account(agent_id: AgentId, balance: Decimal) -> PreparedAccount:
-    return PreparedAccount(
+def _account(world: World, agent_id: AgentId, balance: Decimal) -> None:
+    world.declare_account(
         account=AccountRef(agent_id=agent_id, account_id=CHECKING),
         opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
     )
@@ -155,8 +152,8 @@ def compose(
             for id_ in sorted(issuers | (set(FILED_IN) if is_taxed else set()))
         ),
     )
-    world.declare_account(_account(ALICE, opening_cash))
-    world.declare_account(_account(IRS, Decimal(0)))
+    _account(world, ALICE, opening_cash)
+    _account(world, IRS, Decimal(0))
     if is_taxed:
         # One single filer paying from checking to the irs agent; the rates, brackets and
         # exemptions come from the deployment's own jurisdiction records.
@@ -171,20 +168,16 @@ def compose(
             )
         )
     scale = quantity_scale_for_asset(FUND)
-    world.declare_pool(
-        PreparedHoldingPool(agent_id=ALICE, account_id=BROKERAGE, asset_id=AssetId(SYMBOL), quantity_scale=scale)
-    )
-    world.hold(
-        PreparedLot(
-            lot_id=LotId("bnd-lot"),
-            agent_id=ALICE,
-            account_id=BROKERAGE,
-            asset_id=AssetId(SYMBOL),
-            purchase_month=-24,
-            quantity_scale=scale,
-            units=quantity_to_quanta(UNITS, scale=scale),
-            basis=int(currency_amount_to_quanta(UNITS * PRICE, quantum=QUANTUM)),
-        )
+    world.declare_pool(agent_id=ALICE, account_id=BROKERAGE, asset_id=AssetId(SYMBOL), quantity_scale=scale)
+    world.hold_lot(
+        lot_id=LotId("bnd-lot"),
+        agent_id=ALICE,
+        account_id=BROKERAGE,
+        asset_id=AssetId(SYMBOL),
+        purchase_month=-24,
+        quantity_scale=scale,
+        units=quantity_to_quanta(UNITS, scale=scale),
+        basis=int(currency_amount_to_quanta(UNITS * PRICE, quantum=QUANTUM)),
     )
     if distributes:
         world.declare_distribution(

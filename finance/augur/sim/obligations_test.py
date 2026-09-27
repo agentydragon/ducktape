@@ -24,9 +24,6 @@ from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedLot,
     PreparedObligation,
     PreparedRecurringObligation,
     PreparedRecurringTransfer,
@@ -60,13 +57,14 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(amount, quantum=QUANTUM))
 
 
-def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=ref(agent_id, account_id), opening_balance=money(balance))
+def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return ref(agent_id, account_id), money(balance)
 
 
-def pool(agent_id: AgentId, account_id: AccountId) -> PreparedHoldingPool:
-    return PreparedHoldingPool(
-        agent_id=agent_id, account_id=account_id, asset_id=AssetId(VTI.symbol), quantity_scale=SCALE
+def pool(agent_id: AgentId, account_id: AccountId) -> Callable[[World], None]:
+    return partial(
+        World.declare_pool, agent_id=agent_id, account_id=account_id, asset_id=AssetId(VTI.symbol), quantity_scale=SCALE
     )
 
 
@@ -78,8 +76,9 @@ def lot(
     quantity: Decimal | int,
     cost_basis: Decimal | int,
     purchase_month: int = -24,
-) -> PreparedLot:
-    return PreparedLot(
+) -> Callable[[World], None]:
+    return partial(
+        World.hold_lot,
         lot_id=lot_id,
         agent_id=agent_id,
         account_id=account_id,
@@ -141,9 +140,9 @@ class Situation:
     """The books and claims every path declares; `compose` puts them on one `World` per price path."""
 
     horizon_months: int
-    accounts: list[PreparedAccount] = field(default_factory=list)
-    pools: list[PreparedHoldingPool] = field(default_factory=list)
-    lots: list[PreparedLot] = field(default_factory=list)
+    accounts: list[tuple[AccountRef, int]] = field(default_factory=list)
+    pools: list[Callable[[World], None]] = field(default_factory=list)
+    lots: list[Callable[[World], None]] = field(default_factory=list)
     claims: list[PreparedObligation | PreparedRecurringObligation] = field(default_factory=list)
     recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
 
@@ -154,12 +153,10 @@ def compose(case: Situation, rollout_id: int, *, series: tuple[PreparedSeries, .
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
     )
-    for opening in case.accounts:
-        world.declare_account(opening)
-    for holding_pool in case.pools:
-        world.declare_pool(holding_pool)
-    for holding in case.lots:
-        world.hold(holding)
+    for opened, balance in case.accounts:
+        world.declare_account(account=opened, opening_balance=balance)
+    for declare in (*case.pools, *case.lots):
+        declare(world)
     for flow in case.recurring_transfers:
         world.declare_flow(flow)
     for claim in case.claims:

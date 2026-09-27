@@ -4,7 +4,7 @@ The tax schedule below is deliberately synthetic: 20% ordinary, 10% long-term,
 no deductions. Assertions pin accounting/timing, not statutory fidelity.
 """
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from functools import partial
@@ -32,13 +32,10 @@ from finance.augur.sim.jurisdictions import (
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import MAX_COUNT, USD
 from finance.augur.sim.prepared import (
-    PreparedAccount,
     PreparedDistribution,
     PreparedDistributionSlice,
-    PreparedHoldingPool,
     PreparedIndexedAmount,
     PreparedJurisdiction,
-    PreparedLot,
     PreparedObligation,
     PreparedRecurringObligation,
     PreparedSeries,
@@ -87,8 +84,9 @@ def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=account_id)
 
 
-def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=ref(agent_id, account_id), opening_balance=money(balance))
+def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return ref(agent_id, account_id), money(balance)
 
 
 def flat(asset: SecurityKey, price: Decimal | int, *, snapshots: int) -> PreparedSeries:
@@ -104,14 +102,17 @@ def distribution_rate(asset: SecurityKey, amount: Decimal | int, *, snapshots: i
     )
 
 
-def pool(asset: SecurityKey) -> PreparedHoldingPool:
-    return PreparedHoldingPool(
-        agent_id=ALICE, account_id=BROKERAGE, asset_id=AssetId(asset.symbol), quantity_scale=SCALE
+def pool(asset: SecurityKey) -> Callable[[World], None]:
+    return partial(
+        World.declare_pool, agent_id=ALICE, account_id=BROKERAGE, asset_id=AssetId(asset.symbol), quantity_scale=SCALE
     )
 
 
-def lot(asset: SecurityKey, *, units: float, basis: Decimal | int, purchase_month: int = -24) -> PreparedLot:
-    return PreparedLot(
+def lot(
+    asset: SecurityKey, *, units: float, basis: Decimal | int, purchase_month: int = -24
+) -> Callable[[World], None]:
+    return partial(
+        World.hold_lot,
         lot_id=LotId(f"opening-{asset.symbol}"),
         agent_id=ALICE,
         account_id=BROKERAGE,
@@ -163,11 +164,11 @@ class Situation:
 
     horizon_months: int
     series: tuple[PreparedSeries, ...]
-    accounts: tuple[PreparedAccount, ...]
+    accounts: tuple[tuple[AccountRef, int], ...]
     # A fresh household per path: it keeps the path's CPI history and purchase identities.
     funding: partial[CashBandHousehold]
-    pools: tuple[PreparedHoldingPool, ...] = ()
-    lots: tuple[PreparedLot, ...] = ()
+    pools: tuple[Callable[[World], None], ...] = ()
+    lots: tuple[Callable[[World], None], ...] = ()
     distributions: tuple[PreparedDistribution, ...] = ()
     claims: tuple[PreparedObligation | PreparedRecurringObligation, ...] = ()
     transfers: tuple[PreparedTransfer, ...] = ()
@@ -184,8 +185,8 @@ def compose(case: Situation, rollout_id: int) -> World:
         income_sources=(ORDINARY_INCOME, *case.interest_sources),
         jurisdictions=(PreparedJurisdiction(jurisdiction_id=SYNTHETIC, level=TAX.level),) if case.taxed else (),
     )
-    for opening in case.accounts:
-        world.declare_account(opening)
+    for opened, balance in case.accounts:
+        world.declare_account(account=opened, opening_balance=balance)
     if case.taxed:
         world.track(
             TaxAuthority(
@@ -197,10 +198,8 @@ def compose(case: Situation, rollout_id: int) -> World:
                 indexation=FixedNominalLaw(),
             )
         )
-    for holding_pool in case.pools:
-        world.declare_pool(holding_pool)
-    for holding in case.lots:
-        world.hold(holding)
+    for declare in (*case.pools, *case.lots):
+        declare(world)
     for distribution in case.distributions:
         world.declare_distribution(distribution)
     for flow in case.transfers:
@@ -481,7 +480,7 @@ def test_indexed_bound_overflow_remains_an_error_not_a_financial_stop() -> None:
     world = compose(
         replace(
             case,
-            accounts=(PreparedAccount(account=ref(ALICE), opening_balance=MAX_COUNT), account(WORLD)),
+            accounts=((ref(ALICE), MAX_COUNT), account(WORLD)),
             lots=(),
             funding=partial(case.funding, floor=index, ceiling=index),
         ),

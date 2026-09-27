@@ -34,15 +34,7 @@ from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedRecurringObligation,
-    PreparedSeries,
-    _TenderPolicy,
-)
+from finance.augur.sim.prepared import PreparedJurisdiction, PreparedRecurringObligation, PreparedSeries, _TenderPolicy
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -70,8 +62,9 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
-def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=money(balance))
+def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return AccountRef(agent_id=agent_id, account_id=account_id), money(balance)
 
 
 def protocol(
@@ -123,8 +116,11 @@ class Holder:
     """
 
     horizon_months: int
-    accounts: tuple[PreparedAccount, ...]
-    lot: PreparedLot
+    accounts: tuple[tuple[AccountRef, int], ...]
+    # Alice's one lot of the issuer: its purchase month, units and basis.
+    lot_purchase_month: int
+    lot_units: int
+    lot_basis: int
     monthly_spend: int
     floor: int | None
     taxed: bool
@@ -144,16 +140,9 @@ def holder(
     return Holder(
         horizon_months=horizon_months,
         accounts=(account(ALICE, balance=initial_cash), account(SPEND_SINK), *((account(IRS),) if taxed else ())),
-        lot=PreparedLot(
-            lot_id=LOT_ID,
-            agent_id=ALICE,
-            account_id=CHECKING,
-            asset_id=ASSET_ID,
-            purchase_month=-pe_holding_period_months,
-            quantity_scale=SCALE,
-            units=quantity_to_quanta(pe_units, scale=SCALE),
-            basis=money(Decimal(pe_units) * pe_cost_basis_per_unit),
-        ),
+        lot_purchase_month=-pe_holding_period_months,
+        lot_units=quantity_to_quanta(pe_units, scale=SCALE),
+        lot_basis=money(Decimal(pe_units) * pe_cost_basis_per_unit),
         monthly_spend=money(monthly_spend),
         floor=None if lnw_floor is None else money(lnw_floor),
         taxed=taxed,
@@ -171,8 +160,8 @@ def compose(case: Holder, channels: Sequence[PreparedSeries]) -> World:
             for id_, jurisdiction in jurisdictions.items()
         ),
     )
-    for opening in case.accounts:
-        world.declare_account(opening)
+    for opened, balance in case.accounts:
+        world.declare_account(account=opened, opening_balance=balance)
     if case.taxed:
         world.track(
             TaxAuthority(
@@ -184,10 +173,17 @@ def compose(case: Holder, channels: Sequence[PreparedSeries]) -> World:
                 indexation=FixedNominalLaw(),
             )
         )
-    world.declare_pool(
-        PreparedHoldingPool(agent_id=ALICE, account_id=CHECKING, asset_id=ASSET_ID, quantity_scale=SCALE)
+    world.declare_pool(agent_id=ALICE, account_id=CHECKING, asset_id=ASSET_ID, quantity_scale=SCALE)
+    world.hold_lot(
+        lot_id=LOT_ID,
+        agent_id=ALICE,
+        account_id=CHECKING,
+        asset_id=ASSET_ID,
+        purchase_month=case.lot_purchase_month,
+        quantity_scale=SCALE,
+        units=case.lot_units,
+        basis=case.lot_basis,
     )
-    world.hold(case.lot)
     if case.floor is not None:
         world.declare_tender_policy(
             _TenderPolicy(owner_agent_id=ALICE, proceeds_account_id=CHECKING, liquid_net_worth_floor=case.floor)
@@ -258,7 +254,7 @@ def units_held(rollout: Rollout, *, month: int) -> float:
 def balances(rollout: Rollout, case: Holder, *, month: int) -> dict[str, int]:
     """Alice's declared cash accounts; the books also carry the internal ones."""
 
-    declared = {opening.account for opening in case.accounts}
+    declared = {account for account, _ in case.accounts}
     return {
         row.account.account_id: row.balance
         for row in book(rollout, month).balances

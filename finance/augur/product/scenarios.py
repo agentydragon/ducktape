@@ -25,7 +25,10 @@ from finance.augur.policy.cash_band_household import (
 )
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.product.holdings import (
+    Bond,
     Holdings,
+    Lot,
+    Pool,
     holding_pools,
     opening_lots,
     prepared_bonds,
@@ -57,16 +60,12 @@ from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import Currency
 from finance.augur.sim.prepared import (
-    PreparedAccount,
     PreparedAmount,
-    PreparedBond,
     PreparedDistribution,
     PreparedFixedAmount,
-    PreparedHoldingPool,
     PreparedIndexedAmount,
     PreparedJurisdiction,
     PreparedLocation,
-    PreparedLot,
     PreparedPropertyCashflow,
     PreparedRecurringObligation,
     PreparedRecurringPropertyCashflow,
@@ -190,12 +189,13 @@ class Situation:
     private_equity_issuers: frozenset[IssuerId]
     jurisdictions: tuple[PreparedJurisdiction, ...]
     income_sources: tuple[TransferIncomeCategory, ...]
-    accounts: tuple[PreparedAccount, ...]
+    # Each declared account with its opening balance.
+    accounts: tuple[tuple[AccountRef, int], ...]
     tax_profile: PreparedTaxProfile
-    pools: tuple[PreparedHoldingPool, ...]
-    lots: tuple[PreparedLot, ...]
+    pools: tuple[Pool, ...]
+    lots: tuple[Lot, ...]
     tlh_portfolios: tuple[PreparedTlhPortfolio, ...]
-    bonds: tuple[PreparedBond, ...]
+    bonds: tuple[Bond, ...]
     home: Home | None
     distributions: tuple[PreparedDistribution, ...]
     tender_policy: _TenderPolicy | None
@@ -217,7 +217,7 @@ def build_situation(
     primary = AccountRef(agent_id=primary_agent_id, account_id=PRIMARY_ACCOUNT_ID)
 
     accounts = [
-        PreparedAccount(account=primary, opening_balance=currency.quanta(initial_cash)),
+        (primary, currency.quanta(initial_cash)),
         _empty_account(SPEND_SINK_AGENT_ID, SPEND_SINK_ACCOUNT_ID),
         _empty_account(TAX_AUTHORITY_AGENT_ID, TAX_AUTHORITY_ACCOUNT_ID),
     ]
@@ -348,9 +348,8 @@ def build_situation(
         horizon_months=horizon_months,
         household=household,
         level_series=level_series_demand(
-            lots=lots,
-            tlh_portfolios=tlh_portfolios,
-            bonds=bonds,
+            held_assets=(*(lot.asset_id for lot in lots), *(portfolio.asset_id for portfolio in tlh_portfolios)),
+            bond_coupons=(bond.coupon for bond in bonds),
             distributions=holdings.distributions,
             amounts=(
                 *(cashflow.amount for cashflow in cashflows),
@@ -368,7 +367,17 @@ def build_situation(
             if isinstance(position.asset, PrivateEquityAssetKey)
         ),
         jurisdictions=prepared_jurisdictions(jurisdictions, bonds=bonds, distributions=holdings.distributions),
-        income_sources=compile_income_sources(flows=cashflows, bonds=bonds, distributions=holdings.distributions),
+        income_sources=compile_income_sources(
+            (
+                *(cashflow.income_category for cashflow in cashflows if cashflow.income_category is not None),
+                *(InterestIncome(issuer_jurisdiction_id=bond.issuer_jurisdiction_id) for bond in bonds),
+                *(
+                    tax_slice.income_category
+                    for distribution in holdings.distributions
+                    for tax_slice in distribution.tax_character
+                ),
+            )
+        ),
         accounts=tuple(accounts),
         tax_profile=compile_profile(profile, jurisdictions, currency=currency),
         pools=holding_pools(holdings.portfolio),
@@ -385,7 +394,7 @@ def build_situation(
 def prepared_jurisdictions(
     jurisdictions: Mapping[JurisdictionId, Jurisdiction],
     *,
-    bonds: Iterable[PreparedBond],
+    bonds: Iterable[Bond],
     distributions: Iterable[PreparedDistribution],
 ) -> tuple[PreparedJurisdiction, ...]:
     """Every jurisdiction whose LEVEL an interest-exemption rule can name.
@@ -435,19 +444,19 @@ def compose(situation: Situation, market: MarketPath) -> World:
         income_sources=situation.income_sources,
         jurisdictions=situation.jurisdictions,
     )
-    for account in situation.accounts:
-        world.declare_account(account)
+    for account, balance in situation.accounts:
+        world.declare_account(account=account, opening_balance=balance)
     world.track(TaxAuthority(situation.tax_profile, indexation=FixedNominalLaw()))
     if situation.home is not None and situation.home.interest_deduction is not None:
         world.declare_deduction(situation.home.interest_deduction)
     for pool in situation.pools:
-        world.declare_pool(pool)
+        pool.declare(world)
     for lot in situation.lots:
-        world.hold(lot)
+        lot.declare(world)
     for portfolio in situation.tlh_portfolios:
         world.declare_portfolio(portfolio)
     for bond in situation.bonds:
-        world.hold(bond)
+        bond.declare(world)
     if situation.home is not None:
         world.declare_housing(situation.home.housing, (situation.home.property_tax,), (situation.home.location,))
     for distribution in situation.distributions:
@@ -518,7 +527,7 @@ def _initial_occupancy(purchase: PropertyPurchase) -> tuple[OccupancyMode, float
 class PropertyExpenseWiring:
     """Payees and obligations for recurring property expenses."""
 
-    accounts: tuple[PreparedAccount, ...]
+    accounts: tuple[tuple[AccountRef, int], ...]
     obligations: tuple[PreparedRecurringObligation, ...]
 
 
@@ -561,7 +570,7 @@ def _wire_property_expenses(
             deductible_fraction_ppb=int(round_ppb(deductible_fraction)),
         )
 
-    accounts: list[PreparedAccount] = []
+    accounts: list[tuple[AccountRef, int]] = []
     obligations: list[PreparedRecurringObligation] = []
     if property_.hoa_monthly > 0:
         accounts.append(_empty_account(HOA_AGENT_ID, HOA_ACCOUNT_ID))
@@ -619,7 +628,7 @@ class LandlordRentalWiring:
     fields — one merge site per property, instead of mutating caller-owned lists
     threaded through the helper as kwargs."""
 
-    accounts: tuple[PreparedAccount, ...]
+    accounts: tuple[tuple[AccountRef, int], ...]
     recurring_property_cashflows: tuple[PreparedRecurringPropertyCashflow, ...]
     scheduled_property_cashflows: tuple[PreparedPropertyCashflow, ...]
 
@@ -977,10 +986,10 @@ def _monthly_spend_amount(scenario_key: ScenarioKey, *, currency: Currency) -> P
     raise ValueError(f"unsupported spend_index: {scenario_key.spend_index!r}")
 
 
-def _empty_account(agent_id: AgentId, account_id: AccountId) -> PreparedAccount:
+def _empty_account(agent_id: AgentId, account_id: AccountId) -> tuple[AccountRef, int]:
     """A counterparty's account, opening empty."""
 
-    return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=0)
+    return AccountRef(agent_id=agent_id, account_id=account_id), 0
 
 
 def _indexed(

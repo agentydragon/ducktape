@@ -29,11 +29,8 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
     PreparedJurisdiction,
     PreparedLocation,
-    PreparedLot,
     PreparedRecurringObligation,
     PreparedRecurringTransfer,
     PreparedSeries,
@@ -74,12 +71,13 @@ def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=account_id)
 
 
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=ref(agent_id), opening_balance=money(balance))
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return ref(agent_id), money(balance)
 
 
 def world_for(
-    *accounts: PreparedAccount,
+    *accounts: tuple[AccountRef, int],
     horizon_months: int,
     jurisdiction_ids: tuple[JurisdictionId, ...] = (),
     series: tuple[PreparedSeries, ...] = (),
@@ -93,8 +91,8 @@ def world_for(
             PreparedJurisdiction(jurisdiction_id=id_, level=load_jurisdiction(id_).level) for id_ in jurisdiction_ids
         ),
     )
-    for opening in accounts:
-        world.declare_account(opening)
+    for opened, balance in accounts:
+        world.declare_account(account=opened, opening_balance=balance)
     return world
 
 
@@ -246,21 +244,17 @@ def test_security_sale_books_proceeds_and_a_long_term_gain() -> None:
     world = world_for(account(ALICE), account(IRS), horizon_months=horizon, jurisdiction_ids=(FEDERAL,), series=series)
     taxed_by(world, FEDERAL)
     world.declare_pool(
-        PreparedHoldingPool(
-            agent_id=ALICE, account_id=AccountId("brokerage"), asset_id=AssetId(SP500.symbol), quantity_scale=scale
-        )
+        agent_id=ALICE, account_id=AccountId("brokerage"), asset_id=AssetId(SP500.symbol), quantity_scale=scale
     )
-    world.hold(
-        PreparedLot(
-            lot_id=LotId("alice_sp500"),
-            agent_id=ALICE,
-            account_id=AccountId("brokerage"),
-            asset_id=AssetId(SP500.symbol),
-            purchase_month=-24,  # long-term when sold at month 3
-            quantity_scale=scale,
-            units=units,
-            basis=money(8000),
-        )
+    world.hold_lot(
+        lot_id=LotId("alice_sp500"),
+        agent_id=ALICE,
+        account_id=AccountId("brokerage"),
+        asset_id=AssetId(SP500.symbol),
+        purchase_month=-24,  # long-term when sold at month 3
+        quantity_scale=scale,
+        units=units,
+        basis=money(8000),
     )
     books = run(
         world,

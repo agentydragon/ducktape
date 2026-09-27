@@ -39,7 +39,6 @@ from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
-    PreparedAccount,
     PreparedAmount,
     PreparedIndexedAmount,
     PreparedJurisdiction,
@@ -109,8 +108,9 @@ def ref(agent_id: AgentId) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=ref(agent_id), opening_balance=money(balance))
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return ref(agent_id), money(balance)
 
 
 def indexed(base_amount: Decimal | int) -> PreparedIndexedAmount:
@@ -352,7 +352,7 @@ class Situation:
     horizon_months: int
     rollout_count: int
     series: tuple[PreparedSeries, ...]
-    accounts: tuple[PreparedAccount, ...]
+    accounts: tuple[tuple[AccountRef, int], ...]
     income_sources: tuple[TransferIncomeCategory, ...] = (ORDINARY_INCOME,)
     tax_profiles: tuple[TaxProfile, ...] = ()
     recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
@@ -378,8 +378,8 @@ def compose(situation: Situation, rollout_id: int) -> World:
             PreparedJurisdiction(jurisdiction_id=id_, level=jurisdictions[id_].level) for id_ in jurisdiction_ids
         ),
     )
-    for opening in situation.accounts:
-        world.declare_account(opening)
+    for opened, balance in situation.accounts:
+        world.declare_account(account=opened, opening_balance=balance)
     for profile in situation.tax_profiles:
         world.track(TaxAuthority(compile_profile(profile, jurisdictions, currency=USD), indexation=FixedNominalLaw()))
     for salt in situation.salt_policies:
