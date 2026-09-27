@@ -77,8 +77,8 @@ def write_directory(
     `namespace`, `components` and `config_map_generator` are `kustomize_kustomization`'s.
 
     For a directory whose `kustomization.yaml` the generator owns: under `GENERATED_ROOT`, or
-    under `HAND_WRITTEN_ROOT` holding only hand-written files that kustomization names (a
-    `.sops.yaml` sibling, an `image-pins` Component, a generated ConfigMap's source file).
+    under `HAND_WRITTEN_ROOT` beside the hand-written files it names (a `.sops.yaml` sibling,
+    an `image-pins` Component, a generated ConfigMap's source file).
     One keeping a hand-written `kustomization.yaml` uses `write_charts`. The returned
     directory's `decryption` is set exactly when a sibling is SOPS ciphertext.
     """
