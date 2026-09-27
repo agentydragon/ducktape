@@ -720,8 +720,10 @@ function commandOutcomeLabel(operation: string, outcome: string): string {
   return `${subject} ${outcome === "failed" ? "failed" : outcome === "noop" ? "not applied" : "applied"}`;
 }
 
-// How close the top of the loaded rows comes to the viewport's before the page before them loads.
-const LOAD_OLDER_WITHIN = 80;
+// How close the top of the loaded rows comes to the viewport's before the page before them loads:
+// a full screen, so the load lands before the reader can actually see the top -- reading up
+// through a long thread feels like an ordinary lazy-loaded scroll, not a stop-and-wait at the edge.
+const loadOlderWithin = (element: HTMLDivElement): number => element.clientHeight;
 
 // Traces VirtualizedHistory's scroll-anchor bookkeeping to the console: off by default (this ran
 // hot enough, once, to matter) -- flip on with localStorage.setItem("agentplane:debugScroll", "1")
@@ -863,7 +865,7 @@ function VirtualizedHistory({
       history.olderAvailable &&
       !captureNextScroll.current &&
       restoringAnchor.current === null &&
-      element.scrollTop < LOAD_OLDER_WITHIN
+      element.scrollTop < loadOlderWithin(element)
     )
       history.loadOlder();
   };
@@ -1094,7 +1096,7 @@ function VirtualizedHistory({
         // a stale anchor from an earlier, already-settled gesture would pull the reader back to
         // where they were reading before, not where this gesture has since taken them.
         captureReadingAnchor(element);
-        if (element.scrollTop < LOAD_OLDER_WITHIN) {
+        if (element.scrollTop < loadOlderWithin(element)) {
           scrollDebug("calling loadOlder from onScroll");
           history.loadOlder();
         }

@@ -12,6 +12,11 @@ a candidate is judged against this contract, not against a smaller diff or a sma
 
 - **Opening a thread** — including switching from another thread — scrolls to the thread's tail;
   the most recent message is what the reader sees first.
+- **Opening a thread loads generously up front** — several pages, not just enough to fill the
+  screen — so scrolling through recent history reads as an ordinary lazy-loaded scroll rather than
+  a page-by-page stop-and-wait. A thread shorter than that loads in full immediately.
+- **Reaching within one screen of the top of what is loaded** asks for the page before it — before
+  the reader can actually see the top, not only once they reach the very edge.
 - **An appended message, reader at the bottom**: the view follows it into view. "At the bottom"
   tolerates a small amount of slack — a reader a few pixels off the exact bottom (scroll momentum,
   subpixel rounding) still counts as following.
@@ -47,14 +52,14 @@ Chromium only — no guarantee here extends to Safari/WebKit, and no candidate n
 
 Existing coverage, all Playwright against a real backend:
 
-| Guarantee                                                                                                                                            | Test                                                                                                                                                                             |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Opening a thread / switching threads starts at the tail                                                                                              | `test_switching_threads_starts_at_each_threads_tail` (`test_thread_browser.py`)                                                                                                  |
-| Append-follow; disengage on manual scroll, re-engage at the bottom                                                                                   | `test_thread_follows_bottom_until_reader_scrolls_up` (`test_thread_browser.py`; `desktop`/`phone` × `normal`/`raw`)                                                              |
-| Reaching the top loads older rows without moving the reader; the tail growing past a page while the reader is scrolled back doesn't move them either | `test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_reader_s_place` (`test_thread_window_browser.py`)                                                            |
-| Reaching the top when the tail alone doesn't scroll                                                                                                  | `test_a_tail_too_short_to_scroll_loads_the_rows_before_it_unasked` (`test_thread_window_browser.py`)                                                                             |
-| Resume/reload preserves shape and position                                                                                                           | `test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draft`, `test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_window` (`test_thread_browser.py`) |
-| Lazy pagination elsewhere in the transcript UI                                                                                                       | `test_chronological_debug_is_lazy_paged_and_keeps_the_thread` (`test_thread_browser.py`)                                                                                         |
+| Guarantee                                                                                                                                                                                  | Test                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Opening a thread / switching threads starts at the tail                                                                                                                                    | `test_switching_threads_starts_at_each_threads_tail` (`test_thread_browser.py`)                                                                                                  |
+| Append-follow; disengage on manual scroll, re-engage at the bottom                                                                                                                         | `test_thread_follows_bottom_until_reader_scrolls_up` (`test_thread_browser.py`; `desktop`/`phone` × `normal`/`raw`)                                                              |
+| Reaching the top loads older rows without moving the reader; the tail growing past a page while the reader is scrolled back doesn't move them either; opening loads several pages up front | `test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_reader_s_place` (`test_thread_window_browser.py`)                                                            |
+| A thread shorter than the eager initial load shows in full, with no scrollbar and no further request                                                                                       | `test_a_thread_shorter_than_the_eager_load_shows_in_full_without_a_scroll` (`test_thread_window_browser.py`)                                                                     |
+| Resume/reload preserves shape and position                                                                                                                                                 | `test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draft`, `test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_window` (`test_thread_browser.py`) |
+| Lazy pagination elsewhere in the transcript UI                                                                                                                                             | `test_chronological_debug_is_lazy_paged_and_keeps_the_thread` (`test_thread_browser.py`)                                                                                         |
 
 No test yet isolates the streaming/idle-resize guarantee in general — only the specific shape
 `test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_reader_s_place` exercises. A
