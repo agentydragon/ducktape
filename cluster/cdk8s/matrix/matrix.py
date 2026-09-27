@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
@@ -46,7 +46,6 @@ from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.gateway_api.http_route import RouteMatch
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/matrix"
@@ -127,7 +126,7 @@ def _synapse(scope: Construct) -> None:
     repository = HelmRepository(
         scope,
         "helm-repository",
-        metadata=metadata(_HELM_REPOSITORY, NAMESPACE),
+        metadata=ApiObjectMetadata(name=_HELM_REPOSITORY, namespace=NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://ananace.gitlab.io/charts"),
     )
     helm_release(
@@ -245,7 +244,7 @@ def _synapse_routes(scope: Construct) -> None:
     https_route(
         scope,
         "synapse-route",
-        metadata=metadata(SYNAPSE, NAMESPACE),
+        metadata=ApiObjectMetadata(name=SYNAPSE, namespace=NAMESPACE),
         hostnames=["matrix.allegedly.works"],
         backend=SYNAPSE,
         port=_SYNAPSE_PORT,
@@ -259,7 +258,7 @@ def _synapse_routes(scope: Construct) -> None:
     HttpRoute(
         scope,
         "federation-route",
-        metadata=metadata("matrix-federation", NAMESPACE),
+        metadata=ApiObjectMetadata(name="matrix-federation", namespace=NAMESPACE),
         spec=HttpRouteSpec(
             parent_refs=[cluster_gateway_parent_ref()],
             hostnames=["allegedly.works"],
@@ -341,7 +340,7 @@ def _element(scope: Construct) -> None:
     https_route(
         scope,
         "element-route",
-        metadata=metadata(_ELEMENT, NAMESPACE),
+        metadata=ApiObjectMetadata(name=_ELEMENT, namespace=NAMESPACE),
         hostnames=["chat.allegedly.works"],
         backend=_ELEMENT,
         port=80,

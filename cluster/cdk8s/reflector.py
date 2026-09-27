@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
@@ -13,7 +13,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "reflector"
 NAMESPACE = "reflector-system"
@@ -27,7 +26,7 @@ def chart(app: App) -> Chart:
     repository = HelmRepository(
         chart,
         "repository",
-        metadata=metadata("emberstack", NAMESPACE),
+        metadata=ApiObjectMetadata(name="emberstack", namespace=NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://emberstack.github.io/helm-charts"),
     )
     helm_release(

@@ -3,9 +3,7 @@ the KubeVirt control plane, and the Flux Kustomization that waits for that plane
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from kubevirt_kubevirt_crds.io.kubevirt import (
     KubeVirt,
@@ -29,12 +27,9 @@ from kubevirt_kubevirt_crds.io.kubevirt import (
     KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
     KubeVirtSpecWorkloadUpdateStrategy,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "kubevirt"
 NAMESPACE = "kubevirt"
@@ -47,9 +42,9 @@ def chart(app: App) -> Chart:
     KubeVirt(
         chart,
         "kubevirt",
-        metadata=metadata(
-            NAME,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=NAME,
+            namespace=NAMESPACE,
             annotations={
                 "description": "KubeVirt control plane for running virtual machines on KVM-capable Kubernetes workers."
             },
@@ -111,15 +106,11 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def kubevirt(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kubevirt_operator: Kustomization) -> Kustomization:
+def kubevirt(chart: Chart, directory: RenderedDirectory, kubevirt_operator: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         timeout="10m",
         depends_on=[flux_kustomization_depends_on(kubevirt_operator)],
         # The KubeVirt CR has no Ready condition, so `wait` alone passes it before virt-operator

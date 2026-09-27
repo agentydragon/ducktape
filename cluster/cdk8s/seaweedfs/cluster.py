@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from seaweed_adminscript_crds.com.seaweedfs.seaweed import (
@@ -76,7 +76,6 @@ from seaweed_seaweed_crds.com.seaweedfs.seaweed import (
 from cluster.cdk8s import stateful_infra
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import filer_db, namespace, s3_config
 
 NAME = "seaweedfs"
@@ -164,7 +163,7 @@ def seaweed(scope: Construct) -> Seaweed:
     return Seaweed(
         scope,
         "seaweed",
-        metadata=metadata(NAME, namespace.NAME),
+        metadata=ApiObjectMetadata(name=NAME, namespace=namespace.NAME),
         spec=SeaweedSpec(
             # 4.x is required for the Bucket CR's access wiring: the filer's gRPC server
             # unconditionally registers `iam_pb.SeaweedIdentityAccessManagement` starting at
@@ -432,9 +431,9 @@ def chart(app: App) -> Chart:
     AdminScript(
         chart,
         "replication-repair",
-        metadata=metadata(
-            "replication-repair",
-            namespace.NAME,
+        metadata=ApiObjectMetadata(
+            name="replication-repair",
+            namespace=namespace.NAME,
             annotations={"description": "Hourly copy-only repair of SeaweedFS volume replica placement."},
         ),
         spec=AdminScriptSpec(

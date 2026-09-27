@@ -13,10 +13,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecRestic,
     ReplicationSourceSpecResticCacheCapacity,
@@ -42,7 +43,6 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
@@ -526,8 +526,8 @@ def _monitoring(scope: Construct) -> None:
     ServiceMonitor(
         scope,
         "service-monitor",
-        metadata=metadata(_NAME, _NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
         endpoints=[
             Endpoint.bearer_authorization(
                 port="http", path="/api/prometheus", secret_name=_METRICS_TOKEN, key="password"
@@ -537,7 +537,7 @@ def _monitoring(scope: Construct) -> None:
     PrometheusRule(
         scope,
         "prometheus-rule",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         groups=[
             group(
                 _NAME,
@@ -563,7 +563,7 @@ def _backup(scope: Construct) -> None:
     ReplicationSource(
         scope,
         "backup",
-        metadata=metadata(_BACKUP, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_BACKUP, namespace=_NAMESPACE),
         source_pvc=_CONFIG_CLAIM,
         trigger=ReplicationSourceSpecTrigger(schedule="17 */6 * * *"),
         mover=ReplicationSourceSpecRestic(
@@ -672,7 +672,7 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=[_HOSTNAME],
         backend=_NAME,
         port=8123,

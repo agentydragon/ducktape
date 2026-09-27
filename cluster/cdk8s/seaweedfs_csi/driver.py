@@ -4,9 +4,7 @@ from, its StorageClasses, and the directory's Flux Kustomization.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitRepositorySpec, GitRepositorySpecRef
@@ -22,12 +20,9 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgrade,
     HelmReleaseSpecUpgradeRemediation,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "seaweedfs-csi"
 NAMESPACE = "seaweedfs-csi-system"
@@ -212,7 +207,7 @@ def chart(app: App) -> Chart:
     source = GitRepository(
         chart,
         "source",
-        metadata=metadata("seaweedfs-csi-driver", "flux-system"),
+        metadata=ApiObjectMetadata(name="seaweedfs-csi-driver", namespace="flux-system"),
         spec=GitRepositorySpec(
             interval="24h",
             url="https://github.com/seaweedfs/seaweedfs-csi-driver",
@@ -223,7 +218,7 @@ def chart(app: App) -> Chart:
     HelmRelease(
         chart,
         "release",
-        metadata=metadata(RELEASE, NAMESPACE),
+        metadata=ApiObjectMetadata(name=RELEASE, namespace=NAMESPACE),
         spec=HelmReleaseSpec(
             interval="30m",
             install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
@@ -281,13 +276,5 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def seaweedfs_csi(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_cluster: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart, NAME, artifact, timeout="10m", depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)]
-    )
+def seaweedfs_csi(chart: Chart, directory: RenderedDirectory) -> Kustomization:
+    return flux_kustomization(chart, NAME, directory, timeout="10m")

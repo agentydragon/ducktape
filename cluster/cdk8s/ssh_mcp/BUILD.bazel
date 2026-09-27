@@ -37,7 +37,6 @@ py_library(
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:forgejo_images",
-        "//cluster/cdk8s:metadata",
         "//cluster/cdk8s:pod_spec_patches",
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s/external_secrets:minted_secret",
@@ -60,7 +59,6 @@ py_library(
     ],
     deps = [
         ":config",
-        "//cluster/cdk8s:metadata",
         "//third_party/sshpiper:pipe",
         "@pypi//cdk8s",
         "@pypi//constructs",

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from clickhouse_installation_crds.com.altinity.clickhouse import (
     ClickHouseInstallation,
@@ -47,6 +47,7 @@ from clickhouse_keeper_installation_crds.com.altinity.clickhouse_keeper import (
     ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import public_coder_proxy
@@ -61,7 +62,6 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.haku import console_config
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/cluster"
@@ -232,7 +232,7 @@ def clickhouse_chart(app: App) -> Chart:
     ClickHouseInstallation(
         chart,
         "installation",
-        metadata=metadata(client.NAME, client.NAMESPACE),
+        metadata=ApiObjectMetadata(name=client.NAME, namespace=client.NAMESPACE),
         spec=ClickHouseInstallationSpec(
             configuration=ClickHouseInstallationSpecConfiguration(
                 zookeeper=ClickHouseInstallationSpecConfigurationZookeeper(
@@ -355,8 +355,8 @@ def clickhouse_chart(app: App) -> Chart:
     PodMonitor(
         chart,
         "podmonitor",
-        metadata=metadata(client.NAME, client.NAMESPACE),
-        selector=client.LABELS,
+        metadata=ApiObjectMetadata(name=client.NAME, namespace=client.NAMESPACE),
+        selector=PodMonitorSpecSelector(match_labels=client.LABELS),
         pod_metrics_endpoints=[Endpoint.plain(port="metrics", scrape_timeout="15s")],
     )
     return chart
@@ -370,7 +370,7 @@ def keeper_chart(app: App) -> Chart:
     ClickHouseKeeperInstallation(
         chart,
         "installation",
-        metadata=metadata(_KEEPER_NAME, client.NAMESPACE),
+        metadata=ApiObjectMetadata(name=_KEEPER_NAME, namespace=client.NAMESPACE),
         spec=ClickHouseKeeperInstallationSpec(
             configuration=ClickHouseKeeperInstallationSpecConfiguration(
                 clusters=[

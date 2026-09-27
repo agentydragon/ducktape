@@ -27,10 +27,13 @@ from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustom
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.haku import namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
-from cluster.cdk8s.providers.external_secrets.external_secret import ClusterExternalSecret, cluster_remote_data
+from cluster.cdk8s.providers.external_secrets.external_secret import (
+    ClusterExternalSecret,
+    ClusterSecretStoreRef,
+    cluster_remote_data,
+)
 
 NAME = "haku-mailbox"
 NAMESPACE = "haku-mailbox"
@@ -121,17 +124,12 @@ def _add_deployment(chart: Chart) -> None:
     Authentication is exclusively Authentik OIDC bearer tokens (the stalwart-haku provider); no
     mailbox password exists."""
     public_url = k8s.EnvVar(name="STALWART_PUBLIC_URL", value=_PUBLIC_URL)
+    # Reloader's `autoReloadAll` restarts this on rotation of the mounted STARTTLS certificate and
+    # DB credentials so the normal server re-reads them.
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=NAME,
-            namespace=NAMESPACE,
-            labels=_LABELS,
-            # Restart on rotation of the mounted STARTTLS certificate and DB credentials so the
-            # normal server re-reads them.
-            annotations={"reloader.stakater.com/auto": "true"},
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -278,8 +276,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
                 "description": (
                     "Per-public-node port-25 TCP ingress. Preserves the sending MTA address through "
                     "PROXY protocol so Stalwart's SPF gate remains meaningful."
-                ),
-                "reloader.stakater.com/auto": "true",
+                )
             },
         ),
         spec=k8s.DaemonSetSpec(
@@ -362,8 +359,8 @@ def _add_smtp_ingress(chart: Chart) -> None:
     NetworkPolicy(
         chart,
         "smtp-ingress-policy",
-        metadata=metadata(_INGRESS_NAME, NAMESPACE),
-        selector=_INGRESS_LABELS,
+        metadata=ApiObjectMetadata(name=_INGRESS_NAME, namespace=NAMESPACE),
+        endpoint_selector=_INGRESS_LABELS,
         ingress=[
             CiliumNetworkPolicySpecIngress(
                 from_entities=[
@@ -387,8 +384,8 @@ def _add_smtp_ingress(chart: Chart) -> None:
     NetworkPolicy(
         chart,
         "policy",
-        metadata=metadata(NAME, NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+        endpoint_selector=_LABELS,
         ingress=[
             IngressRule.from_endpoints(_INGRESS_LABELS, ports=[_SMTP_PORT]),
             IngressRule.from_gateway(_HTTP_PORT),
@@ -433,8 +430,8 @@ def chart(app: App) -> Chart:
             annotations={
                 "description": (
                     "STARTTLS certificate for the inbound SMTP listener (mx.allegedly.works). Sending MTAs "
-                    "(Gmail) use opportunistic TLS; the reloader annotation on the deployment restarts the "
-                    "receiver when cert-manager rotates this."
+                    "(Gmail) use opportunistic TLS; Reloader restarts the receiver when cert-manager rotates "
+                    "this."
                 )
             },
         ),
@@ -448,9 +445,9 @@ def chart(app: App) -> Chart:
     gateway.https_route(
         chart,
         "route",
-        metadata=metadata(
-            NAME,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=NAME,
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "Public route to Stalwart's HTTP listener: JMAP for haku (authenticated with its "
@@ -475,10 +472,10 @@ def chart(app: App) -> Chart:
     ClusterExternalSecret(
         chart,
         "mail-token",
-        name="haku-mail-token",
+        metadata=ApiObjectMetadata(name="haku-mail-token"),
         namespaces=[namespace.NAMESPACE],
-        store_name="kubernetes-flux-system-secret-store",
-        refresh="1m",
+        secret_store_ref=ClusterSecretStoreRef.cluster("kubernetes-flux-system-secret-store"),
+        refresh_interval="1m",
         data=[cluster_remote_data("haku-mail-token", "jwt")],
     )
     return chart

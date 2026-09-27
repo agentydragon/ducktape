@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from seaweed_s3policy_crds.com.seaweedfs.seaweed import (
@@ -42,7 +42,6 @@ from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomizatio
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import (
     cluster,
     drivefs_artifacts_bucket,
@@ -103,7 +102,7 @@ def _iam(scope: Construct) -> None:
     S3Policy(
         scope,
         "claude-reader-policy",
-        metadata=metadata(_CLAUDE_READER_POLICY, namespace.NAME),
+        metadata=ApiObjectMetadata(name=_CLAUDE_READER_POLICY, namespace=namespace.NAME),
         spec=S3PolicySpec(
             seaweed_ref=S3PolicySpecSeaweedRef(name=cluster.NAME),
             reclaim_policy=S3PolicySpecReclaimPolicy.RETAIN,
@@ -138,7 +137,7 @@ def _iam(scope: Construct) -> None:
     S3PolicyBinding(
         scope,
         "claude-reader-policy-binding",
-        metadata=metadata(_CLAUDE_READER_POLICY, namespace.NAME),
+        metadata=ApiObjectMetadata(name=_CLAUDE_READER_POLICY, namespace=namespace.NAME),
         spec=S3PolicyBindingSpec(
             seaweed_ref=S3PolicyBindingSpecSeaweedRef(name=cluster.NAME),
             policy_ref=S3PolicyBindingSpecPolicyRef(name=_CLAUDE_READER_POLICY),
@@ -168,13 +167,12 @@ def _gateway(scope: Construct) -> None:
             namespace=namespace.NAME,
             labels=_LABELS,
             annotations={
-                "reloader.stakater.com/auto": "true",
                 "description": (
                     "Single public-facing SeaweedFS S3 gateway (s3.allegedly.works). Mounts a static config for"
                     " bootstrap and public-specific identities. Filer-backed IAM identities are also valid here,"
                     " so every credential must remain a confidential Secret even when its usual consumer is"
                     " cluster-internal."
-                ),
+                )
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -261,7 +259,7 @@ def _gateway(scope: Construct) -> None:
     https_route(
         scope,
         "route",
-        metadata=metadata(NAME, namespace.NAME),
+        metadata=ApiObjectMetadata(name=NAME, namespace=namespace.NAME),
         hostnames=["s3.allegedly.works"],
         backend=NAME,
         port=_PORT,
@@ -285,12 +283,9 @@ def write_manifests(root: Path) -> None:
 def seaweedfs_public_s3(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_external_credentials: Kustomization,
-    seaweedfs_drivefs_artifacts_bucket: Kustomization,
+    seaweedfs_operator: Kustomization,
     vm_images_publisher: Kustomization,
-    seaweedfs_secrets: Kustomization,
-    seaweedfs_cluster: Kustomization,
-    gateway: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     name = "seaweedfs-public-s3"
     return flux_kustomization(
@@ -301,12 +296,11 @@ def seaweedfs_public_s3(
         # gateway configuration now contains only the credential-free anonymous read.
         artifact,
         depends_on=flux_kustomization_depends_on_many(
-            seaweedfs_external_credentials,
-            seaweedfs_drivefs_artifacts_bucket,
+            # S3Identity, S3Credentials, S3Policy and S3PolicyBinding CRDs
+            seaweedfs_operator,
             vm_images_publisher,
-            seaweedfs_secrets,
-            seaweedfs_cluster,
-            gateway,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+            kyverno,
         ),
         timeout="5m",
         decryption=SOPS_DECRYPTION,

@@ -21,7 +21,6 @@ py_library(
     deps = [
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/providers/volsync:replication_destination",
         "//cluster/cdk8s/providers/volsync:replication_source",
         "//cluster/cdk8s/providers/volsync:replicationdestination",
@@ -41,9 +40,9 @@ py_library(
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
         "//cluster/cdk8s:valkey",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
+        "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

@@ -10,19 +10,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Protocol, Service, ServicePort, k8s
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsRelabelings,
+    ServiceMonitorSpecNamespaceSelector,
+    ServiceMonitorSpecSelector,
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 from cluster.scripts import nebula_mesh
 from cluster.scripts.nebula_mesh import Mesh
@@ -41,7 +42,7 @@ class TalosEtcdMetrics(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(_NAME, NAMESPACE, labels=_LABELS),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE, labels=_LABELS),
             cluster_ip="None",
             ports=[ServicePort(name=_PORT_NAME, port=_PORT, target_port=_PORT, protocol=Protocol.TCP)],
         )
@@ -73,9 +74,9 @@ class TalosEtcdMetrics(Construct):
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=metadata("talos-etcd", NAMESPACE, labels=_LABELS),
-            namespace_selector=[NAMESPACE],
-            selector={"app.kubernetes.io/name": _NAME},
+            metadata=ApiObjectMetadata(name="talos-etcd", namespace=NAMESPACE, labels=_LABELS),
+            namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=[NAMESPACE]),
+            selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": _NAME}),
             endpoints=[
                 ServiceMonitorSpecEndpoints(
                     port=_PORT_NAME,

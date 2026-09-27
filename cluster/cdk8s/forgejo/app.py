@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_envoyconfig_crds.io.cilium import (
     CiliumEnvoyConfig,
@@ -30,6 +30,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecValuesFromKind,
 )
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import kustomize_kustomization
@@ -37,7 +38,6 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.seaweedfs import s3
 
@@ -266,11 +266,7 @@ def _values() -> dict[str, object]:
             ],
         },
         # Trust cluster CA bundle (includes Let's Encrypt staging CA)
-        "deployment": {
-            # Reloader: auto-restart pods when secrets change
-            "annotations": {"reloader.stakater.com/auto": "true"},
-            "env": [{"name": "SSL_CERT_FILE", "value": "/etc/ssl/certs/cluster-ca/ca-certificates.crt"}],
-        },
+        "deployment": {"env": [{"name": "SSL_CERT_FILE", "value": "/etc/ssl/certs/cluster-ca/ca-certificates.crt"}]},
         # Mount CA bundle (includes Let's Encrypt staging CA when in staging mode)
         "extraVolumes": [{"name": "cluster-ca", "configMap": {"name": "cluster-internal-ca-bundle"}}],
         "extraContainerVolumeMounts": [_CLUSTER_CA_MOUNT],
@@ -331,7 +327,7 @@ def _helm_release(scope: Construct) -> None:
     repository = HelmRepository(
         scope,
         "helm-repository",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         spec=HelmRepositorySpec(
             type=HelmRepositorySpecType.OCI, interval="24h", url="oci://code.forgejo.org/forgejo-helm"
         ),
@@ -379,7 +375,9 @@ def _ssh_listener(scope: Construct) -> None:
     CiliumEnvoyConfig(
         scope,
         "ssh-listener",
-        metadata=metadata(service, _NAMESPACE, annotations={"cec.cilium.io/use-original-source-address": "false"}),
+        metadata=ApiObjectMetadata(
+            name=service, namespace=_NAMESPACE, annotations={"cec.cilium.io/use-original-source-address": "false"}
+        ),
         spec=CiliumEnvoyConfigSpec(
             node_selector=CiliumEnvoyConfigSpecNodeSelector(match_labels={"topology.kubernetes.io/region": "hil"}),
             backend_services=[
@@ -424,7 +422,7 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["git.allegedly.works"],
         backend="forgejo-http",
         port=3000,
@@ -449,9 +447,9 @@ def chart(app: App) -> Chart:
     ServiceMonitor(
         chart,
         "service-monitor",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         # Helm release name; robust regardless of the chart's app name label.
-        selector={"app.kubernetes.io/instance": _NAME},
+        selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/instance": _NAME}),
         endpoints=[Endpoint.bearer_token_secret(port="http", secret_name=_METRICS_TOKEN, key="token")],
     )
     _metrics_token(chart)

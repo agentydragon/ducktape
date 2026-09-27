@@ -37,7 +37,6 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.seaweedfs import namespace
 
@@ -71,9 +70,9 @@ def chart(app: App) -> Chart:
     SecretStore(
         chart,
         "secret-store",
-        metadata=metadata(
-            _SECRET_STORE,
-            namespace.NAME,
+        metadata=ApiObjectMetadata(
+            name=_SECRET_STORE,
+            namespace=namespace.NAME,
             annotations={
                 "description": (
                     "Reads per-tenant s3-identity-* Secrets and the per-tenant intermediate Secrets that the "
@@ -116,8 +115,8 @@ def chart(app: App) -> Chart:
             namespace=namespace.NAME,
             annotations={"description": "Assembles the s3 gateway config Secret from per-tenant identity Secrets."},
         ),
-        refresh="1m",
-        store=SecretStoreRef.namespaced(_SECRET_STORE),
+        refresh_interval="1m",
+        secret_store_ref=SecretStoreRef.namespaced(_SECRET_STORE),
         data_from=[DataFrom.from_find_by_name_regexp("^s3-identity-.+-json$")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         template=ExternalSecretSpecTargetTemplate(

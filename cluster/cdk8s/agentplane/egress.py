@@ -71,7 +71,6 @@ from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
@@ -343,7 +342,7 @@ class Egress(Construct):
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the proxy
         # calls TokenReview as itself, so it needs its own mounted token.
         service_account = ServiceAccount(
-            self, "serviceaccount", metadata=metadata(NAME, env.namespace), automount_token=True
+            self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace), automount_token=True
         )
         self._add_rbac(service_account)
         self._add_certificate_and_bundle()
@@ -375,7 +374,7 @@ class Egress(Construct):
         Role(
             self,
             "role",
-            metadata=metadata(NAME, self.env.namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
             rules=[
                 RolePolicyRule(
                     resources=[
@@ -389,7 +388,7 @@ class Egress(Construct):
         RoleBinding(
             self,
             "rolebinding",
-            metadata=metadata(NAME, self.env.namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
             role=Role.from_role_name(self, "role-ref", NAME),
         ).add_subjects(service_account)
 
@@ -461,7 +460,7 @@ class Egress(Construct):
         return ConfigMap(
             self,
             "settings",
-            metadata=metadata(f"{NAME}-settings", self.env.namespace),
+            metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=self.env.namespace),
             data={
                 "settings.yaml": yaml_config(
                     settings_file(
@@ -497,9 +496,7 @@ class Egress(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                NAME, self.env.namespace, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-            ),
+            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace, labels=_LABELS),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=self.env.replicas.count,
             strategy=self.env.replicas.strategy,
@@ -566,7 +563,7 @@ class Egress(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(NAME, self.env.namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
             selector=deployment,
             ports=[
                 ServicePort(name="http", port=80, target_port=_AGENT_API_PORT, protocol=Protocol.TCP),
@@ -576,7 +573,7 @@ class Egress(Construct):
         Service(
             self,
             "service-admin",
-            metadata=metadata(f"{NAME}-admin", self.env.namespace),
+            metadata=ApiObjectMetadata(name=f"{NAME}-admin", namespace=self.env.namespace),
             selector=deployment,
             ports=[ServicePort(name="admin", port=ADMIN_PORT, target_port=ADMIN_PORT, protocol=Protocol.TCP)],
         )
@@ -591,8 +588,8 @@ class Egress(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=metadata(NAME, namespace),
-            selector=_LABELS,
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            endpoint_selector=_LABELS,
             ingress=[
                 # Runner Pods, and the sandbox Actions' command boxes (command_sandbox.py, which
                 # imports this module).

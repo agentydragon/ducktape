@@ -42,7 +42,6 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
@@ -86,8 +85,8 @@ def _external_secrets(scope: Construct) -> None:
         scope,
         "brave-search-api-key",
         metadata=ApiObjectMetadata(name=brave, namespace=NAMESPACE),
-        refresh="1m",
-        store=external_creds.STORE,
+        refresh_interval="1m",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data(brave, "api-key")],
         # The existing target is Reflector-created. Orphan lets ESO sync it without
         # requiring an owner reference it does not currently have; the short interval
@@ -238,8 +237,7 @@ def _substitutions() -> list[dict]:
 
 
 def _config_map(scope: Construct) -> k8s.KubeConfigMap:
-    # No content-hash name suffix: the Deployment's `reloader.stakater.com/auto` is what rolls
-    # the proxy when this changes.
+    # No content-hash name suffix: Reloader's `autoReloadAll` rolls the proxy when this changes.
     return k8s.KubeConfigMap(
         scope,
         "config",
@@ -304,9 +302,7 @@ def _deployment(scope: Construct, config_map: k8s.KubeConfigMap, aiquota_bearer:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=NAME, namespace=NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=LABELS),
@@ -372,8 +368,8 @@ def _ingress_policy(scope: Construct, app_namespace: str, app_labels: dict[str, 
     NetworkPolicy(
         scope,
         "ingress",
-        metadata=metadata("allow-public-coder-agent-proxy-ingress", NAMESPACE),
-        selector=LABELS,
+        metadata=ApiObjectMetadata(name="allow-public-coder-agent-proxy-ingress", namespace=NAMESPACE),
+        endpoint_selector=LABELS,
         ingress=[
             IngressRule.from_endpoints(
                 _endpoint(app_namespace, app_labels),
@@ -409,8 +405,8 @@ def _egress_policy(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "egress",
-        metadata=metadata("allow-public-coder-agent-proxy-egress", NAMESPACE),
-        selector=LABELS,
+        metadata=ApiObjectMetadata(name="allow-public-coder-agent-proxy-egress", namespace=NAMESPACE),
+        endpoint_selector=LABELS,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
             # `world` alone does not mean "everywhere". Cilium carves the cluster's own nodes out

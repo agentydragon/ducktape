@@ -11,7 +11,7 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEgress,
@@ -35,7 +35,6 @@ from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomizatio
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.monitoring import grafana_helmrepository
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.seaweedfs import namespace, s3
@@ -510,8 +509,8 @@ def _network_policy(chart: Chart) -> None:
     NetworkPolicy(
         chart,
         "network-policy",
-        metadata=metadata("loki-ingress", NAME),
-        selector={"app.kubernetes.io/name": NAME},
+        metadata=ApiObjectMetadata(name="loki-ingress", namespace=NAME),
+        endpoint_selector={"app.kubernetes.io/name": NAME},
         ingress=[
             # Promtail → Loki (log push)
             CiliumNetworkPolicySpecIngress(
@@ -632,7 +631,8 @@ def loki(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     grafana_helmrepository: Kustomization,
-    seaweedfs_cluster: Kustomization,
+    seaweedfs_operator: Kustomization,
+    monitoring_crds: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -652,5 +652,10 @@ def loki(
             ),
         ],
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(grafana_helmrepository, seaweedfs_cluster),
+        depends_on=flux_kustomization_depends_on_many(
+            grafana_helmrepository,
+            seaweedfs_operator,
+            # the chart's monitoring.serviceMonitor
+            monitoring_crds,
+        ),
     )

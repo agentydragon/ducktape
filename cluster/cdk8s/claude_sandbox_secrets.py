@@ -43,8 +43,8 @@ def _external_creds_secret(
         chart,
         name,
         metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
-        refresh="1h",
-        store=external_creds.STORE,
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data(name, key)],
         # The target already existed without an ExternalSecret owner reference. Orphan
         # lets ESO refresh it in place; deleting this ExternalSecret leaves the target

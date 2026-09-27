@@ -65,7 +65,6 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 
 NAME = "agent-workspaces"
@@ -226,7 +225,7 @@ def chart(app: App) -> Chart:
     SandboxWarmPool(
         chart,
         "codex-warm-pool",
-        metadata=metadata("codex", NAMESPACE),
+        metadata=ApiObjectMetadata(name="codex", namespace=NAMESPACE),
         spec=SandboxWarmPoolSpec(
             replicas=1,
             update_strategy=SandboxWarmPoolSpecUpdateStrategy(type=SandboxWarmPoolSpecUpdateStrategyType.RECREATE),
@@ -242,7 +241,7 @@ def chart(app: App) -> Chart:
     CleanupPolicy(
         chart,
         "janitor",
-        metadata=metadata("workspace-janitor", NAMESPACE),
+        metadata=ApiObjectMetadata(name="workspace-janitor", namespace=NAMESPACE),
         spec=CleanupPolicySpec(
             schedule="40 * * * *",
             match=CleanupPolicySpecMatch(
@@ -279,7 +278,7 @@ def write_manifests(root: Path) -> None:
 def agent_workspaces_app(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     agent_sandbox_controller: Kustomization,
     kyverno_policies: Kustomization,
 ) -> Kustomization:
@@ -290,7 +289,7 @@ def agent_workspaces_app(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config,
+            external_secrets_operator,
             # CRDs + controller
             agent_sandbox_controller,
             # CleanupPolicy CRD and cleanup-controller permissions

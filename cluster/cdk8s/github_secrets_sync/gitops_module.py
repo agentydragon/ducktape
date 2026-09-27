@@ -28,27 +28,8 @@ def write_manifests(root: Path) -> None:
 
 
 def github_secrets_sync(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    tofu_controller: Kustomization,
-    tofu_state_db: Kustomization,
-    github_secrets_sync_secrets: Kustomization,
-    forgejo_images: Kustomization,
-    seaweedfs_pr_visuals_bucket: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
-        chart,
-        NAME,
-        artifact,
-        timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(
-            tofu_controller,
-            tofu_state_db,
-            github_secrets_sync_secrets,
-            # The Terraform module reads the canonical ducktape-ci registry credential
-            # from forgejo-images before publishing it to gaffer-private's GitHub Actions
-            # secrets.
-            forgejo_images,
-            seaweedfs_pr_visuals_bucket,
-        ),
+        chart, NAME, artifact, timeout="10m", depends_on=flux_kustomization_depends_on_many(tofu_controller)
     )

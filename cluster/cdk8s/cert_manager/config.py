@@ -8,6 +8,8 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_clusterissuer_crds.io.cert_manager import (
+    ClusterIssuerSpecAcme,
+    ClusterIssuerSpecAcmePrivateKeySecretRef,
     ClusterIssuerSpecAcmeSolvers,
     ClusterIssuerSpecAcmeSolversDns01,
     ClusterIssuerSpecAcmeSolversDns01Route53,
@@ -119,29 +121,31 @@ def issuers_chart(app: App) -> Chart:
         ("letsencrypt-prod", "https://acme-v02.api.letsencrypt.org/directory"),
         ("letsencrypt-staging", "https://acme-staging-v02.api.letsencrypt.org/directory"),
     ):
-        ClusterIssuer.acme(
+        ClusterIssuer(
             chart,
             issuer,
             metadata=ApiObjectMetadata(name=issuer),
-            server=server,
-            email="agentydragon@gmail.com",
-            private_key_secret_name=f"{issuer}-key",
-            solvers=[
-                ClusterIssuerSpecAcmeSolvers(
-                    dns01=ClusterIssuerSpecAcmeSolversDns01(
-                        route53=ClusterIssuerSpecAcmeSolversDns01Route53(
-                            region="us-east-1",
-                            hosted_zone_id="Z02901943N8ZFQFOD9P5I",
-                            access_key_id_secret_ref=ClusterIssuerSpecAcmeSolversDns01Route53AccessKeyIdSecretRef(
-                                name="aws-route53-credentials", key="AWS_ACCESS_KEY_ID"
-                            ),
-                            secret_access_key_secret_ref=ClusterIssuerSpecAcmeSolversDns01Route53SecretAccessKeySecretRef(
-                                name="aws-route53-credentials", key="AWS_SECRET_ACCESS_KEY"
-                            ),
-                        )
-                    ),
-                    selector=ClusterIssuerSpecAcmeSolversSelector(dns_zones=["allegedly.works"]),
-                )
-            ],
+            acme=ClusterIssuerSpecAcme(
+                server=server,
+                email="agentydragon@gmail.com",
+                private_key_secret_ref=ClusterIssuerSpecAcmePrivateKeySecretRef(name=f"{issuer}-key"),
+                solvers=[
+                    ClusterIssuerSpecAcmeSolvers(
+                        dns01=ClusterIssuerSpecAcmeSolversDns01(
+                            route53=ClusterIssuerSpecAcmeSolversDns01Route53(
+                                region="us-east-1",
+                                hosted_zone_id="Z02901943N8ZFQFOD9P5I",
+                                access_key_id_secret_ref=ClusterIssuerSpecAcmeSolversDns01Route53AccessKeyIdSecretRef(
+                                    name="aws-route53-credentials", key="AWS_ACCESS_KEY_ID"
+                                ),
+                                secret_access_key_secret_ref=ClusterIssuerSpecAcmeSolversDns01Route53SecretAccessKeySecretRef(
+                                    name="aws-route53-credentials", key="AWS_SECRET_ACCESS_KEY"
+                                ),
+                            )
+                        ),
+                        selector=ClusterIssuerSpecAcmeSolversSelector(dns_zones=["allegedly.works"]),
+                    )
+                ],
+            ),
         )
     return chart

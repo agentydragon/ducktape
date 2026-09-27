@@ -8,22 +8,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
-from cluster.cdk8s.flux import (
-    CERT_MANAGER_ISSUER_SUBSTITUTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-)
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
 NAME = "cert-manager"
@@ -100,8 +95,10 @@ def _service_monitor(chart: Chart, name: str, *, component: str, port: str) -> N
     ServiceMonitor(
         chart,
         name,
-        metadata=metadata(name, NAMESPACE),
-        selector={"app.kubernetes.io/instance": NAME, "app.kubernetes.io/component": component},
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
+        selector=ServiceMonitorSpecSelector(
+            match_labels={"app.kubernetes.io/instance": NAME, "app.kubernetes.io/component": component}
+        ),
         # ServiceMonitor.port matches the Service port name, not the targetPort.
         endpoints=[Endpoint.plain(port=port)],
     )
@@ -117,7 +114,7 @@ def chart(app: App) -> Chart:
     repository = HelmRepository(
         chart,
         "repository",
-        metadata=metadata("jetstack", "flux-system"),
+        metadata=ApiObjectMetadata(name="jetstack", namespace="flux-system"),
         spec=HelmRepositorySpec(interval="24h", url="https://charts.jetstack.io"),
     )
     helm_release(
@@ -142,23 +139,15 @@ def write_manifests(root: Path) -> None:
 
 
 def cert_manager(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    cert_manager_issuer_config: Kustomization,
-    reflector: Kustomization,
-    monitoring_crds: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         artifact,
         timeout="5m",
-        post_build=CERT_MANAGER_ISSUER_SUBSTITUTION,
         depends_on=flux_kustomization_depends_on_many(
-            cert_manager_issuer_config,
-            # Produces the namespace-local ConfigMap that postBuild reads.
-            reflector,
             # the ServiceMonitor/PodMonitor CRD
-            monitoring_crds,
+            monitoring_crds
         ),
     )

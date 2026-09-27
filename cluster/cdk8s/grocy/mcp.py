@@ -17,13 +17,13 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.valkey import valkey_instance
 
@@ -59,8 +59,7 @@ def base_chart(app: App) -> Chart:
                     "FastMCP server generating Grocy tools from Grocy's OpenAPI spec. Per-request token"
                     " exchange swaps the caller's Authentik JWT for a Grocy-proxy-scoped JWT before calling"
                     " Grocy."
-                ),
-                "reloader.stakater.com/auto": "true",
+                )
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -167,7 +166,7 @@ def base_chart(app: App) -> Chart:
         chart,
         "servicemonitor",
         metadata=ApiObjectMetadata(name=_NAME),
-        selector=_LABELS,
+        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
         endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
     return chart
@@ -182,7 +181,7 @@ def household_chart(app: App, *, household: str, display_name: str) -> Chart:
     https_route(
         chart,
         "httproute",
-        metadata=metadata(f"grocy-mcp-{household}-server", namespace),
+        metadata=ApiObjectMetadata(name=f"grocy-mcp-{household}-server", namespace=namespace),
         hostnames=[f"grocy-mcp-{household}.allegedly.works"],
         backend=_NAME,
         port=_HTTP_PORT,

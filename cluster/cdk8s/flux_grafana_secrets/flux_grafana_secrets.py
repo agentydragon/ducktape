@@ -6,8 +6,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
+from grafana_grafana_crds.org.integreatly.grafana import GrafanaSpecClient, GrafanaSpecExternal
 from grafana_grafanaserviceaccount_crds.org.integreatly.grafana import (
     GrafanaServiceAccount,
     GrafanaServiceAccountSpec,
@@ -19,7 +20,6 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.grafana_operator.grafana import Grafana
 
 NAME = "flux-grafana-secrets"
@@ -30,18 +30,19 @@ _GRAFANA = "grafana"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    Grafana.external(
+    Grafana(
         chart,
         "grafana",
-        metadata=metadata(_GRAFANA, _NAMESPACE),
-        url="http://grafana-service.monitoring.svc.cluster.local:3000",
-        tenant_namespace=_NAMESPACE,
-        use_kube_auth=True,
+        metadata=ApiObjectMetadata(name=_GRAFANA, namespace=_NAMESPACE),
+        external=GrafanaSpecExternal(
+            url="http://grafana-service.monitoring.svc.cluster.local:3000", tenant_namespace=_NAMESPACE
+        ),
+        client=GrafanaSpecClient(use_kube_auth=True),
     )
     GrafanaServiceAccount(
         chart,
         "service-account",
-        metadata=metadata("flux-notifications", _NAMESPACE),
+        metadata=ApiObjectMetadata(name="flux-notifications", namespace=_NAMESPACE),
         spec=GrafanaServiceAccountSpec(
             instance_name=_GRAFANA,
             role=GrafanaServiceAccountSpecRole.EDITOR,

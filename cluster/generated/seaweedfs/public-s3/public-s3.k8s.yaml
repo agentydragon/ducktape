@@ -149,7 +149,6 @@ kind: Deployment
 metadata:
   annotations:
     description: Single public-facing SeaweedFS S3 gateway (s3.allegedly.works). Mounts a static config for bootstrap and public-specific identities. Filer-backed IAM identities are also valid here, so every credential must remain a confidential Secret even when its usual consumer is cluster-internal.
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/component: s3
     app.kubernetes.io/name: public-s3

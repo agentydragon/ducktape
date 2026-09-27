@@ -45,14 +45,15 @@ from gateway_api_tlsroute_crds.io.k8s.networking.gateway import (
     TlsRouteSpecRules,
     TlsRouteSpecRulesBackendRefs,
 )
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.cert_manager.cluster_ca import LONG_LIVED_CA
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.cert_manager.certificate import LONG_LIVED_CA, Certificate, CertificatePrivateKey
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
@@ -293,9 +294,7 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -386,8 +385,8 @@ def _network_policy(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "network-policy",
-        metadata=metadata(_NAME, _NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        endpoint_selector=_LABELS,
         ingress=[
             IngressRule.from_gateway(_PROXY_PORT),
             IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy"), ports=[_METRICS_PORT]),
@@ -435,9 +434,9 @@ def _gateway(scope: Construct) -> None:
     Gateway(
         scope,
         "gateway",
-        metadata=metadata(
-            _NAME,
-            _NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_NAME,
+            namespace=_NAMESPACE,
             annotations={
                 "description": (
                     "Dedicated TLS-only listener; avoids overlapping the shared wildcard HTTPS listener on port 443."
@@ -465,7 +464,7 @@ def _gateway(scope: Construct) -> None:
     TlsRoute(
         scope,
         "tls-route",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         spec=TlsRouteSpec(
             parent_refs=[TlsRouteSpecParentRefs(name=_NAME, section_name=_TLS_LISTENER)],
             hostnames=[_HOSTNAME],
@@ -478,11 +477,16 @@ def _monitoring(scope: Construct) -> None:
     PodMonitor(
         scope,
         "pod-monitor",
-        metadata=metadata(_NAME, _NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        selector=PodMonitorSpecSelector(match_labels=_LABELS),
         pod_metrics_endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
-    PrometheusRule(scope, "prometheus-rule", metadata=metadata(_NAME, _NAMESPACE), groups=[group(_NAME, _RULES)])
+    PrometheusRule(
+        scope,
+        "prometheus-rule",
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        groups=[group(_NAME, _RULES)],
+    )
 
 
 def app_chart(app: App) -> Chart:

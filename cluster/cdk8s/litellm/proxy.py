@@ -48,6 +48,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.config_format import yaml_config
@@ -64,7 +65,6 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.litellm.config import ConfigMapSpec, proxy_configs
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -245,9 +245,9 @@ class LiteLLMProxy(Construct):
         return ConfigMap(
             self,
             "config",
-            metadata=metadata(
-                self.spec.config.config_map_name,
-                self.spec.namespace,
+            metadata=ApiObjectMetadata(
+                name=self.spec.config.config_map_name,
+                namespace=self.spec.namespace,
                 labels={"app.kubernetes.io/managed-by": "cdk8s", "app.kubernetes.io/part-of": "litellm"},
                 annotations={
                     "ducktape.dev/generated": "by cdk8s under Bazel",
@@ -283,9 +283,7 @@ class LiteLLMProxy(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                self.spec.name, self.spec.namespace, labels=labels, annotations={"reloader.stakater.com/auto": "true"}
-            ),
+            metadata=ApiObjectMetadata(name=self.spec.name, namespace=self.spec.namespace, labels=labels),
             pod_metadata=ApiObjectMetadata(labels=labels),
             replicas=self.spec.replicas,
             strategy=self.spec.strategy,
@@ -346,7 +344,9 @@ class LiteLLMProxy(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(self.spec.name, self.spec.namespace, labels=self.spec.service.labels),
+            metadata=ApiObjectMetadata(
+                name=self.spec.name, namespace=self.spec.namespace, labels=self.spec.service.labels
+            ),
             selector=deployment,
             ports=[
                 ServicePort(
@@ -361,7 +361,7 @@ class LiteLLMProxy(Construct):
         return ServiceAccount(
             self,
             "serviceaccount",
-            metadata=metadata(self.spec.service_account_name, self.spec.namespace),
+            metadata=ApiObjectMetadata(name=self.spec.service_account_name, namespace=self.spec.namespace),
             automount_token=False,
         )
 
@@ -369,7 +369,7 @@ class LiteLLMProxy(Construct):
         https_route(
             self,
             "httproute",
-            metadata=metadata(self.spec.name, self.spec.namespace),
+            metadata=ApiObjectMetadata(name=self.spec.name, namespace=self.spec.namespace),
             hostnames=[hostname],
             backend=self.spec.name,
             port=4000,
@@ -390,8 +390,8 @@ class LiteLLMServiceMonitor(Construct):
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=metadata("litellm", "litellm"),
-            selector={"app.kubernetes.io/name": "litellm"},
+            metadata=ApiObjectMetadata(name="litellm", namespace="litellm"),
+            selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": "litellm"}),
             endpoints=[
                 Endpoint.bearer_token_secret(
                     port="http", secret_name="litellm-master-key", key="api-key", scrape_timeout="10s"

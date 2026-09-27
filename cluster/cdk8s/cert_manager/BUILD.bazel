@@ -12,9 +12,9 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
+        "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -24,13 +24,14 @@ py_library(
 py_library(
     name = "cluster_ca",
     srcs = ["cluster_ca.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":config",
         "//cluster/cdk8s/providers/cert_manager:bundle",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
         "//cluster/cdk8s/providers/cert_manager:certificate",
         "//cluster/cdk8s/providers/cert_manager:cluster_issuer",
+        "//cluster/cdk8s/providers/cert_manager:clusterissuer",
         "@pypi//cdk8s",
     ],
 )
@@ -52,6 +53,7 @@ py_library(
     srcs = ["interception_ca.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":cluster_ca",
         "//cluster/cdk8s/providers/cert_manager:bundle",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
         "//cluster/cdk8s/providers/cert_manager:certificate",
@@ -71,24 +73,8 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-    ],
-)
-
-py_library(
-    name = "issuer_config",
-    srcs = ["issuer_config.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = [
-        ":config",
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
-        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -104,7 +90,6 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",

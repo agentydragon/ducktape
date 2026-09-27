@@ -12,7 +12,7 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManaged,
@@ -34,7 +34,6 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter, RouteMatch
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/study-casino"
@@ -326,7 +325,7 @@ def _route(scope: Construct) -> None:
     HttpRoute(
         scope,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         spec=HttpRouteSpec(
             parent_refs=[cluster_gateway_parent_ref()],
             hostnames=["casino.allegedly.works"],

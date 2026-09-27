@@ -35,9 +35,9 @@ def write_manifests(root: Path) -> None:
 
 
 def seaweedfs_registry_cache_bucket(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_cluster: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_operator: Kustomization
 ) -> Kustomization:
     name = "seaweedfs-registry-cache-bucket"
     return flux_kustomization(
-        chart, name, artifact, depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)], timeout="5m"
+        chart, name, artifact, depends_on=[flux_kustomization_depends_on(seaweedfs_operator)], timeout="5m"
     )

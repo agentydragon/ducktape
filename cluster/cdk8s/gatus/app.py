@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress, CiliumNetworkPolicySpecEgressToEntities
 from constructs import Construct
@@ -22,13 +22,13 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategyName,
 )
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import cilium, cnpg
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
@@ -75,7 +75,7 @@ def _helm_release(scope: Construct) -> None:
     repository = HelmRepository(
         scope,
         "helm-repository",
-        metadata=metadata(_HELM_REPOSITORY, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_HELM_REPOSITORY, namespace=_NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://twin.github.io/helm-charts"),
     )
     # Empty ConfigMap required by the gatus Helm chart. The chart hardcodes
@@ -146,8 +146,8 @@ def _network_policies(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "ingress",
-        metadata=metadata("gatus-ingress", _NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name="gatus-ingress", namespace=_NAMESPACE),
+        endpoint_selector=_LABELS,
         ingress=[
             # Cilium Gateway API (reserved:ingress identity) → Gatus
             IngressRule.from_gateway(_PORT),
@@ -167,8 +167,8 @@ def _network_policies(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "dns-visibility",
-        metadata=metadata("gatus-dns-visibility", _NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name="gatus-dns-visibility", namespace=_NAMESPACE),
+        endpoint_selector=_LABELS,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
             # Everything else, deliberately unrestricted.
@@ -198,7 +198,7 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["status.allegedly.works"],
         backend=_NAME,
         port=80,
@@ -208,8 +208,8 @@ def chart(app: App) -> Chart:
     ServiceMonitor(
         chart,
         "service-monitor",
-        metadata=metadata(_NAME, _NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
         endpoints=[Endpoint.plain(port="http")],
     )
     return chart

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -22,7 +22,6 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku_ci import runner
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "keda"
 NAMESPACE = "keda"
@@ -42,7 +41,7 @@ def chart(app: App) -> Chart:
     repository = HelmRepository(
         chart,
         "repository",
-        metadata=metadata(NAME, NAMESPACE),
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://kedacore.github.io/charts"),
     )
     helm_release(

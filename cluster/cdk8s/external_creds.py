@@ -5,14 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import sops_decryption, write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import SecretStoreRef
 
 NAMESPACE = "ducktape-flux"
@@ -171,7 +170,7 @@ def chart(app: App) -> Chart:
             Role(
                 chart,
                 f"role-{credential.secret_name}",
-                metadata=metadata(role_name, credential.namespace),
+                metadata=ApiObjectMetadata(name=role_name, namespace=credential.namespace),
                 rules=[
                     RolePolicyRule(
                         resources=[
@@ -187,7 +186,7 @@ def chart(app: App) -> Chart:
                 RoleBinding(
                     chart,
                     f"binding-{credential.secret_name}-{index}",
-                    metadata=metadata(consumer.binding_name, credential.namespace),
+                    metadata=ApiObjectMetadata(name=consumer.binding_name, namespace=credential.namespace),
                     role=Role.from_role_name(chart, f"role-ref-{credential.secret_name}-{index}", role_name),
                 ).add_subjects(
                     ServiceAccount.from_service_account_name(

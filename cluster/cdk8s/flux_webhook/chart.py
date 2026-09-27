@@ -45,7 +45,6 @@ from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomizatio
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
 NAME = "flux-webhook"
@@ -83,7 +82,7 @@ def chart(app: App) -> Chart:
     Receiver(
         chart,
         "github-receiver",
-        metadata=metadata("github", NAMESPACE),
+        metadata=ApiObjectMetadata(name="github", namespace=NAMESPACE),
         spec=ReceiverSpec(
             type=ReceiverSpecType.GITHUB,
             events=["push", "registry_package"],
@@ -119,7 +118,7 @@ def chart(app: App) -> Chart:
     grafana = Provider(
         chart,
         "grafana-provider",
-        metadata=metadata("grafana", NAMESPACE),
+        metadata=ApiObjectMetadata(name="grafana", namespace=NAMESPACE),
         spec=ProviderSpec(
             type=ProviderSpecType.GRAFANA,
             # notification-controller >=1.7 sends the request to `address` as-is (no
@@ -132,7 +131,7 @@ def chart(app: App) -> Chart:
     Alert(
         chart,
         "grafana-alert",
-        metadata=metadata("grafana-annotations", NAMESPACE),
+        metadata=ApiObjectMetadata(name="grafana-annotations", namespace=NAMESPACE),
         spec=AlertSpec(
             provider_ref=AlertSpecProviderRef(name=grafana.name),
             event_severity=AlertSpecEventSeverity.INFO,
@@ -146,13 +145,13 @@ def chart(app: App) -> Chart:
     ntfy_provider = Provider(
         chart,
         "ntfy-provider",
-        metadata=metadata("ntfy", NAMESPACE),
+        metadata=ApiObjectMetadata(name="ntfy", namespace=NAMESPACE),
         spec=ProviderSpec(type=ProviderSpecType.GENERIC, secret_ref=ProviderSpecSecretRef(name=_NTFY_WEBHOOK)),
     )
     Alert(
         chart,
         "ntfy-alert",
-        metadata=metadata("on-call", NAMESPACE),
+        metadata=ApiObjectMetadata(name="on-call", namespace=NAMESPACE),
         spec=AlertSpec(
             provider_ref=AlertSpecProviderRef(name=ntfy_provider.name),
             event_severity=AlertSpecEventSeverity.ERROR,
@@ -169,7 +168,7 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(NAME, NAMESPACE),
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         hostnames=["flux-webhook.allegedly.works"],
         backend="webhook-receiver",
         port=80,
@@ -203,8 +202,8 @@ def chart(app: App) -> Chart:
                 "ntfy.ducktape.io/auth-generation": "1",
             },
         ),
-        refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
-        store=SecretStoreRef.cluster(ntfy.SECRET_STORE),
+        refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
+        secret_store_ref=SecretStoreRef.cluster(ntfy.SECRET_STORE),
         data=[remote_data("ntfy-credentials", "alertmanager-token", secret_key="alertmanager_token")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
@@ -224,10 +223,8 @@ def write_manifests(root: Path) -> None:
 def flux_webhook(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    flux_webhook_token: Kustomization,
     ntfy: Kustomization,
-    external_secrets_config: Kustomization,
-    gateway: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -237,5 +234,5 @@ def flux_webhook(
         wait=None,
         timeout="5m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(flux_webhook_token, ntfy, external_secrets_config, gateway),
+        depends_on=flux_kustomization_depends_on_many(ntfy, external_secrets_operator),
     )

@@ -26,7 +26,6 @@ from constructs import Construct
 from cluster.cdk8s import cilium, container_security, node_scheduling
 from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
@@ -46,7 +45,7 @@ class Electric(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(NAME, env.namespace, labels=_LABELS),
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=1,
             strategy=DeploymentStrategy.recreate(),
@@ -100,15 +99,15 @@ class Electric(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(NAME, env.namespace, labels=_LABELS),
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
             selector=deployment,
             ports=[ServicePort(name="http", port=PORT, target_port=PORT, protocol=Protocol.TCP)],
         )
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=metadata(NAME, env.namespace),
-            selector=_LABELS,
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
+            endpoint_selector=_LABELS,
             ingress=[IngressRule.from_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-app"), ports=[PORT])],
             egress=[
                 cilium.dns_egress(),

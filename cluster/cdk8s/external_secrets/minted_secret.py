@@ -18,7 +18,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateMetadata,
 )
 
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 
 
@@ -29,7 +28,7 @@ def _password_generator(scope: Construct, id: str, *, name: str, namespace: str,
     Password(
         scope,
         id,
-        metadata=metadata(name, namespace),
+        metadata=ApiObjectMetadata(name=name, namespace=namespace),
         spec=PasswordSpec(length=length, digits=digits, symbols=0, no_upper=False, allow_repeat=True),
     )
     return name
@@ -84,7 +83,8 @@ def mint_bearer_secret(
         metadata=ApiObjectMetadata(
             name=name, namespace=namespace, annotations={"description": description} if description else None
         ),
-        refresh=refresh,
+        refresh_interval=refresh if isinstance(refresh, str) else None,
+        refresh_policy=refresh if isinstance(refresh, ExternalSecretSpecRefreshPolicy) else None,
         data_from=[DataFrom.from_password_generator(generator)],
         creation_policy=creation_policy,
         deletion_policy=deletion_policy,
@@ -126,7 +126,7 @@ def mint_db_role_secret(
         scope,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
-        refresh="8760h",
+        refresh_interval="8760h",
         data_from=[DataFrom.from_password_generator(generator)],
         template=ExternalSecretSpecTargetTemplate(type=secret_type, data=data),
     )

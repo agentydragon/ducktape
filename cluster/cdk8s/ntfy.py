@@ -8,8 +8,6 @@ Secrets.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     Capability,
@@ -52,19 +50,12 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import cnpg, fleet_rules, node_scheduling
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import sops_decryption, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -137,8 +128,8 @@ def _auth_external_secret(scope: Construct) -> None:
                 "ntfy.ducktape.io/auth-generation": "1",
             },
         ),
-        refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
-        store=SecretStoreRef.cluster(SECRET_STORE),
+        refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
+        secret_store_ref=SecretStoreRef.cluster(SECRET_STORE),
         data=[
             remote_data(_AUTH_SOURCE_SECRET, "alertmanager-password", secret_key="alertmanager_password"),
             remote_data(_AUTH_SOURCE_SECRET, "alertmanager-token", secret_key="alertmanager_token"),
@@ -176,8 +167,8 @@ def _alertmanager_webhook_secret(scope: Construct) -> None:
                 "ntfy.ducktape.io/auth-generation": "1",
             },
         ),
-        refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
-        store=SecretStoreRef.cluster(SECRET_STORE),
+        refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
+        secret_store_ref=SecretStoreRef.cluster(SECRET_STORE),
         data=[remote_data(_AUTH_SOURCE_SECRET, "alertmanager-token", secret_key="alertmanager_token")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
@@ -221,7 +212,12 @@ class Ntfy(Construct):
         deployment = self._add_deployment()
         self._add_service(deployment)
         https_route(
-            self, "httproute", metadata=metadata("ntfy", NAMESPACE), hostnames=[HOSTNAME], backend=NAME, port=PORT
+            self,
+            "httproute",
+            metadata=ApiObjectMetadata(name="ntfy", namespace=NAMESPACE),
+            hostnames=[HOSTNAME],
+            backend=NAME,
+            port=PORT,
         )
         self._add_service_monitor()
 
@@ -229,14 +225,11 @@ class Ntfy(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                NAME,
-                NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=NAMESPACE,
                 labels=_LABELS,
-                annotations={
-                    "description": "Single ntfy server backed by the two-instance ntfy PostgreSQL cluster.",
-                    "reloader.stakater.com/auto": "true",
-                },
+                annotations={"description": "Single ntfy server backed by the two-instance ntfy PostgreSQL cluster."},
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=1,
@@ -285,7 +278,7 @@ class Ntfy(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(NAME, NAMESPACE, labels=_LABELS),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_LABELS),
             selector=deployment,
             ports=[ServicePort(name="http", port=PORT, target_port=PORT, protocol=Protocol.TCP)],
         )
@@ -294,8 +287,8 @@ class Ntfy(Construct):
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=metadata(NAME, NAMESPACE, labels=_LABELS),
-            selector=_LABELS,
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_LABELS),
+            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
             endpoints=[Endpoint.plain(port="http")],
         )
 
@@ -309,33 +302,23 @@ def chart(app: App) -> Chart:
 
 def ntfy(
     flux_chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    root: Path,
+    directory: RenderedDirectory,
     cnpg: Kustomization,
-    external_secrets_config: Kustomization,
-    gateway: Kustomization,
+    external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
-    """Generate ntfy's namespace, CNPG cluster, auth ESO, and app resources.
-
-    The SOPS source Secret remains hand-written in this flat directory; the generated
-    Kustomization lists them and therefore enables Flux SOPS decryption.
-    """
-    out_dir = root / OUTPUT_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    chart(app)
-    app.synth()
-
-    resources = ["ntfy.k8s.yaml", "credentials.sops.yaml"]
-    kustomization = flux_kustomization(
+    return flux_kustomization(
         flux_chart,
         NAME,
-        artifact,
+        directory,
         description="Self-hosted ntfy for Android and cluster alert notifications.",
         timeout="10m",
-        decryption=sops_decryption(resources),
-        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_config, gateway, monitoring_crds),
+        depends_on=flux_kustomization_depends_on_many(
+            cnpg,
+            external_secrets_operator,
+            monitoring_crds,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+            kyverno,
+        ),
     )
-    write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=resources))
-    return kustomization

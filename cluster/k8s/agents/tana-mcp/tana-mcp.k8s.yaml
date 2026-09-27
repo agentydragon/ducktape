@@ -115,8 +115,6 @@ subjects:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: tana-mcp
   name: tana-mcp
@@ -283,7 +281,6 @@ metadata:
     description: Public Authentik-backed MCP facade for Tana, running the shared mcp-oauth-facade image. Access is enforced by Authentik group membership; the server injects a static downstream PAT.
     goldilocks.fairwinds.com/vpa-resource-policy: |
       {"containerPolicies":[{"containerName":"server","minAllowed":{"cpu":"25m"},"controlledValues":"RequestsOnly"}]}
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: tana-mcp-facade
   name: tana-mcp-facade

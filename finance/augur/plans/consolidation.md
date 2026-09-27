@@ -28,31 +28,22 @@ These graduate into `README.md` and `AGENTS.md` with step 1.
 1. **Conventions.** Add a "Using Augur" section to `README.md`, built around one short
    canonical loop: build the world, declare state, sample paths from the model the caller
    chooses, step or act each month, read results. Add the rules above to `AGENTS.md`.
-2. **Move unvetted models to `x/`,** each with its training code from `fit/`:
-   - `structural_macro`, until it is shown to be good enough for core;
-   - the VECM, the state-space models and the private-equity samplers;
-   - `sample_sanity`;
-   - the small samplers (`gbm`, `deterministic`, `independent`, `mirroring`, `composite`),
-     or delete those with no caller.
-
-   Historical replay (`model/historical_windows.py`) and the market-path infrastructure stay
-   in core.
-
-3. **Plans and notes.** Fold the remaining files under `plans/` into one short plan that
+2. **Plans and notes.** Fold the remaining files under `plans/` into one short plan that
    holds only live work. Delete resolved `debug/` notes after moving any durable lesson.
    Update `SPEC.md` and `sim/DESIGN.md` to describe what exists.
 
-Step 1 goes first, so later steps have a written target. Step 2 can follow step 1, and
-step 3 runs alongside.
+Step 1 goes first, so step 2 has a written target.
 
 ## Open questions
 
-- **Dollars helper.** The `Prepared*` facts are integer money quanta, so should `sim/money.py`
-  keep a small `Decimal` dollars → quanta helper for callers? Nothing more than that.
-- **The app after step 2.** The app picks its economy model through `model/provider_config.py`,
-  a union of every provider's configuration. Once the fitted models are in `x/`, core can no
-  longer import them, and that union is the pattern the rules above rule out. Deciding the
-  app's model selection is part of deciding the app's future, which is not decided.
+- **The app's model selection.** The app picks its economy model through
+  `x/models/provider_config.py`, a union of every provider's configuration, and reaches it and
+  the fitted models through a tombstoned visibility exception. That union is the pattern the
+  rules above rule out. Deciding the app's model selection is part of deciding the app's
+  future, which is not decided.
 - **Held feature PRs.** #8139 (uncertain equity mean), #8141 (pinned equity mean), #8142
   (block bootstrap) and #8143 (trading costs) wait until this plan lands. The first three
   then target `x/`.
+- **Integer money, later.** Integer quanta were chosen for speed at large rollout counts, and
+  that gain was never measured. Once this plan lands, measure it. If it does not pay, `World` may
+  instead know its currency and take and return exact fixed-point `Decimal` money.

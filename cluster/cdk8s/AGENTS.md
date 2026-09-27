@@ -104,16 +104,22 @@ Model with constructs, deploy with one props object per environment.
 Every Flux `Kustomization` is one function in one shared chart, and its dependencies are
 its parameters. `generate_manifests.py` is the topological order, written out by hand.
 
-- **A node is `name(chart, artifact, *predecessors: Kustomization) -> Kustomization`.** It
-  returns `flux.flux_kustomization(chart, name, artifact, ...)`, which derives `sourceRef`
-  and `path` from the artifact and applies our defaults (listed once, in its docstring);
-  the node passes only the `KustomizationSpec` fields that differ, as keywords of the
-  same names and types. The entry point builds the artifact
-  (`artifact_generators.artifact(name, directory, *shared_bases)`) just before the call,
-  and passes every artifact to `write_artifact_generators` last; a parked node's
-  artifact is left out, since nothing packages a suspended directory. A node sourcing a
-  `GitRepository` directly takes no artifact and passes that `sourceRef` and a `path`
-  instead. `dependsOn` is
+- **A node is `name(chart, directory: RenderedDirectory, *predecessors) -> Kustomization`**
+  and writes no file. It returns `flux.flux_kustomization(chart, name, directory, ...)`,
+  which derives `sourceRef`, `path` and `decryption` from the directory and applies our
+  defaults (listed once, in its docstring); the node passes only the `KustomizationSpec`
+  fields that differ, as keywords of the same names and types. The entry point builds the
+  artifact (`artifact_generators.artifact(name, directory, *shared_bases)`) just before
+  the call and writes the directory in the node's argument:
+  `generation.write_directory(root, artifact, *chart_builders, siblings=[...])`
+  synthesizes the charts and writes a `kustomization.yaml` listing them and the
+  hand-written siblings, so a component is written and joined in one statement. It passes
+  every artifact to `write_artifact_generators` last; a parked node's artifact is left
+  out, since nothing packages a suspended directory. A directory keeping a hand-written
+  `kustomization.yaml` is written by its module's `write_manifests` at the top of
+  `generate_manifests()`, and its node takes the artifact in place of a directory, as do
+  the nodes not yet converted to `write_directory`. A node sourcing a `GitRepository`
+  directly takes neither and passes that `sourceRef` and a `path` instead. `dependsOn` is
   `flux_kustomization_depends_on_many(predecessor, ...)`, which reads name and namespace
   off the constructs it is handed; the entry carries an explicit `namespace` for that
   reason. The predecessor is a value the caller already built, never a string, a
@@ -157,7 +163,7 @@ its parameters. `generate_manifests.py` is the topological order, written out by
   the committed files; `GENERATED_ROOT` is right exactly when the generator writes every
   file the directory holds.
 
-The worked edge, `monitoring-crds -> cilium-monitoring`:
+The worked edge, `monitoring-crds -> ntfy`:
 
 ```python
 # monitoring/flux_kustomizations.py
@@ -173,26 +179,39 @@ def monitoring_crds(chart: Chart) -> Kustomization:
     )
 
 
-# monitoring/cilium_monitoring.py, beside the chart it deploys
-def cilium_monitoring(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
+# ntfy.py, beside the chart it deploys
+def ntfy(
+    flux_chart: Chart,
+    directory: RenderedDirectory,
+    cnpg: Kustomization,
+    external_secrets_operator: Kustomization,
+    monitoring_crds: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
-        chart,
-        "cilium-monitoring",
-        artifact,
-        timeout="2m",
-        # The ServiceMonitor CRD.
-        depends_on=flux_kustomization_depends_on_many(monitoring_crds),
+        flux_chart,
+        NAME,
+        directory,
+        timeout="10m",
+        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, monitoring_crds, kyverno),
     )
 
 
 # generate_manifests.py
 monitoring_crds_kustomization = monitoring_flux_kustomizations.monitoring_crds(flux_chart)
-monitoring_cilium_artifact = artifact("monitoring-cilium", cilium_monitoring.OUTPUT_DIR)
-cilium_monitoring.cilium_monitoring(flux_chart, monitoring_cilium_artifact, monitoring_crds_kustomization)
 ...
-write_artifact_generators(root, ducktape=[..., monitoring_cilium_artifact, ...], flux_system=[...])
+ntfy_artifact = artifact("ntfy", ntfy.OUTPUT_DIR)
+ntfy_kustomization = ntfy.ntfy(
+    flux_chart,
+    # The SOPS sibling turns on Flux decryption.
+    write_directory(root, ntfy_artifact, ntfy.chart, siblings=["credentials.sops.yaml"]),
+    cnpg_kustomization,
+    external_secrets_operator_kustomization,
+    monitoring_crds_kustomization,
+    kyverno_kustomization,
+)
+...
+write_artifact_generators(root, ducktape=[..., ntfy_artifact, ...], flux_system=[...])
 ```
 
 The one edge still written as a string is `artifact-generators -> flux-system`

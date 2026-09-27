@@ -36,7 +36,6 @@ from cluster.cdk8s.agentplane.egress_credentials import (
 from cluster.cdk8s.aiquota import AGENTPLANE_STAGING_BEARER
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.home_assistant.app import AGENTPLANE_READER_TOKEN
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
 
@@ -51,7 +50,9 @@ _HAKU_MAIL_TOKEN = "haku-mail-token"
 
 def add_staging_egress_credentials(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
     construct = Construct(scope, "staging-egress-credentials")
-    reader = ServiceAccount(construct, "reader", metadata=metadata(EXTERNAL_CREDS_READER, credentials_namespace))
+    reader = ServiceAccount(
+        construct, "reader", metadata=ApiObjectMetadata(name=EXTERNAL_CREDS_READER, namespace=credentials_namespace)
+    )
     credential_external_secret(
         construct,
         namespace=credentials_namespace,

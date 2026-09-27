@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEgress,
@@ -57,7 +57,6 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 
 NAME = "cpap-sync"
@@ -88,9 +87,9 @@ def _gateway_vm(chart: Chart) -> None:
     VirtualMachine(
         chart,
         "gateway-vm",
-        metadata=metadata(
-            _GATEWAY,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_GATEWAY,
+            namespace=NAMESPACE,
             labels=labels,
             annotations={
                 "description": (
@@ -287,9 +286,9 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "egress",
-        metadata=metadata(
-            "cpap-sync-egress",
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name="cpap-sync-egress",
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "The sync Job may resolve DNS, reach the in-cluster CPAP gateway Service, and push to Forgejo "
@@ -297,7 +296,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        selector={"app.kubernetes.io/name": NAME},
+        endpoint_selector={"app.kubernetes.io/name": NAME},
         egress=[
             cilium.dns_egress(),
             # The Service is port 80, but Cilium enforces the translated backend
@@ -358,9 +357,8 @@ def write_manifests(root: Path) -> None:
 def cpap_sync(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     kubevirt: Kustomization,
-    forgejo_images_kustomization: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -368,5 +366,5 @@ def cpap_sync(
         artifact,
         decryption=SOPS_DECRYPTION,
         timeout="30m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_config, kubevirt, forgejo_images_kustomization),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, kubevirt),
     )

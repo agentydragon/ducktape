@@ -5,7 +5,7 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -13,7 +13,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/website"
 _NAME = "website"
@@ -214,7 +213,7 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["www.allegedly.works", "allegedly.works"],
         backend=_NAME,
         port=80,
@@ -228,15 +227,13 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
 
 
-def website(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, gateway: Kustomization) -> Kustomization:
+def website(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno: Kustomization) -> Kustomization:
     name = "website"
     return flux_kustomization(
         chart,
         name,
         artifact,
         timeout="5m",
-        depends_on=[
-            # TLS is owned by the shared Gateway; Website only supplies an HTTPRoute.
-            flux_kustomization_depends_on(gateway)
-        ],
+        # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+        depends_on=[flux_kustomization_depends_on(kyverno)],
     )

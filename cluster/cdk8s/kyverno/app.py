@@ -3,18 +3,13 @@ and the background controller's extra RoleBinding read access."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "kyverno"
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/app"
@@ -132,7 +127,7 @@ def chart(app: App) -> Chart:
     repository = HelmRepository(
         chart,
         "repository",
-        metadata=metadata(NAME, _FLUX_NAMESPACE),
+        metadata=ApiObjectMetadata(name=NAME, namespace=_FLUX_NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://kyverno.github.io/kyverno/"),
     )
     helm_release(
@@ -181,21 +176,11 @@ def background_controller_rbac_chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart, background_controller_rbac_chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(
-            resources=["kyverno.k8s.yaml", "clusterrole-background-controller-rolebindings.k8s.yaml"]
-        ),
-    )
-
-
-def kyverno(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
+def kyverno(chart: Chart, directory: RenderedDirectory) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         interval="10m0s",
         timeout="10m0s",
         # No dependsOn: kyverno manages its own TLS via internal certmanager-controller

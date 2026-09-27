@@ -47,8 +47,6 @@ spec:
                 app.kubernetes.io/name: forgejo
             topologyKey: kubernetes.io/hostname
     deployment:
-      annotations:
-        reloader.stakater.com/auto: "true"
       env:
         - name: SSL_CERT_FILE
           value: /etc/ssl/certs/cluster-ca/ca-certificates.crt

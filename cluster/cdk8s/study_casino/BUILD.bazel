@@ -25,7 +25,6 @@ py_library(
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/gateway_api:http_route",
         "//cluster/cdk8s/providers/gateway_api:httproute",

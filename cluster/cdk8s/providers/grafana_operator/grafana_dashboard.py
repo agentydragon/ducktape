@@ -1,7 +1,6 @@
-"""Ergonomic wrapper for grafana-operator's `GrafanaDashboard`. Every real call site
-picks the target `Grafana` instance(s) the same way, through a `spec.instanceSelector`
-label match, so `instance_selector_labels` builds that nested selector once instead of
-at every call site.
+"""Ergonomic wrapper for grafana-operator's `GrafanaDashboard`, following cdk8s-plus's own
+construction pattern: a class named after the kind, constructed as `GrafanaDashboard(scope, id,
+*, metadata, ...)` with `GrafanaDashboardSpec` fields under their own names and types.
 """
 
 from __future__ import annotations
@@ -32,7 +31,7 @@ class GrafanaDashboard(_GrafanaDashboard):
         id: str,
         *,
         metadata: ApiObjectMetadata,
-        instance_selector_labels: dict[str, str],
+        instance_selector: GrafanaDashboardSpecInstanceSelector,
         folder: str | None = None,
         datasources: Sequence[GrafanaDashboardSpecDatasources] | None = None,
         config_map_ref: GrafanaDashboardSpecConfigMapRef | None = None,
@@ -43,7 +42,7 @@ class GrafanaDashboard(_GrafanaDashboard):
             id,
             metadata=metadata,
             spec=GrafanaDashboardSpec(
-                instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=instance_selector_labels),
+                instance_selector=instance_selector,
                 folder=folder,
                 datasources=list(datasources) if datasources is not None else None,
                 config_map_ref=config_map_ref,

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from cdk8s import ApiObjectMetadata
 from constructs import Construct
 from pydantic import BaseModel
 from tofu_controller.io.fluxcd.contrib.infra import (
@@ -27,7 +28,6 @@ from tofu_controller.io.fluxcd.contrib.infra import (
 )
 
 from cluster.cdk8s import ducktape_flux, flux
-from cluster.cdk8s.metadata import metadata
 
 NAMESPACE = "flux-system"
 STATE_DB = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
@@ -75,7 +75,7 @@ def gitops_terraform(
     return TerraformV1Alpha2(
         scope,
         id,
-        metadata=metadata(name, NAMESPACE),
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
         spec=TerraformV1Alpha2Spec(
             interval="15m",
             refresh_before_apply=True,

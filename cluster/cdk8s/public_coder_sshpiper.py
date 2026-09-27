@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 
@@ -23,7 +23,6 @@ from cluster.cdk8s import cilium
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 
 NAME = "public-coder-agent-sshpiper"
@@ -164,9 +163,7 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=NAME, namespace=_NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=_NAMESPACE, labels=LABELS),
         spec=k8s.DeploymentSpec(
             # One replica, and not only because the recordings PVC is RWO: two pipers would each
             # need the host key, and a client reconnecting to the other one is indistinguishable
@@ -252,8 +249,8 @@ def _network_policies(scope: Construct, app_namespace: str, app_labels: dict[str
     NetworkPolicy(
         scope,
         "ingress",
-        metadata=metadata("allow-public-coder-agent-sshpiper-ingress", _NAMESPACE),
-        selector=LABELS,
+        metadata=ApiObjectMetadata(name="allow-public-coder-agent-sshpiper-ingress", namespace=_NAMESPACE),
+        endpoint_selector=LABELS,
         ingress=[
             IngressRule.from_endpoints(
                 {
@@ -270,8 +267,8 @@ def _network_policies(scope: Construct, app_namespace: str, app_labels: dict[str
     NetworkPolicy(
         scope,
         "egress",
-        metadata=metadata("allow-public-coder-agent-sshpiper-egress", _NAMESPACE),
-        selector=LABELS,
+        metadata=ApiObjectMetadata(name="allow-public-coder-agent-sshpiper-egress", namespace=_NAMESPACE),
+        endpoint_selector=LABELS,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
             # The kubernetes plugin watches Pipes and resolves the upstream key Secret through the

@@ -12,12 +12,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 
 NAME = "dcgm-exporter"
@@ -109,8 +109,8 @@ def chart(app: App) -> Chart:
     PodMonitor(
         chart,
         "podmonitor",
-        metadata=metadata(NAME, NAMESPACE, labels=_LABELS),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_LABELS),
+        selector=PodMonitorSpecSelector(match_labels=_LABELS),
         pod_metrics_endpoints=[Endpoint.plain(port="metrics")],
     )
     return chart

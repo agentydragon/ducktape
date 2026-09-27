@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from kyverno_cleanuppolicy_crds.io.kyverno import (
@@ -28,7 +28,6 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "agent-rbac-base"
 NAMESPACE = "claude-sandbox"
@@ -153,7 +152,7 @@ def _add_sandbox(chart: Chart) -> None:
     CleanupPolicy(
         chart,
         "janitor",
-        metadata=metadata("sandbox-janitor", NAMESPACE),
+        metadata=ApiObjectMetadata(name="sandbox-janitor", namespace=NAMESPACE),
         spec=CleanupPolicySpec(
             schedule="20 * * * *",
             match=CleanupPolicySpecMatch(

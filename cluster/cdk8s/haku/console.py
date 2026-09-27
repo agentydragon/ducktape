@@ -54,13 +54,13 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import container_security, node_scheduling
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console_config, database
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches, runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -137,7 +137,7 @@ class Console(Construct):
         # claim/exec RBAC on the haku-sandbox pool (haku/workspaces.py). No Secret, log, exec, or SandboxTemplate access
         # outside that pool.
         service_account = ServiceAccount(
-            self, "serviceaccount", metadata=metadata(NAME, NAMESPACE), automount_token=True
+            self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE), automount_token=True
         )
         self._add_rbac(service_account)
         env = self._container_env()
@@ -185,9 +185,9 @@ class Console(Construct):
         Role(
             self,
             "diagnostics-role",
-            metadata=metadata(
-                diagnostics,
-                NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=diagnostics,
+                namespace=NAMESPACE,
                 annotations={"description": "Read-only Console workload, event, and public ConfigMap metadata."},
             ),
             rules=[
@@ -201,9 +201,9 @@ class Console(Construct):
         RoleBinding(
             self,
             "diagnostics-rolebinding",
-            metadata=metadata(
-                diagnostics,
-                NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=diagnostics,
+                namespace=NAMESPACE,
                 annotations={"description": "Binds Haku and public-coder to narrow Console metadata diagnostics."},
             ),
             role=Role.from_role_name(self, "diagnostics-role-ref", diagnostics),
@@ -215,7 +215,10 @@ class Console(Construct):
         )
         # Consumer-owned referent identity for source-approved external credentials.
         ServiceAccount(
-            self, "external-creds-reader", metadata=metadata("external-creds-reader", NAMESPACE), automount_token=False
+            self,
+            "external-creds-reader",
+            metadata=ApiObjectMetadata(name="external-creds-reader", namespace=NAMESPACE),
+            automount_token=False,
         )
 
     def _secret(self, name: str) -> ISecret:
@@ -321,16 +324,19 @@ class Console(Construct):
         supplied = [path for path in self._supplied if path[0] in ConsoleConfigFile.model_fields]
         content = settings_file(ConsoleConfigFile, console_config.config(), supplied=supplied)
         return ConfigMap(
-            self, "config", metadata=metadata(_CONFIG_MAP_NAME, NAMESPACE), data={"config.yaml": yaml_config(content)}
+            self,
+            "config",
+            metadata=ApiObjectMetadata(name=_CONFIG_MAP_NAME, namespace=NAMESPACE),
+            data={"config.yaml": yaml_config(content)},
         )
 
     def _add_deployment(self, service_account: ServiceAccount, env: dict[str, EnvValue], config_map: ConfigMap) -> None:
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                NAME,
-                NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=NAMESPACE,
                 labels=LABELS,
                 annotations={
                     # Only the API's own mounted ConfigMap and credentials, never reloader's
@@ -402,7 +408,7 @@ class Console(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(NAME, NAMESPACE, labels=LABELS),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=LABELS),
             selector=Pods.select(self, "pods", labels=LABELS),
             ports=[
                 # The public route targets the static shell; this port serves nginx's
@@ -418,8 +424,8 @@ class Console(Construct):
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=metadata(NAME, NAMESPACE),
-            selector=LABELS,
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+            selector=ServiceMonitorSpecSelector(match_labels=LABELS),
             endpoints=[Endpoint.plain(port="metrics")],
         )
 
@@ -428,7 +434,7 @@ class Console(Construct):
         deployment = Deployment(
             self,
             "static-deployment",
-            metadata=metadata(STATIC_NAME, NAMESPACE, labels=_STATIC_LABELS),
+            metadata=ApiObjectMetadata(name=STATIC_NAME, namespace=NAMESPACE, labels=_STATIC_LABELS),
             pod_metadata=ApiObjectMetadata(labels=_STATIC_LABELS),
             select=False,
             replicas=2,
@@ -468,7 +474,7 @@ class Console(Construct):
         Service(
             self,
             "static-service",
-            metadata=metadata(STATIC_NAME, NAMESPACE, labels=_STATIC_LABELS),
+            metadata=ApiObjectMetadata(name=STATIC_NAME, namespace=NAMESPACE, labels=_STATIC_LABELS),
             selector=Pods.select(self, "static-pods", labels=_STATIC_LABELS),
             ports=[
                 ServicePort(name="http", port=_STATIC_SERVICE_PORT, target_port=_STATIC_PORT, protocol=Protocol.TCP)
@@ -482,7 +488,7 @@ class Console(Construct):
         https_route(
             self,
             "httproute",
-            metadata=metadata(NAME, NAMESPACE),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
             hostnames=[HOSTNAME],
             backend=STATIC_NAME,
             port=_STATIC_SERVICE_PORT,
@@ -499,9 +505,9 @@ class Console(Construct):
         job = Job(
             self,
             "indexer-provisioner",
-            metadata=metadata(
-                _INDEXER_PROVISIONER_NAME,
-                NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=_INDEXER_PROVISIONER_NAME,
+                namespace=NAMESPACE,
                 annotations={
                     "description": (
                         "Applies the object GRANTs for haku_indexer (indexer-role.sql). The role itself is "

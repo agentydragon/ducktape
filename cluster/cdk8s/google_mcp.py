@@ -65,7 +65,6 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
@@ -114,7 +113,7 @@ class GoogleMcpApp(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(_NAME, _NAME, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=_NAME, labels=_LABELS),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=1,
             strategy=DeploymentStrategy.recreate(),
@@ -168,7 +167,7 @@ class GoogleMcpApp(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(_NAME, _NAME),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=_NAME),
             selector=deployment,
             ports=[ServicePort(name="http", port=_HTTP_PORT, target_port=_HTTP_PORT, protocol=Protocol.TCP)],
         )
@@ -177,8 +176,8 @@ class GoogleMcpApp(Construct):
         NetworkPolicy(
             self,
             "network-policy",
-            metadata=metadata(_NAME, _NAME),
-            selector=_LABELS,
+            metadata=ApiObjectMetadata(name=_NAME, namespace=_NAME),
+            endpoint_selector=_LABELS,
             ingress=[
                 IngressRule.from_endpoints(
                     cilium.endpoint_labels("agentplane-staging", "agentplane-actions"), ports=[_HTTP_PORT]
@@ -209,11 +208,7 @@ class GoogleMcp(Construct):
 
 
 def google_mcp(
-    flux_chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    root: Path,
-    external_secrets_operator: Kustomization,
-    forgejo_images: Kustomization,
+    flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path, external_secrets_operator: Kustomization
 ) -> Kustomization:
     app_dir = root / OUTPUT_DIR
     app_dir.mkdir(parents=True, exist_ok=True)
@@ -229,7 +224,7 @@ def google_mcp(
         artifact,
         description="Gmail/Calendar MCP backend for Agentplane staging.",
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, forgejo_images),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
     )
     write_yaml(
         app_dir / "kustomization.yaml",

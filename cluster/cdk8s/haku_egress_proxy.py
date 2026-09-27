@@ -88,9 +88,7 @@ def _mitmproxy(chart: Chart) -> None:
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=NAME, namespace=NAME, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAME, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             # Two, so one container's restart never empties the Service. mitmproxy OOM-kills
             # under haku-ci traffic (#5846), and with one replica every kill was a CI outage:
@@ -263,7 +261,7 @@ def _iron_proxy(chart: Chart, name: str, *, description: str, config: dict, port
     """An iron-proxy Deployment holding real credentials and substituting them for a sandbox's
     placeholders, its config, and its Service."""
     labels = {"app.kubernetes.io/name": name}
-    # No content-hash name suffix: `reloader.stakater.com/auto` rolls the proxy when this changes.
+    # No content-hash name suffix: Reloader's `autoReloadAll` rolls the proxy when this changes.
     config_map = k8s.KubeConfigMap(
         chart,
         f"{name}-config",
@@ -273,12 +271,7 @@ def _iron_proxy(chart: Chart, name: str, *, description: str, config: dict, port
     k8s.KubeDeployment(
         chart,
         f"{name}-deployment",
-        metadata=k8s.ObjectMeta(
-            name=name,
-            namespace=NAME,
-            labels=labels,
-            annotations={"description": description, "reloader.stakater.com/auto": "true"},
-        ),
+        metadata=k8s.ObjectMeta(name=name, namespace=NAME, labels=labels, annotations={"description": description}),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=labels),
@@ -346,8 +339,8 @@ def _github_token(chart: Chart, name: str) -> None:
         chart,
         name,
         metadata=ApiObjectMetadata(name=name, namespace=NAME),
-        refresh="1h",
-        store=external_creds.STORE,
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data("github-agentydragon-agent", "token", secret_key="GITHUB_TOKEN")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
@@ -434,7 +427,7 @@ def _openclaw_spike_proxy(chart: Chart) -> None:
             # shared claude-sandbox store that carries GITHUB_TOKEN above. That store is
             # conditioned to four namespaces including public-coder-agent, the one deliberately
             # unconfined fence in the cluster; a cluster-API bearer has exactly one consumer and
-            # should be readable by exactly one namespace. reloader.stakater.com/auto restarts
+            # should be readable by exactly one namespace. Reloader's `autoReloadAll` restarts
             # this pod when Flux applies a rotation -- without it, kubectl would start 401ing
             # ~44 days after it last worked with nothing visibly changed.
             # Optional: this proxy is the ONLY egress path for the spike, so a missing kube

@@ -559,9 +559,7 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE, labels=LABELS),
         spec=k8s.DeploymentSpec(
             # Keep the replica count GitOps-owned; the worker-local state claim is selected by the
             # affinity and PVC declarations below.
@@ -811,8 +809,8 @@ def _credentials(scope: Construct) -> None:
         scope,
         "github-token",
         metadata=ApiObjectMetadata(name=_GITHUB_TOKEN_NAME, namespace=NAMESPACE),
-        refresh="1h",
-        store=external_creds.STORE,
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data("github-agentydragon-agent", "token", secret_key="GITHUB_TOKEN")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,

@@ -60,7 +60,6 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAMESPACE = "public-coder-agent"
@@ -82,9 +81,9 @@ def ssh_service(scope: Construct) -> Service:
     return Service(
         scope,
         "ssh-service",
-        metadata=metadata(
-            SERVICE_NAME,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=SERVICE_NAME,
+            namespace=NAMESPACE,
             labels=_SERVICE_LABELS,
             annotations={
                 "description": (
@@ -130,8 +129,8 @@ def _buildbuddy_api_key(scope: Construct) -> None:
         scope,
         "buildbuddy-api-key",
         metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-        refresh="1h",
-        store=external_creds.STORE,
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data(name, "api-key")],
         # Reuse the existing Reflector mirror during the staged ownership handoff.
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
@@ -155,7 +154,7 @@ def virtual_machine(scope: Construct) -> VirtualMachine:
     return VirtualMachine(
         scope,
         "virtual-machine",
-        metadata=metadata(VM_NAME, NAMESPACE, labels=_SERVICE_LABELS),
+        metadata=ApiObjectMetadata(name=VM_NAME, namespace=NAMESPACE, labels=_SERVICE_LABELS),
         spec=VirtualMachineSpec(
             run_strategy="Always",
             template=VirtualMachineSpecTemplate(
@@ -294,10 +293,7 @@ def public_coder_agent_devbox(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     kubevirt: Kustomization,
-    forgejo_images: Kustomization,
-    external_creds: Kustomization,
-    external_secrets_config: Kustomization,
-    agent_shared_secrets: Kustomization,
+    external_secrets_operator: Kustomization,
     public_coder_agent_app_kustomization: Kustomization,
 ) -> Kustomization:
     name = "public-coder-agent-devbox"
@@ -308,12 +304,7 @@ def public_coder_agent_devbox(
         timeout="30m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            kubevirt,
-            forgejo_images,
-            external_creds,
-            external_secrets_config,
-            agent_shared_secrets,
-            public_coder_agent_app_kustomization,
+            kubevirt, external_secrets_operator, public_coder_agent_app_kustomization
         ),
         description=(
             "KubeVirt build/test devbox for public-coder-agent "
