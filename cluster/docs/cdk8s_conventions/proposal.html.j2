@@ -1,0 +1,290 @@
+<title>Ducktape cdk8s Conventions</title>
+<meta name="description" content="{{ p.description }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+{{ css }}
+</style>
+{% macro chip(value) %}<span class="chip chip-{{ value | replace(' ', '-') }}">{{ value }}</span>{% endmacro %}
+{% macro code(src) %}<pre class="code"><code class="language-python">{{ src | trim }}</code></pre>{% endmacro %}
+{% macro heading(id) %}{% for sid, label in sections %}{% if sid == id %}<h2><span class="sec-no">{{ "%02d" | format(loop.index) }}</span>{{ label }}</h2>{% endif %}{% endfor %}{% endmacro %}
+<div class="wrap">
+<header class="mast">
+  <div class="eyebrow">cluster/cdk8s · design proposal · draft</div>
+  <h1>Ducktape cdk8s Conventions</h1>
+  <p class="lede">{{ p.lede | inline }}</p>
+  <div class="meta"><span>baseline <b>{{ p.baseline }}</b></span><span>date <b>{{ p.date }}</b></span><span>branch <b>{{ p.branch }}</b></span><span>status <b>awaiting your decisions</b></span></div>
+</header>
+<nav class="toc" aria-label="Sections">
+  <span class="toc-h">Contents</span>
+  <ol>
+  {% for sid, label in sections %}
+    <li><a href="#{{ sid }}">{{ label }}</a></li>
+  {% endfor %}
+  </ol>
+</nav>
+<main>
+
+<section id="answer">
+  {{ heading("answer") }}
+  <div class="verdict">{{ p.verdict | rich }}</div>
+  <div class="scroll"><table>
+    <thead><tr><th>ID</th><th>Convention</th><th>Rule</th></tr></thead>
+    <tbody>
+    {% for c in p.conventions %}
+      <tr><td><a class="cid" href="#{{ c.id }}">{{ c.id }}</a></td><td><strong>{{ c.name }}</strong></td><td>{{ c.rule | rich }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <h3>Principles behind them</h3>
+  <div class="two">
+  {% for pr in p.principles %}
+    <div class="panel"><strong>{{ pr.name }}</strong>{{ pr.statement | rich }}<div class="sub">{{ pr.why | rich }}</div></div>
+  {% endfor %}
+  </div>
+</section>
+
+<section id="space">
+  {{ heading("space") }}
+  <div class="prose">{{ p.space_intro | rich }}</div>
+  {% for ax in p.design_space %}
+  <article class="axis">
+    <header><h3>{{ ax.axis }}</h3></header>
+    <div class="question">{{ ax.question | rich }}</div>
+    <div class="scroll"><table>
+      <thead><tr><th>Option</th><th>Verdict</th><th>How it works here, and why</th></tr></thead>
+      <tbody>
+      {% for o in ax.options %}
+        <tr><td><strong>{{ o.name | inline }}</strong></td><td>{{ chip(o.verdict) }}</td><td>{{ o.note | rich }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <div class="pick"><span class="lbl">Pick</span>{{ ax.pick | rich }}</div>
+  </article>
+  {% endfor %}
+  <h3>Prior art considered</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>Approach</th><th>Where</th><th>Idea</th><th>Verdict</th><th>Fit here</th></tr></thead>
+    <tbody>
+    {% for a in p.prior_art %}
+      <tr><td><strong>{{ a.name | inline }}</strong></td><td>{{ a.ecosystem | inline }}</td><td>{{ a.idea | rich }}</td><td>{{ chip(a.verdict) }}</td><td>{{ a.why | rich }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section id="today">
+  {{ heading("today") }}
+  <div class="stats">
+  {% for s in p.stats %}
+    <div class="stat"><span class="n">{{ s.value }}</span><span class="l">{{ s.label | inline }}</span></div>
+  {% endfor %}
+  </div>
+  <div class="two">
+    <div class="panel">
+      <h3>Mechanisms used by shared helpers</h3>
+      <div class="bars">
+      {% set top = p.census | map(attribute="helpers") | max %}
+      {% for b in p.census %}
+        <div class="bar"><span class="k">{{ b.mechanism }}</span><span class="track"><span class="fill" style="width: {{ "%.1f" | format(100 * b.helpers / top) }}%"></span></span><span class="v">{{ b.helpers }}</span></div>
+      {% endfor %}
+      </div>
+      <div class="sub">{{ p.census_note | rich }}</div>
+    </div>
+    <div class="panel"><h3>One service, many conventions</h3>{{ p.one_service | rich }}</div>
+  </div>
+  <h3>Root causes</h3>
+  <ul class="plain">
+  {% for d in p.diagnosis %}
+    <li>{{ d | rich }}</li>
+  {% endfor %}
+  </ul>
+</section>
+
+<section id="needs">
+  {{ heading("needs") }}
+  <div class="prose">{{ p.needs_intro | rich }}</div>
+  <div class="needs">
+  {% for r in p.matrix %}
+    <div class="need"><span class="nid">{{ r.need }}</span><span class="nname">{{ r.need_name }}</span>{{ chip(r.frequency) }}<span class="ntoday">{{ r.today | inline }}</span></div>
+  {% endfor %}
+  </div>
+</section>
+
+<section id="patterns">
+  {{ heading("patterns") }}
+  <div class="prose">{{ p.patterns_intro | rich }}</div>
+  <div class="scroll"><table>
+    <thead><tr><th>ID</th><th>Pattern</th><th>Verdict</th><th>Why</th></tr></thead>
+    <tbody>
+    {% for pat in p.patterns %}
+      <tr><td class="cid">{{ pat.id }}</td><td><strong>{{ pat.name }}</strong></td><td>{{ chip(pat.verdict) }}</td><td>{{ pat.reason | rich }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <div class="panel">
+    <h3>What Python cdk8s can and cannot do (checked in a scratch venv)</h3>
+    <ul class="plain">
+    {% for m in p.mechanics %}
+      <li>{{ m | rich }}</li>
+    {% endfor %}
+    </ul>
+  </div>
+</section>
+
+<section id="matrix">
+  {{ heading("matrix") }}
+  <div class="prose">{{ p.matrix_intro | rich }}</div>
+  <div class="legend">
+    <span><span class="sw sw-0"></span>0 poor</span><span><span class="sw sw-1"></span>1 workable</span><span><span class="sw sw-2"></span>2 good</span><span><span class="sw sw-3"></span>3 best fit</span><span><span class="sw sw-pick"></span>used by the chosen conventions</span>
+  </div>
+  <div class="scroll"><table class="matrix">
+    <thead><tr><th class="rowh">Need</th>
+    {% for pat in p.patterns %}
+      <th scope="col" title="{{ pat.name }}"><span class="vh">{{ pat.name }}<b>{{ pat.id }}</b></span></th>
+    {% endfor %}
+      <th class="rowh">Chosen</th></tr></thead>
+    <tbody>
+    {% for r in p.matrix %}
+      {% set used = p.patterns_used_by(r) %}
+      <tr tabindex="0" data-row="{{ loop.index0 }}"{% if loop.first %} class="sel"{% endif %}><th scope="row"><span class="nid">{{ r.need }}</span>{{ r.need_name }}</th>
+      {% for pat in p.patterns %}
+        {% set s = r.scores[pat.id] %}
+        <td class="s{{ s }}{% if pat.id in used %} pick{% endif %}" title="{{ r.need }} × {{ pat.name }}: {{ s }}">{{ s }}</td>
+      {% endfor %}
+      <td class="convs">{{ r.chosen_conventions | join(" ") }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% set first = p.matrix[0] %}
+  <div class="panel" aria-live="polite">
+    <span class="lbl">Selected need</span>
+    <h3 id="rd-title">{{ first.need }} · {{ first.need_name }}</h3>
+    <div><span class="lbl">Today</span><p id="rd-today">{{ first.today | inline }}</p></div>
+    <div><span class="lbl">Chosen and why</span><p id="rd-note">{{ first.note | inline }}</p></div>
+    <div><span class="lbl">Conventions</span><p id="rd-conv">{{ first.chosen_conventions | join(", ") }}</p></div>
+  </div>
+  <details class="allnotes panel"><summary>All row notes</summary><dl>
+  {% for r in p.matrix %}
+    <dt>{{ r.need }} · {{ r.need_name }} <span class="cid">{{ r.chosen_conventions | join(" ") }}</span></dt><dd>{{ r.note | rich }}</dd>
+  {% endfor %}
+  </dl></details>
+</section>
+
+<section id="conventions">
+  {{ heading("conventions") }}
+  {% for c in p.conventions %}
+  <article class="conv" id="{{ c.id }}">
+    <header><span class="cid">{{ c.id }}</span><h3>{{ c.name }}</h3></header>
+    <div class="rule">{{ c.rule | rich }}</div>
+    <div class="pats">{% for pid in c.patterns_used %}{{ chip(pid ~ " " ~ pattern_names[pid]) }} {% endfor %}</div>
+    {{ code(c.signature_shape) }}
+    <dl>
+      <div><dt class="lbl">Use when</dt><dd>{{ c.when_to_use | rich }}</dd></div>
+      <div><dt class="lbl">Not when</dt><dd>{{ c.when_not | rich }}</dd></div>
+      <div><dt class="lbl">Replaces</dt><dd>{{ c.replaces | rich }}</dd></div>
+      <div><dt class="lbl">Why</dt><dd>{{ c.why | rich }}</dd></div>
+    </dl>
+  </article>
+  {% endfor %}
+</section>
+
+<section id="examples">
+  {{ heading("examples") }}
+  <div class="prose">{{ p.examples_intro | rich }}</div>
+  <div class="exindex">
+  {% for ex in p.examples %}
+    <a href="#ex-{{ ex.id }}"><b>{{ ex.id }}</b>{{ ex.title }}</a>
+  {% endfor %}
+  </div>
+  {% for ex in p.examples %}
+  <article class="ex" id="ex-{{ ex.id }}">
+    <header><span class="cid">{{ ex.id }}</span><h3>{{ ex.title }}</h3>{% if ex.verification %}{{ chip(ex.verification.status) }}{% endif %}</header>
+    <div class="target">Deploys to: {{ ex.deploys_to | inline }} · shows {% for cid in ex.conventions_shown %}<a class="cid" href="#{{ cid }}">{{ cid }}</a> {% endfor %}</div>
+    <div class="cols">
+      <div class="col before"><span class="lbl">Today</span>{{ code(ex.before) }}</div>
+      <div class="col after"><span class="lbl">Proposed</span>{{ code(ex.after) }}</div>
+    </div>
+    <div class="effect"><span class="lbl">Rendered effect</span>{{ ex.rendered_effect | rich }}</div>
+    {% if ex.verification %}
+    <details class="vnote"><summary>How this example was checked</summary>
+      {{ ex.verification.evidence | rich }}
+      {% if ex.verification.fixed %}<span class="lbl">Fixed during verification</span>{{ ex.verification.fixed | rich }}{% endif %}
+    </details>
+    {% endif %}
+  </article>
+  {% endfor %}
+</section>
+
+<section id="decisions">
+  {{ heading("decisions") }}
+  <ol class="decisions">
+  {% for d in p.decisions %}
+    <li><div class="q">{{ d.question | rich }}</div><div><span class="lbl">Recommendation</span>{{ d.recommendation | rich }}</div><div class="t"><span class="lbl">Trade-off</span>{{ d.tradeoff | rich }}</div></li>
+  {% endfor %}
+  </ol>
+</section>
+
+<section id="prs">
+  {{ heading("prs") }}
+  <div class="scroll"><table>
+    <thead><tr><th>PR</th><th>Title</th><th>Disposition</th><th>Why</th></tr></thead>
+    <tbody>
+    {% for pr in p.open_prs %}
+      <tr><td><a href="https://github.com/agentydragon/ducktape/pull/{{ pr.pr }}">#{{ pr.pr }}</a></td><td>{{ pr.title | inline }}</td><td>{{ chip(pr.recommendation) }}</td><td>{{ pr.reason | rich }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section id="migration">
+  {{ heading("migration") }}
+  <ol class="steps">
+  {% for s in p.migration %}
+    <li><div class="st">{{ s.step | rich }}</div><div class="sc">{{ s.scope | rich }}</div><div class="sr"><span class="lbl">Risk</span>{{ s.risk | rich }}</div></li>
+  {% endfor %}
+  </ol>
+</section>
+
+<section id="agents-md">
+  {{ heading("agents-md") }}
+  <ul class="plain">
+  {% for a in p.agents_md_changes %}
+    <li>{{ a | rich }}</li>
+  {% endfor %}
+  </ul>
+</section>
+
+<section id="rejected">
+  {{ heading("rejected") }}
+  <div class="scroll"><table>
+    <thead><tr><th>Alternative</th><th>Why not</th></tr></thead>
+    <tbody>
+    {% for r in p.rejected %}
+      <tr><td><strong>{{ r.alternative | inline }}</strong></td><td>{{ r.why_rejected | rich }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section id="method">
+  {{ heading("method") }}
+  <div class="prose">{{ p.method | rich }}</div>
+  <div class="scroll"><table>
+    <thead><tr><th>Proposal</th><th>Feasibility</th><th>Owner fit</th><th>Maintainability</th><th>Summary</th></tr></thead>
+    <tbody>
+    {% for s in p.scorecard %}
+      <tr><td><strong>{{ s.proposal }}</strong></td><td class="cid">{{ s.feasibility }}/10</td><td class="cid">{{ s.owner_fit }}/10</td><td class="cid">{{ s.maintainability }}/10</td><td>{{ s.summary | rich }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+</main>
+</div>
+<script type="application/json" id="matrix-rows">{{ matrix_rows_json }}</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>
+{{ js }}
+</script>
