@@ -351,8 +351,6 @@ def aiquota(
     cli_proxy_api: Kustomization,
     external_secrets_operator: Kustomization,
     clickhouse_schema: Kustomization,
-    agent_machine_access_tf: Kustomization,
-    reflector: Kustomization,
 ) -> Kustomization:
     name = NAME
     out_dir = root / OUTPUT_DIR
@@ -378,10 +376,6 @@ def aiquota(
             external_secrets_operator,
             # Creates the aiquota database the migrate init container populates.
             clickhouse_schema,
-            # Mints the aiquota-oidc Authentik OAuth2 client credentials Secret.
-            agent_machine_access_tf,
-            # Reflects clickhouse-aiquota-credentials from the clickhouse namespace.
-            reflector,
         ),
     )
     write_yaml(
