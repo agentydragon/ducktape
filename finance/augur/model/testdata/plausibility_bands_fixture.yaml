@@ -1,6 +1,6 @@
 # FIXTURE plausibility bands for //finance/augur/model:test_plausibility, not evidence about any
-# economy. The limits bracket the placeholder replay history of
-# //finance/augur/study/trinity:synthetic and refuse an explosive equity drift. Sourced public
+# economy. The limits bracket a replay of the placeholder record in
+# //finance/augur/model:synthetic_history and refuse an explosive equity drift. Sourced public
 # bands belong in their own file.
 bands:
   - measure: real_equity_wealth_factor
@@ -25,9 +25,9 @@ bands:
   - measure: nominal_equity_wealth_factor
     horizon_months: 12
     percentile: 5
-    upper: { value: 1.05, breach: too_narrow }
+    upper: { value: 1.1, breach: too_narrow }
     severity: flag
-    source: "FIXTURE: the 1-in-20 worst year returns at most 5%"
+    source: "FIXTURE: the 1-in-20 worst year returns at most 10%"
   - measure: inflation_factor
     horizon_months: 12
     percentile: 99

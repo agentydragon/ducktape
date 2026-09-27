@@ -1,9 +1,9 @@
 """Controls for the plausibility gate.
 
 The band file is a FIXTURE (`testdata/plausibility_bands_fixture.yaml`), not sourced evidence.
-The replay control runs `HistoricalWindowsModel` over the repo's offline placeholder history
-(`study/trinity/synthetic.py`), because the real record needs a network fetch: it shows the
-gate lets sane replayed paths through, not that the real past satisfies sourced bands.
+The replay control runs `HistoricalWindowsModel` over the test-only placeholder record in
+`synthetic_history.py`, because the real record needs a network fetch: it shows the gate lets
+sane replayed paths through, not that the real past satisfies sourced bands.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ from finance.augur.model.plausibility import (
 )
 from finance.augur.model.series import SecuritySymbol
 from finance.augur.model.structural_macro import EquityProcess, MacroVarSpec, StructuralMacroProviderConfig
-from finance.augur.study.trinity.synthetic import synthetic_history
+from finance.augur.model.synthetic_history import synthetic_history
 from util.bazel.runfiles import get_required_path
 
 HORIZON_MONTHS = 24
@@ -130,7 +130,7 @@ def test_an_explosive_equity_drift_is_refused(bands: BandFile) -> None:
 
 
 def test_historical_replay_passes_every_band(bands: BandFile) -> None:
-    replay = HistoricalWindowsModel(history=synthetic_history(HORIZON_MONTHS))
+    replay = HistoricalWindowsModel(history=synthetic_history(months=600))
     market = replay.market_paths(window_starts=replay.window_starts(HORIZON_MONTHS), horizon_months=HORIZON_MONTHS)
     result = evaluate(market, bands)
 

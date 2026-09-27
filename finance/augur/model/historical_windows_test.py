@@ -35,6 +35,7 @@ from finance.augur.model.series import (
     SecurityKey,
     SecuritySymbol,
 )
+from finance.augur.model.synthetic_history import synthetic_history
 from finance.evidence import sources
 from finance.evidence.loading import MonthlyLevel
 
@@ -48,33 +49,9 @@ def _month_seq(count: int, start_year: int = 1900) -> list[date]:
     return [date(start_year + index // 12, index % 12 + 1, 1) for index in range(count)]
 
 
-_HISTORY_START_YEAR = 1970
-
-
-def _history(months: int = MONTHS) -> MacroHistory:
-    """A record whose every series is strictly increasing, so a window's identity is visible in
-    its values: window `i` starts at exactly the month-`i` level of each series."""
-
-    index = np.arange(months, dtype=np.float64)
-    # Equity and CPI grow at an ACCELERATING rate, not a constant one. A constant-growth series
-    # is shape-invariant under rebasing, so every window would replay identically and the tests
-    # that distinguish windows would pass against a sampler that always returned window zero.
-    return MacroHistory(
-        months=tuple(_month_seq(months, _HISTORY_START_YEAR)),
-        short_rate=0.01 + index * 0.0001,
-        term_spread=0.005 + index * 0.00001,
-        # Corporate curves sit above the government one and are distinguishable from it and
-        # from each other, so a test can tell which curve an instrument actually priced off.
-        corporate_aaa_yield=0.02 + index * 0.0001,
-        corporate_baa_yield=0.03 + index * 0.0001,
-        equity_level=100.0 * np.exp(np.cumsum(0.004 + index * 0.00001)),
-        cpi_level=100.0 * np.exp(np.cumsum(0.0015 + index * 0.000003)),
-    )
-
-
 def _model(history: MacroHistory | None = None) -> HistoricalWindowsModel:
     return HistoricalWindowsModel(
-        history=history if history is not None else _history(),
+        history=history if history is not None else synthetic_history(MONTHS),
         instruments=(
             BondFundSpec(symbol=BOND, maturity_years=6.0, initial_price_usd=100.0),
             BondFundSpec(symbol=CASH, maturity_years=0.0, initial_price_usd=1.0),
@@ -110,7 +87,7 @@ def test_every_window_starts_at_the_configured_level() -> None:
 
 
 def test_in_memory_replay_needs_no_fitted_artifact() -> None:
-    history = _history(months=13)
+    history = synthetic_history(13)
     with patch.object(Path, "read_text", side_effect=AssertionError("replay must not read fitted artifacts")):
         model = _model(history)
         equity = _series(model, SecurityKey(symbol=EQUITY), horizon=12, rollouts=1)
@@ -152,7 +129,7 @@ def test_invalid_window_selections_are_rejected(starts: tuple[date, ...], messag
 
 
 def test_a_horizon_longer_than_the_record_is_rejected() -> None:
-    model = _model(_history(months=100))
+    model = _model(synthetic_history(100))
     with pytest.raises(ValueError, match="too few for a"):
         model.materialize(window_starts=(date(1970, 1, 1),), horizon_months=120)
 
@@ -173,7 +150,7 @@ def test_the_independent_window_estimate_is_reported_and_is_tiny() -> None:
     method rather than a comment: 46 years of monthly data admit ~199 overlapping 30-year
     windows and about 1.5 independent ones."""
 
-    model = _model(_history(months=559))
+    model = _model(synthetic_history(559))
 
     assert model.window_count(360) == 199
     assert model.independent_window_estimate(360) == pytest.approx(1.55, abs=0.01)
@@ -203,7 +180,7 @@ def test_the_bond_instrument_layer_matches_the_structural_provider() -> None:
     about the economy, so a rate path fed to either provider must price it identically — that
     is what makes the two comparable at all."""
 
-    history = _history()
+    history = synthetic_history(MONTHS)
     model = _model(history)
     horizon, rollouts = 120, 3
     price = _series(model, SecurityKey(symbol=BOND), horizon=horizon, rollouts=rollouts)
@@ -402,7 +379,7 @@ def test_a_record_cut_to_a_span_replays_only_that_span() -> None:
     """The cut is what makes a published-study reproduction answerable: without it the replay
     samples a different period than the study did, and a disagreement cannot be attributed."""
 
-    history = _history(600).restricted_to(start=date(1980, 1, 1), end=date(1989, 12, 1))
+    history = synthetic_history(600).restricted_to(start=date(1980, 1, 1), end=date(1989, 12, 1))
 
     assert history.months[0] == date(1980, 1, 1)
     assert history.months[-1] == date(1989, 12, 1)
@@ -413,7 +390,7 @@ def test_a_record_cut_to_a_span_replays_only_that_span() -> None:
 
 
 def test_an_open_bound_cuts_only_the_end_it_names() -> None:
-    history = _history(600).restricted_to(start=None, end=date(1979, 12, 1))
+    history = synthetic_history(600).restricted_to(start=None, end=date(1979, 12, 1))
 
     assert history.months[0] == date(1970, 1, 1)
     assert history.months[-1] == date(1979, 12, 1)
@@ -424,7 +401,7 @@ def test_a_span_the_record_does_not_reach_is_rejected() -> None:
     the sampler, one layer away from the span that actually caused it."""
 
     with pytest.raises(ValueError, match="falls in"):
-        _history(600).restricted_to(start=date(2500, 1, 1), end=None)
+        synthetic_history(600).restricted_to(start=date(2500, 1, 1), end=None)
 
 
 def test_a_record_span_that_ends_before_it_starts_is_rejected() -> None:
@@ -472,10 +449,10 @@ def test_the_config_cuts_the_record_before_the_sampler_sees_it(tmp_path: Path) -
 
 def test_an_instrument_prices_off_the_curve_it_names() -> None:
     """The point of naming a curve: a corporate sleeve earns what corporates earned, not a
-    government yield plus a guessed constant. The three curves are separated in `_history`, so
-    the payout recovers which one was actually read."""
+    government yield plus a guessed constant. The three curves are separated in
+    `synthetic_history`, so the payout recovers which one was actually read."""
 
-    history = _history(400)
+    history = synthetic_history(400)
     horizon = 120
     payouts = {}
     for curve in (YieldCurve.GOVERNMENT, YieldCurve.CORPORATE_AAA, YieldCurve.CORPORATE_BAA):
@@ -501,7 +478,7 @@ def test_a_spread_still_adjusts_the_named_curve() -> None:
 
     horizon = 120
     model = HistoricalWindowsModel(
-        history=_history(400),
+        history=synthetic_history(400),
         instruments=(
             BondFundSpec(
                 symbol=BOND,

@@ -303,6 +303,7 @@ py_test(
         ":equity",
         ":historical_windows",
         ":series",
+        ":synthetic_history",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/evidence:loading",
@@ -770,13 +771,23 @@ py_test(
         ":plausibility",
         ":series",
         ":structural_macro",
+        ":synthetic_history",
         "//:conftest",
         "//finance/augur:conftest",
-        "//finance/augur/study/trinity:synthetic",
         "//util/bazel:runfiles",
         "@pypi//numpy",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "synthetic_history",
+    testonly = True,
+    srcs = ["synthetic_history.py"],
+    deps = [
+        ":historical_windows",
+        "@pypi//numpy",
     ],
 )
