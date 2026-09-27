@@ -12,7 +12,7 @@ def home_assistant(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     local_path_provisioner: Kustomization,
-    seaweedfs_cluster: Kustomization,
+    seaweedfs_operator: Kustomization,
     volsync: Kustomization,
     external_secrets_config: Kustomization,
     forgejo_images: Kustomization,
@@ -29,7 +29,7 @@ def home_assistant(
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
             local_path_provisioner,
-            seaweedfs_cluster,
+            seaweedfs_operator,
             volsync,
             external_secrets_config,
             forgejo_images,

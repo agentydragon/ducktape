@@ -287,7 +287,7 @@ def seaweedfs_public_s3(
     seaweedfs_drivefs_artifacts_bucket: Kustomization,
     vm_images_publisher: Kustomization,
     seaweedfs_secrets: Kustomization,
-    seaweedfs_cluster: Kustomization,
+    seaweedfs_operator: Kustomization,
     gateway: Kustomization,
 ) -> Kustomization:
     name = "seaweedfs-public-s3"
@@ -303,7 +303,7 @@ def seaweedfs_public_s3(
             seaweedfs_drivefs_artifacts_bucket,
             vm_images_publisher,
             seaweedfs_secrets,
-            seaweedfs_cluster,
+            seaweedfs_operator,
             gateway,
         ),
         timeout="5m",

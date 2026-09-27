@@ -631,7 +631,8 @@ def loki(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     grafana_helmrepository: Kustomization,
-    seaweedfs_cluster: Kustomization,
+    seaweedfs_operator: Kustomization,
+    monitoring_crds: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -651,5 +652,10 @@ def loki(
             ),
         ],
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(grafana_helmrepository, seaweedfs_cluster),
+        depends_on=flux_kustomization_depends_on_many(
+            grafana_helmrepository,
+            seaweedfs_operator,
+            # the chart's monitoring.serviceMonitor
+            monitoring_crds,
+        ),
     )
