@@ -35,17 +35,16 @@ from cluster.cdk8s.agentplane.environment import (
     ReplicaProfile,
 )
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
+from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 
 _NAMESPACE = "agentplane-testing"
 _HOSTNAME = "agentplane-testing.allegedly.works"
 _DEX_HOSTNAME = "agentplane-dex-testing.allegedly.works"
 _DEX_ISSUER = f"https://{_DEX_HOSTNAME}/dex"
+# The Terraform-owned key, replicated into this namespace by `litellm/credentials.py`'s
+# ExternalSecret; its `litellm-credentials.k8s.yaml` sits in this Kustomization's directory.
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
-# The ESO ExternalSecret replicating the Terraform-owned key into this namespace,
-# a sibling resource in the same Kustomization -- see litellm/credentials.py.
-_LITELLM_CREDENTIALS_DIR = "litellm-credentials/"
 _OAUTH_FIXTURE_MCP_URL = f"http://{OAUTH_FIXTURE_NAME}.{_NAMESPACE}.svc.cluster.local:{OAUTH_FIXTURE_PORT}/mcp"
 
 _FEDERATION_TARGET = {
@@ -116,7 +115,7 @@ ENV = Environment(
         "Complete Agentplane testing environment, including namespace, database, Dex, egress, LLM ingress, "
         "Actions fixtures, app, runner template, and operator RBAC."
     ),
-    extra_resources=(_LITELLM_CREDENTIALS_DIR,),
+    extra_resources=(),
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
     app_config={**testing_config.config(), "action_federation": _ACTION_FEDERATION},
     db=DbProps(instances=1),
@@ -193,7 +192,6 @@ def agentplane_testing(
                 api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
             )
         ],
-        decryption=sops_decryption(ENV.extra_resources),
         depends_on=flux_kustomization_depends_on_many(
             agentplane_crds, agent_sandbox_controller, cert_manager_trust, claude_rbac, cnpg, external_secrets_operator
         ),

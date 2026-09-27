@@ -35,7 +35,7 @@ gazelle_python.yaml linguist-generated=true
 gotk-components.yaml linguist-generated=true
 gotk-sync.yaml linguist-generated=true
 
-# cdk8s-generated cluster manifests — `bbr run //cluster/cdk8s:generate_manifests` output,
+# cdk8s-generated cluster manifests — `bb run //cluster/cdk8s:generate_manifests` output,
 # pinned to committed content by //cluster/cdk8s:test_generate_manifests. See
 # cluster/docs/cdk8s.md. The `.k8s.yaml` suffix is conventionally cdk8s-only. The
 # central Flux Kustomization chart uses that suffix too; generated `kustomization.yaml`
@@ -55,10 +55,12 @@ cluster/k8s/authentik/app/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/cluster/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/operator/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/schema/kustomization.yaml linguist-generated=true
+cluster/k8s/agentplane-index/kustomization.yaml linguist-generated=true
 cluster/k8s/agentplane-staging/kustomization.yaml linguist-generated=true
 # Agentplane testing's root Kustomization is hand-maintained because Flux image
 # automation updates its inline `images:` pins.
 cluster/k8s/haku/console/kustomization.yaml linguist-generated=true
+cluster/k8s/haku/mailbox/kustomization.yaml linguist-generated=true
 cluster/k8s/ntfy/kustomization.yaml linguist-generated=true
 cluster/k8s/external-creds/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/public-coder-agent/sshpiper/kustomization.yaml linguist-generated=true
@@ -80,10 +82,6 @@ cluster/k8s/cli-proxy-api/kustomization.yaml linguist-generated=true
 cluster/k8s/matrix/kustomization.yaml linguist-generated=true
 cluster/k8s/matrix/user-provisioner/kustomization.yaml linguist-generated=true
 cluster/k8s/user-agentydragon/kustomization.yaml linguist-generated=true
-# kubeconform schemas of the Agentplane CRDs — `bb run //agentplane/crds:generate_bin`
-# output, pinned by //agentplane/crds:test_generate.
-cluster/schemas/**/*.json linguist-generated=true
-# cdk8s-generated ssh-mcp directory wiring.
 cluster/k8s/ssh-mcp/kustomization.yaml linguist-generated=true
 cluster/k8s/google-mcp/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/agent-sandbox/workspaces/kustomization.yaml linguist-generated=true
@@ -95,6 +93,9 @@ cluster/k8s/home-assistant/app/kustomization.yaml linguist-generated=true
 cluster/k8s/home-assistant/backup/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/app/kustomization.yaml linguist-generated=true
+# kubeconform schemas of the Agentplane CRDs — `bb run //agentplane/crds:generate_bin`
+# output, pinned by //agentplane/crds:test_generate.
+cluster/schemas/**/*.json linguist-generated=true
 
 # Artifacts captured from live Claude Code containers — not our source code
 devinfra/claude/web_env/rootfs/** rules-lint-ignored=true
