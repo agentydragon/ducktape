@@ -16,8 +16,10 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 
 NAME = "dcgm-exporter"
@@ -30,20 +32,19 @@ _LABELS = {"app": NAME}
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                # Fixed-resource DaemonSet -- opt out of Goldilocks/VPA recommendations.
-                "goldilocks.fairwinds.com/enabled": "false",
-                # GPU exporter runs with the nvidia runtimeClass and host GPU device injection.
-                "pod-security.kubernetes.io/enforce": "privileged",
-                "pod-security.kubernetes.io/audit": "privileged",
-                "pod-security.kubernetes.io/warn": "privileged",
-            },
-        ),
+        name=NAMESPACE,
+        # Fixed-resource DaemonSet -- opt out of Goldilocks/VPA recommendations.
+        vpa=Vpa.DISABLED,
+        agent_readable=None,
+        labels={
+            # GPU exporter runs with the nvidia runtimeClass and host GPU device injection.
+            "pod-security.kubernetes.io/enforce": "privileged",
+            "pod-security.kubernetes.io/audit": "privileged",
+            "pod-security.kubernetes.io/warn": "privileged",
+        },
     )
     k8s.KubeDaemonSet(
         chart,
