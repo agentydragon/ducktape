@@ -18,8 +18,8 @@ from finance.augur.api.portfolio import (
 from finance.augur.api.schemas import ApiModel
 from finance.augur.model.asset_key import AssetKey
 from finance.augur.product.wire import CurrencyQuanta
-from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId, LotId, PortfolioId
+from finance.augur.sim.money import Currency
 
 
 class ProductPublicSecurityLot(ApiModel):
@@ -108,47 +108,39 @@ def product_portfolio_response(
     snapshot: FinanceSnapshot,
     portfolio: PortfolioConfig,
     tlh_portfolios: tuple[LabeledTlhPortfolio, ...],
-    currency_code: str = "USD",
-    currency_quantum: Decimal = Decimal("0.01"),
+    currency: Currency,
 ) -> ProductPortfolioResponse:
     account_label_by_id = {account.account_id: account.label for account in portfolio.accounts}
     holdings = tuple(
-        _holding_position(
-            position, account_label=account_label_by_id.get(position.account_id), currency_quantum=currency_quantum
-        )
+        _holding_position(position, account_label=account_label_by_id.get(position.account_id), currency=currency)
         for position in portfolio.holdings
     )
     tlh = tuple(
-        _tlh_portfolio(
-            portfolio,
-            account_label=account_label_by_id.get(portfolio.spec.account_id),
-            currency_quantum=currency_quantum,
-        )
+        _tlh_portfolio(portfolio, account_label=account_label_by_id.get(portfolio.spec.account_id), currency=currency)
         for portfolio in tlh_portfolios
     )
     bonds = tuple(
-        _bond_position(bond, account_label=account_label_by_id.get(bond.account_id), currency_quantum=currency_quantum)
+        _bond_position(bond, account_label=account_label_by_id.get(bond.account_id), currency=currency)
         for bond in portfolio.bonds
     )
     return ProductPortfolioResponse(
         as_of_date=snapshot.as_of_date,
-        currency_code=currency_code,
-        currency_quantum=format(currency_quantum, "f"),
-        cash_quanta=_quanta(snapshot.cash, quantum=currency_quantum),
+        currency_code=currency.code,
+        currency_quantum=format(currency.quantum, "f"),
+        cash_quanta=_quanta(snapshot.cash, currency=currency),
         holdings=holdings,
         tlh_portfolios=tlh,
         bonds=bonds,
-        total_holdings_value_quanta=_quanta(portfolio.total_holdings_value, quantum=currency_quantum),
+        total_holdings_value_quanta=_quanta(portfolio.total_holdings_value, currency=currency),
         total_holdings_cost_basis_quanta=_quanta(
-            sum((position.total_cost_basis for position in portfolio.holdings), start=Decimal(0)),
-            quantum=currency_quantum,
+            sum((position.total_cost_basis for position in portfolio.holdings), start=Decimal(0)), currency=currency
         ),
-        total_bond_face_value_quanta=_quanta(portfolio.total_bond_face_value, quantum=currency_quantum),
+        total_bond_face_value_quanta=_quanta(portfolio.total_bond_face_value, currency=currency),
     )
 
 
 def _tlh_portfolio(
-    portfolio: LabeledTlhPortfolio, *, account_label: str | None, currency_quantum: Decimal
+    portfolio: LabeledTlhPortfolio, *, account_label: str | None, currency: Currency
 ) -> ProductTlhPortfolio:
     spec = portfolio.spec
     return ProductTlhPortfolio(
@@ -159,32 +151,30 @@ def _tlh_portfolio(
         label=portfolio.label,
         asset=spec.asset,
         current_value_quanta=_quanta(
-            sum((cohort.value for cohort in spec.initial_cohorts), start=Decimal(0)), quantum=currency_quantum
+            sum((cohort.value for cohort in spec.initial_cohorts), start=Decimal(0)), currency=currency
         ),
         total_cost_basis_quanta=_quanta(
-            sum((cohort.cost_basis for cohort in spec.initial_cohorts), start=Decimal(0)), quantum=currency_quantum
+            sum((cohort.cost_basis for cohort in spec.initial_cohorts), start=Decimal(0)), currency=currency
         ),
         cohorts=tuple(
             ProductTlhCohort(
                 holding_period_months_at_start=-cohort.purchase_month_index,
-                value_quanta=_quanta(cohort.value, quantum=currency_quantum),
-                cost_basis_quanta=_quanta(cohort.cost_basis, quantum=currency_quantum),
+                value_quanta=_quanta(cohort.value, currency=currency),
+                cost_basis_quanta=_quanta(cohort.cost_basis, currency=currency),
             )
             for cohort in spec.initial_cohorts
         ),
     )
 
 
-def _bond_position(
-    bond: BondHoldingConfig, *, account_label: str | None, currency_quantum: Decimal
-) -> ProductBondPosition:
+def _bond_position(bond: BondHoldingConfig, *, account_label: str | None, currency: Currency) -> ProductBondPosition:
     return ProductBondPosition(
         bond_id=bond.bond_id,
         account_id=bond.account_id,
         account_label=account_label,
         label=bond.label,
         issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
-        face_value_quanta=_quanta(bond.face_value, quantum=currency_quantum),
+        face_value_quanta=_quanta(bond.face_value, currency=currency),
         annual_coupon_rate=float(bond.annual_coupon_rate),
         coupon_period_months=int(bond.coupon_period_months),
         inflation_indexed=bond.inflation_indexed,
@@ -193,7 +183,7 @@ def _bond_position(
 
 
 def _holding_position(
-    position: HoldingPositionConfig, *, account_label: str | None, currency_quantum: Decimal
+    position: HoldingPositionConfig, *, account_label: str | None, currency: Currency
 ) -> ProductPublicSecurityPosition:
     return ProductPublicSecurityPosition(
         position_id=position.position_id,
@@ -203,21 +193,21 @@ def _holding_position(
         symbol=position.display_symbol,
         security_kind=position.security_kind if isinstance(position, SecurityHoldingConfig) else None,
         asset=position.asset,
-        unit_value_quanta=_quanta(position.unit_value, quantum=currency_quantum),
+        unit_value_quanta=_quanta(position.unit_value, currency=currency),
         quantity=float(position.total_quantity),
-        current_value_quanta=_quanta(position.current_value, quantum=currency_quantum),
-        total_cost_basis_quanta=_quanta(position.total_cost_basis, quantum=currency_quantum),
+        current_value_quanta=_quanta(position.current_value, currency=currency),
+        total_cost_basis_quanta=_quanta(position.total_cost_basis, currency=currency),
         lots=tuple(
             ProductPublicSecurityLot(
                 lot_id=lot.lot_id,
                 holding_period_months_at_start=int(lot.holding_period_months_at_start),
                 quantity=float(lot.quantity),
-                cost_basis_quanta=_quanta(lot.cost_basis, quantum=currency_quantum),
+                cost_basis_quanta=_quanta(lot.cost_basis, currency=currency),
             )
             for lot in position.lots
         ),
     )
 
 
-def _quanta(value: Decimal, *, quantum: Decimal) -> str:
-    return str(int(currency_amount_to_quanta(value, quantum=quantum)))
+def _quanta(value: Decimal, *, currency: Currency) -> str:
+    return str(currency.quanta(value))

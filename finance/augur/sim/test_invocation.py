@@ -1,7 +1,6 @@
 """A Python policy on composed worlds: the path's CPI, selected replay and an experiment's own claim labels."""
 
 from collections.abc import Callable
-from decimal import Decimal
 
 import numpy as np
 import pytest_bazel
@@ -14,7 +13,7 @@ from finance.augur.sim.external_series import ExternalSeriesContext, compile_ser
 from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.money import mul_div
+from finance.augur.sim.money import USD, mul_div
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.prepared import PreparedAccount, PreparedObligation
 from finance.augur.sim.results import Finished
@@ -79,7 +78,7 @@ def test_each_path_keeps_its_own_cpi_and_selected_replay_matches_the_population(
         ExternalSeriesContext.from_level_blocks([(InflationKey(), cpi)], rollout_count=3, horizon_months=HORIZON),
         rollout_count=3,
         horizon_months=HORIZON,
-        currency_quantum=Decimal("0.01"),
+        currency=USD,
     )
 
     def compose(rollout_id: int) -> World:

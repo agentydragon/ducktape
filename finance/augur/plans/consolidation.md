@@ -28,29 +28,11 @@ These graduate into `README.md` and `AGENTS.md` with step 1.
 1. **Conventions.** Add a "Using Augur" section to `README.md`, built around one short
    canonical loop: build the world, declare state, sample paths from the model the caller
    chooses, step or act each month, read results. Add the rules above to `AGENTS.md`.
-2. **Callers declare worlds directly,** building the `Prepared*` facts themselves. `World`
-   stays on integer quanta and unit-agnostic. Callers convert at their edge with a small
-   helper in `sim/money.py` that holds the currency quantum and turns exact `Decimal`
-   amounts into quanta, plus the existing quantity-scale and ppb helpers. A conversion
-   never rounds: it refuses floats and any amount, quantity or rate the target unit cannot
-   represent exactly (as `fixed_point.currency_amount_to_quanta` already does). The helpers that
-   still read scenario records (`compile_income_sources`, `bond_income_categories`,
-   `distribution_income_categories`, `level_series_demand`) move to reading the facts. One
-   PR per group:
-   - `study/guyton_klinger`, `study/trinity`;
-   - `x/allocation_glide`, `x/bond_policies`, `x/bounded_spending`,
-     `x/joint_spending_allocation`, `x/monthly_actions`;
-   - the `sim/` tests that build worlds from scenario records;
-   - the app: `product/scenarios.py`, `product/simulation.py`, `api/portfolio*.py`. Its API
-     output must not change, and its existing tests are the check.
-3. **Delete `sim/scenario.py` and `sim/compiler/`,** and remove the lowering step from
-   `sim/README.md` and `sim/DESIGN.md`.
-4. **Plans and notes.** Fold the remaining files under `plans/` into one short plan that
+2. **Plans and notes.** Fold the remaining files under `plans/` into one short plan that
    holds only live work. Delete resolved `debug/` notes after moving any durable lesson.
    Update `SPEC.md` and `sim/DESIGN.md` to describe what exists.
 
-Step 1 goes first, so later steps have a written target. Steps 2–3 are in order, and step 4
-runs alongside.
+Step 1 goes first, so step 2 has a written target.
 
 ## Open questions
 

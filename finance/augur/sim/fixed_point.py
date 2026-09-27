@@ -15,6 +15,7 @@ from __future__ import annotations
 # ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from collections.abc import Mapping
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from fractions import Fraction
 from typing import Any
 
 import numpy as np
@@ -29,16 +30,19 @@ MONEY_FACTOR_SCALE = 1_000_000_000
 
 
 def round_ppb(values: Float64[np.ndarray, " *shape"] | float) -> Int64[np.ndarray, " *shape"]:
-    """Quantize dimensionless levels or rates, half away from zero, to parts per billion."""
+    """Quantize float levels or rates, half away from zero, to parts per billion.
+
+    For sampled paths and float-typed inputs; an authored rate goes through `rate_to_ppb`.
+    """
 
     scaled = np.asarray(values, dtype=np.float64) * MONEY_FACTOR_SCALE
     return (np.sign(scaled) * np.floor(np.abs(scaled) + 0.5)).astype(np.int64)
 
 
-def rate_to_ppb(value: float) -> int:
-    """Quantize one configured rate using the same grid as sampled levels."""
+def rate_to_ppb(value: Decimal | int) -> int:
+    """An authored rate or fraction in parts per billion; raises on a float or a rate finer than 1 ppb."""
 
-    return int(round_ppb(value))
+    return _exact_count(value, scale=MONEY_FACTOR_SCALE, field="rate")
 
 
 def quantity_for_value(value: int, price: int, quantity_scale: int, *, round_up: bool) -> int:
@@ -69,7 +73,7 @@ def _exact_decimal(value: Any, *, field: str = "value") -> Decimal:
     """
 
     if isinstance(value, float):
-        raise TypeError(f"{field} must be an integer quantum count, Decimal, or decimal string; floats are not exact")
+        raise TypeError(f"{field} must be an integer, Decimal, or decimal string; floats are not exact")
     try:
         decimal = value if isinstance(value, Decimal) else Decimal(value)
     except (InvalidOperation, TypeError, ValueError) as exc:
@@ -77,6 +81,17 @@ def _exact_decimal(value: Any, *, field: str = "value") -> Decimal:
     if not decimal.is_finite():
         raise ValueError(f"{field} must be finite")
     return decimal
+
+
+def _exact_count(value: Decimal | int, *, scale: int, field: str) -> int:
+    """`value` times `scale`, which must come out a whole signed 64-bit count; never rounds."""
+
+    count = Fraction(_exact_decimal(value, field=field)) * scale
+    if count.denominator != 1:
+        raise ValueError(f"{field} {value} is not a whole number of 1/{scale} units")
+    if not -(1 << 63) <= count.numerator < 1 << 63:
+        raise ValueError(f"{field} {value} at scale {scale} does not fit in int64")
+    return count.numerator
 
 
 def validate_currency_amount(value: Any) -> Decimal:
@@ -89,6 +104,12 @@ def validate_currency_amount(value: Any) -> Decimal:
     """
 
     return _exact_decimal(value, field="currency amount")
+
+
+def validate_rate(value: Any) -> Decimal:
+    """Return one exact configured rate or fraction; a float is rejected as for money."""
+
+    return _exact_decimal(value, field="rate")
 
 
 def validate_currency_quantum(value: Any) -> Decimal:
@@ -187,6 +208,7 @@ def quantity_scale_for_asset(asset: AssetKey) -> int:
     return QUANTITY_SCALE_BY_SYMBOL.get(str(asset.symbol).lower(), DEFAULT_UNIT_QUANTA)
 
 
-def quantity_to_quanta(value: Any, *, scale: int) -> np.int64:
-    quanta = (Decimal(str(value)) * scale).quantize(Decimal(1), rounding=ROUND_HALF_UP)
-    return np.int64(quanta)
+def quantity_to_quanta(value: Decimal | int, *, scale: int) -> int:
+    """An authored quantity in `scale` quanta per unit; raises on a float or a quantity finer than one quantum."""
+
+    return _exact_count(value, scale=scale, field="quantity")

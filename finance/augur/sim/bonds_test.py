@@ -1,34 +1,11 @@
-"""Bond mechanics and the phase-1 config boundary."""
+"""Coupon schedule and coupon arithmetic."""
 
 from __future__ import annotations
 
-from decimal import Decimal
-
 import pytest
 import pytest_bazel
-from pydantic import ValidationError
 
 from finance.augur.sim.bonds import coupon_amount_quanta, coupon_months
-from finance.augur.sim.scenario import BondHolding
-
-
-def _bond(**overrides: object) -> BondHolding:
-    return BondHolding.model_validate(
-        {
-            "bond_id": "t10",
-            "agent_id": "alice",
-            "account_id": "checking",
-            "issuer_jurisdiction_id": "federal_us",
-            "face_value": 100000,
-            "purchase_price": 100000,
-            "annual_coupon_rate": 0.04,
-            "coupon_period_months": 6,
-            "purchase_month_index": 0,
-            "maturity_month_index": 120,
-            **overrides,
-        }
-    )
-
 
 _FACE_QUANTA = 10_000_000  # $100,000.00
 
@@ -114,46 +91,6 @@ def test_coupon_rejects_invalid_exact_terms(face: int, rate: int, period: int) -
 def test_coupon_rejects_overflow_without_float_conversion() -> None:
     with pytest.raises(OverflowError, match="coupon does not fit"):
         coupon_amount_quanta(face_quanta=(1 << 63) - 1, annual_coupon_rate_ppb=2_000_000_000, coupon_period_months=12)
-
-
-def test_non_par_purchase_is_rejected_naming_phase_2() -> None:
-    """The whole reason phase 1 needs no discount curve. A bond bought at 98.5 must raise
-    rather than be silently treated as par."""
-
-    with pytest.raises(ValidationError, match="phase 2"):
-        _bond(purchase_price=98500)
-
-
-def test_par_purchase_is_accepted() -> None:
-    assert _bond().purchase_price == Decimal(100_000)
-
-
-def test_par_is_decided_by_exact_configured_money() -> None:
-    """Phase 1 accepts only exact par. Currency representability is validated when the
-    holding is compiled into its enclosing scenario; neither boundary silently rounds.
-    """
-
-    with pytest.raises(ValidationError, match="phase 2"):
-        _bond(purchase_price=Decimal("99999.999999999985"))
-    with pytest.raises(ValidationError, match="phase 2"):
-        _bond(purchase_price=Decimal("99999.99"))
-
-
-def test_stub_period_is_rejected() -> None:
-    with pytest.raises(ValidationError, match="whole number"):
-        _bond(maturity_month_index=121)
-
-
-def test_maturity_at_or_before_purchase_is_rejected() -> None:
-    with pytest.raises(ValidationError, match="matures at or before purchase"):
-        _bond(purchase_month_index=12, maturity_month_index=12)
-
-
-def test_corporate_issuer_is_expressible() -> None:
-    """`None` is a real issuer state (non-governmental), not a missing value — no
-    jurisdiction exempts it."""
-
-    assert _bond(issuer_jurisdiction_id=None).issuer_jurisdiction_id is None
 
 
 if __name__ == "__main__":

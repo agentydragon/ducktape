@@ -1,15 +1,16 @@
-"""Declare the app's situation from a product `ScenarioKey`: lowered once, composed onto one world per path."""
+"""Declare the app's situation from a product `ScenarioKey`: prepared once, composed onto one world per path."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from functools import partial
+from typing import assert_never
 
 from more_itertools import duplicates_everseen, one
 
-from finance.augur.api.config import Config, LocationConfig, SecurityDistributionConfig
+from finance.augur.api.config import Config, LocationConfig
 from finance.augur.api.portfolio import PortfolioConfig
 from finance.augur.api.wire import ActorRole, Property
 from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
@@ -23,13 +24,19 @@ from finance.augur.policy.cash_band_household import (
     Sleeve,
 )
 from finance.augur.policy.funding import ClaimPayer
+from finance.augur.product.holdings import (
+    Holdings,
+    holding_pools,
+    opening_lots,
+    prepared_bonds,
+    prepared_lots,
+    prepared_tlh_portfolio,
+)
 from finance.augur.product.wire import (
     CapitalImprovementEventWire,
     CashFinancing,
     FundingPolicy,
     ManagedSleeveWeight,
-    MortgageFinancing,
-    PropertyLifecycleEventWire,
     PropertyPurchase,
     PropertySaleEventWire,
     RentalIncomePlan,
@@ -39,36 +46,24 @@ from finance.augur.product.wire import (
     SpendIndex,
 )
 from finance.augur.sim.bills import Biller
+from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
-from finance.augur.sim.compiler.execution import (
-    compile_accounts,
-    compile_bond,
-    compile_distribution,
-    compile_holding_pools,
-    compile_housing,
-    compile_interest_deduction,
-    compile_jurisdictions,
-    compile_locations,
-    compile_lots,
-    compile_property_cashflow,
-    compile_property_tax,
-    compile_recurring_obligation,
-    compile_recurring_property_cashflow,
-    compile_tender_policy,
-    compile_tlh_portfolio,
-)
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series, level_series_demand
-from finance.augur.sim.fixed_point import currency_amount_to_quanta, round_currency_amount
+from finance.augur.sim.fixed_point import rate_to_ppb, round_currency_amount, round_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferDeductionCategory, TransferIncomeCategory
+from finance.augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import Currency
 from finance.augur.sim.prepared import (
     PreparedAccount,
+    PreparedAmount,
     PreparedBond,
     PreparedDistribution,
+    PreparedFixedAmount,
     PreparedHoldingPool,
+    PreparedIndexedAmount,
     PreparedJurisdiction,
     PreparedLocation,
     PreparedLot,
@@ -77,38 +72,21 @@ from finance.augur.sim.prepared import (
     PreparedRecurringPropertyCashflow,
     PreparedSeries,
     PreparedTlhPortfolio,
+    _CapitalImprovement,
+    _MortgageFinancing,
     _MortgageInterestDeduction,
+    _PrimaryResidence,
+    _PrimaryResidenceEvent,
+    _PropertyPurchase,
+    _PropertySale,
     _PropertyTax,
+    _RentedFraction,
     _TenderPolicy,
 )
 from finance.augur.sim.pricing import OccupancyMode, insurance_rate, maintenance_rate
 from finance.augur.sim.private_equity_series import compile_private_equity_series
 from finance.augur.sim.property import Housing
 from finance.augur.sim.runtime import load_jurisdictions_for
-from finance.augur.sim.scenario import (
-    BondHolding,
-    CapitalImprovementEvent,
-    DistributionTaxSlice,
-    FixedAmount,
-    InitialAccountBalance,
-    InitialLot,
-    MortgageFinancing as SimMortgageFinancing,
-    MortgageInterestDeductionPolicy,
-    PrimaryResidenceAssignment,
-    PrivateEquityTenderPolicy,
-    PropertyLifecycleEvent,
-    PropertySaleEvent,
-    PropertyTaxPolicy,
-    RecurringObligation,
-    RecurringPropertyCashflow,
-    ScheduledPropertyCashflow,
-    ScheduledPropertyPurchase,
-    SecurityDistribution,
-    SeriesIndexedAmount,
-    SetPrimaryResidenceEvent,
-    SetRentedFractionEvent,
-    TlhPortfolioSpec,
-)
 from finance.augur.sim.tax import PreparedTaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -144,6 +122,16 @@ PROPERTY_MANAGEMENT_AGENT_ID = AgentId("property_management_agency")
 PROPERTY_MANAGEMENT_ACCOUNT_ID = AccountId("checking")
 MANAGEMENT_FEE_CAUSE_ID = "management_fee"
 LEASING_FEE_CAUSE_ID = "leasing_fee"
+# The wire has no land-fraction field. 20% land / 80% building is a common cost-segregation
+# rule of thumb absent assessor data; only the building share depreciates.
+LAND_VALUE_FRACTION_PPB = 200_000_000
+# Acquisition-debt principal caps on the mortgage-interest deduction (§163(h)(3)). Federal
+# post-TCJA caps it at $750k; California kept its pre-TCJA $1M, so the two diverge for
+# moderately large mortgages.
+MORTGAGE_INTEREST_PRINCIPAL_CAPS: Mapping[JurisdictionId, Decimal] = {
+    JurisdictionId("federal_us"): Decimal(750_000),
+    JurisdictionId("california"): Decimal(1_000_000),
+}
 
 
 def _amount(value: object) -> Decimal:
@@ -167,75 +155,6 @@ def sim_locations_from_config(locations: tuple[LocationConfig, ...]) -> dict[Loc
 
 def resolve_primary_agent_id(augur_config: Config) -> AgentId:
     return one(agent.actor_id for agent in augur_config.agents if agent.role == ActorRole.PRIMARY_OWNER)
-
-
-def initial_lots_from_portfolio(portfolio: PortfolioConfig, *, primary_agent_id: AgentId) -> tuple[InitialLot, ...]:
-    lots = portfolio.to_initial_lots()
-    unsupported_owner_ids = sorted({lot.agent_id for lot in lots if lot.agent_id != primary_agent_id})
-    if unsupported_owner_ids:
-        raise ValueError(
-            "product portfolio projection only supports holding lots owned by the primary agent; "
-            f"got owner agent ids {unsupported_owner_ids}"
-        )
-    return lots
-
-
-def initial_bonds_from_portfolio(portfolio: PortfolioConfig, *, primary_agent_id: AgentId) -> tuple[BondHolding, ...]:
-    bonds = portfolio.to_initial_bonds(coupon_account_id=PRIMARY_ACCOUNT_ID)
-    unsupported_owner_ids = sorted({bond.agent_id for bond in bonds if bond.agent_id != primary_agent_id})
-    if unsupported_owner_ids:
-        raise ValueError(
-            "product portfolio projection only supports bonds owned by the primary agent; "
-            f"got owner agent ids {unsupported_owner_ids}"
-        )
-    return bonds
-
-
-def security_distributions_from_portfolio(
-    portfolio: PortfolioConfig,
-    declarations: tuple[SecurityDistributionConfig, ...],
-    *,
-    tlh_portfolios: tuple[TlhPortfolioSpec, ...],
-    primary_agent_id: AgentId,
-) -> tuple[SecurityDistribution, ...]:
-    """Payout specs for every held pool of a security the deployment declares as distributing.
-
-    The two halves meet here and nowhere else: the deployment's list says WHAT a fund is made
-    of (a fact about the instrument), the portfolio says WHERE it is held, and this function
-    knows the product's cash topology well enough to name the destination. A TLH portfolio is
-    a pool of its own: the sim pays it on the portfolio's value, not on units.
-    """
-
-    tax_character_by_symbol = {
-        declaration.symbol: tuple(
-            DistributionTaxSlice(
-                fraction=share.fraction,
-                income_category=InterestIncome(issuer_jurisdiction_id=share.issuer_jurisdiction_id),
-            )
-            for share in declaration.tax_character
-        )
-        for declaration in declarations
-    }
-    distributions = portfolio.to_security_distributions(
-        tax_character_by_symbol=tax_character_by_symbol, payout_account_id=PRIMARY_ACCOUNT_ID
-    ) + tuple(
-        SecurityDistribution(
-            asset=managed.asset,
-            agent_id=managed.owner_agent_id,
-            holding_account_id=managed.account_id,
-            to_account_id=PRIMARY_ACCOUNT_ID,
-            tax_character=tax_character_by_symbol[managed.asset.symbol],
-        )
-        for managed in tlh_portfolios
-        if isinstance(managed.asset, SecurityKey) and managed.asset.symbol in tax_character_by_symbol
-    )
-    unsupported_owner_ids = sorted({d.agent_id for d in distributions if d.agent_id != primary_agent_id})
-    if unsupported_owner_ids:
-        raise ValueError(
-            "product portfolio projection only supports distributions on holdings owned by the "
-            f"primary agent; got owner agent ids {unsupported_owner_ids}"
-        )
-    return distributions
 
 
 def asset_labels(portfolio: PortfolioConfig) -> dict[AssetKey, str]:
@@ -288,176 +207,123 @@ def build_situation(
     *,
     primary_agent_id: AgentId,
     initial_cash: Decimal,
-    initial_lots: tuple[InitialLot, ...],
+    holdings: Holdings,
     properties_by_id: dict[PropertyId, Property],
     locations: Mapping[LocationId, Location],
-    initial_bonds: tuple[BondHolding, ...] = (),
-    security_distributions: tuple[SecurityDistribution, ...] = (),
-    tlh_portfolios: tuple[TlhPortfolioSpec, ...] = (),
 ) -> Situation:
     horizon_months = int(scenario_key.horizon_months)
     end_month = horizon_months - 1
     currency = Currency(code=scenario_key.currency_code, quantum=scenario_key.currency_quantum)
-    quantum = currency.quantum
-    currency_quantum = scenario_key.currency_quantum
+    primary = AccountRef(agent_id=primary_agent_id, account_id=PRIMARY_ACCOUNT_ID)
 
-    initial_balances = [
-        InitialAccountBalance(agent_id=primary_agent_id, account_id=PRIMARY_ACCOUNT_ID, balance=initial_cash),
-        InitialAccountBalance(agent_id=SPEND_SINK_AGENT_ID, account_id=SPEND_SINK_ACCOUNT_ID, balance=Decimal(0)),
-        InitialAccountBalance(agent_id=TAX_AUTHORITY_AGENT_ID, account_id=TAX_AUTHORITY_ACCOUNT_ID, balance=Decimal(0)),
+    accounts = [
+        PreparedAccount(account=primary, opening_balance=currency.quanta(initial_cash)),
+        _empty_account(SPEND_SINK_AGENT_ID, SPEND_SINK_ACCOUNT_ID),
+        _empty_account(TAX_AUTHORITY_AGENT_ID, TAX_AUTHORITY_ACCOUNT_ID),
     ]
-    recurring_obligations = [
-        RecurringObligation(
+    obligations = [
+        PreparedRecurringObligation(
             start_month=0,
             end_month=end_month,
             obligation_id=SPEND_OBLIGATION_ID,
             obligation_type=ObligationType.CASH_SPEND,
-            agent_id=primary_agent_id,
-            from_account_id=PRIMARY_ACCOUNT_ID,
-            to_agent_id=SPEND_SINK_AGENT_ID,
-            to_account_id=SPEND_SINK_ACCOUNT_ID,
-            amount_due=_monthly_spend_amount(scenario_key),
+            from_account=primary,
+            to_account=AccountRef(agent_id=SPEND_SINK_AGENT_ID, account_id=SPEND_SINK_ACCOUNT_ID),
+            amount_due=_monthly_spend_amount(scenario_key, currency=currency),
+            property_id=None,
+            deduction_category=None,
+            deductible_fraction_ppb=rate_to_ppb(1),
         )
     ]
 
     if scenario_key.monthly_rent > 0:
         assert scenario_key.rental_location_id is not None  # wire validator guarantees
-        initial_balances.append(
-            InitialAccountBalance(agent_id=LANDLORD_AGENT_ID, account_id=LANDLORD_ACCOUNT_ID, balance=Decimal(0))
-        )
-        recurring_obligations.append(
-            RecurringObligation(
+        accounts.append(_empty_account(LANDLORD_AGENT_ID, LANDLORD_ACCOUNT_ID))
+        obligations.append(
+            PreparedRecurringObligation(
                 start_month=0,
                 end_month=end_month,
                 obligation_id=RENT_OBLIGATION_ID,
                 obligation_type=ObligationType.OUTSIDE_RENT,
-                agent_id=primary_agent_id,
-                from_account_id=PRIMARY_ACCOUNT_ID,
-                to_agent_id=LANDLORD_AGENT_ID,
-                to_account_id=LANDLORD_ACCOUNT_ID,
-                amount_due=SeriesIndexedAmount(
-                    base_amount=scenario_key.monthly_rent,
-                    series=RentKey(location_id=LocationId(scenario_key.rental_location_id)),
+                from_account=primary,
+                to_account=AccountRef(agent_id=LANDLORD_AGENT_ID, account_id=LANDLORD_ACCOUNT_ID),
+                amount_due=_indexed(
+                    currency.quanta(scenario_key.monthly_rent),
+                    RentKey(location_id=LocationId(scenario_key.rental_location_id)),
                     adjustment_period_months=12,
                 ),
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=rate_to_ppb(1),
             )
         )
 
-    scheduled_property_purchases: list[ScheduledPropertyPurchase] = []
-    scheduled_property_cashflows: list[ScheduledPropertyCashflow] = []
-    recurring_property_cashflows: list[RecurringPropertyCashflow] = []
     home = None
     if scenario_key.property_purchase is not None:
-        property_ = properties_by_id[scenario_key.property_purchase.property_id]
-        initial_balances.append(
-            InitialAccountBalance(
-                agent_id=PROPERTY_SELLER_AGENT_ID, account_id=PROPERTY_SELLER_ACCOUNT_ID, balance=Decimal(0)
-            )
-        )
-        mortgage = _sim_mortgage_for(scenario_key.property_purchase, property_, currency_quantum=currency_quantum)
+        purchase = scenario_key.property_purchase
+        property_ = properties_by_id[purchase.property_id]
+        accounts.append(_empty_account(PROPERTY_SELLER_AGENT_ID, PROPERTY_SELLER_ACCOUNT_ID))
+        mortgage = _mortgage_for(purchase, property_, currency=currency)
         interest_deduction = None
         if mortgage is not None:
-            initial_balances.append(
-                InitialAccountBalance(
-                    agent_id=MORTGAGE_LENDER_AGENT_ID, account_id=MORTGAGE_LENDER_ACCOUNT_ID, balance=Decimal(0)
+            accounts.append(_empty_account(MORTGAGE_LENDER_AGENT_ID, MORTGAGE_LENDER_ACCOUNT_ID))
+            if purchase.is_primary_residence:
+                interest_deduction = _MortgageInterestDeduction(
+                    liability_id=mortgage.liability_id,
+                    owner_agent_id=primary_agent_id,
+                    debt_class="acquisition",
+                    per_jurisdiction_principal_cap={
+                        jurisdiction_id: currency.quanta(cap)
+                        for jurisdiction_id, cap in MORTGAGE_INTEREST_PRINCIPAL_CAPS.items()
+                    },
                 )
-            )
-            if scenario_key.property_purchase.is_primary_residence:
-                interest_deduction = compile_interest_deduction(
-                    MortgageInterestDeductionPolicy(
-                        liability_id=mortgage.liability_id, owner_agent_id=primary_agent_id
-                    ),
-                    quantum=quantum,
-                )
-        scheduled_property_purchases.append(
-            _sim_property_purchase(
-                scenario_key.property_purchase,
-                property_,
-                primary_agent_id=primary_agent_id,
-                mortgage=mortgage,
-                currency_quantum=currency_quantum,
-            )
-        )
-        initial_primary_residences = (
-            [PrimaryResidenceAssignment(agent_id=primary_agent_id, property_id=property_.id)]
-            if scenario_key.property_purchase.is_primary_residence
-            else []
-        )
-        primary_residence_events: list[SetPrimaryResidenceEvent] = []
-        property_lifecycle_events: list[PropertyLifecycleEvent] = []
-        for event in scenario_key.property_purchase.lifecycle_events:
-            if isinstance(event, SetPrimaryResidenceEventWire):
-                primary_residence_events.append(
-                    SetPrimaryResidenceEvent(
-                        month=int(event.month),
-                        agent_id=primary_agent_id,
-                        property_id=property_.id if event.is_primary_residence else None,
-                    )
-                )
-            else:
-                property_lifecycle_events.append(_sim_lifecycle_event(event, property_id=property_.id))
         expense_wiring = _wire_property_expenses(
             scenario_key,
             property_=property_,
             primary_agent_id=primary_agent_id,
             horizon_months=horizon_months,
-            currency_quantum=currency_quantum,
+            currency=currency,
         )
-        initial_balances.extend(expense_wiring.initial_cash)
-        recurring_obligations.extend(expense_wiring.recurring_obligations)
+        accounts.extend(expense_wiring.accounts)
+        obligations.extend(expense_wiring.obligations)
         rental_wiring = _wire_landlord_rental(
-            scenario_key.property_purchase,
+            purchase,
             property_=property_,
             primary_agent_id=primary_agent_id,
             horizon_months=horizon_months,
-            currency_quantum=currency_quantum,
+            currency=currency,
         )
-        initial_balances.extend(rental_wiring.initial_cash)
-        recurring_property_cashflows.extend(rental_wiring.recurring_property_cashflows)
-        scheduled_property_cashflows.extend(rental_wiring.scheduled_property_cashflows)
+        accounts.extend(rental_wiring.accounts)
         home = Home(
-            housing=compile_housing(
-                purchases=scheduled_property_purchases,
-                initial_residences=initial_primary_residences,
-                residence_events=primary_residence_events,
-                lifecycle_events=property_lifecycle_events,
-                quantum=quantum,
+            housing=_housing(
+                purchase, property_, primary_agent_id=primary_agent_id, mortgage=mortgage, currency=currency
             ),
-            property_tax=compile_property_tax(
-                PropertyTaxPolicy(
-                    property_id=property_.id,
-                    owner_agent_id=primary_agent_id,
-                    from_account_id=PRIMARY_ACCOUNT_ID,
-                    tax_authority_agent_id=TAX_AUTHORITY_AGENT_ID,
-                    tax_authority_account_id=TAX_AUTHORITY_ACCOUNT_ID,
-                    annual_tax_rate=None,  # fall back to location YAML
-                    start_month=0,
-                    end_month=end_month,
-                )
+            property_tax=_PropertyTax(
+                property_id=property_.id,
+                owner_agent_id=primary_agent_id,
+                from_account_id=PRIMARY_ACCOUNT_ID,
+                tax_authority_agent_id=TAX_AUTHORITY_AGENT_ID,
+                tax_authority_account_id=TAX_AUTHORITY_ACCOUNT_ID,
+                annual_tax_rate_ppb=None,  # the location's rate applies
+                start_month=0,
+                end_month=end_month,
             ),
-            location=one(compile_locations(scheduled_property_purchases, locations, quantum=quantum)),
+            location=_prepared_location(property_, locations, currency=currency),
             interest_deduction=interest_deduction,
-            cashflows=(
-                *(compile_property_cashflow(cashflow, quantum=quantum) for cashflow in scheduled_property_cashflows),
-                *(
-                    compile_recurring_property_cashflow(cashflow, quantum=quantum)
-                    for cashflow in recurring_property_cashflows
-                ),
-            ),
+            cashflows=(*rental_wiring.scheduled_property_cashflows, *rental_wiring.recurring_property_cashflows),
         )
 
-    tender_policies = _build_private_equity_tender_policies(
-        scenario_key=scenario_key, initial_lots=initial_lots, primary_agent_id=primary_agent_id
+    tender_policy = _tender_policy(
+        scenario_key, holdings.portfolio, primary_agent_id=primary_agent_id, currency=currency
     )
     household, band = _funding_household(
-        scenario_key.funding_policy,
-        primary_agent_id=primary_agent_id,
-        initial_lots=initial_lots,
-        tlh_portfolios=tlh_portfolios,
-        quantum=quantum,
+        scenario_key.funding_policy, primary_agent_id=primary_agent_id, holdings=holdings, currency=currency
     )
     # The funding policy sells a pool's lots oldest first, so a pool may not hold two lots bought the same month.
-    bought = [(lot.agent_id, lot.account_id, lot.asset.wire_id, lot.purchase_month_index) for lot in initial_lots]
+    bought = [
+        (owner, position.account_id, position.asset.wire_id, -lot.holding_period_months_at_start)
+        for owner, position, lot in opening_lots(holdings.portfolio)
+    ]
     if len(set(bought)) != len(bought):
         raise ValueError(
             f"duplicate initial lot purchase months for FIFO pool(s): {sorted(set(duplicates_everseen(bought)))}"
@@ -471,47 +337,77 @@ def build_situation(
         tax_authority_account_id=TAX_AUTHORITY_ACCOUNT_ID,
     )
     jurisdictions = load_jurisdictions_for([profile])
+    lots = prepared_lots(holdings.portfolio, currency=currency)
+    tlh_portfolios = tuple(
+        prepared_tlh_portfolio(portfolio, currency=currency) for portfolio in holdings.tlh_portfolios
+    )
+    bonds = prepared_bonds(holdings.portfolio, coupon_account_id=PRIMARY_ACCOUNT_ID, currency=currency)
+    cashflows = () if home is None else home.cashflows
     return Situation(
         currency=currency,
         horizon_months=horizon_months,
         household=household,
         level_series=level_series_demand(
-            lots=initial_lots,
+            lots=lots,
             tlh_portfolios=tlh_portfolios,
-            bonds=initial_bonds,
-            distributions=security_distributions,
+            bonds=bonds,
+            distributions=holdings.distributions,
             amounts=(
-                *(cashflow.amount for cashflow in scheduled_property_cashflows),
-                *(cashflow.amount for cashflow in recurring_property_cashflows),
-                *(obligation.amount_due for obligation in recurring_obligations),
+                *(cashflow.amount for cashflow in cashflows),
+                *(obligation.amount_due for obligation in obligations),
                 # Both band bounds, not just the floor: the ceiling is the refill target a raise is
                 # sized to, so an indexed ceiling needs its series sampled.
                 *band,
             ),
-            tender_policies=tender_policies,
-            purchases=scheduled_property_purchases,
+            tender_policies=() if tender_policy is None else (tender_policy,),
+            purchases=() if home is None else home.housing.purchases,
         ),
         private_equity_issuers=frozenset(
-            lot.asset.issuer_id for lot in initial_lots if isinstance(lot.asset, PrivateEquityAssetKey)
+            position.asset.issuer_id
+            for position in holdings.portfolio.holdings
+            if isinstance(position.asset, PrivateEquityAssetKey)
         ),
-        jurisdictions=compile_jurisdictions(jurisdictions, bonds=initial_bonds, distributions=security_distributions),
-        income_sources=compile_income_sources(
-            flows=(*scheduled_property_cashflows, *recurring_property_cashflows),
-            bonds=initial_bonds,
-            distributions=security_distributions,
-        ),
-        accounts=compile_accounts(initial_balances, quantum=quantum),
-        tax_profile=compile_profile(profile, jurisdictions, quantum=quantum),
-        pools=compile_holding_pools(lots=initial_lots),
-        lots=compile_lots(initial_lots, quantum=quantum),
-        tlh_portfolios=tuple(compile_tlh_portfolio(portfolio, quantum=quantum) for portfolio in tlh_portfolios),
-        bonds=tuple(compile_bond(bond, quantum=quantum) for bond in initial_bonds),
+        jurisdictions=prepared_jurisdictions(jurisdictions, bonds=bonds, distributions=holdings.distributions),
+        income_sources=compile_income_sources(flows=cashflows, bonds=bonds, distributions=holdings.distributions),
+        accounts=tuple(accounts),
+        tax_profile=compile_profile(profile, jurisdictions, currency=currency),
+        pools=holding_pools(holdings.portfolio),
+        lots=lots,
+        tlh_portfolios=tlh_portfolios,
+        bonds=bonds,
         home=home,
-        distributions=tuple(compile_distribution(distribution) for distribution in security_distributions),
-        tender_policy=None if not tender_policies else compile_tender_policy(one(tender_policies), quantum=quantum),
-        obligations=tuple(
-            compile_recurring_obligation(obligation, quantum=quantum) for obligation in recurring_obligations
-        ),
+        distributions=holdings.distributions,
+        tender_policy=tender_policy,
+        obligations=tuple(obligations),
+    )
+
+
+def prepared_jurisdictions(
+    jurisdictions: Mapping[JurisdictionId, Jurisdiction],
+    *,
+    bonds: Iterable[PreparedBond],
+    distributions: Iterable[PreparedDistribution],
+) -> tuple[PreparedJurisdiction, ...]:
+    """Every jurisdiction whose LEVEL an interest-exemption rule can name.
+
+    An issuer's level resolves whether or not a tax profile names it, so a Treasury coupon is
+    state-exempt for a holder who files only in California. So the registry is the profiles' own
+    `jurisdictions`, plus every issuer a bond or fund distribution names.
+    """
+
+    levels = {jurisdiction_id: jurisdiction.level for jurisdiction_id, jurisdiction in jurisdictions.items()}
+    issuers = {bond.issuer_jurisdiction_id for bond in bonds} | {
+        tax_slice.income_category.issuer_jurisdiction_id
+        for distribution in distributions
+        for tax_slice in distribution.tax_character
+        if isinstance(tax_slice.income_category, InterestIncome)
+    }
+    for issuer_id in issuers:
+        if issuer_id is not None and issuer_id not in levels:
+            levels[issuer_id] = load_jurisdiction(issuer_id).level
+    return tuple(
+        PreparedJurisdiction(jurisdiction_id=jurisdiction_id, level=levels[jurisdiction_id])
+        for jurisdiction_id in sorted(levels)
     )
 
 
@@ -519,17 +415,14 @@ def paths(situation: Situation, sampled: ExternalSeriesContext, *, rollout_count
     """The sampled paths as the integer series a world reads: levels, then each held issuer's protocol."""
     return (
         *compile_series(
-            sampled,
-            rollout_count=rollout_count,
-            horizon_months=situation.horizon_months,
-            currency_quantum=situation.currency.quantum,
+            sampled, rollout_count=rollout_count, horizon_months=situation.horizon_months, currency=situation.currency
         ),
         *compile_private_equity_series(
             sorted(situation.private_equity_issuers),
             sampled.private_equity,
             rollout_count=rollout_count,
             horizon_months=situation.horizon_months,
-            quantum=situation.currency.quantum,
+            currency=situation.currency,
         ),
     )
 
@@ -606,31 +499,6 @@ def _schedule_e_split(rented_fraction: float) -> tuple[TransferDeductionCategory
     return ("ordinary", float(rented_fraction))
 
 
-def _sim_lifecycle_event(event: PropertyLifecycleEventWire, *, property_id: PropertyId) -> PropertyLifecycleEvent:
-    """Translate one wire lifecycle event to its sim-side equivalent.
-
-    Wire variants and sim variants are kept separate because the wire variants are scoped
-    to a specific PropertyPurchase (so they don't carry property_id), while sim variants
-    are a flat list with explicit property_id. Beyond that the shapes match. Dispatch is
-    by `isinstance` over the Pydantic discriminated union.
-    """
-
-    month = int(event.month)
-    if isinstance(event, SetRentedFractionEventWire):
-        return SetRentedFractionEvent(
-            month=month, property_id=property_id, rented_fraction=float(event.rented_fraction)
-        )
-    if isinstance(event, SetPrimaryResidenceEventWire):
-        raise TypeError("SetPrimaryResidenceEventWire is lowered separately from property lifecycle events")
-    if isinstance(event, CapitalImprovementEventWire):
-        return CapitalImprovementEvent(
-            month=month, property_id=property_id, amount=event.amount, description=event.description
-        )
-    if isinstance(event, PropertySaleEventWire):
-        return PropertySaleEvent(month=month, property_id=property_id, closing_cost_pct=float(event.closing_cost_pct))
-    raise TypeError(f"unknown PropertyLifecycleEventWire variant: {type(event).__name__}")
-
-
 def _initial_occupancy(purchase: PropertyPurchase) -> tuple[OccupancyMode, float]:
     """Initial-month (occupancy_mode, rented_fraction) implied by the purchase.
 
@@ -650,8 +518,8 @@ def _initial_occupancy(purchase: PropertyPurchase) -> tuple[OccupancyMode, float
 class PropertyExpenseWiring:
     """Payees and obligations for recurring property expenses."""
 
-    initial_cash: tuple[InitialAccountBalance, ...]
-    recurring_obligations: tuple[RecurringObligation, ...]
+    accounts: tuple[PreparedAccount, ...]
+    obligations: tuple[PreparedRecurringObligation, ...]
 
 
 def _wire_property_expenses(
@@ -660,7 +528,7 @@ def _wire_property_expenses(
     property_: Property,
     primary_agent_id: AgentId,
     horizon_months: int,
-    currency_quantum: Decimal,
+    currency: Currency,
 ) -> PropertyExpenseWiring:
     """Wire HOA, insurance, and maintenance payees for one purchased property.
 
@@ -671,112 +539,93 @@ def _wire_property_expenses(
 
     purchase = scenario_key.property_purchase
     assert purchase is not None
-    end_month = horizon_months - 1
     initial_occupancy_mode, initial_rented_fraction = _initial_occupancy(purchase)
     # When these obligations carry `property_id`, the sim reads the runtime rented fraction at
     # settlement time so mid-horizon stop/restart events resize the Schedule E share.
-    property_deduction_category, property_deductible_fraction = _schedule_e_split(initial_rented_fraction)
-    initial_cash: list[InitialAccountBalance] = []
-    recurring_obligations: list[RecurringObligation] = []
+    deduction_category, deductible_fraction = _schedule_e_split(initial_rented_fraction)
+
+    def bill(
+        obligation_id: str, obligation_type: ObligationType, payee: AccountRef, monthly_amount: Decimal
+    ) -> PreparedRecurringObligation:
+        return PreparedRecurringObligation(
+            start_month=0,
+            end_month=horizon_months - 1,
+            obligation_id=obligation_id,
+            obligation_type=obligation_type,
+            from_account=AccountRef(agent_id=primary_agent_id, account_id=PRIMARY_ACCOUNT_ID),
+            to_account=payee,
+            amount_due=_indexed(currency.quanta(monthly_amount), InflationKey(), adjustment_period_months=1),
+            property_id=property_.id,
+            deduction_category=deduction_category,
+            # The wire's rented fraction is a float, so the share rounds onto the ppb grid.
+            deductible_fraction_ppb=int(round_ppb(deductible_fraction)),
+        )
+
+    accounts: list[PreparedAccount] = []
+    obligations: list[PreparedRecurringObligation] = []
     if property_.hoa_monthly > 0:
-        initial_cash.append(InitialAccountBalance(agent_id=HOA_AGENT_ID, account_id=HOA_ACCOUNT_ID, balance=Decimal(0)))
-        recurring_obligations.append(
-            RecurringObligation(
-                start_month=0,
-                end_month=end_month,
-                obligation_id=HOA_OBLIGATION_ID,
-                obligation_type=ObligationType.HOA_DUES,
-                agent_id=primary_agent_id,
-                from_account_id=PRIMARY_ACCOUNT_ID,
-                to_agent_id=HOA_AGENT_ID,
-                to_account_id=HOA_ACCOUNT_ID,
-                amount_due=SeriesIndexedAmount(
-                    base_amount=_amount(property_.hoa_monthly), series=InflationKey(), adjustment_period_months=1
-                ),
-                deduction_category=property_deduction_category,
-                deductible_fraction=property_deductible_fraction,
-                property_id=property_.id,
+        accounts.append(_empty_account(HOA_AGENT_ID, HOA_ACCOUNT_ID))
+        obligations.append(
+            bill(
+                HOA_OBLIGATION_ID,
+                ObligationType.HOA_DUES,
+                AccountRef(agent_id=HOA_AGENT_ID, account_id=HOA_ACCOUNT_ID),
+                _amount(property_.hoa_monthly),
             )
         )
     if scenario_key.annual_insurance_pct > 0:
-        initial_cash.append(
-            InitialAccountBalance(agent_id=INSURER_AGENT_ID, account_id=INSURER_ACCOUNT_ID, balance=Decimal(0))
-        )
+        accounts.append(_empty_account(INSURER_AGENT_ID, INSURER_ACCOUNT_ID))
         effective_insurance_pct = insurance_rate(
             base_annual_pct=float(scenario_key.annual_insurance_pct),
             occupancy_mode=initial_occupancy_mode,
             rented_fraction=initial_rented_fraction,
         )
-        monthly_insurance = round_currency_amount(
-            _amount(property_.price) * _amount(effective_insurance_pct) / Decimal(100 * 12), quantum=currency_quantum
-        )
-        recurring_obligations.append(
-            RecurringObligation(
-                start_month=0,
-                end_month=end_month,
-                obligation_id=INSURANCE_OBLIGATION_ID,
-                obligation_type=ObligationType.HOMEOWNERS_INSURANCE,
-                agent_id=primary_agent_id,
-                from_account_id=PRIMARY_ACCOUNT_ID,
-                to_agent_id=INSURER_AGENT_ID,
-                to_account_id=INSURER_ACCOUNT_ID,
-                amount_due=SeriesIndexedAmount(
-                    base_amount=monthly_insurance, series=InflationKey(), adjustment_period_months=1
+        obligations.append(
+            bill(
+                INSURANCE_OBLIGATION_ID,
+                ObligationType.HOMEOWNERS_INSURANCE,
+                AccountRef(agent_id=INSURER_AGENT_ID, account_id=INSURER_ACCOUNT_ID),
+                round_currency_amount(
+                    _amount(property_.price) * _amount(effective_insurance_pct) / Decimal(100 * 12),
+                    quantum=currency.quantum,
                 ),
-                deduction_category=property_deduction_category,
-                deductible_fraction=property_deductible_fraction,
-                property_id=property_.id,
             )
         )
     if scenario_key.annual_maintenance_pct > 0:
-        initial_cash.append(
-            InitialAccountBalance(
-                agent_id=MAINTENANCE_VENDOR_AGENT_ID, account_id=MAINTENANCE_VENDOR_ACCOUNT_ID, balance=Decimal(0)
-            )
-        )
+        accounts.append(_empty_account(MAINTENANCE_VENDOR_AGENT_ID, MAINTENANCE_VENDOR_ACCOUNT_ID))
         effective_maintenance_pct = maintenance_rate(
             base_annual_pct=float(scenario_key.annual_maintenance_pct),
             occupancy_mode=initial_occupancy_mode,
             rented_fraction=initial_rented_fraction,
         )
-        monthly_maintenance = round_currency_amount(
-            _amount(property_.price) * _amount(effective_maintenance_pct) / Decimal(100 * 12), quantum=currency_quantum
-        )
-        recurring_obligations.append(
-            RecurringObligation(
-                start_month=0,
-                end_month=end_month,
-                obligation_id=MAINTENANCE_OBLIGATION_ID,
-                obligation_type=ObligationType.PROPERTY_MAINTENANCE,
-                agent_id=primary_agent_id,
-                from_account_id=PRIMARY_ACCOUNT_ID,
-                to_agent_id=MAINTENANCE_VENDOR_AGENT_ID,
-                to_account_id=MAINTENANCE_VENDOR_ACCOUNT_ID,
-                amount_due=SeriesIndexedAmount(
-                    base_amount=monthly_maintenance, series=InflationKey(), adjustment_period_months=1
+        obligations.append(
+            bill(
+                MAINTENANCE_OBLIGATION_ID,
+                ObligationType.PROPERTY_MAINTENANCE,
+                AccountRef(agent_id=MAINTENANCE_VENDOR_AGENT_ID, account_id=MAINTENANCE_VENDOR_ACCOUNT_ID),
+                round_currency_amount(
+                    _amount(property_.price) * _amount(effective_maintenance_pct) / Decimal(100 * 12),
+                    quantum=currency.quantum,
                 ),
-                deduction_category=property_deduction_category,
-                deductible_fraction=property_deductible_fraction,
-                property_id=property_.id,
             )
         )
-    return PropertyExpenseWiring(initial_cash=tuple(initial_cash), recurring_obligations=tuple(recurring_obligations))
+    return PropertyExpenseWiring(accounts=tuple(accounts), obligations=tuple(obligations))
 
 
 @dataclass(frozen=True)
 class LandlordRentalWiring:
     """Per-property landlord rental wiring produced by `_wire_landlord_rental`. Caller
-    extends its parallel `initial_cash`/property cashflow lists with these
+    extends its parallel account/property cashflow lists with these
     fields — one merge site per property, instead of mutating caller-owned lists
     threaded through the helper as kwargs."""
 
-    initial_cash: tuple[InitialAccountBalance, ...]
-    recurring_property_cashflows: tuple[RecurringPropertyCashflow, ...]
-    scheduled_property_cashflows: tuple[ScheduledPropertyCashflow, ...]
+    accounts: tuple[PreparedAccount, ...]
+    recurring_property_cashflows: tuple[PreparedRecurringPropertyCashflow, ...]
+    scheduled_property_cashflows: tuple[PreparedPropertyCashflow, ...]
 
 
 _EMPTY_LANDLORD_RENTAL_WIRING = LandlordRentalWiring(
-    initial_cash=(), recurring_property_cashflows=(), scheduled_property_cashflows=()
+    accounts=(), recurring_property_cashflows=(), scheduled_property_cashflows=()
 )
 
 
@@ -799,7 +648,7 @@ def _wire_landlord_rental(
     property_: Property,
     primary_agent_id: AgentId,
     horizon_months: int,
-    currency_quantum: Decimal,
+    currency: Currency,
 ) -> LandlordRentalWiring:
     """Wire up tenant→owner rent + owner→agency management/leasing fees.
 
@@ -821,65 +670,59 @@ def _wire_landlord_rental(
     if not rental_segments:
         return _EMPTY_LANDLORD_RENTAL_WIRING
 
-    initial_cash: list[InitialAccountBalance] = [
-        InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id=TENANT_ACCOUNT_ID, balance=Decimal(0))
-    ]
-    recurring_property_cashflows: list[RecurringPropertyCashflow] = []
-    scheduled_property_cashflows: list[ScheduledPropertyCashflow] = []
+    owner = AccountRef(agent_id=primary_agent_id, account_id=PRIMARY_ACCOUNT_ID)
+    agency = AccountRef(agent_id=PROPERTY_MANAGEMENT_AGENT_ID, account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID)
+    accounts = [_empty_account(TENANT_AGENT_ID, TENANT_ACCOUNT_ID)]
+    recurring_property_cashflows: list[PreparedRecurringPropertyCashflow] = []
+    scheduled_property_cashflows: list[PreparedPropertyCashflow] = []
     for segment in rental_segments:
         leased_monthly_rent = base_monthly_rent * segment.fraction_rented
         base_monthly_collected = round_currency_amount(
-            leased_monthly_rent * vacancy_multiplier, quantum=currency_quantum
+            leased_monthly_rent * vacancy_multiplier, quantum=currency.quantum
         )
         recurring_property_cashflows.append(
-            RecurringPropertyCashflow(
+            PreparedRecurringPropertyCashflow(
                 start_month=segment.start_month,
                 end_month=segment.end_month,
                 property_id=property_.id,
                 cause_id=f"{RENTAL_INCOME_CAUSE_ID}:{property_.id}",
-                from_agent_id=TENANT_AGENT_ID,
-                from_account_id=TENANT_ACCOUNT_ID,
-                to_agent_id=primary_agent_id,
-                to_account_id=PRIMARY_ACCOUNT_ID,
-                amount=SeriesIndexedAmount(
-                    base_amount=base_monthly_collected, series=rent_series, adjustment_period_months=12
-                ),
+                from_account=AccountRef(agent_id=TENANT_AGENT_ID, account_id=TENANT_ACCOUNT_ID),
+                to_account=owner,
+                amount=_indexed(currency.quanta(base_monthly_collected), rent_series, adjustment_period_months=12),
                 # Rental income is ordinary income (taxed at owner's marginal bracket).
                 # §469 passive-loss limitation is not modeled.
                 income_category=ORDINARY_INCOME,
+                deduction_category=None,
             )
         )
 
     management = purchase.rental_management
     if management is not None:
-        initial_cash.append(
-            InitialAccountBalance(
-                agent_id=PROPERTY_MANAGEMENT_AGENT_ID, account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID, balance=Decimal(0)
-            )
-        )
+        accounts.append(_empty_account(PROPERTY_MANAGEMENT_AGENT_ID, PROPERTY_MANAGEMENT_ACCOUNT_ID))
         management_fee_fraction = Decimal(str(management.management_fee_pct)) / Decimal(100)
         if management_fee_fraction > 0:
             for segment in rental_segments:
                 base_monthly_collected = round_currency_amount(
-                    base_monthly_rent * segment.fraction_rented * vacancy_multiplier, quantum=currency_quantum
+                    base_monthly_rent * segment.fraction_rented * vacancy_multiplier, quantum=currency.quantum
                 )
                 recurring_property_cashflows.append(
-                    RecurringPropertyCashflow(
+                    PreparedRecurringPropertyCashflow(
                         start_month=segment.start_month,
                         end_month=segment.end_month,
                         property_id=property_.id,
                         cause_id=f"{MANAGEMENT_FEE_CAUSE_ID}:{property_.id}",
-                        from_agent_id=primary_agent_id,
-                        from_account_id=PRIMARY_ACCOUNT_ID,
-                        to_agent_id=PROPERTY_MANAGEMENT_AGENT_ID,
-                        to_account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID,
-                        amount=SeriesIndexedAmount(
-                            base_amount=round_currency_amount(
-                                base_monthly_collected * management_fee_fraction, quantum=currency_quantum
+                        from_account=owner,
+                        to_account=agency,
+                        amount=_indexed(
+                            currency.quanta(
+                                round_currency_amount(
+                                    base_monthly_collected * management_fee_fraction, quantum=currency.quantum
+                                )
                             ),
-                            series=rent_series,
+                            rent_series,
                             adjustment_period_months=12,
                         ),
+                        income_category=None,
                         # Management fee is a Schedule E deduction against rental income.
                         deduction_category="ordinary",
                     )
@@ -888,20 +731,17 @@ def _wire_landlord_rental(
         if leasing_fee_months_val > 0:
             for segment in rental_segments:
                 leasing_fee_base = round_currency_amount(
-                    base_monthly_rent * segment.fraction_rented * leasing_fee_months_val, quantum=currency_quantum
+                    base_monthly_rent * segment.fraction_rented * leasing_fee_months_val, quantum=currency.quantum
                 )
                 scheduled_property_cashflows.extend(
-                    ScheduledPropertyCashflow(
+                    PreparedPropertyCashflow(
                         month=fire_month,
                         property_id=property_.id,
                         cause_id=f"{LEASING_FEE_CAUSE_ID}:{property_.id}:m{fire_month}",
-                        from_agent_id=primary_agent_id,
-                        from_account_id=PRIMARY_ACCOUNT_ID,
-                        to_agent_id=PROPERTY_MANAGEMENT_AGENT_ID,
-                        to_account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID,
-                        amount=SeriesIndexedAmount(
-                            base_amount=leasing_fee_base, series=rent_series, adjustment_period_months=12
-                        ),
+                        from_account=owner,
+                        to_account=agency,
+                        amount=_indexed(currency.quanta(leasing_fee_base), rent_series, adjustment_period_months=12),
+                        income_category=None,
                         # Leasing fee is a Schedule E deduction against rental income.
                         deduction_category="ordinary",
                     )
@@ -910,7 +750,7 @@ def _wire_landlord_rental(
                     )
                 )
     return LandlordRentalWiring(
-        initial_cash=tuple(initial_cash),
+        accounts=tuple(accounts),
         recurring_property_cashflows=tuple(recurring_property_cashflows),
         scheduled_property_cashflows=tuple(scheduled_property_cashflows),
     )
@@ -976,60 +816,152 @@ def _rental_cashflow_segments(purchase: PropertyPurchase, *, horizon_months: int
     return tuple(segments)
 
 
-def _down_payment_for(purchase: PropertyPurchase, property_: Property, *, currency_quantum: Decimal) -> Decimal:
+def _down_payment_for(purchase: PropertyPurchase, property_: Property, *, currency: Currency) -> Decimal:
     if isinstance(purchase.financing, CashFinancing):
         return _amount(property_.price)
     return round_currency_amount(
-        _amount(property_.price) * _amount(purchase.financing.down_payment_pct) / Decimal(100), quantum=currency_quantum
+        _amount(property_.price) * _amount(purchase.financing.down_payment_pct) / Decimal(100), quantum=currency.quantum
     )
 
 
-def _sim_mortgage_for(
-    purchase: PropertyPurchase, property_: Property, *, currency_quantum: Decimal
-) -> SimMortgageFinancing | None:
+def _mortgage_for(purchase: PropertyPurchase, property_: Property, *, currency: Currency) -> _MortgageFinancing | None:
     if isinstance(purchase.financing, CashFinancing):
         return None
-    assert isinstance(purchase.financing, MortgageFinancing)
-    return SimMortgageFinancing(
+    return _MortgageFinancing(
         liability_id=LiabilityId(f"{property_.id}_mortgage"),
         lender_agent_id=MORTGAGE_LENDER_AGENT_ID,
         lender_account_id=MORTGAGE_LENDER_ACCOUNT_ID,
         # Derived from the rounded down payment rather than rounded independently from the
-        # percentage: `ScheduledPropertyPurchase` requires the two to sum to the price exactly,
-        # and two half-quantum roundings of a split can each go up and overshoot it by one.
-        principal=_amount(property_.price) - _down_payment_for(purchase, property_, currency_quantum=currency_quantum),
-        annual_interest_rate=purchase.financing.annual_rate_pct / 100.0,
+        # percentage: the down payment and the principal must sum to the price exactly, and two
+        # half-quantum roundings of a split can each go up and overshoot it by one.
+        principal=currency.quanta(_amount(property_.price) - _down_payment_for(purchase, property_, currency=currency)),
+        # The wire's rate is a float percent, so it rounds onto the ppb grid.
+        annual_interest_rate_ppb=int(round_ppb(purchase.financing.annual_rate_pct / 100.0)),
         term_months=purchase.financing.term_months,
     )
 
 
-def _sim_property_purchase(
+def _housing(
     purchase: PropertyPurchase,
     property_: Property,
     *,
     primary_agent_id: AgentId,
-    mortgage: SimMortgageFinancing | None,
-    currency_quantum: Decimal,
-) -> ScheduledPropertyPurchase:
+    mortgage: _MortgageFinancing | None,
+    currency: Currency,
+) -> Housing:
+    """The purchase at month 0, its residence assignment and its lifecycle, as the tables `Properties` reads.
+
+    The wire's fractions and percents are floats, so they round onto the ppb grid.
+    """
+
+    sales: list[_PropertySale] = []
+    residence_events: list[_PrimaryResidenceEvent] = []
+    rented_fraction_events: list[_RentedFraction] = []
+    capital_improvements: list[_CapitalImprovement] = []
+    for event in purchase.lifecycle_events:
+        month = int(event.month)
+        match event:
+            case SetRentedFractionEventWire():
+                rented_fraction_events.append(
+                    _RentedFraction(
+                        month=month,
+                        property_id=property_.id,
+                        rented_fraction_ppb=int(round_ppb(float(event.rented_fraction))),
+                    )
+                )
+            case SetPrimaryResidenceEventWire():
+                residence_events.append(
+                    _PrimaryResidenceEvent(
+                        month=month,
+                        agent_id=primary_agent_id,
+                        property_id=property_.id if event.is_primary_residence else None,
+                    )
+                )
+            case CapitalImprovementEventWire():
+                capital_improvements.append(
+                    _CapitalImprovement(
+                        month=month,
+                        property_id=property_.id,
+                        amount=currency.quanta(event.amount),
+                        description=event.description,
+                    )
+                )
+            case PropertySaleEventWire():
+                sales.append(
+                    _PropertySale(
+                        month=month,
+                        property_id=property_.id,
+                        closing_cost_ppb=_closing_cost_ppb(float(event.closing_cost_pct)),
+                    )
+                )
+            case _:
+                assert_never(event)
     purchase_price = _amount(property_.price)
     _, rented_fraction = _initial_occupancy(purchase)
-    return ScheduledPropertyPurchase(
-        month=0,
-        cause_id=f"{property_.id}_purchase",
-        property_id=property_.id,
-        location_id=property_.location_id,
-        buyer_agent_id=primary_agent_id,
-        buyer_account_id=PRIMARY_ACCOUNT_ID,
-        seller_agent_id=PROPERTY_SELLER_AGENT_ID,
-        seller_account_id=PROPERTY_SELLER_ACCOUNT_ID,
-        purchase_price=purchase_price,
-        down_payment=_down_payment_for(purchase, property_, currency_quantum=currency_quantum),
-        buyer_closing_cost=round_currency_amount(
-            purchase_price * _amount(purchase.closing_cost_pct) / Decimal(100), quantum=currency_quantum
+    return Housing(
+        purchases=(
+            _PropertyPurchase(
+                month=0,
+                cause_id=_purchase_cause_id(property_),
+                property_id=property_.id,
+                location_id=property_.location_id,
+                buyer_agent_id=primary_agent_id,
+                buyer_account_id=PRIMARY_ACCOUNT_ID,
+                seller_agent_id=PROPERTY_SELLER_AGENT_ID,
+                seller_account_id=PROPERTY_SELLER_ACCOUNT_ID,
+                purchase_price=currency.quanta(purchase_price),
+                down_payment=currency.quanta(_down_payment_for(purchase, property_, currency=currency)),
+                buyer_closing_cost=currency.quanta(
+                    round_currency_amount(
+                        purchase_price * _amount(purchase.closing_cost_pct) / Decimal(100), quantum=currency.quantum
+                    )
+                ),
+                rented_fraction_ppb=int(round_ppb(rented_fraction)),
+                land_value_fraction_ppb=LAND_VALUE_FRACTION_PPB,
+                mortgage=mortgage,
+            ),
         ),
-        mortgage=mortgage,
-        rented_fraction=rented_fraction,
-        # The wire schema has no land-fraction field; this uses the sim default.
+        sales=tuple(sales),
+        initial_residences=(
+            (_PrimaryResidence(agent_id=primary_agent_id, property_id=property_.id),)
+            if purchase.is_primary_residence
+            else ()
+        ),
+        residence_events=tuple(residence_events),
+        rented_fraction_events=tuple(rented_fraction_events),
+        capital_improvements=tuple(capital_improvements),
+    )
+
+
+def _closing_cost_ppb(closing_cost_pct: float) -> int:
+    """Seller closing costs on the ppb grid every other rate uses: the wire's float percent, rounded."""
+
+    return int(round_ppb(float(Decimal(str(closing_cost_pct)) / 100)))
+
+
+def _purchase_cause_id(property_: Property) -> str:
+    return f"{property_.id}_purchase"
+
+
+def _prepared_location(
+    property_: Property, locations: Mapping[LocationId, Location], *, currency: Currency
+) -> PreparedLocation:
+    """The location the purchase buys in: the one whose rate the property-tax policy reads."""
+
+    if property_.location_id not in locations:
+        known_location_ids = ", ".join(repr(location_id) for location_id in sorted(locations)) or "<none>"
+        raise ValueError(
+            f"scheduled property purchase {_purchase_cause_id(property_)!r} references unknown location_id "
+            f"{property_.location_id!r}; known location ids: {known_location_ids}"
+        )
+    location = locations[property_.location_id]
+    return PreparedLocation(
+        location_id=property_.location_id,
+        display_name=location.display_name,
+        jurisdiction_ids=tuple(location.jurisdiction_ids),
+        # A float rate on the location, rounded onto the ppb grid.
+        annual_property_tax_rate_ppb=int(round_ppb(location.annual_property_tax_rate)),
+        annual_special_assessment=currency.quanta(location.annual_special_assessment),
     )
 
 
@@ -1037,24 +969,36 @@ def _initial_rented_fraction(purchase: PropertyPurchase) -> Decimal:
     return Decimal(str(purchase.initial_rental.fraction_rented)) if purchase.initial_rental is not None else Decimal(0)
 
 
-def _monthly_spend_amount(scenario_key: ScenarioKey) -> Decimal | SeriesIndexedAmount:
+def _monthly_spend_amount(scenario_key: ScenarioKey, *, currency: Currency) -> PreparedAmount:
     if scenario_key.spend_index == SpendIndex.INFLATION:
-        return SeriesIndexedAmount(
-            base_amount=scenario_key.monthly_spend, series=InflationKey(), adjustment_period_months=1
-        )
+        return _indexed(currency.quanta(scenario_key.monthly_spend), InflationKey(), adjustment_period_months=1)
     if scenario_key.spend_index == SpendIndex.NONE:
-        return scenario_key.monthly_spend
+        return currency.quanta(scenario_key.monthly_spend)
     raise ValueError(f"unsupported spend_index: {scenario_key.spend_index!r}")
 
 
+def _empty_account(agent_id: AgentId, account_id: AccountId) -> PreparedAccount:
+    """A counterparty's account, opening empty."""
+
+    return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=0)
+
+
+def _indexed(
+    base_amount: int, series: InflationKey | RentKey, *, adjustment_period_months: int
+) -> PreparedIndexedAmount:
+    """`base_amount` at month 0, reset to the series' level every `adjustment_period_months`."""
+
+    return PreparedIndexedAmount(
+        base_amount=base_amount,
+        series_id=series.wire_id,
+        base_month_index=0,
+        adjustment_period_months=adjustment_period_months,
+    )
+
+
 def _funding_household(
-    funding_policy: FundingPolicy,
-    *,
-    primary_agent_id: AgentId,
-    initial_lots: tuple[InitialLot, ...],
-    tlh_portfolios: tuple[TlhPortfolioSpec, ...],
-    quantum: Decimal,
-) -> tuple[Callable[[], CashBandHousehold | ClaimPayer], tuple[Decimal | SeriesIndexedAmount, ...]]:
+    funding_policy: FundingPolicy, *, primary_agent_id: AgentId, holdings: Holdings, currency: Currency
+) -> tuple[Callable[[], CashBandHousehold | ClaimPayer], tuple[int | PreparedIndexedAmount, ...]]:
     """The household the wire's cash band + weights describe, and the band bounds it reads.
 
     Zero-weight entries are the product UI's explicit "never sell" exclusion, not the
@@ -1069,9 +1013,13 @@ def _funding_household(
     up — and it is why the wire has no "derive it for me" sentinel. The app never buys.
     """
 
-    holders = [(lot.account_id, lot.asset.symbol) for lot in initial_lots if isinstance(lot.asset, SecurityKey)]
+    holders = [
+        (position.account_id, position.asset.symbol)
+        for _, position, _ in opening_lots(holdings.portfolio)
+        if isinstance(position.asset, SecurityKey)
+    ]
     held = {symbol for _, symbol in holders}
-    managed_by_id = {managed.portfolio_id: managed for managed in tlh_portfolios}
+    managed_by_id = {managed.portfolio_id: managed for managed in holdings.tlh_portfolios}
     sleeves: list[Sleeve] = []
     for sleeve in funding_policy.sleeve_weights:
         if isinstance(sleeve, ManagedSleeveWeight):
@@ -1089,10 +1037,10 @@ def _funding_household(
         managed_by_id[sleeve.portfolio_id].account_id for sleeve in sleeves if isinstance(sleeve, ManagedSleeve)
     ]
     band = tuple(
-        _band_bound_amount(amount, index_to_inflation=funding_policy.cash_band_index_to_inflation)
+        _band_bound_amount(amount, index_to_inflation=funding_policy.cash_band_index_to_inflation, currency=currency)
         for amount in (funding_policy.cash_floor, funding_policy.cash_ceiling)
     )
-    floor, ceiling = (_household_bound(amount, quantum=quantum) for amount in band)
+    floor, ceiling = (_household_bound(amount) for amount in band)
     household = partial(
         CashBandHousehold,
         primary_agent_id,
@@ -1107,49 +1055,42 @@ def _funding_household(
     return household, band
 
 
-def _band_bound_amount(amount: Decimal, *, index_to_inflation: bool) -> Decimal | SeriesIndexedAmount:
-    """Translate an exact configured amount + index flag into the sim `AmountSpec`.
+def _band_bound_amount(amount: Decimal, *, index_to_inflation: bool, currency: Currency) -> int | PreparedIndexedAmount:
+    """Translate an exact configured amount + index flag into a prepared amount.
 
     An indexed bound tracks CPI monthly (period=1) so the real-terms band stays constant; a
-    nominal bound remains the exact configured amount.
+    nominal bound is the exact configured amount in quanta.
     """
 
     if not index_to_inflation or amount <= 0:
+        return currency.quanta(amount)
+    return _indexed(currency.quanta(amount), InflationKey(), adjustment_period_months=1)
+
+
+def _household_bound(amount: int | PreparedIndexedAmount) -> BandBound:
+    if isinstance(amount, int):
         return amount
-    return SeriesIndexedAmount(base_amount=amount, series=InflationKey(), adjustment_period_months=1)
+    return CpiIndexed(base_amount=amount.base_amount, adjustment_period_months=amount.adjustment_period_months)
 
 
-def _household_bound(amount: Decimal | SeriesIndexedAmount, *, quantum: Decimal) -> BandBound:
-    if isinstance(amount, Decimal):
-        return int(currency_amount_to_quanta(amount, quantum=quantum))
-    return CpiIndexed(
-        base_amount=int(currency_amount_to_quanta(amount.base_amount, quantum=quantum)),
-        adjustment_period_months=int(amount.adjustment_period_months),
-    )
+def _tender_policy(
+    scenario_key: ScenarioKey, portfolio: PortfolioConfig, *, primary_agent_id: AgentId, currency: Currency
+) -> _TenderPolicy | None:
+    """The wire's pe_tender_policy for the primary agent, whenever the portfolio holds PE.
 
-
-def _build_private_equity_tender_policies(
-    *, scenario_key: ScenarioKey, initial_lots: tuple[InitialLot, ...], primary_agent_id: AgentId
-) -> list[PrivateEquityTenderPolicy]:
-    """Build the sim `PrivateEquityTenderPolicy` list from the wire's pe_tender_policy.
-
-    A single policy targets the primary agent. It is emitted whenever the user holds PE,
-    even with a zero floor: the floor only controls voluntary tender/public-market sales,
-    while exogenous forced-sale/recovery events still need owner/proceeds routing.
+    Emitted even with a zero floor: the floor only controls voluntary tender/public-market
+    sales, while exogenous forced-sale/recovery events still need owner/proceeds routing.
     """
 
-    holds_pe = any(isinstance(lot.asset, PrivateEquityAssetKey) for lot in initial_lots)
+    if not any(isinstance(position.asset, PrivateEquityAssetKey) for position in portfolio.holdings):
+        return None
     floor = scenario_key.pe_tender_policy.liquid_net_worth_floor
-    if not holds_pe:
-        return []
-    if floor > 0 and scenario_key.pe_tender_policy.index_floor_to_inflation:
-        floor_amount: FixedAmount | SeriesIndexedAmount = SeriesIndexedAmount(
-            base_amount=floor, series=InflationKey(), adjustment_period_months=1
-        )
-    else:
-        floor_amount = FixedAmount(amount=floor)
-    return [
-        PrivateEquityTenderPolicy(
-            owner_agent_id=primary_agent_id, proceeds_account_id=PRIMARY_ACCOUNT_ID, liquid_net_worth_floor=floor_amount
-        )
-    ]
+    return _TenderPolicy(
+        owner_agent_id=primary_agent_id,
+        proceeds_account_id=PRIMARY_ACCOUNT_ID,
+        liquid_net_worth_floor=(
+            _indexed(currency.quanta(floor), InflationKey(), adjustment_period_months=1)
+            if floor > 0 and scenario_key.pe_tender_policy.index_floor_to_inflation
+            else PreparedFixedAmount(amount=currency.quanta(floor))
+        ),
+    )

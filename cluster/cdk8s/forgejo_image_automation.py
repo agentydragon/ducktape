@@ -10,8 +10,6 @@ the selected tags back into each directory's `image-pins/` Component lives in
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from constructs import Construct
 from flux_imagepolicy_crds.io.fluxcd.toolkit.image import (
@@ -28,10 +26,9 @@ from flux_imagerepository_crds.io.fluxcd.toolkit.image import (
     ImageRepositorySpec,
     ImageRepositorySpecSecretRef,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "flux-image-automation-forgejo"
@@ -144,26 +141,23 @@ class ForgejoImageAutomation(Construct):
             )
 
 
-def write_manifests(root: Path) -> None:
+def chart(app: App) -> Chart:
     """The ImageRepository/ImagePolicy pair per CI image, as one chart. The directory had
     one hand-written file per pair; a single generated file keeps each pair adjacent
     (cluster/AGENTS.md § Colocating image repository and policy)."""
-    out_dir = root / OUTPUT_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     ForgejoImageAutomation(chart, "images")
     add_fleet_rules(chart)
-    app.synth()
+    return chart
 
 
 def flux_image_automation_forgejo(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, flux_image_automation_ghcr: Kustomization
+    chart: Chart, directory: RenderedDirectory, flux_image_automation_ghcr: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         retry_interval=None,
         wait=None,
         depends_on=flux_kustomization_depends_on_many(flux_image_automation_ghcr),

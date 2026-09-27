@@ -20,7 +20,7 @@ from typing import Annotated, Literal
 import yaml
 from pydantic import BaseModel, BeforeValidator, Field, model_validator
 
-from finance.augur.sim.fixed_point import validate_currency_amount
+from finance.augur.sim.fixed_point import validate_currency_amount, validate_rate
 from finance.augur.sim.ids import JurisdictionId
 
 
@@ -69,6 +69,7 @@ def _validate_bracket_upper(value: object) -> Decimal | Literal["Infinity"]:
 
 type BracketUpper = Annotated[Decimal | Literal["Infinity"], BeforeValidator(_validate_bracket_upper)]
 type CurrencyAmount = Annotated[Decimal, BeforeValidator(validate_currency_amount)]
+type Rate = Annotated[Decimal, BeforeValidator(validate_rate)]
 
 
 class TaxBracket(BaseModel):
@@ -79,7 +80,7 @@ class TaxBracket(BaseModel):
     `(previous_upper, upper]`."""
 
     upper: BracketUpper
-    rate: float
+    rate: Rate
 
 
 class ThresholdTax(BaseModel):
@@ -89,7 +90,7 @@ class ThresholdTax(BaseModel):
     filing status, and the jurisdiction's `indexation` says whether it is inflation-indexed.
     """
 
-    rate: float
+    rate: Rate
     threshold: dict[str, CurrencyAmount]
 
 

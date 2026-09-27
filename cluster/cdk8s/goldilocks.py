@@ -34,7 +34,7 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        # Declared by the vpa directory, which this one's Kustomization depends on.
+        # Declared by the vpa directory.
         repository=vpa.REPOSITORY_SOURCE_REF,
         chart=NAME,
         version="11.1.0",
@@ -96,5 +96,12 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
 
 
-def goldilocks(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, vpa: Kustomization) -> Kustomization:
-    return flux_kustomization(chart, NAME, artifact, timeout="5m", depends_on=[flux_kustomization_depends_on(vpa)])
+def goldilocks(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno: Kustomization) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        NAME,
+        artifact,
+        timeout="5m",
+        # Kyverno's failurePolicy: Fail webhooks admit the Namespace.
+        depends_on=[flux_kustomization_depends_on(kyverno)],
+    )
