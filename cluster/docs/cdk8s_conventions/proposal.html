@@ -1147,9 +1147,11 @@
           </p>
           <p>
             None of this is a big-bang rewrite. Each convention lands as a series of small PRs you can review as
-            rendered diffs. The provider cleanup has landed and most of the edge trim is in. The writer&#39;s first PR
-            is under way, without the fleet rules, graph checks and health-check derivation you deferred. Pod policy and
-            the edge check can start now. The <code>wait</code> default and derived Orphan are postponed, and C4 and the
+            rendered diffs. The provider cleanup, the edge trim (426 edges down to 258, and 231 once #8185 lands) and
+            the writer, now writing 109 directories, have landed. Ready without a decision: the edge check, the
+            render-identical cores of pod policy and the namespace helper, four stateless folds, seven more writer
+            conversions and the ResticBackup dedupe. The fleet rules, graph checks, health-check derivation and glue
+            absorption are deferred. The <code>wait</code> default and derived Orphan are postponed, and C4 and the
             steps built on it wait on your decision.
           </p>
         </div>
@@ -11204,21 +11206,30 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                Edge-justification check with <code>flux.ORDERING_EXCEPTIONS</code>: every edge targets a CRD provider,
-                a Fail-webhook operator or a <code>postBuild</code> source of something the dependent renders, or is
-                listed with one of #7094 rule 2&#39;s two reasons. It lands after the edge-removal batches (step 5),
-                with whatever unjustified edges remain in a burn-down table under a <code>CLEANUP</code> tombstone, so
-                no new one can be added.
+                Edge-justification check, ready now and best stacked on #8185. Every edge must be one of: a CRD provider
+                of a kind the dependent renders, including kinds its Helm charts render (a table: 7 to
+                <code>monitoring-crds</code>, <code>cnpg</code> and <code>cert-manager-trust</code> to
+                <code>cert-manager</code>) and kinds from an external repo (<code>gaffer-private</code> to
+                <code>tofu-controller</code>); a <code>Fail</code> webhook operator; an input a
+                <code>Fail</code> webhook needs (the three <code>kyverno-policies</code> edges: Kyverno rejects a
+                <code>CleanupPolicy</code> until the cleanup-controller ClusterRoles that
+                <code>kyverno-policies</code> renders exist); the bootstrap edge <code>artifact-generators</code> to
+                <code>flux-system</code>; or a registered exception with one of #7094 rule 2&#39;s two reasons (the five
+                #8191 kept, moved from comments into the table). Two tables hold what is not settled: the 27 direct
+                <code>kyverno</code> edges (decision 13) and the two user-provisioner Job edges you deferred.
+                <code>external-secrets-operator</code> to <code>external-secrets-crds</code> needs
+                <code>OPERATOR_CRDS</code> to name the CRD unit. Whatever does not fit fails the check, so no new
+                unjustified edge can land.
               </p>
             </div>
           </div>
           <div class="sc">
             <div class="rich">
               <p>
-                <code>flux.py</code> (the tables) and <code>cluster/validation/dependencies.py</code>, which already
-                builds every unit; the check moves to synth with the graph checks (step 12, deferred). Until then the 6
-                edges that exist because a Helm chart renders a custom resource take their kinds from a six-entry table,
-                which <code>chart_kinds</code> replaces.
+                <code>cluster/validation/{crd_layering,dependencies}.py</code>, with the tables beside
+                <code>OPERATOR_CRDS</code> so they are checks, not wiring; tests on synthetic graphs, including
+                suspended units, which <code>flux_kust_resources</code> skips today. The check moves to synth with the
+                graph checks (step 11, deferred).
               </p>
             </div>
           </div>
@@ -11231,18 +11242,13 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                Edge-removal batches, one class or target per PR. You asked for the edges before the check in step 4, so
-                they land without it. Landed: <code>gateway</code> (#8181: 18 edges, 5 retargeted to
-                <code>kyverno</code>), <code>tofu-state-db</code> (#8176: 18), the ESO store (#8183: 34, 31 retargeted
-                to <code>external-secrets-operator</code>), <code>forgejo-images</code> (#8186: 25, 2 retargeted to
-                <code>seaweedfs-operator</code>), the credential sources (#8188: 48, 2 retargeted) and
-                <code>seaweedfs-cluster</code> (#8187: 17, 12 retargeted to <code>seaweedfs-operator</code>). Open: the
-                namespace units (#8185: 27), the ordering-only edges (#8190: 11 removed, 2 retargeted to
-                <code>kyverno</code>, 2 kept as CRD edges) and the rest of service readiness (#8191: 65 removed, 16
-                added, and the first 5 edges kept as registered exceptions). Two CRD edges were already missing on devel
-                and are still to add: <code>volsync</code> to <code>monitoring-crds</code> (its chart&#39;s
-                ServiceMonitor) and <code>gaffer-private</code> to <code>tofu-controller</code> (a Terraform CR from the
-                private repo).
+                Edge-removal batches, one class or target per PR. Landed: <code>gateway</code> (#8181),
+                <code>tofu-state-db</code> (#8176), the ESO store (#8183), <code>forgejo-images</code> (#8186), the
+                credential sources (#8188), <code>seaweedfs-cluster</code> (#8187), the ordering-only edges (#8190),
+                service readiness (#8191: 62 removed, 16 retargets added, 5 kept as registered exceptions) and the two
+                CRD edges that were missing (#8194). The graph is down from 426 edges to 258. Open: the namespace units
+                (#8185: 27, green), after which 231 remain. Left for later: the two user-provisioner Job edges, with the
+                Jobs, and the direct <code>kyverno</code> edges (decision 13).
               </p>
             </div>
           </div>
@@ -11269,18 +11275,25 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                Stateless tiny-unit folds, one per PR: the kube-system trio (coredns-custom, kube-system, hubble-ui);
-                the monitoring trio (flux-, cilium- and etcd-monitoring, with monitoring-rules, into one
-                platform-monitoring unit); the six <code>seaweedfs-*-bucket</code> units into their consumers; the
-                provisioner Jobs (atuin-user-provisioner into atuin, matrix-user-provisioner into matrix); the Terraform
-                groups (forgejo-gitops, authentik-tf, github-tf).
+                Stateless tiny-unit folds, behind one PR that sets Orphan on every unit folded away, then one PR per
+                fold: the monitoring set (<code>flux-</code>, <code>cilium-</code>, <code>etcd-</code> and
+                <code>seaweedfs-monitoring</code> with <code>monitoring-rules</code>, into one platform-monitoring
+                unit); the kube-system trio (<code>kube-system</code>, <code>hubble-ui</code>,
+                <code>coredns-custom</code>, whose Corefile becomes a <code>config_map_generator</code> entry; check
+                first that the live ConfigMap has no hash suffix); the authentik Terraform units
+                (<code>sso-providers-tf</code>, <code>agent-machine-access-tf</code>, <code>gatus-sso-tf</code>,
+                <code>alloy-otlp-bearer-token-tf</code>); and the GitHub ones (<code>github-branch-protection</code>,
+                <code>github-secrets-sync</code>, <code>flux-webhook-token</code>). Ten units go.
+                <code>forgejo-gitops</code> waits on the Terraform-ordering call in step 10; the six
+                <code>seaweedfs-*-bucket</code> units retire with step 19; the provisioner Jobs are deferred.
               </p>
             </div>
           </div>
           <div class="sc">
             <div class="rich">
               <p>
-                One PR per fold; each generated component becomes one <code>write_directory</code> call and one node.
+                One Orphan PR, then four fold PRs of 60 to 150 lines, each one <code>write_directory</code> call and one
+                node.
               </p>
             </div>
           </div>
@@ -11288,9 +11301,10 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             <span class="lbl">Risk</span>
             <div class="rich">
               <p>
-                Medium per fold, because objects change owner. Each fold follows <code>cluster/cdk8s/AGENTS.md</code> §
-                Restructuring (Orphan on the old owner, then adoption). Terraform CRs keep their names, so their state
-                is reused, and none sets <code>destroyResourcesOnDeletion</code>; Buckets retain by default.
+                Low to medium per fold, because objects change owner. Each follows
+                <code>cluster/cdk8s/AGENTS.md</code> § Restructuring (Orphan on the old owner, then adoption). The
+                applied objects are identical. Terraform CRs keep their names, so their state is reused, and none sets
+                <code>destroyResourcesOnDeletion</code>. The merged units keep every health check (call D).
               </p>
             </div>
           </div>
@@ -11299,24 +11313,27 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                <code>namespaces.namespace(scope, id, *, name, vpa, agent_readable)</code> with StrEnum label choices
-                shared with <code>kyverno/policies.py</code> (X1); under decision 11, the 38
-                <code>enabled: &#34;true&#34;</code> labels and the two goldilocks checks that demand them change in the
-                same PR.
+                <code>namespaces.namespace(scope, id, *, name, vpa, agent_readable)</code>, with StrEnum label choices
+                shared with <code>kyverno/policies.py</code> (X1). Ready now for the 54 labeled Namespaces, with values
+                that render today&#39;s labels exactly. The 22 unlabeled ones (mostly Helm-installed operators),
+                deleting the 39 <code>enabled: &#34;true&#34;</code> labels and the two goldilocks checks wait on
+                decision 11, after which they are one line in the helper and the checks.
               </p>
             </div>
           </div>
           <div class="sc">
             <div class="rich">
               <p>
-                <code>namespaces.py</code>, the 62 Namespace constructions, <code>cluster/validation/checks.py</code>.
+                <code>namespaces.py</code> and the 72 construction sites (59 <code>k8s.KubeNamespace</code>, 6
+                cdk8s-plus <code>Namespace</code>, 7 <code>write_namespace</code>): the helper with one area, then two
+                or three area PRs.
               </p>
             </div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
             <div class="rich">
-              <p>Low. Labels only, and Goldilocks&#39; on-by-default flag keeps the VPA objects.</p>
+              <p>None for the ready part: identical render. Decision 11&#39;s part is labels only.</p>
             </div>
           </div>
         </li>
@@ -11325,23 +11342,60 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             <div class="rich">
               <p>
                 <code>pod_policy.py</code> (<code>harden</code>, <code>place</code>, <code>POD_SPEC_PATHS</code>) and
-                <code>node_scheduling.py</code> (<code>Placement</code>, <code>CONTROL_PLANE_TOLERATION</code>,
-                <code>PREFER_WORKERS</code>): <code>fleet_rules</code> reads the shared table and gains ScaledJob;
-                repoint the 28 calls of <code>apply_pod_spec_patches</code>, <code>attract_to_zone</code> and
-                <code>tolerate_control_plane_taint</code>; delete <code>pod_spec_patches.py</code>, the two mutators and
-                <code>WRITABLE_ROOT</code> (its 11 sites keep <code>read_only_root_filesystem=False</code>).
+                <code>node_scheduling.py</code> (<code>Placement</code>, <code>HIL_OVH</code>,
+                <code>CONTROL_PLANE_TOLERATION</code>, <code>PREFER_WORKERS</code>): repoint the 30 calls (18
+                <code>apply_pod_spec_patches</code>, 8 <code>attract_to_zone</code>, 2
+                <code>tolerate_control_plane_taint</code>, 2 <code>runtime_default_seccomp_patch</code>); delete
+                <code>pod_spec_patches.py</code>, the mutators and <code>WRITABLE_ROOT</code> (its 11 sites keep
+                <code>read_only_root_filesystem=False</code>); <code>fleet_rules</code> reads the shared table and gains
+                ScaledJob. Ready now with <code>place()</code> still emitting today&#39;s required zone affinity, so the
+                core renders identically. Two small PRs follow: drop-ALL on the two containers that lack it (litellm,
+                ha-mcp&#39;s <code>facade</code>) and <code>PREFER_WORKERS</code> on the two Agentplane services that
+                tolerate the control plane. Decision 8 then flips one line in <code>place()</code>.
               </p>
             </div>
           </div>
           <div class="sc">
-            <div class="rich"><p>About 30 call sites in agentplane, haku and ntfy.</p></div>
+            <div class="rich">
+              <p>About 30 call sites in agentplane, haku, ntfy and litellm; a 300 to 400 line core PR.</p>
+            </div>
+          </div>
+          <div class="sr">
+            <span class="lbl">Risk</span>
+            <div class="rich">
+              <p>None for the core. The two follow-ups change a securityContext and scheduling on four workloads.</p>
+            </div>
+          </div>
+        </li>
+        <li>
+          <div class="st">
+            <div class="rich">
+              <p>
+                Per-area PRs after step 8: first a render-identical constants PR (<code>&#34;hil-ovh&#34;</code> at 35
+                sites in 31 files, 14 local zone constants, the control-plane key spelled in 33 files, the
+                prefer-workers affinity hand-written in 15); then <code>harden()</code> and <code>place()</code> on the
+                raw and CRD-embedded workloads, deleting the literal hardening structs; Helm values take
+                <code>HIL_OVH.node_selector</code>, <code>[CONTROL_PLANE_TOLERATION]</code> and
+                <code>PREFER_WORKERS</code>. The provisioner Jobs stay out, as do the required affinities that are not
+                zone affinities.
+              </p>
+            </div>
+          </div>
+          <div class="sc">
+            <div class="rich">
+              <p>
+                54 raw workloads in 42 files plus <code>SandboxTemplate</code> and the haku-ci <code>ScaledJob</code>,
+                and 26 Helm <code>nodeSelector</code> dicts in 17 files, in five or six area PRs (agents, apps,
+                platform, ...).
+              </p>
+            </div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
             <div class="rich">
               <p>
-                Low. The render changes are required nodeAffinity becoming a nodeSelector at 8 sites (decision 8), and
-                <code>PREFER_WORKERS</code> on the two Agentplane services that tolerate the control plane.
+                Medium per container that had no securityContext: 39 containers in 27 workloads gain drop-ALL and no
+                escalation. Review the render diff container by container, the haku-ci runner first.
               </p>
             </div>
           </div>
@@ -11350,86 +11404,36 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                Per-area PRs, in parallel: call <code>harden()</code> and <code>place()</code> on the raw and
-                CRD-embedded workloads; delete the literal hardening structs and the 14 local zone constants; Helm
-                values take <code>HIL_OVH.node_selector</code>, <code>[CONTROL_PLANE_TOLERATION]</code> and
-                <code>PREFER_WORKERS</code>.
+                Convert the rest to the writer. Landed: #8192 (the writer), #8195, #8197 to #8200, #8201, #8203 to
+                #8206, #8210 and #8211; 109 directories now go through <code>write_directory</code>. Of the 66 nodes
+                still on the old path, 7 convert as they are, in three PRs: haku console and mailbox;
+                <code>flux-image-automation-ghcr</code>, <code>seaweedfs-secrets</code> and
+                <code>agentplane-index</code>; and the two sibling-only directories (<code>haku-forgejo-tea</code>,
+                <code>agent-shared-secrets</code>), the writer&#39;s first zero-chart use. Two more carry a dead
+                decryption like the five #8210 dropped (<code>seaweedfs-public-s3</code>,
+                <code>gaffer-private-source</code>). The six Forgejo gitops-module directories pass Terraform objects
+                between charts, where names would do (<code>gitops_terraform</code> reads only <code>.name</code>); that
+                is your call. The rest stay: 40 have a hand-written <code>kustomization.yaml</code> (call C; 8 are
+                parked); 5 copy shared bases, which the writer rejects (public-coder-agent-app and the grocy MCP and
+                user-perms overlays); 4 are nested (tofu-state, litellm, and the flux-system bootstrap&#39;s
+                <code>ducktape-flux</code> and <code>sources</code>); and 2 are special (public-coder devbox returns the
+                SSH Service another module reads; agentplane-staging derives health checks from its chart).
+                <code>write_charts</code> and <code>sops_decryption</code> go only after the glue absorption in step 11;
+                the explicit <code>path=</code> source form stays for Kustomizations that read other GitRepositories.
               </p>
             </div>
           </div>
           <div class="sc">
             <div class="rich">
-              <p>
-                The 54 raw workloads plus <code>SandboxTemplate</code> and <code>ScaledJob</code>, and the 17 modules
-                with Helm <code>nodeSelector</code> dicts, one PR per area.
-              </p>
+              <p>Three conversion PRs and a dead-decryption PR now; the Forgejo modules after your call.</p>
             </div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
             <div class="rich">
               <p>
-                Medium per container that had no securityContext: it gains drop-ALL and no escalation. Review the render
-                diff container by container.
-              </p>
-            </div>
-          </div>
-        </li>
-        <li>
-          <div class="st">
-            <div class="rich">
-              <p>
-                The writer, with your calls: it always writes the directory&#39;s <code>kustomization.yaml</code> (A);
-                each component is written and joined to its node in one place in <code>generate_manifests.py</code> (B);
-                hand-written kustomization glue stays as it is (C); health checks stay as each node types them (D).
-                <code>RenderedDirectory</code> carries what <code>flux_kustomization</code> reads for
-                <code>sourceRef</code>, <code>path</code> and decryption, which is set when a
-                <code>*.sops.yaml</code> sits beside the rendered files. Nodes take it and never write. The first PR,
-                under way, converts ntfy and one plain generated directory.
-              </p>
-            </div>
-          </div>
-          <div class="sc">
-            <div class="rich">
-              <p>
-                <code>generation.py</code>, <code>flux.py</code>, two components and their joins in
-                <code>generate_manifests.py</code>.
-              </p>
-            </div>
-          </div>
-          <div class="sr">
-            <span class="lbl">Risk</span>
-            <div class="rich">
-              <p>
-                Low. ntfy renders identically; the other directory gains a <code>kustomization.yaml</code>, and
-                <code>render_diff.py</code> shows the applied objects unchanged.
-              </p>
-            </div>
-          </div>
-        </li>
-        <li>
-          <div class="st">
-            <div class="rich">
-              <p>
-                Convert the rest to the writer in 6 to 8 area PRs stacked on the first: the remaining writer-nodes and
-                about 150 split modules. Each deletes the module&#39;s write-phase line and its hand-typed decryption,
-                and adds a <code>kustomization.yaml</code> where Flux generated one. A last PR deletes
-                <code>write_charts</code> and <code>sops_decryption</code>.
-              </p>
-            </div>
-          </div>
-          <div class="sc">
-            <div class="rich">
-              <p>About 160 modules and their joins in <code>generate_manifests.py</code>.</p>
-            </div>
-          </div>
-          <div class="sr">
-            <span class="lbl">Risk</span>
-            <div class="rich">
-              <p>
-                Low. The applied objects are identical, and <code>render_diff.py</code> confirms it for every directory
-                that gains a <code>kustomization.yaml</code>. A node whose typed decryption disagrees with its directory
-                shows up as a rendered diff.
+                Low. <code>render_diff.py</code> confirms identical applied objects for every directory that gains a
+                <code>kustomization.yaml</code>.
               </p>
             </div>
           </div>
@@ -11479,7 +11483,7 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             <div class="rich">
               <p>
                 <code>fleet_rules.py</code> plus the raw pod specs that state nothing. Until fleet rules reach every
-                chart (step 12, deferred), the rule covers only the charts that call <code>add_fleet_rules</code>.
+                chart (step 11, deferred), the rule covers only the charts that call <code>add_fleet_rules</code>.
               </p>
             </div>
           </div>
@@ -11487,7 +11491,7 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             <span class="lbl">Risk</span>
             <div class="rich">
               <p>
-                Low. It is a check, and each fix states the value already in effect. It must land before step 19
+                Low. It is a check, and each fix states the value already in effect. It must land before step 18
                 converts any ServiceAccount.
               </p>
             </div>
@@ -11523,7 +11527,7 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                <strong>Postponed with the step it waits on.</strong> Stateful folds, after step 14: forgejo-cache into
+                <strong>Postponed with the step it waits on.</strong> Stateful folds, after step 13: forgejo-cache into
                 forgejo, seaweedfs-filer-db into seaweedfs-cluster, and authentik-db-backups into the unit that owns its
                 database (E10).
               </p>
@@ -11628,7 +11632,7 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                Secrets, after decisions 5 and 12 and step 13: <code>external_secrets/credentials.py</code> and
+                Secrets, after decisions 5 and 12 and step 12: <code>external_secrets/credentials.py</code> and
                 <code>MintedSecret</code> (#8114 reworked); the external-creds roster moves onto
                 <code>Credential</code> (its store moves into external-creds, whose node gains an edge to
                 <code>external-secrets-operator</code>, and flux-system&#39;s reader gets one owner); convert the minted
@@ -11647,7 +11651,7 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
               <p>
                 Medium. ExternalSecrets fail transiently while a store is renamed; check ExternalSecret status on the
                 live cluster after each PR. ServiceAccount conversions: grep each account&#39;s pods for
-                <code>service_account_name</code> before converting, and state the token on each (step 13&#39;s rule
+                <code>service_account_name</code> before converting, and state the token on each (step 12&#39;s rule
                 catches a miss).
               </p>
             </div>
@@ -11660,7 +11664,7 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
                 SeaweedFS (decision 10): provider kind classes with <code>access=</code> (the reworked #8035) and
                 <code>PrivateBucket</code>, rendered in each consumer&#39;s unit with its Secret name unchanged. Migrate
                 consumers per area, then delete <code>_ClusterGrant</code>, <code>Bucket.grant</code> and the duplicate
-                <code>SecretKeyFields</code>.
+                <code>SecretKeyFields</code>. The six <code>seaweedfs-*-bucket</code> units retire here too.
               </p>
             </div>
           </div>
@@ -11681,20 +11685,32 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                Backups: <code>PostgresBackup</code> (<code>cnpg_backup.py</code>) for authentik first, then one PR per
-                remaining OVH database (N8). <code>ResticBackup</code> replaces <code>public_coder_backup.py</code> and
-                <code>haku_openclaw_spike_backup.py</code>.
+                Backups. Ready now: <code>ResticBackup</code> replaces the near-copies
+                <code>public_coder_backup.py</code> and <code>haku_openclaw_spike_backup.py</code>, with the bucket kept
+                outside the composite. After decisions 1 and 10:
+                <code>PostgresBackup</code> (<code>cnpg_backup.py</code>) takes a <code>PostgresRef</code> and builds a
+                <code>PrivateBucket</code>, for authentik first (whose fold is step 14), then one PR per other OVH
+                database you want covered (N8); only <code>authentik-db-ovh</code> has backups today, and enabling the
+                plugin restarts a single-instance cluster.
               </p>
             </div>
           </div>
           <div class="sc">
             <div class="rich">
-              <p><code>cnpg_backup.py</code> plus one PR per database.</p>
+              <p>
+                One render-identical ResticBackup PR (about 250 lines net removed); <code>cnpg_backup.py</code> plus one
+                PR per database.
+              </p>
             </div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
-            <div class="rich"><p>Medium. New buckets and identities are created; no existing data moves.</p></div>
+            <div class="rich">
+              <p>
+                None for ResticBackup. Medium for PostgresBackup: new buckets and identities are created; no existing
+                data moves.
+              </p>
+            </div>
           </div>
         </li>
         <li>
