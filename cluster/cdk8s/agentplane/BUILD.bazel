@@ -166,6 +166,7 @@ py_library(
         "//cluster/cdk8s/providers/agent_sandbox:sandboxtemplate",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
+        "@pypi//cdk8s",
         "@pypi//constructs",
     ],
 )

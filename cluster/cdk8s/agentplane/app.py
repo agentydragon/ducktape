@@ -454,15 +454,17 @@ class App(Construct):
         SandboxTemplate(
             self,
             "sandboxtemplate",
-            name="agentplane-runner",
-            namespace=namespace,
-            # What the sandbox Actions tell an agent choosing among the templates they offer.
-            annotations={
-                DESCRIPTION_ANNOTATION: (
-                    "The shared runner image, built to host an agent harness: the sandbox tools (git, "
-                    "curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
-                )
-            },
+            metadata=ApiObjectMetadata(
+                name="agentplane-runner",
+                namespace=namespace,
+                # What the sandbox Actions tell an agent choosing among the templates they offer.
+                annotations={
+                    DESCRIPTION_ANNOTATION: (
+                        "The shared runner image, built to host an agent harness: the sandbox tools (git, "
+                        "curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
+                    )
+                },
+            ),
             # The CiliumNetworkPolicy next to this construct is the runner's fence.
             network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
             volume_claim_templates_policy=SandboxTemplateSpecVolumeClaimTemplatesPolicy.OVERRIDES,

@@ -42,7 +42,7 @@ from agent_sandbox_sandboxwarmpool_crds.io.x_k8s.agents.extensions import (
     SandboxWarmPoolSpecUpdateStrategy,
     SandboxWarmPoolSpecUpdateStrategyType,
 )
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from kyverno_cleanuppolicy_crds.io.kyverno import (
     CleanupPolicy,
@@ -85,8 +85,7 @@ def _codex_template(chart: Chart) -> SandboxTemplate:
     return SandboxTemplate(
         chart,
         "codex",
-        name="codex",
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name="codex", namespace=NAMESPACE),
         network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
         pod_template=SandboxTemplateSpecPodTemplate(
             metadata=SandboxTemplateSpecPodTemplateMetadata(labels={"app.kubernetes.io/name": "agent-workspace"}),
