@@ -19,6 +19,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.config_format import json5_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
@@ -369,7 +370,7 @@ def _deployment(scope: Construct) -> None:
                                     k8s.NodeSelectorTerm(
                                         match_expressions=[
                                             k8s.NodeSelectorRequirement(
-                                                key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
+                                                key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="DoesNotExist"
                                             )
                                         ]
                                     )
@@ -444,11 +445,9 @@ def _state_claims(scope: Construct) -> None:
             namespace=_NAMESPACE,
             annotations={
                 "description": (
-                    "Worker-local (optiplex SSD) replacement for the OpenClaw spike state, migrating "
-                    "it off the ovh-ns103656 HDD (which fell over under I/O contention with "
-                    "etcd+kubelet). WaitForFirstConsumer binds it on optiplex when the VolSync "
-                    "restore mover is created; it must not be mounted by the Deployment before the "
-                    "restore completes."
+                    "Persistent OpenClaw home, agent workspace, memory, and Claude Code session "
+                    "transcripts for the isolated Haku spike, on the optiplex worker's local SSD, "
+                    "away from the control-plane disks etcd and kubelet need."
                 )
             },
         ),

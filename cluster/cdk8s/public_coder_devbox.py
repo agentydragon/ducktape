@@ -50,7 +50,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import external_creds
+from cluster.cdk8s import external_creds, node_scheduling
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -173,7 +173,7 @@ def virtual_machine(scope: Construct) -> VirtualMachine:
                                     VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
                                         match_expressions=[
                                             VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                                key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
+                                                key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="DoesNotExist"
                                             )
                                         ]
                                     )

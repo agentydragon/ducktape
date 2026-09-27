@@ -266,9 +266,7 @@ def generate_manifests(root: Path) -> None:
     agentplane_testing_health_checks = agentplane_generation.environment_health_checks(
         agentplane_testing_resource_chart, testing.ENV.namespace
     )
-    haku_charts.write_console_manifests(root)
     haku_openclaw_spike_config.write_manifests(root)
-    haku_mailbox.write_manifests(root)
     public_coder_agent_config.write_manifests(root)
     public_coder_proxy.write_manifests(
         root,
@@ -1178,7 +1176,14 @@ def generate_manifests(root: Path) -> None:
     haku_mailbox_artifact = artifact("haku-mailbox", haku_mailbox.OUTPUT_DIR)
     haku_flux_kustomizations.haku_mailbox(
         flux_chart,
-        haku_mailbox_artifact,
+        write_directory(
+            root,
+            haku_mailbox_artifact,
+            haku_mailbox.chart,
+            siblings=haku_mailbox.SOPS_FILES,
+            components=["./image-pins"],
+            config_map_generator=[haku_mailbox.CONFIG_MAP, haku_mailbox.INGRESS_CONFIG_MAP],
+        ),
         cnpg_kustomization,
         cert_manager_kustomization,
         external_secrets_operator_kustomization,
@@ -1377,7 +1382,15 @@ def generate_manifests(root: Path) -> None:
     haku_console_artifact = artifact("haku-console", haku_charts.PATH)
     haku_charts.haku_console(
         flux_chart,
-        haku_console_artifact,
+        write_directory(
+            root,
+            haku_console_artifact,
+            haku_charts.console_chart,
+            siblings=haku_charts.EXTRA_RESOURCES,
+            namespace=haku_charts.NAMESPACE,
+            components=["./image-pins"],
+            config_map_generator=haku_charts.CONFIG_MAP_GENERATOR,
+        ),
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,

@@ -19,6 +19,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -320,27 +321,12 @@ def _values() -> dict[str, object]:
                     }
                 },
                 # Chart auto-generates podAntiAffinity when replicas > 1
-                "nodeSelector": {"topology.kubernetes.io/zone": "hil-ovh"},
+                "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
                 # The replica with its local PVC on a control plane must survive the
                 # default taint until monitoring-state migration. Prefer workers for
                 # any placement not constrained by that PVC.
-                "tolerations": [
-                    {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
-                ],
-                "affinity": {
-                    "nodeAffinity": {
-                        "preferredDuringSchedulingIgnoredDuringExecution": [
-                            {
-                                "weight": 100,
-                                "preference": {
-                                    "matchExpressions": [
-                                        {"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}
-                                    ]
-                                },
-                            }
-                        ]
-                    }
-                },
+                "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
+                "affinity": node_scheduling.PREFER_WORKERS,
                 "resources": {
                     "requests": {"cpu": "10m", "memory": "64Mi"},
                     "limits": {"cpu": "100m", "memory": "128Mi"},
