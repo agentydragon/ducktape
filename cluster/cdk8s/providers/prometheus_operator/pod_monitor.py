@@ -42,8 +42,8 @@ class Endpoint:
 
 
 class PodMonitor(_PodMonitor):
-    """Prometheus Operator's `PodMonitor`. `selector` is `spec.selector.matchLabels`;
-    `pod_metrics_endpoints` is `spec.podMetricsEndpoints`.
+    """Prometheus Operator's `PodMonitor`. Keywords are `PodMonitorSpec` fields under their own
+    names and types.
     """
 
     def __init__(
@@ -52,15 +52,12 @@ class PodMonitor(_PodMonitor):
         id: str,
         *,
         metadata: ApiObjectMetadata,
-        selector: dict[str, str],
+        selector: PodMonitorSpecSelector,
         pod_metrics_endpoints: Sequence[PodMonitorSpecPodMetricsEndpoints],
     ) -> None:
         super().__init__(
             scope,
             id,
             metadata=metadata,
-            spec=PodMonitorSpec(
-                selector=PodMonitorSpecSelector(match_labels=selector),
-                pod_metrics_endpoints=list(pod_metrics_endpoints),
-            ),
+            spec=PodMonitorSpec(selector=selector, pod_metrics_endpoints=list(pod_metrics_endpoints)),
         )

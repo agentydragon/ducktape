@@ -10,9 +10,17 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from agentplane_actionpolicybinding_crds.works.allegedly.agentplane import ActionPolicyBindingSpecSubject
+from agentplane_actionpolicybinding_crds.works.allegedly.agentplane import (
+    ActionPolicyBinding,
+    ActionPolicyBindingSpec,
+    ActionPolicyBindingSpecSubject,
+)
 from agentplane_actionpolicyset_crds.works.allegedly.agentplane import ActionPolicySetSpecAutoApproveIf
-from agentplane_egressbinding_crds.works.allegedly.agentplane import EgressBindingSpecSubjects
+from agentplane_egressbinding_crds.works.allegedly.agentplane import (
+    EgressBinding,
+    EgressBindingSpec,
+    EgressBindingSpecSubjects,
+)
 from agentplane_egresspolicy_crds.works.allegedly.agentplane import EgressPolicySpecRules, EgressPolicySpecRulesMethods
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
@@ -48,9 +56,7 @@ from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_GAFFER_PRIVATE_READS_SET,
     PUBLIC_GITHUB_READS_SET,
 )
-from cluster.cdk8s.providers.agentplane.action_policy_binding import ActionPolicyBinding
 from cluster.cdk8s.providers.agentplane.action_policy_set import ActionPolicySet, AutoApproveIf
-from cluster.cdk8s.providers.agentplane.egress_binding import EgressBinding
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
@@ -95,7 +101,9 @@ def _binding(
     policy_sets: Sequence[str],
 ) -> None:
     BindingSpec.model_validate(
-        ActionPolicyBinding(scope, id, metadata=metadata, subject=subject, policy_sets=policy_sets).to_json()["spec"]
+        ActionPolicyBinding(
+            scope, id, metadata=metadata, spec=ActionPolicyBindingSpec(subject=subject, policy_sets=list(policy_sets))
+        ).to_json()["spec"]
     )
 
 
@@ -447,7 +455,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "networkpolicy-egress-to-testing-app",
         metadata=ApiObjectMetadata(name=f"{egress.NAME}-to-testing-app", namespace=_NAMESPACE),
-        selector={"app.kubernetes.io/name": egress.NAME},
+        endpoint_selector={"app.kubernetes.io/name": egress.NAME},
         egress=[
             EgressRule.to_endpoints(
                 cilium.endpoint_labels(testing.ENV.namespace, app_component.NAME), app_component.CONTAINER_PORT
@@ -521,25 +529,27 @@ def add_staging_action_policies(scope: Construct) -> None:
             namespace=_NAMESPACE,
             annotations={"description": "What sandboxes running as the claude-ai ServiceAccount may reach."},
         ),
-        subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="claude-ai")],
-        policies=[
-            BASIC_POLICY,
-            KUBERNETES_POLICY,
-            FORGEJO_HAKU_POLICY,
-            PACKAGES_POLICY,
-            GOOGLE_READONLY_POLICY,
-            GROCY_SF_READONLY_POLICY,
-            HOME_ASSISTANT_READONLY_POLICY,
-            ACTIVITYWATCH_READ_POLICY,
-            AIQUOTA_READ_POLICY,
-            HAKU_MAILBOX_POLICY,
-            COINBASE_POLICY,
-            _AGENTPLANE_TESTING_POLICY,
-            _GITHUB_DOWNLOADS_POLICY,
-            GITHUB_CLONE_POLICY,
-            GITHUB_AGENTYDRAGON_AGENT_POLICY,
-            GITHUB_ACTIONS_LOGS_POLICY,
-        ],
+        spec=EgressBindingSpec(
+            subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="claude-ai")],
+            policies=[
+                BASIC_POLICY,
+                KUBERNETES_POLICY,
+                FORGEJO_HAKU_POLICY,
+                PACKAGES_POLICY,
+                GOOGLE_READONLY_POLICY,
+                GROCY_SF_READONLY_POLICY,
+                HOME_ASSISTANT_READONLY_POLICY,
+                ACTIVITYWATCH_READ_POLICY,
+                AIQUOTA_READ_POLICY,
+                HAKU_MAILBOX_POLICY,
+                COINBASE_POLICY,
+                _AGENTPLANE_TESTING_POLICY,
+                _GITHUB_DOWNLOADS_POLICY,
+                GITHUB_CLONE_POLICY,
+                GITHUB_AGENTYDRAGON_AGENT_POLICY,
+                GITHUB_ACTIONS_LOGS_POLICY,
+            ],
+        ),
     )
 
     # Every sandbox Action, auto-approved. Approving each one individually would not be a

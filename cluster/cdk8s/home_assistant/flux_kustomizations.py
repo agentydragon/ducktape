@@ -17,7 +17,6 @@ def home_assistant(
     external_secrets_config: Kustomization,
     forgejo_images: Kustomization,
     monitoring_crds: Kustomization,
-    gateway: Kustomization,
     sso_providers_tf: Kustomization,
 ) -> Kustomization:
     name = "home-assistant"
@@ -35,7 +34,6 @@ def home_assistant(
             forgejo_images,
             # ServiceMonitor + PrometheusRule
             monitoring_crds,
-            gateway,
             sso_providers_tf,
         ),
         description=(

@@ -235,7 +235,7 @@ def chart(app: App) -> Chart:
         chart,
         "ciliumnetworkpolicy",
         metadata=ApiObjectMetadata(name="airlock-ingress", namespace=NAME),
-        selector=_LABELS,
+        endpoint_selector=_LABELS,
         ingress=[
             _ingress_from(CiliumNetworkPolicySpecIngressFromEntities.INGRESS),
             # Kubelet liveness/readiness probes originate from the node host.

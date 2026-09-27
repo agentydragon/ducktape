@@ -12,7 +12,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 def ollama(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    gateway: Kustomization,
     cert_manager_environment: Kustomization,
     nvidia_runtimeclass: Kustomization,
     external_secrets_config: Kustomization,
@@ -35,7 +34,6 @@ def ollama(
             )
         ],
         depends_on=flux_kustomization_depends_on_many(
-            gateway,
             cert_manager_environment,
             nvidia_runtimeclass,
             # langfuse ESO remains

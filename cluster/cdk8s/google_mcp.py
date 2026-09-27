@@ -177,7 +177,7 @@ class GoogleMcpApp(Construct):
             self,
             "network-policy",
             metadata=ApiObjectMetadata(name=_NAME, namespace=_NAME),
-            selector=_LABELS,
+            endpoint_selector=_LABELS,
             ingress=[
                 IngressRule.from_endpoints(
                     cilium.endpoint_labels("agentplane-staging", "agentplane-actions"), ports=[_HTTP_PORT]

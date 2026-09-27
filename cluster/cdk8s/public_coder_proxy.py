@@ -369,7 +369,7 @@ def _ingress_policy(scope: Construct, app_namespace: str, app_labels: dict[str, 
         scope,
         "ingress",
         metadata=ApiObjectMetadata(name="allow-public-coder-agent-proxy-ingress", namespace=NAMESPACE),
-        selector=LABELS,
+        endpoint_selector=LABELS,
         ingress=[
             IngressRule.from_endpoints(
                 _endpoint(app_namespace, app_labels),
@@ -406,7 +406,7 @@ def _egress_policy(scope: Construct) -> None:
         scope,
         "egress",
         metadata=ApiObjectMetadata(name="allow-public-coder-agent-proxy-egress", namespace=NAMESPACE),
-        selector=LABELS,
+        endpoint_selector=LABELS,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
             # `world` alone does not mean "everywhere". Cilium carves the cluster's own nodes out

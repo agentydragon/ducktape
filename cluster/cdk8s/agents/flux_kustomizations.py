@@ -139,7 +139,6 @@ def plaid_mcp(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     forgejo_images: Kustomization,
-    gateway: Kustomization,
     cnpg: Kustomization,
     local_path_provisioner: Kustomization,
     external_secrets_config: Kustomization,
@@ -157,7 +156,6 @@ def plaid_mcp(
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
             forgejo_images,
-            gateway,
             cnpg,
             local_path_provisioner,
             external_secrets_config,

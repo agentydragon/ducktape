@@ -250,7 +250,7 @@ def _network_policies(scope: Construct, app_namespace: str, app_labels: dict[str
         scope,
         "ingress",
         metadata=ApiObjectMetadata(name="allow-public-coder-agent-sshpiper-ingress", namespace=_NAMESPACE),
-        selector=LABELS,
+        endpoint_selector=LABELS,
         ingress=[
             IngressRule.from_endpoints(
                 {
@@ -268,7 +268,7 @@ def _network_policies(scope: Construct, app_namespace: str, app_labels: dict[str
         scope,
         "egress",
         metadata=ApiObjectMetadata(name="allow-public-coder-agent-sshpiper-egress", namespace=_NAMESPACE),
-        selector=LABELS,
+        endpoint_selector=LABELS,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
             # The kubernetes plugin watches Pipes and resolves the upstream key Secret through the

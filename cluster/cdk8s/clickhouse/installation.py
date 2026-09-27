@@ -47,6 +47,7 @@ from clickhouse_keeper_installation_crds.com.altinity.clickhouse_keeper import (
     ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import public_coder_proxy
@@ -355,7 +356,7 @@ def clickhouse_chart(app: App) -> Chart:
         chart,
         "podmonitor",
         metadata=ApiObjectMetadata(name=client.NAME, namespace=client.NAMESPACE),
-        selector=client.LABELS,
+        selector=PodMonitorSpecSelector(match_labels=client.LABELS),
         pod_metrics_endpoints=[Endpoint.plain(port="metrics", scrape_timeout="15s")],
     )
     return chart

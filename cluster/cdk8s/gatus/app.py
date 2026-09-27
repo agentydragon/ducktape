@@ -22,6 +22,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategyName,
 )
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import cilium, cnpg
 from cluster.cdk8s.gateway import https_route
@@ -146,7 +147,7 @@ def _network_policies(scope: Construct) -> None:
         scope,
         "ingress",
         metadata=ApiObjectMetadata(name="gatus-ingress", namespace=_NAMESPACE),
-        selector=_LABELS,
+        endpoint_selector=_LABELS,
         ingress=[
             # Cilium Gateway API (reserved:ingress identity) → Gatus
             IngressRule.from_gateway(_PORT),
@@ -167,7 +168,7 @@ def _network_policies(scope: Construct) -> None:
         scope,
         "dns-visibility",
         metadata=ApiObjectMetadata(name="gatus-dns-visibility", namespace=_NAMESPACE),
-        selector=_LABELS,
+        endpoint_selector=_LABELS,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
             # Everything else, deliberately unrestricted.
@@ -208,7 +209,7 @@ def chart(app: App) -> Chart:
         chart,
         "service-monitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        selector=_LABELS,
+        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
         endpoints=[Endpoint.plain(port="http")],
     )
     return chart

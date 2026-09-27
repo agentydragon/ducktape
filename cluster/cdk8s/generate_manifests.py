@@ -603,9 +603,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, external_secrets_config_artifact, external_secrets_operator_kustomization
     )
     gateway_artifact = artifact("gateway", gateway.OUTPUT_DIR)
-    gateway_kustomization = gateway.gateway(
-        flux_chart, gateway_artifact, cert_manager_kustomization, kyverno_kustomization
-    )
+    gateway.gateway(flux_chart, gateway_artifact, cert_manager_kustomization, kyverno_kustomization)
     tofu_controller_artifact = artifact("tofu-controller", tofu_controller_release.OUTPUT_DIR)
     tofu_controller_kustomization = tofu_controller_release.tofu_controller(
         flux_chart, tofu_controller_artifact, cert_manager_kustomization, kyverno_kustomization
@@ -653,9 +651,9 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     website_artifact = artifact("website", website.OUTPUT_DIR)
-    website.website(flux_chart, website_artifact, gateway_kustomization)
+    website.website(flux_chart, website_artifact, kyverno_kustomization)
     proxmox_proxy_artifact = artifact("proxmox-proxy", proxmox_proxy.OUTPUT_DIR)
-    proxmox_proxy.proxmox_proxy(flux_chart, proxmox_proxy_artifact, gateway_kustomization)
+    proxmox_proxy.proxmox_proxy(flux_chart, proxmox_proxy_artifact, kyverno_kustomization)
     kube_system_artifact = artifact("kube-system", kube_system.OUTPUT_DIR)
     kube_system.kube_system(flux_chart, kube_system_artifact, goldilocks_kustomization)
     agents_mitmproxy_artifact = artifact("agents-mitmproxy", mitmproxy.OUTPUT_DIR)
@@ -671,7 +669,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, authentik_artifact, cnpg_kustomization, monitoring_crds_kustomization
     )
     gaffer_private_source_flux_kustomizations.gaffer_private_bridge(
-        flux_chart, gaffer_private_source_kustomization, authentik_kustomization, gateway_kustomization
+        flux_chart, gaffer_private_source_kustomization, authentik_kustomization, kyverno_kustomization
     )
     dns_automation_artifact = artifact("dns-automation", dns_automation.OUTPUT_DIR)
     dns_automation.dns_automation(
@@ -711,14 +709,13 @@ def generate_manifests(root: Path) -> None:
         root,
         cnpg_kustomization,
         external_secrets_config_kustomization,
-        gateway_kustomization,
         monitoring_crds_kustomization,
+        kyverno_kustomization,
     )
     ollama_app_artifact = artifact("ollama-app", ollama_app.OUTPUT_DIR)
     ollama_kustomization = ollama_flux_kustomizations.ollama(
         flux_chart,
         ollama_app_artifact,
-        gateway_kustomization,
         cert_manager_environment_kustomization,
         nvidia_runtimeclass_kustomization,
         external_secrets_config_kustomization,
@@ -874,7 +871,7 @@ def generate_manifests(root: Path) -> None:
     matrix_app_artifact = artifact("matrix-app", matrix.OUTPUT_DIR)
     matrix_kustomization = matrix.matrix(flux_chart, matrix_app_artifact, cnpg_kustomization)
     headlamp_app_artifact = artifact("headlamp-app", headlamp.OUTPUT_DIR)
-    headlamp.headlamp(flux_chart, headlamp_app_artifact, gateway_kustomization, sso_providers_tf_kustomization)
+    headlamp.headlamp(flux_chart, headlamp_app_artifact, sso_providers_tf_kustomization)
     grafana_instance_artifact = artifact("grafana-instance", grafana_instance.OUTPUT_DIR)
     grafana_instance_kustomization = monitoring_flux_kustomizations.grafana_instance(
         flux_chart, grafana_instance_artifact, grafana_operator_kustomization, cnpg_kustomization
@@ -888,7 +885,6 @@ def generate_manifests(root: Path) -> None:
         flux_webhook_token_kustomization,
         ntfy_kustomization,
         external_secrets_config_kustomization,
-        gateway_kustomization,
     )
     langfuse_artifact = artifact("langfuse", langfuse_app.OUTPUT_DIR)
     langfuse_app.langfuse(
@@ -925,7 +921,7 @@ def generate_manifests(root: Path) -> None:
         vm_images_publisher_kustomization,
         seaweedfs_secrets_kustomization,
         seaweedfs_operator_kustomization,
-        gateway_kustomization,
+        kyverno_kustomization,
     )
     haku_cloud_agent_artifact = artifact("haku-cloud-agent", f"{HAND_WRITTEN_ROOT}/parked/cloud-agent-tf")
     parked_flux_kustomizations.haku_cloud_agent(
@@ -1027,7 +1023,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         plaid_mcp_artifact,
         forgejo_images_kustomization,
-        gateway_kustomization,
         cnpg_kustomization,
         local_path_provisioner_kustomization,
         external_secrets_config_kustomization,
@@ -1050,7 +1045,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         cli_proxy_api_artifact,
         external_secrets_config_kustomization,
-        gateway_kustomization,
         cert_manager_environment_kustomization,
         sso_providers_tf_kustomization,
         forgejo_images_kustomization,
@@ -1105,7 +1099,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         grocy_sf_artifact,
         forgejo_images_kustomization,
-        gateway_kustomization,
         cert_manager_environment_kustomization,
         authentik_kustomization,
         volsync_kustomization,
@@ -1115,7 +1108,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         grocy_vallejo_artifact,
         forgejo_images_kustomization,
-        gateway_kustomization,
         cert_manager_environment_kustomization,
         authentik_kustomization,
         volsync_kustomization,
@@ -1138,7 +1130,6 @@ def generate_manifests(root: Path) -> None:
         external_secrets_config_kustomization,
         forgejo_images_kustomization,
         monitoring_crds_kustomization,
-        gateway_kustomization,
         sso_providers_tf_kustomization,
     )
     matrix_user_provisioner_artifact = artifact("matrix-user-provisioner", matrix_user_provisioner.OUTPUT_DIR)
@@ -1157,7 +1148,6 @@ def generate_manifests(root: Path) -> None:
         external_creds_kustomization,
         external_secrets_config_kustomization,
         forgejo_images_kustomization,
-        gateway_kustomization,
         cert_manager_kustomization,
         seaweedfs_operator_kustomization,
     )
@@ -1167,7 +1157,6 @@ def generate_manifests(root: Path) -> None:
         sdr_artifact,
         external_secrets_config_kustomization,
         forgejo_images_kustomization,
-        gateway_kustomization,
         authentik_kustomization,
     )
     ssh_mcp_artifact = artifact("ssh-mcp", ssh_mcp_generation.OUTPUT_DIR)
@@ -1231,7 +1220,6 @@ def generate_manifests(root: Path) -> None:
         grocy_mcp_sf_artifact,
         external_secrets_config_kustomization,
         forgejo_images_kustomization,
-        gateway_kustomization,
         grocy_sf_kustomization,
         valkey_kustomization,
         agent_machine_access_tf_kustomization,
@@ -1252,7 +1240,6 @@ def generate_manifests(root: Path) -> None:
         grocy_mcp_vallejo_artifact,
         external_secrets_config_kustomization,
         forgejo_images_kustomization,
-        gateway_kustomization,
         grocy_vallejo_kustomization,
         valkey_kustomization,
         agent_machine_access_tf_kustomization,
@@ -1369,7 +1356,6 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         local_path_provisioner_kustomization,
         forgejo_images_kustomization,
-        gateway_kustomization,
         agent_machine_access_tf_kustomization,
         reflector_kustomization,
         external_creds_kustomization,

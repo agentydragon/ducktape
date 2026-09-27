@@ -215,7 +215,7 @@ class KubeApiProxy(Construct):
             self,
             "networkpolicy",
             metadata=ApiObjectMetadata(name=NAME, namespace=console.NAMESPACE),
-            selector=LABELS,
+            endpoint_selector=LABELS,
             ingress=[
                 IngressRule.from_gateway(_HTTP_PORT),
                 IngressRule.from_endpoints(

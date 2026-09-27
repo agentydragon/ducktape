@@ -206,7 +206,7 @@ def _fence(
         chart,
         "fence",
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
-        selector={"app.kubernetes.io/name": proxy},
+        endpoint_selector={"app.kubernetes.io/name": proxy},
         egress=egress,
     )
     return chart

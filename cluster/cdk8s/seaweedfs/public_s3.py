@@ -288,7 +288,7 @@ def seaweedfs_public_s3(
     vm_images_publisher: Kustomization,
     seaweedfs_secrets: Kustomization,
     seaweedfs_operator: Kustomization,
-    gateway: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     name = "seaweedfs-public-s3"
     return flux_kustomization(
@@ -304,7 +304,8 @@ def seaweedfs_public_s3(
             vm_images_publisher,
             seaweedfs_secrets,
             seaweedfs_operator,
-            gateway,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+            kyverno,
         ),
         timeout="5m",
         decryption=SOPS_DECRYPTION,

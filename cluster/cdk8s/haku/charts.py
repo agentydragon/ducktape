@@ -114,7 +114,6 @@ def haku_console(
     cnpg: Kustomization,
     local_path_provisioner: Kustomization,
     forgejo_images: Kustomization,
-    gateway: Kustomization,
     agent_machine_access_tf: Kustomization,
     reflector: Kustomization,
     external_creds: Kustomization,
@@ -146,7 +145,6 @@ def haku_console(
             cnpg,
             local_path_provisioner,
             forgejo_images,
-            gateway,
             # TF creates the Authentik clients and haku-console-oidc Secret;
             # the console does OIDC discovery synchronously at startup.
             agent_machine_access_tf,

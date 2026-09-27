@@ -103,7 +103,7 @@ def _add_mcp_everything(scope: Construct) -> None:
         scope,
         "mcp-everything-networkpolicy",
         metadata=ApiObjectMetadata(name=MCP_EVERYTHING_NAME, namespace=_NAMESPACE),
-        selector=_MCP_EVERYTHING_LABELS,
+        endpoint_selector=_MCP_EVERYTHING_LABELS,
         ingress=[
             IngressRule.from_endpoints(
                 cilium.endpoint_labels(_NAMESPACE, "agentplane-app"),
@@ -119,7 +119,7 @@ def _add_mcp_everything(scope: Construct) -> None:
         scope,
         "mcp-everything-callers-networkpolicy",
         metadata=ApiObjectMetadata(name=f"{MCP_EVERYTHING_NAME}-callers", namespace=_NAMESPACE),
-        selector=CiliumNetworkPolicySpecEndpointSelector(
+        endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(
             match_expressions=[
                 CiliumNetworkPolicySpecEndpointSelectorMatchExpressions(
                     key="app.kubernetes.io/name",
@@ -202,7 +202,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
         scope,
         "oauth-fixture-networkpolicy",
         metadata=ApiObjectMetadata(name=OAUTH_FIXTURE_NAME, namespace=_NAMESPACE),
-        selector=_OAUTH_FIXTURE_LABELS,
+        endpoint_selector=_OAUTH_FIXTURE_LABELS,
         ingress=[
             IngressRule.from_endpoints(
                 cilium.endpoint_labels(_NAMESPACE, "agentplane-actions"), ports=[OAUTH_FIXTURE_PORT]

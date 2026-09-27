@@ -7,15 +7,12 @@ unset, so cert-manager's own default applies.
 
 `CertificatePrivateKey` groups `CertificateSpecPrivateKey`'s real algorithm/size variance
 (RSA/ECDSA/Ed25519, each with its own valid sizes) under named `@staticmethod` factories that
-return the struct itself. `LONG_LIVED_CA` is this cluster's one CA
-duration/renewal policy (10-year cert, 1-year renewal window), spread as
-`Certificate(..., **LONG_LIVED_CA)` by every long-lived signing Certificate.
+return the struct itself.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TypedDict
 
 from cdk8s import ApiObjectMetadata
 from cert_manager_crds.io.cert_manager import (
@@ -80,11 +77,3 @@ class CertificatePrivateKey:
         return CertificateSpecPrivateKey(
             algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA, size=256, rotation_policy=rotation_policy
         )
-
-
-class _LongLivedCa(TypedDict):
-    duration: str
-    renew_before: str
-
-
-LONG_LIVED_CA: _LongLivedCa = {"duration": "87600h", "renew_before": "8760h"}  # 10 years / 1 year

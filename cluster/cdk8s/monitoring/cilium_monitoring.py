@@ -5,7 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecEndpointsScheme
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitorSpecEndpointsScheme,
+    ServiceMonitorSpecNamespaceSelector,
+    ServiceMonitorSpecSelector,
+)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
@@ -28,8 +32,8 @@ def chart(app: App) -> Chart:
         chart,
         "cilium-agent",
         metadata=ApiObjectMetadata(name="cilium-agent", namespace=NAMESPACE, labels=_labels("cilium-agent")),
-        namespace_selector=["kube-system"],
-        selector={"app.kubernetes.io/name": "cilium-agent"},
+        namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=["kube-system"]),
+        selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": "cilium-agent"}),
         endpoints=[Endpoint.plain(port="metrics", scheme=ServiceMonitorSpecEndpointsScheme.HTTP, scrape_timeout="10s")],
     )
     # Hubble flow metrics, enabled by `hubble.metrics` in
@@ -43,8 +47,8 @@ def chart(app: App) -> Chart:
         chart,
         "hubble",
         metadata=ApiObjectMetadata(name="hubble", namespace=NAMESPACE, labels=_labels("hubble")),
-        namespace_selector=["kube-system"],
-        selector={"k8s-app": "hubble"},
+        namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=["kube-system"]),
+        selector=ServiceMonitorSpecSelector(match_labels={"k8s-app": "hubble"}),
         endpoints=[
             Endpoint.plain(port="hubble-metrics", scheme=ServiceMonitorSpecEndpointsScheme.HTTP, scrape_timeout="10s")
         ],

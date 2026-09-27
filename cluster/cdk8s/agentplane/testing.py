@@ -150,7 +150,7 @@ def chart(app: App) -> Chart:
         chart,
         "networkpolicy-app-from-staging-egress",
         metadata=ApiObjectMetadata(name=f"{app_component.NAME}-from-staging-egress", namespace=ENV.namespace),
-        selector={"app.kubernetes.io/name": app_component.NAME},
+        endpoint_selector={"app.kubernetes.io/name": app_component.NAME},
         ingress=[
             IngressRule.from_endpoints(
                 cilium.endpoint_labels("agentplane-staging", egress.NAME), ports=[app_component.CONTAINER_PORT]
