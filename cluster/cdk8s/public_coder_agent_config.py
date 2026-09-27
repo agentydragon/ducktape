@@ -810,8 +810,7 @@ def _credentials(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "github-token",
-        name=_GITHUB_TOKEN_NAME,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name=_GITHUB_TOKEN_NAME, namespace=NAMESPACE),
         refresh="1h",
         store=external_creds.STORE,
         data=[remote_data("github-agentydragon-agent", "token", secret_key="GITHUB_TOKEN")],

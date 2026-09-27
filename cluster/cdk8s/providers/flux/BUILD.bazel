@@ -110,8 +110,8 @@ py_library(
     srcs = ["flux_kustomization.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/providers/flux:kustomization",
+        "@pypi//cdk8s",
         "@pypi//constructs",
     ],
 )

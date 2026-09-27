@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
@@ -38,8 +38,7 @@ def chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         "route53-credentials",
-        name=_ROUTE53_SECRET,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name=_ROUTE53_SECRET, namespace=NAMESPACE),
         refresh="1h",
         store=external_creds.STORE,
         data=[
