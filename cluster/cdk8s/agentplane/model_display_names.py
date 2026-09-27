@@ -34,6 +34,7 @@ _UNPROBED_CODEX_DISPLAY_NAMES: dict[str, str] = {"gpt-5.4": "GPT-5.4", "gpt-5.5"
 # OLLAMA_CHAT_MODELS's base id -> display name; the context-window suffix each exposed
 # variant carries is computed below, mirroring `ollama_chat_variant`'s own suffixing.
 _OLLAMA_BASE_DISPLAY_NAMES: dict[str, str] = {
+    "qwen3.8-flash-next-iq4xs": "Qwen3.8 Flash Next IQ4_XS",
     "gpt-oss-20b": "GPT-OSS 20B",
     "gpt-oss-120b": "GPT-OSS 120B",
     "gemma4-31b-it-q8_0": "Gemma 4 31B",

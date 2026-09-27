@@ -89,6 +89,10 @@ data:
           display_name: Gemini 3.1 Flash Lite
         - model: antigravity/ant-messages/gemini-3.5-flash-lite
           display_name: Gemini 3.5 Flash Lite
+        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          display_name: Qwen3.8 Flash Next IQ4_XS (128K)
+        - model: ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
+          display_name: Qwen3.8 Flash Next IQ4_XS (128K)
         - model: ollama/oai-chat/gpt-oss-20b-128k
           display_name: GPT-OSS 20B (128K)
         - model: ollama/olm-chat/gpt-oss-20b-128k
@@ -147,6 +151,8 @@ data:
           - antigravity/ant-messages/gpt-oss-120b-medium
           - antigravity/ant-messages/gemini-3.1-flash-lite
           - antigravity/ant-messages/gemini-3.5-flash-lite
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
           - ollama/oai-chat/gpt-oss-20b-128k
           - ollama/olm-chat/gpt-oss-20b-128k
           - ollama/oai-chat/gpt-oss-20b-256k
@@ -168,6 +174,8 @@ data:
           - chatgpt/oai-responses/gpt-5.6-sol
           - chatgpt/oai-responses/gpt-5.6-terra
           - chatgpt/oai-responses/gpt-5.6-luna
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
           - ollama/oai-chat/gpt-oss-20b-128k
           - ollama/olm-chat/gpt-oss-20b-128k
           - ollama/oai-chat/gpt-oss-20b-256k

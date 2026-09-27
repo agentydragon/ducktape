@@ -10,8 +10,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch, Size
+from cdk8s_plus_34 import (
+    PersistentVolume,
+    PersistentVolumeAccessMode,
+    PersistentVolumeClaim,
+    PersistentVolumeReclaimPolicy,
+    k8s,
+)
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -30,12 +36,14 @@ _LABELS = {"app.kubernetes.io/name": _NAME}
 _OLLAMA_PORT = 11434
 _AUTH_PROXY_PORT = 11435
 _MODELS_CLAIM = "llm-models"
+_SSD_MODELS_CLAIM = "qwen38-iq4-ssd"
+_SSD_MODELS_VOLUME = "wyrm2-qwen38-iq4-ssd"
 _DIRECT_TOKEN = "ollama-direct-token"
 # Both rendered by the hand-written kustomization.yaml's configMapGenerator.
 _AUTH_PROXY_CONFIG_MAP = "ollama-auth-proxy"
 _SCRIPTS_CONFIG_MAP = "gpt-oss-scripts"
-# Host inference experiments own the GPUs; retain models and routing for resumption.
-_PAUSED_FOR_HOST_EXPERIMENTS = True
+# Pause this Deployment before exclusive host inference experiments.
+_PAUSED_FOR_HOST_EXPERIMENTS = False
 
 
 def _namespace(scope: Construct) -> None:
@@ -75,6 +83,58 @@ def _models_claim(scope: Construct) -> None:
     )
 
 
+def _ssd_models(scope: Construct) -> None:
+    # Existing host-managed ext4 filesystem, not a dynamically provisioned LVM LV.
+    # Capacity advertises this directory; it is not a filesystem quota.
+    volume = PersistentVolume(
+        scope,
+        "ssd-models-volume",
+        metadata=ApiObjectMetadata(
+            name=_SSD_MODELS_VOLUME, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
+        ),
+        storage=Size.gibibytes(90),
+        access_modes=[PersistentVolumeAccessMode.READ_WRITE_ONCE],
+        reclaim_policy=PersistentVolumeReclaimPolicy.RETAIN,
+        storage_class_name="",
+    )
+    # The fluent PV has no local source or node-affinity fields.
+    ApiObject.of(volume).add_json_patch(
+        JsonPatch.add(
+            "/spec/local", k8s.LocalVolumeSource(path="/var/lib/llm-models-ssd/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS")
+        ),
+        JsonPatch.add(
+            "/spec/nodeAffinity",
+            k8s.VolumeNodeAffinity(
+                required=k8s.NodeSelector(
+                    node_selector_terms=[
+                        k8s.NodeSelectorTerm(
+                            match_expressions=[
+                                k8s.NodeSelectorRequirement(
+                                    key="kubernetes.io/hostname", operator="In", values=["wyrm2"]
+                                )
+                            ]
+                        )
+                    ]
+                )
+            ),
+        ),
+    )
+    claim = PersistentVolumeClaim(
+        scope,
+        "ssd-models-claim",
+        metadata=ApiObjectMetadata(
+            name=_SSD_MODELS_CLAIM, namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
+        ),
+        access_modes=[PersistentVolumeAccessMode.READ_WRITE_ONCE],
+        storage_class_name="",
+        storage=Size.gibibytes(90),
+        volume=volume,
+    )
+    volume.bind(claim)
+    # cdk8s-plus bind() renders only the name; PV claimRef also needs the namespace.
+    ApiObject.of(volume).add_json_patch(JsonPatch.add("/spec/claimRef/namespace", _NAMESPACE))
+
+
 def _ollama_container() -> k8s.Container:
     probe_action = k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_string("ollama"))
     return k8s.Container(
@@ -83,6 +143,12 @@ def _ollama_container() -> k8s.Container:
         ports=[k8s.ContainerPort(name="ollama", container_port=_OLLAMA_PORT, protocol="TCP")],
         env=[
             k8s.EnvVar(name="OLLAMA_MODELS", value="/models"),
+            # SSD blobs are externally managed read-only symlinks. Keep startup GC
+            # from unlinking them before the bootstrap Job registers the model.
+            k8s.EnvVar(name="OLLAMA_NOPRUNE", value="true"),
+            k8s.EnvVar(name="OLLAMA_NUM_PARALLEL", value="1"),
+            k8s.EnvVar(name="OLLAMA_MAX_LOADED_MODELS", value="1"),
+            k8s.EnvVar(name="LLAMA_ARG_FIT_TARGET", value="8192,2048"),
             k8s.EnvVar(name="OLLAMA_HOST", value=f"0.0.0.0:{_OLLAMA_PORT}"),
             k8s.EnvVar(name="NVIDIA_VISIBLE_DEVICES", value="all"),
             k8s.EnvVar(name="OLLAMA_KV_CACHE_TYPE", value="q8_0"),
@@ -101,7 +167,10 @@ def _ollama_container() -> k8s.Container:
             },
             limits={"nvidia.com/gpu": k8s.Quantity.from_number(2), "memory": k8s.Quantity.from_string("40Gi")},
         ),
-        volume_mounts=[k8s.VolumeMount(name="models", mount_path="/models")],
+        volume_mounts=[
+            k8s.VolumeMount(name="models", mount_path="/models"),
+            k8s.VolumeMount(name="ssd-models", mount_path="/ssd-models", read_only=True),
+        ],
         liveness_probe=k8s.Probe(http_get=probe_action, initial_delay_seconds=30, period_seconds=30),
         readiness_probe=k8s.Probe(http_get=probe_action, initial_delay_seconds=10, period_seconds=10),
     )
@@ -145,8 +214,27 @@ def _deployment(scope: Construct) -> None:
                     runtime_class_name="nvidia",
                     node_selector={"feature.node.kubernetes.io/pci-10de.present": "true"},
                     tolerations=[k8s.Toleration(key="nvidia.com/gpu", operator="Exists", effect="PreferNoSchedule")],
+                    init_containers=[
+                        k8s.Container(
+                            name="link-ssd-models",
+                            image="ollama/ollama:0.34.4",
+                            command=["/bin/sh", "/scripts/link-ssd-models.sh"],
+                            volume_mounts=[
+                                k8s.VolumeMount(name="models", mount_path="/models"),
+                                k8s.VolumeMount(name="ssd-models", mount_path="/ssd-models", read_only=True),
+                                k8s.VolumeMount(name="scripts", mount_path="/scripts", read_only=True),
+                            ],
+                        )
+                    ],
                     containers=[_ollama_container(), _auth_proxy_container()],
                     volumes=[
+                        k8s.Volume(
+                            name="ssd-models",
+                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(
+                                claim_name=_SSD_MODELS_CLAIM, read_only=True
+                            ),
+                        ),
+                        k8s.Volume(name="scripts", config_map=k8s.ConfigMapVolumeSource(name=_SCRIPTS_CONFIG_MAP)),
                         k8s.Volume(
                             name="models",
                             persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_MODELS_CLAIM),
@@ -235,7 +323,7 @@ def _setup_job(scope: Construct) -> None:
         scope,
         "setup-gpt-oss",
         # Versioned so a changed bootstrap model list creates a fresh Job.
-        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v4", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v5", namespace=_NAMESPACE),
         spec=k8s.JobSpec(
             ttl_seconds_after_finished=86400,
             template=k8s.PodTemplateSpec(
@@ -295,6 +383,7 @@ def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     _namespace(chart)
     _models_claim(chart)
+    _ssd_models(chart)
     _deployment(chart)
     _service(chart)
     https_route(
