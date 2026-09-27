@@ -56,6 +56,11 @@ spec:
       name: cert-manager-environment
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/cert-manager/issuer-config/**"
+          to: "@artifact/cluster/generated/cert-manager/issuer-config/"
+      name: cert-manager-issuer-config
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/cnpg/**"
           to: "@artifact/cluster/generated/cnpg/"
       name: cnpg

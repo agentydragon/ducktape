@@ -14,7 +14,12 @@ from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositoryS
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import (
+    CERT_MANAGER_ISSUER_SUBSTITUTION,
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -137,16 +142,21 @@ def write_manifests(root: Path) -> None:
 
 
 def cert_manager(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, reflector: Kustomization, monitoring_crds: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    cert_manager_issuer_config: Kustomization,
+    reflector: Kustomization,
+    monitoring_crds: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         artifact,
         timeout="5m",
+        post_build=CERT_MANAGER_ISSUER_SUBSTITUTION,
         depends_on=flux_kustomization_depends_on_many(
-            # TODO: drop this edge. It ordered the reflected cert-manager-issuer-config
-            # ConfigMap that postBuild read; neither exists any more.
+            cert_manager_issuer_config,
+            # Produces the namespace-local ConfigMap that postBuild reads.
             reflector,
             # the ServiceMonitor/PodMonitor CRD
             monitoring_crds,

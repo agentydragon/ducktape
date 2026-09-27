@@ -1432,6 +1432,7 @@ py_library(
         "//cluster/cdk8s/authentik:sso_providers",
         "//cluster/cdk8s/cert_manager:app",
         "//cluster/cdk8s/cert_manager:environment",
+        "//cluster/cdk8s/cert_manager:issuer_config",
         "//cluster/cdk8s/cert_manager:trust",
         "//cluster/cdk8s/cli_proxy_api",
         "//cluster/cdk8s/clickhouse:installation",

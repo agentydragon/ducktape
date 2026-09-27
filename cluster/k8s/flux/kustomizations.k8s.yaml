@@ -58,6 +58,23 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: cert-manager-issuer-config
+  namespace: ducktape-flux
+spec:
+  interval: 10m
+  path: ./cluster/generated/cert-manager/issuer-config
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: cert-manager-issuer-config
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: coredns-custom
   namespace: ducktape-flux
 spec:
@@ -878,12 +895,18 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
+    - name: cert-manager-issuer-config
+      namespace: ducktape-flux
     - name: reflector
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/cert-manager/app
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1193,8 +1216,14 @@ spec:
       namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
+    - name: cert-manager-issuer-config
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/gateway
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1367,12 +1396,18 @@ spec:
       namespace: ducktape-flux
     - name: cert-manager-trust
       namespace: ducktape-flux
+    - name: cert-manager-issuer-config
+      namespace: ducktape-flux
     - name: external-creds
       namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/cert-manager/environment
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1572,10 +1607,16 @@ metadata:
 spec:
   deletionPolicy: Orphan
   dependsOn:
+    - name: cert-manager-issuer-config
+      namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/atuin
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1626,6 +1667,8 @@ spec:
     - name: authentik
       namespace: ducktape-flux
     - name: gateway
+      namespace: ducktape-flux
+    - name: cert-manager-issuer-config
       namespace: ducktape-flux
   interval: 10m
   path: ./k8s
@@ -3417,10 +3460,16 @@ spec:
       namespace: ducktape-flux
     - name: cert-manager
       namespace: ducktape-flux
+    - name: cert-manager-issuer-config
+      namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/github-api-proxy
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3501,6 +3550,8 @@ spec:
       namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
+    - name: cert-manager-issuer-config
+      namespace: ducktape-flux
     - name: cert-manager-environment
       namespace: ducktape-flux
     - name: authentik
@@ -3528,6 +3579,8 @@ spec:
     - name: forgejo-images
       namespace: ducktape-flux
     - name: gateway
+      namespace: ducktape-flux
+    - name: cert-manager-issuer-config
       namespace: ducktape-flux
     - name: cert-manager-environment
       namespace: ducktape-flux
@@ -3564,8 +3617,14 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
+    - name: cert-manager-issuer-config
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/haku/mailbox
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
   prune: true
   retryInterval: 1m
   sourceRef:
