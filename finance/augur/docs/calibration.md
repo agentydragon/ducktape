@@ -47,6 +47,16 @@ These sampling intervals do not measure model uncertainty, establish independent
 historical windows, or validate a joint forecast. Per-market divergence is not an
 aggregate decision-quality score.
 
+Matching quotes is reproduction, not forecast skill. Quotes about thresholds, dates or
+events do not identify a joint trajectory distribution, so any coupling or
+interpolation between them is the model's assumption even when a fit matches every
+supplied marginal. Reweighting existing samples cannot create missing support, and
+fitting generative parameters to quotes does not guarantee it; report residuals and
+weight concentration apart from predictive evidence. A skill comparison needs frozen
+information dates, resolved outcomes or held-out series, compatible question meanings
+and dependence-aware uncertainty; an LLM's asserted knowledge cutoff alone does not
+make an evaluation leakage-free.
+
 <../calibration/resolvers.py> owns event meaning; its adjacent tests pin deadline,
 unresolved-horizon, inflation-history and bucket behavior. Calibration tests cover
 missing channels/quotes and family fitting. API endpoint tests exercise the

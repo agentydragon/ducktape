@@ -126,7 +126,10 @@ def constant_maturity_fund_paths(
     it tracks the mark, because a fund whose mark has fallen can only buy the face it can pay
     for. A model that pins face while the mark moves has the fund distributing a yield on its
     own net assets that drifts away from the yield of the bonds it holds, without limit and in
-    the direction that flatters it. See <../debug/bond_sleeve_overdistribution.md>.
+    the direction that flatters it: an earlier pinned-face version paid 10.95% on its mark over
+    1926-1995 while its bonds yielded 6.71%, and the whole error sat in that income leg, not in
+    the missing pull-to-par of the price step. Check a change here against an external published
+    return series, on its volatility as well as its mean (`study/sbbi/`).
     """
 
     market_yield = np.asarray(market_yield, dtype=np.float64)
