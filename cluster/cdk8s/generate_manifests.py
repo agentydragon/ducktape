@@ -314,9 +314,6 @@ def generate_manifests(root: Path) -> None:
     github_branch_protection.write_manifests(root)
     agent_machine_access.write_manifests(root)
     forgejo_gitops_modules.write_manifests(root)
-    alloy_otlp_bearer_token.write_manifests(root)
-    monitoring_namespace.write_manifests(root)
-    grafana_helmrepository.write_manifests(root)
     drift_watch.write_manifests(root)
     github_secrets_sync_gitops_module.write_manifests(root)
     github_secrets_sync_secrets.write_manifests(root)
@@ -327,10 +324,6 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_public_s3.write_manifests(root)
     nix_cache_attic.write_manifests(root)
     vm_images_publisher_publisher.write_manifests(root)
-    grafana_operator.write_manifests(root)
-    cilium_monitoring.write_manifests(root)
-    monitoring_rules.write_manifests(root)
-    monitoring_stack.write_manifests(root)
     alloy.write_manifests(root)
     loki.write_manifests(root)
     mimir.write_manifests(root)
@@ -427,10 +420,12 @@ def generate_manifests(root: Path) -> None:
     )
     monitoring_crds_kustomization = monitoring_flux_kustomizations.monitoring_crds(flux_chart)
     grafana_helmrepository_artifact = artifact("grafana-helmrepository", grafana_helmrepository.OUTPUT_DIR)
-    grafana_helmrepository.grafana_helmrepository(flux_chart, grafana_helmrepository_artifact)
+    grafana_helmrepository.grafana_helmrepository(
+        flux_chart, write_directory(root, grafana_helmrepository_artifact, grafana_helmrepository.chart)
+    )
     monitoring_namespace_artifact = artifact("monitoring-namespace", monitoring_namespace.OUTPUT_DIR)
     monitoring_namespace_kustomization = monitoring_namespace.monitoring_namespace(
-        flux_chart, monitoring_namespace_artifact
+        flux_chart, write_directory(root, monitoring_namespace_artifact, monitoring_namespace.chart)
     )
     node_feature_discovery_artifact = artifact("node-feature-discovery", node_feature_discovery.OUTPUT_DIR)
     node_feature_discovery.node_feature_discovery(
@@ -521,9 +516,17 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     monitoring_cilium_artifact = artifact("monitoring-cilium", cilium_monitoring.OUTPUT_DIR)
-    cilium_monitoring.cilium_monitoring(flux_chart, monitoring_cilium_artifact, monitoring_crds_kustomization)
+    cilium_monitoring.cilium_monitoring(
+        flux_chart,
+        write_directory(root, monitoring_cilium_artifact, cilium_monitoring.chart),
+        monitoring_crds_kustomization,
+    )
     monitoring_etcd_artifact = artifact("monitoring-etcd", etcd.OUTPUT_DIR)
-    etcd.etcd_monitoring(flux_chart, monitoring_etcd_artifact, root, mesh, monitoring_crds_kustomization)
+    etcd.etcd_monitoring(
+        flux_chart,
+        write_directory(root, monitoring_etcd_artifact, lambda app: etcd.chart(app, mesh)),
+        monitoring_crds_kustomization,
+    )
     monitoring_gateway_probe_artifact = artifact("monitoring-gateway-probe", gateway_probe.OUTPUT_DIR)
     gateway_probe.gateway_probe(
         flux_chart,
@@ -537,10 +540,16 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     monitoring_rules_artifact = artifact("monitoring-rules", monitoring_rules.OUTPUT_DIR)
-    monitoring_rules.monitoring_rules(flux_chart, monitoring_rules_artifact, monitoring_crds_kustomization)
+    monitoring_rules.monitoring_rules(
+        flux_chart,
+        write_directory(root, monitoring_rules_artifact, monitoring_rules.chart),
+        monitoring_crds_kustomization,
+    )
     grafana_operator_artifact = artifact("grafana-operator", grafana_operator.OUTPUT_DIR)
     grafana_operator_kustomization = grafana_operator.grafana_operator(
-        flux_chart, grafana_operator_artifact, monitoring_namespace_kustomization
+        flux_chart,
+        write_directory(root, grafana_operator_artifact, grafana_operator.chart),
+        monitoring_namespace_kustomization,
     )
     nvidia_device_plugin_artifact = artifact("nvidia-device-plugin", nvidia_device_plugin.OUTPUT_DIR)
     nvidia_device_plugin.nvidia_device_plugin(
@@ -774,7 +783,10 @@ def generate_manifests(root: Path) -> None:
     monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
     monitoring_stack.monitoring_stack(
         flux_chart,
-        monitoring_stack_artifact,
+        # The SOPS sibling turns on Flux decryption.
+        write_directory(
+            root, monitoring_stack_artifact, monitoring_stack.chart, siblings=["grafana-admin-password.sops.yaml"]
+        ),
         monitoring_namespace_kustomization,
         monitoring_crds_kustomization,
         kyverno_kustomization,
@@ -1150,7 +1162,9 @@ def generate_manifests(root: Path) -> None:
         "monitoring-alloy-otlp-bearer-token-tf", alloy_otlp_bearer_token.OUTPUT_DIR
     )
     alloy_otlp_bearer_token.alloy_otlp_bearer_token_tf(
-        flux_chart, monitoring_alloy_otlp_bearer_token_tf_artifact, tofu_controller_kustomization
+        flux_chart,
+        write_directory(root, monitoring_alloy_otlp_bearer_token_tf_artifact, alloy_otlp_bearer_token.chart),
+        tofu_controller_kustomization,
     )
     litellm_artifact = artifact("litellm", litellm_namespace.OUTPUT_DIR)
     litellm_proxy.litellm(
