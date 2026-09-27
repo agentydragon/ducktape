@@ -20,11 +20,12 @@ from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedIndexedAmount,
-    PreparedRecurringObligation,
+    PreparedObligation,
     PreparedRecurringTransfer,
     PreparedSeries,
 )
 from finance.augur.sim.results import Finished, Paid, Rollout
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 
@@ -56,12 +57,11 @@ def _account(agent_id: AgentId, balance: Decimal) -> tuple[AccountRef, int]:
     return AccountRef(agent_id=agent_id, account_id=CHECKING), int(currency_amount_to_quanta(balance, quantum=QUANTUM))
 
 
-def _rent_obligation(amount: PreparedIndexedAmount) -> PreparedRecurringObligation:
+def _rent_obligation(amount: PreparedIndexedAmount) -> PreparedObligation:
     """Alice owes the landlord this amount every month of the horizon."""
 
-    return PreparedRecurringObligation(
-        start_month=0,
-        end_month=None,
+    return PreparedObligation(
+        schedule=Recurring(start_month=0, end_month=None),
         obligation_id="outside_rent",
         obligation_type=ObligationType.OUTSIDE_RENT,
         from_account=AccountRef(agent_id=AgentId("alice"), account_id=CHECKING),
@@ -95,7 +95,7 @@ def _compose(
     rollout_count: int,
     horizon_months: int,
     accounts: Sequence[tuple[AccountRef, int]],
-    obligation: PreparedRecurringObligation | None = None,
+    obligation: PreparedObligation | None = None,
     transfer: PreparedRecurringTransfer | None = None,
 ) -> World:
     world = World(

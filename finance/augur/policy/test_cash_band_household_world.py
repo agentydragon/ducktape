@@ -30,6 +30,7 @@ from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedObligation, PreparedSeries, PreparedTlhPortfolio
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
@@ -95,7 +96,7 @@ def lot(lot_id: LotId, asset_id: AssetId, *, units: int, basis: int) -> Callable
 
 def claim(amount: int) -> PreparedObligation:
     return PreparedObligation(
-        month=0,
+        schedule=Once(month=0),
         obligation_id="upkeep",
         obligation_type="cash_spend",
         from_account=AccountRef(agent_id=ALICE, account_id=CASH),

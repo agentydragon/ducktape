@@ -23,7 +23,8 @@ from finance.augur.sim.holdings import Disposition
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedRecurringObligation, PreparedRecurringTransfer
+from finance.augur.sim.prepared import PreparedObligation, PreparedRecurringTransfer
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.world import World
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
@@ -108,9 +109,8 @@ def compose(case: Situation) -> World:
         start, end = case.rent_months
         world.track(
             Biller(
-                PreparedRecurringObligation(
-                    start_month=start,
-                    end_month=end,
+                PreparedObligation(
+                    schedule=Recurring(start_month=start, end_month=end),
                     obligation_id="rent",
                     obligation_type="rent",
                     from_account=ref(ALICE),

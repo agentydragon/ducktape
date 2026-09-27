@@ -30,6 +30,7 @@ from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.prepared import PreparedJurisdiction, PreparedObligation, PreparedSeries
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
@@ -121,7 +122,7 @@ def compose(case: Situation, rollout_id: int) -> World:
     world.track(
         Biller(
             PreparedObligation(
-                month=0,
+                schedule=Once(month=0),
                 obligation_id="example-bill",
                 obligation_type=ObligationType.OUTSIDE_RENT,
                 from_account=AccountRef(agent_id=HOUSEHOLD, account_id=CHECKING),

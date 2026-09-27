@@ -17,6 +17,7 @@ from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedObligation, PreparedTransfer
 from finance.augur.sim.results import Executed, Finished, RejectedAction, Rollout, UnpaidClaims
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 
@@ -55,7 +56,7 @@ def compose(rollout_id: int, *, obligation_id: str = "one-cent-bill") -> World:
     world.track(
         Biller(
             PreparedObligation(
-                month=0,
+                schedule=Once(month=0),
                 obligation_id=obligation_id,
                 obligation_type=ObligationType.OUTSIDE_RENT,
                 from_account=ALICE,

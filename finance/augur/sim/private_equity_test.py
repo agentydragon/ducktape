@@ -34,8 +34,9 @@ from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedJurisdiction, PreparedRecurringObligation, PreparedSeries, _TenderPolicy
+from finance.augur.sim.prepared import PreparedJurisdiction, PreparedObligation, PreparedSeries, _TenderPolicy
 from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -190,9 +191,8 @@ def compose(case: Holder, channels: Sequence[PreparedSeries]) -> World:
         )
     world.track(
         Biller(
-            PreparedRecurringObligation(
-                start_month=0,
-                end_month=case.horizon_months - 1,
+            PreparedObligation(
+                schedule=Recurring(start_month=0, end_month=case.horizon_months - 1),
                 obligation_id="monthly_spend",
                 obligation_type=ObligationType.CASH_SPEND,
                 from_account=AccountRef(agent_id=ALICE, account_id=CHECKING),

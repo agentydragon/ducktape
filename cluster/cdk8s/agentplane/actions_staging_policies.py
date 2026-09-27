@@ -70,6 +70,7 @@ _GMAIL_READS_SET = "gmail-reads"
 _GOOGLE_CALENDAR_READS_SET = "google-calendar-reads"
 _TANA_READS_SET = "tana-reads"
 _GROCY_SF_READS_SET = "grocy-sf-reads"
+_SSH_READS_SET = "ssh-reads"
 # The `cluster-sops-read` Coinbase CDP key, which can only view (no trade, no transfer): the one
 # Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
 _COINBASE_SECRET = "coinbase-api-credentials"
@@ -640,9 +641,26 @@ def add_staging_action_policies(scope: Construct) -> None:
         auto_approve_if=[AutoApproveIf.exact_actions(actions={"grocy_sf": _GROCY_SF_READS_ACTIONS})],
     )
 
+    # SSH MCP's `list_targets`: it names which machine/user targets are configured and whether
+    # each one's local key is present -- no hostname is dialed, no command runs, and no secret
+    # material is returned. Every other `ssh` Action (running a command against a target) stays
+    # on the human path.
+    _policy_set(
+        scope,
+        "actionpolicyset-ssh-reads",
+        metadata=ApiObjectMetadata(
+            name=_SSH_READS_SET,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "Auto-approves the SSH MCP backend's list_targets, which only names configured targets and key availability; every other SSH Action stays on the human path."
+            },
+        ),
+        auto_approve_if=[AutoApproveIf.exact_actions(actions={"ssh": ["list_targets"]})],
+    )
+
     # The reviewed read sets for GitHub (github-reads and github-identity-reads), Home
-    # Assistant, Gmail, Google Calendar, Tana and Grocy SF, plus sandbox use, attached to the
-    # Claude.ai connector's principal.
+    # Assistant, Gmail, Google Calendar, Tana, Grocy SF and SSH, plus sandbox use, attached to
+    # the Claude.ai connector's principal.
     # The binding's existence is the grant: deleting it, or the label on the ServiceAccount,
     # puts every one of these Actions back on the human path.
     _binding(
@@ -652,7 +670,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             name="claude-ai-reads",
             namespace=_NAMESPACE,
             annotations={
-                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF reads and sandbox use for Connections acting as the claude-ai ServiceAccount."
+                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF/SSH reads and sandbox use for Connections acting as the claude-ai ServiceAccount."
             },
         ),
         subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="claude-ai"),
@@ -665,5 +683,6 @@ def add_staging_action_policies(scope: Construct) -> None:
             _GOOGLE_CALENDAR_READS_SET,
             _TANA_READS_SET,
             _GROCY_SF_READS_SET,
+            _SSH_READS_SET,
         ],
     )

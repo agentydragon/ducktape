@@ -43,8 +43,8 @@ from finance.augur.sim.prepared import (
     PreparedIndexedAmount,
     PreparedJurisdiction,
     PreparedLocation,
+    PreparedObligation,
     PreparedPropertyCashflow,
-    PreparedRecurringObligation,
     PreparedRecurringPropertyCashflow,
     PreparedRecurringTransfer,
     PreparedSeries,
@@ -63,6 +63,7 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.property import Housing
 from finance.augur.sim.results import Executed, Finished, Rollout, Trace
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -236,10 +237,9 @@ def dues(
     end_month: int | None = None,
     property_id: PropertyId | None = None,
     deductible_fraction: Decimal | int = 1,
-) -> PreparedRecurringObligation:
-    return PreparedRecurringObligation(
-        start_month=0,
-        end_month=end_month,
+) -> PreparedObligation:
+    return PreparedObligation(
+        schedule=Recurring(start_month=0, end_month=end_month),
         obligation_id=obligation_id,
         obligation_type=obligation_type,
         from_account=ref(payer),
@@ -359,7 +359,7 @@ class Situation:
     scheduled_transfers: tuple[PreparedTransfer, ...] = ()
     recurring_property_cashflows: tuple[PreparedRecurringPropertyCashflow, ...] = ()
     scheduled_property_cashflows: tuple[PreparedPropertyCashflow, ...] = ()
-    obligations: tuple[PreparedRecurringObligation, ...] = ()
+    obligations: tuple[PreparedObligation, ...] = ()
     housing: Housing = field(default_factory=Housing)
     locations: tuple[PreparedLocation, ...] = ()
     property_tax_policies: tuple[_PropertyTax, ...] = ()

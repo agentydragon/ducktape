@@ -57,7 +57,7 @@ from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedJurisdiction,
     PreparedLocation,
-    PreparedRecurringObligation,
+    PreparedObligation,
     PreparedSeries,
     _CapitalImprovement,
     _MortgageFinancing,
@@ -67,6 +67,7 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.property import Housing
 from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -235,9 +236,8 @@ def target_allocation_world() -> World:
     hold_vti(world, LotId("alice-vti"), quantity=200, cost_basis=10_000, purchase_month=-1)
     world.track(
         Biller(
-            PreparedRecurringObligation(
-                start_month=RENT_MONTH,
-                end_month=None,
+            PreparedObligation(
+                schedule=Recurring(start_month=RENT_MONTH, end_month=None),
                 obligation_id="alice-rent",
                 obligation_type="rent",
                 from_account=ref(ALICE),

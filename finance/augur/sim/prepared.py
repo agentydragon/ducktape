@@ -12,6 +12,7 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, PortfolioId, PropertyId
 from finance.augur.sim.income import TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.jurisdictions import JurisdictionLevel
+from finance.augur.sim.schedule import Schedule
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 
 
@@ -65,7 +66,7 @@ class PreparedRecurringPropertyCashflow(PreparedRecurringTransfer):
 
 
 @dataclass(frozen=True, kw_only=True)
-class PreparedClaim:
+class PreparedObligation:
     obligation_id: str
     obligation_type: str
     from_account: AccountRef
@@ -74,17 +75,7 @@ class PreparedClaim:
     property_id: PropertyId | None
     deduction_category: TransferDeductionCategory | None
     deductible_fraction_ppb: int
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedObligation(PreparedClaim):
-    month: int
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedRecurringObligation(PreparedClaim):
-    start_month: int
-    end_month: int | None
+    schedule: Schedule
 
 
 @dataclass(frozen=True, kw_only=True)

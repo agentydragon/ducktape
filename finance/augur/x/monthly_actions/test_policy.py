@@ -13,6 +13,7 @@ from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import PreparedObligation, PreparedSeries
 from finance.augur.sim.results import Finished, RejectedAction
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 from finance.augur.x.monthly_actions.policy import decide
@@ -44,7 +45,7 @@ def opening(bill_dollars: int) -> World:
     world.track(
         Biller(
             PreparedObligation(
-                month=0,
+                schedule=Once(month=0),
                 obligation_id="opening-bill",
                 obligation_type=ObligationType.CASH_SPEND,
                 from_account=AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("checking")),

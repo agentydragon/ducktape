@@ -46,6 +46,7 @@ py_library(
         "//finance/augur/sim:private_equity_series",
         "//finance/augur/sim:property",
         "//finance/augur/sim:runtime",
+        "//finance/augur/sim:schedule",
         "//finance/augur/sim:tax",
         "//finance/augur/sim:tax_authority",
         "//finance/augur/sim:tax_indexation",
