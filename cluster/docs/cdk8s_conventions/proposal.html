@@ -1149,10 +1149,10 @@
             None of this is a big-bang rewrite. Each convention lands as a series of small PRs you can review as
             rendered diffs. The provider cleanup, the edge trim (426 edges down to 249, and 222 once #8185 lands), the
             writer, now writing 100 directories, and three stateless folds (181 units down to 171) have landed. Ready
-            without a decision: the edge check, the render-identical cores of pod policy and the namespace helper, eight
-            more writer conversions and the ResticBackup dedupe. The fleet rules, graph checks, health-check derivation
-            and glue absorption are deferred. The <code>wait</code> default and derived Orphan are postponed, and C4 and
-            the steps built on it wait on your decision.
+            without a decision, cleanups first: the render-identical cores of pod policy and the namespace helper, eight
+            more writer conversions and the ResticBackup dedupe. The edge check waits until they land. The fleet rules,
+            graph checks, health-check derivation and glue absorption are deferred. The <code>wait</code> default and
+            derived Orphan are postponed, and C4 and the steps built on it wait on your decision.
           </p>
         </div>
       </div>
@@ -11206,8 +11206,9 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                Edge-justification check, ready now and best stacked on #8185. Every edge must be one of: a CRD provider
-                of a kind the dependent renders, including kinds its Helm charts render (a table: 7 to
+                <strong>Deferred by the owner: cleanups of what is wrong or inconsistent today land first.</strong>
+                Edge-justification check, stacked on #8185 when it comes. Every edge must be one of: a CRD provider of a
+                kind the dependent renders, including kinds its Helm charts render (a table: 7 to
                 <code>monitoring-crds</code>, <code>cnpg</code> and <code>cert-manager-trust</code> to
                 <code>cert-manager</code>) and kinds from an external repo (<code>gaffer-private</code> to
                 <code>tofu-controller</code>); a <code>Fail</code> webhook operator; an input a
