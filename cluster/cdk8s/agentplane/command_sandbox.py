@@ -21,6 +21,7 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpecVolumesEmptyDir,
     SandboxTemplateSpecPodTemplateSpecVolumesEmptyDirSizeLimit,
 )
+from cdk8s import ApiObjectMetadata
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecIngress
 from constructs import Construct
 
@@ -28,7 +29,6 @@ from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import egress, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 
@@ -115,7 +115,7 @@ class CommandSandbox(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=metadata(NAME, namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             selector=_LABELS,
             ingress=[CiliumNetworkPolicySpecIngress()],
             egress=[

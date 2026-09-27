@@ -249,8 +249,8 @@ and lands in its own PR with the violations fixed. Exceptions are explicit param
   affinity, not `nodeSelector`.
 - `add_container(env_from=[EnvFrom(config_map=...)])` takes the wrapper, not the
   ConfigMap.
-- `Chart(namespace=...)` would drop the `metadata(name, namespace)` call from every
-  object, but it injects the namespace into cluster-scoped objects too (ClusterRole,
+- `Chart(namespace=...)` would drop `namespace=` from every object's `ApiObjectMetadata`,
+  but it injects the namespace into cluster-scoped objects too (ClusterRole,
   Bundle) with no opt-out; usable only once cluster-scoped objects get their own chart.
 - Synth imports each service's `main` for its `Settings`, pulling the runtime in; synth
   tests are `size = "medium"` until a light `settings.py` per service exists

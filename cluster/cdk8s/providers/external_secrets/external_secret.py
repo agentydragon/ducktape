@@ -47,8 +47,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 
-from cluster.cdk8s.metadata import metadata
-
 
 class SecretStoreRef:
     """Which store an `ExternalSecret` reads from: a cluster-wide `ClusterSecretStore`, or
@@ -165,7 +163,7 @@ class ExternalSecret(_ExternalSecret):
         super().__init__(
             scope,
             id,
-            metadata=metadata(name, namespace, annotations=annotations),
+            metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=annotations),
             spec=ExternalSecretSpec(
                 refresh_interval=refresh_interval,
                 refresh_policy=refresh_policy,

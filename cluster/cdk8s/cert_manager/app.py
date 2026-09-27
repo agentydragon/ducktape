@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
@@ -22,7 +22,6 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
 NAME = "cert-manager"
@@ -100,7 +99,7 @@ def _service_monitor(chart: Chart, name: str, *, component: str, port: str) -> N
     ServiceMonitor(
         chart,
         name,
-        metadata=metadata(name, NAMESPACE),
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
         selector={"app.kubernetes.io/instance": NAME, "app.kubernetes.io/component": component},
         # ServiceMonitor.port matches the Service port name, not the targetPort.
         endpoints=[Endpoint.plain(port=port)],
@@ -117,7 +116,7 @@ def chart(app: App) -> Chart:
     repository = HelmRepository(
         chart,
         "repository",
-        metadata=metadata("jetstack", "flux-system"),
+        metadata=ApiObjectMetadata(name="jetstack", namespace="flux-system"),
         spec=HelmRepositorySpec(interval="24h", url="https://charts.jetstack.io"),
     )
     helm_release(

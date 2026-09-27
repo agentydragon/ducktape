@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from cdk8s import ApiObjectMetadata
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization as _Kustomization,
@@ -28,8 +29,6 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecPostBuild,
     KustomizationSpecSourceRef,
 )
-
-from cluster.cdk8s.metadata import metadata
 
 
 class Kustomization(_Kustomization):
@@ -76,7 +75,7 @@ class Kustomization(_Kustomization):
         super().__init__(
             scope,
             id,
-            metadata=metadata(name, namespace, annotations=annotations),
+            metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=annotations),
             spec=KustomizationSpec(
                 source_ref=source_ref,
                 interval=interval,

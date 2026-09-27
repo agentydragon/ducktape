@@ -31,7 +31,6 @@ from cluster.cdk8s import cilium, container_security, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -63,7 +62,10 @@ class LlmIngress(Construct):
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the ingress
         # calls TokenReview as itself, so it needs its own mounted token.
         service_account = ServiceAccount(
-            self, "serviceaccount", metadata=metadata(_NAME, env.namespace), automount_token=True
+            self,
+            "serviceaccount",
+            metadata=ApiObjectMetadata(name=_NAME, namespace=env.namespace),
+            automount_token=True,
         )
         # TokenReview proves the Pod-bound workload bearer presented by the central
         # egress proxy. It grants none of that Pod's authority to the ingress.
@@ -83,7 +85,7 @@ class LlmIngress(Construct):
         return ConfigMap(
             self,
             "settings",
-            metadata=metadata(f"{_NAME}-settings", self.env.namespace),
+            metadata=ApiObjectMetadata(name=f"{_NAME}-settings", namespace=self.env.namespace),
             data={
                 "settings.yaml": yaml_config(
                     settings_file(Settings, {"allowed_service_account_namespaces": [self.env.namespace]})
@@ -95,9 +97,9 @@ class LlmIngress(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                _NAME,
-                self.env.namespace,
+            metadata=ApiObjectMetadata(
+                name=_NAME,
+                namespace=self.env.namespace,
                 labels=_LABELS,
                 annotations={"secret.reloader.stakater.com/reload": self.env.llm_ingress.litellm_key_secret_name},
             ),
@@ -157,7 +159,7 @@ class LlmIngress(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(_NAME, self.env.namespace),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=self.env.namespace),
             selector=deployment,
             ports=[ServicePort(name="http", port=CONTAINER_PORT, target_port=CONTAINER_PORT, protocol=Protocol.TCP)],
         )
@@ -169,7 +171,7 @@ class LlmIngress(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=metadata(_NAME, self.env.namespace),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=self.env.namespace),
             selector=_LABELS,
             ingress=[
                 IngressRule.from_endpoints(

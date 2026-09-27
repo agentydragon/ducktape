@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecDriftDetection, HelmReleaseSpecDriftDetectionMode
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
@@ -15,7 +15,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "grafana-operator"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/grafana-operator"
@@ -26,7 +25,7 @@ def chart(app: App) -> Chart:
     repository = HelmRepository(
         chart,
         "helm-repository",
-        metadata=metadata(NAME, "flux-system"),
+        metadata=ApiObjectMetadata(name=NAME, namespace="flux-system"),
         spec=HelmRepositorySpec(
             type=HelmRepositorySpecType.OCI, url="oci://ghcr.io/grafana/helm-charts", interval="12h"
         ),

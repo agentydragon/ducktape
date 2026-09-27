@@ -27,7 +27,6 @@ from constructs import Construct
 
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.metadata import metadata
 
 
 @jsii.implements(IApiResource)
@@ -192,14 +191,14 @@ class AgentRbac(Construct):
         Role(
             self,
             "role",
-            metadata=metadata("agentplane-testing-operator", env.namespace),
+            metadata=ApiObjectMetadata(name="agentplane-testing-operator", namespace=env.namespace),
             rules=[*_SANDBOX_RULES, _ACTION_POLICY_RULE, _TOKEN_RULE],
         )
 
         RoleBinding(
             self,
             "rolebinding",
-            metadata=metadata("agent-agentplane-testing-operator", env.namespace),
+            metadata=ApiObjectMetadata(name="agent-agentplane-testing-operator", namespace=env.namespace),
             role=Role.from_role_name(self, "role-ref", "agentplane-testing-operator"),
         ).add_subjects(
             # Haku and public-coder agent identities plus the interactive
@@ -223,9 +222,17 @@ class AcceptanceToken(Construct):
 
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
-        role = Role(self, "role", metadata=metadata("agentplane-acceptance-token", env.namespace), rules=[_TOKEN_RULE])
+        role = Role(
+            self,
+            "role",
+            metadata=ApiObjectMetadata(name="agentplane-acceptance-token", namespace=env.namespace),
+            rules=[_TOKEN_RULE],
+        )
         RoleBinding(
-            self, "rolebinding", metadata=metadata("claude-ai-acceptance-token", env.namespace), role=role
+            self,
+            "rolebinding",
+            metadata=ApiObjectMetadata(name="claude-ai-acceptance-token", namespace=env.namespace),
+            role=role,
         ).add_subjects(
             ServiceAccount.from_service_account_name(
                 self, "claude-ai-sa", "claude-ai", namespace_name="agentplane-staging"

@@ -27,7 +27,6 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 
 NAME = "clickhouse-schema"
@@ -48,9 +47,9 @@ def chart(app: App) -> Chart:
     job = Job(
         chart,
         "job",
-        metadata=metadata(
-            _JOB_NAME,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_JOB_NAME,
+            namespace=NAMESPACE,
             labels=_LABELS,
             annotations={
                 "description": (

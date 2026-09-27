@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -42,7 +42,6 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
@@ -373,7 +372,7 @@ def _ingress_policy(scope: Construct, app_namespace: str, app_labels: dict[str, 
     NetworkPolicy(
         scope,
         "ingress",
-        metadata=metadata("allow-public-coder-agent-proxy-ingress", NAMESPACE),
+        metadata=ApiObjectMetadata(name="allow-public-coder-agent-proxy-ingress", namespace=NAMESPACE),
         selector=LABELS,
         ingress=[
             IngressRule.from_endpoints(
@@ -410,7 +409,7 @@ def _egress_policy(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "egress",
-        metadata=metadata("allow-public-coder-agent-proxy-egress", NAMESPACE),
+        metadata=ApiObjectMetadata(name="allow-public-coder-agent-proxy-egress", namespace=NAMESPACE),
         selector=LABELS,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),

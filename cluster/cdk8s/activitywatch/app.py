@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngress,
@@ -27,7 +27,6 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/activitywatch"
@@ -227,7 +226,7 @@ def _route(scope: Construct, id: str, *, name: str, hostname: str) -> None:
     https_route(
         scope,
         id,
-        metadata=metadata(name, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
         hostnames=[hostname],
         backend=name,
         port=_SERVICE_PORT,
@@ -243,7 +242,7 @@ def _network_policy(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "network-policy",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         selector=_LABELS,
         ingress=[
             CiliumNetworkPolicySpecIngress(

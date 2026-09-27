@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallCrds,
@@ -23,7 +23,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import namespace
 
 NAME = "seaweedfs-operator"
@@ -36,7 +35,7 @@ def chart(app: App) -> Chart:
     repository = HelmRepository(
         chart,
         "repository",
-        metadata=metadata(NAME, _REPOSITORY_NAMESPACE),
+        metadata=ApiObjectMetadata(name=NAME, namespace=_REPOSITORY_NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://seaweedfs.github.io/seaweedfs-operator/"),
     )
     helm_release(

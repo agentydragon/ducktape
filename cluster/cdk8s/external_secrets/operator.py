@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_issuer_crds.io.cert_manager import Issuer, IssuerSpec, IssuerSpecSelfSigned
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
@@ -20,7 +20,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "external-secrets"
 NAMESPACE = "external-secrets-system"
@@ -99,13 +98,13 @@ def chart(app: App) -> Chart:
     webhook_issuer = Issuer(
         chart,
         "webhook-issuer",
-        metadata=metadata("external-secrets-selfsigned-issuer", NAMESPACE),
+        metadata=ApiObjectMetadata(name="external-secrets-selfsigned-issuer", namespace=NAMESPACE),
         spec=IssuerSpec(self_signed=IssuerSpecSelfSigned()),
     )
     repository = HelmRepository(
         chart,
         "repository",
-        metadata=metadata(NAME, NAMESPACE),
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://charts.external-secrets.io"),
     )
     helm_release(

@@ -5,7 +5,7 @@ Google Calendar MCP action groups.
 
 from __future__ import annotations
 
-from cdk8s import App, Chart, Duration
+from cdk8s import ApiObjectMetadata, App, Chart, Duration
 from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute, ServiceAccount
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -39,7 +39,6 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
@@ -358,7 +357,10 @@ def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
     command_sandbox.CommandSandbox(chart, "command-sandbox", ENV)
     reader = ServiceAccount(
-        chart, "external-creds-reader", metadata=metadata("external-creds-reader", _NAMESPACE), automount_token=False
+        chart,
+        "external-creds-reader",
+        metadata=ApiObjectMetadata(name="external-creds-reader", namespace=_NAMESPACE),
+        automount_token=False,
     )
     ExternalSecret(
         chart,

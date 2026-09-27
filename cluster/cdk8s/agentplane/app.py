@@ -70,7 +70,6 @@ from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_bu
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
@@ -120,16 +119,22 @@ class App(Construct):
         # The identity an agent presents to the app's own API; no Pod runs as it, so no
         # mounted token.
         ServiceAccount(
-            self, "serviceaccount-agent", metadata=metadata("agentplane-agent", namespace), automount_token=False
+            self,
+            "serviceaccount-agent",
+            metadata=ApiObjectMetadata(name="agentplane-agent", namespace=namespace),
+            automount_token=False,
         )
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the app
         # mounts its own token to call TokenReview as itself.
         app_service_account = ServiceAccount(
-            self, "serviceaccount-app", metadata=metadata(NAME, namespace), automount_token=True
+            self, "serviceaccount-app", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), automount_token=True
         )
         # The runner Pods' identity, with no RBAC of its own.
         ServiceAccount(
-            self, "serviceaccount-runner", metadata=metadata("agentplane-runner", namespace), automount_token=False
+            self,
+            "serviceaccount-runner",
+            metadata=ApiObjectMetadata(name="agentplane-runner", namespace=namespace),
+            automount_token=False,
         )
         return app_service_account
 
@@ -147,7 +152,7 @@ class App(Construct):
         Role(
             self,
             "role",
-            metadata=metadata(NAME, namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             rules=[
                 # GET /sandboxes/templates lists them; a get-only Role 403'd the route (#7023).
                 RolePolicyRule(
@@ -187,7 +192,10 @@ class App(Construct):
             ],
         )
         RoleBinding(
-            self, "rolebinding", metadata=metadata(NAME, namespace), role=Role.from_role_name(self, "role-ref", NAME)
+            self,
+            "rolebinding",
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            role=Role.from_role_name(self, "role-ref", NAME),
         ).add_subjects(app_service_account)
 
     def _container_env(self) -> dict[str, EnvValue]:
@@ -237,9 +245,9 @@ class App(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                NAME,
-                namespace,
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=namespace,
                 labels=_LABELS,
                 annotations={
                     # A re-minted client secret otherwise leaves the pod on the old
@@ -304,7 +312,7 @@ class App(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(NAME, self.env.namespace, labels=_LABELS),
+            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace, labels=_LABELS),
             selector=deployment,
             ports=[ServicePort(name="http", port=CONTAINER_PORT, target_port=CONTAINER_PORT, protocol=Protocol.TCP)],
         )
@@ -314,7 +322,7 @@ class App(Construct):
         https_route(
             self,
             "httproute",
-            metadata=metadata(namespace, namespace),
+            metadata=ApiObjectMetadata(name=namespace, namespace=namespace),
             hostnames=[self.env.app.hostname],
             backend=NAME,
             port=CONTAINER_PORT,
@@ -338,7 +346,7 @@ class App(Construct):
         NetworkPolicy(
             self,
             "networkpolicy-runner",
-            metadata=metadata("agentplane-runner", namespace),
+            metadata=ApiObjectMetadata(name="agentplane-runner", namespace=namespace),
             selector=_RUNNER_LABELS,
             ingress=[IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": namespace}, ports=[_RUNNER_PORT])],
             egress=[
@@ -352,7 +360,7 @@ class App(Construct):
         NetworkPolicy(
             self,
             "networkpolicy-app",
-            metadata=metadata(NAME, namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             selector=_LABELS,
             ingress=[IngressRule.from_gateway(CONTAINER_PORT)],
             egress=[

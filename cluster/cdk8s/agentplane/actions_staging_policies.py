@@ -48,7 +48,6 @@ from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_GAFFER_PRIVATE_READS_SET,
     PUBLIC_GITHUB_READS_SET,
 )
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.agentplane.action_policy_binding import ActionPolicyBinding
 from cluster.cdk8s.providers.agentplane.action_policy_set import ActionPolicySet, AutoApproveIf
 from cluster.cdk8s.providers.agentplane.egress_binding import EgressBinding
@@ -410,7 +409,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     coinbase_reader = Role(
         scope,
         "role-claude-ai-coinbase",
-        metadata=metadata("claude-ai-coinbase-reader", _NAMESPACE),
+        metadata=ApiObjectMetadata(name="claude-ai-coinbase-reader", namespace=_NAMESPACE),
         rules=[
             RolePolicyRule(
                 resources=[Secret.from_secret_name(scope, "coinbase-secret", _COINBASE_SECRET)], verbs=["get"]
@@ -420,7 +419,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     RoleBinding(
         scope,
         "rolebinding-claude-ai-coinbase",
-        metadata=metadata("claude-ai-coinbase-reader", _NAMESPACE),
+        metadata=ApiObjectMetadata(name="claude-ai-coinbase-reader", namespace=_NAMESPACE),
         role=coinbase_reader,
     ).add_subjects(claude_ai)
     EgressPolicy(
@@ -447,7 +446,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "networkpolicy-egress-to-testing-app",
-        metadata=metadata(f"{egress.NAME}-to-testing-app", _NAMESPACE),
+        metadata=ApiObjectMetadata(name=f"{egress.NAME}-to-testing-app", namespace=_NAMESPACE),
         selector={"app.kubernetes.io/name": egress.NAME},
         egress=[
             EgressRule.to_endpoints(

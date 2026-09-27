@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 
@@ -23,7 +23,6 @@ from cluster.cdk8s import cilium
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 
 NAME = "public-coder-agent-sshpiper"
@@ -252,7 +251,7 @@ def _network_policies(scope: Construct, app_namespace: str, app_labels: dict[str
     NetworkPolicy(
         scope,
         "ingress",
-        metadata=metadata("allow-public-coder-agent-sshpiper-ingress", _NAMESPACE),
+        metadata=ApiObjectMetadata(name="allow-public-coder-agent-sshpiper-ingress", namespace=_NAMESPACE),
         selector=LABELS,
         ingress=[
             IngressRule.from_endpoints(
@@ -270,7 +269,7 @@ def _network_policies(scope: Construct, app_namespace: str, app_labels: dict[str
     NetworkPolicy(
         scope,
         "egress",
-        metadata=metadata("allow-public-coder-agent-sshpiper-egress", _NAMESPACE),
+        metadata=ApiObjectMetadata(name="allow-public-coder-agent-sshpiper-egress", namespace=_NAMESPACE),
         selector=LABELS,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),

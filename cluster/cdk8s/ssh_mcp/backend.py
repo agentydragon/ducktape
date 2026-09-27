@@ -34,7 +34,6 @@ from cluster.cdk8s import cilium
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -65,7 +64,7 @@ def _config_map(scope: Construct, config: SshMcpConfig) -> ConfigMap:
     return ConfigMap(
         scope,
         "configuration",
-        metadata=metadata(CONFIG_MAP_NAME, NAMESPACE),
+        metadata=ApiObjectMetadata(name=CONFIG_MAP_NAME, namespace=NAMESPACE),
         data={"settings.yaml": yaml_config(config.settings), "known_hosts": config.known_hosts},
     )
 
@@ -119,7 +118,9 @@ class SshMcp(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(NAME, NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}),
+            metadata=ApiObjectMetadata(
+                name=NAME, namespace=NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}
+            ),
             pod_metadata=ApiObjectMetadata(labels=LABELS),
             replicas=1,
             select=False,
@@ -190,7 +191,7 @@ class SshMcp(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(NAME, NAMESPACE),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
             selector=deployment,
             ports=[ServicePort(name="http", port=HTTP_PORT, target_port=HTTP_PORT, protocol=Protocol.TCP)],
         )
@@ -199,7 +200,7 @@ class SshMcp(Construct):
         NetworkPolicy(
             self,
             "network-policy",
-            metadata=metadata(NAME, NAMESPACE),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
             selector=LABELS,
             ingress=[
                 IngressRule.from_endpoints(

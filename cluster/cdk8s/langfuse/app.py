@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
@@ -35,7 +35,6 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.valkey import valkey_instance
 
@@ -309,7 +308,7 @@ def _helm_release(scope: Construct) -> None:
     repository = HelmRepository(
         scope,
         "helm-repository",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://langfuse.github.io/langfuse-k8s"),
     )
     helm_release(
@@ -339,7 +338,7 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["langfuse.allegedly.works"],
         backend="langfuse-web",
         port=3000,

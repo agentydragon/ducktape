@@ -9,6 +9,7 @@ it; they retry until the Cluster accepts connections.
 
 from __future__ import annotations
 
+from cdk8s import ApiObjectMetadata
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManaged,
     ClusterSpecManagedRoles,
@@ -27,7 +28,6 @@ from constructs import Construct
 
 from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
-from cluster.cdk8s.metadata import metadata
 
 NAMESPACE = "haku-console"
 CLUSTER_NAME = "haku-console-db"
@@ -89,7 +89,7 @@ class Db(Construct):
         Database(
             self,
             "database",
-            metadata=metadata(f"{CLUSTER_NAME}-approval-store", NAMESPACE),
+            metadata=ApiObjectMetadata(name=f"{CLUSTER_NAME}-approval-store", namespace=NAMESPACE),
             spec=DatabaseSpec(
                 cluster=DatabaseSpecCluster(name=CLUSTER_NAME),
                 name=DATABASE,

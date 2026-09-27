@@ -16,13 +16,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.seaweedfs import namespace
 
@@ -35,7 +34,9 @@ def chart(app: App) -> Chart:
     PrometheusRule(
         chart,
         "seaweedfs-replication",
-        metadata=metadata("seaweedfs-replication", namespace.NAME, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(
+            name="seaweedfs-replication", namespace=namespace.NAME, labels={"release": "kube-prometheus-stack"}
+        ),
         groups=[
             group(
                 "seaweedfs-replication",

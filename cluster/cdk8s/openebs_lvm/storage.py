@@ -26,7 +26,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "openebs-lvm"
 NAMESPACE = "openebs"
@@ -81,7 +80,7 @@ def chart(app: App) -> Chart:
     repository = HelmRepository(
         chart,
         "repository",
-        metadata=metadata(RELEASE, "flux-system"),
+        metadata=ApiObjectMetadata(name=RELEASE, namespace="flux-system"),
         spec=HelmRepositorySpec(interval="24h", url="https://openebs.github.io/lvm-localpv"),
     )
     helm_release(

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Pods, Protocol, Service, ServicePort, ServiceType, k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -60,7 +60,6 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAMESPACE = "public-coder-agent"
@@ -82,9 +81,9 @@ def ssh_service(scope: Construct) -> Service:
     return Service(
         scope,
         "ssh-service",
-        metadata=metadata(
-            SERVICE_NAME,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=SERVICE_NAME,
+            namespace=NAMESPACE,
             labels=_SERVICE_LABELS,
             annotations={
                 "description": (
@@ -156,7 +155,7 @@ def virtual_machine(scope: Construct) -> VirtualMachine:
     return VirtualMachine(
         scope,
         "virtual-machine",
-        metadata=metadata(VM_NAME, NAMESPACE, labels=_SERVICE_LABELS),
+        metadata=ApiObjectMetadata(name=VM_NAME, namespace=NAMESPACE, labels=_SERVICE_LABELS),
         spec=VirtualMachineSpec(
             run_strategy="Always",
             template=VirtualMachineSpecTemplate(

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -31,7 +31,6 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from cluster.cdk8s import external_creds, forgejo_images
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
@@ -219,7 +218,7 @@ def _service_monitor(chart: Chart, app: str, endpoint: ServiceMonitorSpecEndpoin
     ServiceMonitor(
         chart,
         f"{app}-monitor",
-        metadata=metadata(app, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=app, namespace=_NAMESPACE),
         selector={"app.kubernetes.io/name": app, "app.kubernetes.io/component": "quota"},
         endpoints=[endpoint],
     )
@@ -276,7 +275,7 @@ def chart(app: App) -> Chart:
     GrafanaDashboard(
         chart,
         "dashboard",
-        metadata=metadata("github-exporter", _NAMESPACE),
+        metadata=ApiObjectMetadata(name="github-exporter", namespace=_NAMESPACE),
         instance_selector_labels={"dashboards": "grafana"},
         folder="GitHub",
         config_map_ref=GrafanaDashboardSpecConfigMapRef(name="github-exporter-dashboard", key="dashboard.json"),

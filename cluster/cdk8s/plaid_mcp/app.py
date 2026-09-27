@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import cilium
@@ -20,7 +20,6 @@ from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/app"
@@ -217,9 +216,9 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "ingress-policy",
-        metadata=metadata(
-            "plaid-mcp-ingress",
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name="plaid-mcp-ingress",
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "Default-deny ingress for plaid-mcp pods. Only the Authentik embedded proxy outpost can"

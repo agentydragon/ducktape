@@ -18,9 +18,8 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecVolumeClaimTemplates,
     SandboxTemplateSpecVolumeClaimTemplatesPolicy,
 )
+from cdk8s import ApiObjectMetadata
 from constructs import Construct
-
-from cluster.cdk8s.metadata import metadata
 
 
 class SandboxTemplate(_SandboxTemplate):
@@ -49,7 +48,7 @@ class SandboxTemplate(_SandboxTemplate):
         super().__init__(
             scope,
             id,
-            metadata=metadata(name, namespace, annotations=annotations),
+            metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=annotations),
             spec=SandboxTemplateSpec(
                 pod_template=pod_template,
                 network_policy_management=network_policy_management,

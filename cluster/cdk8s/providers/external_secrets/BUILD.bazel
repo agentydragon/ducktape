@@ -80,7 +80,6 @@ py_library(
     deps = [
         ":clusterexternalsecret",
         ":externalsecret",
-        "//cluster/cdk8s:metadata",
         "@pypi//cdk8s",
         "@pypi//constructs",
     ],

@@ -42,7 +42,7 @@ from agent_sandbox_sandboxwarmpool_crds.io.x_k8s.agents.extensions import (
     SandboxWarmPoolSpecUpdateStrategy,
     SandboxWarmPoolSpecUpdateStrategyType,
 )
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from kyverno_cleanuppolicy_crds.io.kyverno import (
     CleanupPolicy,
@@ -65,7 +65,6 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 
 NAME = "agent-workspaces"
@@ -227,7 +226,7 @@ def chart(app: App) -> Chart:
     SandboxWarmPool(
         chart,
         "codex-warm-pool",
-        metadata=metadata("codex", NAMESPACE),
+        metadata=ApiObjectMetadata(name="codex", namespace=NAMESPACE),
         spec=SandboxWarmPoolSpec(
             replicas=1,
             update_strategy=SandboxWarmPoolSpecUpdateStrategy(type=SandboxWarmPoolSpecUpdateStrategyType.RECREATE),
@@ -243,7 +242,7 @@ def chart(app: App) -> Chart:
     CleanupPolicy(
         chart,
         "janitor",
-        metadata=metadata("workspace-janitor", NAMESPACE),
+        metadata=ApiObjectMetadata(name="workspace-janitor", namespace=NAMESPACE),
         spec=CleanupPolicySpec(
             schedule="40 * * * *",
             match=CleanupPolicySpecMatch(

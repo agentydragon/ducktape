@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from volsync_replicationdestination_crds.backube.volsync import (
     ReplicationDestinationSpecRsyncTls,
@@ -40,7 +40,6 @@ from volsync_replicationsource_crds.backube.volsync import (
 
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.volsync.replication_destination import ReplicationDestination
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 
@@ -314,7 +313,7 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
     ReplicationDestination(
         chart,
         "migration",
-        metadata=metadata("grocy-config-ovh-migration", namespace),
+        metadata=ApiObjectMetadata(name="grocy-config-ovh-migration", namespace=namespace),
         trigger=ReplicationDestinationSpecTrigger(manual="prep-20260520"),
         rsync_tls=ReplicationDestinationSpecRsyncTls(
             destination_pvc=_CONFIG_CLAIM,
@@ -345,7 +344,7 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
     ReplicationDestination(
         chart,
         "backup-destination",
-        metadata=metadata(_BACKUP, namespace),
+        metadata=ApiObjectMetadata(name=_BACKUP, namespace=namespace),
         rsync_tls=ReplicationDestinationSpecRsyncTls(
             destination_pvc=_BACKUP,
             copy_method=ReplicationDestinationSpecRsyncTlsCopyMethod.DIRECT,
@@ -357,7 +356,7 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
     ReplicationSource(
         chart,
         "backup-source",
-        metadata=metadata(_BACKUP, namespace),
+        metadata=ApiObjectMetadata(name=_BACKUP, namespace=namespace),
         source_pvc=_CONFIG_CLAIM,
         trigger=ReplicationSourceSpecTrigger(schedule=backup_schedule),
         mover=ReplicationSourceSpecRsyncTls(

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from cdk8s import ApiObjectMetadata
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     Cluster as _Cluster,
     ClusterSpec,
@@ -23,8 +24,6 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecStorage,
 )
 from constructs import Construct
-
-from cluster.cdk8s.metadata import metadata
 
 
 class Cluster(_Cluster):
@@ -59,7 +58,7 @@ class Cluster(_Cluster):
         super().__init__(
             scope,
             id,
-            metadata=metadata(name, namespace, annotations=annotations),
+            metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=annotations),
             spec=ClusterSpec(
                 instances=instances,
                 image_name=image_name,

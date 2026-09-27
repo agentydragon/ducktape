@@ -12,7 +12,6 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/providers/cilium:ciliumclusterwidenetworkpolicy",
         "//cluster/cdk8s/providers/keda:scaled_job",
         "//cluster/cdk8s/providers/keda:scaledjob",

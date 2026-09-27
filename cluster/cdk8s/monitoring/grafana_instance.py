@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb, ClusterSpecBootstrapInitdbSecret
 from grafana_grafana_crds.org.integreatly.grafana import (
     GrafanaSpec,
@@ -37,7 +37,6 @@ from cluster.cdk8s import cnpg
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.grafana_operator.grafana import Grafana
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
@@ -86,7 +85,7 @@ def _grafana(chart: Chart) -> None:
     Grafana(
         chart,
         "grafana",
-        metadata=metadata(_NAME, _NAMESPACE, labels=_INSTANCE_LABELS),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE, labels=_INSTANCE_LABELS),
         spec=GrafanaSpec(
             client=GrafanaSpecClient(use_kube_auth=True),
             config={
@@ -182,7 +181,7 @@ def _grafana(chart: Chart) -> None:
     https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["grafana.allegedly.works"],
         backend="grafana-service",
         port=3000,
@@ -195,7 +194,7 @@ def _datasource(chart: Chart, name: str, datasource: GrafanaDatasourceSpecDataso
     GrafanaDatasource(
         chart,
         f"datasource-{name}",
-        metadata=metadata(name, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
         instance_selector_labels=_INSTANCE_LABELS,
         datasource=datasource,
     )
@@ -283,7 +282,7 @@ def _dashboard(
     GrafanaDashboard(
         chart,
         f"dashboard-{name}",
-        metadata=metadata(name, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
         instance_selector_labels=_INSTANCE_LABELS,
         datasources=[
             GrafanaDashboardSpecDatasources(input_name=input_name, datasource_name=datasource)

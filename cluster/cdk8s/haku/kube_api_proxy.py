@@ -43,7 +43,6 @@ from cluster.cdk8s import cilium
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
@@ -88,9 +87,9 @@ class KubeApiProxy(Construct):
         service_account = ServiceAccount(
             self,
             "serviceaccount",
-            metadata=metadata(
-                NAME,
-                namespace,
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=namespace,
                 annotations={
                     "description": "Executes only Kubernetes requests authorized synchronously by Haku Console."
                 },
@@ -101,7 +100,7 @@ class KubeApiProxy(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(NAME, namespace, labels=LABELS),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace, labels=LABELS),
             selector=Pods.select(self, "pods", labels=LABELS),
             ports=[
                 ServicePort(name="http", port=_HTTP_PORT, target_port=_HTTP_PORT, protocol=Protocol.TCP),
@@ -114,9 +113,9 @@ class KubeApiProxy(Construct):
         https_route(
             self,
             "httproute",
-            metadata=metadata(
-                "haku-kubeapi-allegedly-works",
-                namespace,
+            metadata=ApiObjectMetadata(
+                name="haku-kubeapi-allegedly-works",
+                namespace=namespace,
                 annotations={
                     "description": "Dedicated TLS-terminated Kubernetes API route for Haku-authorized Agent traffic."
                 },
@@ -133,9 +132,9 @@ class KubeApiProxy(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                NAME,
-                console.NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=console.NAMESPACE,
                 labels=LABELS,
                 annotations={
                     "description": "Fail-closed Haku Agent Kubernetes authorization boundary.",
@@ -218,7 +217,7 @@ class KubeApiProxy(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=metadata(NAME, console.NAMESPACE),
+            metadata=ApiObjectMetadata(name=NAME, namespace=console.NAMESPACE),
             selector=LABELS,
             ingress=[
                 IngressRule.from_gateway(_HTTP_PORT),

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from constructs import Construct
 from flux_imagepolicy_crds.io.fluxcd.toolkit.image import (
     ImagePolicy,
@@ -33,7 +33,6 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "flux-image-automation-forgejo"
 # Flux's own namespace, where the image-reflector controller reads these.
@@ -124,7 +123,7 @@ class ForgejoImageAutomation(Construct):
             ImageRepository(
                 self,
                 f"{name}-repository",
-                metadata=metadata(name, NAMESPACE),
+                metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
                 spec=ImageRepositorySpec(
                     image=f"{_REGISTRY}/{_REPOSITORIES.get(name, name)}",
                     interval=_SCAN_INTERVAL,
@@ -134,7 +133,7 @@ class ForgejoImageAutomation(Construct):
             ImagePolicy(
                 self,
                 f"{name}-policy",
-                metadata=metadata(name, NAMESPACE),
+                metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
                 spec=ImagePolicySpec(
                     image_repository_ref=ImagePolicySpecImageRepositoryRef(name=name),
                     filter_tags=ImagePolicySpecFilterTags(pattern=_TAG_PATTERN),

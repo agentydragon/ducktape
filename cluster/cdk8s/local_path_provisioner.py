@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
@@ -20,7 +20,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "local-path-provisioner"
 NAMESPACE = "local-path-storage"
@@ -111,7 +110,7 @@ def chart(app: App) -> Chart:
     repository = HelmRepository(
         chart,
         "repository",
-        metadata=metadata(NAME, "flux-system"),
+        metadata=ApiObjectMetadata(name=NAME, namespace="flux-system"),
         spec=HelmRepositorySpec(interval="24h", url="https://charts.containeroo.ch"),
     )
     helm_release(

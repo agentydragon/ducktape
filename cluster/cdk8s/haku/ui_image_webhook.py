@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_receiver_crds.io.fluxcd.toolkit.notification import (
     Receiver,
     ReceiverSpec,
@@ -37,7 +37,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "haku-ui-image-webhook"
 OUTPUT_DIR = f"{GENERATED_ROOT}/haku/ui-image-webhook"
@@ -48,7 +47,7 @@ def chart(app: App) -> Chart:
     Receiver(
         chart,
         "receiver",
-        metadata=metadata("haku-ui-forgejo", "flux-system"),
+        metadata=ApiObjectMetadata(name="haku-ui-forgejo", namespace="flux-system"),
         spec=ReceiverSpec(
             type=ReceiverSpecType.GENERIC,
             secret_ref=ReceiverSpecSecretRef(name="forgejo-webhook-token"),

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
@@ -19,7 +19,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "kube-api-proxy"
 NAMESPACE = "default"
@@ -149,9 +148,9 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(
-            _ROUTE,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_ROUTE,
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "HTTPRoute for the Kubernetes API at kubeapi.allegedly.works. The Cilium\n"

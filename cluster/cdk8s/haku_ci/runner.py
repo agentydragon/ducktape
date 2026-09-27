@@ -55,7 +55,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku_ci import runner_config
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.keda.scaled_job import ScaledJob
 from cluster.cdk8s.providers.keda.trigger_authentication import TriggerAuthentication
 
@@ -472,7 +471,10 @@ def _add_runner(chart: Chart) -> None:
     # No name-suffix hash: each ScaledJob pod is a fresh one-CI-job Job, so the next job reads the
     # new config on its own and there is nothing to roll.
     config = ConfigMap(
-        chart, "runner-config", metadata=metadata(_CONFIG_MAP, NAMESPACE), data={_CONFIG_FILE: _config().to_yaml()}
+        chart,
+        "runner-config",
+        metadata=ApiObjectMetadata(name=_CONFIG_MAP, namespace=NAMESPACE),
+        data={_CONFIG_FILE: _config().to_yaml()},
     )
     # Forgejo's /metrics endpoint exposes no Actions queue-depth metric. KEDA's native
     # forgejo-runner scaler instead polls Forgejo's authenticated, repo-scoped runner-jobs endpoint,

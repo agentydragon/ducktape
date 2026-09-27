@@ -11,13 +11,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
 
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.valkey import valkey_instance
 
@@ -217,9 +216,9 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "httproute",
-        metadata=metadata(
-            _NAMESPACE,
-            _NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_NAMESPACE,
+            namespace=_NAMESPACE,
             annotations={
                 "description": (
                     "Authenticated public endpoint for the Zot pull-through cache. The cluster-gateway"
@@ -237,9 +236,9 @@ def chart(app: App) -> Chart:
     ServiceMonitor(
         chart,
         "servicemonitor",
-        metadata=metadata(
-            _NAME,
-            _NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_NAME,
+            namespace=_NAMESPACE,
             annotations={"description": "Zot OCI-cache application metrics scraped into Mimir by Alloy."},
         ),
         selector=_LABELS,

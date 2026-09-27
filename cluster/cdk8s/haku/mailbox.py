@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef
 from cilium_crds.io.cilium import (
@@ -26,7 +26,6 @@ from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustom
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.haku import namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ClusterExternalSecret, cluster_remote_data
@@ -361,7 +360,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
     NetworkPolicy(
         chart,
         "smtp-ingress-policy",
-        metadata=metadata(_INGRESS_NAME, NAMESPACE),
+        metadata=ApiObjectMetadata(name=_INGRESS_NAME, namespace=NAMESPACE),
         selector=_INGRESS_LABELS,
         ingress=[
             CiliumNetworkPolicySpecIngress(
@@ -386,7 +385,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
     NetworkPolicy(
         chart,
         "policy",
-        metadata=metadata(NAME, NAMESPACE),
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         selector=_LABELS,
         ingress=[
             IngressRule.from_endpoints(_INGRESS_LABELS, ports=[_SMTP_PORT]),
@@ -445,9 +444,9 @@ def chart(app: App) -> Chart:
     gateway.https_route(
         chart,
         "route",
-        metadata=metadata(
-            NAME,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=NAME,
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "Public route to Stalwart's HTTP listener: JMAP for haku (authenticated with its "

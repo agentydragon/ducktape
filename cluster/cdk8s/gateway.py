@@ -39,7 +39,6 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter, RouteMatch
 from cluster.cdk8s.providers.gateway_api.listener import Listener, ListenerTls
 
@@ -126,7 +125,9 @@ def chart(app: App) -> Chart:
     Gateway(
         chart,
         "gateway",
-        metadata=metadata(_NAME, _NAMESPACE, annotations={"cert-manager.io/cluster-issuer": "${LETSENCRYPT_ISSUER}"}),
+        metadata=ApiObjectMetadata(
+            name=_NAME, namespace=_NAMESPACE, annotations={"cert-manager.io/cluster-issuer": "${LETSENCRYPT_ISSUER}"}
+        ),
         spec=GatewaySpec(
             gateway_class_name="cilium",
             listeners=[
@@ -151,7 +152,7 @@ def chart(app: App) -> Chart:
     HttpRoute(
         chart,
         "http-redirect",
-        metadata=metadata("http-to-https-redirect", _NAMESPACE),
+        metadata=ApiObjectMetadata(name="http-to-https-redirect", namespace=_NAMESPACE),
         spec=HttpRouteSpec(
             parent_refs=[HttpRouteSpecParentRefs(name=_NAME, section_name=_HTTP_LISTENER)],
             rules=[

@@ -34,7 +34,6 @@ from constructs import Construct
 
 from cluster.cdk8s import cilium, container_security
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy, deny_all_egress
 
@@ -58,7 +57,7 @@ def _add_mcp_everything(scope: Construct) -> None:
     deployment = Deployment(
         scope,
         "mcp-everything-deployment",
-        metadata=metadata(MCP_EVERYTHING_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=MCP_EVERYTHING_NAME, namespace=_NAMESPACE),
         pod_metadata=ApiObjectMetadata(labels=_MCP_EVERYTHING_LABELS),
         replicas=1,
         strategy=DeploymentStrategy.recreate(),
@@ -91,7 +90,7 @@ def _add_mcp_everything(scope: Construct) -> None:
     Service(
         scope,
         "mcp-everything-service",
-        metadata=metadata(MCP_EVERYTHING_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=MCP_EVERYTHING_NAME, namespace=_NAMESPACE),
         selector=deployment,
         ports=[
             ServicePort(name="http", port=MCP_EVERYTHING_PORT, target_port=MCP_EVERYTHING_PORT, protocol=Protocol.TCP)
@@ -103,7 +102,7 @@ def _add_mcp_everything(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "mcp-everything-networkpolicy",
-        metadata=metadata(MCP_EVERYTHING_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=MCP_EVERYTHING_NAME, namespace=_NAMESPACE),
         selector=_MCP_EVERYTHING_LABELS,
         ingress=[
             IngressRule.from_endpoints(
@@ -119,7 +118,7 @@ def _add_mcp_everything(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "mcp-everything-callers-networkpolicy",
-        metadata=metadata(f"{MCP_EVERYTHING_NAME}-callers", _NAMESPACE),
+        metadata=ApiObjectMetadata(name=f"{MCP_EVERYTHING_NAME}-callers", namespace=_NAMESPACE),
         selector=CiliumNetworkPolicySpecEndpointSelector(
             match_expressions=[
                 CiliumNetworkPolicySpecEndpointSelectorMatchExpressions(
@@ -137,9 +136,9 @@ def _add_oauth_fixture(scope: Construct) -> None:
     deployment = Deployment(
         scope,
         "oauth-fixture-deployment",
-        metadata=metadata(
-            OAUTH_FIXTURE_NAME,
-            _NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=OAUTH_FIXTURE_NAME,
+            namespace=_NAMESPACE,
             annotations={
                 "description": "Dex-backed OAuth-protected MCP server for acceptance-testing MCP OAuth linkage; the fixture verifies Dex JWTs locally and has no credentials."
             },
@@ -189,7 +188,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
     Service(
         scope,
         "oauth-fixture-service",
-        metadata=metadata(OAUTH_FIXTURE_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=OAUTH_FIXTURE_NAME, namespace=_NAMESPACE),
         selector=deployment,
         ports=[
             ServicePort(name="http", port=OAUTH_FIXTURE_PORT, target_port=OAUTH_FIXTURE_PORT, protocol=Protocol.TCP)
@@ -202,7 +201,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "oauth-fixture-networkpolicy",
-        metadata=metadata(OAUTH_FIXTURE_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=OAUTH_FIXTURE_NAME, namespace=_NAMESPACE),
         selector=_OAUTH_FIXTURE_LABELS,
         ingress=[
             IngressRule.from_endpoints(

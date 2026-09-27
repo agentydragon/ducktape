@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from cdk8s import ApiObjectMetadata
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmRelease,
@@ -20,8 +21,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecValuesFrom,
 )
 from flux_source.io.fluxcd.toolkit.source import HelmRepository
-
-from cluster.cdk8s.metadata import metadata
 
 # Uninstall and retry a failed install three times before the release stalls.
 RETRY_FAILED_INSTALL = HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3))
@@ -64,13 +63,17 @@ def helm_release(
     """
     match repository:
         case HelmRepository():
-            source_ref = helm_repository_source_ref(repository.name, repository.metadata.namespace)
+            if (repository_namespace := repository.metadata.namespace) is None:
+                raise ValueError(f"HelmRepository has no namespace to reference: {repository.name=}")
+            source_ref = helm_repository_source_ref(repository.name, repository_namespace)
         case HelmReleaseSpecChartSpecSourceRef():
             source_ref = repository
     return HelmRelease(
         scope,
         f"helm-release-{name}",
-        metadata=metadata(name, namespace, annotations=None if description is None else {"description": description}),
+        metadata=ApiObjectMetadata(
+            name=name, namespace=namespace, annotations=None if description is None else {"description": description}
+        ),
         spec=HelmReleaseSpec(
             interval=interval,
             timeout=timeout,

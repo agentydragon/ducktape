@@ -43,7 +43,6 @@ from external_secrets_crds.io.external_secrets import (
 from cluster.cdk8s import cilium
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy, deny_all_egress
@@ -218,9 +217,9 @@ def _add_deployment(scope: Construct) -> Deployment:
     deployment = Deployment(
         scope,
         "deployment",
-        metadata=metadata(
-            _NAME,
-            _NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_NAME,
+            namespace=_NAMESPACE,
             labels=_LABELS,
             annotations={
                 # Dex reads its generated config and client secret only at startup.
@@ -272,7 +271,7 @@ def _add_service(scope: Construct, deployment: Deployment) -> None:
     Service(
         scope,
         "service",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         selector=deployment,
         ports=[ServicePort(name="http", port=_PORT, target_port=_PORT, protocol=Protocol.TCP)],
     )
@@ -282,7 +281,7 @@ def _add_http_route(scope: Construct) -> None:
     https_route(
         scope,
         "httproute",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["agentplane-dex-testing.allegedly.works"],
         backend=_NAME,
         port=_PORT,
@@ -293,7 +292,7 @@ def _add_network_policy(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "networkpolicy",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         selector=_LABELS,
         ingress=[
             IngressRule.from_gateway(_PORT),

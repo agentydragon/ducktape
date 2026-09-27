@@ -68,7 +68,6 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, f
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -181,7 +180,7 @@ class Aiquota(Construct):
         https_route(
             self,
             "httproute",
-            metadata=metadata(_API_NAME, NAMESPACE),
+            metadata=ApiObjectMetadata(name=_API_NAME, namespace=NAMESPACE),
             hostnames=[_HOSTNAME],
             backend=_API_NAME,
             port=_PORT,
@@ -221,9 +220,9 @@ class Aiquota(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                _API_NAME,
-                NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=_API_NAME,
+                namespace=NAMESPACE,
                 labels=_LABELS,
                 annotations={
                     "description": "Claude and Codex subscription quota API via the CLIProxyAPI integration.",
@@ -317,9 +316,9 @@ class Aiquota(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(
-                _API_NAME,
-                NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=_API_NAME,
+                namespace=NAMESPACE,
                 labels=_LABELS,
                 annotations={
                     "description": (
@@ -336,7 +335,7 @@ class Aiquota(Construct):
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=metadata(NAME, NAMESPACE),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
             selector=_LABELS,
             endpoints=[Endpoint.plain(port="http", scrape_timeout="15s")],
         )

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -16,7 +16,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, kustomize_kust
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "talos-cloud-controller-manager"
 NAMESPACE = "kube-system"
@@ -30,7 +29,7 @@ def helmrepository_chart(app: App) -> Chart:
     HelmRepository(
         chart,
         "repository",
-        metadata=metadata(_REPOSITORY, NAMESPACE),
+        metadata=ApiObjectMetadata(name=_REPOSITORY, namespace=NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", type=HelmRepositorySpecType.OCI, url="oci://ghcr.io/siderolabs/charts"),
     )
     return chart

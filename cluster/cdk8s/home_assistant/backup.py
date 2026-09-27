@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -31,7 +31,6 @@ from external_secrets_secretstore_crds.io.external_secrets import (
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.seaweedfs import s3
 
@@ -76,7 +75,7 @@ def _repository(scope: Construct) -> None:
     SecretStore(
         scope,
         "secret-store",
-        metadata=metadata(_SECRET_STORE, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_SECRET_STORE, namespace=_NAMESPACE),
         spec=SecretStoreSpec(
             provider=SecretStoreSpecProvider(
                 kubernetes=SecretStoreSpecProviderKubernetes(

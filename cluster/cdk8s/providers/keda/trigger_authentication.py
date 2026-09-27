@@ -8,14 +8,13 @@ needed.
 
 from __future__ import annotations
 
+from cdk8s import ApiObjectMetadata
 from constructs import Construct
 from keda_triggerauthentication_crds.sh.keda import (
     TriggerAuthentication as _TriggerAuthentication,
     TriggerAuthenticationSpec,
     TriggerAuthenticationSpecSecretTargetRef,
 )
-
-from cluster.cdk8s.metadata import metadata
 
 
 class TriggerAuthentication(_TriggerAuthentication):
@@ -29,7 +28,7 @@ class TriggerAuthentication(_TriggerAuthentication):
         return cls(
             scope,
             id,
-            metadata=metadata(name, namespace),
+            metadata=ApiObjectMetadata(name=name, namespace=namespace),
             spec=TriggerAuthenticationSpec(
                 secret_target_ref=[
                     TriggerAuthenticationSpecSecretTargetRef(parameter=parameter, name=secret_name, key=secret_key)

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart, JsonPatch
+from cdk8s import ApiObjectMetadata, App, Chart, JsonPatch
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -32,7 +32,6 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "monitoring-stack"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/stack"
@@ -490,7 +489,7 @@ def chart(app: App) -> Chart:
     repository = HelmRepository(
         chart,
         "helm-repository",
-        metadata=metadata(_HELM_REPOSITORY, "flux-system"),
+        metadata=ApiObjectMetadata(name=_HELM_REPOSITORY, namespace="flux-system"),
         spec=HelmRepositorySpec(interval="12h", url="https://prometheus-community.github.io/helm-charts"),
     )
     release = helm_release(

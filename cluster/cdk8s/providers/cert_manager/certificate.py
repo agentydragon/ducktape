@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TypedDict
 
+from cdk8s import ApiObjectMetadata
 from cert_manager_crds.io.cert_manager import (
     Certificate as _Certificate,
     CertificateSpec,
@@ -28,8 +29,6 @@ from cert_manager_crds.io.cert_manager import (
     CertificateSpecUsages,
 )
 from constructs import Construct
-
-from cluster.cdk8s.metadata import metadata
 
 
 class Certificate(_Certificate):
@@ -59,7 +58,7 @@ class Certificate(_Certificate):
         super().__init__(
             scope,
             id,
-            metadata=metadata(name, namespace, annotations=annotations),
+            metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=annotations),
             spec=CertificateSpec(
                 secret_name=secret_name,
                 issuer_ref=issuer_ref,
