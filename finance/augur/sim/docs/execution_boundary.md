@@ -1,6 +1,7 @@
 # Execution input and ownership
 
-The per-table lowerings in `sim.compiler` turn authored records, materialized paths,
+The per-table lowerings in `sim.compiler`, `sim.external_series`,
+`sim.private_equity_series` and `sim.tax_profile` turn authored records, materialized paths,
 jurisdiction rules and locations into the typed `sim.prepared` records a composed world
 declares. Preparation does not fetch evidence, fit models, or reinterpret tax law. Each
 declaration refuses the financial inputs it cannot execute where it is declared.

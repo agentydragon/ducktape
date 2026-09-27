@@ -144,8 +144,7 @@ from finance.augur.policy.funding import fund_claims
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.external_series import ExternalSeriesContext, materialize_sampled_exogenous
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series, materialize_sampled_exogenous
 from finance.augur.sim.fixed_point import (
     currency_amount_to_quanta,
     quantity_scale_for_asset,
