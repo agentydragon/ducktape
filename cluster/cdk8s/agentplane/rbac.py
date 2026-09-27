@@ -214,10 +214,11 @@ class AgentRbac(Construct):
 
 
 class AcceptanceToken(Construct):
-    """Lets `agentplane-staging`'s `claude-ai` mint this namespace's app token, so its sandboxes
-    can run the acceptance suite's harness scenarios (`agentplane/acceptance/README.md`), which
-    ask the API server for nothing else. None of `AgentRbac`'s Sandbox lifecycle, exec or
-    ActionPolicy writes: the token is an identity for the app, as `_TOKEN_RULE` says.
+    """Lets `agentplane-staging`'s `claude-ai` and `haku-agent` mint this namespace's app token,
+    so their sandboxes can run the acceptance suite's harness scenarios
+    (`agentplane/acceptance/README.md`), which ask the API server for nothing else. None of
+    `AgentRbac`'s Sandbox lifecycle, exec or ActionPolicy writes: the token is an identity for
+    the app, as `_TOKEN_RULE` says.
     """
 
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
@@ -236,5 +237,8 @@ class AcceptanceToken(Construct):
         ).add_subjects(
             ServiceAccount.from_service_account_name(
                 self, "claude-ai-sa", "claude-ai", namespace_name="agentplane-staging"
-            )
+            ),
+            ServiceAccount.from_service_account_name(
+                self, "haku-agent-sa", "haku-agent", namespace_name="agentplane-staging"
+            ),
         )
