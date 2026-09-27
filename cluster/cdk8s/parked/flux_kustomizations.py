@@ -60,7 +60,7 @@ def haku_cloud_agent(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     external_creds: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     tofu_controller: Kustomization,
 ) -> Kustomization:
     name = "haku-cloud-agent"
@@ -75,7 +75,7 @@ def haku_cloud_agent(
         suspend=True,
         timeout="10m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(external_creds, external_secrets_config, tofu_controller),
+        depends_on=flux_kustomization_depends_on_many(external_creds, external_secrets_operator, tofu_controller),
     )
 
 
@@ -142,7 +142,6 @@ def haku_dispatch(
     chart: Chart,
     cnpg: Kustomization,
     local_path_provisioner: Kustomization,
-    external_secrets_config: Kustomization,
     external_secrets_operator: Kustomization,
     litellm: Kustomization,
     litellm_keys_tf: Kustomization,
@@ -162,7 +161,7 @@ def haku_dispatch(
         path="./haku/x/dispatch/deploy",
         deletion_policy=KustomizationSpecDeletionPolicy.WAIT_FOR_TERMINATION,
         depends_on=flux_kustomization_depends_on_many(
-            cnpg, local_path_provisioner, external_secrets_config, external_secrets_operator, litellm, litellm_keys_tf
+            cnpg, local_path_provisioner, external_secrets_operator, litellm, litellm_keys_tf
         ),
     )
 
@@ -171,7 +170,7 @@ def haku_managed_agent(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     external_creds: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     haku_state: Kustomization,
     haku_egress_proxy: Kustomization,
 ) -> Kustomization:
@@ -187,8 +186,8 @@ def haku_managed_agent(
         depends_on=flux_kustomization_depends_on_many(
             # provides the canonical AnkiWeb credential and source-side grant
             external_creds,
-            # provides the external-creds ClusterSecretStore
-            external_secrets_config,
+            # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
+            external_secrets_operator,
             # provides the haku-forgejo-git secret in haku-sandbox
             haku_state,
             # injects the egress proxy + CA the worker imports
@@ -200,7 +199,7 @@ def haku_managed_agent(
 def sdr(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     authentik: Kustomization,
 ) -> Kustomization:
     name = "sdr"
@@ -212,5 +211,5 @@ def sdr(
         # Temporarily disabled until the radio is set up again after relocation.
         suspend=True,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_config, authentik),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, authentik),
     )

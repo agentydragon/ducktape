@@ -14,7 +14,7 @@ def ollama(
     artifact: ArtifactGeneratorSpecArtifacts,
     cert_manager_environment: Kustomization,
     nvidia_runtimeclass: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     reflector: Kustomization,
 ) -> Kustomization:
     name = "ollama"
@@ -35,8 +35,8 @@ def ollama(
         depends_on=flux_kustomization_depends_on_many(
             cert_manager_environment,
             nvidia_runtimeclass,
-            # langfuse ESO remains
-            external_secrets_config,
+            # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
+            external_secrets_operator,
             reflector,
         ),
     )

@@ -225,7 +225,7 @@ def flux_webhook(
     artifact: ArtifactGeneratorSpecArtifacts,
     flux_webhook_token: Kustomization,
     ntfy: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -235,5 +235,5 @@ def flux_webhook(
         wait=None,
         timeout="5m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(flux_webhook_token, ntfy, external_secrets_config),
+        depends_on=flux_kustomization_depends_on_many(flux_webhook_token, ntfy, external_secrets_operator),
     )

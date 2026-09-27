@@ -175,7 +175,7 @@ def agentplane_testing(
     cert_manager_environment: Kustomization,
     cert_manager_trust: Kustomization,
     cnpg: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -200,6 +200,6 @@ def agentplane_testing(
             cert_manager_environment,
             cert_manager_trust,
             cnpg,
-            external_secrets_config,
+            external_secrets_operator,
         ),
     )

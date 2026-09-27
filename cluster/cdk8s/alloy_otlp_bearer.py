@@ -56,7 +56,7 @@ def write_manifests(root: Path) -> None:
 
 
 def alloy_otlp_bearer(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_config: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -65,8 +65,8 @@ def alloy_otlp_bearer(
         retry_interval=None,
         wait=None,
         depends_on=flux_kustomization_depends_on_many(
-            # ClusterSecretStore + CRDs
-            external_secrets_config
+            # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
+            external_secrets_operator
         ),
         timeout="2m",
         decryption=SOPS_DECRYPTION,

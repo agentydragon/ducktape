@@ -13,7 +13,7 @@ def github_exporter(
     artifact: ArtifactGeneratorSpecArtifacts,
     monitoring_crds: Kustomization,
     grafana_instance: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     external_creds: Kustomization,
     kyverno: Kustomization,
 ) -> Kustomization:
@@ -27,7 +27,7 @@ def github_exporter(
             # ServiceMonitor
             monitoring_crds,
             grafana_instance,
-            external_secrets_config,
+            external_secrets_operator,
             external_creds,
             # Kyverno's failurePolicy: Fail webhooks admit the Deployments.
             kyverno,

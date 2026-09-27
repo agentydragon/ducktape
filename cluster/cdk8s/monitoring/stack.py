@@ -560,11 +560,7 @@ def write_manifests(root: Path) -> None:
 
 
 def monitoring_stack(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    monitoring_crds: Kustomization,
-    ntfy: Kustomization,
-    external_secrets_config: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization, ntfy: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -596,6 +592,5 @@ def monitoring_stack(
             # the CRDs exist, and the chart no longer installs them itself.
             monitoring_crds,
             ntfy,
-            external_secrets_config,
         ),
     )

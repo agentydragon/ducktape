@@ -69,7 +69,7 @@ def cert_manager_environment(
     cert_manager: Kustomization,
     cert_manager_trust: Kustomization,
     external_creds: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -77,6 +77,6 @@ def cert_manager_environment(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            cert_manager, cert_manager_trust, external_creds, external_secrets_config
+            cert_manager, cert_manager_trust, external_creds, external_secrets_operator
         ),
     )

@@ -138,7 +138,7 @@ def plaid_mcp(
     artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
     local_path_provisioner: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     valkey: Kustomization,
     agent_machine_access_tf: Kustomization,
     reflector: Kustomization,
@@ -154,7 +154,7 @@ def plaid_mcp(
         depends_on=flux_kustomization_depends_on_many(
             cnpg,
             local_path_provisioner,
-            external_secrets_config,
+            external_secrets_operator,
             valkey,
             agent_machine_access_tf,
             reflector,
@@ -233,7 +233,7 @@ def tana_mcp(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     external_creds: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     valkey: Kustomization,
     monitoring_crds: Kustomization,
     kyverno: Kustomization,
@@ -247,7 +247,7 @@ def tana_mcp(
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
             external_creds,
-            external_secrets_config,
+            external_secrets_operator,
             valkey,
             # ServiceMonitor + PrometheusRule
             monitoring_crds,
