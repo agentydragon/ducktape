@@ -144,6 +144,7 @@ py_library(
         ":local_path_provisioner",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/cnpg:cnpg_cluster",
+        "@pypi//cdk8s",
         "@pypi//constructs",
     ],
 )
