@@ -401,7 +401,8 @@ th {
 
 .chip-restrict,
 .chip-revise,
-.chip-planned {
+.chip-planned,
+.chip-verified-on-an-earlier-devel {
   color: var(--restrict);
   background: var(--restrict-soft);
 }

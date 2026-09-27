@@ -66,6 +66,7 @@ class Disposition(StrEnum):
 class VerificationStatus(StrEnum):
     VERIFIED = "verified"
     VERIFIED_AFTER_FIXES = "verified after fixes"
+    VERIFIED_EARLIER = "verified on an earlier devel"
     UNVERIFIED = "not verified"
 
 
