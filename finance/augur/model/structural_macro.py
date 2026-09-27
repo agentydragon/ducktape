@@ -49,8 +49,9 @@ configured `Sampler.sample` composes this with `product_paths.construct_products
 
 from __future__ import annotations
 
+import math
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 
 import numpy as np
 import yaml
@@ -77,6 +78,39 @@ PERCENT_TO_DECIMAL = 0.01
 MINIMUM_MONTHS = 240
 
 
+class FitEstimationMeanUncertainty(FrozenModel):
+    """The checked-in fit's own estimation error on its mean: the fitted sd over the root of the
+    monthly returns it averaged — ≈0.00153/month (≈1.8%/yr) for the century fit.
+
+    The FIT's sd, not `EquityProcess.monthly_log_return_sigma`: it measures how precisely the
+    record pins the mean, whatever volatility or center a caller configures around it.
+    """
+
+    kind: Literal["fit_estimation"] = "fit_estimation"
+
+    @property
+    def standard_error(self) -> float:
+        fit = _fitted_defaults()
+        # `equity_fit.sample_months` counts the LEVELS `fit_log_returns` read; the mean averaged
+        # the returns between them, one fewer.
+        return fit.equity_monthly_log_return_sigma / math.sqrt(fit.equity_fit.sample_months - 1)
+
+
+class StatedMeanUncertainty(FrozenModel):
+    """A caller-chosen standard error: a prior wider than the record's sampling error alone, or
+    one for a center the fit did not produce."""
+
+    kind: Literal["stated"] = "stated"
+    standard_error: NonNegativeFloat = Field(
+        description="Of the monthly log drift, in `monthly_log_return_mu`'s units. Zero is the known mean, bit for bit."
+    )
+
+
+type EquityMeanUncertainty = Annotated[
+    FitEstimationMeanUncertainty | StatedMeanUncertainty, Field(discriminator="kind")
+]
+
+
 class EquityProcess(FrozenModel):
     """Structural-macro return dynamics bound to an experiment's equity description.
 
@@ -101,6 +135,15 @@ class EquityProcess(FrozenModel):
     # dressed as structure — load-bearing per SPEC.md: a question that turns on bond/equity
     # correlation is not answered here.
     rate_beta: float = 0.0
+    mean_uncertainty: EquityMeanUncertainty | None = Field(
+        default=None,
+        description=(
+            "Parameter uncertainty in the drift (Pástor & Stambaugh 2012): each rollout draws its own "
+            "monthly log drift once, from a normal centered on `monthly_log_return_mu` with this "
+            "standard error, and its path is conditional on that draw. Volatility and the macro VAR "
+            "stay point estimates. None treats the mean as known, shared by every rollout."
+        ),
+    )
 
 
 type MacroStateVector = tuple[float, float, float]
@@ -264,6 +307,17 @@ class StructuralMacroModel:
 
         state = _macro_state_path(config.macro_state, request, rollouts=rollouts, months=months)
         short_rate = np.maximum(state[SHORT_RATE], MINIMUM_ANNUAL_YIELD)
+        provenance: dict[str, object] = {
+            "exogenous_provider_label": self.label,
+            "rollout_seeds": request.rollout_seeds,
+            "notes": ("joint VAR(1) macro state fitted on FRED FEDFUNDS/GS10/CPIAUCSL 1955-2026",),
+        }
+        if config.equity is not None and config.equity.mean_uncertainty is not None:
+            provenance["equity_mean_uncertainty"] = {
+                "center": config.equity.monthly_log_return_mu,
+                "standard_error": config.equity.mean_uncertainty.standard_error,
+                "standard_error_source": config.equity.mean_uncertainty.kind,
+            }
         return MarketPaths(
             short_rate=state[SHORT_RATE],
             term_spread=state[TERM_SPREAD],
@@ -273,11 +327,7 @@ class StructuralMacroModel:
             else None,
             corporate_yields={},
             model_id=self.label,
-            provenance={
-                "exogenous_provider_label": self.label,
-                "rollout_seeds": request.rollout_seeds,
-                "notes": ("joint VAR(1) macro state fitted on FRED FEDFUNDS/GS10/CPIAUCSL 1955-2026",),
-            },
+            provenance=provenance,
         )
 
 
@@ -326,10 +376,24 @@ def _equity_index(spec: EquityProcess, request: ExogenousSamplingRequest, short_
 
     shocks = _shocks(request, "structural_macro:equity", months=short_rate.shape[1])
     rate_changes = np.diff(short_rate, axis=1, prepend=short_rate[:, :1])
-    log_returns = spec.monthly_log_return_mu + spec.monthly_log_return_sigma * shocks + spec.rate_beta * rate_changes
+    log_returns = _equity_drift(spec, request) + spec.monthly_log_return_sigma * shocks + spec.rate_beta * rate_changes
     # Month 0 is the anchor, not a return: every emitted series starts at its configured level.
     log_returns[:, 0] = 0.0
     return np.exp(np.cumsum(log_returns, axis=1))
+
+
+def _equity_drift(spec: EquityProcess, request: ExogenousSamplingRequest) -> float | np.ndarray:
+    """`monthly_log_return_mu`, or under `mean_uncertainty` a `(rollout, 1)` column of each
+    rollout's own draw around it, held for the whole path.
+
+    The draw has a stream of its own, so switching it on moves no other stream's draws.
+    """
+
+    if spec.mean_uncertainty is None:
+        return spec.monthly_log_return_mu
+    return spec.monthly_log_return_mu + spec.mean_uncertainty.standard_error * _shocks(
+        request, "structural_macro:equity_mean", months=1
+    )
 
 
 def _inflation_level(config: StructuralMacroProviderConfig, inflation_rate: np.ndarray) -> np.ndarray:

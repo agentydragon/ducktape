@@ -10,6 +10,7 @@ independently.
 
 from __future__ import annotations
 
+import math
 from datetime import date
 
 import numpy as np
@@ -26,6 +27,7 @@ from finance.augur.model.exogenous import (
     validate_sample_satisfies_request,
 )
 from finance.augur.model.historical_windows import HistoricalWindowsModel, MacroHistory
+from finance.augur.model.market_paths import MarketPaths
 from finance.augur.model.provider_config import ProviderConfig
 from finance.augur.model.series import (
     InflationKey,
@@ -38,8 +40,10 @@ from finance.augur.model.structural_macro import (
     INFLATION_RATE,
     SHORT_RATE,
     EquityProcess,
+    FitEstimationMeanUncertainty,
     MacroStateMatrix,
     MacroVarSpec,
+    StatedMeanUncertainty,
     StructuralMacroProviderConfig,
 )
 
@@ -572,6 +576,175 @@ def test_macro_shocks_are_correlated_across_states() -> None:
     # Lower-triangular, so state 0's innovation cannot depend on states 1-2's draws.
     assert cholesky[0][1] == 0.0
     assert cholesky[0][2] == 0.0
+
+
+def _market(equity: EquityProcess, seeds: tuple[int, ...], *, horizon_months: int) -> MarketPaths:
+    """The fitted macro VAR with `equity` on it. `rate_beta` stays zero throughout, so the equity
+    path is a function of its own streams alone."""
+
+    return (
+        StructuralMacroProviderConfig(equity=equity)
+        .realize_model()
+        .sample_market(ExogenousSamplingRequest(horizon_months=horizon_months, rollout_seeds=seeds))
+    )
+
+
+def _log_index(paths: MarketPaths) -> np.ndarray:
+    assert paths.equity_total_return_index is not None
+    return np.log(paths.equity_total_return_index)
+
+
+def _equity(**fields: object) -> EquityProcess:
+    return EquityProcess.model_validate({"instrument": EquitySpec(symbol=EQUITY, initial_price_usd=500.0), **fields})
+
+
+# Enough rollouts that four Monte Carlo standard errors stay within 15% of what they bound.
+DRIFT_ROLLOUTS = 4_000
+
+
+def test_each_rollout_draws_its_own_drift_once() -> None:
+    """With no volatility a rollout's monthly log return IS its drift, so the draws read straight
+    off the emitted path: normal around the configured mean with the stated standard error, and
+    constant along the path — a drift redrawn every month would move from one month to the next."""
+
+    paths = _market(
+        _equity(
+            monthly_log_return_mu=0.005,
+            monthly_log_return_sigma=0.0,
+            mean_uncertainty=StatedMeanUncertainty(standard_error=0.002),
+        ),
+        tuple(range(DRIFT_ROLLOUTS)),
+        horizon_months=12,
+    )
+    monthly = np.diff(_log_index(paths), axis=1)
+    drifts = monthly[:, 0]
+
+    np.testing.assert_allclose(monthly, np.broadcast_to(drifts[:, None], monthly.shape), rtol=0.0, atol=1e-12)
+    # Monte Carlo standard errors: SE/√n for the sample mean, SE/√(2(n - 1)) for the sample sd.
+    assert float(np.mean(drifts)) == pytest.approx(0.005, abs=4 * 0.002 / math.sqrt(DRIFT_ROLLOUTS))
+    assert float(np.std(drifts, ddof=1)) == pytest.approx(0.002, abs=4 * 0.002 / math.sqrt(2 * (DRIFT_ROLLOUTS - 1)))
+    assert paths.provenance["equity_mean_uncertainty"] == {
+        "center": 0.005,
+        "standard_error": 0.002,
+        "standard_error_source": "stated",
+    }
+
+
+def test_the_fit_estimation_error_is_the_fitted_sd_over_the_root_of_the_returns() -> None:
+    """How precisely the checked-in record pins the mean: its fitted sd over √(returns averaged),
+    ≈0.00153/month (≈1.8%/yr) for a century.
+
+    The FIT's sd. Volatility is configured to zero here, so a standard error computed from the
+    configured sd would draw nothing and fail the dispersion check."""
+
+    fitted = _equity()
+    uncertainty = FitEstimationMeanUncertainty()
+    # The equity fit window is 1926-07 through 2026-06: 1200 monthly levels, 1199 returns.
+    assert uncertainty.standard_error == pytest.approx(fitted.monthly_log_return_sigma / math.sqrt(1199), rel=0.05)
+
+    paths = _market(
+        _equity(monthly_log_return_sigma=0.0, mean_uncertainty=uncertainty),
+        tuple(range(DRIFT_ROLLOUTS)),
+        horizon_months=1,
+    )
+    drifts = _log_index(paths)[:, 1]
+    standard_error = uncertainty.standard_error
+
+    assert float(np.mean(drifts)) == pytest.approx(
+        fitted.monthly_log_return_mu, abs=4 * standard_error / math.sqrt(DRIFT_ROLLOUTS)
+    )
+    assert float(np.std(drifts, ddof=1)) == pytest.approx(
+        standard_error, abs=4 * standard_error / math.sqrt(2 * (DRIFT_ROLLOUTS - 1))
+    )
+    assert paths.provenance["equity_mean_uncertainty"] == {
+        "center": fitted.monthly_log_return_mu,
+        "standard_error": standard_error,
+        "standard_error_source": "fit_estimation",
+    }
+
+
+def test_an_uncertain_mean_adds_the_squared_horizon_times_its_variance() -> None:
+    """Pástor and Stambaugh's point in the model's own units. Over H months a drift error d - μ
+    compounds to H·(d - μ), so it adds H²·SE² to the variance of terminal log wealth, where the
+    shocks contribute H·σ². At 30 years that is (12·30)² × 0.003² = 1.1664 against 360 × 0.05² =
+    0.9 — and a drift redrawn every month would add only H·SE² ≈ 0.0032.
+
+    Both arms share their seeds, so the equity shocks cancel out of the difference and its Monte
+    Carlo error is that of var(D) + 2·cov(K, D), with K the known-mean terminal and D = H·(d - μ).
+    """
+
+    horizon = 12 * 30
+    shocks = horizon * 0.05**2
+    added = (horizon * 0.003) ** 2
+
+    def terminal(**uncertainty: object) -> np.ndarray:
+        equity = _equity(monthly_log_return_mu=0.008, monthly_log_return_sigma=0.05, **uncertainty)
+        return _log_index(_market(equity, tuple(range(DRIFT_ROLLOUTS)), horizon_months=horizon))[:, -1]
+
+    increase = float(
+        np.var(terminal(mean_uncertainty=StatedMeanUncertainty(standard_error=0.003)), ddof=1)
+        - np.var(terminal(), ddof=1)
+    )
+    assert increase == pytest.approx(added, abs=4 * math.sqrt((2 * added**2 + 4 * shocks * added) / DRIFT_ROLLOUTS))
+
+
+def test_a_sharded_run_draws_each_rollout_the_same_drift() -> None:
+    """The draw is seeded per (rollout, stream) like every other stream, so the same seeds split
+    across two requests reproduce the one-batch paths bit for bit."""
+
+    seeds = (7, 2**100 + 3, 42, 0, 12345678901234567890, 5, 99, 1)
+    equity = _equity(mean_uncertainty=FitEstimationMeanUncertainty())
+
+    def index(batch: tuple[int, ...]) -> np.ndarray:
+        paths = _market(equity, batch, horizon_months=120)
+        assert paths.equity_total_return_index is not None
+        return paths.equity_total_return_index
+
+    np.testing.assert_array_equal(np.concatenate([index(seeds[:4]), index(seeds[4:])]), index(seeds))
+
+
+def test_the_mean_draw_moves_nothing_but_the_equity_drift() -> None:
+    """The draw has a stream of its own. A zero standard error therefore samples the known-mean
+    paths bit for bit — no other stream consumed or reordered — and a nonzero one leaves every
+    other series identical and shifts each rollout's equity returns by one constant."""
+
+    def levels(mean_uncertainty: StatedMeanUncertainty | None) -> dict[LevelSeriesKey, np.ndarray]:
+        config = StructuralMacroProviderConfig(
+            instruments=(BondFundSpec(symbol=BOND, maturity_years=6.0), BondFundSpec(symbol=CASH, maturity_years=0.0)),
+            equity=_equity(mean_uncertainty=mean_uncertainty),
+        )
+        bundle = _sample(config)
+        return {key: _series(bundle, key) for key in config.realize_model().emittable_level_keys()}
+
+    known = levels(None)
+    zero = levels(StatedMeanUncertainty(standard_error=0.0))
+    uncertain = levels(StatedMeanUncertainty(standard_error=0.002))
+    equity = SecurityKey(symbol=EQUITY)
+
+    for key, path in known.items():
+        np.testing.assert_array_equal(zero[key], path)
+        if key != equity:
+            np.testing.assert_array_equal(uncertain[key], path)
+    shift = np.diff(np.log(uncertain[equity]), axis=1) - np.diff(np.log(known[equity]), axis=1)
+    np.testing.assert_allclose(shift, np.broadcast_to(shift[:, :1], shift.shape), rtol=0.0, atol=1e-12)
+    assert np.ptp(shift[:, 0]) > 0.0
+
+
+def test_the_standard_error_source_is_named_in_config() -> None:
+    """Reachable from a deployment's YAML, and explicit there: enabling the draw names where its
+    standard error comes from, with no default source to fall back on."""
+
+    def parse(mean_uncertainty: dict[str, object]) -> EquityProcess:
+        return EquityProcess.model_validate(
+            {"instrument": {"symbol": "EQ", "initial_price_usd": 500.0}, "mean_uncertainty": mean_uncertainty}
+        )
+
+    assert parse({"kind": "fit_estimation"}) == _equity(mean_uncertainty=FitEstimationMeanUncertainty())
+    assert parse({"kind": "stated", "standard_error": 0.002}) == _equity(
+        mean_uncertainty=StatedMeanUncertainty(standard_error=0.002)
+    )
+    with pytest.raises(ValidationError, match="discriminator"):
+        parse({})
 
 
 if __name__ == "__main__":

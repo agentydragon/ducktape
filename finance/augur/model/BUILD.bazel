@@ -343,6 +343,7 @@ py_test(
         ":equity",
         ":exogenous",
         ":historical_windows",
+        ":market_paths",
         ":provider_config",
         ":series",
         ":structural_macro",

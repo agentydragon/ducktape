@@ -25,6 +25,13 @@ additional market shocks.
 
 **Per-rollout seeding.** A rollout's path depends only on its own seed, never on the batch.
 
+**The equity mean is known unless declared uncertain.** By default every rollout shares the
+configured drift. `mean_uncertainty` instead draws each rollout's monthly drift once — normal
+around that mean, with a standard error the config names: the fit's own estimation error
+(`fit_estimation`) or a `stated` one — and samples the path conditional on it. The draw has its
+own per-rollout stream, so enabling it changes no other draw, and the sample's provenance records
+its center and standard error.
+
 ## Instrument and forecast responsibilities
 
 Equity identity and opening price are shared descriptions, independent of fitted return
@@ -274,6 +281,14 @@ how much they move an allocation answer.
    the drift ~2pp and cut the volatility ~2.5pp. Nothing forces a century — it is a choice,
    and the honest reason for it is that a 30-year horizon should be priced against a record
    containing more than one regime.
+
+   _Whatever the window, the drift is an estimate._ A century of monthly returns pins it to
+   ±0.153%/month (one standard error, ≈1.8%/yr), and by default every rollout takes it as the
+   true mean. That understates dispersion more the longer the horizon, because a drift error
+   compounds where shocks average out (Pástor & Stambaugh 2012). Setting
+   `mean_uncertainty: {kind: fit_estimation}` prices it: for a mean fitted on `n` returns it
+   adds `H/n` of the known-mean log-wealth variance at horizon `H`, so +30% at 30 years (sd
+   1.004 → 1.145). Volatility and the VAR's parameters remain point estimates (#5798).
 
    _Correction:_ an earlier revision claimed a 4pp window effect, measured as MITTX (1973–)
    against VFINX (1980–). That was wrong. MITTX returns 7.17%/yr while its own market returns

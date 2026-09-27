@@ -46,6 +46,7 @@ def fit_log_returns(levels: Sequence[MonthlyLevel]) -> LogReturnFit:
     return LogReturnFit(
         monthly_log_mu=float(np.mean(returns)),
         monthly_log_sigma=float(np.std(returns, ddof=1)),
+        # LEVELS, one more than the returns averaged — `FitEstimationMeanUncertainty` relies on it.
         sample_months=len(levels),
         first_month=months[0],
         last_month=months[-1],
