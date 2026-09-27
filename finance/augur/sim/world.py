@@ -35,6 +35,7 @@ from finance.augur.sim.books import (
     Posting,
     TaxPaymentOutcome,
     TlhPortfolioState,
+    TradingCostOutcome,
 )
 from finance.augur.sim.compiler.income_sources import income_source_wire_id
 from finance.augur.sim.distributions import Distributions
@@ -64,6 +65,7 @@ from finance.augur.sim.prepared import (
     PreparedRecurringPropertyCashflow,
     PreparedRecurringTransfer,
     PreparedTlhPortfolio,
+    PreparedTradingCosts,
     PreparedTransfer,
     _MortgageInterestDeduction,
     _PropertyPurchase,
@@ -77,6 +79,7 @@ from finance.augur.sim.scenario import InterestIncome, TransferIncomeCategory
 from finance.augur.sim.tax_authority import Assessment, TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw
 from finance.augur.sim.tlh import ModeledRealizations, TlhMarketUpdate, TlhOpening, TlhPortfolio
+from finance.augur.sim.trading_costs import TradingCosts
 
 type Capture = Literal["summary", "dense", "forensic"]
 
@@ -133,6 +136,7 @@ class World:
         self.bonds: HeldBonds | None = None
         self.distributions: Distributions | None = None
         self.private_equity: private_equity.PrivateEquity | None = None
+        self.trading_costs: TradingCosts | None = None
         # Standing cashflows, moved when their month opens; see `declare_flow`.
         self._scheduled_transfers: tuple[PreparedTransfer, ...] = ()
         self._recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
@@ -185,6 +189,8 @@ class World:
             if f"security:{pool.asset_id}" not in self.market.series:
                 raise ValueError(f"missing public security series for {pool.asset_id!r}")
             self.market.require_prices(f"security:{pool.asset_id}")
+            if self.trading_costs is not None and pool.asset_id not in self.trading_costs.schedule.rates_ppb:
+                raise ValueError(f"the trading costs name no rate for {pool.asset_id!r}; there is no default rate")
         self.holdings.declare_pool(self.accounting, pool)
 
     def hold(self, holding: PreparedLot | PreparedBond) -> None:
@@ -326,6 +332,22 @@ class World:
                 (), {(spec.owner_agent_id, spec.account_id, spec.asset_id) for spec in self.specs.values()}
             )
         self.distributions.specs = (*self.distributions.specs, spec)
+
+    def declare_trading_costs(self, schedule: PreparedTradingCosts) -> None:
+        """What each executed Buy and Sell pays to trade (<trading_costs.py>); a world without one models none.
+
+        Declared once, it prices every public pool, declared before or after it: there is no default rate.
+        """
+        self._composing()
+        if self.trading_costs is not None:
+            raise ValueError("trading costs are already declared")
+        for asset, rate in schedule.rates_ppb.items():
+            if not 0 <= checked_count(rate, "trading cost rate") <= MONEY_FACTOR_SCALE:
+                raise ValueError(f"trading cost for {asset!r} must be 0 to 100% of a trade's gross value; {rate=} ppb")
+        public = {pool.asset_id for pool in self.holdings.pools if private_issuer(pool.asset_id) is None}
+        if unpriced := sorted(public - set(schedule.rates_ppb)):
+            raise ValueError(f"the trading costs name no rate for {unpriced}; there is no default rate")
+        self.trading_costs = TradingCosts(schedule)
 
     def declare_portfolio(self, spec: PreparedTlhPortfolio) -> None:
         """A managed TLH portfolio held at month zero, marked at the path's opening price."""
@@ -697,6 +719,7 @@ class World:
                 self.bonds,
                 self.distributions,
                 self.private_equity,
+                self.trading_costs,
             ):
                 if component is not None:
                     component.begin_month()
@@ -1150,18 +1173,41 @@ class World:
             if isinstance(action, Transfer):
                 self.accounting.transfer(self.month, action, actor=actor)
             elif isinstance(action, Buy | Sell):
-                if action.agent_id != actor:
-                    raise ValueError("wrong actor")
-                price = self.public_price(actor, action.asset_id, self.month)
-                if isinstance(action, Buy):
-                    self.holdings.buy(self.accounting, self.month, action, price=price)
-                else:
-                    self.holdings.sell(self.accounting, self.month, action, price=price)
+                return self._trade(actor, action, action_index)
             else:
                 raise ValueError("component request requires modeled financial effects")
         except ValueError as error:
             return results.Rejected(reason=results.InvalidRequest(detail=str(error)))
         return results.Executed()
+
+    def _trade(self, actor: AgentId, action: Buy | Sell, action_index: int) -> results.Executed:
+        """Settle a public-security trade at this month's price, paying the declared schedule's cost if any."""
+        if action.agent_id != actor:
+            raise ValueError("wrong actor")
+        price = self.public_price(actor, action.asset_id, self.month)
+        costs = self.trading_costs
+        rate = 0 if costs is None else costs.schedule.rates_ppb[action.asset_id]
+        if isinstance(action, Buy):
+            traded = self.holdings.buy(self.accounting, self.month, action, price=price, cost_rate_ppb=rate)
+            account_id = action.cash_account_id
+        else:
+            traded = self.holdings.sell(self.accounting, self.month, action, price=price, cost_rate_ppb=rate)
+            account_id = action.proceeds_account_id
+        if costs is None:
+            return results.Executed()
+        costs.paid.append(
+            TradingCostOutcome(
+                month=self.month,
+                action_index=action_index,
+                cause_id=action.cause_id,
+                agent_id=actor,
+                account_id=account_id,
+                asset_id=action.asset_id,
+                gross_value=traded.gross,
+                cost=traded.cost,
+            )
+        )
+        return results.Executed(trading_cost=traded.cost)
 
     def unpaid_claims(self, actor: AgentId) -> list[results.UnpaidClaim]:
         return [

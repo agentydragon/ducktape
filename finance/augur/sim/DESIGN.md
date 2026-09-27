@@ -26,6 +26,7 @@ supplied paths (+ rules)
     -> World(MarketPath(series, rollout_id, ...), horizon_months=...)
     -> world.declare_account / declare_pool / hold / declare_portfolio / declare_distribution
     -> world.declare_housing / declare_flow / declare_deduction / declare_tender_policy
+    -> world.declare_trading_costs
     -> world.track(agent | mortgage | biller | tax_authority); world.start()
     -> world.step()  # open: statements and dues to the agent; MonthOpened -> ordered actions; close
     -> world.finished; the experiment read what it measures between steps
@@ -64,7 +65,7 @@ month's `Receipt`s — and `step` delivers `MonthOpened`, whose reply is the
 household's ordered actions. The world builds no view on anyone's behalf: `EconomicAgent` assembles the
 `Observation` its `decide` reads from the mail it kept, and the batch session assembles
 the same view for its `Decision`s from its delegate's mail. A domain nothing declared is absent from the world, not empty: `properties`,
-`bonds`, `managed`, `private_equity` and `distributions` are `None` until a
+`bonds`, `managed`, `private_equity`, `distributions` and `trading_costs` are `None` until a
 declaration, holding, contract or attached table needs them, and every phase skips
 an absent one. `World` has no capture
 mode, no named subject and no history: component outcome lists (`accounting.journal`, `holdings.dispositions`, …)
@@ -112,7 +113,8 @@ buy these units, pay this claim. "Raise enough for at least this much cash" or "
 whatever settlement leaves" is a policy's intent, which it realises as a combination of
 exact orders sized from what it observes; no position, managed portfolio or ledger sizes
 an order on a policy's behalf, and an order the account cannot fund is rejected, not
-trimmed. A managed portfolio is denominated in money, so it takes or pays exactly the
+trimmed. A declared trading cost (<trading_costs.py>) is part of what a buy must fund,
+and settlement, not the policy, charges it. A managed portfolio is denominated in money, so it takes or pays exactly the
 amount ordered, with no unit grid (<tlh.py>); a funding policy's sleeve names it by its
 portfolio id, never by the index it tracks, so it has no quote to size against, and
 lots of that index are a sleeve of their own. `TlhStatement` says whether each portfolio

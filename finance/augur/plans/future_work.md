@@ -71,9 +71,11 @@ because the app has no corresponding input control.
   Additional HIFO/specific-selection helpers may be useful; this is distinct from
   changing a product's tax-basis method. Keep existing FIFO controls.
 - Trading costs/spreads and settlement timing must be stated in studies that
-  compare turnover. Add friction to canonical settlement when the selected study
-  requires it; do not certify a free-trading comparison as cost-aware. Existing
-  tracking issue: [#5486](https://github.com/agentydragon/ducktape/issues/5486).
+  compare turnover; do not certify a free-trading comparison as cost-aware. A
+  study declares its trading costs on each world (`World.declare_trading_costs`),
+  and the funding and rebalancing helpers must first size purchases net of them:
+  a world that declares them rejects a buy whose cash cannot also pay its cost.
+  Existing tracking issue: [#5486](https://github.com/agentydragon/ducktape/issues/5486).
 
 ## Bonds and spending strategies
 

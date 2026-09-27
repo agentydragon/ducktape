@@ -117,6 +117,15 @@ lots' actual basis, including residual basis on full disposal. Acquisition basis
 comes from the actual settled purchase. FIFO is a caller's selection rule, not
 the only possible exact-lot request.
 
+A world may declare trading costs: a proportional rate per public security, from
+zero to the whole trade, with no default for a security it does not price. Each
+executed buy and sale then pays its rate on each lot's gross value, rounded to the
+nearest currency quantum with exact ties away from zero, from the trade's own cash
+in a journal entry of its own. A buy's cost joins its lot's basis; a sale's reduces
+each lot's proceeds and realized gain. A buy whose cash cannot also pay its cost is
+rejected. Without a declaration a world does not model trading costs.
+Managed-portfolio operations and issuer-driven private-equity sales pay none.
+
 An opening lot supplies its exact remaining total cost basis in the scenario's
 currency quantum. That total need not divide into currency-quantized per-unit
 amounts. Imports, execution and recorded lot state retain the total without
@@ -193,6 +202,9 @@ aggregate prior-year amount rather than per-jurisdiction schedules.
 
 Typed common results retain original path IDs, request/claim/component/account
 identities, attempted receipts, canonical tax facts and exact stopped/ending books.
+An executed trade's receipt carries its declared trading cost, and the compact
+summary lists every executed trade's gross value and cost; both are absent, not
+zero, where no trading costs are declared.
 Optional detailed capture includes books, journal and columnar events; compact
 capture does not require those histories. Missing capture is not zero activity.
 A domain the experiment did not declare (bonds, housing, managed portfolios,

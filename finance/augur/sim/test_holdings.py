@@ -90,10 +90,10 @@ def purchase() -> Buy:
 
 
 def test_exact_selection_is_not_fifo_and_full_lot_basis_reconciles(books: Books) -> None:
-    books.holdings.sell(books.accounting, 0, sale(LotId("new"), 3), price=10)
+    books.holdings.sell(books.accounting, 0, sale(LotId("new"), 3), price=10, cost_rate_ppb=0)
     assert books.holdings.lots[0].units_remaining == 10
     assert books.holdings.dispositions[0].basis == 10
-    books.holdings.sell(books.accounting, 0, sale(LotId("new"), 7), price=10)
+    books.holdings.sell(books.accounting, 0, sale(LotId("new"), 7), price=10, cost_rate_ppb=0)
     assert books.holdings.lots[1].units_remaining == books.holdings.lots[1].basis_remaining == 0
     assert books.holdings.dispositions[1].basis == 22
     assert sum(row.proceeds for row in books.holdings.dispositions) == 10
@@ -146,7 +146,9 @@ def test_rejected_total_cashouts_leave_lots_cash_tax_and_capture_unchanged(books
 def test_fifo_selection_sells_the_oldest_lot_first(books: Books) -> None:
     selected = books.holdings.fifo([1, 0], 13)
     assert selected[0].lot_id == "old"
-    books.holdings.sell(books.accounting, 0, sale(LotId("old"), 13).model_copy(update={"lots": selected}), price=10)
+    books.holdings.sell(
+        books.accounting, 0, sale(LotId("old"), 13).model_copy(update={"lots": selected}), price=10, cost_rate_ppb=0
+    )
     assert [(row.lot_id, row.units, row.basis) for row in books.holdings.dispositions] == [
         ("old", 10, 17),
         ("new", 3, 10),
@@ -173,7 +175,7 @@ def test_invalid_exact_lot_requests_leave_every_book_unchanged(books: Books, cas
     ]
     before = books.snapshot()
     with pytest.raises(ValueError, match=r"unknown|does not belong|invalid quantity|duplicate lot|sale needs"):
-        books.holdings.sell(books.accounting, 0, request.model_copy(update=changes[case]), price=10)
+        books.holdings.sell(books.accounting, 0, request.model_copy(update=changes[case]), price=10, cost_rate_ppb=0)
     assert books.snapshot() == before
 
 
@@ -194,18 +196,18 @@ def test_overflow_after_first_lot_or_jurisdiction_cannot_partially_commit(books:
         )
     before = books.snapshot()
     with pytest.raises(OverflowError):
-        books.holdings.sell(books.accounting, 0, both_lots(), price=MAX_COUNT if case == 4 else 20)
+        books.holdings.sell(books.accounting, 0, both_lots(), price=MAX_COUNT if case == 4 else 20, cost_rate_ppb=0)
     assert books.snapshot() == before
 
 
 def test_purchase_posts_cash_and_basis_then_joins_future_exact_sales(books: Books) -> None:
-    books.holdings.buy(books.accounting, 0, purchase(), price=10)
+    books.holdings.buy(books.accounting, 0, purchase(), price=10, cost_rate_ppb=0)
     lot = books.holdings.lots[2]
     assert lot.units_remaining == lot.basis_remaining == 15
     assert lot.spec.purchase_month == 0
     assert lot.snapshot().asset_id == "test_fund"
     assert books.accounting.ledger.balance(CASH) == 85
-    books.holdings.sell(books.accounting, 0, sale(LotId("bought"), 15), price=20)
+    books.holdings.sell(books.accounting, 0, sale(LotId("bought"), 15), price=20, cost_rate_ppb=0)
     assert books.holdings.dispositions[0].realized_gain == 15
     assert books.accounting.ledger.trial_balance() == 0
 
@@ -228,7 +230,7 @@ def test_invalid_or_unfunded_purchase_does_not_create_lot_or_debit_cash(
 ) -> None:
     before = books.snapshot()
     with pytest.raises((ValueError, OverflowError), match=r"purchase|holding pool|unknown declared|overflow"):
-        books.holdings.buy(books.accounting, 0, purchase().model_copy(update=changes), price=10)
+        books.holdings.buy(books.accounting, 0, purchase().model_copy(update=changes), price=10, cost_rate_ppb=0)
     assert books.snapshot() == before
 
 

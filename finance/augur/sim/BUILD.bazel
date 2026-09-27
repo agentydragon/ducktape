@@ -602,6 +602,7 @@ py_library(
         ":money",
         ":observations",
         ":prepared",
+        ":trading_costs",
         "//finance/augur/model:asset_key",
         "//finance/augur/model:series",
     ],
@@ -781,6 +782,7 @@ py_library(
         ":tax_authority",
         ":tax_indexation",
         ":tlh",
+        ":trading_costs",
         "//finance/augur/model:series",
         "//finance/augur/sim/compiler:income_sources",
     ],
@@ -1828,6 +1830,37 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/sim/compiler:tax",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "trading_costs",
+    srcs = ["trading_costs.py"],
+    deps = [
+        ":books",
+        ":fixed_point",
+        ":money",
+        ":prepared",
+    ],
+)
+
+py_test(
+    name = "test_trading_costs",
+    srcs = ["test_trading_costs.py"],
+    deps = [
+        ":actions",
+        ":books",
+        ":fixed_point",
+        ":ids",
+        ":prepared",
+        ":results",
+        ":session",
+        ":world",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim/testing:accounting",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

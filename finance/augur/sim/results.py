@@ -15,6 +15,7 @@ from finance.augur.sim.books import (
     TaxAccrual,
     TaxPaymentOutcome,
     TaxSettlementOutcome,
+    TradingCostOutcome,
 )
 from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
 from finance.augur.sim.ids import AgentId, AssetId, BondId
@@ -96,6 +97,11 @@ class PaymentRejection(Record):
 
 class Executed(Record):
     kind: Literal["Executed"] = "Executed"
+    trading_cost: int | None = Field(
+        default=None,
+        description="What a Buy or Sell paid under the world's trading-cost schedule; None when no schedule "
+        "prices the action: it is not a trade, or the world declares none.",
+    )
 
 
 class Rejected(Record):
@@ -160,6 +166,9 @@ class Summary(Record):
     tax_accruals: list[TaxAccrual]
     tax_payments: list[TaxPaymentOutcome]
     tax_settlements: list[TaxSettlementOutcome]
+    trading_costs: list[TradingCostOutcome] | None = Field(
+        description="Every executed trade's cost under the declared schedule; None when the world declares none."
+    )
     ending_book: Book
     ending_mark_month: int
     last_receipts: list[Receipt]

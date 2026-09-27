@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from finance.augur.sim import capture, results
 from finance.augur.sim.actions import Action, DecisionActions
 from finance.augur.sim.agent import EconomicAgent, assemble
-from finance.augur.sim.books import AccountRef, TaxAccrual, TaxPaymentOutcome, TaxSettlementOutcome
+from finance.augur.sim.books import AccountRef, TaxAccrual, TaxPaymentOutcome, TaxSettlementOutcome, TradingCostOutcome
 from finance.augur.sim.ids import AgentId, AssetId
 from finance.augur.sim.observations import Decision, Observation
 from finance.augur.sim.world import Capture, World
@@ -54,6 +54,7 @@ class _Record:
         self.tax_accruals: list[TaxAccrual] = []
         self.tax_payments: list[TaxPaymentOutcome] = []
         self.tax_settlements: list[TaxSettlementOutcome] = []
+        self.trading_costs: list[TradingCostOutcome] = []
         self.financial = capture.FinancialCapture(world, capture=mode) if mode != "summary" else None
         self._series()
 
@@ -88,6 +89,8 @@ class _Record:
         self.tax_accruals.extend(world.accounting.tax_accruals)
         self.tax_payments.extend(world.accounting.tax_payments)
         self.tax_settlements.extend(world.accounting.tax_settlements)
+        if world.trading_costs is not None:
+            self.trading_costs.extend(world.trading_costs.paid)
         if self.mode != "summary":
             self.receipts.extend(world.previous_receipts)
         if self.financial is not None:
@@ -111,6 +114,7 @@ class _Record:
             tax_accruals=self.tax_accruals,
             tax_payments=self.tax_payments,
             tax_settlements=self.tax_settlements,
+            trading_costs=None if world.trading_costs is None else self.trading_costs,
             ending_book=world.book(),
             ending_mark_month=world.mark_month,
             last_receipts=list(world.previous_receipts),

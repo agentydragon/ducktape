@@ -215,7 +215,7 @@ class PrivateEquity:
                         asset_id=asset,
                         lots=holdings.fifo(candidates, target),
                     )
-                    holdings.sell(accounting, month, request, price=mark)
+                    holdings.sell(accounting, month, request, price=mark, cost_rate_ppb=0)
             floor = market.amount(policy.liquid_net_worth_floor, month)
             liquid = liquid_net_worth(accounting, holdings, market, marks, actor, month)
             shortfall = max(0, checked_count(floor - liquid, "money subtraction"))
@@ -269,4 +269,4 @@ class PrivateEquity:
                     asset_id=asset,
                     lots=holdings.fifo(candidates, target),
                 )
-                holdings.sell(accounting, month, request, price=mark)
+                holdings.sell(accounting, month, request, price=mark, cost_rate_ppb=0)

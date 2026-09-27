@@ -4,6 +4,7 @@ The declaration vocabulary a composed world takes. Underscored configured record
 preserve existing consumers until their policies move to the common action session.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -156,6 +157,17 @@ class PreparedDistribution:
     asset_id: AssetId
     to_account_id: AccountId
     tax_character: tuple[PreparedDistributionSlice, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class PreparedTradingCosts:
+    """What trading each public security costs, in parts per billion of a trade's gross value.
+
+    There is no default rate: a world that declares a schedule refuses a public pool it does not
+    price. How a trade pays it: <trading_costs.py>.
+    """
+
+    rates_ppb: Mapping[AssetId, int]
 
 
 @dataclass(frozen=True, kw_only=True)
