@@ -52,6 +52,9 @@ export interface Scenario extends ScenarioOptions {
   lifecycleGroup?: boolean;
   /** Open the chronological archive drawer, the native-frame inspection surface. */
   openDebug?: "latest" | "stderr";
+  /** Open the composer's overflow "More" menu and leave it open, showing the thread id label
+   * alongside "Debug history" / "Shut down harness". */
+  openMoreMenu?: boolean;
   /** Open the tool-call run once it mounts, then the reasoning step folded inside it. */
   openReasoning?: boolean;
   /** Open the tool-call run once it mounts, then the tool call's Arguments and Output inside it. */
@@ -478,6 +481,24 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: PHONE,
     outputName: "session-phone",
     readySelectors: ['[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  // The composer's overflow "More" menu open over a named thread: the thread id now shows as a
+  // menu label above "Debug history" / "Shut down harness", not beside the title.
+  session_more_menu: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    openMoreMenu: true,
+    readySelectors: ['[role="menu"]', '[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  session_more_menu_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: PHONE,
+    openMoreMenu: true,
+    readySelectors: ['[role="menu"]', '[data-thread-anchor="34"]'],
     captureViewport: true,
   },
   // An unnamed thread: the title field shows the thread id as its placeholder and nothing beside it.
