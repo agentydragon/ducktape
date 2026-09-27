@@ -6,7 +6,7 @@ import csv
 from collections.abc import Iterable
 from io import StringIO
 
-from finance.augur.budget.wire import (
+from finance.budget.wire import (
     BudgetAdjustment,
     BudgetSnapshotResponse,
     BudgetTransactionsResponse,

@@ -1,32 +1,38 @@
-# augur budget planner
+# budget
 
-A new augur tab (`Budget`) and the supporting API for "what does my monthly
-spending actually look like, and how much can I afford to change it?"
-Pulls live data from the Plaid mirror DB, classifies transactions into named
-buckets, groups related buckets into families (e.g. medical: charges +
-insurance reimbursements) that show inflows and outflows side by side instead
-of force-netting, and surfaces lumpy one-offs separately.
+Plaid transaction classifier answering "what does my monthly spending actually
+look like, and how much can I afford to change it?" Reads live data from the
+Plaid mirror DB, classifies transactions into named buckets, groups related
+buckets into families (e.g. medical: charges + insurance reimbursements) that
+show inflows and outflows side by side instead of force-netting, and surfaces
+lumpy one-offs separately.
+
+Consumers: augur's API server serves it at `/api/budget/*` for the frontend's
+`Budget` tab (<../augur/api/server.py>), and the Beancount exporter
+(<../beancount_export/>) renders the same classification as a ledger.
 
 ## Architecture
 
-| Layer               | What it does                                                                                                                                                                               |
+| Module              | What it does                                                                                                                                                                               |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `schema.py`         | `BudgetConfig` Pydantic: bucket taxonomy (kinds: expense / inflow / transfer / income) + the condition DSL and rule kinds, loaded from augur YAML                                          |
+| `schema.py`         | `BudgetConfig` Pydantic: bucket taxonomy (kinds: expense / inflow / transfer / income) + the condition DSL and rule kinds, loaded from the `budget:` block of the augur config YAML        |
 | `sql_read_model.py` | Reads Plaid transactions from Postgres, compiles the rules to a first-match-wins SQL CASE, classifies (direction-gated) + applies overrides, aggregates monthly totals, returns drilldowns |
 | `service.py`        | Orchestrates request windows, database session reuse, CSV export, and wire types                                                                                                           |
-| `wire.py`           | HTTP wire schemas (drive frontend Zod codegen via `export_schema`)                                                                                                                         |
+| `wire.py`           | HTTP wire schemas (drive augur's frontend Zod codegen via its `export_schema`)                                                                                                             |
+| `csv_export.py`     | CSV exports: the bucket-by-month summary (plus planning columns when adjustments are sent) and one bucket's transactions                                                                   |
 
 ## What lives in ducktape vs gaffer-private
 
-**ducktape (public):** The framework — schemas, the condition DSL + rule kinds,
-the SQL read model, the API endpoints, and the frontend tab. No rule _content_
-ships in the framework; every rule lives in the deployment's config.
+**ducktape (public):** The framework — this package (schemas, the condition DSL
+and rule kinds, the SQL read model), plus augur's `/api/budget/*` endpoints and
+frontend tab. No rule _content_ ships in the framework; every rule lives in the
+deployment's config.
 
 **gaffer-private (private):** The actual `budget:` config block in the
 deployment's `Config` YAML, listing the user's specific merchants (medical
 providers, therapist, landlord), Plaid account IDs to include, and bucket
-overrides. Augur loads this at startup; the framework knows nothing about it
-until the YAML is read.
+overrides. Augur and the Beancount exporter both load it from that YAML; the
+framework knows nothing about it until the YAML is read.
 
 ## Adding a `budget:` section to your augur config
 
@@ -38,7 +44,7 @@ budget:
     # `plaid-mcp-db-readonly` (cluster/cdk8s/plaid_mcp/db.py); mount its
     # DATABASE_URL key as this env var.
     database_url_env: AUGUR_PLAID_DATABASE_URL
-    # Optional: subset of plaid_utils.accounts.account_id values to include.
+    # Optional: subset of Plaid mirror accounts.account_id values to include.
     # Empty = every account the connection sees.
     plaid_account_ids: []
 
@@ -61,8 +67,8 @@ budget:
     - { id: government, label: Government, kind: expense, direction: outflow }
     # Related buckets share a `family`; the UI renders them in one panel showing inflow and
     # outflow side by side (no auto-netting -- reimbursement timing is too lumpy to net safely).
-    - { id: medical_reimbursement, label: Anthem reimbursements, kind: inflow, direction: inflow, family: medical }
-    - { id: esketamine, label: Esketamine, kind: expense, direction: outflow, family: medical }
+    - { id: medical_reimbursement, label: Insurance reimbursements, kind: inflow, direction: inflow, family: medical }
+    - { id: prescriptions, label: Prescriptions, kind: expense, direction: outflow, family: medical }
     - { id: therapy, label: Therapy, kind: expense, direction: outflow, family: medical }
     - { id: medical_other, label: Other medical, kind: expense, direction: outflow, family: medical }
     # Transfers are split by direction so each bucket stays single-sided.

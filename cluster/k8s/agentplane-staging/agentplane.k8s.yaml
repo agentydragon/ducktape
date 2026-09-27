@@ -2419,6 +2419,8 @@ data:
             url: https://api.githubcopilot.com/mcp/
             server_id: github
             auth: oauth
+            headers:
+              X-MCP-Toolsets: default,actions
       kubernetes_admin:
         title: Kubernetes admin
         description: The Kubernetes API with the linked operator's own permissions. Use it only for what your own Kubernetes identity cannot do; each call waits for the operator's approval.
