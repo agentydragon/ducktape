@@ -40,6 +40,7 @@ from constructs import Construct
 
 from agentplane.egress import sidecar
 from agentplane.egress.resources import placeholder_of
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.agentplane import egress, llm_ingress
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
@@ -298,9 +299,7 @@ def pod_spec(
         image_pull_secrets=[SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name=SECRET_NAME)],
         # With the rest of the namespace and with LiteLLM: a box's traffic through the egress proxy
         # and a runner's model calls both stay inside the zone.
-        node_selector=(
-            {"topology.kubernetes.io/zone": env.app.runner_zone} if env.app.runner_zone is not None else None
-        ),
+        node_selector=({node_scheduling.ZONE_LABEL: env.app.runner_zone} if env.app.runner_zone is not None else None),
         service_account_name=service_account_name,
         termination_grace_period_seconds=60,
         security_context=SandboxTemplateSpecPodTemplateSpecSecurityContext(

@@ -7,7 +7,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import cnpg
+from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -21,7 +21,6 @@ _DB_CLUSTER = "atuin-db"
 _SERVER = "atuin-server"
 _PORT = 8888
 _LABELS = {"app.kubernetes.io/name": NAME}
-_ZONE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh"}
 
 
 def _database(chart: Chart) -> None:
@@ -30,7 +29,7 @@ def _database(chart: Chart) -> None:
         "database",
         name=_DB_CLUSTER,
         namespace=NAMESPACE,
-        node_selector=_ZONE_SELECTOR,
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh-ssd",
         size="2Gi",
         initdb=cnpg.same_owner_initdb(NAME),
@@ -56,7 +55,7 @@ def _server(chart: Chart) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
-                    node_selector=_ZONE_SELECTOR,
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     containers=[
                         k8s.Container(
                             name=NAME,

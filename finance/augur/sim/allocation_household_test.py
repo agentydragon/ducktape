@@ -40,10 +40,10 @@ from finance.augur.sim.prepared import (
     PreparedJurisdiction,
     PreparedLot,
     PreparedObligation,
-    PreparedRecurringObligation,
     PreparedSeries,
     PreparedTransfer,
 )
+from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
@@ -125,7 +125,7 @@ def lot(asset: SecurityKey, *, units: float, basis: Decimal | int, purchase_mont
 
 def claim(month: int, amount: Decimal | int, identifier: str = "spending") -> PreparedObligation:
     return PreparedObligation(
-        month=month,
+        schedule=Once(month=month),
         obligation_id=identifier,
         obligation_type="cash_spend",
         from_account=ref(ALICE),
@@ -169,7 +169,7 @@ class Situation:
     pools: tuple[PreparedHoldingPool, ...] = ()
     lots: tuple[PreparedLot, ...] = ()
     distributions: tuple[PreparedDistribution, ...] = ()
-    claims: tuple[PreparedObligation | PreparedRecurringObligation, ...] = ()
+    claims: tuple[PreparedObligation, ...] = ()
     transfers: tuple[PreparedTransfer, ...] = ()
     sales: Mapping[int, tuple[Sell, ...]] = field(default_factory=dict)
     interest_sources: tuple[InterestIncome, ...] = ()
@@ -332,9 +332,8 @@ def test_indexed_monthly_claims_keep_sales_and_next_year_tax_events() -> None:
             accounts=(account(ALICE), account(WORLD)),
             transfers=(),
             claims=(
-                PreparedRecurringObligation(
-                    start_month=0,
-                    end_month=None,
+                PreparedObligation(
+                    schedule=Recurring(start_month=0, end_month=None),
                     obligation_id="indexed",
                     obligation_type="cash_spend",
                     from_account=ref(ALICE),

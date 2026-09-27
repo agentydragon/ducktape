@@ -8,7 +8,7 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb, ClusterSpecBootstrapInitdbSecret
 
-from cluster.cdk8s import cnpg
+from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -37,7 +37,7 @@ def _chart(app: App) -> Chart:
         },
         # Existing SSD-local replicas remain pinned by their PVs; the node
         # affinity only steers placements no existing claim constrains.
-        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh-ssd",
         size="10Gi",
         # The cluster was created by pg_basebackup from the retired forgejo-db, so this

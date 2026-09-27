@@ -34,7 +34,7 @@ from finance.augur.sim.prepared import (
     PreparedJurisdiction,
     PreparedLocation,
     PreparedLot,
-    PreparedRecurringObligation,
+    PreparedObligation,
     PreparedRecurringTransfer,
     PreparedSeries,
     PreparedTransfer,
@@ -43,6 +43,7 @@ from finance.augur.sim.prepared import (
     _PropertyTax,
 )
 from finance.augur.sim.property import Housing
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
@@ -158,10 +159,9 @@ def paycheck(amount: Decimal | int, *, end_month: int) -> PreparedRecurringTrans
     )
 
 
-def rent(amount: Decimal | int, *, end_month: int) -> PreparedRecurringObligation:
-    return PreparedRecurringObligation(
-        start_month=0,
-        end_month=end_month,
+def rent(amount: Decimal | int, *, end_month: int) -> PreparedObligation:
+    return PreparedObligation(
+        schedule=Recurring(start_month=0, end_month=end_month),
         obligation_id="rent",
         obligation_type="rent",
         from_account=ref(ALICE),

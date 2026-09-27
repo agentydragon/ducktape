@@ -8,8 +8,6 @@ Hand-written beside the output: the SOPS Secrets, the `configMapGenerator` input
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef
@@ -21,10 +19,9 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
 
-from cluster.cdk8s import cilium, cnpg, forgejo_images, gateway, namespaces
+from cluster.cdk8s import cilium, cnpg, forgejo_images, gateway, namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
-from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions
 from cluster.cdk8s.haku import namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -54,18 +51,21 @@ _IMAGE = "git.allegedly.works/ducktape-ci/stalwart:unset"
 _SMTP_PORT = 2525
 _HTTP_PORT = 8080
 _IMAP_PORT = 1143
-_CONFIG_DIR = "/etc/stalwart"  # where _CONFIG_MAP is mounted
+_CONFIG_DIR = "/etc/stalwart"  # where CONFIG_MAP is mounted
 _INITIALIZE = "initialize.sh"
 _SERVER_CONFIG = "config.json"
 # The provisioning plan: the server's config, the init container's script and the plan it applies.
-_CONFIG_MAP = ConfigMapArgs(
+CONFIG_MAP = ConfigMapArgs(
     name="haku-mailbox-config",
     namespace=NAMESPACE,
     # The script and the plan's Sieve carry `${...}` that are theirs, not Flux's.
     options=GeneratorOptions(annotations={"kustomize.toolkit.fluxcd.io/substitute": "disabled"}),
     files=[_INITIALIZE, _SERVER_CONFIG, "mailbox-plan.ndjson"],
 )
-_INGRESS_CONFIG_MAP = ConfigMapArgs(name=_INGRESS_NAME, namespace=NAMESPACE, files=["nginx.conf"])
+INGRESS_CONFIG_MAP = ConfigMapArgs(name=_INGRESS_NAME, namespace=NAMESPACE, files=["nginx.conf"])
+# No namespace transformer: haku-mail-token.sops.yaml targets flux-system (the rotator's
+# publication point); everything else carries its namespace explicitly.
+SOPS_FILES = ("haku-mailbox-admin.sops.yaml", "haku-mail-token.sops.yaml")
 
 
 def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:
@@ -110,7 +110,7 @@ def _add_store(chart: Chart) -> None:
         "db",
         name="haku-mailbox-db",
         namespace=NAMESPACE,
-        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh",
         size="10Gi",
         # CNPG auto-generates credentials in secret haku-mailbox-db-app.
@@ -143,7 +143,7 @@ def _add_deployment(chart: Chart) -> None:
                     # OVH-only resilience: inbound mail must not depend on Proxmox, and the CNPG
                     # store is pinned to hil-ovh -- co-locate with it (same pin as other
                     # OVH-pinned apps, e.g. paperless).
-                    node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     security_context=k8s.PodSecurityContext(
                         run_as_non_root=True, run_as_user=1000, run_as_group=1000, fs_group=1000
                     ),
@@ -202,7 +202,7 @@ def _add_deployment(chart: Chart) -> None:
                     volumes=[
                         k8s.Volume(
                             name="config",
-                            config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP.name, default_mode=0o555),
+                            config_map=k8s.ConfigMapVolumeSource(name=CONFIG_MAP.name, default_mode=0o555),
                         ),
                         k8s.Volume(name="tls", secret=k8s.SecretVolumeSource(secret_name=_TLS_SECRET)),
                         k8s.Volume(name="tmp", empty_dir=k8s.EmptyDirVolumeSource()),
@@ -292,11 +292,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
                     # on every public OVH node while the control-plane taint is rolled out. The
                     # backend Deployment is movable; this DaemonSet is the explicit control-plane
                     # exception until the public-node roster is redesigned.
-                    tolerations=[
-                        k8s.Toleration(
-                            key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                        )
-                    ],
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     containers=[
                         k8s.Container(
                             name="nginx",
@@ -336,7 +332,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
                         )
                     ],
                     volumes=[
-                        k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=_INGRESS_CONFIG_MAP.name)),
+                        k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=INGRESS_CONFIG_MAP.name)),
                         k8s.Volume(
                             name="tmp",
                             empty_dir=k8s.EmptyDirVolumeSource(
@@ -478,17 +474,3 @@ def chart(app: App) -> Chart:
         data=[cluster_remote_data("haku-mail-token", "jwt")],
     )
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        # No namespace transformer: haku-mail-token.sops.yaml targets flux-system (the rotator's
-        # publication point); everything else carries its namespace explicitly.
-        kustomize_kustomization(
-            resources=[f"{NAME}.k8s.yaml", "haku-mailbox-admin.sops.yaml", "haku-mail-token.sops.yaml"],
-            components=["./image-pins"],
-            config_map_generator=[_CONFIG_MAP, _INGRESS_CONFIG_MAP],
-        ),
-    )

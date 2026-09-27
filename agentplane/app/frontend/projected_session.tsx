@@ -74,7 +74,7 @@ import { StaleNotice, useStreamStatus, type StreamStatus } from "./stream_status
 import { HighlightedText, JsonView } from "./json_view";
 import { Markdown } from "./markdown";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
-import { ChronologicalDebugLink, ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
+import { ChronologicalDebugIcon, ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
 import "./projected_session.css";
 
@@ -220,7 +220,16 @@ function EvidenceFrames(props: { threadId: string; entity: ThreadEntity; observa
   const { entity } = props;
   const id = `${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:frames:${props.observationCursor}`;
   return (
-    <RetainedDisclosure id={id} summary={`Observation ${props.observationCursor} raw frames`}>
+    <RetainedDisclosure
+      id={id}
+      summary={
+        // A `<span>`, not a `Group`'s default `<div>`: `<summary>` only allows phrasing content.
+        <Group component="span" justify="space-between" wrap="nowrap" gap="xs">
+          <span>Observation {props.observationCursor} raw frames</span>
+          <ChronologicalDebugIcon observationCursor={props.observationCursor} />
+        </Group>
+      }
+    >
       <EvidenceFramesPage key={id} {...props} />
     </RetainedDisclosure>
   );
@@ -276,11 +285,11 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
               observationCursor={observation.observation_cursor}
             />
           ) : (
-            <Text size="xs" key={observation.observation_cursor}>
-              Observation {observation.observation_cursor} has no native frame
-            </Text>
+            <Group key={observation.observation_cursor} justify="space-between" wrap="nowrap" gap="xs">
+              <Text size="xs">Observation {observation.observation_cursor} has no native frame</Text>
+              <ChronologicalDebugIcon observationCursor={observation.observation_cursor} />
+            </Group>
           )}
-          <ChronologicalDebugLink observationCursor={observation.observation_cursor} />
         </Stack>
       ))}
       {page?.next_after_cursor && (

@@ -51,6 +51,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import node_scheduling, pod_policy
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
@@ -65,7 +66,6 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.litellm.config import ConfigMapSpec, proxy_configs
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
@@ -180,10 +180,10 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
             image_pull_secret_name="forgejo-images-creds",
             service_account_name="litellm",
             termination_grace_period_seconds=90,
-            node_affinity=Node.labeled(NodeLabelQuery.is_("topology.kubernetes.io/zone", "hil-ovh")),
+            node_affinity=Node.labeled(NodeLabelQuery.is_(node_scheduling.ZONE_LABEL, node_scheduling.HIL_OVH_ZONE)),
             tolerations=(
                 Node.tainted(
-                    NodeTaintQuery.exists("node-role.kubernetes.io/control-plane", effect=TaintEffect.NO_SCHEDULE)
+                    NodeTaintQuery.exists(node_scheduling.CONTROL_PLANE_TAINT_KEY, effect=TaintEffect.NO_SCHEDULE)
                 ),
             ),
             topology_spread_constraints=(
@@ -319,7 +319,7 @@ class LiteLLMProxy(Construct):
             # Same rationale as the pod-level override above.
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False, ensure_non_root=False),
         )
-        apply_pod_spec_patches(deployment)
+        pod_policy.harden(deployment)
         volume = Volume.from_config_map(
             self, "config-volume", config_map, items={"config.yaml": PathMapping(path="config.yaml")}
         )
