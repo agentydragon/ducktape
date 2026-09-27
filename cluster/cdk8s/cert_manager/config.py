@@ -5,7 +5,7 @@ root whichever issuer is active.
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_clusterissuer_crds.io.cert_manager import (
     ClusterIssuerSpecAcmeSolvers,
@@ -119,7 +119,7 @@ def issuers_chart(app: App) -> Chart:
         ClusterIssuer.acme(
             chart,
             issuer,
-            name=issuer,
+            metadata=ApiObjectMetadata(name=issuer),
             server=server,
             email="agentydragon@gmail.com",
             private_key_secret_name=f"{issuer}-key",

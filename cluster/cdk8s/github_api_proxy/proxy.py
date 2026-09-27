@@ -15,7 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 from textwrap import dedent
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_crds.io.cert_manager import (
     CertificateSpecIssuerRef,
@@ -194,8 +194,7 @@ def _certificates(scope: Construct) -> None:
     Certificate(
         scope,
         "server",
-        name="github-api-proxy-server",
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(name="github-api-proxy-server", namespace=_NAMESPACE),
         secret_name=_SERVER_TLS_SECRET,
         dns_names=[_HOSTNAME],
         private_key=CertificatePrivateKey.ecdsa_p256(rotation_policy=CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
@@ -205,14 +204,16 @@ def _certificates(scope: Construct) -> None:
     Certificate(
         scope,
         "interception-ca",
-        name=_INTERCEPTION_CA,
-        namespace=_NAMESPACE,
-        annotations={
-            "description": (
-                "Dedicated workstation proxy interception root. Only its public certificate may be "
-                "distributed to clients; the signing key stays in this namespace."
-            )
-        },
+        metadata=ApiObjectMetadata(
+            name=_INTERCEPTION_CA,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": (
+                    "Dedicated workstation proxy interception root. Only its public certificate may be "
+                    "distributed to clients; the signing key stays in this namespace."
+                )
+            },
+        ),
         is_ca=True,
         common_name="ducktape-github-api-proxy-interception-ca",
         secret_name=_INTERCEPTION_CA,

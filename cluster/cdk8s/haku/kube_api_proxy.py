@@ -71,8 +71,7 @@ class KubeApiProxy(Construct):
         Certificate(
             self,
             "certificate",
-            name=_TLS_SECRET,
-            namespace=namespace,
+            metadata=ApiObjectMetadata(name=_TLS_SECRET, namespace=namespace),
             secret_name=_TLS_SECRET,
             duration="2160h",
             renew_before="720h",
