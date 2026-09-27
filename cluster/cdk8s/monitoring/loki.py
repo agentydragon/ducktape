@@ -29,6 +29,7 @@ from cilium_crds.io.cilium import (
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -45,20 +46,6 @@ _LEGACY_CREDENTIALS_SECRET = "loki-s3-credentials"
 _CREDENTIALS_SECRET = "loki-seaweedfs-credentials"
 WRITE_URL = "http://loki-write.loki.svc.cluster.local:3100"
 _PUSH_URL = f"{WRITE_URL}/loki/api/v1/push"
-_ZONE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh"}
-# Prefer ordinary workers when this workload tolerates control planes.
-_PREFER_WORKERS_AFFINITY = {
-    "nodeAffinity": {
-        "preferredDuringSchedulingIgnoredDuringExecution": [
-            {
-                "weight": 100,
-                "preference": {
-                    "matchExpressions": [{"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}]
-                },
-            }
-        ]
-    }
-}
 _CREDENTIALS_ENV_FROM = [{"secretRef": {"name": _CREDENTIALS_SECRET}}]
 _GOLDILOCKS_OFF = {"goldilocks.fairwinds.com/enabled": "false"}
 _TOLERATE_NO_SCHEDULE = [{"effect": "NoSchedule", "operator": "Exists"}]
@@ -197,8 +184,8 @@ def _loki_values() -> dict[str, object]:
         "write": {
             "replicas": 2,
             "annotations": _GOLDILOCKS_OFF,
-            "nodeSelector": _ZONE_SELECTOR,
-            "affinity": _PREFER_WORKERS_AFFINITY,
+            "nodeSelector": {node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+            "affinity": node_scheduling.PREFER_WORKERS,
             "persistence": {"storageClass": "local-path-ovh", "size": "10Gi"},
             "extraEnvFrom": _CREDENTIALS_ENV_FROM,
             "resources": {"requests": {"cpu": "100m", "memory": "256Mi"}, "limits": {"cpu": "500m", "memory": "512Mi"}},
@@ -206,8 +193,8 @@ def _loki_values() -> dict[str, object]:
         "read": {
             "replicas": 2,
             "annotations": _GOLDILOCKS_OFF,
-            "nodeSelector": _ZONE_SELECTOR,
-            "affinity": _PREFER_WORKERS_AFFINITY,
+            "nodeSelector": {node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+            "affinity": node_scheduling.PREFER_WORKERS,
             "extraEnvFrom": _CREDENTIALS_ENV_FROM,
             # Loki doesn't derive GOMEMLIMIT from its own cgroup limit yet (open
             # upstream: grafana/loki#23514, grafana/loki#19586), so the Go GC never
@@ -224,8 +211,8 @@ def _loki_values() -> dict[str, object]:
         "backend": {
             "replicas": 2,
             "annotations": _GOLDILOCKS_OFF,
-            "nodeSelector": _ZONE_SELECTOR,
-            "affinity": _PREFER_WORKERS_AFFINITY,
+            "nodeSelector": {node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+            "affinity": node_scheduling.PREFER_WORKERS,
             "persistence": {"volumeClaimsEnabled": False},
             "extraEnvFrom": _CREDENTIALS_ENV_FROM,
             # backend runs the compactor + index-gateway + ruler. Its memory tracks
@@ -246,8 +233,8 @@ def _loki_values() -> dict[str, object]:
             # service out of ServiceMonitor discovery.
             "replicas": 1,
             "resources": {"requests": {"cpu": "10m", "memory": "32Mi"}},
-            "nodeSelector": _ZONE_SELECTOR,
-            "affinity": _PREFER_WORKERS_AFFINITY,
+            "nodeSelector": {node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+            "affinity": node_scheduling.PREFER_WORKERS,
             # nginx's DNS resolver reuses one fixed UDP source port for every
             # query; Kubernetes' conntrack-based Service NAT then pins that flow
             # to whichever CoreDNS pod answered first and never re-evaluates it,

@@ -73,16 +73,14 @@ from seaweed_seaweed_crds.com.seaweedfs.seaweed import (
     SeaweedSpecVolumeTopologyTolerations,
 )
 
-from cluster.cdk8s import stateful_infra
+from cluster.cdk8s import node_scheduling, stateful_infra
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.seaweedfs import filer_db, namespace, s3_config
 
 NAME = "seaweedfs"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/cluster"
-_ZONE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh"}
 _HOSTNAME = "kubernetes.io/hostname"
-_CONTROL_PLANE = "node-role.kubernetes.io/control-plane"
 
 
 def _component_labels(component: str) -> dict[str, str]:
@@ -134,7 +132,11 @@ def _volume_topology(
         # minFreeSpacePercent, not the slot cap.
         max_volume_counts=max_volume_counts,
         node_selector={"storage.allegedly.works/tier": disk},
-        tolerations=[SeaweedSpecVolumeTopologyTolerations(key=_CONTROL_PLANE, operator="Exists", effect="NoSchedule")],
+        tolerations=[
+            SeaweedSpecVolumeTopologyTolerations(
+                key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
+            )
+        ],
         affinity=SeaweedSpecVolumeTopologyAffinity(
             pod_anti_affinity=SeaweedSpecVolumeTopologyAffinityPodAntiAffinity(
                 required_during_scheduling_ignored_during_execution=[
@@ -216,8 +218,12 @@ def seaweed(scope: Construct) -> Seaweed:
                     "memory": SeaweedSpecMasterRequests.from_string("128Mi"),
                 },
                 limits={"memory": SeaweedSpecMasterLimits.from_string("512Mi")},
-                node_selector=_ZONE_SELECTOR,
-                tolerations=[SeaweedSpecMasterTolerations(key=_CONTROL_PLANE, operator="Exists", effect="NoSchedule")],
+                node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+                tolerations=[
+                    SeaweedSpecMasterTolerations(
+                        key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
+                    )
+                ],
                 # Hard anti-affinity -- each master on a different host so raft quorum can
                 # actually survive a node loss.
                 affinity=SeaweedSpecMasterAffinity(
@@ -335,7 +341,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     "memory": SeaweedSpecFilerRequests.from_string("384Mi"),
                 },
                 limits={"memory": SeaweedSpecFilerLimits.from_string("768Mi")},
-                node_selector=_ZONE_SELECTOR,
+                node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
                 affinity=SeaweedSpecFilerAffinity(
                     # Hard anti-affinity -- one filer per host, so the 2 replicas never share a
                     # node and a single node loss can't take out both.
@@ -357,7 +363,7 @@ def seaweed(scope: Construct) -> Seaweed:
                                 preference=SeaweedSpecFilerAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference(
                                     match_expressions=[
                                         SeaweedSpecFilerAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions(
-                                            key=_CONTROL_PLANE, operator="DoesNotExist"
+                                            key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="DoesNotExist"
                                         )
                                     ]
                                 ),
@@ -404,10 +410,14 @@ def seaweed(scope: Construct) -> Seaweed:
                 # outside the pod gets "connection refused". Bind to 0.0.0.0 so probes (and
                 # the Service ClusterIP) reach the API.
                 extra_args=["-ip.bind=0.0.0.0"],
-                node_selector=_ZONE_SELECTOR,
+                node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
                 # Allow kimsufi CPs as scheduling targets so s3 can spread across OVH hosts
                 # when desirable. Stateless gateway -- no I/O contention.
-                tolerations=[SeaweedSpecS3Tolerations(key=_CONTROL_PLANE, operator="Exists", effect="NoSchedule")],
+                tolerations=[
+                    SeaweedSpecS3Tolerations(
+                        key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
+                    )
+                ],
             ),
         ),
     )

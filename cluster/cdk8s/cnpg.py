@@ -22,13 +22,14 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
 )
 from constructs import Construct
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.local_path_provisioner import SSD_STORAGE_CLASSES
 from cluster.cdk8s.providers.cnpg.cluster import Cluster
 
 POSTGRES_IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie"
 
 _CONTROL_PLANE_TOLERATION = ClusterSpecAffinityTolerations(
-    key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
+    key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
 )
 
 

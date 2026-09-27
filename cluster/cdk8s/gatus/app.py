@@ -24,7 +24,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import cilium, cnpg
+from cluster.cdk8s import cilium, cnpg, node_scheduling
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
@@ -37,7 +37,6 @@ _NAME = "gatus"
 _NAMESPACE = "gatus"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _DB_NAME = "gatus-db"
-_ZONE = "hil-ovh"
 _HELM_REPOSITORY = "twin"
 _PORT = 8080
 
@@ -63,7 +62,7 @@ def _database(scope: Construct) -> None:
         "database",
         name=_DB_NAME,
         namespace=_NAMESPACE,
-        node_selector={"topology.kubernetes.io/zone": _ZONE},
+        node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
         storage_class="local-path-ovh",
         size="1Gi",
         # CNPG auto-generates credentials in secret gatus-db-app
@@ -110,28 +109,12 @@ def _helm_release(scope: Construct) -> None:
             # The ServiceMonitor is its own object below, to avoid blocking
             # Gatus deploys on monitoring-stack readiness.
             "serviceMonitor": {"enabled": False},
-            "nodeSelector": {"topology.kubernetes.io/zone": _ZONE},
+            "nodeSelector": {node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
             # Gatus is stateless at the pod level (state moved to gatus-db above). Allow
             # control-plane nodes as overflow capacity, while the affinity below keeps
             # ordinary placement on workers.
-            "tolerations": [
-                {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
-            ],
-            # Prefer ordinary workers when this workload tolerates control planes.
-            "affinity": {
-                "nodeAffinity": {
-                    "preferredDuringSchedulingIgnoredDuringExecution": [
-                        {
-                            "weight": 100,
-                            "preference": {
-                                "matchExpressions": [
-                                    {"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}
-                                ]
-                            },
-                        }
-                    ]
-                }
-            },
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
+            "affinity": node_scheduling.PREFER_WORKERS,
             "resources": {"requests": {"cpu": "20m", "memory": "64Mi"}, "limits": {"cpu": "200m", "memory": "128Mi"}},
         },
     )

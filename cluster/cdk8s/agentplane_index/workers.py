@@ -23,7 +23,7 @@ from cnpg_database_crds.io.cnpg.postgresql import (
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from agentplane.indexing.main import Settings
-from cluster.cdk8s import cnpg, forgejo_images
+from cluster.cdk8s import cnpg, forgejo_images, node_scheduling
 from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
@@ -83,7 +83,7 @@ def _database(chart: Chart) -> None:
         "database-cluster",
         name=_DB_CLUSTER,
         namespace=NAME,
-        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+        node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
         storage_class="local-path-ovh-ssd",
         size="20Gi",
         initdb=ClusterSpecBootstrapInitdb(database="ducktape", owner=_DB_OWNER),

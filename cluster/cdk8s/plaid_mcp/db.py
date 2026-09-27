@@ -23,7 +23,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
-from cluster.cdk8s import cilium, cnpg
+from cluster.cdk8s import cilium, cnpg, node_scheduling
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
@@ -47,7 +47,6 @@ _PROVISIONER_LABELS = {"app": _PROVISIONER}
 _SQL_CONFIG_MAP = "plaid-mcp-db-readonly-sql"
 _SQL_FILE = "readonly-role.sql"
 _PRIMARY_HOST = f"{_CLUSTER}-rw.{NAMESPACE}.svc"
-_ZONE = "hil-ovh"
 
 
 def _cluster(chart: Chart) -> None:
@@ -62,7 +61,7 @@ def _cluster(chart: Chart) -> None:
                 " financial data."
             )
         },
-        node_selector={"topology.kubernetes.io/zone": _ZONE},
+        node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
         storage_class="local-path-ovh",
         size="5Gi",
         managed=ClusterSpecManaged(
@@ -176,7 +175,7 @@ def _readonly_provisioner(chart: Chart) -> None:
                 metadata=k8s.ObjectMeta(labels=_PROVISIONER_LABELS),
                 spec=k8s.PodSpec(
                     restart_policy="Never",
-                    node_selector={"topology.kubernetes.io/zone": _ZONE},
+                    node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
                     containers=[
                         k8s.Container(
                             name="psql",

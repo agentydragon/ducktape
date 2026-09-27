@@ -14,7 +14,7 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 
-from cluster.cdk8s import cnpg
+from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
@@ -30,7 +30,7 @@ def _chart(app: App) -> Chart:
         "cluster",
         name=_CLUSTER_NAME,
         namespace="litellm",
-        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+        node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
         storage_class="local-path-ovh",
         size="5Gi",
         # CNPG auto-generates credentials in secret litellm-db-app.

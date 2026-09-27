@@ -7,6 +7,7 @@ from cdk8s import App, Chart, Size
 from cdk8s_plus_34 import Cpu
 from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import RedisReplicationSpecTolerations
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.valkey import valkey_instance
@@ -33,7 +34,7 @@ def chart(app: App) -> Chart:
         storage_size=Size.gibibytes(2),
         tolerations=[
             RedisReplicationSpecTolerations(
-                key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
+                key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
             )
         ],
     )

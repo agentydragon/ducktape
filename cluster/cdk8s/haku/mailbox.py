@@ -21,7 +21,7 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
 
-from cluster.cdk8s import cilium, cnpg, forgejo_images, gateway
+from cluster.cdk8s import cilium, cnpg, forgejo_images, gateway, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
@@ -109,7 +109,7 @@ def _add_store(chart: Chart) -> None:
         "db",
         name="haku-mailbox-db",
         namespace=NAMESPACE,
-        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+        node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
         storage_class="local-path-ovh",
         size="10Gi",
         # CNPG auto-generates credentials in secret haku-mailbox-db-app.
@@ -142,7 +142,7 @@ def _add_deployment(chart: Chart) -> None:
                     # OVH-only resilience: inbound mail must not depend on Proxmox, and the CNPG
                     # store is pinned to hil-ovh -- co-locate with it (same pin as other
                     # OVH-pinned apps, e.g. paperless).
-                    node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+                    node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
                     security_context=k8s.PodSecurityContext(
                         run_as_non_root=True, run_as_user=1000, run_as_group=1000, fs_group=1000
                     ),
@@ -291,11 +291,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
                     # on every public OVH node while the control-plane taint is rolled out. The
                     # backend Deployment is movable; this DaemonSet is the explicit control-plane
                     # exception until the public-node roster is redesigned.
-                    tolerations=[
-                        k8s.Toleration(
-                            key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                        )
-                    ],
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     containers=[
                         k8s.Container(
                             name="nginx",

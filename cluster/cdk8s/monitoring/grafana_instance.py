@@ -35,7 +35,7 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecInstanceSelector,
 )
 
-from cluster.cdk8s import cnpg
+from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -60,7 +60,7 @@ def _database(chart: Chart) -> None:
         "database",
         name=_DB_NAME,
         namespace=_NAMESPACE,
-        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+        node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
         storage_class="local-path-ovh",
         size="2Gi",
         # Created by pg_basebackup from the retired grafana-db, so this never initializes

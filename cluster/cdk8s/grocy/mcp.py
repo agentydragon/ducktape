@@ -19,6 +19,7 @@ from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
@@ -35,7 +36,6 @@ _HTTP_PORT = 8765
 _METRICS_PORT = 9090
 # The base's placeholder; each household's kustomization.yaml patches in its own Secret.
 _OIDC_SECRET = "grocy-mcp-oidc"
-_CONTROL_PLANE = "node-role.kubernetes.io/control-plane"
 
 
 def _secret_env(name: str, key: str) -> k8s.EnvVar:
@@ -72,25 +72,12 @@ def base_chart(app: App) -> Chart:
                     # The OAuth state Valkey instances use local-path-ovh and are pinned to
                     # hil-ovh. Keep the MCP client in the same site: valkey-glide's default
                     # 250 ms request timeout is too small for the current cross-site path.
-                    node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+                    node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
                     # Stateless (config only, no PVC). Allow control-plane nodes as overflow
                     # capacity, but prefer workers to keep ordinary application I/O away from
                     # etcd disks.
-                    tolerations=[k8s.Toleration(key=_CONTROL_PLANE, operator="Exists", effect="NoSchedule")],
-                    affinity=k8s.Affinity(
-                        node_affinity=k8s.NodeAffinity(
-                            preferred_during_scheduling_ignored_during_execution=[
-                                k8s.PreferredSchedulingTerm(
-                                    weight=100,
-                                    preference=k8s.NodeSelectorTerm(
-                                        match_expressions=[
-                                            k8s.NodeSelectorRequirement(key=_CONTROL_PLANE, operator="DoesNotExist")
-                                        ]
-                                    ),
-                                )
-                            ]
-                        )
-                    ),
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
+                    affinity=node_scheduling.PREFER_WORKERS,
                     containers=[
                         k8s.Container(
                             name="server",

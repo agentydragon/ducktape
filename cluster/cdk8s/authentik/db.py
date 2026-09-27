@@ -12,7 +12,7 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecPlugins,
 )
 
-from cluster.cdk8s import cnpg
+from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
@@ -20,7 +20,7 @@ NAME = "authentik-db-ovh"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/db"
 # The database is on node-local `local-path-ovh` storage and cannot move; Authentik's server
 # selects the same zone to stay beside it.
-NODE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh"}
+NODE_SELECTOR = {node_scheduling.ZONE_LABEL: node_scheduling.ZONE}
 DATABASE = "authentik"
 # The credentials CNPG generated for the retired `authentik-db`, which this cluster was
 # cloned from; the role's password came with the clone.

@@ -38,6 +38,7 @@ from seaweed_s3policybinding_crds.com.seaweedfs.seaweed import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
@@ -182,12 +183,8 @@ def _gateway(scope: Construct) -> None:
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
-                    node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
-                    tolerations=[
-                        k8s.Toleration(
-                            key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                        )
-                    ],
+                    node_selector={node_scheduling.ZONE_LABEL: node_scheduling.ZONE},
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     containers=[
                         k8s.Container(
                             name="s3",

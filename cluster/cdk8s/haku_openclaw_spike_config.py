@@ -19,6 +19,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.config_format import json5_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
@@ -368,7 +369,7 @@ def _deployment(scope: Construct) -> None:
                                     k8s.NodeSelectorTerm(
                                         match_expressions=[
                                             k8s.NodeSelectorRequirement(
-                                                key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
+                                                key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="DoesNotExist"
                                             )
                                         ]
                                     )
