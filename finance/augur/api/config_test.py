@@ -40,13 +40,13 @@ from finance.augur.api.portfolio_source_config import (
     PortfolioSourcesConfig,
 )
 from finance.augur.api.wire import ActorRole
-from finance.augur.model.independent import IndependentProviderConfig
-from finance.augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
-from finance.augur.model.provider_config import CompositeProviderConfig
 from finance.augur.model.series import IssuerId, LocationId, SecuritySymbol
-from finance.augur.model.state_space import StateSpaceProviderConfig
-from finance.augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId, PropertyId
+from finance.augur.x.models.independent import IndependentProviderConfig
+from finance.augur.x.models.private_equity_risk import PrivateEquityRiskProviderConfig
+from finance.augur.x.models.provider_config import CompositeProviderConfig
+from finance.augur.x.models.state_space import StateSpaceProviderConfig
+from finance.augur.x.models.trained_private_equity import TrainedPrivateEquityProviderConfig
 
 LOCATION_A_PROPERTY = PropertyId("location_a_property")
 

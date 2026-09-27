@@ -42,18 +42,18 @@ import jax.numpy as jnp
 import numpy as np
 from numpyro import distributions as dist
 
-from finance.augur.fit.macro_var import (
+from finance.augur.fit.scoring import gaussian_crps, joint_log_density
+from finance.augur.model.historical_windows import MACRO_HISTORY_SOURCES, load_macro_history
+from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
+from finance.augur.x.models.macro_var import (
     MACRO_STATE_NAMES,
     MacroStatePath,
     MacroVarFit,
     fit_macro_var_path,
     macro_state_path,
 )
-from finance.augur.fit.scoring import gaussian_crps, joint_log_density
-from finance.augur.fit.structural_macro import macro_var_levels
-from finance.augur.model.historical_windows import MACRO_HISTORY_SOURCES, load_macro_history
-from finance.augur.model.structural_macro import MINIMUM_MONTHS
-from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
+from finance.augur.x.models.structural_macro import MINIMUM_MONTHS
+from finance.augur.x.models.structural_macro_fit import macro_var_levels
 
 logger = logging.getLogger(__name__)
 

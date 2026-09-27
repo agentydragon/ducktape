@@ -38,8 +38,11 @@ on the same synthetic taxable paths, with intended/paid consumption and selected
 
 Core must not depend on `study/` or `x/`. Bazel visibility enforces it: every package there is
 visible only to `//finance/augur/study:__subpackages__` and `//finance/augur/x:__subpackages__`.
-The VECM, state-space and private-equity samplers (`model/`, fitted in `fit/`) are experimental
-but still live in core: labelled here, not isolated, until they move.
+Fitted models live in `x/models/` with their training code until evidence shows one is good
+enough for core; core keeps historical replay (`model/historical_windows.py`) and the market-path
+and instrument-pricing infrastructure. **Deviation:** the app (`api/`, `product/`,
+`calibration/`) still selects its economy model from `x/models/`, through a per-target
+visibility exception marked `CLEANUP` in `x/models/BUILD.bazel`.
 
 ## Planning boundary
 
@@ -84,8 +87,9 @@ reconstruct tax schedules from padded arrays or reread jurisdiction rules.
 
 | Directory   | Purpose                                                                                                                                 |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `model/`    | Runtime exogenous-provider configs, sim-facing exogenous model APIs, simple fixture provider, and fitted macro providers.               |
-| `fit/`      | Offline exogenous-model fitting entry points and config templates.                                                                      |
+| `model/`    | Sim-facing exogenous model APIs, market paths and instrument pricing, historical replay, and independent per-series level specs.        |
+| `fit/`      | Shared evidence loading and scoring for offline exogenous-model fitting.                                                                |
+| `x/models/` | Experimental fitted providers with their training code, and the provider-config union the app selects from.                             |
 | `api/`      | `Config` schema, wire request/response shapes, `Backend`, HTTP server, catalog/settings/calibration assembly, OpenAPI schema export.    |
 | `sim/`      | Deterministic trajectory evaluation over typed scenarios and sampled external-series bundles.                                           |
 | `frontend/` | React app + Tailwind bundle build, frontend helpers (casing conversion, columnar table marshaling, scenario-set state, backend client). |
@@ -131,7 +135,7 @@ macro block plus a deterministic `private_equity_risk` fixture issuer. Fitted
 macro models are selected per preset in `Config.models`, e.g. `type:
 structural_macro`, which defaults to the checked-in fit, or `type: state_space`
 with a trained artifact path plus grouped conditioning observations. A checked-in
-fit either passes `//finance/augur/fit/calibrated:sanity_test` or is listed in
+fit either passes `//finance/augur/x/models/calibrated:sanity_test` or is listed in
 its `QUARANTINED` and is not to be used as a model.
 
 ## Profiling

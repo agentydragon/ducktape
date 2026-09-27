@@ -18,8 +18,8 @@ from finance.augur.calibration.catalog import CatalogMetadata, ExactMarket, IpoB
 from finance.augur.calibration.ipo_prior import derive_public_market_anchors
 from finance.augur.calibration.platform import PriceClient
 from finance.augur.calibration.testing import mock_price_clients
-from finance.augur.model.private_equity_risk import PrivateEquityRiskIssuerConfig
 from finance.augur.model.series import IssuerId
+from finance.augur.x.models.private_equity_risk import PrivateEquityRiskIssuerConfig
 from finance.evidence.markets import Platform
 
 
