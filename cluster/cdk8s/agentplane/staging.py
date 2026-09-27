@@ -459,7 +459,6 @@ def agentplane_staging(
     cert_manager_trust: Kustomization,
     claude_rbac: Kustomization,
     cnpg: Kustomization,
-    external_creds: Kustomization,
     external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
@@ -494,7 +493,6 @@ def agentplane_staging(
             cert_manager_trust,
             claude_rbac,
             cnpg,
-            external_creds,
             external_secrets_operator,
         ),
     )
