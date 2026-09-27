@@ -12,9 +12,16 @@ import math
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from statistics import NormalDist
 
 import numpy as np
+from scipy.stats import binomtest
 from statsmodels.stats.proportion import proportion_confint
+
+# Doubles carry about 16 significant digits and path arithmetic loses a few, so an error at or below
+# this fraction of an estimate's scale (taken as at least 1) is rounding, not sampling: the estimate
+# is exact. Any other error is above 1e-12, so no rendering prints past the 12th decimal.
+_FLOAT_NOISE = 1e-12
 
 
 @dataclass(frozen=True)
@@ -82,8 +89,9 @@ class ProportionDifference:
 
     Only discordant paths inform the difference: `a_only` paths where `a` succeeded and `b` did not,
     `b_only` the reverse. The standard error is the Wald one from those counts (Agresti, Categorical
-    Data Analysis, 2nd ed., §10.1); it understates the noise when discordant paths are few, and is
-    zero when every path is discordant the same way.
+    Data Analysis, 2nd ed., §10.1) and is for display only: it understates the noise when discordant
+    paths are few and is zero when every path is discordant the same way, so `verdict` decides by an
+    exact test instead.
     """
 
     paths: int
@@ -192,10 +200,22 @@ type Verdict = Resolved | Unresolved
 
 
 def verdict(paired: PairedDifference, *, standard_errors: float) -> Verdict:
-    """Resolved when `a - b` lies more than `standard_errors` standard errors from zero."""
+    """Resolved when `a - b` differs from zero at the significance of a `standard_errors`-SE normal test.
+
+    A mean difference must exceed `standard_errors` standard errors, and float noise. A proportion
+    difference is decided by the exact conditional McNemar test, a two-sided binomial test of `a_only`
+    against `b_only` at 1/2, which must reach the same level `2 * (1 - Phi(standard_errors))`.
+    """
     if not 0 < standard_errors < math.inf:
         raise ValueError(f"standard_errors must be positive and finite: {standard_errors=}")
-    if abs(paired.difference) <= standard_errors * paired.standard_error:
+    if isinstance(paired, ProportionDifference):
+        discordant = paired.a_only + paired.b_only
+        resolved = discordant > 0 and (
+            binomtest(paired.a_only, discordant, p=0.5).pvalue < 2 * NormalDist().cdf(-standard_errors)
+        )
+    else:
+        resolved = abs(paired.difference) > max(standard_errors * paired.standard_error, _FLOAT_NOISE)
+    if not resolved:
         return Unresolved()
     return Resolved(Direction.A_HIGHER if paired.difference > 0 else Direction.B_HIGHER)
 
@@ -229,9 +249,12 @@ def _fixed(value: float, decimals: int, *, signed: bool = False) -> str:
 def _plus_minus(value: float, error: float, *, signed: bool) -> tuple[str, str]:
     """`value` and `error`, both to the decimal place of the error's first significant figure.
 
-    A zero error puts no limit on precision, so the value keeps its significant digits.
+    An error within float noise leaves `value` exact: it prints to the noise floor without trailing
+    zeros, so a difference that is constant up to rounding reads as a clean number.
     """
-    if error == 0:
-        return f"{value:{'+' if signed else ''}z,.15g}", "0"
+    noise = _FLOAT_NOISE * max(1.0, abs(value))
+    if error <= noise:
+        exact = _fixed(value, _decimals(noise), signed=signed)
+        return exact.rstrip("0").rstrip(".") if "." in exact else exact, "0"
     decimals = _decimals(error)
     return _fixed(value, decimals, signed=signed), _fixed(error, decimals)

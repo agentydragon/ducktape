@@ -12,6 +12,7 @@ from finance.augur.facade.estimate import (
     ProportionDifference,
     Resolved,
     Unresolved,
+    Verdict,
     WindowFrequency,
     verdict,
 )
@@ -73,11 +74,56 @@ def test_identical_arms_are_unresolved() -> None:
     assert verdict(MeanDifference.from_paths(a=values, b=values), standard_errors=2.0) == Unresolved()
 
 
-def test_a_resolved_verdict_names_the_higher_arm() -> None:
+def test_a_mean_verdict_names_the_higher_arm() -> None:
     # The difference lies 2 standard errors from zero: resolved at 1.5, not at 3.
     assert verdict(MeanDifference.from_paths(a=_WIDE_A, b=_WIDE_B), standard_errors=1.5) == Resolved(Direction.A_HIGHER)
     assert verdict(MeanDifference.from_paths(a=_WIDE_B, b=_WIDE_A), standard_errors=1.5) == Resolved(Direction.B_HIGHER)
     assert verdict(MeanDifference.from_paths(a=_WIDE_A, b=_WIDE_B), standard_errors=3.0) == Unresolved()
+
+
+@pytest.mark.parametrize(("paths", "a_only"), [(1000, 4), (3, 3)], ids=["4 of 1000 paths", "every path"])
+def test_a_few_one_way_discordant_paths_do_not_resolve(paths: int, a_only: int) -> None:
+    # The Wald standard error puts these beyond 2 SEs (2.004 of them; infinitely many when it is 0), but
+    # the exact McNemar p-value 2 / 2**a_only (0.125, 0.25) is far above the 2-SE level 0.0455.
+    paired = ProportionDifference(paths=paths, a_only=a_only, b_only=0)
+    assert paired.difference > 2 * paired.standard_error
+    assert verdict(paired, standard_errors=2.0) == Unresolved()
+
+
+@pytest.mark.parametrize(
+    ("a_only", "b_only", "standard_errors", "expected"),
+    [
+        # 10 against 2 discordant paths: exact p = 2 * 79 / 2**12 = 0.0386, inside the two-sided 2-SE level
+        # 0.0455 (a one-sided 0.0228 would miss it) and outside the 2.5-SE level 0.0124.
+        pytest.param(10, 2, 2.0, Resolved(Direction.A_HIGHER), id="a higher inside 2 SE"),
+        pytest.param(2, 10, 2.0, Resolved(Direction.B_HIGHER), id="b higher inside 2 SE"),
+        pytest.param(10, 2, 2.5, Unresolved(), id="outside 2.5 SE"),
+        # 60 against 20: p = 8.6e-6, inside the 3-SE level 0.0027.
+        pytest.param(60, 20, 3.0, Resolved(Direction.A_HIGHER), id="large clean difference"),
+    ],
+)
+def test_a_proportion_verdict_is_the_exact_test_at_the_stated_level(
+    a_only: int, b_only: int, standard_errors: float, expected: Verdict
+) -> None:
+    paired = ProportionDifference(paths=1000, a_only=a_only, b_only=b_only)
+    assert verdict(paired, standard_errors=standard_errors) == expected
+
+
+def test_a_constant_difference_prints_clean_despite_float_noise() -> None:
+    # b pays a fee of 0.1 on every path; its per-path differences from a disagree in the last bits.
+    a = {0: 1234.567, 1: 987.654321, 2: 101.1, 3: 55.55}
+    paired = MeanDifference.from_paths(a=a, b={path: value - 0.1 for path, value in a.items()})
+    assert paired.standard_error > 0
+    assert str(paired) == "+0.1 ± 0 (SE, 4 paired paths)"
+
+
+def test_float_noise_alone_never_resolves() -> None:
+    # A difference at the level of double rounding, as when equal arms are computed in a different order:
+    # more than 2 standard errors from zero, yet printed and judged as exactly zero.
+    paired = MeanDifference(difference=-8e-15, standard_error=3e-15, paths=3)
+    assert abs(paired.difference) > 2 * paired.standard_error
+    assert str(paired) == "+0 ± 0 (SE, 3 paired paths)"
+    assert verdict(paired, standard_errors=2.0) == Unresolved()
 
 
 @pytest.mark.parametrize(
@@ -99,9 +145,12 @@ def test_a_resolved_verdict_names_the_higher_arm() -> None:
             id="error above one rounds the integer part",
         ),
         pytest.param(
-            Mean(mean=2.5, standard_error=0.0, paths=3),
-            "2.5 ± 0 (SE, 3 paths)",
-            id="zero error leaves the value unrounded",
+            Mean(mean=2.5, standard_error=0.0, paths=3), "2.5 ± 0 (SE, 3 paths)", id="zero error prints the exact value"
+        ),
+        pytest.param(
+            Mean(mean=1 / 3, standard_error=0.0, paths=2),
+            "0.333333333333 ± 0 (SE, 2 paths)",
+            id="exact values stop at 12 decimals",
         ),
         pytest.param(
             MeanDifference(difference=-0.0004, standard_error=0.003, paths=100),
