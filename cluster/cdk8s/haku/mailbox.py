@@ -8,8 +8,6 @@ Hand-written beside the output: the SOPS Secrets, the `configMapGenerator` input
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef
@@ -23,8 +21,7 @@ from cilium_crds.io.cilium import (
 
 from cluster.cdk8s import cilium, cnpg, forgejo_images, gateway, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
-from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions
 from cluster.cdk8s.haku import namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate
@@ -53,18 +50,21 @@ _IMAGE = "git.allegedly.works/ducktape-ci/stalwart:unset"
 _SMTP_PORT = 2525
 _HTTP_PORT = 8080
 _IMAP_PORT = 1143
-_CONFIG_DIR = "/etc/stalwart"  # where _CONFIG_MAP is mounted
+_CONFIG_DIR = "/etc/stalwart"  # where CONFIG_MAP is mounted
 _INITIALIZE = "initialize.sh"
 _SERVER_CONFIG = "config.json"
 # The provisioning plan: the server's config, the init container's script and the plan it applies.
-_CONFIG_MAP = ConfigMapArgs(
+CONFIG_MAP = ConfigMapArgs(
     name="haku-mailbox-config",
     namespace=NAMESPACE,
     # The script and the plan's Sieve carry `${...}` that are theirs, not Flux's.
     options=GeneratorOptions(annotations={"kustomize.toolkit.fluxcd.io/substitute": "disabled"}),
     files=[_INITIALIZE, _SERVER_CONFIG, "mailbox-plan.ndjson"],
 )
-_INGRESS_CONFIG_MAP = ConfigMapArgs(name=_INGRESS_NAME, namespace=NAMESPACE, files=["nginx.conf"])
+INGRESS_CONFIG_MAP = ConfigMapArgs(name=_INGRESS_NAME, namespace=NAMESPACE, files=["nginx.conf"])
+# No namespace transformer: haku-mail-token.sops.yaml targets flux-system (the rotator's
+# publication point); everything else carries its namespace explicitly.
+SOPS_FILES = ("haku-mailbox-admin.sops.yaml", "haku-mail-token.sops.yaml")
 
 
 def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:
@@ -201,7 +201,7 @@ def _add_deployment(chart: Chart) -> None:
                     volumes=[
                         k8s.Volume(
                             name="config",
-                            config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP.name, default_mode=0o555),
+                            config_map=k8s.ConfigMapVolumeSource(name=CONFIG_MAP.name, default_mode=0o555),
                         ),
                         k8s.Volume(name="tls", secret=k8s.SecretVolumeSource(secret_name=_TLS_SECRET)),
                         k8s.Volume(name="tmp", empty_dir=k8s.EmptyDirVolumeSource()),
@@ -331,7 +331,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
                         )
                     ],
                     volumes=[
-                        k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=_INGRESS_CONFIG_MAP.name)),
+                        k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=INGRESS_CONFIG_MAP.name)),
                         k8s.Volume(
                             name="tmp",
                             empty_dir=k8s.EmptyDirVolumeSource(
@@ -475,17 +475,3 @@ def chart(app: App) -> Chart:
         data=[cluster_remote_data("haku-mail-token", "jwt")],
     )
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        # No namespace transformer: haku-mail-token.sops.yaml targets flux-system (the rotator's
-        # publication point); everything else carries its namespace explicitly.
-        kustomize_kustomization(
-            resources=[f"{NAME}.k8s.yaml", "haku-mailbox-admin.sops.yaml", "haku-mail-token.sops.yaml"],
-            components=["./image-pins"],
-            config_map_generator=[_CONFIG_MAP, _INGRESS_CONFIG_MAP],
-        ),
-    )

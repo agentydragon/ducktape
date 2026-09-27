@@ -57,6 +57,7 @@ from finance.augur.sim.prepared import (
     _RentedFraction,
 )
 from finance.augur.sim.property import Housing
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
@@ -577,7 +578,7 @@ def test_a_deduction_is_claimed_by_an_enrolled_taxpayer() -> None:
 
 
 BILL = PreparedObligation(
-    month=0,
+    schedule=Once(month=0),
     obligation_id="test-bill",
     obligation_type="cash_spend",
     from_account=ref(HOLDER),
@@ -592,7 +593,7 @@ BILL = PreparedObligation(
 def test_a_bill_is_due_inside_the_horizon_on_an_index_the_path_carries() -> None:
     composed().track(Biller(BILL))
     with pytest.raises(ValueError, match="outside the horizon"):
-        composed().track(Biller(replace(BILL, month=HORIZON)))
+        composed().track(Biller(replace(BILL, schedule=Once(month=HORIZON))))
     with pytest.raises(ValueError, match="missing series"):
         composed().track(Biller(replace(BILL, amount_due=indexed())))
 

@@ -31,6 +31,7 @@ from finance.augur.sim.prepared import (
     _TenderPolicy,
 )
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -71,7 +72,7 @@ def unfundable(*, month: int, payer: AgentId, amount: Decimal | int) -> Prepared
     """One required payment larger than everything the payer has."""
 
     return PreparedObligation(
-        month=month,
+        schedule=Once(month=month),
         obligation_id="unfundable",
         obligation_type=ObligationType.CASH_SPEND,
         from_account=AccountRef(agent_id=payer, account_id=CHECKING),
