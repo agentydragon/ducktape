@@ -15,6 +15,7 @@ from __future__ import annotations
 # ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from collections.abc import Mapping
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from fractions import Fraction
 from typing import Any
 
 import numpy as np
@@ -116,6 +117,19 @@ def currency_amount_to_quanta(value: Any, *, quantum: Any) -> np.int64:
         return np.int64(int(count))
     except OverflowError as exc:
         raise ValueError(f"currency quantum count {count} does not fit in int64") from exc
+
+
+def basis_points_to_ppb(value: Any) -> int:
+    """An exact configured rate in basis points, on the parts-per-billion grid of every other rate.
+
+    Like configured money it is spelled as an integer, `Decimal` or decimal string and never rounded:
+    a float, a non-finite value or a rate finer than a billionth is refused.
+    """
+
+    ppb = Fraction(_exact_decimal(value, field="basis points")) * (MONEY_FACTOR_SCALE // 10_000)
+    if ppb.denominator != 1:
+        raise ValueError(f"{value} basis points is finer than one part per billion")
+    return int(ppb)
 
 
 def round_currency_amount(value: Any, *, quantum: Any) -> Decimal:

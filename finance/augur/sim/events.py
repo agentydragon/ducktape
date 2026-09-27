@@ -209,7 +209,8 @@ ROLLOUT_FAILURE_EVENT_SCHEMA = pl.Schema(
 # decomposes into one disposition row per lot the sale ate into;
 # `cause_id` groups all dispositions of the same sale for downstream
 # tax classification. Holding period for LTCG/STCG is
-# `month_index - purchase_month_index`.
+# `month_index - purchase_month_index`. Proceeds are the amount realized:
+# net of the lot's cost where the world declares trading costs.
 LOT_DISPOSITION_EVENT_SCHEMA = pl.Schema(
     {
         "rollout_id": pl.Int64(),

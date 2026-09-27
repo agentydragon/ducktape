@@ -15,6 +15,7 @@ from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import apportion, checked_count, checked_wide, is_quantity_scale, position_value
 from finance.augur.sim.observations import HoldingPool, PublicPosition
 from finance.augur.sim.prepared import PreparedHoldingPool, PreparedLot
+from finance.augur.sim.trading_costs import trading_cost
 
 
 @dataclass
@@ -39,6 +40,8 @@ class Lot:
 
 @dataclass(frozen=True)
 class Disposition:
+    """One lot's part in a sale; `proceeds` is the amount realized, net of the lot's trading cost."""
+
     month: int
     cause_id: str
     agent_id: AgentId
@@ -54,12 +57,32 @@ class Disposition:
     realized_gain: int
 
 
+@dataclass(frozen=True)
+class Traded:
+    """A settled buy or sale: the gross value of its lots and the trading cost it paid."""
+
+    gross: int
+    cost: int
+
+
 def basis_account(agent: AgentId, account: AccountId, asset: AssetId) -> AccountRef:
     return AccountRef(agent_id=agent, account_id=AccountId(f"asset-basis:{account}:{asset}"))
 
 
 def gain_account(agent: AgentId) -> AccountRef:
     return AccountRef(agent_id=agent, account_id=AccountId("income:realized-gain"))
+
+
+def _cost_entry(month: int, cause_id: str, cash: AccountRef, account: AccountRef, cost: int) -> JournalEntry:
+    """Trade `cause_id`'s cost out of `cash`: into a bought lot's basis, or against a sale's realized gain."""
+    return JournalEntry(
+        month=month,
+        cause_id=f"{cause_id}:trading-cost",
+        postings=[
+            Posting(account=cash, amount=checked_count(-cost, "money negation")),
+            Posting(account=account, amount=cost),
+        ],
+    )
 
 
 def private_issuer(asset: AssetId) -> IssuerId | None:
@@ -216,10 +239,12 @@ class Holdings:
             selected.append((index, selection.units))
         return selected
 
-    def sell(self, accounting: Accounting, month: int, request: Sell, *, price: int) -> None:
+    def sell(self, accounting: Accounting, month: int, request: Sell, *, price: int, cost_rate_ppb: int) -> Traded:
+        """Sell the selected lots at `price`; each pays `cost_rate_ppb` of its gross value (<trading_costs.py>)."""
         selected = self._selected(accounting, request, price)
         amounts = [position_value(price, units, self.lots[index].spec.quantity_scale) for index, units in selected]
-        self._post_sale(accounting, month, request, selected, amounts)
+        costs = [trading_cost(amount, cost_rate_ppb) for amount in amounts]
+        return self._post_sale(accounting, month, request, selected, amounts, costs)
 
     def cashout(self, accounting: Accounting, month: int, request: Sell, *, total: int) -> None:
         selected = self._selected(accounting, request, total)
@@ -244,7 +269,7 @@ class Holdings:
             residual -= 1
         if residual:
             raise ArithmeticError("sale proceeds allocation did not exhaust the stated total")
-        self._post_sale(accounting, month, request, selected, amounts)
+        self._post_sale(accounting, month, request, selected, amounts, [0] * len(amounts))
 
     def _post_sale(
         self,
@@ -253,17 +278,21 @@ class Holdings:
         request: Sell,
         selected: Sequence[tuple[int, int]],
         amounts: Sequence[int],
-    ) -> None:
+        costs: Sequence[int],
+    ) -> Traded:
+        """Each lot realizes its gross amount less its trading cost; the costs are paid in an entry of their own."""
         replacements, dispositions, basis_postings = [], [], []
-        total_proceeds = total_gain = 0
+        total_gross = total_basis = total_cost = 0
         tax = deepcopy(accounting.tax)
-        for (index, units), proceeds in zip(selected, amounts, strict=True):
+        for (index, units), gross, cost in zip(selected, amounts, costs, strict=True):
             lot = self.lots[index]
             spec = lot.spec
             basis = apportion(lot.basis_remaining, units, lot.units_remaining)
+            proceeds = checked_count(gross - cost, "money subtraction")
             gain = checked_count(proceeds - basis, "money subtraction")
-            total_proceeds = checked_count(total_proceeds + proceeds, "money addition")
-            total_gain = checked_count(total_gain + gain, "money addition")
+            total_gross = checked_count(total_gross + gross, "money addition")
+            total_basis = checked_count(total_basis + basis, "money addition")
+            total_cost = checked_count(total_cost + cost, "money addition")
             tax.gain(request.agent_id, gain, long_term=month - spec.purchase_month >= 12)
             replacements.append(
                 (index, lot.units_remaining - units, checked_count(lot.basis_remaining - basis, "money subtraction"))
@@ -291,29 +320,31 @@ class Holdings:
                     gain,
                 )
             )
-        accounting.apply(
+        cash = AccountRef(agent_id=request.agent_id, account_id=request.proceeds_account_id)
+        gains = gain_account(request.agent_id)
+        entries = [
             JournalEntry(
                 month=month,
                 cause_id=request.cause_id,
                 postings=[
-                    Posting(
-                        account=AccountRef(agent_id=request.agent_id, account_id=request.proceeds_account_id),
-                        amount=total_proceeds,
-                    ),
+                    Posting(account=cash, amount=total_gross),
                     *basis_postings,
-                    Posting(
-                        account=gain_account(request.agent_id), amount=checked_count(-total_gain, "money negation")
-                    ),
+                    Posting(account=gains, amount=checked_count(total_basis - total_gross, "money subtraction")),
                 ],
             )
-        )
+        ]
+        if total_cost:
+            entries.append(_cost_entry(month, request.cause_id, cash, gains, total_cost))
+        accounting.apply_entries(entries)
         for index, units, basis in replacements:
             self.lots[index].units_remaining = units
             self.lots[index].basis_remaining = basis
         accounting.tax = tax
         self.dispositions.extend(dispositions)
+        return Traded(total_gross, total_cost)
 
-    def buy(self, accounting: Accounting, month: int, request: Buy, *, price: int) -> None:
+    def buy(self, accounting: Accounting, month: int, request: Buy, *, price: int, cost_rate_ppb: int) -> Traded:
+        """Buy a new lot at `price`, its basis the gross value plus `cost_rate_ppb` of it (<trading_costs.py>)."""
         cash = AccountRef(agent_id=request.agent_id, account_id=request.cash_account_id)
         if cash not in accounting.declared:
             raise ValueError("unknown declared cash account")
@@ -335,8 +366,10 @@ class Holdings:
         if (request.agent_id, request.holding_account_id, request.asset_id) in self.managed:
             raise ValueError("managed portfolio contributions are not ordinary lot purchases")
         spent = position_value(price, request.units, request.quantity_scale)
-        if spent > accounting.ledger.balance(cash):
-            raise ValueError("insufficient purchase cash")
+        cost = trading_cost(spent, cost_rate_ppb)
+        basis = checked_count(spent + cost, "money addition")
+        if basis > accounting.ledger.balance(cash):
+            raise ValueError("insufficient purchase cash" + (f" for {spent} and trading cost {cost}" if cost else ""))
         if not 0 <= month < 1 << 31:
             raise OverflowError("integer overflow during purchase month")
         spec = PreparedLot(
@@ -347,16 +380,21 @@ class Holdings:
             purchase_month=month,
             quantity_scale=request.quantity_scale,
             units=request.units,
-            basis=spent,
+            basis=basis,
         )
-        accounting.apply(
+        held = basis_account(spec.agent_id, spec.account_id, spec.asset_id)
+        entries = [
             JournalEntry(
                 month=month,
                 cause_id=request.cause_id,
                 postings=[
                     Posting(account=cash, amount=checked_count(-spent, "money negation")),
-                    Posting(account=basis_account(spec.agent_id, spec.account_id, spec.asset_id), amount=spent),
+                    Posting(account=held, amount=spent),
                 ],
             )
-        )
-        self.lots.append(Lot(spec, request.units, spent))
+        ]
+        if cost:
+            entries.append(_cost_entry(month, request.cause_id, cash, held, cost))
+        accounting.apply_entries(entries)
+        self.lots.append(Lot(spec, request.units, basis))
+        return Traded(spent, cost)

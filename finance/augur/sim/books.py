@@ -1,6 +1,6 @@
 """Exact observed engine books. Money and quantities retain their integer quanta."""
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from finance.augur.model.series import LocationId
 from finance.augur.sim.ids import (
@@ -210,6 +210,19 @@ class DistributionOutcome(Record):
     income_source: str
     units: int | None
     amount: int
+
+
+class TradingCostOutcome(Record):
+    """The declared trading cost one executed Buy or Sell paid, in the month it executed."""
+
+    month: int
+    action_index: int
+    cause_id: str
+    agent_id: AgentId
+    account_id: AccountId = Field(description="The cash account that paid: a buy's cash, a sale's proceeds account.")
+    asset_id: AssetId
+    gross_value: int = Field(description="The trade's lots' units at this month's price, before the cost.")
+    cost: int
 
 
 class BondCashflowOutcome(Record):

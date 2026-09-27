@@ -8,7 +8,8 @@ experiment policies and their outer time loops are Python code.
 
 An experiment composes a `World` (<world.py>) per path on a `MarketPath`: it
 declares the accounts, pools, lots, bonds, TLH portfolios, housing and standing
-cashflows that exist at month zero, tracks an `EconomicAgent` subclass (<agent.py>) and any `Mortgage`
+cashflows that exist at month zero and any trading costs its trades pay (<trading_costs.py>),
+tracks an `EconomicAgent` subclass (<agent.py>) and any `Mortgage`
 (<mortgage.py>), `Biller` (<bills.py>) or `TaxAuthority` (<tax_authority.py>)
 that exists then, and loops over `world.step()`. Alternatively it starts the
 common `ActionSession` and submits
