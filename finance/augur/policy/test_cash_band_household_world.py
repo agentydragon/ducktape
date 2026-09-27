@@ -6,9 +6,7 @@ execution; the financial behaviour of the same households lives in
 <../sim/allocation_household_test.py> and <../sim/target_allocation_test.py>.
 """
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from functools import partial
 from typing import Any
 
 import pytest
@@ -54,6 +52,16 @@ STOCK_SLEEVE = SecuritySleeve(asset_id=STOCK, weight=1)
 REINVEST = Reinvest(rebalance_tolerance_ppb=None)
 
 
+@dataclass(frozen=True)
+class OpeningLot:
+    """Whole units of one of Alice's holdings, bought two years before the path starts."""
+
+    lot_id: LotId
+    asset_id: AssetId
+    units: int
+    basis: int
+
+
 @dataclass
 class Situation:
     """One household's books, the household and the claims raised on it."""
@@ -61,7 +69,7 @@ class Situation:
     prices: dict[str, int]
     household: CashBandHousehold
     opening_cash: int = 0
-    lots: tuple[Callable[[World], None], ...] = ()
+    lots: tuple[OpeningLot, ...] = ()
     portfolios: tuple[PreparedTlhPortfolio, ...] = ()
     claims: tuple[PreparedObligation, ...] = ()
     horizon_months: int = 1
@@ -77,20 +85,6 @@ def reinvesting(*sleeves: Sleeve, ceiling: int, tolerance: int | None) -> CashBa
         source_account_ids=(HOLDINGS,),
         reinvest=Reinvest(rebalance_tolerance_ppb=tolerance),
         cause_id_prefix="fund",
-    )
-
-
-def lot(lot_id: LotId, asset_id: AssetId, *, units: int, basis: int) -> Callable[[World], None]:
-    return partial(
-        World.hold_lot,
-        lot_id=lot_id,
-        agent_id=ALICE,
-        account_id=HOLDINGS,
-        asset_id=asset_id,
-        purchase_month=-24,
-        quantity_scale=1,
-        units=units,
-        basis=basis,
     )
 
 
@@ -127,8 +121,17 @@ def run(case: Situation) -> FinancialOutput:
     for target in case.household.sleeves:
         if isinstance(target, SecuritySleeve):
             world.declare_pool(agent_id=ALICE, account_id=HOLDINGS, asset_id=target.asset_id, quantity_scale=1)
-    for hold in case.lots:
-        hold(world)
+    for held in case.lots:
+        world.hold_lot(
+            lot_id=held.lot_id,
+            agent_id=ALICE,
+            account_id=HOLDINGS,
+            asset_id=held.asset_id,
+            purchase_month=-24,
+            quantity_scale=1,
+            units=held.units,
+            basis=held.basis,
+        )
     for spec in case.portfolios:
         world.declare_portfolio(spec)
     for obligation in case.claims:
@@ -176,8 +179,8 @@ def test_a_purchase_is_sized_to_what_the_months_claim_payment_leaves() -> None:
             ),
             opening_cash=50,
             lots=(
-                lot(LotId("opening-coarse"), AssetId("coarse"), units=5, basis=500),
-                lot(LotId("opening-fine"), AssetId("fine"), units=102, basis=102),
+                OpeningLot(LotId("opening-coarse"), AssetId("coarse"), units=5, basis=500),
+                OpeningLot(LotId("opening-fine"), AssetId("fine"), units=102, basis=102),
             ),
             claims=(claim(50),),
         )

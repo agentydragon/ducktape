@@ -449,13 +449,38 @@ def compose(situation: Situation, market: MarketPath) -> World:
     if situation.home is not None and situation.home.interest_deduction is not None:
         world.declare_deduction(situation.home.interest_deduction)
     for pool in situation.pools:
-        pool.declare(world)
+        world.declare_pool(
+            agent_id=pool.agent_id,
+            account_id=pool.account_id,
+            asset_id=pool.asset_id,
+            quantity_scale=pool.quantity_scale,
+        )
     for lot in situation.lots:
-        lot.declare(world)
+        world.hold_lot(
+            lot_id=lot.lot_id,
+            agent_id=lot.agent_id,
+            account_id=lot.account_id,
+            asset_id=lot.asset_id,
+            purchase_month=lot.purchase_month,
+            quantity_scale=lot.quantity_scale,
+            units=lot.units,
+            basis=lot.basis,
+        )
     for portfolio in situation.tlh_portfolios:
         world.declare_portfolio(portfolio)
     for bond in situation.bonds:
-        bond.declare(world)
+        world.hold_bond(
+            bond_id=bond.bond_id,
+            agent_id=bond.agent_id,
+            account_id=bond.account_id,
+            issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
+            face_value=bond.face_value,
+            purchase_price=bond.purchase_price,
+            coupon=bond.coupon,
+            coupon_period_months=bond.coupon_period_months,
+            purchase_month_index=bond.purchase_month_index,
+            maturity_month_index=bond.maturity_month_index,
+        )
     if situation.home is not None:
         world.declare_housing(situation.home.housing, (situation.home.property_tax,), (situation.home.location,))
     for distribution in situation.distributions:

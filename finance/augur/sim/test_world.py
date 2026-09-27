@@ -38,14 +38,6 @@ class Pool:
     asset_id: AssetId
     quantity_scale: int
 
-    def declare(self, world: World) -> None:
-        world.declare_pool(
-            agent_id=self.agent_id,
-            account_id=self.account_id,
-            asset_id=self.asset_id,
-            quantity_scale=self.quantity_scale,
-        )
-
 
 @dataclass(frozen=True, kw_only=True)
 class Lot:
@@ -57,18 +49,6 @@ class Lot:
     quantity_scale: int
     units: int
     basis: int
-
-    def declare(self, world: World) -> None:
-        world.hold_lot(
-            lot_id=self.lot_id,
-            agent_id=self.agent_id,
-            account_id=self.account_id,
-            asset_id=self.asset_id,
-            purchase_month=self.purchase_month,
-            quantity_scale=self.quantity_scale,
-            units=self.units,
-            basis=self.basis,
-        )
 
 
 @dataclass(frozen=True)
@@ -564,6 +544,29 @@ def test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent(yea
     assert run == before
 
 
+def declare_pool(world: World, pool: Pool) -> None:
+    world.declare_pool(
+        agent_id=pool.agent_id, account_id=pool.account_id, asset_id=pool.asset_id, quantity_scale=pool.quantity_scale
+    )
+
+
+def hold(world: World, run: Situation) -> None:
+    """The situation's pools and opening lots."""
+    for pool in run.holding_pools:
+        declare_pool(world, pool)
+    for lot in run.initial_lots:
+        world.hold_lot(
+            lot_id=lot.lot_id,
+            agent_id=lot.agent_id,
+            account_id=lot.account_id,
+            asset_id=lot.asset_id,
+            purchase_month=lot.purchase_month,
+            quantity_scale=lot.quantity_scale,
+            units=lot.units,
+            basis=lot.basis,
+        )
+
+
 def composed(run: Situation, rollout: int = 0) -> World:
     """The situation's facts declared one at a time on one path, as an experiment would write them."""
     world = world_on(
@@ -574,10 +577,7 @@ def composed(run: Situation, rollout: int = 0) -> World:
         accounts=run.accounts,
         taxpayers=run.tax_profiles,
     )
-    for pool in run.holding_pools:
-        pool.declare(world)
-    for lot in run.initial_lots:
-        lot.declare(world)
+    hold(world, run)
     for flow in run.scheduled_transfers:
         world.declare_flow(flow)
     for obligation in run.obligations:
@@ -909,10 +909,7 @@ def test_a_composed_world_has_only_the_domains_it_declares() -> None:
     world = World(MarketPath(run.series, 0, rollout_count=1), horizon_months=2)
     for account, balance in run.accounts.items():
         world.declare_account(account=account, opening_balance=balance)
-    for pool in run.holding_pools:
-        pool.declare(world)
-    for lot in run.initial_lots:
-        lot.declare(world)
+    hold(world, run)
     world.track(_Household({0: 500}))
     capture = FinancialCapture(world, capture="forensic")
     world.start()
@@ -935,10 +932,11 @@ def test_a_composed_world_has_only_the_domains_it_declares() -> None:
     with pytest.raises(ValueError, match="no managed portfolio"):
         world.managed_portfolios()
     with pytest.raises(ValueError, match="before starting"):
-        run.holding_pools[0].declare(world)
+        declare_pool(world, run.holding_pools[0])
     with pytest.raises(ValueError, match="missing public security series"):
-        replace(run.holding_pools[0], asset_id=AssetId("test-unpriced")).declare(
-            World(MarketPath(run.series, 0, rollout_count=1), horizon_months=2)
+        declare_pool(
+            World(MarketPath(run.series, 0, rollout_count=1), horizon_months=2),
+            replace(run.holding_pools[0], asset_id=AssetId("test-unpriced")),
         )
 
 

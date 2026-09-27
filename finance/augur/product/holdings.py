@@ -1,7 +1,7 @@
 """The deployment's opening positions as the prepared facts a world declares.
 
-The records here are the app's own: each is what one path's world is told, in quanta, and
-declares itself onto that world.
+The records here are the app's own: each is what one path's world is told, in quanta.
+`scenarios.compose` declares them onto that world.
 
 `opening_holdings` checks them once, when the service starts. Money becomes quanta per
 request, in the request's currency; everything else is prepared once.
@@ -36,7 +36,6 @@ from finance.augur.sim.prepared import (
     PreparedTlhPortfolio,
 )
 from finance.augur.sim.tlh import TlhOpeningCohort
-from finance.augur.sim.world import World
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -45,14 +44,6 @@ class Pool:
     account_id: AccountId
     asset_id: AssetId
     quantity_scale: int
-
-    def declare(self, world: World) -> None:
-        world.declare_pool(
-            agent_id=self.agent_id,
-            account_id=self.account_id,
-            asset_id=self.asset_id,
-            quantity_scale=self.quantity_scale,
-        )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -65,18 +56,6 @@ class Lot:
     quantity_scale: int
     units: int
     basis: int
-
-    def declare(self, world: World) -> None:
-        world.hold_lot(
-            lot_id=self.lot_id,
-            agent_id=self.agent_id,
-            account_id=self.account_id,
-            asset_id=self.asset_id,
-            purchase_month=self.purchase_month,
-            quantity_scale=self.quantity_scale,
-            units=self.units,
-            basis=self.basis,
-        )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -91,20 +70,6 @@ class Bond:
     coupon_period_months: int
     purchase_month_index: int
     maturity_month_index: int
-
-    def declare(self, world: World) -> None:
-        world.hold_bond(
-            bond_id=self.bond_id,
-            agent_id=self.agent_id,
-            account_id=self.account_id,
-            issuer_jurisdiction_id=self.issuer_jurisdiction_id,
-            face_value=self.face_value,
-            purchase_price=self.purchase_price,
-            coupon=self.coupon,
-            coupon_period_months=self.coupon_period_months,
-            purchase_month_index=self.purchase_month_index,
-            maturity_month_index=self.maturity_month_index,
-        )
 
 
 @dataclass(frozen=True)
