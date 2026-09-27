@@ -20,8 +20,6 @@ Forgejo webhook URLs also derive their path from.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_receiver_crds.io.fluxcd.toolkit.notification import (
     Receiver,
@@ -31,10 +29,8 @@ from flux_receiver_crds.io.fluxcd.toolkit.notification import (
     ReceiverSpecSecretRef,
     ReceiverSpecType,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -98,9 +94,5 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def haku_ui_image_webhook(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    return flux_kustomization(chart, NAME, artifact, retry_interval=None, wait=None)
+def haku_ui_image_webhook(chart: Chart, directory: RenderedDirectory) -> Kustomization:
+    return flux_kustomization(chart, NAME, directory, retry_interval=None, wait=None)
