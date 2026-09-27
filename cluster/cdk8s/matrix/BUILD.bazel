@@ -13,7 +13,6 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "//cluster/cdk8s/providers/flux:kustomization",

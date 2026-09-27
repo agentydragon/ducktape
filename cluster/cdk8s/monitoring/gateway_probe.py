@@ -16,12 +16,13 @@ from enum import StrEnum
 from pathlib import Path
 
 import yaml
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitorSpecPodMetricsEndpoints,
     PodMonitorSpecPodMetricsEndpointsRelabelings,
 )
+from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRuleSpecGroupsRules
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
@@ -34,7 +35,6 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import PodMonitor
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.scripts.nebula_mesh import Mesh
@@ -195,7 +195,7 @@ def _own_node_endpoint(dial: Dial, targets: dict[str, str]) -> PodMonitorSpecPod
     )
 
 
-def _rules(nodes: list[str]) -> list[Rule]:
+def _rules(nodes: list[str]) -> list[PrometheusRuleSpecGroupsRules]:
     probe = f'probe_success{{job="{_JOB}", dial=~"{_OWN_NODE_DIALS}"}}'
     return [
         Rule.alert(
@@ -235,7 +235,7 @@ def chart(app: App, mesh: Mesh) -> Chart:
     PodMonitor(
         chart,
         "pod-monitor",
-        metadata=metadata(_NAME, NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
         selector=_LABELS,
         pod_metrics_endpoints=[
             _own_node_endpoint(
@@ -250,7 +250,7 @@ def chart(app: App, mesh: Mesh) -> Chart:
     PrometheusRule(
         chart,
         "prometheus-rule",
-        metadata=metadata(_NAME, NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
         groups=[group(_NAME, _rules(nodes))],
     )
     add_fleet_rules(chart)

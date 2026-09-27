@@ -11,7 +11,7 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEgress,
@@ -35,7 +35,6 @@ from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomizatio
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.monitoring import grafana_helmrepository
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.seaweedfs import namespace, s3
@@ -510,7 +509,7 @@ def _network_policy(chart: Chart) -> None:
     NetworkPolicy(
         chart,
         "network-policy",
-        metadata=metadata("loki-ingress", NAME),
+        metadata=ApiObjectMetadata(name="loki-ingress", namespace=NAME),
         selector={"app.kubernetes.io/name": NAME},
         ingress=[
             # Promtail → Loki (log push)

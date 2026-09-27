@@ -19,9 +19,9 @@ from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, SecurityLotState
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
-from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, currency_amount_to_quanta, quantity_scale_for_asset
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.jurisdictions import (
     Jurisdiction,
     JurisdictionLevel,
@@ -44,9 +44,9 @@ from finance.augur.sim.prepared import (
     PreparedSeries,
     PreparedTransfer,
 )
-from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, TaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import World
 

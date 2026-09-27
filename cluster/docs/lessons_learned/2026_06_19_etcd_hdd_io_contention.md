@@ -207,10 +207,8 @@ can drop onto the leader (.13) at any time and spike its fsync queue.
    PGPASSWORD). This config is purely cross-cutting (identical for every CR) and should
    be centralized before adding more to it — see "Centralizing the Terraform CR runner
    template" below.
-4. **Move `augur-evidence-ingest` off the control plane** (~490 KiB/s sustained on .14
-   during ingest; also the job that intermittently fails). Cross-repo — augur is
-   reconciled from `gaffer-private`; the pin must be made there on the CronJob's pod
-   template.
+4. **Move `augur-evidence-ingest` off the control plane — moot.** Augur is parked in
+   `gaffer-private`, and the CronJob's `augur` namespace does not exist.
 5. **Structural fix: etcd belongs on NVMe — done 2026-09-18.** The NVMe KS-GAME nodes
    were promoted into the quorum, and the SYS-1 NVMe node was added as the third voter;
    the former HDD control-plane node was demoted to a worker. The staged topology work

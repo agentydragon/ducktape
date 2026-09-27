@@ -15,11 +15,10 @@ from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.policy import sleeves
 from finance.augur.sim.actions import Action, DecisionActions, LotSale, Sell
 from finance.augur.sim.books import AccountRef, SecurityLotState
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.compiler.tax import compile_profile
-from finance.augur.sim.external_series import ExternalSeriesContext, materialize_external_series
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series, materialize_external_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.observations import Observation
@@ -31,10 +30,10 @@ from finance.augur.sim.prepared import (
     PreparedSeries,
 )
 from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.world import World
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))

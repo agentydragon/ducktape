@@ -1,6 +1,6 @@
 """Already-held nominal bonds and TIPS: supplied marks, contractual coupons and redemption."""
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from copy import deepcopy
 
 from finance.augur.sim.accounting import Accounting
@@ -8,11 +8,12 @@ from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, BondCashflowOutcome, BondState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AgentId
+from finance.augur.sim.income import InterestIncome
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.observations import FixedCoupon, HeldBond, IndexedCoupon
 from finance.augur.sim.prepared import PreparedBond, PreparedFixedAmount, PreparedIndexedCoupon
-from finance.augur.sim.scenario import InterestIncome
+from finance.augur.sim.scenario import BondHolding
 
 
 class BondStatement(Statement):
@@ -146,3 +147,9 @@ class HeldBonds:
                         principal=principal,
                     )
                 )
+
+
+def bond_income_categories(bonds: Iterable[BondHolding]) -> set[InterestIncome]:
+    """Interest sources needed by tax compilation, including issuer jurisdiction."""
+
+    return {InterestIncome(issuer_jurisdiction_id=bond.issuer_jurisdiction_id) for bond in bonds}

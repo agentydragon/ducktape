@@ -19,7 +19,7 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    terraform.gitops_terraform(chart, "terraform", name=NAME, variables={})
+    terraform.gitops_terraform(chart, "terraform", name=NAME, variables=None)
     return chart
 
 

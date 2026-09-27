@@ -11,10 +11,11 @@ from finance.augur.model.series import LocationId, RentKey
 from finance.augur.sim.actions import DecisionActions, PayClaim
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.claims import ObligationType
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -24,7 +25,6 @@ from finance.augur.sim.prepared import (
     PreparedSeries,
 )
 from finance.augur.sim.results import Finished, Paid, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME, ObligationType
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 

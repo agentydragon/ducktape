@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
+from pydantic import BaseModel, ConfigDict
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import terraform
@@ -141,6 +142,14 @@ def model_allowlists() -> dict[str, list[str]]:
     return lanes
 
 
+class KeysVars(BaseModel):
+    """The inputs of tf/gitops/litellm-keys."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    model_allowlists: dict[str, list[str]]
+
+
 def keys_chart(app: App) -> Chart:
     """Mints the agent and laptop-client LiteLLM virtual keys (tf/gitops/litellm-keys).
     Needs the SOPS-managed master key and a serving LiteLLM with its virtual-key DB;
@@ -151,7 +160,7 @@ def keys_chart(app: App) -> Chart:
         chart,
         "terraform",
         name="litellm-keys",
-        variables={"model_allowlists": model_allowlists()},
+        variables=KeysVars(model_allowlists=model_allowlists()),
         env=[
             # The narrow SOPS age private key (litellm-clients-sops-age-key.sops.yaml
             # beside this CR) that decrypts the module's pinned client-key files for

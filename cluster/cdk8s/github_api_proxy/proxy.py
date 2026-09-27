@@ -6,8 +6,7 @@ The proxy image tag is the placeholder "unset"; the hand-written
 cluster/k8s/github-api-proxy/app/image-pins/kustomization.yaml overrides it at `kustomize build`
 time via Flux's image-automation marker. Also hand-written in `app/`: the client credential
 SOPS Secrets, `config.json` (rendered by the `configMapGenerator`) and that
-`kustomization.yaml`. The Flux Kustomization substitutes `${LETSENCRYPT_ISSUER}`
-(`cert-manager-issuer-config`) into the server Certificate.
+`kustomization.yaml`.
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 from textwrap import dedent
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_crds.io.cert_manager import (
     CertificateSpecIssuerRef,
@@ -48,10 +47,10 @@ from gateway_api_tlsroute_crds.io.k8s.networking.gateway import (
 )
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cert_manager.certificate import LONG_LIVED_CA, Certificate, CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
@@ -194,25 +193,26 @@ def _certificates(scope: Construct) -> None:
     Certificate(
         scope,
         "server",
-        name="github-api-proxy-server",
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(name="github-api-proxy-server", namespace=_NAMESPACE),
         secret_name=_SERVER_TLS_SECRET,
         dns_names=[_HOSTNAME],
         private_key=CertificatePrivateKey.ecdsa_p256(rotation_policy=CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
         usages=[CertificateSpecUsages.SERVER_AUTH],
-        issuer_ref=CertificateSpecIssuerRef(name="${LETSENCRYPT_ISSUER}", kind="ClusterIssuer"),
+        issuer_ref=CertificateSpecIssuerRef(name=LETSENCRYPT_ISSUER, kind="ClusterIssuer"),
     )
     Certificate(
         scope,
         "interception-ca",
-        name=_INTERCEPTION_CA,
-        namespace=_NAMESPACE,
-        annotations={
-            "description": (
-                "Dedicated workstation proxy interception root. Only its public certificate may be "
-                "distributed to clients; the signing key stays in this namespace."
-            )
-        },
+        metadata=ApiObjectMetadata(
+            name=_INTERCEPTION_CA,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": (
+                    "Dedicated workstation proxy interception root. Only its public certificate may be "
+                    "distributed to clients; the signing key stays in this namespace."
+                )
+            },
+        ),
         is_ca=True,
         common_name="ducktape-github-api-proxy-interception-ca",
         secret_name=_INTERCEPTION_CA,
@@ -292,9 +292,7 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -385,7 +383,7 @@ def _network_policy(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "network-policy",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         selector=_LABELS,
         ingress=[
             IngressRule.from_gateway(_PROXY_PORT),
@@ -434,9 +432,9 @@ def _gateway(scope: Construct) -> None:
     Gateway(
         scope,
         "gateway",
-        metadata=metadata(
-            _NAME,
-            _NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_NAME,
+            namespace=_NAMESPACE,
             annotations={
                 "description": (
                     "Dedicated TLS-only listener; avoids overlapping the shared wildcard HTTPS listener on port 443."
@@ -464,7 +462,7 @@ def _gateway(scope: Construct) -> None:
     TlsRoute(
         scope,
         "tls-route",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         spec=TlsRouteSpec(
             parent_refs=[TlsRouteSpecParentRefs(name=_NAME, section_name=_TLS_LISTENER)],
             hostnames=[_HOSTNAME],
@@ -477,14 +475,14 @@ def _monitoring(scope: Construct) -> None:
     PodMonitor(
         scope,
         "pod-monitor",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         selector=_LABELS,
         pod_metrics_endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
     PrometheusRule(
         scope,
         "prometheus-rule",
-        metadata=metadata(_NAME, _NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         groups=[group(_NAME, _RULES)],
     )
 

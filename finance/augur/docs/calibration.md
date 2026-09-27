@@ -54,7 +54,7 @@ same library with hermetic price clients.
 
 ## Issuer model configuration
 
-<../model/private_equity_risk.py> supports explicit public-market CDF anchors,
+<../x/models/private_equity_risk.py> supports explicit public-market CDF anchors,
 converted to monthly hazards, with a configured tail hazard after the last anchor.
 <../calibration/ipo_prior.py> derives paste-ready anchors from catalog quotes; its
 duplicate/decreasing-point treatment is separate from calibration's weighted
@@ -70,7 +70,7 @@ The [PE model conventions](private_equity_model.md) describe the implemented
 issuance and fitter/runtime distinctions; they are not an adoption decision.
 
 Scale-dependent valuation drift is an optional model assumption, not a financial
-rule or proof of predictive quality. <../fit/bayes_dilution.py> separates fixed
+rule or proof of predictive quality. <../x/models/bayes_dilution.py> separates fixed
 shape priors from fitted parameters. Single-issuer observations confined to a
 narrow size regime do not establish the full maturation shape; any fit or claimed
 improvement needs its evidence window, priors and held-out evaluation identified.

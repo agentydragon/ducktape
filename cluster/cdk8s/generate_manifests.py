@@ -95,7 +95,6 @@ from cluster.cdk8s.authentik import (
 from cluster.cdk8s.cert_manager import (
     app as cert_manager_app,
     environment as cert_manager_environment,
-    issuer_config as cert_manager_issuer_config,
     trust as cert_manager_trust,
 )
 from cluster.cdk8s.cli_proxy_api import cli_proxy_api
@@ -390,7 +389,6 @@ def generate_manifests(root: Path) -> None:
     litellm_credentials.write_agentplane_testing_manifests(root)
     cert_manager_app.write_manifests(root)
     cert_manager_trust.write_manifests(root)
-    cert_manager_issuer_config.write_manifests(root)
     cert_manager_environment.write_manifests(root)
     external_secrets_config.write_manifests(root)
     external_secrets_operator.write_manifests(root)
@@ -442,10 +440,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart, agent_sandbox_controller_artifact
     )
     artifact_generators_factory(flux_chart)
-    cert_manager_issuer_config_artifact = artifact("cert-manager-issuer-config", cert_manager_issuer_config.OUTPUT_DIR)
-    cert_manager_issuer_config_kustomization = cert_manager_issuer_config.cert_manager_issuer_config(
-        flux_chart, cert_manager_issuer_config_artifact
-    )
     coredns_custom_artifact = artifact("coredns-custom", f"{HAND_WRITTEN_ROOT}/coredns-custom")
     coredns_custom_flux_kustomizations.coredns_custom(flux_chart, coredns_custom_artifact)
     external_secrets_crds_kustomization = external_secrets_flux_kustomizations.external_secrets_crds(flux_chart)
@@ -490,8 +484,6 @@ def generate_manifests(root: Path) -> None:
     nvidia_runtimeclass_kustomization = nvidia_runtimeclass.nvidia_runtimeclass(
         flux_chart, nvidia_runtimeclass_artifact
     )
-    openebs_lvm_artifact = artifact("openebs-lvm", openebs_lvm_storage.OUTPUT_DIR)
-    openebs_lvm_storage.openebs_lvm(flux_chart, openebs_lvm_artifact)
     parked_flux_kustomizations.buildbuddy_executor(flux_chart)
     gecko_namespace_artifact = artifact("gecko-namespace", f"{HAND_WRITTEN_ROOT}/parked/gecko/namespace")
     gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart, gecko_namespace_artifact)
@@ -504,6 +496,8 @@ def generate_manifests(root: Path) -> None:
     snapshot_controller_crds_kustomization = snapshot_controller_flux_kustomizations.snapshot_controller_crds(
         flux_chart
     )
+    openebs_lvm_artifact = artifact("openebs-lvm", openebs_lvm_storage.OUTPUT_DIR)
+    openebs_lvm_storage.openebs_lvm(flux_chart, openebs_lvm_artifact, snapshot_controller_crds_kustomization)
     sshpiper_crds_kustomization = sshpiper_crds_flux_kustomizations.sshpiper_crds(flux_chart)
     talos_cloud_controller_manager_artifact = artifact(
         "talos-cloud-controller-manager", talos_cloud_controller_manager.OUTPUT_DIR
@@ -565,11 +559,7 @@ def generate_manifests(root: Path) -> None:
     )
     cert_manager_artifact = artifact("cert-manager", cert_manager_app.OUTPUT_DIR)
     cert_manager_kustomization = cert_manager_app.cert_manager(
-        flux_chart,
-        cert_manager_artifact,
-        cert_manager_issuer_config_kustomization,
-        reflector_kustomization,
-        monitoring_crds_kustomization,
+        flux_chart, cert_manager_artifact, reflector_kustomization, monitoring_crds_kustomization
     )
     seaweedfs_operator_artifact = artifact("seaweedfs-operator", seaweedfs_operator_release.OUTPUT_DIR)
     seaweedfs_operator_kustomization = seaweedfs_operator_release.seaweedfs_operator(
@@ -614,11 +604,7 @@ def generate_manifests(root: Path) -> None:
     )
     gateway_artifact = artifact("gateway", gateway.OUTPUT_DIR)
     gateway_kustomization = gateway.gateway(
-        flux_chart,
-        gateway_artifact,
-        cert_manager_kustomization,
-        kyverno_kustomization,
-        cert_manager_issuer_config_kustomization,
+        flux_chart, gateway_artifact, cert_manager_kustomization, kyverno_kustomization
     )
     tofu_controller_artifact = artifact("tofu-controller", tofu_controller_release.OUTPUT_DIR)
     tofu_controller_kustomization = tofu_controller_release.tofu_controller(
@@ -650,7 +636,6 @@ def generate_manifests(root: Path) -> None:
         cert_manager_environment_artifact,
         cert_manager_kustomization,
         cert_manager_trust_kustomization,
-        cert_manager_issuer_config_kustomization,
         external_creds_kustomization,
         external_secrets_config_kustomization,
     )
@@ -680,19 +665,13 @@ def generate_manifests(root: Path) -> None:
         flux_chart, docker_ci_artifact, cert_manager_environment_kustomization, claude_rbac_kustomization
     )
     atuin_artifact = artifact("atuin", atuin_server.OUTPUT_DIR)
-    atuin_kustomization = atuin_server.atuin(
-        flux_chart, atuin_artifact, cert_manager_issuer_config_kustomization, cnpg_kustomization
-    )
+    atuin_kustomization = atuin_server.atuin(flux_chart, atuin_artifact, cnpg_kustomization)
     authentik_artifact = artifact("authentik", f"{HAND_WRITTEN_ROOT}/authentik")
     authentik_kustomization = authentik_flux_kustomizations.authentik(
         flux_chart, authentik_artifact, cnpg_kustomization, monitoring_crds_kustomization
     )
     gaffer_private_source_flux_kustomizations.gaffer_private_bridge(
-        flux_chart,
-        gaffer_private_source_kustomization,
-        authentik_kustomization,
-        gateway_kustomization,
-        cert_manager_issuer_config_kustomization,
+        flux_chart, gaffer_private_source_kustomization, authentik_kustomization, gateway_kustomization
     )
     dns_automation_artifact = artifact("dns-automation", dns_automation.OUTPUT_DIR)
     dns_automation.dns_automation(
@@ -1124,7 +1103,6 @@ def generate_manifests(root: Path) -> None:
         github_api_proxy_artifact,
         external_secrets_operator_kustomization,
         cert_manager_kustomization,
-        cert_manager_issuer_config_kustomization,
         monitoring_crds_kustomization,
     )
     github_exporter_artifact = artifact("github-exporter", github_exporter_app.OUTPUT_DIR)
@@ -1154,7 +1132,6 @@ def generate_manifests(root: Path) -> None:
         grocy_sf_artifact,
         forgejo_images_kustomization,
         gateway_kustomization,
-        cert_manager_issuer_config_kustomization,
         cert_manager_environment_kustomization,
         authentik_kustomization,
         volsync_kustomization,
@@ -1165,7 +1142,6 @@ def generate_manifests(root: Path) -> None:
         grocy_vallejo_artifact,
         forgejo_images_kustomization,
         gateway_kustomization,
-        cert_manager_issuer_config_kustomization,
         cert_manager_environment_kustomization,
         authentik_kustomization,
         volsync_kustomization,
@@ -1177,7 +1153,6 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         cert_manager_kustomization,
         external_secrets_operator_kustomization,
-        cert_manager_issuer_config_kustomization,
     )
     home_assistant_artifact = artifact("home-assistant", f"{HAND_WRITTEN_ROOT}/home-assistant")
     home_assistant_kustomization = home_assistant_flux_kustomizations.home_assistant(
@@ -1491,7 +1466,6 @@ def generate_manifests(root: Path) -> None:
             sso_providers_tf_artifact,
             cert_manager_artifact,
             cert_manager_environment_artifact,
-            cert_manager_issuer_config_artifact,
             cnpg_artifact,
             external_secrets_config_artifact,
             external_secrets_operator_artifact,

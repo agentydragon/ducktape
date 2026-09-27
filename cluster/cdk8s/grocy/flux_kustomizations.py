@@ -13,7 +13,6 @@ def grocy_sf(
     artifact: ArtifactGeneratorSpecArtifacts,
     forgejo_images: Kustomization,
     gateway: Kustomization,
-    cert_manager_issuer_config: Kustomization,
     cert_manager_environment: Kustomization,
     authentik: Kustomization,
     volsync: Kustomization,
@@ -25,7 +24,7 @@ def grocy_sf(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            forgejo_images, gateway, cert_manager_issuer_config, cert_manager_environment, authentik, volsync
+            forgejo_images, gateway, cert_manager_environment, authentik, volsync
         ),
     )
 
@@ -84,7 +83,6 @@ def grocy_vallejo(
     artifact: ArtifactGeneratorSpecArtifacts,
     forgejo_images: Kustomization,
     gateway: Kustomization,
-    cert_manager_issuer_config: Kustomization,
     cert_manager_environment: Kustomization,
     authentik: Kustomization,
     volsync: Kustomization,
@@ -96,7 +94,7 @@ def grocy_vallejo(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            forgejo_images, gateway, cert_manager_issuer_config, cert_manager_environment, authentik, volsync
+            forgejo_images, gateway, cert_manager_environment, authentik, volsync
         ),
     )
 

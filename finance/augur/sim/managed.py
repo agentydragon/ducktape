@@ -9,14 +9,13 @@ from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Contribute, Liquidate, Withdraw
 from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, DistributionOutcome, JournalEntry, Posting
-from finance.augur.sim.compiler.income_sources import income_source_wire_id
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import gain_account
 from finance.augur.sim.ids import AccountId, AgentId, PortfolioId
+from finance.augur.sim.income import InterestIncome, TransferIncomeCategory, income_source_wire_id
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.observations import TlhPortfolioObservation
 from finance.augur.sim.prepared import PreparedDistribution, PreparedJurisdiction, PreparedTlhPortfolio
-from finance.augur.sim.scenario import InterestIncome, TransferIncomeCategory
 
 type Operation = Literal["modeled_realization", "contribution", "redemption", "distribution"]
 

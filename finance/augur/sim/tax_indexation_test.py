@@ -6,15 +6,15 @@ from fractions import Fraction
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.compiler.tax import PreparedTaxProfile, compile_profile
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import AgentId, JurisdictionId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, MarketStatement
-from finance.augur.sim.scenario import ORDINARY_INCOME, TaxProfile
-from finance.augur.sim.tax import TaxFacts, assess
+from finance.augur.sim.tax import PreparedTaxProfile, TaxFacts, assess
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw, rules_for_year
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.tax_year import TaxBook
 from finance.augur.sim.world import World
 

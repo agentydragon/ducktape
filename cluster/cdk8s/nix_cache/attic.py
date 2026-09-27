@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -25,7 +25,6 @@ from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.seaweedfs import s3
 
@@ -87,7 +86,7 @@ def _server(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, annotations={"reloader.stakater.com/auto": "true"}),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_SELECTOR),
@@ -165,7 +164,7 @@ def _server(scope: Construct) -> None:
     https_route(
         scope,
         "route",
-        metadata=metadata(NAMESPACE, NAMESPACE),
+        metadata=ApiObjectMetadata(name=NAMESPACE, namespace=NAMESPACE),
         hostnames=["cache.allegedly.works"],
         backend=NAME,
         port=_PORT,
@@ -183,8 +182,7 @@ def _rotation(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "github-pat",
-        name=_GITHUB_PAT_SECRET,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name=_GITHUB_PAT_SECRET, namespace=NAMESPACE),
         refresh="1h",
         store=external_creds.STORE,
         data=[remote_data("github-agentydragon-2", "token")],

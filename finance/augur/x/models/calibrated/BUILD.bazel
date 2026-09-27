@@ -1,0 +1,50 @@
+load("//devinfra/python:defs.bzl", "py_test")
+
+# Only study/ and x/ may depend on this package: finance/augur/README.md § Stability tiers.
+package(default_visibility = [
+    "//finance/augur/study:__subpackages__",
+    "//finance/augur/x:__subpackages__",
+])
+
+# Quarantined: fails `sanity_test` (reason and numbers in its `QUARANTINED`). Kept as a real
+# sample of the typed observation boundary, never as a model.
+filegroup(
+    name = "trained_vecm_provider",
+    srcs = ["trained_vecm_provider.yaml"],
+)
+
+# Checked-in structural_macro fit — produced by `bb run //finance/augur/x/models:train_bin --
+# --model structural_macro ...` and loaded via runfiles as StructuralMacroProviderConfig's/
+# EquityProcess's shipped defaults (see ../structural_macro.py's `_fitted_defaults`). Unlike the VECM
+# provider config, this isn't itself a deployable ProviderConfig — deployment-specific fields
+# (equity symbol, instruments) aren't fit outputs, so they stay in the deployment YAML.
+filegroup(
+    name = "trained_structural_macro_blob",
+    srcs = ["trained_structural_macro.yaml"],
+)
+
+py_test(
+    name = "sanity_test",
+    size = "medium",
+    srcs = ["sanity_test.py"],
+    # Every checked-in artifact, so a new one is checked without editing this rule.
+    data = glob(["*.yaml"]),
+    deps = [
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/fit:model",
+        "//finance/augur/model:equity",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
+        "//finance/augur/model/path_models:scenarios",
+        "//finance/augur/x/models:conftest",
+        "//finance/augur/x/models:structural_macro",
+        "//finance/augur/x/models:vecm",
+        "@pypi//numpy",
+        "@pypi//numpyro",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

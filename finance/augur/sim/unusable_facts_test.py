@@ -20,13 +20,12 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.compiler.private_equity import compile_pe_channels
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot, PreparedSeries
+from finance.augur.sim.private_equity_series import compile_pe_channels
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")

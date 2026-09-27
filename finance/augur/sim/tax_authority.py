@@ -6,15 +6,21 @@ from finance.augur.sim.accounting import Accounting, TaxLiabilityStatement
 from finance.augur.sim.actor import Actor, MonthOpened
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting, TaxAccrual, TaxLiabilityState
 from finance.augur.sim.claims import Demand, TaxPayment, TaxTrueUp
-from finance.augur.sim.compiler.tax import PreparedTaxProfile, PreparedTaxRules
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AccountId, JurisdictionId
+from finance.augur.sim.income import OrdinaryIncome, QualifiedDividendIncome
 from finance.augur.sim.market_path import MarketStatement
 from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
 from finance.augur.sim.mortgage import Mortgage
 from finance.augur.sim.prepared import PreparedJurisdiction, _MortgageInterestDeduction, _SaltDeduction
-from finance.augur.sim.scenario import OrdinaryIncome, QualifiedDividendIncome
-from finance.augur.sim.tax import TaxFacts, assess, is_investment_income, taxes_interest_from
+from finance.augur.sim.tax import (
+    PreparedTaxProfile,
+    PreparedTaxRules,
+    TaxFacts,
+    assess,
+    is_investment_income,
+    taxes_interest_from,
+)
 from finance.augur.sim.tax_indexation import CpiIndexedLaw, FixedNominalLaw, TaxIndexation, rules_for_year
 from finance.augur.sim.tax_year import TaxBook
 

@@ -29,11 +29,11 @@ from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId,
 from finance.augur.sim.actions import Action, ClaimId, DecisionActions, PayClaim
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.compiler.tax import compile_profile
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.claims import ObligationType
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.observations import Observation
@@ -63,18 +63,10 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.property import Housing
 from finance.augur.sim.results import Executed, Finished, Rollout, Trace
-from finance.augur.sim.scenario import (
-    ORDINARY_INCOME,
-    FilingStatus,
-    InterestIncome,
-    ObligationType,
-    TaxProfile,
-    TransferDeductionCategory,
-    TransferIncomeCategory,
-)
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")

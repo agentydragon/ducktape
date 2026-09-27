@@ -64,7 +64,6 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import sops_decryption, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -126,8 +125,17 @@ def _auth_external_secret(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "auth-external-secret",
-        name=_AUTH_SECRET,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_AUTH_SECRET,
+            namespace=NAMESPACE,
+            annotations={
+                "description": "Derives ntfy bcrypt users and declarative tokens from SOPS values.",
+                # Sprig bcrypt uses a fresh salt on every render. Keep this ExternalSecret
+                # OnChange and bump the generation on deliberate credential rotation instead
+                # of regenerating hashes on every ESO refresh.
+                "ntfy.ducktape.io/auth-generation": "1",
+            },
+        ),
         refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
         store=SecretStoreRef.cluster(SECRET_STORE),
         data=[
@@ -151,13 +159,6 @@ def _auth_external_secret(scope: Construct) -> None:
                 ),
             },
         ),
-        annotations={
-            "description": "Derives ntfy bcrypt users and declarative tokens from SOPS values.",
-            # Sprig bcrypt uses a fresh salt on every render. Keep this ExternalSecret
-            # OnChange and bump the generation on deliberate credential rotation instead
-            # of regenerating hashes on every ESO refresh.
-            "ntfy.ducktape.io/auth-generation": "1",
-        },
     )
 
 
@@ -166,8 +167,14 @@ def _alertmanager_webhook_secret(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "alertmanager-webhook-external-secret",
-        name="alertmanager-ntfy-webhook",
-        namespace="monitoring",
+        metadata=ApiObjectMetadata(
+            name="alertmanager-ntfy-webhook",
+            namespace="monitoring",
+            annotations={
+                "description": "Alertmanager bearer credential for the self-hosted ntfy instance",
+                "ntfy.ducktape.io/auth-generation": "1",
+            },
+        ),
         refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
         store=SecretStoreRef.cluster(SECRET_STORE),
         data=[remote_data(_AUTH_SOURCE_SECRET, "alertmanager-token", secret_key="alertmanager_token")],
@@ -178,10 +185,6 @@ def _alertmanager_webhook_secret(scope: Construct) -> None:
             type="Opaque",
             data={"address": f"https://{HOSTNAME}/alerts", "token": "{{ .alertmanager_token }}"},
         ),
-        annotations={
-            "description": "Alertmanager bearer credential for the self-hosted ntfy instance",
-            "ntfy.ducktape.io/auth-generation": "1",
-        },
     )
 
 
@@ -217,7 +220,12 @@ class Ntfy(Construct):
         deployment = self._add_deployment()
         self._add_service(deployment)
         https_route(
-            self, "httproute", metadata=metadata("ntfy", NAMESPACE), hostnames=[HOSTNAME], backend=NAME, port=PORT
+            self,
+            "httproute",
+            metadata=ApiObjectMetadata(name="ntfy", namespace=NAMESPACE),
+            hostnames=[HOSTNAME],
+            backend=NAME,
+            port=PORT,
         )
         self._add_service_monitor()
 
@@ -225,14 +233,11 @@ class Ntfy(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                NAME,
-                NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=NAMESPACE,
                 labels=_LABELS,
-                annotations={
-                    "description": "Single ntfy server backed by the two-instance ntfy PostgreSQL cluster.",
-                    "reloader.stakater.com/auto": "true",
-                },
+                annotations={"description": "Single ntfy server backed by the two-instance ntfy PostgreSQL cluster."},
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=1,
@@ -281,7 +286,7 @@ class Ntfy(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(NAME, NAMESPACE, labels=_LABELS),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_LABELS),
             selector=deployment,
             ports=[ServicePort(name="http", port=PORT, target_port=PORT, protocol=Protocol.TCP)],
         )
@@ -290,7 +295,7 @@ class Ntfy(Construct):
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=metadata(NAME, NAMESPACE, labels={"release": "kube-prometheus-stack", **_LABELS}),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_LABELS),
             selector=_LABELS,
             endpoints=[Endpoint.plain(port="http")],
         )

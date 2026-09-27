@@ -1276,7 +1276,17 @@ routes.push(
   [
     "GET",
     /^\/models$/,
-    () => ({ HARNESS_CLAUDE: ["harness-claude-model", "next-model"], HARNESS_CODEX: ["harness-codex-model"] }),
+    () => ({
+      models: [
+        { model: "harness-claude-model", display_name: "Harness Claude Model" },
+        { model: "next-model", display_name: "Next Model" },
+        { model: "harness-codex-model", display_name: "Harness Codex Model" },
+      ],
+      harnesses: {
+        HARNESS_CLAUDE: ["harness-claude-model", "next-model"],
+        HARNESS_CODEX: ["harness-codex-model"],
+      },
+    }),
   ],
   [
     "GET",

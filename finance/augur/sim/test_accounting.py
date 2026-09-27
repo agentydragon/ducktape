@@ -9,8 +9,8 @@ from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Transfer
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting
 from finance.augur.sim.ids import AccountId
+from finance.augur.sim.income import ORDINARY_INCOME, TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.money import MAX_COUNT, MIN_COUNT
-from finance.augur.sim.scenario import ORDINARY_INCOME, TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RECIPIENT, RESERVE, accounting
 
 

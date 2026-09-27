@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -25,7 +25,6 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 
 NAME = "loki-read-proxy"
@@ -197,9 +196,9 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "cilium-network-policy",
-        metadata=metadata(
-            NAME,
-            NAME,
+        metadata=ApiObjectMetadata(
+            name=NAME,
+            namespace=NAME,
             annotations={
                 "description": (
                     "Ingress to the Loki read proxy only from haku-sandbox pods; egress only to loki-read,"

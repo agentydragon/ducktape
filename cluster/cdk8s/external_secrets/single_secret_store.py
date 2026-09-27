@@ -16,8 +16,6 @@ from external_secret_store_crds.io.external_secrets import (
     ClusterSecretStoreSpecProviderKubernetesServerCaProviderType,
 )
 
-from cluster.cdk8s.metadata import metadata
-
 
 def single_secret_store(
     scope: Construct,
@@ -37,13 +35,16 @@ def single_secret_store(
     source_role = Role(
         scope,
         f"{name}-source-role",
-        metadata=metadata(reader_role, source_namespace),
+        metadata=ApiObjectMetadata(name=reader_role, namespace=source_namespace),
         rules=[
             RolePolicyRule(resources=[Secret.from_secret_name(scope, f"{name}-source", source_secret)], verbs=["get"])
         ],
     )
     RoleBinding(
-        scope, f"{name}-source-binding", metadata=metadata(reader_role, source_namespace), role=source_role
+        scope,
+        f"{name}-source-binding",
+        metadata=ApiObjectMetadata(name=reader_role, namespace=source_namespace),
+        role=source_role,
     ).add_subjects(reader)
     store = f"kubernetes-{name}-secret-store"
     ClusterSecretStore(

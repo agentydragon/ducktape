@@ -41,7 +41,6 @@ from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -90,7 +89,10 @@ class Actions(Construct):
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the Action
         # Service calls TokenReview as itself, so it needs its own mounted token.
         return ServiceAccount(
-            self, "serviceaccount", metadata=metadata(_NAME, self.env.namespace), automount_token=True
+            self,
+            "serviceaccount",
+            metadata=ApiObjectMetadata(name=_NAME, namespace=self.env.namespace),
+            automount_token=True,
         )
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
@@ -111,7 +113,7 @@ class Actions(Construct):
         Role(
             self,
             "role",
-            metadata=metadata(_NAME, namespace),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=namespace),
             rules=[
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch"]),
                 RolePolicyRule(
@@ -148,14 +150,17 @@ class Actions(Construct):
             ],
         )
         RoleBinding(
-            self, "rolebinding", metadata=metadata(_NAME, namespace), role=Role.from_role_name(self, "role-ref", _NAME)
+            self,
+            "rolebinding",
+            metadata=ApiObjectMetadata(name=_NAME, namespace=namespace),
+            role=Role.from_role_name(self, "role-ref", _NAME),
         ).add_subjects(service_account)
 
     def _add_settings(self) -> ConfigMap:
         return ConfigMap(
             self,
             "settings",
-            metadata=metadata("agentplane-actions-settings", self.env.namespace),
+            metadata=ApiObjectMetadata(name="agentplane-actions-settings", namespace=self.env.namespace),
             data={"settings.yaml": yaml_config(settings_file(Settings, self.env.actions.settings))},
         )
 
@@ -206,9 +211,9 @@ class Actions(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                _NAME,
-                namespace,
+            metadata=ApiObjectMetadata(
+                name=_NAME,
+                namespace=namespace,
                 labels=_LABELS,
                 annotations={
                     "secret.reloader.stakater.com/reload": secret_reload,
@@ -297,7 +302,7 @@ class Actions(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(_NAME, self.env.namespace),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=self.env.namespace),
             selector=deployment,
             ports=[ServicePort(name="http", port=CONTAINER_PORT, target_port=CONTAINER_PORT, protocol=Protocol.TCP)],
         )
@@ -308,7 +313,7 @@ class Actions(Construct):
         https_route(
             self,
             "httproute",
-            metadata=metadata(f"{_NAME}-mcp", self.env.namespace),
+            metadata=ApiObjectMetadata(name=f"{_NAME}-mcp", namespace=self.env.namespace),
             hostnames=[self.env.actions.hostname],
             backend=_NAME,
             port=CONTAINER_PORT,
@@ -321,7 +326,7 @@ class Actions(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=metadata(_NAME, namespace),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=namespace),
             selector=_LABELS,
             ingress=[
                 IngressRule.from_gateway(CONTAINER_PORT),

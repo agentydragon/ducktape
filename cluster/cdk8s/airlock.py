@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngress,
@@ -19,26 +19,16 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPorts,
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTargetCreationPolicy,
-    ExternalSecretSpecTargetTemplate,
-)
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from cluster.cdk8s.env_helpers import secret_env_var
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
-from cluster.cdk8s.providers.external_secrets.external_secret import (
-    ClusterDataFrom,
-    ClusterExternalSecret,
-    DataFrom,
-    ExternalSecret,
-)
+from cluster.cdk8s.providers.external_secrets.external_secret import ClusterDataFrom, ClusterExternalSecret
 
 NAME = "airlock"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/airlock"
@@ -63,9 +53,7 @@ def _deployment(chart: Chart) -> None:
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=NAME, namespace=NAME, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAME, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -127,21 +115,15 @@ def _deployment(chart: Chart) -> None:
 def _session_secret(chart: Chart) -> None:
     """Airlock's session-signing key is app-local. A key rotation invalidates existing browser
     sessions but does not need to update Authentik or another credential store."""
-    generator = Password(
-        chart,
-        "session-secret-generator",
-        metadata=metadata(_SESSION_SECRET, NAME),
-        spec=PasswordSpec(allow_repeat=True, digits=16, length=64, no_upper=False, symbols=0),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         chart,
         "session-secret",
         name=_SESSION_SECRET,
         namespace=NAME,
-        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[DataFrom.from_password_generator(generator.name)],
+        key="session-secret",
+        length=64,
+        digits=16,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
-        template=ExternalSecretSpecTargetTemplate(data={"session-secret": "{{ .password }}"}, type="Opaque"),
         immutable=True,
     )
 
@@ -236,7 +218,7 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "httproute",
-        metadata=metadata(NAME, NAME),
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAME),
         hostnames=["airlock.allegedly.works"],
         backend=NAME,
         port=_PORT,
@@ -248,7 +230,7 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "ciliumnetworkpolicy",
-        metadata=metadata("airlock-ingress", NAME),
+        metadata=ApiObjectMetadata(name="airlock-ingress", namespace=NAME),
         selector=_LABELS,
         ingress=[
             _ingress_from(CiliumNetworkPolicySpecIngressFromEntities.INGRESS),

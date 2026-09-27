@@ -5,6 +5,8 @@ routes and policies passed in here.
 
 from __future__ import annotations
 
+from cluster.cdk8s.agentplane.model_display_names import display_name
+
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
 # The EgressPolicy objects egress creates in every environment, named here
 # because the presets bind them.
@@ -32,8 +34,15 @@ def settings(
     thread_preset_codex_model: str,
     action_policy_sets: list[str] | None = None,
 ) -> dict:
+    # A model both harnesses accept (e.g. a local Ollama route) names its display name once,
+    # regardless of how many harness lists reference it. dict.fromkeys dedupes while keeping
+    # each model's first-seen order.
+    all_models = dict.fromkeys((*harness_claude, *harness_codex))
     return {
-        "models": {"HARNESS_CLAUDE": harness_claude, "HARNESS_CODEX": harness_codex},
+        "models": {
+            "models": [{"model": model, "display_name": display_name(model)} for model in all_models],
+            "harnesses": {"HARNESS_CLAUDE": harness_claude, "HARNESS_CODEX": harness_codex},
+        },
         # Rendered into the image-owned agent-instruction template; deployments may use
         # different service names.
         "agent_egress_api_url": f"http://agentplane-egress.{namespace}.svc.cluster.local",

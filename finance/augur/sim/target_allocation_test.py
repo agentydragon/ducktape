@@ -17,8 +17,7 @@ from finance.augur.policy.cash_band_household import CashBandHousehold, Reinvest
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.holdings import Disposition
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId

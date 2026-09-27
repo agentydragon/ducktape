@@ -9,7 +9,7 @@ models that separately and marks it illiquid.
 
 **Only the fund's own yield is needed**, not a curve: a constant-maturity fund lives at one
 point on it. Pricing a bond of arbitrary maturity, or rolling a ladder, does need the curve —
-see `model/SPEC.md` gaps 8 and 10 — and neither is this.
+see `x/models/structural_macro.md` gaps 8 and 10 — and neither is this.
 
 **The convention is the reference implementation's**, deliberately. Aswath Damodaran's
 historical returns dataset — the free series most published work uses where Ibbotson's SBBI is

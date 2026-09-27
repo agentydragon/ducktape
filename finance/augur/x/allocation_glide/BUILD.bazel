@@ -1,6 +1,10 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
-package(default_visibility = ["//visibility:public"])
+# Only study/ and x/ may depend on this package: finance/augur/README.md § Stability tiers.
+package(default_visibility = [
+    "//finance/augur/study:__subpackages__",
+    "//finance/augur/x:__subpackages__",
+])
 
 py_binary(
     name = "compare_bin",
@@ -19,13 +23,12 @@ py_library(
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:ids",
+        "//finance/augur/sim:income",
         "//finance/augur/sim:market_path",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:results",
-        "//finance/augur/sim:scenario",
         "//finance/augur/sim:session",
         "//finance/augur/sim:world",
-        "//finance/augur/sim/compiler:execution",
         "@pypi//numpy",
     ],
 )

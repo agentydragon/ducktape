@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
     GitRepository,
@@ -22,7 +22,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "haku-workloads"
 OUTPUT_DIR = f"{GENERATED_ROOT}/haku/workloads"
@@ -38,9 +37,9 @@ def chart(app: App) -> Chart:
     source = GitRepository(
         chart,
         "source",
-        metadata=metadata(
-            "haku-state",
-            _FLUX_NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name="haku-state",
+            namespace=_FLUX_NAMESPACE,
             annotations={
                 "description": "Haku's own state repo (internal Forgejo, plaintext HTTP). Source for the "
                 "haku-state-workloads Kustomization, which reconciles Haku-authored manifests under k8s/ into "

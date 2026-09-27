@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from cnpg_database_crds.io.cnpg.postgresql import (
@@ -20,21 +20,15 @@ from cnpg_database_crds.io.cnpg.postgresql import (
     DatabaseSpecExtensions,
     DatabaseSpecExtensionsEnsure,
 )
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTargetCreationPolicy,
-    ExternalSecretSpecTargetTemplate,
-)
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from agentplane.indexing.main import Settings
 from cluster.cdk8s import cnpg, forgejo_images
 from cluster.cdk8s.env_helpers import secret_env_var
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from util.settings_contract import env_name
 
 NAME = "agentplane-index"
@@ -73,21 +67,13 @@ _CONFIG_MAP = ConfigMapArgs(
 
 
 def _read_token(chart: Chart) -> None:
-    Password(
-        chart,
-        "read-token-generator",
-        metadata=metadata(_READ_TOKEN, NAME),
-        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         chart,
         "read-token",
         name=_READ_TOKEN,
         namespace=NAME,
-        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[DataFrom.from_password_generator(_READ_TOKEN)],
+        key="token",
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"token": "{{ .password }}"}),
     )
 
 
@@ -120,7 +106,7 @@ def _worker(
     Database(
         chart,
         f"{instance}-database",
-        metadata=metadata(f"{NAME}-{instance}", NAME),
+        metadata=ApiObjectMetadata(name=f"{NAME}-{instance}", namespace=NAME),
         spec=DatabaseSpec(
             cluster=DatabaseSpecCluster(name=_DB_CLUSTER),
             name=database,
@@ -135,7 +121,7 @@ def _worker(
     k8s.KubeDeployment(
         chart,
         f"{instance}-deployment",
-        metadata=k8s.ObjectMeta(name=instance, namespace=NAME, annotations={"reloader.stakater.com/auto": "true"}),
+        metadata=k8s.ObjectMeta(name=instance, namespace=NAME),
         spec=k8s.DeploymentSpec(
             replicas=replicas,
             selector=k8s.LabelSelector(match_labels=labels),

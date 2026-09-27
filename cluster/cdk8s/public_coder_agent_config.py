@@ -16,21 +16,19 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Namespace, k8s
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
-    ExternalSecretSpecTargetTemplate,
 )
 
 from cluster.cdk8s import external_creds, public_coder_proxy, public_coder_sshpiper
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.env_helpers import secret_env_var
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.haku import console, console_config, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.model_rosters import (
     ANTIGRAVITY_MODELS,
     GEMINI_CONTEXT_WINDOW,
@@ -52,7 +50,7 @@ from cluster.cdk8s.openclaw_gateway import (
     session_memory_hook,
     trusted_proxy_gateway,
 )
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, remote_data
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 _CODEX_BY_ID = {model.id: model for model in OPENCLAW_CODEX_MODELS}
 _DEFAULT_CODEX_MODEL = _CODEX_BY_ID["gpt-6-luna"]
@@ -561,9 +559,7 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE, labels=LABELS),
         spec=k8s.DeploymentSpec(
             # Keep the replica count GitOps-owned; the worker-local state claim is selected by the
             # affinity and PVC declarations below.
@@ -812,8 +808,7 @@ def _credentials(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "github-token",
-        name=_GITHUB_TOKEN_NAME,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name=_GITHUB_TOKEN_NAME, namespace=NAMESPACE),
         refresh="1h",
         store=external_creds.STORE,
         data=[remote_data("github-agentydragon-agent", "token", secret_key="GITHUB_TOKEN")],
@@ -828,24 +823,18 @@ def _credentials(scope: Construct) -> None:
     # (OPENCLAW_GATEWAY_PASSWORD). Generate it once and retain it; rotating this Secret
     # deliberately restarts the agent and invalidates local clients until they read the
     # replacement value from the same environment.
-    generator = Password(
-        scope,
-        "gateway-password-generator",
-        metadata=metadata("public-coder-agent-gateway-password-generator", NAMESPACE),
-        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         scope,
         "gateway-password",
         name=_GATEWAY_PASSWORD_NAME,
         namespace=NAMESPACE,
+        generator_name=f"{_GATEWAY_PASSWORD_NAME}-generator",
         # A generated password is stable for the generator's lifetime. Avoid an automatic
         # rotation that would unnecessarily interrupt active sessions.
         refresh="8760h",
-        data_from=[DataFrom.from_password_generator(generator.name)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        template=ExternalSecretSpecTargetTemplate(data={"password": "{{ .password }}"}),
+        secret_type=None,
     )
 
 

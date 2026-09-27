@@ -53,7 +53,8 @@ Model with constructs, deploy with one props object per environment.
   `Volume.from_config_map(config_map)`, `Role.from_role_name(...)`; a network rule
   targets a workload through the constant the owning module exports
   (`cilium.endpoint_labels(namespace, egress.NAME)`), never the
-  string spelled again.
+  string spelled again. So a helper that builds an object returns it: the caller gets
+  something to reference instead of a name to repeat.
 - **The service's `Settings` is its deployment contract.** Flags, env vars and settings
   files are rendered through the binary's pydantic-settings model
   (`util/settings_contract.py`: `cli_args`, `env_name`, `settings_file`,
@@ -61,6 +62,28 @@ Model with constructs, deploy with one props object per environment.
   and its `CONFIG_FILE_ENV`; `cluster/cdk8s` owns where and how it runs. Nothing under
   `x/` or `haku/` imports `cluster/`. A project's own `deploy/` may hold a props-driven
   construct (tested with synthetic props); the cluster's instantiation of it lives here.
+  The general rule is that configuration is typed by its consumer's own schema. Where
+  that schema lives in another artifact, a model mirrors it and a test ties the two: a
+  tofu-controller module's inputs are a frozen pydantic model mirroring its
+  `variables.tf` (`gitops_terraform(variables=...)`, `test_terraform_vars.py`), since
+  tofu only warns on an undeclared variable.
+- **What the generator knows, it renders.** A value known at synth is written into the
+  object as a Python constant. Flux `postBuild` substitution is for a value only the
+  cluster has. Substituting a synth-time value costs a Kustomization and a `dependsOn`
+  edge on every consumer, and hides the applied value from the committed manifests and
+  `render_diff.py`, which see only `${VAR}`.
+- **A cluster-wide behavior is configured once, where it runs; objects carry only the
+  exceptions.** Restating the default on each object adds nothing when it matches, and
+  looks like it works where the mechanism never reads it. Reloader runs with
+  `autoReloadAll` (`reloader.py`) and reads only a workload's own metadata, never its
+  pod template: a workload that must not restart says `"false"` there, and the rest say
+  nothing. Alloy discovers every ServiceMonitor, PodMonitor and PrometheusRule without a
+  selector, so none carries a label for it.
+- **One shape per job.** Each job this layer does (build a kind, build one variant of a
+  field, amend a pod spec, declare a Flux node) has one mechanism. Before writing a
+  helper, find how the tree already does that job and use that shape; a second shape
+  for the same job is a review finding even when both work. Mechanisms multiply one
+  reasonable PR at a time, and each is another convention every reader must learn.
 - **One helper per repeated shape.** When the same dozen generated-struct lines appear
   twice, name the shape once: `cilium.py` (`egress_via_gateway`, `dns_egress`,
   `fqdn_fence`, ...) for this cluster's own facts, `providers/cilium/network_policy.py`'s
@@ -249,8 +272,8 @@ and lands in its own PR with the violations fixed. Exceptions are explicit param
   affinity, not `nodeSelector`.
 - `add_container(env_from=[EnvFrom(config_map=...)])` takes the wrapper, not the
   ConfigMap.
-- `Chart(namespace=...)` would drop the `metadata(name, namespace)` call from every
-  object, but it injects the namespace into cluster-scoped objects too (ClusterRole,
+- `Chart(namespace=...)` would drop `namespace=` from every object's `ApiObjectMetadata`,
+  but it injects the namespace into cluster-scoped objects too (ClusterRole,
   Bundle) with no opt-out; usable only once cluster-scoped objects get their own chart.
 - Synth imports each service's `main` for its `Settings`, pulling the runtime in; synth
   tests are `size = "medium"` until a light `settings.py` per service exists

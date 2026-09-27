@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from kubevirt_kubevirt_crds.io.kubevirt import (
     KubeVirt,
@@ -34,7 +34,6 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "kubevirt"
 NAMESPACE = "kubevirt"
@@ -47,9 +46,9 @@ def chart(app: App) -> Chart:
     KubeVirt(
         chart,
         "kubevirt",
-        metadata=metadata(
-            NAME,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=NAME,
+            namespace=NAMESPACE,
             annotations={
                 "description": "KubeVirt control plane for running virtual machines on KVM-capable Kubernetes workers."
             },

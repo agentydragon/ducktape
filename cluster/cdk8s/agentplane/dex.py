@@ -31,6 +31,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
+    ExternalSecretSpecDataFrom,
     ExternalSecretSpecDataFromRewrite,
     ExternalSecretSpecDataFromRewriteRegexp,
     ExternalSecretSpecTargetCreationPolicy,
@@ -43,7 +44,6 @@ from external_secrets_crds.io.external_secrets import (
 from cluster.cdk8s import cilium
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy, deny_all_egress
@@ -123,7 +123,7 @@ def _add_credentials(scope: Construct) -> None:
         scope, "session-secret-generator", name="agentplane-testing-agentplane-session-secret", length=64, digits=16
     )
 
-    def rewrite(source: str, target: str) -> DataFrom:
+    def rewrite(source: str, target: str) -> ExternalSecretSpecDataFrom:
         return DataFrom.from_password_generator(
             source,
             rewrite=[
@@ -136,8 +136,11 @@ def _add_credentials(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "oidc-credentials",
-        name="agentplane-oidc",
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name="agentplane-oidc",
+            namespace=_NAMESPACE,
+            annotations={"description": "ESO-generated Dex client credentials and Agentplane session signing key."},
+        ),
         refresh="8760h",
         data_from=[
             rewrite("agentplane-testing-dex-client-secret", "client-secret"),
@@ -153,14 +156,16 @@ def _add_credentials(scope: Construct) -> None:
                 "session-secret": '{{ index . "session-secret" }}',
             },
         ),
-        annotations={"description": "ESO-generated Dex client credentials and Agentplane session signing key."},
     )
 
     ExternalSecret(
         scope,
         "mcp-oauth-credentials",
-        name="agentplane-mcp-oauth",
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name="agentplane-mcp-oauth",
+            namespace=_NAMESPACE,
+            annotations={"description": "ESO-generated credentials for the testing MCP client registered in Dex."},
+        ),
         refresh="8760h",
         data_from=[rewrite("agentplane-testing-mcp-client-secret", "client-secret")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
@@ -169,14 +174,18 @@ def _add_credentials(scope: Construct) -> None:
             type="Opaque",
             data={"client-id": "agentplane-testing-mcp", "client-secret": '{{ index . "client-secret" }}'},
         ),
-        annotations={"description": "ESO-generated credentials for the testing MCP client registered in Dex."},
     )
 
     ExternalSecret(
         scope,
         "acceptance-operator-credentials",
-        name="agentplane-testing-acceptance-operator",
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name="agentplane-testing-acceptance-operator",
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "Generates the acceptance password and Dex config together from one password value."
+            },
+        ),
         refresh="8760h",
         # Dex's config and the acceptance client's password both come from this one
         # dataFrom entry: two ExternalSecrets naming the same Password generator get two
@@ -208,9 +217,6 @@ def _add_credentials(scope: Construct) -> None:
                 "config.yaml": _dex_config_yaml(),
             },
         ),
-        annotations={
-            "description": "Generates the acceptance password and Dex config together from one password value."
-        },
     )
 
 
@@ -218,9 +224,9 @@ def _add_deployment(scope: Construct) -> Deployment:
     deployment = Deployment(
         scope,
         "deployment",
-        metadata=metadata(
-            _NAME,
-            _NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_NAME,
+            namespace=_NAMESPACE,
             labels=_LABELS,
             annotations={
                 # Dex reads its generated config and client secret only at startup.
@@ -272,7 +278,7 @@ def _add_service(scope: Construct, deployment: Deployment) -> None:
     Service(
         scope,
         "service",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         selector=deployment,
         ports=[ServicePort(name="http", port=_PORT, target_port=_PORT, protocol=Protocol.TCP)],
     )
@@ -282,7 +288,7 @@ def _add_http_route(scope: Construct) -> None:
     https_route(
         scope,
         "httproute",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["agentplane-dex-testing.allegedly.works"],
         backend=_NAME,
         port=_PORT,
@@ -293,7 +299,7 @@ def _add_network_policy(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "networkpolicy",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         selector=_LABELS,
         ingress=[
             IngressRule.from_gateway(_PORT),

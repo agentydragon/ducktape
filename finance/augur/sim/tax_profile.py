@@ -1,0 +1,207 @@
+"""A taxpayer's filing status, jurisdictions and tax-payment routing, and their resolution into
+exact, variable-length tax records."""
+
+from collections.abc import Iterable, Mapping, Sequence
+from decimal import Decimal
+from enum import StrEnum
+
+from pydantic import BaseModel, Field
+
+from finance.augur.sim.distributions import distribution_income_categories
+from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
+from finance.augur.sim.held_bonds import bond_income_categories
+from finance.augur.sim.ids import CHECKING, AccountId, AgentId, JurisdictionId
+from finance.augur.sim.income import InterestIncome, OrdinaryIncome, TransferIncomeCategory, income_source_sort_key
+from finance.augur.sim.jurisdictions import (
+    Jurisdiction,
+    StatutoryAmount,
+    StatutoryIndexation,
+    TaxBracket,
+    ThresholdTax,
+    load_jurisdiction,
+)
+from finance.augur.sim.money import NonNegativeCurrencyAmount
+from finance.augur.sim.scenario import (
+    BondHolding,
+    RecurringPropertyCashflow,
+    ScheduledPropertyCashflow,
+    SecurityDistribution,
+)
+from finance.augur.sim.tax import PreparedTaxBracket, PreparedTaxProfile, PreparedTaxRules, PreparedThresholdTax
+
+
+class FilingStatus(StrEnum):
+    """Federal/state filing status. Today only single-filer is wired through the tax + §121
+    math; adding a new variant requires touching every place that branches on filing status
+    (bracket lookup keys in jurisdiction YAMLs, §121 cap table in `_apply_property_sale`,
+    standard-deduction lookup, …). The enum makes this an explicit blocker on every
+    callsite rather than a string typo silently falling through to a missing-key error."""
+
+    SINGLE = "single"
+
+
+class TaxProfile(BaseModel):
+    """A taxed agent's tax-time configuration. At spike 1 only single filers are modeled;
+    later layers add MFJ / HoH and any filing-status-driven branching."""
+
+    agent_id: AgentId
+    filing_status: FilingStatus = FilingStatus.SINGLE
+    jurisdiction_ids: list[JurisdictionId] = Field(
+        description='Ordered list of taxing authorities — typically `["federal_us", "california"]` for a CA resident.'
+    )
+    tax_authority_agent_id: AgentId = Field(
+        description="Destination of tax-payment transfers — a bookkeeping sink, not a taxed agent itself."
+    )
+    payment_account_id: AccountId = Field(
+        default=CHECKING, description="The agent's account the engine debits for estimated-tax and true-up payments."
+    )
+    tax_authority_account_id: AccountId = Field(
+        default=CHECKING, description="The matching credit account on the tax authority's side."
+    )
+    prior_year_tax: NonNegativeCurrencyAmount = Field(
+        default=Decimal(0),
+        description=(
+            "Aggregate safe-harbor target used to size quarterly estimated payments. If "
+            "0, no quarterly estimates are emitted and the January true-up pays the full "
+            "accrued tax."
+        ),
+    )
+
+
+SECTION_1250_FEDERAL_CAP_RATE = 0.25
+SECTION_1250_FEDERAL_JURISDICTION_ID = "federal_us"
+
+_SECTION_121_EXCLUSION_BY_FILING_STATUS: dict[FilingStatus, Decimal] = {FilingStatus.SINGLE: Decimal(250_000)}
+
+
+def section_121_exclusion_for(filing_status: FilingStatus) -> Decimal:
+    if filing_status not in _SECTION_121_EXCLUSION_BY_FILING_STATUS:
+        raise NotImplementedError(
+            f"§121 exclusion cap is not implemented for filing_status={filing_status!r}; "
+            f"add a {filing_status} entry to _SECTION_121_EXCLUSION_BY_FILING_STATUS "
+            f"and audit every other place that branches on filing status (jurisdiction "
+            f"bracket lookups, standard-deduction lookups, MID, SALT cap, NIIT thresholds)."
+        )
+    return _SECTION_121_EXCLUSION_BY_FILING_STATUS[filing_status]
+
+
+def compile_income_sources(
+    *,
+    flows: Iterable[ScheduledPropertyCashflow | RecurringPropertyCashflow],
+    bonds: Iterable[BondHolding],
+    distributions: Iterable[SecurityDistribution],
+) -> tuple[TransferIncomeCategory, ...]:
+    """Ordinary income plus every category cashflows, held bonds or fund distributions name, in reporting order."""
+
+    sources = sorted(
+        {
+            OrdinaryIncome(),
+            *(item.income_category for item in flows if item.income_category is not None),
+            *bond_income_categories(bonds),
+            *distribution_income_categories(distributions),
+        },
+        key=income_source_sort_key,
+    )
+    # Every named issuer must resolve, including issuers found only on cashflows.
+    for source in sources:
+        if isinstance(source, InterestIncome) and source.issuer_jurisdiction_id is not None:
+            load_jurisdiction(source.issuer_jurisdiction_id)
+    return tuple(sources)
+
+
+def _agreed_capital_loss_offset_cap(
+    profile: TaxProfile, jurisdictions: Mapping[JurisdictionId, Jurisdiction], *, quantum: Decimal
+) -> int:
+    """Netting runs once per taxpayer; reject jurisdictions requiring different offset caps, now or once indexed."""
+
+    caps = {
+        jurisdiction_id: (
+            jurisdictions[jurisdiction_id].max_capital_loss_ordinary_offset[profile.filing_status],
+            jurisdictions[jurisdiction_id].indexation[StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET],
+        )
+        for jurisdiction_id in profile.jurisdiction_ids
+    }
+    if len(set(caps.values())) > 1:
+        raise ValueError(
+            f"tax profile for {profile.agent_id!r} spans jurisdictions that cap the capital-loss "
+            f"ordinary offset differently ({caps}); one netting per taxpayer cannot answer for both"
+        )
+    return int(currency_amount_to_quanta(next(iter(caps.values()))[0], quantum=quantum))
+
+
+def _brackets(brackets: Sequence[TaxBracket], *, quantum: Decimal) -> tuple[PreparedTaxBracket, ...]:
+    return tuple(
+        PreparedTaxBracket(
+            upper=None
+            if bracket.upper == "Infinity"
+            else int(currency_amount_to_quanta(bracket.upper, quantum=quantum)),
+            rate_ppb=rate_to_ppb(bracket.rate),
+        )
+        for bracket in brackets
+    )
+
+
+def _threshold_tax(
+    tax: ThresholdTax | None, filing_status: FilingStatus, *, quantum: Decimal
+) -> PreparedThresholdTax | None:
+    if tax is None:
+        return None
+    return PreparedThresholdTax(
+        rate_ppb=rate_to_ppb(tax.rate),
+        threshold=int(currency_amount_to_quanta(tax.threshold[filing_status], quantum=quantum)),
+    )
+
+
+def compile_profile(
+    profile: TaxProfile, jurisdictions: Mapping[JurisdictionId, Jurisdiction], *, quantum: Decimal
+) -> PreparedTaxProfile:
+    """One taxpayer's routing and quantized rules, as a composed world enrolls them."""
+    offset_cap = _agreed_capital_loss_offset_cap(profile, jurisdictions, quantum=quantum)
+    rules = []
+    for jurisdiction_id in profile.jurisdiction_ids:
+        jurisdiction = jurisdictions[jurisdiction_id]
+        rules.append(
+            PreparedTaxRules(
+                jurisdiction_id=jurisdiction_id,
+                exempt_interest_from_levels=tuple(sorted(jurisdiction.exempt_interest_from_levels)),
+                exempts_own_issue=jurisdiction.exempts_own_issue,
+                ordinary_brackets=_brackets(
+                    jurisdiction.ordinary_income_brackets[profile.filing_status], quantum=quantum
+                ),
+                long_term_capital_gain_brackets=(
+                    _brackets(jurisdiction.ltcg_brackets[profile.filing_status], quantum=quantum)
+                    if jurisdiction.ltcg_brackets is not None
+                    else ()
+                ),
+                standard_deduction=int(
+                    currency_amount_to_quanta(jurisdiction.standard_deduction[profile.filing_status], quantum=quantum)
+                ),
+                max_capital_loss_ordinary_offset=offset_cap,
+                section_1250_rate_ppb=rate_to_ppb(
+                    SECTION_1250_FEDERAL_CAP_RATE if jurisdiction_id == SECTION_1250_FEDERAL_JURISDICTION_ID else 0.0
+                ),
+                net_investment_income_tax=_threshold_tax(
+                    jurisdiction.net_investment_income_tax, profile.filing_status, quantum=quantum
+                ),
+                taxable_income_surtax=_threshold_tax(
+                    jurisdiction.taxable_income_surtax, profile.filing_status, quantum=quantum
+                ),
+                law_year=jurisdiction.law_year,
+                indexed=frozenset(
+                    amount
+                    for amount, indexation in jurisdiction.indexation.items()
+                    if indexation is StatutoryIndexation.CPI
+                ),
+            )
+        )
+    return PreparedTaxProfile(
+        agent_id=profile.agent_id,
+        tax_authority_agent_id=profile.tax_authority_agent_id,
+        payment_account_id=profile.payment_account_id,
+        tax_authority_account_id=profile.tax_authority_account_id,
+        prior_year_tax=int(currency_amount_to_quanta(profile.prior_year_tax, quantum=quantum)),
+        section_121_exclusion=int(
+            currency_amount_to_quanta(section_121_exclusion_for(profile.filing_status), quantum=quantum)
+        ),
+        jurisdictions=tuple(rules),
+    )

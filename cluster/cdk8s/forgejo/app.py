@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_envoyconfig_crds.io.cilium import (
     CiliumEnvoyConfig,
@@ -17,12 +17,9 @@ from cilium_envoyconfig_crds.io.cilium import (
     CiliumEnvoyConfigSpecNodeSelector,
 )
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecRefreshPolicy,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
-    ExternalSecretSpecTargetTemplate,
 )
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -34,13 +31,12 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
 
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.seaweedfs import s3
 
@@ -107,22 +103,14 @@ def _object_storage(scope: Construct) -> None:
 def _metrics_token(scope: Construct) -> None:
     """ESO owns a stable Forgejo metrics bearer token. CreatedOnce avoids rotating the token
     without coordinating a Forgejo restart and Prometheus scrape cutover."""
-    generator = Password(
-        scope,
-        "metrics-token-generator",
-        metadata=metadata(_METRICS_TOKEN, _NAMESPACE),
-        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         scope,
         "metrics-token",
         name=_METRICS_TOKEN,
         namespace=_NAMESPACE,
-        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[DataFrom.from_password_generator(generator.name)],
+        key="token",
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"token": "{{ .password }}"}),
     )
 
 
@@ -277,11 +265,7 @@ def _values() -> dict[str, object]:
             ],
         },
         # Trust cluster CA bundle (includes Let's Encrypt staging CA)
-        "deployment": {
-            # Reloader: auto-restart pods when secrets change
-            "annotations": {"reloader.stakater.com/auto": "true"},
-            "env": [{"name": "SSL_CERT_FILE", "value": "/etc/ssl/certs/cluster-ca/ca-certificates.crt"}],
-        },
+        "deployment": {"env": [{"name": "SSL_CERT_FILE", "value": "/etc/ssl/certs/cluster-ca/ca-certificates.crt"}]},
         # Mount CA bundle (includes Let's Encrypt staging CA when in staging mode)
         "extraVolumes": [{"name": "cluster-ca", "configMap": {"name": "cluster-internal-ca-bundle"}}],
         "extraContainerVolumeMounts": [_CLUSTER_CA_MOUNT],
@@ -342,7 +326,7 @@ def _helm_release(scope: Construct) -> None:
     repository = HelmRepository(
         scope,
         "helm-repository",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         spec=HelmRepositorySpec(
             type=HelmRepositorySpecType.OCI, interval="24h", url="oci://code.forgejo.org/forgejo-helm"
         ),
@@ -390,7 +374,9 @@ def _ssh_listener(scope: Construct) -> None:
     CiliumEnvoyConfig(
         scope,
         "ssh-listener",
-        metadata=metadata(service, _NAMESPACE, annotations={"cec.cilium.io/use-original-source-address": "false"}),
+        metadata=ApiObjectMetadata(
+            name=service, namespace=_NAMESPACE, annotations={"cec.cilium.io/use-original-source-address": "false"}
+        ),
         spec=CiliumEnvoyConfigSpec(
             node_selector=CiliumEnvoyConfigSpecNodeSelector(match_labels={"topology.kubernetes.io/region": "hil"}),
             backend_services=[
@@ -435,7 +421,7 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["git.allegedly.works"],
         backend="forgejo-http",
         port=3000,
@@ -460,7 +446,7 @@ def chart(app: App) -> Chart:
     ServiceMonitor(
         chart,
         "service-monitor",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         # Helm release name; robust regardless of the chart's app name label.
         selector={"app.kubernetes.io/instance": _NAME},
         endpoints=[Endpoint.bearer_token_secret(port="http", secret_name=_METRICS_TOKEN, key="token")],

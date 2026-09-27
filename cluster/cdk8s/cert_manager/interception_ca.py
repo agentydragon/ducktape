@@ -65,8 +65,7 @@ def interception_root_ca(
     Certificate(
         scope,
         "certificate",
-        name=name,
-        namespace=namespace,
+        metadata=ApiObjectMetadata(name=name, namespace=namespace),
         is_ca=True,
         common_name=name,
         secret_name=secret_name,

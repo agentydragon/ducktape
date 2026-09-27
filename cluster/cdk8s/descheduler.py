@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
@@ -21,7 +21,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "descheduler"
 NAMESPACE = "kube-system"
@@ -90,7 +89,7 @@ class Descheduler(Construct):
         repository = HelmRepository(
             self,
             "repository",
-            metadata=metadata(NAME, NAMESPACE),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
             spec=HelmRepositorySpec(interval="24h", url="https://kubernetes-sigs.github.io/descheduler"),
         )
         helm_release(

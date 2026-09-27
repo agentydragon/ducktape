@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from cdk8s import ApiObjectMetadata
 from constructs import Construct
 from keda_scaledjob_crds.sh.keda import (
     ScaledJob as _ScaledJob,
@@ -18,8 +19,6 @@ from keda_scaledjob_crds.sh.keda import (
     ScaledJobSpecScalingStrategy,
     ScaledJobSpecTriggers,
 )
-
-from cluster.cdk8s.metadata import metadata
 
 
 class ScaledJob(_ScaledJob):
@@ -31,11 +30,9 @@ class ScaledJob(_ScaledJob):
         scope: Construct,
         id: str,
         *,
-        name: str,
-        namespace: str,
+        metadata: ApiObjectMetadata,
         job_target_ref: ScaledJobSpecJobTargetRef,
         triggers: Sequence[ScaledJobSpecTriggers],
-        labels: dict[str, str] | None = None,
         min_replica_count: int | None = None,
         max_replica_count: int | None = None,
         polling_interval: int | None = None,
@@ -48,7 +45,7 @@ class ScaledJob(_ScaledJob):
         super().__init__(
             scope,
             id,
-            metadata=metadata(name, namespace, labels=labels),
+            metadata=metadata,
             spec=ScaledJobSpec(
                 job_target_ref=job_target_ref,
                 triggers=list(triggers),

@@ -83,8 +83,6 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: haku-openclaw-spike
   name: haku-openclaw-spike
