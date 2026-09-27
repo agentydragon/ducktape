@@ -23,14 +23,7 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedIndexedAmount,
-    PreparedLot,
-    PreparedObligation,
-    PreparedSeries,
-)
+from finance.augur.sim.prepared import PreparedIndexedAmount, PreparedObligation, PreparedSeries
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
@@ -77,29 +70,23 @@ def compose(case: Situation, rollout_id: int) -> World:
     )
     for name, balance in ((RETIREE, Decimal(10_000)), (COUNTERPARTY, Decimal(0))):
         world.declare_account(
-            PreparedAccount(
-                account=AccountRef(agent_id=name, account_id=AccountId("checking")),
-                opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
-            )
+            account=AccountRef(agent_id=name, account_id=AccountId("checking")),
+            opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
         )
     for asset in (GROWTH, STEADY):
         scale = quantity_scale_for_asset(asset)
         world.declare_pool(
-            PreparedHoldingPool(
-                agent_id=RETIREE, account_id=AccountId("checking"), asset_id=AssetId(asset.symbol), quantity_scale=scale
-            )
+            agent_id=RETIREE, account_id=AccountId("checking"), asset_id=AssetId(asset.symbol), quantity_scale=scale
         )
-        world.hold(
-            PreparedLot(
-                lot_id=LotId(f"test-opening-{asset.symbol}"),
-                agent_id=RETIREE,
-                account_id=AccountId("checking"),
-                asset_id=AssetId(asset.symbol),
-                purchase_month=-24,
-                quantity_scale=scale,
-                units=quantity_to_quanta(500, scale=scale),
-                basis=int(currency_amount_to_quanta(Decimal(50_000), quantum=QUANTUM)),
-            )
+        world.hold_lot(
+            lot_id=LotId(f"test-opening-{asset.symbol}"),
+            agent_id=RETIREE,
+            account_id=AccountId("checking"),
+            asset_id=AssetId(asset.symbol),
+            purchase_month=-24,
+            quantity_scale=scale,
+            units=quantity_to_quanta(500, scale=scale),
+            basis=int(currency_amount_to_quanta(Decimal(50_000), quantum=QUANTUM)),
         )
     for month in range(0, HORIZON_MONTHS, 12):
         world.track(

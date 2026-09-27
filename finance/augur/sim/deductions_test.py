@@ -32,7 +32,6 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
-    PreparedAccount,
     PreparedJurisdiction,
     PreparedLocation,
     PreparedRecurringTransfer,
@@ -103,8 +102,9 @@ DEFAULT_SALT_SCHEDULE = (
 )
 
 
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return AccountRef(agent_id=agent_id, account_id=CHECKING), money(balance)
 
 
 def deducts(
@@ -217,7 +217,7 @@ def compose(case: Situation) -> World:
             PreparedJurisdiction(jurisdiction_id=id_, level=rules.level) for id_, rules in jurisdictions.items()
         ),
     )
-    for opening in (
+    for opened, balance in (
         account(ALICE, case.down_payment + 50_000),
         account(PAYROLL),
         account(IRS),
@@ -225,7 +225,7 @@ def compose(case: Situation) -> World:
         account(BANK),
         account(COLLECTOR),
     ):
-        world.declare_account(opening)
+        world.declare_account(account=opened, opening_balance=balance)
     world.track(
         TaxAuthority(
             compile_profile(

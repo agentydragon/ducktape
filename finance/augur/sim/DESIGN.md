@@ -32,7 +32,7 @@ or HTTP modules.
 ```text
 supplied paths (+ rules)
     -> World(MarketPath(series, rollout_id, ...), horizon_months=...)
-    -> world.declare_account / declare_pool / hold / declare_portfolio / declare_distribution  # Prepared* records
+    -> world.declare_account / declare_pool / hold_lot / hold_bond / declare_portfolio / declare_distribution  # Prepared* records
     -> world.declare_housing / declare_flow / declare_deduction / declare_tender_policy
     -> world.track(agent | mortgage | biller | tax_authority); world.start()
     -> world.step()  # open: statements and dues to the agent; MonthOpened -> ordered actions; close

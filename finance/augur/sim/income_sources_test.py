@@ -25,7 +25,7 @@ from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferIn
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedAccount, PreparedJurisdiction, PreparedTransfer
+from finance.augur.sim.prepared import PreparedJurisdiction, PreparedTransfer
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -75,8 +75,8 @@ class Payment:
     month: int = WAGE_MONTH
 
 
-def _account(agent_id: AgentId, balance: Decimal) -> PreparedAccount:
-    return PreparedAccount(
+def _account(world: World, agent_id: AgentId, balance: Decimal) -> None:
+    world.declare_account(
         account=AccountRef(agent_id=agent_id, account_id=CHECKING),
         opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
     )
@@ -102,7 +102,7 @@ def compose(payments: tuple[Payment, ...]) -> World:
         (PAYER, sum((payment.amount for payment in payments), Decimal(0))),
         (IRS, Decimal(0)),
     ):
-        world.declare_account(_account(agent_id, balance))
+        _account(world, agent_id, balance)
     for recipient in recipients:
         world.track(
             TaxAuthority(

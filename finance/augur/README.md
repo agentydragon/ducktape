@@ -34,9 +34,9 @@ series = compile_series(materialize_sampled_exogenous(bundle), rollout_count=N, 
 worlds = {}
 for rollout_id in range(N):
     world = World(MarketPath(series, rollout_id, rollout_count=N), horizon_months=H)
-    world.declare_account(PreparedAccount(account=checking, opening_balance=USD.quanta(200)))
-    world.declare_pool(PreparedHoldingPool(...))
-    world.hold(PreparedLot(..., units=quantity_to_quanta(2, scale=scale), basis=USD.quanta(80)))
+    world.declare_account(account=checking, opening_balance=USD.quanta(200))
+    world.declare_pool(...)
+    world.hold_lot(..., units=quantity_to_quanta(2, scale=scale), basis=USD.quanta(80))
     world.track(Biller(PreparedObligation(..., amount_due=USD.quanta(150))))
     worlds[rollout_id] = world
 

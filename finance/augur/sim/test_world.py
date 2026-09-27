@@ -21,14 +21,7 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, LotI
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.mortgage import Mortgage, MortgageTerms
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedLot,
-    PreparedObligation,
-    PreparedSeries,
-    PreparedTransfer,
-)
+from finance.augur.sim.prepared import PreparedObligation, PreparedSeries, PreparedTransfer
 from finance.augur.sim.results import ConsumptionTarget, Executed, Finished, Rejected, RejectedAction, UnpaidClaims
 from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.session import ActionSession
@@ -38,6 +31,26 @@ from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import Capture, World
 
 
+@dataclass(frozen=True, kw_only=True)
+class Pool:
+    agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
+    quantity_scale: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class Lot:
+    lot_id: LotId
+    agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
+    purchase_month: int
+    quantity_scale: int
+    units: int
+    basis: int
+
+
 @dataclass(frozen=True)
 class Situation:
     """What every path shares: the household's books, what it holds, and what it is billed or paid."""
@@ -45,9 +58,10 @@ class Situation:
     series: tuple[PreparedSeries, ...]
     rollout_count: int
     horizon_months: int
-    accounts: tuple[PreparedAccount, ...]
-    holding_pools: tuple[PreparedHoldingPool, ...]
-    initial_lots: tuple[PreparedLot, ...]
+    # Each account with its opening balance.
+    accounts: Mapping[AccountRef, int]
+    holding_pools: tuple[Pool, ...]
+    initial_lots: tuple[Lot, ...]
     tax_profiles: tuple[PreparedTaxProfile, ...] = ()
     obligations: tuple[PreparedObligation, ...] = ()
     scheduled_transfers: tuple[PreparedTransfer, ...] = ()
@@ -65,7 +79,7 @@ def situation(horizon: int = 2, paths: int = 1) -> Situation:
         horizon_months=horizon,
         accounts=opening({CASH: 10_000}),
         holding_pools=(
-            PreparedHoldingPool(
+            Pool(
                 agent_id=HOUSEHOLD,
                 account_id=AccountId("checking"),
                 asset_id=AssetId("test_stock"),
@@ -73,7 +87,7 @@ def situation(horizon: int = 2, paths: int = 1) -> Situation:
             ),
         ),
         initial_lots=(
-            PreparedLot(
+            Lot(
                 lot_id=LotId("timing-stock"),
                 agent_id=HOUSEHOLD,
                 account_id=AccountId("checking"),
@@ -93,12 +107,10 @@ def cash_only() -> Situation:
     return replace(
         run,
         initial_lots=(),
-        accounts=tuple(
-            replace(account, opening_balance=2500 if account.account == CASH else 0) for account in run.accounts
-        ),
+        accounts={account: 2500 if account == CASH else 0 for account in run.accounts},
         holding_pools=(
             replace(run.holding_pools[0], account_id=AccountId("empty-brokerage")),
-            PreparedHoldingPool(
+            Pool(
                 agent_id=WORLD,
                 account_id=AccountId("other-brokerage"),
                 asset_id=AssetId("test_stock"),
@@ -283,7 +295,7 @@ def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> No
         run,
         tax_profiles=(replace(profile, jurisdictions=(rules,)),),
         obligations=(bill(50_000),),
-        accounts=tuple(replace(account, opening_balance=0) for account in run.accounts),
+        accounts=dict.fromkeys(run.accounts, 0),
         scheduled_transfers=(
             PreparedTransfer(
                 month=0,
@@ -532,6 +544,29 @@ def test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent(yea
     assert run == before
 
 
+def declare_pool(world: World, pool: Pool) -> None:
+    world.declare_pool(
+        agent_id=pool.agent_id, account_id=pool.account_id, asset_id=pool.asset_id, quantity_scale=pool.quantity_scale
+    )
+
+
+def hold(world: World, run: Situation) -> None:
+    """The situation's pools and opening lots."""
+    for pool in run.holding_pools:
+        declare_pool(world, pool)
+    for lot in run.initial_lots:
+        world.hold_lot(
+            lot_id=lot.lot_id,
+            agent_id=lot.agent_id,
+            account_id=lot.account_id,
+            asset_id=lot.asset_id,
+            purchase_month=lot.purchase_month,
+            quantity_scale=lot.quantity_scale,
+            units=lot.units,
+            basis=lot.basis,
+        )
+
+
 def composed(run: Situation, rollout: int = 0) -> World:
     """The situation's facts declared one at a time on one path, as an experiment would write them."""
     world = world_on(
@@ -542,10 +577,7 @@ def composed(run: Situation, rollout: int = 0) -> World:
         accounts=run.accounts,
         taxpayers=run.tax_profiles,
     )
-    for pool in run.holding_pools:
-        world.declare_pool(pool)
-    for lot in run.initial_lots:
-        world.hold(lot)
+    hold(world, run)
     for flow in run.scheduled_transfers:
         world.declare_flow(flow)
     for obligation in run.obligations:
@@ -648,10 +680,7 @@ def test_transfer_and_fifo_sale_remain_balanced(mode: Literal["dense", "forensic
     run = situation(2, 2)
     run = replace(
         run,
-        accounts=tuple(
-            replace(a, opening_balance=1000 if a.account == CASH else 2000 if a.account == EXOGENOUS else 0)
-            for a in run.accounts
-        ),
+        accounts={a: 1000 if a == CASH else 2000 if a == EXOGENOUS else 0 for a in run.accounts},
         initial_lots=(replace(run.initial_lots[0], units=2_000_000, basis=20_000),),
         scheduled_transfers=(
             PreparedTransfer(
@@ -878,12 +907,9 @@ def test_a_tracked_bill_is_demanded_in_its_months_and_paid_by_the_household() ->
 def test_a_composed_world_has_only_the_domains_it_declares() -> None:
     run = situation(horizon=2)
     world = World(MarketPath(run.series, 0, rollout_count=1), horizon_months=2)
-    for account in run.accounts:
-        world.declare_account(account)
-    for pool in run.holding_pools:
-        world.declare_pool(pool)
-    for lot in run.initial_lots:
-        world.hold(lot)
+    for account, balance in run.accounts.items():
+        world.declare_account(account=account, opening_balance=balance)
+    hold(world, run)
     world.track(_Household({0: 500}))
     capture = FinancialCapture(world, capture="forensic")
     world.start()
@@ -906,10 +932,11 @@ def test_a_composed_world_has_only_the_domains_it_declares() -> None:
     with pytest.raises(ValueError, match="no managed portfolio"):
         world.managed_portfolios()
     with pytest.raises(ValueError, match="before starting"):
-        world.declare_pool(run.holding_pools[0])
+        declare_pool(world, run.holding_pools[0])
     with pytest.raises(ValueError, match="missing public security series"):
-        World(MarketPath(run.series, 0, rollout_count=1), horizon_months=2).declare_pool(
-            replace(run.holding_pools[0], asset_id=AssetId("test-unpriced"))
+        declare_pool(
+            World(MarketPath(run.series, 0, rollout_count=1), horizon_months=2),
+            replace(run.holding_pools[0], asset_id=AssetId("test-unpriced")),
         )
 
 

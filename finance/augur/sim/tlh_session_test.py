@@ -18,7 +18,6 @@ from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import Currency
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
-    PreparedAccount,
     PreparedDistribution,
     PreparedDistributionSlice,
     PreparedJurisdiction,
@@ -111,7 +110,7 @@ def compose(case: Situation, rollout_id: int) -> World:
         else (),
     )
     for agent_id, balance in ((OWNER, case.cash), (OTHER if case.bystander else IRS, 0)):
-        world.declare_account(PreparedAccount(account=ref(agent_id), opening_balance=balance))
+        world.declare_account(account=ref(agent_id), opening_balance=balance)
     if case.taxed:
         world.track(
             TaxAuthority(

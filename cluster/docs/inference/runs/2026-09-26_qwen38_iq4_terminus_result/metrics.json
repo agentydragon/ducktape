@@ -1,0 +1,206 @@
+{
+  "task": "terminal-bench/interleaved-vigenere",
+  "task_checksum": "d20753b2349cb9f03eb638c5c9d1faeec91c73d7a06cc70cb3beee7663b719a7",
+  "trial_name": "238a75a32aad5e60b33a22ac53087790__ZHStSvL",
+  "source_revision": "6411aede31e98e0087ac3d78caf775b603f1fd01",
+  "artifact_root": "/tmp/wyrm2-qwen38-iq4-20260926",
+  "result": {
+    "reward": 1.0,
+    "exception": "AgentTimeoutError",
+    "exception_message": "Agent execution timed out after 28800.0 seconds",
+    "verifier_tests_passed": 6,
+    "agent_episodes": 257,
+    "recorded_agent_steps": 256
+  },
+  "timings": {
+    "started_at": "2026-09-26T19:11:35.462557Z",
+    "finished_at": "2026-09-27T03:12:45.362358Z",
+    "agent_execution": {
+      "started_at": "2026-09-26T19:11:39.154678Z",
+      "finished_at": "2026-09-27T03:11:39.193851Z"
+    },
+    "verifier": {
+      "started_at": "2026-09-27T03:11:50.542845Z",
+      "finished_at": "2026-09-27T03:12:45.362346Z"
+    }
+  },
+  "agent_execution_seconds": 28800.039173,
+  "harbor_tokens": {
+    "n_input_tokens": 10493692,
+    "n_cache_tokens": 9969208,
+    "n_output_tokens": 678251
+  },
+  "native_llama_timings": {
+    "prompt eval time": {
+      "requests": 266,
+      "seconds": 1214.26285,
+      "tokens": 524484
+    },
+    "eval time": {
+      "requests": 266,
+      "seconds": 16628.89517,
+      "tokens": 678251
+    },
+    "total time": {
+      "requests": 266,
+      "seconds": 17843.158030000002,
+      "tokens": 1202735
+    }
+  },
+  "bash_commands": {
+    "count": 418,
+    "sum_requested_wait_seconds": 10860.6
+  },
+  "compactions": [
+    {
+      "step_id": 35,
+      "timestamp": "2026-09-26T21:14:08.263111+00:00",
+      "previous_action_prompt_tokens": 69096,
+      "resumed_action_prompt_tokens": 6501
+    },
+    {
+      "step_id": 118,
+      "timestamp": "2026-09-26T23:14:27.796379+00:00",
+      "previous_action_prompt_tokens": 72392,
+      "resumed_action_prompt_tokens": 10778
+    },
+    {
+      "step_id": 208,
+      "timestamp": "2026-09-27T01:37:07.565951+00:00",
+      "previous_action_prompt_tokens": 71867,
+      "resumed_action_prompt_tokens": 7100
+    }
+  ],
+  "wrapper_completed_at": "2026-09-26T20:13:03-07:00",
+  "archive": {
+    "path": "/var/lib/llm-models-ssd/experiment-artifacts/wyrm2-qwen38-iq4-20260926.tar.gz",
+    "sha256": "feeb0668b5e252b7a8995ed3cfbb79471e8d268b3e3bb5ad99270fed4a43ae8b"
+  },
+  "source_artifacts": [
+    {
+      "path": "source-revision.txt",
+      "bytes": 41,
+      "sha256": "41912b188e1ad4310e3a6ed1d296967d440330a85cc80fedede8dedc204b2599"
+    },
+    {
+      "path": "source-sha256.txt",
+      "bytes": 1738,
+      "sha256": "11006c1b44c0005a405922c31ecd5da3b11e6af9e829e3932260066e78f9ce63"
+    },
+    {
+      "path": "completed.txt",
+      "bytes": 26,
+      "sha256": "b0feacc37c6176640d1a44a2a2baaefb707043e6e9b647775d7f80304d54d194"
+    },
+    {
+      "path": "queue.log",
+      "bytes": 376,
+      "sha256": "ae9c31760f2ebd57d09e74aad85344b808ef34b36abd13e1c291835aac7ac286"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/server.log",
+      "bytes": 1708965,
+      "sha256": "f58997bdff66ce3cfd133f1a3cb8a42a9718e5559f1a717d370799035f9fc57e"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/server-inspect.json",
+      "bytes": 19757,
+      "sha256": "86be218a3704803a990630410e5fca4ab81bceb9e72afddc3fe0b5877e599438"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/startup.log",
+      "bytes": 36487,
+      "sha256": "0b5c04c24af5264dd7077370fd444bb33a371d45881eae62e0532f85cb44ede0"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/harbor/job.json",
+      "bytes": 1573,
+      "sha256": "da6898265576bea4cc06a53aef5b5f074dd85d4caab2a97fdce9a5b05dce2df4"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/harbor/harbor-source-sha256.txt",
+      "bytes": 520,
+      "sha256": "afbe20053cbe9b775de86ed31ba800f349c9a952c89ce39b6768857399a4e8f2"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/harbor/jobs/attempt/result.json",
+      "bytes": 1312,
+      "sha256": "a8c69f4a2b0b043865a2336fb4b77eb756594b790dbf19f7c9b91eb908cbfe05"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__ZHStSvL/result.json",
+      "bytes": 182594,
+      "sha256": "f967be434052be8894febd6b6fb6e5865be625114130f6023d5a50fe859a7ced"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__ZHStSvL/trial.log",
+      "bytes": 43301,
+      "sha256": "8df092d44c19e57716e4626e6496f50594c4c969a6deb993889726558daba167"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__ZHStSvL/agent/trajectory.json",
+      "bytes": 2634456,
+      "sha256": "42e4a4563498a8d5021fa9c95a1bdf48c784329aa66d08a9673bcb31ec9872f4"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__ZHStSvL/agent/trajectory.summarization-1-answers.json",
+      "bytes": 936013,
+      "sha256": "b01da4c1bb216d9652dbe290d6bf40ef846acde3f29317b8ec2fac4e1a132613"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__ZHStSvL/agent/trajectory.summarization-1-questions.json",
+      "bytes": 27151,
+      "sha256": "b36905d7398937ffd2484a66559a86fab5159ddda0e5325eee31f4f22a69589f"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__ZHStSvL/agent/trajectory.summarization-1-summary.json",
+      "bytes": 924773,
+      "sha256": "d4c0f5238338f4a03ea143bcd1e341bff8e287f67e09ac8850451c838f3df84a"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__ZHStSvL/agent/trajectory.summarization-2-answers.json",
+      "bytes": 1307605,
+      "sha256": "b80e7e4051ea955f2dc841364ab2b0b963276f4690e7b0ea440477c27edcef81"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__ZHStSvL/agent/trajectory.summarization-2-questions.json",
+      "bytes": 26116,
+      "sha256": "0c3d7a3766c5bc7e7033acc598947d945cc54f84dce0c35889299fb0c47f3e87"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__ZHStSvL/agent/trajectory.summarization-2-summary.json",
+      "bytes": 1281342,
+      "sha256": "5c768f7cd128ab47cdf4aadca61951b65edd7ddc1115aecd0ae4f2d49dcee09b"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__ZHStSvL/agent/trajectory.summarization-3-answers.json",
+      "bytes": 1328012,
+      "sha256": "ae20fc25a00cd0d8dc7fb1a43a759dd0cc009911a11ea8b1334cc7a53c77e62b"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__ZHStSvL/agent/trajectory.summarization-3-questions.json",
+      "bytes": 27586,
+      "sha256": "1a6228b09a450ac3b4f135c7a5c71b3e08df11183ade9133a1bb2ba927f33552"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__ZHStSvL/agent/trajectory.summarization-3-summary.json",
+      "bytes": 1321736,
+      "sha256": "6612099b16a4da1e5a307456c758885974eae7fc65e5a2566a2828493de8058a"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__ZHStSvL/verifier/ctrf.json",
+      "bytes": 2642,
+      "sha256": "f369fa861f86d9227d668dd4f644c234fd77b6dfc352e68a2bad552f3ea180b9"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__ZHStSvL/verifier/reward.txt",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    {
+      "path": "iq4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__ZHStSvL/verifier/test-stdout.txt",
+      "bytes": 364,
+      "sha256": "03d15b6234c1c5758da37c9f70c365f974365affed3ff61f95f49f7332db0abb"
+    }
+  ]
+}

@@ -33,12 +33,9 @@ from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import Currency
 from finance.augur.sim.prepared import (
-    PreparedAccount,
     PreparedDistribution,
     PreparedDistributionSlice,
-    PreparedHoldingPool,
     PreparedJurisdiction,
-    PreparedLot,
     PreparedSeries,
 )
 from finance.augur.sim.runtime import load_jurisdictions_for
@@ -220,9 +217,7 @@ def _federal_ca_taxes(panel: AnnualPanel, start_years: Sequence[int], tax_law: T
 
 def _declare_taxes(world: World, taxes: FederalCaTaxes, rollout_id: int) -> None:
     """The window's tax authority, with sleeve payouts characterized by issuer."""
-    world.declare_account(
-        PreparedAccount(account=AccountRef(agent_id=TAX_AUTHORITY, account_id=CHECKING), opening_balance=0)
-    )
+    world.declare_account(account=AccountRef(agent_id=TAX_AUTHORITY, account_id=CHECKING), opening_balance=0)
     world.track(TaxAuthority(taxes.profile, indexation=taxes.laws[rollout_id]))
     for sleeve in Sleeve:
         world.declare_distribution(
@@ -266,12 +261,10 @@ def compose_world(windows: AnnualWindows, rollout_id: int, *, wealth: Decimal, w
         *(AccountRef(agent_id=RETIREE, account_id=account_id) for account_id in retiree_accounts),
         AccountRef(agent_id=WORLD, account_id=CHECKING),
     ):
-        world.declare_account(PreparedAccount(account=account, opening_balance=0))
+        world.declare_account(account=account, opening_balance=0)
     for sleeve in Sleeve:
         world.declare_pool(
-            PreparedHoldingPool(
-                agent_id=RETIREE, account_id=BROKERAGE, asset_id=AssetId(sleeve), quantity_scale=QUANTITY_SCALE
-            )
+            agent_id=RETIREE, account_id=BROKERAGE, asset_id=AssetId(sleeve), quantity_scale=QUANTITY_SCALE
         )
     if taxes is not None:
         _declare_taxes(world, taxes, rollout_id)
@@ -279,16 +272,14 @@ def compose_world(windows: AnnualWindows, rollout_id: int, *, wealth: Decimal, w
         if not weights[sleeve]:
             continue
         value = round_currency_amount(wealth * weights[sleeve] / total, quantum=CURRENCY.quantum)
-        world.hold(
-            PreparedLot(
-                lot_id=LotId(f"{sleeve}_opening"),
-                agent_id=RETIREE,
-                account_id=BROKERAGE,
-                asset_id=AssetId(sleeve),
-                purchase_month=-1,
-                quantity_scale=QUANTITY_SCALE,
-                units=quantity_to_quanta(value, scale=QUANTITY_SCALE),
-                basis=CURRENCY.quanta(value),
-            )
+        world.hold_lot(
+            lot_id=LotId(f"{sleeve}_opening"),
+            agent_id=RETIREE,
+            account_id=BROKERAGE,
+            asset_id=AssetId(sleeve),
+            purchase_month=-1,
+            quantity_scale=QUANTITY_SCALE,
+            units=quantity_to_quanta(value, scale=QUANTITY_SCALE),
+            basis=CURRENCY.quanta(value),
         )
     return world

@@ -32,13 +32,10 @@ from finance.augur.sim.jurisdictions import (
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import MAX_COUNT, USD
 from finance.augur.sim.prepared import (
-    PreparedAccount,
     PreparedDistribution,
     PreparedDistributionSlice,
-    PreparedHoldingPool,
     PreparedIndexedAmount,
     PreparedJurisdiction,
-    PreparedLot,
     PreparedObligation,
     PreparedSeries,
     PreparedTransfer,
@@ -87,8 +84,9 @@ def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=account_id)
 
 
-def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=ref(agent_id, account_id), opening_balance=money(balance))
+def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return ref(agent_id, account_id), money(balance)
 
 
 def flat(asset: SecurityKey, price: Decimal | int, *, snapshots: int) -> PreparedSeries:
@@ -104,23 +102,13 @@ def distribution_rate(asset: SecurityKey, amount: Decimal | int, *, snapshots: i
     )
 
 
-def pool(asset: SecurityKey) -> PreparedHoldingPool:
-    return PreparedHoldingPool(
-        agent_id=ALICE, account_id=BROKERAGE, asset_id=AssetId(asset.symbol), quantity_scale=SCALE
-    )
+@dataclass(frozen=True)
+class OpeningLot:
+    """Alice's whole shares of `asset` in brokerage, bought two years before the path starts."""
 
-
-def lot(asset: SecurityKey, *, units: float, basis: Decimal | int, purchase_month: int = -24) -> PreparedLot:
-    return PreparedLot(
-        lot_id=LotId(f"opening-{asset.symbol}"),
-        agent_id=ALICE,
-        account_id=BROKERAGE,
-        asset_id=AssetId(asset.symbol),
-        purchase_month=purchase_month,
-        quantity_scale=SCALE,
-        units=int(units * SCALE),
-        basis=money(basis),
-    )
+    asset: SecurityKey
+    shares: int
+    basis: Decimal | int
 
 
 def claim(month: int, amount: Decimal | int, identifier: str = "spending") -> PreparedObligation:
@@ -163,11 +151,12 @@ class Situation:
 
     horizon_months: int
     series: tuple[PreparedSeries, ...]
-    accounts: tuple[PreparedAccount, ...]
+    accounts: tuple[tuple[AccountRef, int], ...]
     # A fresh household per path: it keeps the path's CPI history and purchase identities.
     funding: partial[CashBandHousehold]
-    pools: tuple[PreparedHoldingPool, ...] = ()
-    lots: tuple[PreparedLot, ...] = ()
+    # The securities Alice's brokerage holds a pool of, whether or not she holds any yet.
+    pools: tuple[SecurityKey, ...] = ()
+    lots: tuple[OpeningLot, ...] = ()
     distributions: tuple[PreparedDistribution, ...] = ()
     claims: tuple[PreparedObligation, ...] = ()
     transfers: tuple[PreparedTransfer, ...] = ()
@@ -184,8 +173,8 @@ def compose(case: Situation, rollout_id: int) -> World:
         income_sources=(ORDINARY_INCOME, *case.interest_sources),
         jurisdictions=(PreparedJurisdiction(jurisdiction_id=SYNTHETIC, level=TAX.level),) if case.taxed else (),
     )
-    for opening in case.accounts:
-        world.declare_account(opening)
+    for opened, balance in case.accounts:
+        world.declare_account(account=opened, opening_balance=balance)
     if case.taxed:
         world.track(
             TaxAuthority(
@@ -197,10 +186,19 @@ def compose(case: Situation, rollout_id: int) -> World:
                 indexation=FixedNominalLaw(),
             )
         )
-    for holding_pool in case.pools:
-        world.declare_pool(holding_pool)
-    for holding in case.lots:
-        world.hold(holding)
+    for asset in case.pools:
+        world.declare_pool(agent_id=ALICE, account_id=BROKERAGE, asset_id=AssetId(asset.symbol), quantity_scale=SCALE)
+    for held in case.lots:
+        world.hold_lot(
+            lot_id=LotId(f"opening-{held.asset.symbol}"),
+            agent_id=ALICE,
+            account_id=BROKERAGE,
+            asset_id=AssetId(held.asset.symbol),
+            purchase_month=-24,
+            quantity_scale=SCALE,
+            units=held.shares * SCALE,
+            basis=money(held.basis),
+        )
     for distribution in case.distributions:
         world.declare_distribution(distribution)
     for flow in case.transfers:
@@ -253,8 +251,8 @@ def base(*, purchases: bool = False, zero_exit: bool = False, single: bool = Fal
         series=tuple(flat(asset, 10, snapshots=14) for asset in assets),
         accounts=(account(ALICE, balance=100), account(WORLD, balance=100)),
         funding=allocation(*assets, purchases=purchases, zero_exit=zero_exit),
-        pools=tuple(pool(asset) for asset in assets),
-        lots=tuple(lot(asset, units=100 // len(assets), basis=500 // len(assets)) for asset in assets),
+        pools=assets,
+        lots=tuple(OpeningLot(asset, shares=100 // len(assets), basis=500 // len(assets)) for asset in assets),
         claims=(claim(0, 500), claim(12, 50)),
         transfers=()
         if zero_exit
@@ -450,7 +448,7 @@ def indexed_bounds() -> Situation:
             PreparedSeries(series_id="inflation", snapshots=7, values=(2, 3, 5, 7, 11, 13, 19, 4, 1, 2, 99, 6, 88, 40)),
         ),
         accounts=(account(ALICE), account(WORLD)),
-        lots=(lot(STOCK, units=100, basis=1),),
+        lots=(OpeningLot(STOCK, shares=100, basis=1),),
         claims=(),
         transfers=(),
         taxed=False,
@@ -480,7 +478,7 @@ def test_indexed_bound_overflow_remains_an_error_not_a_financial_stop() -> None:
     world = compose(
         replace(
             case,
-            accounts=(PreparedAccount(account=ref(ALICE), opening_balance=MAX_COUNT), account(WORLD)),
+            accounts=((ref(ALICE), MAX_COUNT), account(WORLD)),
             lots=(),
             funding=partial(case.funding, floor=index, ceiling=index),
         ),

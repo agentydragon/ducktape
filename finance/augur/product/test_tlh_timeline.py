@@ -21,7 +21,7 @@ from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import Currency
-from finance.augur.sim.prepared import PreparedAccount, PreparedJurisdiction, PreparedSeries, PreparedTlhPortfolio
+from finance.augur.sim.prepared import PreparedJurisdiction, PreparedSeries, PreparedTlhPortfolio
 from finance.augur.sim.results import Finished
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -51,9 +51,7 @@ def compose(price: int) -> World:
     )
     for agent_id, balance in ((OWNER, 10), (AgentId("irs"), 0)):
         world.declare_account(
-            PreparedAccount(
-                account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")), opening_balance=balance
-            )
+            account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")), opening_balance=balance
         )
     world.track(
         TaxAuthority(
