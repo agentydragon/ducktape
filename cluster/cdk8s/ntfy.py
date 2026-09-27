@@ -314,7 +314,7 @@ def ntfy(
     artifact: ArtifactGeneratorSpecArtifacts,
     root: Path,
     cnpg: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
     kyverno: Kustomization,
 ) -> Kustomization:
@@ -339,7 +339,7 @@ def ntfy(
         decryption=sops_decryption(resources),
         depends_on=flux_kustomization_depends_on_many(
             cnpg,
-            external_secrets_config,
+            external_secrets_operator,
             monitoring_crds,
             # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
             kyverno,

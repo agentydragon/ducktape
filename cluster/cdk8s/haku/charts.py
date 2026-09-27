@@ -113,7 +113,7 @@ def haku_console(
     artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
     local_path_provisioner: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     """Build the Flux graph node from its predecessor nodes."""
@@ -140,7 +140,7 @@ def haku_console(
             # The Cluster operator and the storage class its PVCs bind.
             cnpg,
             local_path_provisioner,
-            external_secrets_config,
+            external_secrets_operator,
             # The ServiceMonitor CRD.
             monitoring_crds,
         ),

@@ -117,7 +117,7 @@ def plaid_mcp(
     artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
     local_path_provisioner: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     valkey: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
@@ -131,7 +131,7 @@ def plaid_mcp(
         depends_on=flux_kustomization_depends_on_many(
             cnpg,
             local_path_provisioner,
-            external_secrets_config,
+            external_secrets_operator,
             valkey,
             # ServiceMonitor
             monitoring_crds,
@@ -216,7 +216,7 @@ def agent_shared_secrets(
 def tana_mcp(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     valkey: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
@@ -228,7 +228,7 @@ def tana_mcp(
         timeout="5m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config,
+            external_secrets_operator,
             valkey,
             # ServiceMonitor + PrometheusRule
             monitoring_crds,

@@ -221,7 +221,10 @@ def write_manifests(root: Path) -> None:
 
 
 def flux_webhook(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, ntfy: Kustomization, external_secrets_config: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    ntfy: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -231,5 +234,5 @@ def flux_webhook(
         wait=None,
         timeout="5m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(ntfy, external_secrets_config),
+        depends_on=flux_kustomization_depends_on_many(ntfy, external_secrets_operator),
     )
