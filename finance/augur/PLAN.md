@@ -32,6 +32,17 @@ Every change is checked against an independent calculation, never a copy of the 
   California's unequal proportions) and the true-up, with the safe-harbor rule only as it
   sets the amounts; no penalties.
 - **SALT phase-out:** the SALT cap's income phase-out.
+- **Interest tax character:** interest is tagged with its issuer's jurisdiction
+  (`InterestIncome.issuer_jurisdiction_id`), and each jurisdiction derives exemption from the
+  issuer's level and whether the issuer is itself (`Jurisdiction.taxes_interest_from`). A CA
+  muni is recorded as issued by `california`, which did not issue it. Exemption belongs to the
+  obligation's legal regime, not its issuer: Ginnie Mae and Fannie Mae interest is taxable by
+  states while Federal Home Loan Bank interest is not, territorial bonds are exempt in every
+  state, and Build America Bonds are taxable munis. Tag interest with a named tax character
+  instead (`Treasury`, `Municipal(state)`, `Taxable`; `Territorial` and agency variants when
+  a product needs them), and have each jurisdiction's data list the characters it exempts.
+  Fund tax splits and bond declarations name characters; shares of one character add. The
+  vocabulary is agreed with the owner before code.
 - **NIIT:** net rental income becomes net investment income (`OrdinaryIncome` merges rent with
   wages today); Form 8960 line 9 deductions.
 - **Housing basis:** `Properties.sell` leaves out the closing costs `sim/property.py`

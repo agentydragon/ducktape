@@ -10,7 +10,6 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -25,9 +24,9 @@ py_library(
         "//cluster/cdk8s:env_helpers",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:forgejo_images",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/cnpg:database",

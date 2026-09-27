@@ -46,6 +46,7 @@ from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecEndpoints, ServiceMonitorSpecSelector
 
+from cluster.cdk8s import pod_policy
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.fleet_rules import add_fleet_rules
@@ -53,7 +54,6 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.home_assistant.app import HA_MCP_TOKEN
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -190,7 +190,6 @@ class HaMcpApp(Construct):
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
             automount_service_account_token=False,
         )
-        apply_pod_spec_patches(deployment)
 
         tmp_volume = Volume.from_empty_dir(self, "tmp-volume", "tmp")
         data_volume = Volume.from_empty_dir(self, "data-volume", "data")
@@ -257,6 +256,7 @@ class HaMcpApp(Construct):
             # could break the running facade. Same rationale as litellm/proxy.py.
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False, ensure_non_root=False),
         )
+        pod_policy.harden(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:

@@ -30,12 +30,11 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
-from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s import cilium, namespaces, pod_policy
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.ssh_mcp.config import (
@@ -130,7 +129,6 @@ class SshMcp(Construct):
         )
         # The Deployment selector is immutable; retain its existing labels for Flux adoption.
         deployment.select(LabelSelector.of(labels=LABELS))
-        apply_pod_spec_patches(deployment)
         bearer = Secret.from_secret_name(self, "bearer-secret-ref", BEARER_SECRET_NAME)
         deployment.add_container(
             name="server",
@@ -184,6 +182,7 @@ class SshMcp(Construct):
                 ],
             )
         )
+        pod_policy.harden(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:

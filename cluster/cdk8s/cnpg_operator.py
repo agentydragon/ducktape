@@ -18,6 +18,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -36,7 +37,7 @@ _BARMAN_CLOUD = "plugin-barman-cloud"
 # on a control-plane node.
 _CRITICAL_VALUES: dict[str, object] = {
     "priorityClassName": "system-cluster-critical",
-    "tolerations": [{"key": "node-role.kubernetes.io/control-plane", "effect": "NoSchedule", "operator": "Exists"}],
+    "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
 }
 
 

@@ -28,7 +28,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
 
-from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s import cilium, namespaces, node_scheduling
 from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import SECRET_NAME
@@ -142,11 +142,7 @@ def _deployment(scope: Construct) -> None:
                     # PVC, it can't tolerate that churn — each eviction breaks the auto-refresh worker's
                     # session. Allow the zone's otherwise-idle control-plane nodes as real overflow
                     # capacity instead of only ever bouncing between the two contended workers.
-                    tolerations=[
-                        k8s.Toleration(
-                            key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                        )
-                    ],
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     init_containers=[
                         k8s.Container(
                             name="init-auth-dir",

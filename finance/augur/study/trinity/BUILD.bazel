@@ -37,6 +37,7 @@ py_library(
         "//finance/augur/sim:money",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:results",
+        "//finance/augur/sim:schedule",
         "//finance/augur/sim:session",
         "//finance/augur/sim:world",
         "@pypi//numpy",
