@@ -45,6 +45,13 @@ build time.
   has already invited a click for nothing. Unlike the `textRef === null` case just below it (plain dimmed
   "Reasoning" text, no toggle at all), there's no cheap signal to suppress the toggle before the lazy fetch
   resolves; worth figuring out one (e.g. from the fold/view layer) rather than always rendering it optimistically.
+- **Collapsing a long expanded block requires scrolling back up to its toggle**: `RetainedDisclosure`
+  (`retained_disclosures.tsx`) is a plain `<details>`/`<summary>` -- opening a long one (`LazyBody`'s
+  Reasoning/Arguments/Output, or `CollapsibleRows`'s "N tool call(s), N reasoning step(s)" run/lifecycle wrapper,
+  both in `projected_session.tsx`) and scrolling down through its content scrolls the `<summary>` that collapses
+  it off the top of the screen, so collapsing means scrolling back up first. One direction: keep the
+  summary/toggle stuck to the viewport top while its content is still in view, only releasing it once scrolled
+  fully past -- would need a custom sticky-summary treatment rather than the native `<details>` element as is.
 - **Consider squashing the "observation" naming layer**: not remembered as a deliberate design choice. `Event`
   (`protocol/event.proto`)'s payload is a `oneof` field literally named `observation`; that name then propagated
   outward into `runner/observation.py`'s `Observation` type, the archive/API layer
