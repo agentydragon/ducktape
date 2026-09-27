@@ -24,6 +24,7 @@ ACTIVITYWATCH_READ_POLICY = "activitywatch-read"
 AIQUOTA_READ_POLICY = "aiquota-read"
 HAKU_MAILBOX_POLICY = "haku-mailbox"
 COINBASE_POLICY = "coinbase"
+BUILDBUDDY_POLICY = "buildbuddy"
 
 
 def settings(

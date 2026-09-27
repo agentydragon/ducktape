@@ -4166,6 +4166,7 @@ spec:
     - github-clone
     - github-agentydragon-agent
     - github-actions-logs
+    - buildbuddy
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
@@ -5041,3 +5042,51 @@ spec:
         - /jmap/**
       credentialRef:
         name: haku-mailbox
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: buildbuddy-api-key
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: buildbuddy-api-key
+        property: api-key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: buildbuddy-api-key
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: buildbuddy
+  namespace: agentplane-staging
+spec:
+  description: The shared BuildBuddy API key (cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml), the same one CI's BUILDBUDDY_API_KEY carries, copied into this namespace by ESO. BuildBuddy uses this one key for its JSON-over-HTTP API and its gRPC services alike, presented as the literal value of the `x-buildbuddy-api-key` header/metadata entry -- this is a local-Bazel-client credential only: `bb remote`'s hosted runner copies the same value into the Bazel command it executes, which this proxy cannot see or protect (agentplane/docs/buildbuddy_remote_auth.md).
+  source:
+    secretRef:
+      name: buildbuddy-api-key
+      key: api-key
+  targets:
+    - header: x-buildbuddy-api-key
+      method: wholeValue
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: buildbuddy
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - app.buildbuddy.io
+        - remote.buildbuddy.io
+      credentialRef:
+        name: buildbuddy

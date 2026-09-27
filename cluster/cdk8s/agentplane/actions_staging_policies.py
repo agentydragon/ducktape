@@ -38,6 +38,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
     BASIC_POLICY,
+    BUILDBUDDY_POLICY,
     COINBASE_POLICY,
     FORGEJO_HAKU_POLICY,
     GITHUB_ACTIONS_LOGS_POLICY,
@@ -522,6 +523,10 @@ def add_staging_action_policies(scope: Construct) -> None:
     # `github-actions-logs` presents nothing either: GET-only to the Azure Blob Storage hosts
     # a workflow run's job logs and artifacts 302 to, so a sandbox of this caller's can follow
     # that redirect and read its own PR's CI output (egress.py).
+    # `buildbuddy` presents the shared BuildBuddy API key as the literal `x-buildbuddy-api-key`
+    # header/metadata value, letting this caller's sandboxes run `bazel --config=rbe` directly
+    # against BuildBuddy's remote cache and Remote Execution instead of needing bbr/BuildBuddy
+    # CLI tooling this namespace otherwise lacks (egress_staging_credentials.py).
     EgressBinding(
         scope,
         "egressbinding-claude-ai",
@@ -549,6 +554,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 GITHUB_CLONE_POLICY,
                 GITHUB_AGENTYDRAGON_AGENT_POLICY,
                 GITHUB_ACTIONS_LOGS_POLICY,
+                BUILDBUDDY_POLICY,
             ],
         ),
     )
