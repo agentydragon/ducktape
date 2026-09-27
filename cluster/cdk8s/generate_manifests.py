@@ -537,7 +537,11 @@ def generate_manifests(root: Path) -> None:
         flux_chart, write_directory(root, forgejo_cache_artifact, forgejo_cache.chart), valkey_kustomization
     )
     haku_forgejo_tea_artifact = artifact(haku_forgejo_tea.NAME, haku_forgejo_tea.OUTPUT_DIR)
-    haku_forgejo_tea.haku_forgejo_tea(flux_chart, haku_forgejo_tea_artifact, haku_rbac_kustomization)
+    haku_forgejo_tea.haku_forgejo_tea(
+        flux_chart,
+        write_directory(root, haku_forgejo_tea_artifact, siblings=["haku-forgejo-tea.sops.yaml"]),
+        haku_rbac_kustomization,
+    )
     claude_rbac_artifact = artifact("claude-rbac", agent_rbac_base.OUTPUT_DIR)
     claude_rbac_kustomization = agent_rbac_base.claude_rbac(
         flux_chart, write_directory(root, claude_rbac_artifact, agent_rbac_base.chart), kyverno_policies_kustomization
@@ -598,7 +602,9 @@ def generate_manifests(root: Path) -> None:
     )
     agent_shared_secrets_artifact = artifact("agent-shared-secrets", f"{HAND_WRITTEN_ROOT}/agents/shared-secrets")
     agents_flux_kustomizations.agent_shared_secrets(
-        flux_chart, agent_shared_secrets_artifact, claude_rbac_kustomization
+        flux_chart,
+        write_directory(root, agent_shared_secrets_artifact, siblings=["attic-push-token.sops.yaml"]),
+        claude_rbac_kustomization,
     )
     external_creds_artifact = artifact("external-creds", external_creds.OUTPUT_DIR)
     external_creds.external_creds(
