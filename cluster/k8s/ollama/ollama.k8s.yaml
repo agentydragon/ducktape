@@ -98,7 +98,7 @@ spec:
             - name: CUDA_DEVICE_ORDER
               value: PCI_BUS_ID
             - name: LLAMA_ARG_FIT_TARGET
-              value: 2048,0
+              value: 4096,2048
             - name: OLLAMA_HOST
               value: 0.0.0.0:11434
             - name: NVIDIA_VISIBLE_DEVICES
