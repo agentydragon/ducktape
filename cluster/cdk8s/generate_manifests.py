@@ -635,7 +635,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, docker_ci_artifact, claude_rbac_kustomization, cert_manager_kustomization, kyverno_kustomization
     )
     atuin_artifact = artifact("atuin", atuin_server.OUTPUT_DIR)
-    atuin_server.atuin(flux_chart, atuin_artifact, cnpg_kustomization)
+    atuin_kustomization = atuin_server.atuin(flux_chart, atuin_artifact, cnpg_kustomization)
     authentik_artifact = artifact("authentik", f"{HAND_WRITTEN_ROOT}/authentik")
     authentik_flux_kustomizations.authentik(
         flux_chart, authentik_artifact, cnpg_kustomization, monitoring_crds_kustomization
@@ -691,7 +691,7 @@ def generate_manifests(root: Path) -> None:
     )
     atuin_user_provisioner_artifact = artifact("atuin-user-provisioner", atuin_user_provisioner.OUTPUT_DIR)
     atuin_user_provisioner.atuin_user_provisioner(
-        flux_chart, atuin_user_provisioner_artifact, user_agentydragon_kustomization
+        flux_chart, atuin_user_provisioner_artifact, atuin_kustomization, user_agentydragon_kustomization
     )
     agent_machine_access_tf_artifact = artifact("agent-machine-access-tf", agent_machine_access.OUTPUT_DIR)
     agent_machine_access.agent_machine_access_tf(
@@ -795,7 +795,7 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     matrix_app_artifact = artifact("matrix-app", matrix.OUTPUT_DIR)
-    matrix.matrix(flux_chart, matrix_app_artifact, cnpg_kustomization)
+    matrix_kustomization = matrix.matrix(flux_chart, matrix_app_artifact, cnpg_kustomization)
     headlamp_app_artifact = artifact("headlamp-app", headlamp.OUTPUT_DIR)
     headlamp.headlamp(flux_chart, headlamp_app_artifact)
     grafana_instance_artifact = artifact("grafana-instance", grafana_instance.OUTPUT_DIR)
@@ -979,7 +979,7 @@ def generate_manifests(root: Path) -> None:
     )
     matrix_user_provisioner_artifact = artifact("matrix-user-provisioner", matrix_user_provisioner.OUTPUT_DIR)
     matrix_user_provisioner.matrix_user_provisioner(
-        flux_chart, matrix_user_provisioner_artifact, external_secrets_operator_kustomization
+        flux_chart, matrix_user_provisioner_artifact, external_secrets_operator_kustomization, matrix_kustomization
     )
     nix_cache_artifact = artifact("nix-cache", nix_cache_attic.OUTPUT_DIR)
     nix_cache_flux_kustomizations.nix_cache(

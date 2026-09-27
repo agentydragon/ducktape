@@ -158,7 +158,7 @@ def write_manifests(root: Path) -> None:
 
 
 def atuin_user_provisioner(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, user_agentydragon: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, atuin: Kustomization, user_agentydragon: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -166,5 +166,5 @@ def atuin_user_provisioner(
         artifact,
         retry_interval=None,
         wait=None,
-        depends_on=flux_kustomization_depends_on_many(user_agentydragon),
+        depends_on=flux_kustomization_depends_on_many(atuin, user_agentydragon),
     )

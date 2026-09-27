@@ -1837,6 +1837,8 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
+    - name: atuin
+      namespace: ducktape-flux
     - name: user-agentydragon
       namespace: ducktape-flux
   interval: 10m
@@ -3433,6 +3435,8 @@ metadata:
 spec:
   dependsOn:
     - name: external-secrets-operator
+      namespace: ducktape-flux
+    - name: matrix
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
