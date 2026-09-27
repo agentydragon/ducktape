@@ -18,6 +18,7 @@ import pytest_bazel
 from google.protobuf import json_format
 from playwright.async_api import (
     APIResponse,
+    Locator,
     Page,
     Request,
     Route,
@@ -746,30 +747,14 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
     await history.hover()
     # The app adopts the reader's position at the gesture's scrollend. Rows entering the window can
     # still load and be re-measured after it, and the scroll correction for a re-measure lands a
-    # frame after its commit. Sample that same position once two consecutive frames agree.
+    # frame after its commit; capture_reading_anchor samples once two consecutive frames agree.
     gesture = await history.evaluate_handle(
         "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
     )
     await page.mouse.wheel(0, -600)
     async with asyncio.timeout(30):
         await gesture.evaluate("gesture => gesture.ended")
-        reading_anchor = await history.evaluate(
-            """area => new Promise(resolve => {
-                const sample = () => {
-                    const top = area.getBoundingClientRect().top;
-                    const item = [...area.querySelectorAll('[data-thread-anchor]')].find(
-                        item => item.getBoundingClientRect().bottom > top
-                    );
-                    return {cursor: item.dataset.threadAnchor, offset: item.getBoundingClientRect().top - top};
-                };
-                const settle = previous => requestAnimationFrame(() => {
-                    const current = sample();
-                    if (current.cursor === previous.cursor && current.offset === previous.offset) resolve(current);
-                    else settle(current);
-                });
-                requestAnimationFrame(() => settle(sample()));
-            })"""
-        )
+        reading_anchor = await capture_reading_anchor(history)
     await gesture.dispose()
     updated = source.append(
         event_pb2.Event(
@@ -830,6 +815,30 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
     await page.set_viewport_size({"width": 412 if phone else 1280, "height": 900})
     await expect_history_bottom(page)
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-resumed.png")
+
+
+async def capture_reading_anchor(area: Locator) -> dict[str, str | float]:
+    """The first row whose bottom is below the viewport top, and its position -- the reader's
+    place, sampled once two consecutive frames agree so a pending re-measure right after a
+    just-ended gesture cannot register as a false position."""
+    return await area.evaluate(
+        """area => new Promise(resolve => {
+            const sample = () => {
+                const top = area.getBoundingClientRect().top;
+                const row = [...area.querySelectorAll('[data-thread-anchor]')].find(
+                    candidate => candidate.getBoundingClientRect().bottom > top
+                );
+                const rowTop = row.getBoundingClientRect().top;
+                return { cursor: row.dataset.threadAnchor, top: rowTop, offset: rowTop - top };
+            };
+            const settle = previous => requestAnimationFrame(() => {
+                const current = sample();
+                if (current.cursor === previous.cursor && current.top === previous.top) resolve(current);
+                else settle(current);
+            });
+            requestAnimationFrame(() => settle(sample()));
+        })"""
+    )
 
 
 async def expect_reading_anchor(page: Page, anchor: dict[str, str | float]) -> None:

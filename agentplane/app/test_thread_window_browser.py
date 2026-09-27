@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest_bazel
 from playwright.async_api import Page, Request, Route, expect
 
-from agentplane.app.test_thread_browser import ThreadBrowser, db_url, expect_reading_anchor
+from agentplane.app.test_thread_browser import ThreadBrowser, capture_reading_anchor, db_url, expect_reading_anchor
 from agentplane.protocol import event_log_pb2, event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -132,23 +132,7 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
         async with asyncio.timeout(30):
             await held.asked.wait()
             await gesture.evaluate("gesture => gesture.ended")
-            anchor = await history.evaluate(
-                """area => new Promise(resolve => {
-                    const sample = () => {
-                        const top = area.getBoundingClientRect().top;
-                        const row = [...area.querySelectorAll('[data-thread-anchor]')]
-                            .find(candidate => candidate.getBoundingClientRect().bottom > top);
-                        const rowTop = row.getBoundingClientRect().top;
-                        return { cursor: row.dataset.threadAnchor, top: rowTop, offset: rowTop - top };
-                    };
-                    const settle = previous => requestAnimationFrame(() => {
-                        const current = sample();
-                        if (current.cursor === previous.cursor && current.top === previous.top) resolve(current);
-                        else settle(current);
-                    });
-                    requestAnimationFrame(() => settle(sample()));
-                })"""
-            )
+            anchor = await capture_reading_anchor(history)
         await gesture.dispose()
         await expect(loading).to_be_visible()
         await page.screenshot(path=undeclared_outputs_dir() / "thread-window-loading-earlier.png")
@@ -173,6 +157,43 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     assert len(_handles(urls)) == 1
     assert len([request for request in requests if _older_page(request)]) == 1
     await page.screenshot(path=undeclared_outputs_dir() / "thread-window-retained-reader.png")
+
+
+async def test_an_older_page_landing_mid_gesture_does_not_move_the_reader(thread_browser: ThreadBrowser) -> None:
+    """test_a_growing_thread_stays_one_shape... releases the held older-page response only after
+    the scroll-up gesture has already settled (scrollend fired). A real fast scroll can instead
+    have that response land while the browser is still between the scroll and its later
+    scrollend -- the race a live report described as the view jumping while scrolling up to see
+    the loading-earlier banner."""
+    page = thread_browser.page
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
+    latest = _append_items(thread_browser, "window-item", range(70))
+    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+    await page.reload()
+    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    loading = history.get_by_role("status").filter(has_text="Loading earlier…")
+    await history.hover()
+    async with _holding_older_pages(page) as held:
+        gesture = await history.evaluate_handle(
+            "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
+        )
+        await page.mouse.wheel(0, -10_000)
+        async with asyncio.timeout(30):
+            await held.asked.wait()
+        # Unlike test_a_growing_thread_stays_one_shape..., release before the gesture settles: the
+        # response lands while the browser is still between the scroll and its later scrollend.
+        anchor = await capture_reading_anchor(history)
+        held.release.set()
+        await expect(loading).to_have_count(0)
+        async with asyncio.timeout(30):
+            await gesture.evaluate("gesture => gesture.ended")
+        await gesture.dispose()
+        await _frames(page)
+        await expect_reading_anchor(page, anchor)
+        await page.screenshot(path=undeclared_outputs_dir() / "thread-window-mid-gesture-prepend.png")
 
 
 async def test_a_tail_too_short_to_scroll_loads_the_rows_before_it_unasked(thread_browser: ThreadBrowser) -> None:
