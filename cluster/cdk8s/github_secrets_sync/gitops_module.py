@@ -32,7 +32,6 @@ def github_secrets_sync(
     artifact: ArtifactGeneratorSpecArtifacts,
     tofu_controller: Kustomization,
     github_secrets_sync_secrets: Kustomization,
-    forgejo_images: Kustomization,
     seaweedfs_pr_visuals_bucket: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
@@ -41,12 +40,6 @@ def github_secrets_sync(
         artifact,
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(
-            tofu_controller,
-            github_secrets_sync_secrets,
-            # The Terraform module reads the canonical ducktape-ci registry credential
-            # from forgejo-images before publishing it to gaffer-private's GitHub Actions
-            # secrets.
-            forgejo_images,
-            seaweedfs_pr_visuals_bucket,
+            tofu_controller, github_secrets_sync_secrets, seaweedfs_pr_visuals_bucket
         ),
     )

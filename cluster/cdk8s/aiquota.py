@@ -348,8 +348,6 @@ def aiquota(
     flux_chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     root: Path,
-    external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
     cli_proxy_api: Kustomization,
     external_secrets_operator: Kustomization,
     clickhouse_schema: Kustomization,
@@ -373,8 +371,6 @@ def aiquota(
         # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config,
-            forgejo_images,
             # Provides the shared namespace and the CLIProxyAPI management Secret.
             cli_proxy_api,
             # Materializes the narrow mirrored copies of the API bearer for its

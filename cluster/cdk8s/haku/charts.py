@@ -113,11 +113,10 @@ def haku_console(
     artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
     local_path_provisioner: Kustomization,
-    forgejo_images: Kustomization,
     agent_machine_access_tf: Kustomization,
     reflector: Kustomization,
     external_creds: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     """Build the Flux graph node from its predecessor nodes."""
@@ -144,7 +143,6 @@ def haku_console(
             # The Cluster operator and the storage class its PVCs bind.
             cnpg,
             local_path_provisioner,
-            forgejo_images,
             # TF creates the Authentik clients and haku-console-oidc Secret;
             # the console does OIDC discovery synchronously at startup.
             agent_machine_access_tf,
@@ -152,7 +150,7 @@ def haku_console(
             # into this namespace.
             reflector,
             external_creds,
-            external_secrets_config,
+            external_secrets_operator,
             # The ServiceMonitor CRD.
             monitoring_crds,
         ),

@@ -324,10 +324,9 @@ def write_manifests(root: Path) -> None:
 def cli_proxy_api(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     cert_manager_environment: Kustomization,
     sso_providers_tf: Kustomization,
-    forgejo_images: Kustomization,
 ) -> Kustomization:
     name = "cli-proxy-api"
     return flux_kustomization(
@@ -338,6 +337,6 @@ def cli_proxy_api(
         timeout="5m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config, cert_manager_environment, sso_providers_tf, forgejo_images
+            external_secrets_operator, cert_manager_environment, sso_providers_tf
         ),
     )

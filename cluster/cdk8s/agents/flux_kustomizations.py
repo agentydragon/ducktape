@@ -69,7 +69,6 @@ def authentik_jwt_rotation(
 def forgejo_token_rotation(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    forgejo_images: Kustomization,
     authentik_jwt_rotation: Kustomization,
     forgejo_claude: Kustomization,
     haku_state: Kustomization,
@@ -83,7 +82,6 @@ def forgejo_token_rotation(
         retry_interval=None,
         wait=None,
         depends_on=flux_kustomization_depends_on_many(
-            forgejo_images,
             # owns the agents-infra namespace
             authentik_jwt_rotation,
             forgejo_claude,
@@ -138,10 +136,9 @@ def haku_openclaw_spike_app(
 def plaid_mcp(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    forgejo_images: Kustomization,
     cnpg: Kustomization,
     local_path_provisioner: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     valkey: Kustomization,
     agent_machine_access_tf: Kustomization,
     reflector: Kustomization,
@@ -155,10 +152,9 @@ def plaid_mcp(
         timeout="10m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            forgejo_images,
             cnpg,
             local_path_provisioner,
-            external_secrets_config,
+            external_secrets_operator,
             valkey,
             agent_machine_access_tf,
             reflector,
@@ -246,7 +242,7 @@ def tana_mcp(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     external_creds: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     valkey: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
@@ -259,7 +255,7 @@ def tana_mcp(
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
             external_creds,
-            external_secrets_config,
+            external_secrets_operator,
             valkey,
             # ServiceMonitor + PrometheusRule
             monitoring_crds,

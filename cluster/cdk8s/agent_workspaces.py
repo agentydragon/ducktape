@@ -278,7 +278,7 @@ def write_manifests(root: Path) -> None:
 def agent_workspaces_app(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     agent_sandbox_controller: Kustomization,
     kyverno_policies: Kustomization,
 ) -> Kustomization:
@@ -289,7 +289,7 @@ def agent_workspaces_app(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config,
+            external_secrets_operator,
             # CRDs + controller
             agent_sandbox_controller,
             # CleanupPolicy CRD and cleanup-controller permissions

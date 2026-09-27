@@ -293,9 +293,8 @@ def public_coder_agent_devbox(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     kubevirt: Kustomization,
-    forgejo_images: Kustomization,
     external_creds: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     agent_shared_secrets: Kustomization,
 ) -> Kustomization:
     name = "public-coder-agent-devbox"
@@ -306,7 +305,7 @@ def public_coder_agent_devbox(
         timeout="30m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            kubevirt, forgejo_images, external_creds, external_secrets_config, agent_shared_secrets
+            kubevirt, external_creds, external_secrets_operator, agent_shared_secrets
         ),
         description=(
             "KubeVirt build/test devbox for public-coder-agent "
