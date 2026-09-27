@@ -11,6 +11,18 @@ while every test still passes. Consider generating them from the pydantic models
 the JSON Schema FastMCP publishes as the tool's `inputSchema` and `outputSchema`, converted to zod at
 build time.
 
+## Thread view UX
+
+- **Chronological-debug link renders full width**: `ChronologicalDebugLink` (`chronological_debug.tsx`) is a compact
+  Mantine `Button`, but the evidence page view in `projected_session.tsx` places it inside a `Stack`, whose default
+  `align="stretch"` stretches every child to the container's width -- the button ends up as a full-width bar
+  instead of a small pill.
+- **Thread id shown redundantly once a thread has a title**: `ThreadTitle` (`thread_title.tsx`) uses the thread id
+  both as the title field's placeholder when unset and as an always-visible dimmed caption next to the title once
+  one is set. Once a title exists, the id line adds clutter for no benefit; it should move somewhere less
+  prominent instead -- the composer's overflow menu (`Menu.Dropdown` in `projected_session.tsx`, currently "Debug
+  history" / "Shut down harness") is one candidate.
+
 ## Hidden characters in what the operator approves
 
 Bidi controls, zero-width and other default-ignorable characters, and control characters render
