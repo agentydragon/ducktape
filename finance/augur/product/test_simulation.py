@@ -30,7 +30,7 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, L
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedJurisdiction, PreparedLocation, _PropertyPurchase, _PropertySale
+from finance.augur.sim.prepared import PreparedLocation, _PropertyPurchase, _PropertySale
 from finance.augur.sim.property import Housing
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -106,10 +106,9 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
             MarketPath(series, rollout_id, rollout_count=rollout_count),
             horizon_months=HORIZON_MONTHS,
             income_sources=(ORDINARY_INCOME,),
-            jurisdictions=tuple(
-                PreparedJurisdiction(jurisdiction_id=jurisdiction_id, level=jurisdiction.level)
-                for jurisdiction_id, jurisdiction in jurisdictions.items()
-            ),
+            jurisdictions={
+                jurisdiction_id: jurisdiction.level for jurisdiction_id, jurisdiction in jurisdictions.items()
+            },
         )
         for agent_id in (AGENT, IRS):
             world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)

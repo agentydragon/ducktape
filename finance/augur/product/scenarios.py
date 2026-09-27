@@ -26,8 +26,10 @@ from finance.augur.policy.cash_band_household import (
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.product.holdings import (
     Bond,
+    Distribution,
     Holdings,
     Lot,
+    ManagedPortfolio,
     Pool,
     holding_pools,
     opening_lots,
@@ -55,22 +57,16 @@ from finance.augur.sim.external_series import ExternalSeriesContext, compile_ser
 from finance.augur.sim.fixed_point import rate_to_ppb, round_currency_amount, round_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferDeductionCategory, TransferIncomeCategory
-from finance.augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
+from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, load_jurisdiction
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import Currency
 from finance.augur.sim.prepared import (
     PreparedAmount,
-    PreparedDistribution,
     PreparedFixedAmount,
     PreparedIndexedAmount,
-    PreparedJurisdiction,
     PreparedLocation,
-    PreparedPropertyCashflow,
-    PreparedRecurringObligation,
-    PreparedRecurringPropertyCashflow,
     PreparedSeries,
-    PreparedTlhPortfolio,
     _CapitalImprovement,
     _MortgageFinancing,
     _MortgageInterestDeduction,
@@ -86,6 +82,7 @@ from finance.augur.sim.pricing import OccupancyMode, insurance_rate, maintenance
 from finance.augur.sim.private_equity_series import compile_private_equity_series
 from finance.augur.sim.property import Housing
 from finance.augur.sim.runtime import load_jurisdictions_for
+from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.tax import PreparedTaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -164,6 +161,60 @@ def asset_labels(portfolio: PortfolioConfig) -> dict[AssetKey, str]:
     }
 
 
+@dataclass(frozen=True, kw_only=True)
+class PropertyCashflow:
+    """A cashflow that moves only while its property is held."""
+
+    cause_id: str
+    from_account: AccountRef
+    to_account: AccountRef
+    amount: PreparedAmount
+    income_category: TransferIncomeCategory | None
+    deduction_category: TransferDeductionCategory | None
+    property_id: PropertyId
+    schedule: Schedule
+
+    def declare(self, world: World) -> None:
+        world.declare_flow(
+            cause_id=self.cause_id,
+            from_account=self.from_account,
+            to_account=self.to_account,
+            amount=self.amount,
+            income_category=self.income_category,
+            deduction_category=self.deduction_category,
+            schedule=self.schedule,
+            property_id=self.property_id,
+        )
+
+
+@dataclass(frozen=True, kw_only=True)
+class Obligation:
+    """A bill the household owes a counterparty; one attached to a property is billed while it is held."""
+
+    obligation_id: str
+    obligation_type: ObligationType
+    from_account: AccountRef
+    to_account: AccountRef
+    amount_due: PreparedAmount
+    property_id: PropertyId | None
+    deduction_category: TransferDeductionCategory | None
+    deductible_fraction_ppb: int
+    schedule: Schedule
+
+    def biller(self) -> Biller:
+        return Biller(
+            obligation_id=self.obligation_id,
+            obligation_type=self.obligation_type,
+            from_account=self.from_account,
+            to_account=self.to_account,
+            amount_due=self.amount_due,
+            property_id=self.property_id,
+            deduction_category=self.deduction_category,
+            deductible_fraction_ppb=self.deductible_fraction_ppb,
+            schedule=self.schedule,
+        )
+
+
 @dataclass(frozen=True)
 class Home:
     """The purchased property: its tables, the authority that taxes it and the cashflows it carries."""
@@ -173,7 +224,7 @@ class Home:
     location: PreparedLocation
     # Claimed only on a financed primary residence.
     interest_deduction: _MortgageInterestDeduction | None
-    cashflows: tuple[PreparedPropertyCashflow | PreparedRecurringPropertyCashflow, ...]
+    cashflows: tuple[PropertyCashflow, ...]
 
 
 @dataclass(frozen=True)
@@ -187,19 +238,19 @@ class Situation:
     # Every series the declarations read, which is what the request samples.
     level_series: tuple[LevelSeriesKey, ...]
     private_equity_issuers: frozenset[IssuerId]
-    jurisdictions: tuple[PreparedJurisdiction, ...]
+    jurisdictions: Mapping[JurisdictionId, JurisdictionLevel]
     income_sources: tuple[TransferIncomeCategory, ...]
     # Each declared account with its opening balance.
     accounts: tuple[tuple[AccountRef, int], ...]
     tax_profile: PreparedTaxProfile
     pools: tuple[Pool, ...]
     lots: tuple[Lot, ...]
-    tlh_portfolios: tuple[PreparedTlhPortfolio, ...]
+    tlh_portfolios: tuple[ManagedPortfolio, ...]
     bonds: tuple[Bond, ...]
     home: Home | None
-    distributions: tuple[PreparedDistribution, ...]
+    distributions: tuple[Distribution, ...]
     tender_policy: _TenderPolicy | None
-    obligations: tuple[PreparedRecurringObligation, ...]
+    obligations: tuple[Obligation, ...]
 
 
 def build_situation(
@@ -222,9 +273,8 @@ def build_situation(
         _empty_account(TAX_AUTHORITY_AGENT_ID, TAX_AUTHORITY_ACCOUNT_ID),
     ]
     obligations = [
-        PreparedRecurringObligation(
-            start_month=0,
-            end_month=end_month,
+        Obligation(
+            schedule=Recurring(start_month=0, end_month=end_month),
             obligation_id=SPEND_OBLIGATION_ID,
             obligation_type=ObligationType.CASH_SPEND,
             from_account=primary,
@@ -240,9 +290,8 @@ def build_situation(
         assert scenario_key.rental_location_id is not None  # wire validator guarantees
         accounts.append(_empty_account(LANDLORD_AGENT_ID, LANDLORD_ACCOUNT_ID))
         obligations.append(
-            PreparedRecurringObligation(
-                start_month=0,
-                end_month=end_month,
+            Obligation(
+                schedule=Recurring(start_month=0, end_month=end_month),
                 obligation_id=RENT_OBLIGATION_ID,
                 obligation_type=ObligationType.OUTSIDE_RENT,
                 from_account=primary,
@@ -350,7 +399,7 @@ def build_situation(
         level_series=level_series_demand(
             held_assets=(*(lot.asset_id for lot in lots), *(portfolio.asset_id for portfolio in tlh_portfolios)),
             bond_coupons=(bond.coupon for bond in bonds),
-            distributions=holdings.distributions,
+            distributing_assets=(distribution.asset_id for distribution in holdings.distributions),
             amounts=(
                 *(cashflow.amount for cashflow in cashflows),
                 *(obligation.amount_due for obligation in obligations),
@@ -366,16 +415,12 @@ def build_situation(
             for position in holdings.portfolio.holdings
             if isinstance(position.asset, PrivateEquityAssetKey)
         ),
-        jurisdictions=prepared_jurisdictions(jurisdictions, bonds=bonds, distributions=holdings.distributions),
+        jurisdictions=jurisdiction_levels(jurisdictions, bonds=bonds, distributions=holdings.distributions),
         income_sources=compile_income_sources(
             (
                 *(cashflow.income_category for cashflow in cashflows if cashflow.income_category is not None),
                 *(InterestIncome(issuer_jurisdiction_id=bond.issuer_jurisdiction_id) for bond in bonds),
-                *(
-                    tax_slice.income_category
-                    for distribution in holdings.distributions
-                    for tax_slice in distribution.tax_character
-                ),
+                *(category for distribution in holdings.distributions for category in distribution.tax_character),
             )
         ),
         accounts=tuple(accounts),
@@ -391,13 +436,13 @@ def build_situation(
     )
 
 
-def prepared_jurisdictions(
+def jurisdiction_levels(
     jurisdictions: Mapping[JurisdictionId, Jurisdiction],
     *,
     bonds: Iterable[Bond],
-    distributions: Iterable[PreparedDistribution],
-) -> tuple[PreparedJurisdiction, ...]:
-    """Every jurisdiction whose LEVEL an interest-exemption rule can name.
+    distributions: Iterable[Distribution],
+) -> dict[JurisdictionId, JurisdictionLevel]:
+    """The level of every jurisdiction an interest-exemption rule can name.
 
     An issuer's level resolves whether or not a tax profile names it, so a Treasury coupon is
     state-exempt for a holder who files only in California. So the registry is the profiles' own
@@ -406,18 +451,15 @@ def prepared_jurisdictions(
 
     levels = {jurisdiction_id: jurisdiction.level for jurisdiction_id, jurisdiction in jurisdictions.items()}
     issuers = {bond.issuer_jurisdiction_id for bond in bonds} | {
-        tax_slice.income_category.issuer_jurisdiction_id
+        category.issuer_jurisdiction_id
         for distribution in distributions
-        for tax_slice in distribution.tax_character
-        if isinstance(tax_slice.income_category, InterestIncome)
+        for category in distribution.tax_character
+        if isinstance(category, InterestIncome)
     }
     for issuer_id in issuers:
         if issuer_id is not None and issuer_id not in levels:
             levels[issuer_id] = load_jurisdiction(issuer_id).level
-    return tuple(
-        PreparedJurisdiction(jurisdiction_id=jurisdiction_id, level=levels[jurisdiction_id])
-        for jurisdiction_id in sorted(levels)
-    )
+    return {jurisdiction_id: levels[jurisdiction_id] for jurisdiction_id in sorted(levels)}
 
 
 def paths(situation: Situation, sampled: ExternalSeriesContext, *, rollout_count: int) -> tuple[PreparedSeries, ...]:
@@ -454,20 +496,20 @@ def compose(situation: Situation, market: MarketPath) -> World:
     for lot in situation.lots:
         lot.declare(world)
     for portfolio in situation.tlh_portfolios:
-        world.declare_portfolio(portfolio)
+        portfolio.declare(world)
     for bond in situation.bonds:
         bond.declare(world)
     if situation.home is not None:
         world.declare_housing(situation.home.housing, (situation.home.property_tax,), (situation.home.location,))
     for distribution in situation.distributions:
-        world.declare_distribution(distribution)
+        distribution.declare(world)
     if situation.tender_policy is not None:
         world.declare_tender_policy(situation.tender_policy)
     if situation.home is not None:
         for flow in situation.home.cashflows:
-            world.declare_flow(flow)
+            flow.declare(world)
     for obligation in situation.obligations:
-        world.track(Biller(obligation))
+        world.track(obligation.biller())
     household = situation.household()
     if isinstance(household, CashBandHousehold):
         household.check(world)
@@ -528,7 +570,7 @@ class PropertyExpenseWiring:
     """Payees and obligations for recurring property expenses."""
 
     accounts: tuple[tuple[AccountRef, int], ...]
-    obligations: tuple[PreparedRecurringObligation, ...]
+    obligations: tuple[Obligation, ...]
 
 
 def _wire_property_expenses(
@@ -555,10 +597,9 @@ def _wire_property_expenses(
 
     def bill(
         obligation_id: str, obligation_type: ObligationType, payee: AccountRef, monthly_amount: Decimal
-    ) -> PreparedRecurringObligation:
-        return PreparedRecurringObligation(
-            start_month=0,
-            end_month=horizon_months - 1,
+    ) -> Obligation:
+        return Obligation(
+            schedule=Recurring(start_month=0, end_month=horizon_months - 1),
             obligation_id=obligation_id,
             obligation_type=obligation_type,
             from_account=AccountRef(agent_id=primary_agent_id, account_id=PRIMARY_ACCOUNT_ID),
@@ -571,7 +612,7 @@ def _wire_property_expenses(
         )
 
     accounts: list[tuple[AccountRef, int]] = []
-    obligations: list[PreparedRecurringObligation] = []
+    obligations: list[Obligation] = []
     if property_.hoa_monthly > 0:
         accounts.append(_empty_account(HOA_AGENT_ID, HOA_ACCOUNT_ID))
         obligations.append(
@@ -629,8 +670,8 @@ class LandlordRentalWiring:
     threaded through the helper as kwargs."""
 
     accounts: tuple[tuple[AccountRef, int], ...]
-    recurring_property_cashflows: tuple[PreparedRecurringPropertyCashflow, ...]
-    scheduled_property_cashflows: tuple[PreparedPropertyCashflow, ...]
+    recurring_property_cashflows: tuple[PropertyCashflow, ...]
+    scheduled_property_cashflows: tuple[PropertyCashflow, ...]
 
 
 _EMPTY_LANDLORD_RENTAL_WIRING = LandlordRentalWiring(
@@ -682,17 +723,16 @@ def _wire_landlord_rental(
     owner = AccountRef(agent_id=primary_agent_id, account_id=PRIMARY_ACCOUNT_ID)
     agency = AccountRef(agent_id=PROPERTY_MANAGEMENT_AGENT_ID, account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID)
     accounts = [_empty_account(TENANT_AGENT_ID, TENANT_ACCOUNT_ID)]
-    recurring_property_cashflows: list[PreparedRecurringPropertyCashflow] = []
-    scheduled_property_cashflows: list[PreparedPropertyCashflow] = []
+    recurring_property_cashflows: list[PropertyCashflow] = []
+    scheduled_property_cashflows: list[PropertyCashflow] = []
     for segment in rental_segments:
         leased_monthly_rent = base_monthly_rent * segment.fraction_rented
         base_monthly_collected = round_currency_amount(
             leased_monthly_rent * vacancy_multiplier, quantum=currency.quantum
         )
         recurring_property_cashflows.append(
-            PreparedRecurringPropertyCashflow(
-                start_month=segment.start_month,
-                end_month=segment.end_month,
+            PropertyCashflow(
+                schedule=Recurring(start_month=segment.start_month, end_month=segment.end_month),
                 property_id=property_.id,
                 cause_id=f"{RENTAL_INCOME_CAUSE_ID}:{property_.id}",
                 from_account=AccountRef(agent_id=TENANT_AGENT_ID, account_id=TENANT_ACCOUNT_ID),
@@ -715,9 +755,8 @@ def _wire_landlord_rental(
                     base_monthly_rent * segment.fraction_rented * vacancy_multiplier, quantum=currency.quantum
                 )
                 recurring_property_cashflows.append(
-                    PreparedRecurringPropertyCashflow(
-                        start_month=segment.start_month,
-                        end_month=segment.end_month,
+                    PropertyCashflow(
+                        schedule=Recurring(start_month=segment.start_month, end_month=segment.end_month),
                         property_id=property_.id,
                         cause_id=f"{MANAGEMENT_FEE_CAUSE_ID}:{property_.id}",
                         from_account=owner,
@@ -743,8 +782,8 @@ def _wire_landlord_rental(
                     base_monthly_rent * segment.fraction_rented * leasing_fee_months_val, quantum=currency.quantum
                 )
                 scheduled_property_cashflows.extend(
-                    PreparedPropertyCashflow(
-                        month=fire_month,
+                    PropertyCashflow(
+                        schedule=Once(month=fire_month),
                         property_id=property_.id,
                         cause_id=f"{LEASING_FEE_CAUSE_ID}:{property_.id}:m{fire_month}",
                         from_account=owner,

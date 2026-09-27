@@ -21,7 +21,7 @@ from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import Currency
-from finance.augur.sim.prepared import PreparedJurisdiction, PreparedSeries, PreparedTlhPortfolio
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Finished
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -47,7 +47,7 @@ def compose(price: int) -> World:
         ),
         horizon_months=1,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=FEDERAL_US, level=FEDERAL.level),),
+        jurisdictions={FEDERAL_US: FEDERAL.level},
     )
     for agent_id, balance in ((OWNER, 10), (AgentId("irs"), 0)):
         world.declare_account(
@@ -64,20 +64,18 @@ def compose(price: int) -> World:
         )
     )
     world.declare_portfolio(
-        PreparedTlhPortfolio(
-            portfolio_id=PortfolioId("managed"),
-            owner_agent_id=OWNER,
-            account_id=AccountId("checking"),
-            asset_id=ASSET,
-            initial_cohorts=(TlhOpeningCohort(value=100 * price, cost_basis=100, purchase_month_index=-24),),
-            assumptions=TlhAssumptions(
-                peak_annual_yield=0.12,
-                floor_annual_yield=0,
-                maturity_decay_exponent=1,
-                drawdown_sensitivity=0,
-                short_term_fraction=1,
-            ),
-        )
+        portfolio_id=PortfolioId("managed"),
+        owner_agent_id=OWNER,
+        account_id=AccountId("checking"),
+        asset_id=ASSET,
+        initial_cohorts=(TlhOpeningCohort(value=100 * price, cost_basis=100, purchase_month_index=-24),),
+        assumptions=TlhAssumptions(
+            peak_annual_yield=0.12,
+            floor_annual_yield=0,
+            maturity_decay_exponent=1,
+            drawdown_sensitivity=0,
+            short_term_fraction=1,
+        ),
     )
     return world
 

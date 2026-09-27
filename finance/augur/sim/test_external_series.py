@@ -17,7 +17,7 @@ from finance.augur.sim.testing.security_distributions import FUND, HORIZON, PER_
 
 def demand(*, bond_coupons: tuple[PreparedFixedAmount | PreparedIndexedCoupon, ...]) -> tuple[LevelSeriesKey, ...]:
     return level_series_demand(
-        held_assets=(), bond_coupons=bond_coupons, distributions=(), amounts=(), tender_policies=(), purchases=()
+        held_assets=(), bond_coupons=bond_coupons, distributing_assets=(), amounts=(), tender_policies=(), purchases=()
     )
 
 

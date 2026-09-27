@@ -34,10 +34,9 @@ from finance.augur.product.scenarios import (
     TAX_AUTHORITY_AGENT_ID,
     Situation,
     build_situation,
-    prepared_jurisdictions,
+    jurisdiction_levels,
 )
 from finance.augur.product.wire import FundingPolicy, ScenarioKey, SecuritySleeveWeight, SleeveWeight, SpendIndex
-from finance.augur.sim.bills import Biller
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import (
@@ -157,7 +156,7 @@ def run(
         ),
         horizon_months=situation.horizon_months,
         income_sources=situation.income_sources,
-        jurisdictions=prepared_jurisdictions(jurisdictions, bonds=(), distributions=situation.distributions),
+        jurisdictions=jurisdiction_levels(jurisdictions, bonds=(), distributions=situation.distributions),
     )
     for account, balance in situation.accounts:
         world.declare_account(account=account, opening_balance=balance)
@@ -172,9 +171,9 @@ def run(
     for held in situation.lots:
         held.declare(world)
     for distribution in situation.distributions:
-        world.declare_distribution(distribution)
+        distribution.declare(world)
     for obligation in situation.obligations:
-        world.track(Biller(obligation))
+        world.track(obligation.biller())
     policy = Policy(
         config,
         actor_id=ACTOR,

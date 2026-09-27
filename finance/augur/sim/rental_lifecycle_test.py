@@ -14,9 +14,10 @@ lowering belong in `finance/augur/product/service_test.py`; one here that fed a 
 and asserted the same product back could not fail for any bug.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from decimal import ROUND_HALF_UP, Decimal
+from functools import partial
 from typing import Any
 
 import numpy as np
@@ -41,14 +42,8 @@ from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
     PreparedAmount,
     PreparedIndexedAmount,
-    PreparedJurisdiction,
     PreparedLocation,
-    PreparedPropertyCashflow,
-    PreparedRecurringObligation,
-    PreparedRecurringPropertyCashflow,
-    PreparedRecurringTransfer,
     PreparedSeries,
-    PreparedTransfer,
     _CapitalImprovement,
     _MortgageFinancing,
     _MortgageInterestDeduction,
@@ -63,6 +58,7 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.property import Housing
 from finance.augur.sim.results import Executed, Finished, Rollout, Trace
+from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -144,10 +140,10 @@ def recurring_transfer(
     amount: PreparedAmount,
     income: TransferIncomeCategory | None = None,
     deduction: TransferDeductionCategory | None = None,
-) -> PreparedRecurringTransfer:
-    return PreparedRecurringTransfer(
-        start_month=start_month,
-        end_month=end_month,
+) -> Callable[[World], None]:
+    return partial(
+        World.declare_flow,
+        schedule=Recurring(start_month=start_month, end_month=end_month),
         cause_id=cause_id,
         from_account=ref(payer),
         to_account=ref(payee),
@@ -166,9 +162,10 @@ def scheduled_transfer(
     amount: PreparedAmount,
     income: TransferIncomeCategory | None = None,
     deduction: TransferDeductionCategory | None = None,
-) -> PreparedTransfer:
-    return PreparedTransfer(
-        month=month,
+) -> Callable[[World], None]:
+    return partial(
+        World.declare_flow,
+        schedule=Once(month=month),
         cause_id=cause_id,
         from_account=ref(payer),
         to_account=ref(payee),
@@ -189,10 +186,10 @@ def recurring_property_cashflow(
     amount: PreparedAmount,
     income: TransferIncomeCategory | None = None,
     deduction: TransferDeductionCategory | None = None,
-) -> PreparedRecurringPropertyCashflow:
-    return PreparedRecurringPropertyCashflow(
-        start_month=start_month,
-        end_month=end_month,
+) -> Callable[[World], None]:
+    return partial(
+        World.declare_flow,
+        schedule=Recurring(start_month=start_month, end_month=end_month),
         property_id=property_id,
         cause_id=cause_id,
         from_account=ref(payer),
@@ -213,9 +210,10 @@ def scheduled_property_cashflow(
     amount: PreparedAmount,
     income: TransferIncomeCategory | None = None,
     deduction: TransferDeductionCategory | None = None,
-) -> PreparedPropertyCashflow:
-    return PreparedPropertyCashflow(
-        month=month,
+) -> Callable[[World], None]:
+    return partial(
+        World.declare_flow,
+        schedule=Once(month=month),
         property_id=property_id,
         cause_id=cause_id,
         from_account=ref(payer),
@@ -236,10 +234,10 @@ def dues(
     end_month: int | None = None,
     property_id: PropertyId | None = None,
     deductible_fraction: Decimal | int = 1,
-) -> PreparedRecurringObligation:
-    return PreparedRecurringObligation(
-        start_month=0,
-        end_month=end_month,
+) -> Callable[[], Biller]:
+    return partial(
+        Biller,
+        schedule=Recurring(start_month=0, end_month=end_month),
         obligation_id=obligation_id,
         obligation_type=obligation_type,
         from_account=ref(payer),
@@ -355,11 +353,12 @@ class Situation:
     accounts: tuple[tuple[AccountRef, int], ...]
     income_sources: tuple[TransferIncomeCategory, ...] = (ORDINARY_INCOME,)
     tax_profiles: tuple[TaxProfile, ...] = ()
-    recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
-    scheduled_transfers: tuple[PreparedTransfer, ...] = ()
-    recurring_property_cashflows: tuple[PreparedRecurringPropertyCashflow, ...] = ()
-    scheduled_property_cashflows: tuple[PreparedPropertyCashflow, ...] = ()
-    obligations: tuple[PreparedRecurringObligation, ...] = ()
+    # Declared onto each world; each world gets its own billers.
+    recurring_transfers: tuple[Callable[[World], None], ...] = ()
+    scheduled_transfers: tuple[Callable[[World], None], ...] = ()
+    recurring_property_cashflows: tuple[Callable[[World], None], ...] = ()
+    scheduled_property_cashflows: tuple[Callable[[World], None], ...] = ()
+    obligations: tuple[Callable[[], Biller], ...] = ()
     housing: Housing = field(default_factory=Housing)
     locations: tuple[PreparedLocation, ...] = ()
     property_tax_policies: tuple[_PropertyTax, ...] = ()
@@ -374,9 +373,7 @@ def compose(situation: Situation, rollout_id: int) -> World:
         MarketPath(situation.series, rollout_id, rollout_count=situation.rollout_count),
         horizon_months=situation.horizon_months,
         income_sources=situation.income_sources,
-        jurisdictions=tuple(
-            PreparedJurisdiction(jurisdiction_id=id_, level=jurisdictions[id_].level) for id_ in jurisdiction_ids
-        ),
+        jurisdictions={id_: jurisdictions[id_].level for id_ in jurisdiction_ids},
     )
     for opened, balance in situation.accounts:
         world.declare_account(account=opened, opening_balance=balance)
@@ -390,16 +387,15 @@ def compose(situation: Situation, rollout_id: int) -> World:
         world.declare_housing(situation.housing, situation.property_tax_policies, situation.locations)
     # Counterparty cashflows rather than actions: the world moves these when their month opens,
     # before the month's claims are assembled.
-    for transfer in situation.scheduled_transfers:
-        world.declare_flow(transfer)
-    for recurring in situation.recurring_transfers:
-        world.declare_flow(recurring)
-    for cashflow in situation.scheduled_property_cashflows:
-        world.declare_flow(cashflow)
-    for recurring_cashflow in situation.recurring_property_cashflows:
-        world.declare_flow(recurring_cashflow)
+    for declare in (
+        *situation.scheduled_transfers,
+        *situation.recurring_transfers,
+        *situation.scheduled_property_cashflows,
+        *situation.recurring_property_cashflows,
+    ):
+        declare(world)
     for obligation in situation.obligations:
-        world.track(Biller(obligation))
+        world.track(obligation())
     return world
 
 
@@ -560,7 +556,7 @@ def rental(
             amount=indexed(monthly_rent),
         )
     ]
-    scheduled: list[PreparedTransfer] = []
+    scheduled: list[Callable[[World], None]] = []
     if monthly_management_fee is not None or leasing_fees_by_month is not None:
         accounts.append(account(AGENCY))
     if monthly_management_fee is not None:

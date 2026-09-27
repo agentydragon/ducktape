@@ -23,8 +23,9 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.prepared import PreparedJurisdiction, PreparedSeries, PreparedTransfer
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction, Rollout
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -84,7 +85,7 @@ def _compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=FEDERAL, level=federal.level),),
+        jurisdictions={FEDERAL: federal.level},
     )
     openings = [(ALICE, Decimal(0)), (IRS, Decimal(0))]
     if case.wages:
@@ -115,15 +116,13 @@ def _compose(case: Situation, rollout_id: int) -> World:
         # Wages are the one cashflow an action cannot express: a bare actor transfer may not
         # declare tax character, so the payroll run is the scheduled table the world carries.
         world.declare_flow(
-            PreparedTransfer(
-                month=0,
-                cause_id="wages",
-                from_account=AccountRef(agent_id=AgentId("employer"), account_id=AccountId("checking")),
-                to_account=AccountRef(agent_id=ALICE, account_id=AccountId("checking")),
-                amount=int(currency_amount_to_quanta(case.wages, quantum=QUANTUM)),
-                income_category=ORDINARY_INCOME,
-                deduction_category=None,
-            )
+            schedule=Once(month=0),
+            cause_id="wages",
+            from_account=AccountRef(agent_id=AgentId("employer"), account_id=AccountId("checking")),
+            to_account=AccountRef(agent_id=ALICE, account_id=AccountId("checking")),
+            amount=int(currency_amount_to_quanta(case.wages, quantum=QUANTUM)),
+            income_category=ORDINARY_INCOME,
+            deduction_category=None,
         )
     return world
 

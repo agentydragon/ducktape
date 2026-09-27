@@ -26,12 +26,13 @@ from finance.augur.sim.fixed_point import (
     round_currency_amount,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferIncomeCategory
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedJurisdiction, PreparedRecurringTransfer, PreparedSeries
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw, FixedNominalLaw, TaxIndexation
@@ -95,33 +96,38 @@ def sale(cause_id: str, lot_id: LotId, asset: SecurityKey, *, quantity: Decimal 
     )
 
 
+@dataclass(frozen=True)
+class Monthly:
+    """A cashflow paid every month from month zero; its income category joins the world's tax vocabulary."""
+
+    cause_id: str
+    payer: AgentId
+    payee: AgentId
+    amount: int
+    income_category: TransferIncomeCategory | None
+    end_month: int | None
+
+    def declare(self, world: World) -> None:
+        world.declare_flow(
+            cause_id=self.cause_id,
+            from_account=AccountRef(agent_id=self.payer, account_id=CHECKING),
+            to_account=AccountRef(agent_id=self.payee, account_id=CHECKING),
+            amount=self.amount,
+            income_category=self.income_category,
+            deduction_category=None,
+            schedule=Recurring(start_month=0, end_month=self.end_month),
+        )
+
+
 def monthly(
     cause_id: str, payer: AgentId, payee: AgentId, amount: Decimal, *, income: bool, end_month: int | None = 11
-) -> PreparedRecurringTransfer:
-    return PreparedRecurringTransfer(
-        start_month=0,
-        end_month=end_month,
-        cause_id=cause_id,
-        from_account=AccountRef(agent_id=payer, account_id=CHECKING),
-        to_account=AccountRef(agent_id=payee, account_id=CHECKING),
-        amount=money(amount),
-        income_category=ORDINARY_INCOME if income else None,
-        deduction_category=None,
-    )
+) -> Monthly:
+    return Monthly(cause_id, payer, payee, money(amount), ORDINARY_INCOME if income else None, end_month)
 
 
-def monthly_interest(cause_id: str, issuer: JurisdictionId | None, amount: Decimal) -> PreparedRecurringTransfer:
+def monthly_interest(cause_id: str, issuer: JurisdictionId | None, amount: Decimal) -> Monthly:
     """A year of monthly coupons from `issuer`'s debt (`None`: a corporate issuer) into Alice's checking."""
-    return PreparedRecurringTransfer(
-        start_month=0,
-        end_month=11,
-        cause_id=cause_id,
-        from_account=AccountRef(agent_id=PAYROLL, account_id=CHECKING),
-        to_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
-        amount=money(amount),
-        income_category=InterestIncome(issuer_jurisdiction_id=issuer),
-        deduction_category=None,
-    )
+    return Monthly(cause_id, PAYROLL, ALICE, money(amount), InterestIncome(issuer_jurisdiction_id=issuer), 11)
 
 
 def sell_into_cash(asset: SecurityKey) -> CashBandHousehold:
@@ -146,7 +152,7 @@ class Situation:
     accounts: tuple[Callable[[World], None], ...]
     jurisdiction_ids: tuple[JurisdictionId, ...] = (FEDERAL, CALIFORNIA)
     prior_year_tax: Decimal | int = 0
-    recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
+    recurring_transfers: tuple[Monthly, ...] = ()
     lots: tuple[Lot, ...] = ()
     sales: Mapping[int, tuple[Sell, ...]] = field(default_factory=dict)
     # The holding Alice sells to fund her claims; with none, she only pays them.
@@ -193,9 +199,7 @@ def compose(case: Situation, indexation: TaxIndexation) -> World:
                 ]
             )
         ),
-        jurisdictions=tuple(
-            PreparedJurisdiction(jurisdiction_id=id_, level=rules.level) for id_, rules in jurisdictions.items()
-        ),
+        jurisdictions={id_: rules.level for id_, rules in jurisdictions.items()},
     )
     for declare in case.accounts:
         declare(world)
@@ -236,7 +240,7 @@ def compose(case: Situation, indexation: TaxIndexation) -> World:
             basis=money(held.cost_basis),
         )
     for flow in case.recurring_transfers:
-        world.declare_flow(flow)
+        flow.declare(world)
     return world
 
 

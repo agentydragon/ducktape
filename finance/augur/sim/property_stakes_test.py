@@ -11,9 +11,10 @@ capex, sale basis, §121 eligibility and mortgage payoff are all per property, a
 holding a primary home and a rental is where a leak between them shows.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
+from functools import partial
 
 import numpy as np
 import polars as pl
@@ -33,9 +34,7 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
-    PreparedJurisdiction,
     PreparedLocation,
-    PreparedRecurringTransfer,
     _CapitalImprovement,
     _MortgageFinancing,
     _PrimaryResidence,
@@ -46,6 +45,7 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.property import Housing
 from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -176,7 +176,7 @@ class Situation:
     locations: tuple[PreparedLocation, ...] = LOCATIONS
     tax_policies: tuple[_PropertyTax, ...] = ()
     jurisdiction_ids: tuple[JurisdictionId, ...] = ()
-    recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
+    recurring_transfers: tuple[Callable[[World], None], ...] = ()
     home_values: Mapping[str, Sequence[float]] = field(default_factory=dict)
 
 
@@ -202,9 +202,7 @@ def compose(case: Situation, rollout_id: int) -> World:
         MarketPath(series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=tuple(
-            PreparedJurisdiction(jurisdiction_id=id_, level=rules.level) for id_, rules in jurisdictions.items()
-        ),
+        jurisdictions={id_: rules.level for id_, rules in jurisdictions.items()},
     )
     for opened, balance in case.accounts:
         world.declare_account(account=opened, opening_balance=balance)
@@ -226,7 +224,7 @@ def compose(case: Situation, rollout_id: int) -> World:
         )
     world.declare_housing(case.housing, case.tax_policies, case.locations)
     for flow in case.recurring_transfers:
-        world.declare_flow(flow)
+        flow(world)
     return world
 
 
@@ -346,9 +344,9 @@ def home_and_rental_case() -> Situation:
         locations=MULTI_PROPERTY_LOCATIONS,
         jurisdiction_ids=(FEDERAL, CALIFORNIA),
         recurring_transfers=(
-            PreparedRecurringTransfer(
-                start_month=0,
-                end_month=RENTAL_SALE_MONTH - 1,
+            partial(
+                World.declare_flow,
+                schedule=Recurring(start_month=0, end_month=RENTAL_SALE_MONTH - 1),
                 cause_id="rental-income:rental",
                 from_account=AccountRef(agent_id=TENANT, account_id=CHECKING),
                 to_account=AccountRef(agent_id=ALICE, account_id=CHECKING),

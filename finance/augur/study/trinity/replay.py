@@ -155,14 +155,9 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedDistribution,
-    PreparedDistributionSlice,
-    PreparedIndexedAmount,
-    PreparedObligation,
-    PreparedSeries,
-)
+from finance.augur.sim.prepared import PreparedIndexedAmount, PreparedSeries
 from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
@@ -375,38 +370,32 @@ def compose(case: Situation, rollout_id: int, *, lots: Sequence[OpeningLot], ann
     for month in range(0, case.horizon_months, MONTHS_PER_YEAR):
         world.track(
             Biller(
-                PreparedObligation(
-                    month=month,
-                    obligation_id=f"withdrawal_year_{month // MONTHS_PER_YEAR}",
-                    obligation_type=ObligationType.CASH_SPEND,
-                    from_account=AccountRef(agent_id=RETIREE, account_id=CHECKING),
-                    to_account=AccountRef(agent_id=WORLD, account_id=CHECKING),
-                    amount_due=PreparedIndexedAmount(
-                        base_amount=int(currency_amount_to_quanta(annual_withdrawal, quantum=QUANTUM)),
-                        series_id=InflationKey().wire_id,
-                        base_month_index=0,
-                        adjustment_period_months=MONTHS_PER_YEAR,
-                    ),
-                    property_id=None,
-                    deduction_category=None,
-                    deductible_fraction_ppb=rate_to_ppb(1),
-                )
+                schedule=Once(month=month),
+                obligation_id=f"withdrawal_year_{month // MONTHS_PER_YEAR}",
+                obligation_type=ObligationType.CASH_SPEND,
+                from_account=AccountRef(agent_id=RETIREE, account_id=CHECKING),
+                to_account=AccountRef(agent_id=WORLD, account_id=CHECKING),
+                amount_due=PreparedIndexedAmount(
+                    base_amount=int(currency_amount_to_quanta(annual_withdrawal, quantum=QUANTUM)),
+                    series_id=InflationKey().wire_id,
+                    base_month_index=0,
+                    adjustment_period_months=MONTHS_PER_YEAR,
+                ),
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=rate_to_ppb(1),
             )
         )
     if holds_bonds:
         world.declare_distribution(
-            PreparedDistribution(
-                agent_id=RETIREE,
-                holding_account_id=BROKERAGE,
-                asset_id=AssetId(BONDS),
-                to_account_id=CHECKING,
-                # Nobody is taxed here, so the character is inert; it is required because a
-                # payout that allocates less than all of itself would pay out less than the
-                # fund distributes.
-                tax_character=(
-                    PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1), income_category=InterestIncome()),
-                ),
-            )
+            agent_id=RETIREE,
+            holding_account_id=BROKERAGE,
+            asset_id=AssetId(BONDS),
+            to_account_id=CHECKING,
+            # Nobody is taxed here, so the character is inert; it is required because a
+            # payout that allocates less than all of itself would pay out less than the
+            # fund distributes.
+            tax_character={InterestIncome(): rate_to_ppb(1)},
         )
     return world
 

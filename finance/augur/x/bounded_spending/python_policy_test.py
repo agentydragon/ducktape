@@ -2,7 +2,7 @@
 
 import json
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from decimal import Decimal
 from pathlib import Path
 
@@ -28,8 +28,9 @@ from finance.augur.sim.jurisdictions import (
 )
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedJurisdiction, PreparedObligation, PreparedSeries, PreparedTransfer
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -51,6 +52,7 @@ from util.bazel.runfiles import get_required_path
 
 RETIREE = AgentId("retiree")
 WORLD = AgentId("world")
+UNTAXED: Mapping[JurisdictionId, JurisdictionLevel] = {}
 
 
 def _series(paths: ExternalSeriesContext, *, rollout_count: int, horizon_months: int) -> tuple[PreparedSeries, ...]:
@@ -64,7 +66,7 @@ def _books(
     rollout_count: int,
     horizon_months: int,
     retiree_cash: int,
-    jurisdictions: tuple[PreparedJurisdiction, ...] = (),
+    jurisdictions: Mapping[JurisdictionId, JurisdictionLevel] = UNTAXED,
 ) -> World:
     """A retiree with `retiree_cash` quanta in checking and a counterparty; nothing else declared."""
     world = World(
@@ -183,29 +185,25 @@ def test_post_cashflow_review_and_ordered_claim_prefix_are_explicit() -> None:
         world = _books(series, rollout_id, rollout_count=1, horizon_months=1, retiree_cash=10_000)
         # Arrives when the month opens, before the review, so the request counts it.
         world.declare_flow(
-            PreparedTransfer(
-                month=0,
-                cause_id="current-income",
-                from_account=AccountRef(agent_id=WORLD, account_id=AccountId("checking")),
-                to_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
-                amount=10_000,
-                income_category=None,
-                deduction_category=None,
-            )
+            schedule=Once(month=0),
+            cause_id="current-income",
+            from_account=AccountRef(agent_id=WORLD, account_id=AccountId("checking")),
+            to_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
+            amount=10_000,
+            income_category=None,
+            deduction_category=None,
         )
         world.track(
             Biller(
-                PreparedObligation(
-                    month=0,
-                    obligation_id="due-bill",
-                    obligation_type=ObligationType.OUTSIDE_RENT,
-                    from_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
-                    to_account=AccountRef(agent_id=WORLD, account_id=AccountId("checking")),
-                    amount_due=3_000,
-                    property_id=None,
-                    deduction_category=None,
-                    deductible_fraction_ppb=rate_to_ppb(1),
-                )
+                schedule=Once(month=0),
+                obligation_id="due-bill",
+                obligation_type=ObligationType.OUTSIDE_RENT,
+                from_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
+                to_account=AccountRef(agent_id=WORLD, account_id=AccountId("checking")),
+                amount_due=3_000,
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=rate_to_ppb(1),
             )
         )
         return world
@@ -295,7 +293,7 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
             rollout_count=1,
             horizon_months=13,
             retiree_cash=0,
-            jurisdictions=(PreparedJurisdiction(jurisdiction_id=rules.jurisdiction_id, level=rules.level),),
+            jurisdictions={rules.jurisdiction_id: rules.level},
         )
         world.track(TaxAuthority(profile, indexation=FixedNominalLaw()))
         world.declare_pool(

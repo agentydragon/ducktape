@@ -75,8 +75,7 @@ from property ownership:
 - `_PrimaryResidenceEvent` assigns or clears an agent's main home over time.
 - `_RentedFraction`, `_CapitalImprovement` and `_PropertySale` handle rented-fraction
   changes, improvements, and sales.
-- `PreparedPropertyCashflow` and
-  `PreparedRecurringPropertyCashflow` model property-linked rent,
+- `World.declare_flow` with a `property_id` models property-linked rent,
   management, and leasing cashflows. The engine gates them by property
   ownership lifecycle, then decodes fired rows into the generic transfer event
   frame without adding `property_id` to transfer events.

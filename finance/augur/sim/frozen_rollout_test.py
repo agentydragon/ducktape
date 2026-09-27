@@ -21,8 +21,9 @@ from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedJurisdiction, PreparedObligation, PreparedSeries, _TenderPolicy
+from finance.augur.sim.prepared import PreparedSeries, _TenderPolicy
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -59,11 +60,11 @@ def account(world: World, agent_id: AgentId, account_id: AccountId = CHECKING, b
     world.declare_account(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=money(balance))
 
 
-def unfundable(*, month: int, payer: AgentId, amount: Decimal | int) -> PreparedObligation:
+def unfundable(*, month: int, payer: AgentId, amount: Decimal | int) -> Biller:
     """One required payment larger than everything the payer has."""
 
-    return PreparedObligation(
-        month=month,
+    return Biller(
+        schedule=Once(month=month),
         obligation_id="unfundable",
         obligation_type=ObligationType.CASH_SPEND,
         from_account=AccountRef(agent_id=payer, account_id=CHECKING),
@@ -83,7 +84,7 @@ def frozen_world(*, horizon_months: int) -> World:
         MarketPath((), 0, rollout_count=1),
         horizon_months=horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=FEDERAL, level=jurisdictions[FEDERAL].level),),
+        jurisdictions={FEDERAL: jurisdictions[FEDERAL].level},
     )
     for agent_id in (ALICE, VENDOR, IRS):
         account(world, agent_id)
@@ -97,7 +98,7 @@ def frozen_world(*, horizon_months: int) -> World:
             indexation=FixedNominalLaw(),
         )
     )
-    world.track(Biller(unfundable(month=FAIL_MONTH, payer=ALICE, amount=Decimal(1))))
+    world.track(unfundable(month=FAIL_MONTH, payer=ALICE, amount=Decimal(1)))
     return world
 
 
@@ -144,7 +145,7 @@ def private_equity_world(*, freeze: bool) -> World:
         _TenderPolicy(owner_agent_id=PE_OWNER, proceeds_account_id=CHECKING, liquid_net_worth_floor=0)
     )
     if freeze:
-        world.track(Biller(unfundable(month=PE_FREEZE_MONTH, payer=PE_OWNER, amount=Decimal(1_000))))
+        world.track(unfundable(month=PE_FREEZE_MONTH, payer=PE_OWNER, amount=Decimal(1_000)))
     return world
 
 

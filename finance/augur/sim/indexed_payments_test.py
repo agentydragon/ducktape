@@ -1,7 +1,8 @@
 """Path-indexed cashflows and explicit claim payments through the common session."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from decimal import Decimal
+from functools import partial
 
 import numpy as np
 import pytest
@@ -18,13 +19,9 @@ from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedIndexedAmount,
-    PreparedRecurringObligation,
-    PreparedRecurringTransfer,
-    PreparedSeries,
-)
+from finance.augur.sim.prepared import PreparedIndexedAmount, PreparedSeries
 from finance.augur.sim.results import Finished, Paid, Rollout
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 
@@ -56,12 +53,12 @@ def _account(agent_id: AgentId, balance: Decimal) -> tuple[AccountRef, int]:
     return AccountRef(agent_id=agent_id, account_id=CHECKING), int(currency_amount_to_quanta(balance, quantum=QUANTUM))
 
 
-def _rent_obligation(amount: PreparedIndexedAmount) -> PreparedRecurringObligation:
+def _rent_obligation(amount: PreparedIndexedAmount) -> Callable[[], Biller]:
     """Alice owes the landlord this amount every month of the horizon."""
 
-    return PreparedRecurringObligation(
-        start_month=0,
-        end_month=None,
+    return partial(
+        Biller,
+        schedule=Recurring(start_month=0, end_month=None),
         obligation_id="outside_rent",
         obligation_type=ObligationType.OUTSIDE_RENT,
         from_account=AccountRef(agent_id=AgentId("alice"), account_id=CHECKING),
@@ -73,12 +70,12 @@ def _rent_obligation(amount: PreparedIndexedAmount) -> PreparedRecurringObligati
     )
 
 
-def _tenant_rent(amount: PreparedIndexedAmount) -> PreparedRecurringTransfer:
+def _tenant_rent(amount: PreparedIndexedAmount) -> Callable[[World], None]:
     """The tenant's monthly payment to alice; alice never decides it."""
 
-    return PreparedRecurringTransfer(
-        start_month=0,
-        end_month=None,
+    return partial(
+        World.declare_flow,
+        schedule=Recurring(start_month=0, end_month=None),
         cause_id="tenant_rent",
         from_account=AccountRef(agent_id=AgentId("tenant"), account_id=CHECKING),
         to_account=AccountRef(agent_id=AgentId("alice"), account_id=CHECKING),
@@ -95,8 +92,8 @@ def _compose(
     rollout_count: int,
     horizon_months: int,
     accounts: Sequence[tuple[AccountRef, int]],
-    obligation: PreparedRecurringObligation | None = None,
-    transfer: PreparedRecurringTransfer | None = None,
+    obligation: Callable[[], Biller] | None = None,
+    transfer: Callable[[World], None] | None = None,
 ) -> World:
     world = World(
         MarketPath(series, rollout_id, rollout_count=rollout_count),
@@ -106,11 +103,11 @@ def _compose(
     for opened, balance in accounts:
         world.declare_account(account=opened, opening_balance=balance)
     if obligation is not None:
-        world.track(Biller(obligation))
+        world.track(obligation())
     if transfer is not None:
         # A counterparty's cashflow table, not an action: the world moves it in `prepare_month`,
         # before this month's claims are assembled.
-        world.declare_flow(transfer)
+        transfer(world)
     return world
 
 

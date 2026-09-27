@@ -1,7 +1,7 @@
 """Explicit household funding, full claim payments, and stopped-path successful prefixes."""
 
 from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from decimal import Decimal
 from functools import partial
 
@@ -23,12 +23,7 @@ from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.prepared import (
-    PreparedObligation,
-    PreparedRecurringObligation,
-    PreparedRecurringTransfer,
-    PreparedSeries,
-)
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import (
     Executed,
     Finished,
@@ -39,6 +34,7 @@ from finance.augur.sim.results import (
     RejectedAction,
     Rollout,
 )
+from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 
@@ -98,9 +94,10 @@ def bill(
     amount_due: Decimal | int,
     *,
     month: int = 0,
-) -> PreparedObligation:
-    return PreparedObligation(
-        month=month,
+) -> Callable[[], Biller]:
+    return partial(
+        Biller,
+        schedule=Once(month=month),
         obligation_id=obligation_id,
         obligation_type=obligation_type,
         from_account=payer,
@@ -120,10 +117,10 @@ def monthly_bill(
     amount_due: Decimal | int,
     *,
     start_month: int = 0,
-) -> PreparedRecurringObligation:
-    return PreparedRecurringObligation(
-        start_month=start_month,
-        end_month=None,
+) -> Callable[[], Biller]:
+    return partial(
+        Biller,
+        schedule=Recurring(start_month=start_month, end_month=None),
         obligation_id=obligation_id,
         obligation_type=obligation_type,
         from_account=payer,
@@ -143,8 +140,9 @@ class Situation:
     accounts: list[tuple[AccountRef, int]] = field(default_factory=list)
     pools: list[Callable[[World], None]] = field(default_factory=list)
     lots: list[Callable[[World], None]] = field(default_factory=list)
-    claims: list[PreparedObligation | PreparedRecurringObligation] = field(default_factory=list)
-    recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
+    # A fresh biller per path.
+    claims: list[Callable[[], Biller]] = field(default_factory=list)
+    recurring_transfers: tuple[Callable[[World], None], ...] = ()
 
 
 def compose(case: Situation, rollout_id: int, *, series: tuple[PreparedSeries, ...], rollout_count: int) -> World:
@@ -158,9 +156,9 @@ def compose(case: Situation, rollout_id: int, *, series: tuple[PreparedSeries, .
     for declare in (*case.pools, *case.lots):
         declare(world)
     for flow in case.recurring_transfers:
-        world.declare_flow(flow)
+        flow(world)
     for claim in case.claims:
-        world.track(Biller(claim))
+        world.track(claim())
     return world
 
 
@@ -326,8 +324,8 @@ def test_funding_uses_rollout_specific_prices(rent: Situation) -> None:
 
 def test_funding_consumes_only_selected_account_fifo_pool(rent: Situation) -> None:
     rent.accounts[0] = account(AgentId("alice"), AccountId("taxable"))
-    rent.claims[0] = replace(
-        rent.claims[0], from_account=ref(AgentId("alice"), AccountId("taxable")), amount_due=money(Decimal(400))
+    rent.claims[0] = bill(
+        "rent_due", "rent", ref(AgentId("alice"), AccountId("taxable")), ref(AgentId("landlord")), Decimal(400)
     )
     rent.lots[0] = lot(LotId("alice_vti"), AgentId("alice"), AccountId("taxable"), quantity=5, cost_basis=Decimal(250))
     rent.lots.append(lot(LotId("ira_vti"), AgentId("alice"), AccountId("ira"), quantity=100, cost_basis=Decimal(5000)))
@@ -352,7 +350,7 @@ def test_funding_sells_from_source_account_into_cash_account(rent: Situation) ->
     rent.accounts[0] = account(AgentId("alice"))
     rent.lots[0] = lot(LotId("alice_vti"), AgentId("alice"), AccountId("taxable"), quantity=5, cost_basis=Decimal(250))
     rent.pools = [pool(AgentId("alice"), AccountId("taxable"))]
-    rent.claims[0] = replace(rent.claims[0], amount_due=money(Decimal(400)))
+    rent.claims[0] = bill("rent_due", "rent", ref(AgentId("alice")), ref(AgentId("landlord")), Decimal(400))
     [result], _ = _run(
         rent,
         partial(
@@ -418,7 +416,7 @@ def test_cash_band_uses_balance_after_planned_claims(
     rent.lots[0] = lot(
         LotId("alice_vti"), AgentId("alice"), AccountId("checking"), quantity=100, cost_basis=Decimal(5000)
     )
-    rent.claims[0] = replace(rent.claims[0], amount_due=money(Decimal(1000)))
+    rent.claims[0] = bill("rent_due", "rent", ref(AgentId("alice")), ref(AgentId("landlord")), Decimal(1000))
     [result], _ = _run(rent, _band_funding)
     assert result.stop is None
     assert result.trace is not None
@@ -444,11 +442,7 @@ def test_first_payment_survives_later_rejection_and_subsequent_action_is_skipped
     rent.accounts[0] = account(AgentId("alice"), balance=Decimal(600))
     rent.lots = []
     rent.accounts.append(account(AgentId("utility")))
-    rent.claims.append(
-        replace(
-            rent.claims[0], obligation_id="utility_due", obligation_type="utility", to_account=ref(AgentId("utility"))
-        )
-    )
+    rent.claims.append(bill("utility_due", "utility", ref(AgentId("alice")), ref(AgentId("utility")), Decimal(500)))
 
     def pay_then_transfer(batch: list[Decision]) -> list[DecisionActions]:
         return [
@@ -526,9 +520,9 @@ def test_failed_path_skips_future_transfers_and_policy_calls_while_other_path_co
     )
     exhaustion.accounts.append(account(AgentId("employer")))
     exhaustion.recurring_transfers = (
-        PreparedRecurringTransfer(
-            start_month=1,
-            end_month=None,
+        partial(
+            World.declare_flow,
+            schedule=Recurring(start_month=1, end_month=None),
             cause_id="future_paycheck",
             from_account=ref(AgentId("employer")),
             to_account=ref(AgentId("alice")),

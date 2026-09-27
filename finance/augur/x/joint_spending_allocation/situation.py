@@ -25,7 +25,8 @@ from finance.augur.sim.jurisdictions import (
 )
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedJurisdiction, PreparedObligation, PreparedSeries
+from finance.augur.sim.prepared import PreparedSeries
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
@@ -101,9 +102,7 @@ def compose(situation: Situation, rollout_id: int) -> World:
         MarketPath(situation.series, rollout_id, rollout_count=situation.rollout_count),
         horizon_months=situation.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=_FLAT_TAX.jurisdiction_id, level=_FLAT_TAX.level),)
-        if situation.taxable
-        else (),
+        jurisdictions={_FLAT_TAX.jurisdiction_id: _FLAT_TAX.level} if situation.taxable else {},
     )
     for name in (RETIREE, COUNTERPARTY, TAX_AUTHORITY):
         world.declare_account(
@@ -141,17 +140,15 @@ def compose(situation: Situation, rollout_id: int) -> World:
     for month in range(0, situation.horizon_months, 12):
         world.track(
             Biller(
-                PreparedObligation(
-                    month=month,
-                    obligation_id="test-committed-bill",
-                    obligation_type=ObligationType.OUTSIDE_RENT,
-                    from_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
-                    to_account=AccountRef(agent_id=COUNTERPARTY, account_id=AccountId("checking")),
-                    amount_due=situation.annual_bill,
-                    property_id=None,
-                    deduction_category=None,
-                    deductible_fraction_ppb=1_000_000_000,
-                )
+                schedule=Once(month=month),
+                obligation_id="test-committed-bill",
+                obligation_type=ObligationType.OUTSIDE_RENT,
+                from_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
+                to_account=AccountRef(agent_id=COUNTERPARTY, account_id=AccountId("checking")),
+                amount_due=situation.annual_bill,
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=1_000_000_000,
             )
         )
     return world

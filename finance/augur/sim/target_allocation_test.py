@@ -23,7 +23,7 @@ from finance.augur.sim.holdings import Disposition
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedRecurringObligation, PreparedRecurringTransfer
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.world import World
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
@@ -108,33 +108,27 @@ def compose(case: Situation) -> World:
         start, end = case.rent_months
         world.track(
             Biller(
-                PreparedRecurringObligation(
-                    start_month=start,
-                    end_month=end,
-                    obligation_id="rent",
-                    obligation_type="rent",
-                    from_account=ref(ALICE),
-                    to_account=ref(LANDLORD),
-                    amount_due=money(case.rent),
-                    property_id=None,
-                    deduction_category=None,
-                    deductible_fraction_ppb=1_000_000_000,
-                )
+                schedule=Recurring(start_month=start, end_month=end),
+                obligation_id="rent",
+                obligation_type="rent",
+                from_account=ref(ALICE),
+                to_account=ref(LANDLORD),
+                amount_due=money(case.rent),
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=1_000_000_000,
             )
         )
     if case.income:
         start, end = case.income_months
         world.declare_flow(
-            PreparedRecurringTransfer(
-                start_month=start,
-                end_month=end,
-                cause_id="income",
-                from_account=ref(LANDLORD),
-                to_account=ref(ALICE),
-                amount=money(case.income),
-                income_category=None,
-                deduction_category=None,
-            )
+            schedule=Recurring(start_month=start, end_month=end),
+            cause_id="income",
+            from_account=ref(LANDLORD),
+            to_account=ref(ALICE),
+            amount=money(case.income),
+            income_category=None,
+            deduction_category=None,
         )
     world.track(
         CashBandHousehold(

@@ -1,7 +1,9 @@
 """The real session posts opaque component effects without owning its model state."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
+from functools import partial
 
 import pytest
 import pytest_bazel
@@ -17,13 +19,7 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import Currency
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import (
-    PreparedDistribution,
-    PreparedDistributionSlice,
-    PreparedJurisdiction,
-    PreparedSeries,
-    PreparedTlhPortfolio,
-)
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Executed, Finished, InvalidRequest, Rejected, RejectedAction
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -67,7 +63,7 @@ class Situation:
     rollouts: int = 1
     harvest: bool = True
     prices: tuple[int, ...] | None = None
-    distributions: tuple[PreparedDistribution, ...] = ()
+    distributions: tuple[Callable[[World], None], ...] = ()
     interest_sources: tuple[InterestIncome, ...] = ()
     distribution_rates: tuple[Decimal, ...] = ()
     taxed: bool = True
@@ -105,9 +101,7 @@ def compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series(), rollout_id, rollout_count=case.rollouts),
         horizon_months=case.horizon,
         income_sources=(ORDINARY_INCOME, *case.interest_sources),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=FEDERAL, level=load_jurisdiction(FEDERAL).level),)
-        if case.taxed
-        else (),
+        jurisdictions={FEDERAL: load_jurisdiction(FEDERAL).level} if case.taxed else {},
     )
     for agent_id, balance in ((OWNER, case.cash), (OTHER if case.bystander else IRS, 0)):
         world.declare_account(account=ref(agent_id), opening_balance=balance)
@@ -123,17 +117,15 @@ def compose(case: Situation, rollout_id: int) -> World:
             )
         )
     world.declare_portfolio(
-        PreparedTlhPortfolio(
-            portfolio_id=MANAGED,
-            owner_agent_id=OWNER,
-            account_id=CHECKING,
-            asset_id=AssetId(ASSET.symbol),
-            initial_cohorts=(COHORT,),
-            assumptions=assumptions(harvest=case.harvest),
-        )
+        portfolio_id=MANAGED,
+        owner_agent_id=OWNER,
+        account_id=CHECKING,
+        asset_id=AssetId(ASSET.symbol),
+        initial_cohorts=(COHORT,),
+        assumptions=assumptions(harvest=case.harvest),
     )
     for distribution in case.distributions:
-        world.declare_distribution(distribution)
+        distribution(world)
     return world
 
 
@@ -361,17 +353,16 @@ def test_managed_subquantum_distribution_keeps_cash_and_issuer_character() -> No
         harvest=False,
         distribution_rates=(Decimal("0.015"), Decimal(0)),
         distributions=(
-            PreparedDistribution(
+            partial(
+                World.declare_distribution,
                 agent_id=OWNER,
                 holding_account_id=CHECKING,
                 asset_id=AssetId(ASSET.symbol),
                 to_account_id=CHECKING,
-                tax_character=(
-                    PreparedDistributionSlice(
-                        fraction_ppb=500_000_000, income_category=InterestIncome(issuer_jurisdiction_id=FEDERAL)
-                    ),
-                    PreparedDistributionSlice(fraction_ppb=500_000_000, income_category=InterestIncome()),
-                ),
+                tax_character={
+                    InterestIncome(issuer_jurisdiction_id=FEDERAL): 500_000_000,
+                    InterestIncome(): 500_000_000,
+                },
             ),
         ),
         interest_sources=(InterestIncome(issuer_jurisdiction_id=FEDERAL), InterestIncome(issuer_jurisdiction_id=None)),

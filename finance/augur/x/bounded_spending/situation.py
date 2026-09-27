@@ -10,7 +10,6 @@ from finance.augur.sim.fixed_point import rate_to_ppb
 from finance.augur.sim.ids import AssetId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedDistribution, PreparedDistributionSlice
 from finance.augur.sim.world import World
 from finance.augur.study.trinity.replay import (
     BONDS,
@@ -43,14 +42,10 @@ def compose(case: Situation, rollout_id: int, *, equity_share: float) -> World:
     hold_lots(world, lots)
     if holds_bonds:
         world.declare_distribution(
-            PreparedDistribution(
-                agent_id=RETIREE,
-                holding_account_id=BROKERAGE,
-                asset_id=AssetId(BONDS),
-                to_account_id=CHECKING,
-                tax_character=(
-                    PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1), income_category=InterestIncome()),
-                ),
-            )
+            agent_id=RETIREE,
+            holding_account_id=BROKERAGE,
+            asset_id=AssetId(BONDS),
+            to_account_id=CHECKING,
+            tax_character={InterestIncome(): rate_to_ppb(1)},
         )
     return world

@@ -25,8 +25,8 @@ from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferIn
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedJurisdiction, PreparedTransfer
 from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -93,9 +93,7 @@ def compose(payments: tuple[Payment, ...]) -> World:
         income_sources=tuple(
             sorted({ORDINARY_INCOME, *(payment.source for payment in payments)}, key=income_source_sort_key)
         ),
-        jurisdictions=tuple(
-            PreparedJurisdiction(jurisdiction_id=id_, level=jurisdictions[id_].level) for id_ in sorted(jurisdictions)
-        ),
+        jurisdictions={id_: jurisdictions[id_].level for id_ in sorted(jurisdictions)},
     )
     for agent_id, balance in (
         *((recipient, OPENING_CASH) for recipient in recipients),
@@ -116,15 +114,13 @@ def compose(payments: tuple[Payment, ...]) -> World:
         )
     for index, payment in enumerate(payments):
         world.declare_flow(
-            PreparedTransfer(
-                month=payment.month,
-                cause_id=f"payment-{index}",
-                from_account=AccountRef(agent_id=PAYER, account_id=CHECKING),
-                to_account=AccountRef(agent_id=payment.to_agent_id, account_id=CHECKING),
-                amount=int(currency_amount_to_quanta(payment.amount, quantum=QUANTUM)),
-                income_category=payment.source,
-                deduction_category=None,
-            )
+            schedule=Once(month=payment.month),
+            cause_id=f"payment-{index}",
+            from_account=AccountRef(agent_id=PAYER, account_id=CHECKING),
+            to_account=AccountRef(agent_id=payment.to_agent_id, account_id=CHECKING),
+            amount=int(currency_amount_to_quanta(payment.amount, quantum=QUANTUM)),
+            income_category=payment.source,
+            deduction_category=None,
         )
     return world
 

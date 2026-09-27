@@ -1,8 +1,9 @@
 """Scripted cashflows and conservation through the common Python action session."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
+from functools import partial
 
 import pytest
 import pytest_bazel
@@ -13,8 +14,8 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedRecurringTransfer, PreparedTransfer
 from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 
@@ -29,9 +30,10 @@ def quanta(amount: Decimal) -> int:
     return int(currency_amount_to_quanta(amount, quantum=QUANTUM))
 
 
-def one_off(month: int, cause_id: str, payer: AgentId, payee: AgentId, amount: Decimal) -> PreparedTransfer:
-    return PreparedTransfer(
-        month=month,
+def one_off(month: int, cause_id: str, payer: AgentId, payee: AgentId, amount: Decimal) -> Callable[[World], None]:
+    return partial(
+        World.declare_flow,
+        schedule=Once(month=month),
         cause_id=cause_id,
         from_account=checking(payer),
         to_account=checking(payee),
@@ -49,10 +51,10 @@ def monthly(
     *,
     start_month: int = 0,
     end_month: int | None = None,
-) -> PreparedRecurringTransfer:
-    return PreparedRecurringTransfer(
-        start_month=start_month,
-        end_month=end_month,
+) -> Callable[[World], None]:
+    return partial(
+        World.declare_flow,
+        schedule=Recurring(start_month=start_month, end_month=end_month),
         cause_id=cause_id,
         from_account=checking(payer),
         to_account=checking(payee),
@@ -68,8 +70,8 @@ class Situation:
 
     horizon_months: int
     balances: Sequence[tuple[AgentId, Decimal]]
-    scheduled: tuple[PreparedTransfer, ...] = ()
-    recurring: tuple[PreparedRecurringTransfer, ...] = ()
+    scheduled: tuple[Callable[[World], None], ...] = ()
+    recurring: tuple[Callable[[World], None], ...] = ()
 
 
 def compose(case: Situation, rollout_id: int, *, rollout_count: int) -> World:
@@ -82,9 +84,9 @@ def compose(case: Situation, rollout_id: int, *, rollout_count: int) -> World:
     for agent_id, balance in case.balances:
         world.declare_account(account=checking(agent_id), opening_balance=quanta(balance))
     for scheduled in case.scheduled:
-        world.declare_flow(scheduled)
+        scheduled(world)
     for recurring in case.recurring:
-        world.declare_flow(recurring)
+        recurring(world)
     return world
 
 

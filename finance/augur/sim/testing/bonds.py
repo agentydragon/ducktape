@@ -18,7 +18,7 @@ from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, income_sou
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedFixedAmount, PreparedIndexedCoupon, PreparedJurisdiction, PreparedSeries
+from finance.augur.sim.prepared import PreparedFixedAmount, PreparedIndexedCoupon, PreparedSeries
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
@@ -163,7 +163,7 @@ def compose(case: Situation, rollout_id: int = 0) -> World:
                 key=income_source_sort_key,
             )
         ),
-        jurisdictions=tuple(PreparedJurisdiction(jurisdiction_id=id_, level=rules[id_].level) for id_ in sorted(rules)),
+        jurisdictions={id_: rules[id_].level for id_ in sorted(rules)},
     )
     for account, balance in case.accounts:
         world.declare_account(account=account, opening_balance=balance)

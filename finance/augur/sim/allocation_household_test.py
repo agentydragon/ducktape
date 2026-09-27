@@ -31,16 +31,8 @@ from finance.augur.sim.jurisdictions import (
 )
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import MAX_COUNT, USD
-from finance.augur.sim.prepared import (
-    PreparedDistribution,
-    PreparedDistributionSlice,
-    PreparedIndexedAmount,
-    PreparedJurisdiction,
-    PreparedObligation,
-    PreparedRecurringObligation,
-    PreparedSeries,
-    PreparedTransfer,
-)
+from finance.augur.sim.prepared import PreparedIndexedAmount, PreparedSeries
+from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
@@ -124,9 +116,10 @@ def lot(
     )
 
 
-def claim(month: int, amount: Decimal | int, identifier: str = "spending") -> PreparedObligation:
-    return PreparedObligation(
-        month=month,
+def claim(month: int, amount: Decimal | int, identifier: str = "spending") -> Callable[[], Biller]:
+    return partial(
+        Biller,
+        schedule=Once(month=month),
         obligation_id=identifier,
         obligation_type="cash_spend",
         from_account=ref(ALICE),
@@ -169,9 +162,10 @@ class Situation:
     funding: partial[CashBandHousehold]
     pools: tuple[Callable[[World], None], ...] = ()
     lots: tuple[Callable[[World], None], ...] = ()
-    distributions: tuple[PreparedDistribution, ...] = ()
-    claims: tuple[PreparedObligation | PreparedRecurringObligation, ...] = ()
-    transfers: tuple[PreparedTransfer, ...] = ()
+    distributions: tuple[Callable[[World], None], ...] = ()
+    # A fresh biller per path.
+    claims: tuple[Callable[[], Biller], ...] = ()
+    transfers: tuple[Callable[[World], None], ...] = ()
     sales: Mapping[int, tuple[Sell, ...]] = field(default_factory=dict)
     interest_sources: tuple[InterestIncome, ...] = ()
     taxed: bool = True
@@ -183,7 +177,7 @@ def compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME, *case.interest_sources),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=SYNTHETIC, level=TAX.level),) if case.taxed else (),
+        jurisdictions={SYNTHETIC: TAX.level} if case.taxed else {},
     )
     for opened, balance in case.accounts:
         world.declare_account(account=opened, opening_balance=balance)
@@ -198,14 +192,10 @@ def compose(case: Situation, rollout_id: int) -> World:
                 indexation=FixedNominalLaw(),
             )
         )
-    for declare in (*case.pools, *case.lots):
+    for declare in (*case.pools, *case.lots, *case.distributions, *case.transfers):
         declare(world)
-    for distribution in case.distributions:
-        world.declare_distribution(distribution)
-    for flow in case.transfers:
-        world.declare_flow(flow)
     for obligation in case.claims:
-        world.track(Biller(obligation))
+        world.track(obligation())
     world.track(Scripted(case.funding(), case.sales))
     return world
 
@@ -258,8 +248,9 @@ def base(*, purchases: bool = False, zero_exit: bool = False, single: bool = Fal
         transfers=()
         if zero_exit
         else (
-            PreparedTransfer(
-                month=12,
+            partial(
+                World.declare_flow,
+                schedule=Once(month=12),
                 cause_id="contribution",
                 from_account=ref(WORLD),
                 to_account=ref(ALICE),
@@ -331,9 +322,9 @@ def test_indexed_monthly_claims_keep_sales_and_next_year_tax_events() -> None:
             accounts=(account(ALICE), account(WORLD)),
             transfers=(),
             claims=(
-                PreparedRecurringObligation(
-                    start_month=0,
-                    end_month=None,
+                partial(
+                    Biller,
+                    schedule=Recurring(start_month=0, end_month=None),
                     obligation_id="indexed",
                     obligation_type="cash_spend",
                     from_account=ref(ALICE),
@@ -368,14 +359,13 @@ def test_empty_buyable_pool_pays_coupon_only_after_first_purchase() -> None:
             claims=(),
             taxed=False,
             distributions=(
-                PreparedDistribution(
+                partial(
+                    World.declare_distribution,
                     agent_id=ALICE,
                     holding_account_id=BROKERAGE,
                     asset_id=AssetId(STOCK.symbol),
                     to_account_id=CHECKING,
-                    tax_character=(
-                        PreparedDistributionSlice(fraction_ppb=1_000_000_000, income_category=InterestIncome()),
-                    ),
+                    tax_character={InterestIncome(): 1_000_000_000},
                 ),
             ),
             interest_sources=(InterestIncome(issuer_jurisdiction_id=None),),
@@ -404,8 +394,9 @@ def test_fifo_across_two_purchase_dates_preserves_basis_and_tax_character() -> N
             lots=(),
             claims=(),
             transfers=(
-                PreparedTransfer(
-                    month=1,
+                partial(
+                    World.declare_flow,
+                    schedule=Once(month=1),
                     cause_id="later",
                     from_account=ref(WORLD),
                     to_account=ref(ALICE),

@@ -29,7 +29,8 @@ from finance.augur.sim.books import AccountRef, Book, SecurityLotState
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedObligation, PreparedSeries, PreparedTlhPortfolio
+from finance.augur.sim.prepared import PreparedSeries
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
@@ -61,8 +62,8 @@ class Situation:
     household: CashBandHousehold
     opening_cash: int = 0
     lots: tuple[Callable[[World], None], ...] = ()
-    portfolios: tuple[PreparedTlhPortfolio, ...] = ()
-    claims: tuple[PreparedObligation, ...] = ()
+    portfolios: tuple[Callable[[World], None], ...] = ()
+    claims: tuple[Callable[[], Biller], ...] = ()
     horizon_months: int = 1
 
 
@@ -93,9 +94,10 @@ def lot(lot_id: LotId, asset_id: AssetId, *, units: int, basis: int) -> Callable
     )
 
 
-def claim(amount: int) -> PreparedObligation:
-    return PreparedObligation(
-        month=0,
+def claim(amount: int) -> Callable[[], Biller]:
+    return partial(
+        Biller,
+        schedule=Once(month=0),
         obligation_id="upkeep",
         obligation_type="cash_spend",
         from_account=AccountRef(agent_id=ALICE, account_id=CASH),
@@ -129,9 +131,9 @@ def run(case: Situation) -> FinancialOutput:
     for hold in case.lots:
         hold(world)
     for spec in case.portfolios:
-        world.declare_portfolio(spec)
+        spec(world)
     for obligation in case.claims:
-        world.track(Biller(obligation))
+        world.track(obligation())
     case.household.check(world)
     world.track(case.household)
     recorder = FinancialCapture(world, capture="forensic")
@@ -190,8 +192,9 @@ def test_a_purchase_is_sized_to_what_the_months_claim_payment_leaves() -> None:
     assert [disposition.units for disposition in output.dispositions] == [1]
 
 
-def managed_portfolio(opening: TlhOpeningCohort) -> PreparedTlhPortfolio:
-    return PreparedTlhPortfolio(
+def managed_portfolio(opening: TlhOpeningCohort) -> Callable[[World], None]:
+    return partial(
+        World.declare_portfolio,
         portfolio_id=PortfolioId("managed"),
         owner_agent_id=ALICE,
         account_id=HOLDINGS,
