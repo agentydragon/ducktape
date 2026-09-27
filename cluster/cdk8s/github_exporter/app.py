@@ -21,7 +21,10 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
 )
-from grafana_grafanadashboard_crds.org.integreatly.grafana import GrafanaDashboardSpecConfigMapRef
+from grafana_grafanadashboard_crds.org.integreatly.grafana import (
+    GrafanaDashboardSpecConfigMapRef,
+    GrafanaDashboardSpecInstanceSelector,
+)
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsRelabelings,
@@ -275,7 +278,7 @@ def chart(app: App) -> Chart:
         chart,
         "dashboard",
         metadata=ApiObjectMetadata(name="github-exporter", namespace=_NAMESPACE),
-        instance_selector_labels={"dashboards": "grafana"},
+        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels={"dashboards": "grafana"}),
         folder="GitHub",
         config_map_ref=GrafanaDashboardSpecConfigMapRef(name="github-exporter-dashboard", key="dashboard.json"),
     )
