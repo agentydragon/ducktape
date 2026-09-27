@@ -15,9 +15,9 @@ filegroup(
 
 # Checked-in structural_macro fit — produced by `bb run //finance/augur/x/models:train_bin --
 # --model structural_macro ...` and loaded via runfiles as StructuralMacroProviderConfig's/
-# EquityProcess's shipped defaults (see ../structural_macro.py's `_fitted_defaults`). Unlike the VECM
-# provider config, this isn't itself a deployable ProviderConfig — deployment-specific fields
-# (equity symbol, instruments) aren't fit outputs, so they stay in the deployment YAML.
+# EquityProcess's shipped defaults (see ../structural_macro.py's `_fitted_defaults`). It isn't itself
+# a ProviderConfig: deployment-specific fields (equity symbol, instruments) aren't fit outputs, so
+# they stay in the deployment YAML.
 filegroup(
     name = "trained_structural_macro_blob",
     srcs = ["trained_structural_macro.yaml"],

@@ -11,11 +11,15 @@ described in <sim/DESIGN.md> and the module documentation.
 
 ## Preparation and market inputs
 
-Market generation and financial settlement are separate. Experiments choose
-datasets, models, fitting, sampling and product construction; execution consumes
-already supplied paths, which assume the simulated actors do not move market prices.
-Forecast-only evaluation does not require simulator
-instrument declarations. Sharing a model does not imply it supports every
+`World` (`sim/`) is the world of simulated economic actors: households,
+counterparties, taxes and settlement. Exogenous models (`model/`, `x/models/`) are the
+part of reality Augur does not model as actors: markets, prices, rates and inflation.
+Exogenous models sample their trajectories first, and those paths are then piped into
+the `World`. The effect runs one way only: actors never affect the exogenous paths.
+
+Experiments choose datasets, models, fitting, sampling and product construction;
+execution consumes already supplied paths. Forecast-only evaluation does not require
+simulator instrument declarations. Sharing a model does not imply it supports every
 instrument or that its forecasts are adequate for a particular decision. Fitted
 market models are experimental (`x/models/`); core supplies historical replay and
 the market-path and instrument-pricing infrastructure.

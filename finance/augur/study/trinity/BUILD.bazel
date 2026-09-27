@@ -53,7 +53,7 @@ py_test(
     name = "replay_test",
     # Fetches the record from the public upstreams and runs ~55 474-rollout simulations, so it
     # is excluded from CI's default filter: an upstream outage must not redden an unrelated PR.
-    # See the package README; throughput of the Python migration has not been measured here.
+    # See the package README.
     size = "large",
     srcs = ["replay_test.py"],
     tags = ["manual"],

@@ -7,6 +7,12 @@ submit ordered actions for many paths at once.
 
 ## Preparation and dependencies
 
+`World` is the world of simulated economic actors: households, counterparties, taxes and
+settlement. Exogenous models (`model/`, `x/models/`) are the part of reality Augur does not
+model as actors: markets, prices, rates and inflation. They sample their trajectories first;
+those paths are then piped into the `World` as a `MarketPath`. The effect runs one way only:
+actors never affect the exogenous paths.
+
 Callers build the records defined in <prepared.py> directly, converting exact decimals
 through a `Currency` (<money.py>) and the helpers in <fixed_point.py>, which are exact or
 raise; preparation does not fetch market evidence, fit a model or load tax law
