@@ -536,7 +536,6 @@ py_library(
         "//finance/augur/sim:money",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:tlh",
-        "//finance/augur/sim:world",
     ],
 )
 
