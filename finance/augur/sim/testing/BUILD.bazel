@@ -33,9 +33,10 @@ py_library(
     srcs = ["security_distributions.py"],
     deps = [
         "//finance/augur/model:series",
+        "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:income",
-        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:prepared",
     ],
 )
 
