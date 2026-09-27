@@ -1220,6 +1220,9 @@ metadata:
   name: volsync
   namespace: ducktape-flux
 spec:
+  dependsOn:
+    - name: monitoring-crds
+      namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: v1
       current: has(data.token) && data.token != ''
@@ -1609,6 +1612,8 @@ spec:
     - name: gaffer-private-source
       namespace: flux-system
     - name: kyverno
+      namespace: ducktape-flux
+    - name: tofu-controller
       namespace: ducktape-flux
   interval: 10m
   path: ./k8s

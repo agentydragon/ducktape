@@ -26,7 +26,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCh
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -116,12 +116,14 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
 
 
-def volsync(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
+def volsync(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         artifact,
         timeout="5m",
+        # The chart renders its ServiceMonitor only if the CRD exists when Helm installs it.
+        depends_on=[flux_kustomization_depends_on(monitoring_crds)],
         # The token controller populates data.token asynchronously. Do not declare
         # the VolSync auth material ready until Alloy can actually use it.
         health_check_exprs=[
