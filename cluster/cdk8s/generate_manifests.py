@@ -376,9 +376,7 @@ def generate_manifests(root: Path) -> None:
     ollama_app.write_manifests(root)
     gatus_app.write_manifests(root)
     activitywatch_app.write_manifests(root)
-    cli_proxy_api.write_manifests(root)
     matrix.write_manifests(root)
-    matrix_user_provisioner.write_manifests(root)
     study_casino_app.write_manifests(root)
     github_api_proxy.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
@@ -1041,7 +1039,13 @@ def generate_manifests(root: Path) -> None:
     cli_proxy_api_artifact = artifact("cli-proxy-api", cli_proxy_api.OUTPUT_DIR)
     cli_proxy_api_kustomization = cli_proxy_api.cli_proxy_api(
         flux_chart,
-        cli_proxy_api_artifact,
+        write_directory(
+            root,
+            cli_proxy_api_artifact,
+            cli_proxy_api.chart,
+            siblings=cli_proxy_api.KEY_FILES,
+            components=["./image-pins"],
+        ),
         external_secrets_operator_kustomization,
         cert_manager_environment_kustomization,
     )
@@ -1112,7 +1116,12 @@ def generate_manifests(root: Path) -> None:
     )
     matrix_user_provisioner_artifact = artifact("matrix-user-provisioner", matrix_user_provisioner.OUTPUT_DIR)
     matrix_user_provisioner.matrix_user_provisioner(
-        flux_chart, matrix_user_provisioner_artifact, external_secrets_operator_kustomization, matrix_kustomization
+        flux_chart,
+        write_directory(
+            root, matrix_user_provisioner_artifact, matrix_user_provisioner.chart, components=["./image-pins"]
+        ),
+        external_secrets_operator_kustomization,
+        matrix_kustomization,
     )
     nix_cache_artifact = artifact("nix-cache", nix_cache_attic.OUTPUT_DIR)
     nix_cache_flux_kustomizations.nix_cache(
@@ -1163,8 +1172,14 @@ def generate_manifests(root: Path) -> None:
     aiquota_artifact = artifact("aiquota", aiquota.OUTPUT_DIR)
     aiquota.aiquota(
         flux_chart,
-        aiquota_artifact,
-        root,
+        write_directory(
+            root,
+            aiquota_artifact,
+            aiquota.chart,
+            siblings=[f"{aiquota.BEARER_SECRET_NAME}.sops.yaml"],
+            components=["./image-pins"],
+            config_map_generator=[aiquota.CONFIG_CONFIG_MAP, aiquota.SCHEMA_CONFIG_MAP],
+        ),
         cli_proxy_api_kustomization,
         external_secrets_operator_kustomization,
         clickhouse_schema_kustomization,
