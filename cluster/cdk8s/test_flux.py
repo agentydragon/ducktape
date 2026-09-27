@@ -8,9 +8,19 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import (
+    ArtifactGeneratorSpecArtifacts,
+    ArtifactGeneratorSpecArtifactsCopy,
+)
 
 from cluster.cdk8s.artifact_generators import artifact
-from cluster.cdk8s.flux import SOPS_DECRYPTION, RenderedDirectory, flux_kustomization, kustomizations_chart
+from cluster.cdk8s.flux import (
+    SOPS_DECRYPTION,
+    RenderedDirectory,
+    artifact_directory,
+    flux_kustomization,
+    kustomizations_chart,
+)
 
 _HEALTH_CHECKS = [KustomizationSpecHealthChecks(kind="Deployment", name="test-app", namespace="test-ns")]
 
@@ -55,6 +65,23 @@ def test_rendered_directory_refuses_a_second_decryption() -> None:
     directory = RenderedDirectory(artifact=artifact("test-app", "test/app"), decryption=None)
     with pytest.raises(ValueError, match="derives its decryption"):
         flux_kustomization(kustomizations_chart(Cdk8sTesting.app()), "test-app", directory, decryption=SOPS_DECRYPTION)
+
+
+def test_artifact_directory_is_the_first_copy_of_an_artifact_with_bases() -> None:
+    assert artifact_directory(artifact("test-app", "test/app", "test/base")) == "test/app"
+
+
+@pytest.mark.parametrize(
+    "copy",
+    [
+        ArtifactGeneratorSpecArtifactsCopy(from_="@repo/test/app/**", to="@artifact/test/other/"),
+        ArtifactGeneratorSpecArtifactsCopy(from_="@repo/test/app/*.yaml", to="@artifact/test/app/"),
+        ArtifactGeneratorSpecArtifactsCopy(from_="@repo/test/app/**", to="@artifact/test/app/", exclude=["*.md"]),
+    ],
+)
+def test_artifact_directory_refuses_a_partial_or_moved_copy(copy: ArtifactGeneratorSpecArtifactsCopy) -> None:
+    with pytest.raises(ValueError, match="not a whole-directory copy"):
+        artifact_directory(ArtifactGeneratorSpecArtifacts(name="test-app", origin_revision="@repo", copy=[copy]))
 
 
 if __name__ == "__main__":
