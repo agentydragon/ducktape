@@ -8,6 +8,7 @@ import textwrap
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
     Kustomization,
@@ -16,6 +17,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on,
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.scripts import nebula_mesh
 
 NAME = "proxmox-proxy"
@@ -75,18 +77,7 @@ def _tcp_probe(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
-        chart,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
-    )
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
     k8s.KubeDeployment(
         chart,
         "deployment",

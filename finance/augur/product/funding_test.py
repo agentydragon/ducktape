@@ -34,7 +34,7 @@ from finance.augur.product.scenarios import (
     TAX_AUTHORITY_AGENT_ID,
     Situation,
     build_situation,
-    prepared_jurisdictions,
+    jurisdiction_levels,
 )
 from finance.augur.product.wire import FundingPolicy, ScenarioKey, SecuritySleeveWeight, SleeveWeight, SpendIndex
 from finance.augur.sim.bills import Biller
@@ -157,10 +157,10 @@ def run(
         ),
         horizon_months=situation.horizon_months,
         income_sources=situation.income_sources,
-        jurisdictions=prepared_jurisdictions(jurisdictions, bonds=(), distributions=situation.distributions),
+        jurisdictions=jurisdiction_levels(jurisdictions, bonds=(), distributions=situation.distributions),
     )
-    for account in situation.accounts:
-        world.declare_account(account)
+    for account, balance in situation.accounts:
+        world.declare_account(account=account, opening_balance=balance)
     if tax is not None:
         world.track(
             TaxAuthority(
@@ -168,13 +168,45 @@ def run(
             )
         )
     for pool in situation.pools:
-        world.declare_pool(pool)
+        world.declare_pool(
+            agent_id=pool.agent_id,
+            account_id=pool.account_id,
+            asset_id=pool.asset_id,
+            quantity_scale=pool.quantity_scale,
+        )
     for held in situation.lots:
-        world.hold(held)
+        world.hold_lot(
+            lot_id=held.lot_id,
+            agent_id=held.agent_id,
+            account_id=held.account_id,
+            asset_id=held.asset_id,
+            purchase_month=held.purchase_month,
+            quantity_scale=held.quantity_scale,
+            units=held.units,
+            basis=held.basis,
+        )
     for distribution in situation.distributions:
-        world.declare_distribution(distribution)
+        world.declare_distribution(
+            agent_id=distribution.agent_id,
+            holding_account_id=distribution.holding_account_id,
+            asset_id=distribution.asset_id,
+            to_account_id=distribution.to_account_id,
+            tax_character=distribution.tax_character,
+        )
     for obligation in situation.obligations:
-        world.track(Biller(obligation))
+        world.track(
+            Biller(
+                obligation_id=obligation.obligation_id,
+                obligation_type=obligation.obligation_type,
+                from_account=obligation.from_account,
+                to_account=obligation.to_account,
+                amount_due=obligation.amount_due,
+                property_id=obligation.property_id,
+                deduction_category=obligation.deduction_category,
+                deductible_fraction_ppb=obligation.deductible_fraction_ppb,
+                schedule=obligation.schedule,
+            )
+        )
     policy = Policy(
         config,
         actor_id=ACTOR,

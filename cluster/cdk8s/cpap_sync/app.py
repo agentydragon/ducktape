@@ -44,9 +44,10 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecVolumesSecret,
 )
 
-from cluster.cdk8s import cilium, forgejo_images, node_scheduling
+from cluster.cdk8s import cilium, forgejo_images, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 
 NAME = "cpap-sync"
@@ -169,17 +170,13 @@ def _gateway_vm(chart: Chart) -> None:
 
 def namespace_chart(app: App) -> Chart:
     chart = Chart(app, "namespace", disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                "name": NAMESPACE,
-                "pod-security.kubernetes.io/enforce": "baseline",
-                "goldilocks.fairwinds.com/enabled": "false",
-            },
-        ),
+        name=NAMESPACE,
+        vpa=Vpa.DISABLED,
+        agent_readable=None,
+        labels={"name": NAMESPACE, "pod-security.kubernetes.io/enforce": "baseline"},
     )
     return chart
 

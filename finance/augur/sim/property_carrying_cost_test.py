@@ -17,13 +17,7 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedLocation,
-    _MortgageFinancing,
-    _PropertyPurchase,
-    _PropertyTax,
-)
+from finance.augur.sim.prepared import PreparedLocation, _MortgageFinancing, _PropertyPurchase, _PropertyTax
 from finance.augur.sim.property import Housing
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.session import ActionSession
@@ -64,8 +58,9 @@ def cents(value: float) -> float:
     return float(round_currency_amount(Decimal(str(value)), quantum=QUANTUM))
 
 
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return AccountRef(agent_id=agent_id, account_id=CHECKING), money(balance)
 
 
 def purchase(
@@ -127,7 +122,7 @@ class Situation:
     """What Alice buys, where it sits, and who taxes it."""
 
     horizon_months: int
-    accounts: tuple[PreparedAccount, ...]
+    accounts: tuple[tuple[AccountRef, int], ...]
     purchases: tuple[_PropertyPurchase, ...]
     tax_policies: tuple[_PropertyTax, ...] = ()
     locations: tuple[PreparedLocation, ...] = (SAN_FRANCISCO,)
@@ -137,8 +132,8 @@ def compose(case: Situation) -> World:
     world = World(
         MarketPath((), 0, rollout_count=1), horizon_months=case.horizon_months, income_sources=(ORDINARY_INCOME,)
     )
-    for opening in case.accounts:
-        world.declare_account(opening)
+    for opened, balance in case.accounts:
+        world.declare_account(account=opened, opening_balance=balance)
     world.declare_housing(Housing(purchases=case.purchases), case.tax_policies, case.locations)
     return world
 

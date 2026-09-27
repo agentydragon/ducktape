@@ -43,16 +43,14 @@ from finance.augur.model.series import (
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.sim.fixed_point import round_ppb, sampled_array_to_per_unit_rate, sampled_array_to_quanta
 from finance.augur.sim.holdings import asset_key
+from finance.augur.sim.ids import AssetId
 from finance.augur.sim.money import Currency
 from finance.augur.sim.prepared import (
     PreparedAmount,
-    PreparedBond,
-    PreparedDistribution,
+    PreparedFixedAmount,
     PreparedIndexedAmount,
     PreparedIndexedCoupon,
-    PreparedLot,
     PreparedSeries,
-    PreparedTlhPortfolio,
     _PropertyPurchase,
     _TenderPolicy,
 )
@@ -116,20 +114,20 @@ def materialize_sampled_exogenous(bundle: SampledExogenousBundle) -> ExternalSer
 
 def level_series_demand(
     *,
-    lots: Iterable[PreparedLot],
-    tlh_portfolios: Iterable[PreparedTlhPortfolio],
-    bonds: Iterable[PreparedBond],
-    distributions: Iterable[PreparedDistribution],
+    held_assets: Iterable[AssetId],
+    bond_coupons: Iterable[PreparedFixedAmount | PreparedIndexedCoupon],
+    distributing_assets: Iterable[AssetId],
     amounts: Iterable[PreparedAmount],
     tender_policies: Iterable[_TenderPolicy],
     purchases: Iterable[_PropertyPurchase],
 ) -> tuple[LevelSeriesKey, ...]:
     """Every level series these declarations REFERENCE — their exogenous demand.
 
-    `amounts` are the cashflows' and obligations' amounts. Derivable before anything is
-    sampled, which is the point: it lets the caller ask the exogenous model for exactly this
-    set instead of re-deriving the same fact from the product wire type in a second, drifting
-    implementation.
+    `held_assets` are the lots' and managed portfolios' assets, `distributing_assets` the
+    securities a distribution pays out on, and `amounts` the cashflows' and obligations' amounts.
+    Derivable before anything is sampled, which is the point: it lets the caller ask the exogenous
+    model for exactly this set instead of re-deriving the same fact from the product wire type in
+    a second, drifting implementation.
 
     Must stay exhaustive over the series the declarations read: a demand missing here is a
     series the path does not carry, which the declaration that reads it refuses.
@@ -144,10 +142,8 @@ def level_series_demand(
             keys.append(key)
 
     # Holdings are marked every month off their asset-price series.
-    for lot in lots:
-        add(asset_price_key_or_none(asset_key(lot.asset_id)))
-    for portfolio in tlh_portfolios:
-        add(asset_price_key_or_none(asset_key(portfolio.asset_id)))
+    for asset_id in held_assets:
+        add(asset_price_key_or_none(asset_key(asset_id)))
     # A TIPS' principal rides CPI, so an inflation-indexed bond DEMANDS inflation even when
     # nothing else does. Without this, the declaration rejects a missing inflation path for
     # any holding that does not happen to want CPI for another reason — a CPI-indexed spend,
@@ -155,12 +151,12 @@ def level_series_demand(
     #
     # Demand side only: `compile_series` carries only what was SAMPLED, so a TIPS whose inflation
     # nobody sampled is refused where it is held rather than priced off an all-NaN row.
-    if any(isinstance(bond.coupon, PreparedIndexedCoupon) for bond in bonds):
+    if any(isinstance(coupon, PreparedIndexedCoupon) for coupon in bond_coupons):
         add(InflationKey())
     # A distributing security demands TWO series: its price (already demanded by the lots that
     # hold it) and its dollars-per-unit payout, which nothing else references.
-    for distribution in distributions:
-        add(SecurityDistributionKey(symbol=asset_price_key(asset_key(distribution.asset_id)).symbol))
+    for asset_id in distributing_assets:
+        add(SecurityDistributionKey(symbol=asset_price_key(asset_key(asset_id)).symbol))
     for amount in amounts:
         _add_amount_series_key(amount, add)
     for pe_policy in tender_policies:

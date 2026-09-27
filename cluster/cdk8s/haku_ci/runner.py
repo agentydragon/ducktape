@@ -8,7 +8,7 @@ from __future__ import annotations
 import shlex
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import ConfigMap, k8s
+from cdk8s_plus_34 import ConfigMap
 from cilium_clusterwide_crds.io.cilium import (
     CiliumClusterwideNetworkPolicy,
     CiliumClusterwideNetworkPolicySpec,
@@ -53,10 +53,11 @@ from keda_triggerauthentication_crds.sh.keda import (
     TriggerAuthenticationSpecSecretTargetRef,
 )
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.haku_ci import runner_config
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 
 NAME = "haku-ci"
 NAMESPACE = "haku-ci"
@@ -608,28 +609,26 @@ def chart(app: App) -> Chart:
     # registry/git push creds. But the runner executes Haku-authored build steps (its workflow +
     # Dockerfile), so it IS agent-controlled compute and is egress-fenced like haku-sandbox. See
     # README.md.
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                "name": NAMESPACE,
-                "rbac.ducktape.io/agent-readable-logs": "true",
-                # The runner's resources are set deliberately; no VPA recommendations wanted.
-                "goldilocks.fairwinds.com/enabled": "false",
-                # Enforce the privileged Pod Security level. The dind sidecar runs privileged (the
-                # documented requirement for docker:dind-rootless -- it provides /dev/net/tun and
-                # disables the mount masks RootlessKit needs; the daemon itself still runs rootless
-                # as UID 1000). baseline/restricted forbid both privileged and its Unconfined
-                # seccomp, so the namespace must enforce privileged. Safe because haku-ci is
-                # operator-only (Haku has no RBAC here; only Flux applies), so the loosened level
-                # grants Haku nothing.
-                "pod-security.kubernetes.io/enforce": "privileged",
-                "pod-security.kubernetes.io/warn": "privileged",
-                "pod-security.kubernetes.io/audit": "privileged",
-            },
-        ),
+        name=NAMESPACE,
+        # The runner's resources are set deliberately; no VPA recommendations wanted.
+        vpa=Vpa.DISABLED,
+        agent_readable=AgentReadable.LOGS,
+        labels={
+            "name": NAMESPACE,
+            # Enforce the privileged Pod Security level. The dind sidecar runs privileged (the
+            # documented requirement for docker:dind-rootless -- it provides /dev/net/tun and
+            # disables the mount masks RootlessKit needs; the daemon itself still runs rootless
+            # as UID 1000). baseline/restricted forbid both privileged and its Unconfined
+            # seccomp, so the namespace must enforce privileged. Safe because haku-ci is
+            # operator-only (Haku has no RBAC here; only Flux applies), so the loosened level
+            # grants Haku nothing.
+            "pod-security.kubernetes.io/enforce": "privileged",
+            "pod-security.kubernetes.io/warn": "privileged",
+            "pod-security.kubernetes.io/audit": "privileged",
+        },
     )
     _add_egress_fence(chart)
     _add_runner(chart)

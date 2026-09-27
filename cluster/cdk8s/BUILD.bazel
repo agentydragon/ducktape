@@ -142,6 +142,29 @@ py_library(
 )
 
 py_library(
+    name = "namespaces",
+    srcs = ["namespaces.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_namespaces",
+    srcs = ["test_namespaces.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":namespaces",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "cnpg",
     srcs = ["cnpg.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -508,6 +531,7 @@ py_library(
         ":flux",
         ":gateway",
         ":manifest_roots",
+        ":namespaces",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -549,6 +573,7 @@ py_library(
         ":flux",
         ":forgejo_images",
         ":manifest_roots",
+        ":namespaces",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -591,6 +616,7 @@ py_library(
         ":gateway",
         ":generation",
         ":manifest_roots",
+        ":namespaces",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
@@ -853,6 +879,7 @@ py_library(
         ":gateway",
         ":generation",
         ":manifest_roots",
+        ":namespaces",
         ":node_scheduling",
         ":valkey",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
@@ -981,6 +1008,7 @@ py_library(
         ":egress_fences",
         ":flux",
         ":manifest_roots",
+        ":namespaces",
         "//cluster/cdk8s/cert_manager:interception_ca",
         "//cluster/cdk8s/providers/cilium:ciliumclusterwidenetworkpolicy",
         "//cluster/cdk8s/providers/flux:kustomization",
@@ -1023,8 +1051,8 @@ py_library(
         ":artifact_generators",
         ":flux",
         ":manifest_roots",
+        ":namespaces",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
     ],
 )
 
@@ -1152,6 +1180,7 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":namespaces",
         ":vpa",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -1166,6 +1195,7 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":namespaces",
         ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:helmrepository",
@@ -1181,6 +1211,7 @@ py_library(
         ":artifact_generators",
         ":flux",
         ":manifest_roots",
+        ":namespaces",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -1195,6 +1226,7 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":namespaces",
         ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:helmrepository",
@@ -1295,6 +1327,7 @@ py_library(
         ":artifact_generators",
         ":flux",
         ":manifest_roots",
+        ":namespaces",
         "//cluster/cdk8s/monitoring:loki",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -1633,10 +1666,10 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":namespaces",
         ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
     ],
 )

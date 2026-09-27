@@ -22,11 +22,12 @@ from cilium_crds.io.cilium import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/activitywatch"
@@ -43,22 +44,19 @@ _READ_PORT = 5603
 
 
 def _namespace(scope: Construct) -> None:
-    k8s.KubeNamespace(
+    namespaces.namespace(
         scope,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "pod-security.kubernetes.io/enforce": "privileged",
-                "pod-security.kubernetes.io/audit": "privileged",
-                "pod-security.kubernetes.io/warn": "privileged",
-                # Lets the approved agent identities read workload metadata and pod logs here,
-                # so a crashlooping sidecar can be diagnosed without an operator grant.
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
+        name=_NAMESPACE,
+        vpa=Vpa.AUTO,
+        # Lets the approved agent identities read workload metadata and pod logs here,
+        # so a crashlooping sidecar can be diagnosed without an operator grant.
+        agent_readable=AgentReadable.LOGS,
+        labels={
+            "pod-security.kubernetes.io/enforce": "privileged",
+            "pod-security.kubernetes.io/audit": "privileged",
+            "pod-security.kubernetes.io/warn": "privileged",
+        },
     )
 
 

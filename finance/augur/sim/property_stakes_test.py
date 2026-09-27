@@ -33,10 +33,7 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedJurisdiction,
     PreparedLocation,
-    PreparedRecurringTransfer,
     _CapitalImprovement,
     _MortgageFinancing,
     _PrimaryResidence,
@@ -47,6 +44,7 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.property import Housing
 from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -103,8 +101,9 @@ MULTI_PROPERTY_LOCATIONS = (
 )
 
 
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return AccountRef(agent_id=agent_id, account_id=CHECKING), money(balance)
 
 
 def financing(
@@ -166,17 +165,25 @@ def property_tax(property_id: PropertyId, collector: AgentId) -> _PropertyTax:
 
 
 @dataclass(frozen=True)
+class Rent:
+    """The tenant's monthly rent to Alice, in dollars, from month 0 through `end_month`."""
+
+    amount: Decimal | int
+    end_month: int
+
+
+@dataclass(frozen=True)
 class Situation:
     """What Alice owns, what happens to it, and the market each property is valued in."""
 
     horizon_months: int
-    accounts: tuple[PreparedAccount, ...]
+    accounts: tuple[tuple[AccountRef, int], ...]
     housing: Housing
     rollout_count: int = 1
     locations: tuple[PreparedLocation, ...] = LOCATIONS
     tax_policies: tuple[_PropertyTax, ...] = ()
     jurisdiction_ids: tuple[JurisdictionId, ...] = ()
-    recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
+    rent: Rent | None = None
     home_values: Mapping[str, Sequence[float]] = field(default_factory=dict)
 
 
@@ -202,12 +209,10 @@ def compose(case: Situation, rollout_id: int) -> World:
         MarketPath(series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=tuple(
-            PreparedJurisdiction(jurisdiction_id=id_, level=rules.level) for id_, rules in jurisdictions.items()
-        ),
+        jurisdictions={id_: rules.level for id_, rules in jurisdictions.items()},
     )
-    for opening in case.accounts:
-        world.declare_account(opening)
+    for opened, balance in case.accounts:
+        world.declare_account(account=opened, opening_balance=balance)
     if case.jurisdiction_ids:
         world.track(
             TaxAuthority(
@@ -225,8 +230,16 @@ def compose(case: Situation, rollout_id: int) -> World:
             )
         )
     world.declare_housing(case.housing, case.tax_policies, case.locations)
-    for flow in case.recurring_transfers:
-        world.declare_flow(flow)
+    if case.rent is not None:
+        world.declare_flow(
+            schedule=Recurring(start_month=0, end_month=case.rent.end_month),
+            cause_id="rental-income:rental",
+            from_account=AccountRef(agent_id=TENANT, account_id=CHECKING),
+            to_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
+            amount=money(case.rent.amount),
+            income_category=ORDINARY_INCOME,
+            deduction_category=None,
+        )
     return world
 
 
@@ -345,18 +358,7 @@ def home_and_rental_case() -> Situation:
         ),
         locations=MULTI_PROPERTY_LOCATIONS,
         jurisdiction_ids=(FEDERAL, CALIFORNIA),
-        recurring_transfers=(
-            PreparedRecurringTransfer(
-                start_month=0,
-                end_month=RENTAL_SALE_MONTH - 1,
-                cause_id="rental-income:rental",
-                from_account=AccountRef(agent_id=TENANT, account_id=CHECKING),
-                to_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
-                amount=money(MONTHLY_RENT),
-                income_category=ORDINARY_INCOME,
-                deduction_category=None,
-            ),
-        ),
+        rent=Rent(MONTHLY_RENT, end_month=RENTAL_SALE_MONTH - 1),
         housing=Housing(
             purchases=(
                 purchase(

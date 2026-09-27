@@ -15,7 +15,6 @@ from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD, mul_div
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.prepared import PreparedAccount, PreparedObligation
 from finance.augur.sim.results import Finished
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
@@ -29,9 +28,7 @@ def _retiree(market: MarketPath) -> World:
     world = World(market, horizon_months=HORIZON, income_sources=(ORDINARY_INCOME,))
     for name, balance in ((AgentId("retiree"), 10_000), (AgentId("world"), 0)):
         world.declare_account(
-            PreparedAccount(
-                account=AccountRef(agent_id=name, account_id=AccountId("checking")), opening_balance=balance
-            )
+            account=AccountRef(agent_id=name, account_id=AccountId("checking")), opening_balance=balance
         )
     return world
 
@@ -98,17 +95,15 @@ def test_an_experiment_defined_claim_label_reaches_the_policy() -> None:
     world = _retiree(MarketPath((), 0, rollout_count=1))
     world.track(
         Biller(
-            PreparedObligation(
-                schedule=Once(month=0),
-                obligation_id="test-outflow",
-                obligation_type="experiment:annual-outflow",
-                from_account=AccountRef(agent_id=AgentId("retiree"), account_id=AccountId("checking")),
-                to_account=AccountRef(agent_id=AgentId("world"), account_id=AccountId("checking")),
-                amount_due=15_000,
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=1_000_000_000,
-            )
+            schedule=Once(month=0),
+            obligation_id="test-outflow",
+            obligation_type="experiment:annual-outflow",
+            from_account=AccountRef(agent_id=AgentId("retiree"), account_id=AccountId("checking")),
+            to_account=AccountRef(agent_id=AgentId("world"), account_id=AccountId("checking")),
+            amount_due=15_000,
+            property_id=None,
+            deduction_category=None,
+            deductible_fraction_ppb=1_000_000_000,
         )
     )
     session = ActionSession({0: world}, AgentId("retiree"))

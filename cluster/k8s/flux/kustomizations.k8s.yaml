@@ -1699,6 +1699,7 @@ metadata:
   name: ollama
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: external-secrets-operator
       namespace: ducktape-flux

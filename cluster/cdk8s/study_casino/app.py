@@ -29,11 +29,12 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
 )
 
-from cluster.cdk8s import cnpg, node_scheduling
+from cluster.cdk8s import cnpg, namespaces, node_scheduling
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter, RouteMatch
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/study-casino"
@@ -63,18 +64,14 @@ _PROVISIONER_SCRIPT = textwrap.dedent(
 
 
 def _namespace(scope: Construct) -> None:
-    k8s.KubeNamespace(
+    namespaces.namespace(
         scope,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={
-                "name": _NAMESPACE,
-                # Single-pod personal app; opt out of Goldilocks/VPA recommendations.
-                "goldilocks.fairwinds.com/enabled": "false",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
+        name=_NAMESPACE,
+        # Single-pod personal app; opt out of Goldilocks/VPA recommendations.
+        vpa=Vpa.DISABLED,
+        agent_readable=AgentReadable.LOGS,
+        labels={"name": _NAMESPACE},
     )
 
 

@@ -32,10 +32,7 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedJurisdiction,
     PreparedLocation,
-    PreparedRecurringTransfer,
     _MortgageFinancing,
     _MortgageInterestDeduction,
     _PropertyPurchase,
@@ -45,6 +42,7 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.property import Housing
 from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -103,8 +101,9 @@ DEFAULT_SALT_SCHEDULE = (
 )
 
 
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return AccountRef(agent_id=agent_id, account_id=CHECKING), money(balance)
 
 
 def deducts(
@@ -213,11 +212,9 @@ def compose(case: Situation) -> World:
         MarketPath((), 0, rollout_count=1),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=tuple(
-            PreparedJurisdiction(jurisdiction_id=id_, level=rules.level) for id_, rules in jurisdictions.items()
-        ),
+        jurisdictions={id_: rules.level for id_, rules in jurisdictions.items()},
     )
-    for opening in (
+    for opened, balance in (
         account(ALICE, case.down_payment + 50_000),
         account(PAYROLL),
         account(IRS),
@@ -225,7 +222,7 @@ def compose(case: Situation) -> World:
         account(BANK),
         account(COLLECTOR),
     ):
-        world.declare_account(opening)
+        world.declare_account(account=opened, opening_balance=balance)
     world.track(
         TaxAuthority(
             compile_profile(
@@ -275,16 +272,13 @@ def compose(case: Situation) -> World:
         (SAN_FRANCISCO,),
     )
     world.declare_flow(
-        PreparedRecurringTransfer(
-            start_month=0,
-            end_month=case.horizon_months - 1,
-            cause_id="alice_paycheck",
-            from_account=AccountRef(agent_id=PAYROLL, account_id=CHECKING),
-            to_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
-            amount=money(round_currency_amount(Decimal(case.annual_w2_income) / 12, quantum=QUANTUM)),
-            income_category=ORDINARY_INCOME,
-            deduction_category=None,
-        )
+        schedule=Recurring(start_month=0, end_month=case.horizon_months - 1),
+        cause_id="alice_paycheck",
+        from_account=AccountRef(agent_id=PAYROLL, account_id=CHECKING),
+        to_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
+        amount=money(round_currency_amount(Decimal(case.annual_w2_income) / 12, quantum=QUANTUM)),
+        income_category=ORDINARY_INCOME,
+        deduction_category=None,
     )
     return world
 

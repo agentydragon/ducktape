@@ -24,9 +24,7 @@ from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
-    PreparedAccount,
     PreparedLocation,
-    PreparedObligation,
     PreparedSeries,
     _MortgageFinancing,
     _PropertyPurchase,
@@ -60,8 +58,9 @@ def ref(agent_id: AgentId) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=ref(agent_id), opening_balance=money(balance))
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return ref(agent_id), money(balance)
 
 
 def home_value(*paths: list[Decimal | int], horizon_months: int) -> tuple[PreparedSeries, ...]:
@@ -118,7 +117,7 @@ def home(
 
 
 def compose(
-    *accounts: PreparedAccount,
+    *accounts: tuple[AccountRef, int],
     horizon_months: int,
     housing: Housing,
     tax_policies: tuple[_PropertyTax, ...] = (),
@@ -127,8 +126,8 @@ def compose(
     rollout_count: int = 1,
 ) -> World:
     world = World(MarketPath(series, rollout_id, rollout_count=rollout_count), horizon_months=horizon_months)
-    for opening in accounts:
-        world.declare_account(opening)
+    for opened, balance in accounts:
+        world.declare_account(account=opened, opening_balance=balance)
     world.declare_housing(housing, tax_policies, (SF,))
     return world
 
@@ -363,17 +362,15 @@ def test_paid_groups_update_entities_but_a_failed_year_end_does_not_reset_intere
     if fail_year_end:
         world.track(
             Biller(
-                PreparedObligation(
-                    schedule=Once(month=11),
-                    obligation_id="unfundable",
-                    obligation_type="cash_spend",
-                    from_account=ref(ALICE),
-                    to_account=ref(AgentId("seller")),
-                    amount_due=money(1_000_000),
-                    property_id=None,
-                    deduction_category=None,
-                    deductible_fraction_ppb=1_000_000_000,
-                )
+                schedule=Once(month=11),
+                obligation_id="unfundable",
+                obligation_type="cash_spend",
+                from_account=ref(ALICE),
+                to_account=ref(AgentId("seller")),
+                amount_due=money(1_000_000),
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=1_000_000_000,
             )
         )
     books = drive(world, BOB, ALICE).books

@@ -23,15 +23,7 @@ from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import Currency
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedDistribution,
-    PreparedDistributionSlice,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedSeries,
-)
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Executed, Finished, Receipt, Rejected, RejectedAction, Rollout
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.session import ActionSession
@@ -126,12 +118,7 @@ def world(paths: list[Path], rollout_id: int) -> World:
         MarketPath(series, rollout_id, rollout_count=len(paths)),
         horizon_months=12 * years,
         income_sources=(ORDINARY_INCOME, InterestIncome(issuer_jurisdiction_id=FEDERAL)) if path.taxed else (),
-        jurisdictions=(
-            PreparedJurisdiction(jurisdiction_id=FEDERAL, level=JurisdictionLevel.FEDERAL),
-            PreparedJurisdiction(jurisdiction_id=CALIFORNIA, level=JurisdictionLevel.STATE),
-        )
-        if path.taxed
-        else (),
+        jurisdictions={FEDERAL: JurisdictionLevel.FEDERAL, CALIFORNIA: JurisdictionLevel.STATE} if path.taxed else {},
     )
     accounts = [
         AccountRef(agent_id=RETIREE, account_id=CHECKING),
@@ -147,11 +134,9 @@ def world(paths: list[Path], rollout_id: int) -> World:
         ),
     ]
     for account in accounts:
-        result.declare_account(PreparedAccount(account=account, opening_balance=0))
+        result.declare_account(account=account, opening_balance=0)
     for sleeve in Sleeve:
-        result.declare_pool(
-            PreparedHoldingPool(agent_id=RETIREE, account_id=BROKERAGE, asset_id=AssetId(sleeve), quantity_scale=1)
-        )
+        result.declare_pool(agent_id=RETIREE, account_id=BROKERAGE, asset_id=AssetId(sleeve), quantity_scale=1)
     if path.taxed:
         profile = TaxProfile(
             agent_id=RETIREE,
@@ -170,17 +155,11 @@ def world(paths: list[Path], rollout_id: int) -> World:
             )
         )
         result.declare_distribution(
-            PreparedDistribution(
-                agent_id=RETIREE,
-                holding_account_id=BROKERAGE,
-                asset_id=AssetId(Sleeve.BONDS),
-                to_account_id=INCOME[Sleeve.BONDS],
-                tax_character=(
-                    PreparedDistributionSlice(
-                        fraction_ppb=10**9, income_category=InterestIncome(issuer_jurisdiction_id=FEDERAL)
-                    ),
-                ),
-            )
+            agent_id=RETIREE,
+            holding_account_id=BROKERAGE,
+            asset_id=AssetId(Sleeve.BONDS),
+            to_account_id=INCOME[Sleeve.BONDS],
+            tax_character={InterestIncome(issuer_jurisdiction_id=FEDERAL): 10**9},
         )
     lots = [
         (Sleeve.CASH, "cash", OPENING_UNITS[Sleeve.CASH]),
@@ -188,17 +167,15 @@ def world(paths: list[Path], rollout_id: int) -> World:
         *((Sleeve.EQUITY, lot, units) for lot, units in path.equity_lots),
     ]
     for index, (sleeve, lot, units) in enumerate(lots):
-        result.hold(
-            PreparedLot(
-                lot_id=LotId(lot),
-                agent_id=RETIREE,
-                account_id=BROKERAGE,
-                asset_id=AssetId(sleeve),
-                purchase_month=index - len(lots),
-                quantity_scale=1,
-                units=units,
-                basis=100 * units,
-            )
+        result.hold_lot(
+            lot_id=LotId(lot),
+            agent_id=RETIREE,
+            account_id=BROKERAGE,
+            asset_id=AssetId(sleeve),
+            purchase_month=index - len(lots),
+            quantity_scale=1,
+            units=units,
+            basis=100 * units,
         )
     return result
 

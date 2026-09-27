@@ -1,18 +1,35 @@
 """Already-held nominal bonds and TIPS: supplied marks, contractual coupons and redemption."""
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from copy import deepcopy
+from dataclasses import dataclass
 
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, BondCashflowOutcome, BondState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId
 from finance.augur.sim.income import InterestIncome
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.observations import FixedCoupon, HeldBond, IndexedCoupon
-from finance.augur.sim.prepared import PreparedBond, PreparedFixedAmount, PreparedIndexedCoupon
+from finance.augur.sim.prepared import PreparedFixedAmount, PreparedIndexedCoupon
+
+
+@dataclass(frozen=True, kw_only=True)
+class Bond:
+    """A held dated bond's contract terms."""
+
+    bond_id: BondId
+    agent_id: AgentId
+    account_id: AccountId
+    issuer_jurisdiction_id: JurisdictionId | None
+    face_value: int
+    purchase_price: int
+    coupon: PreparedFixedAmount | PreparedIndexedCoupon
+    coupon_period_months: int
+    purchase_month_index: int
+    maturity_month_index: int
 
 
 class BondStatement(Statement):
@@ -22,19 +39,19 @@ class BondStatement(Statement):
 
 
 class HeldBonds:
-    def __init__(self, bonds: Sequence[PreparedBond], market: MarketPath) -> None:
+    def __init__(self, bonds: Sequence[Bond], market: MarketPath) -> None:
         self.terms = tuple(bonds)
         self.market = market
         # This month's cashflows, cleared by `begin_month`; terms plus the ledger are the state.
         self.cashflows: list[BondCashflowOutcome] = []
 
-    def hold(self, bond: PreparedBond) -> None:
+    def hold(self, bond: Bond) -> None:
         self.terms = (*self.terms, bond)
 
     def begin_month(self) -> None:
         self.cashflows.clear()
 
-    def principal(self, bond: PreparedBond, month: int) -> int:
+    def principal(self, bond: Bond, month: int) -> int:
         if not isinstance(bond.coupon, PreparedIndexedCoupon):
             return bond.face_value
         return mul_div(
@@ -44,7 +61,7 @@ class HeldBonds:
             "bond indexed principal",
         )
 
-    def held_principal(self, bond: PreparedBond, snapshot_month: int, valuation_month: int) -> int | None:
+    def held_principal(self, bond: Bond, snapshot_month: int, valuation_month: int) -> int | None:
         if bond.purchase_month_index > max(0, snapshot_month - 1) or bond.maturity_month_index < snapshot_month:
             return None
         return self.principal(bond, valuation_month)
@@ -146,9 +163,3 @@ class HeldBonds:
                         principal=principal,
                     )
                 )
-
-
-def bond_income_categories(bonds: Iterable[PreparedBond]) -> set[InterestIncome]:
-    """Interest sources needed by tax compilation, including issuer jurisdiction."""
-
-    return {InterestIncome(issuer_jurisdiction_id=bond.issuer_jurisdiction_id) for bond in bonds}

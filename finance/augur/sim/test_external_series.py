@@ -10,32 +10,20 @@ import pytest_bazel
 from finance.augur.model.exogenous import LevelFrames
 from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityDistributionKey
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series, level_series_demand
-from finance.augur.sim.ids import AccountId, AgentId, BondId
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedBond, PreparedFixedAmount, PreparedIndexedCoupon
+from finance.augur.sim.prepared import PreparedFixedAmount, PreparedIndexedCoupon
 from finance.augur.sim.testing.security_distributions import FUND, HORIZON, PER_UNIT, PRICE, SYMBOL
 
 
-def demand(*, bonds: tuple[PreparedBond, ...]) -> tuple[LevelSeriesKey, ...]:
+def demand(*, bond_coupons: tuple[PreparedFixedAmount | PreparedIndexedCoupon, ...]) -> tuple[LevelSeriesKey, ...]:
     return level_series_demand(
-        lots=(), tlh_portfolios=(), bonds=bonds, distributions=(), amounts=(), tender_policies=(), purchases=()
+        held_assets=(), bond_coupons=bond_coupons, distributing_assets=(), amounts=(), tender_policies=(), purchases=()
     )
 
 
-def bond(*, indexed: bool) -> PreparedBond:
-    """One dated $100 4% semiannual bond, with nothing priced beside it."""
-    return PreparedBond(
-        bond_id=BondId("test-bond"),
-        agent_id=AgentId("test-investor"),
-        account_id=AccountId("cash"),
-        issuer_jurisdiction_id=None,
-        face_value=10_000,
-        purchase_price=10_000,
-        coupon=PreparedIndexedCoupon(annual_rate_ppb=40_000_000) if indexed else PreparedFixedAmount(amount=200),
-        coupon_period_months=6,
-        purchase_month_index=0,
-        maturity_month_index=12,
-    )
+# One dated 4% semiannual coupon on a $100 bond, with nothing priced beside it.
+INDEXED = PreparedIndexedCoupon(annual_rate_ppb=40_000_000)
+NOMINAL = PreparedFixedAmount(amount=200)
 
 
 def test_an_indexed_bond_demands_an_inflation_path() -> None:
@@ -51,10 +39,10 @@ def test_an_indexed_bond_demands_an_inflation_path() -> None:
     and would pass either way, which is how the gap stayed invisible from `sim/`.
     """
 
-    assert InflationKey() in demand(bonds=(bond(indexed=True),))
+    assert InflationKey() in demand(bond_coupons=(INDEXED,))
     # And not otherwise: a nominal bond's cashflows are fixed by its terms, so demanding a
     # series it never reads would fail an unmodeled-inflation deployment for no reason.
-    assert InflationKey() not in demand(bonds=(bond(indexed=False),))
+    assert InflationKey() not in demand(bond_coupons=(NOMINAL,))
 
 
 def _payout_paths(*, bad_month_value: float | None = None) -> ExternalSeriesContext:

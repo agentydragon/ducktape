@@ -19,6 +19,51 @@ spec:
       storage: 350Gi
   storageClassName: lvm-proxmox-hdd
 ---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: wyrm2-qwen38-iq4-ssd
+spec:
+  accessModes:
+    - ReadWriteOnce
+  capacity:
+    storage: 90Gi
+  claimRef:
+    name: qwen38-iq4-ssd
+    namespace: ollama
+  local:
+    path: /var/lib/llm-models-ssd/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - wyrm2
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  volumeMode: Filesystem
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: qwen38-iq4-ssd
+  namespace: ollama
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 90Gi
+  storageClassName: ""
+  volumeMode: Filesystem
+  volumeName: wyrm2-qwen38-iq4-ssd
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -27,7 +72,7 @@ metadata:
   name: ollama
   namespace: ollama
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: ollama
@@ -42,6 +87,14 @@ spec:
         - env:
             - name: OLLAMA_MODELS
               value: /models
+            - name: OLLAMA_NOPRUNE
+              value: "true"
+            - name: OLLAMA_NUM_PARALLEL
+              value: "1"
+            - name: OLLAMA_MAX_LOADED_MODELS
+              value: "1"
+            - name: LLAMA_ARG_FIT_TARGET
+              value: 2048,0
             - name: OLLAMA_HOST
               value: 0.0.0.0:11434
             - name: NVIDIA_VISIBLE_DEVICES
@@ -83,6 +136,9 @@ spec:
           volumeMounts:
             - mountPath: /models
               name: models
+            - mountPath: /ssd-models
+              name: ssd-models
+              readOnly: true
         - env:
             - name: OLLAMA_DIRECT_TOKEN
               valueFrom:
@@ -106,6 +162,21 @@ spec:
             - mountPath: /etc/nginx/nginx.conf
               name: nginx-config
               subPath: nginx.conf
+      initContainers:
+        - command:
+            - /bin/sh
+            - /scripts/link-ssd-models.sh
+          image: ollama/ollama:0.34.4
+          name: link-ssd-models
+          volumeMounts:
+            - mountPath: /models
+              name: models
+            - mountPath: /ssd-models
+              name: ssd-models
+              readOnly: true
+            - mountPath: /scripts
+              name: scripts
+              readOnly: true
       nodeSelector:
         feature.node.kubernetes.io/pci-10de.present: "true"
       runtimeClassName: nvidia
@@ -114,6 +185,13 @@ spec:
           key: nvidia.com/gpu
           operator: Exists
       volumes:
+        - name: ssd-models
+          persistentVolumeClaim:
+            claimName: qwen38-iq4-ssd
+            readOnly: true
+        - configMap:
+            name: gpt-oss-scripts
+          name: scripts
         - name: models
           persistentVolumeClaim:
             claimName: llm-models
@@ -224,6 +302,83 @@ subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: setup-gpt-oss-v6
+  namespace: ollama
+spec:
+  template:
+    spec:
+      containers:
+        - command:
+            - /scripts/setup-gpt-oss-v2.sh
+          env:
+            - name: OLLAMA_HOST
+              value: http://127.0.0.1:11434
+          image: curlimages/curl:8.22.0
+          name: setup
+          volumeMounts:
+            - mountPath: /scripts
+              name: scripts
+              readOnly: true
+      initContainers:
+        - command:
+            - /bin/sh
+            - /scripts/link-ssd-models.sh
+          image: ollama/ollama:0.34.4
+          name: link-ssd-models
+          volumeMounts:
+            - mountPath: /models
+              name: models
+            - mountPath: /ssd-models
+              name: ssd-models
+              readOnly: true
+            - mountPath: /scripts
+              name: scripts
+              readOnly: true
+        - args:
+            - serve
+          env:
+            - name: OLLAMA_HOST
+              value: 127.0.0.1:11434
+            - name: OLLAMA_MODELS
+              value: /models
+            - name: OLLAMA_NOPRUNE
+              value: "true"
+            - name: OLLAMA_NO_CLOUD
+              value: "true"
+          image: ollama/ollama:0.34.4
+          name: registration-api
+          resources:
+            limits:
+              cpu: 1
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          restartPolicy: Always
+          volumeMounts:
+            - mountPath: /models
+              name: models
+            - mountPath: /ssd-models
+              name: ssd-models
+      nodeSelector:
+        kubernetes.io/hostname: wyrm2
+      restartPolicy: OnFailure
+      volumes:
+        - configMap:
+            defaultMode: 493
+            name: gpt-oss-scripts
+          name: scripts
+        - name: models
+          persistentVolumeClaim:
+            claimName: llm-models
+        - name: ssd-models
+          persistentVolumeClaim:
+            claimName: qwen38-iq4-ssd
+  ttlSecondsAfterFinished: 86400
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password

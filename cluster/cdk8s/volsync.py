@@ -23,10 +23,11 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "volsync"
 NAMESPACE = "volsync-system"
@@ -46,14 +47,7 @@ _SERVICE_MONITOR_AUTH_PATCH = f"""\
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
-        chart,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={"goldilocks.fairwinds.com/enabled": "true", "goldilocks.fairwinds.com/vpa-update-mode": "initial"},
-        ),
-    )
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.INITIAL, agent_readable=None)
     account = k8s.KubeServiceAccount(
         chart, "metrics-account", metadata=k8s.ObjectMeta(name=_METRICS_ACCOUNT, namespace=NAMESPACE)
     )

@@ -35,14 +35,13 @@ Every change is checked against an independent calculation, never a copy of the 
 - **Interest tax character:** interest is tagged with its issuer's jurisdiction
   (`InterestIncome.issuer_jurisdiction_id`), and each jurisdiction derives exemption from the
   issuer's level and whether the issuer is itself (`Jurisdiction.taxes_interest_from`). A CA
-  muni is recorded as issued by `california`, which did not issue it. Exemption belongs to the
-  obligation's legal regime, not its issuer: Ginnie Mae and Fannie Mae interest is taxable by
-  states while Federal Home Loan Bank interest is not, territorial bonds are exempt in every
-  state, and Build America Bonds are taxable munis. Tag interest with a named tax character
-  instead (`Treasury`, `Municipal(state)`, `Taxable`; `Territorial` and agency variants when
-  a product needs them), and have each jurisdiction's data list the characters it exempts.
-  Fund tax splits and bond declarations name characters; shares of one character add. The
-  vocabulary is agreed with the owner before code.
+  muni is recorded as issued by `california`, which did not issue it; exemption belongs to the
+  obligation's legal regime, not its issuer. Tag interest with a tax character instead:
+  `Treasury`, `Municipal(state)` or `Taxable`, the three regimes products hold today. Each
+  jurisdiction's data lists the characters it exempts (federal: any `municipal`; California:
+  `treasury` and `municipal: california`). `character` replaces `issuer_jurisdiction_id` on
+  `InterestIncome`, bond declarations, bond observations and book rows, and fund tax shares;
+  shares of one character add. The issuer-level lookup and the declared-issuer checks go.
 - **NIIT:** net rental income becomes net investment income (`OrdinaryIncome` merges rent with
   wages today); Form 8960 line 9 deductions.
 - **Housing basis:** `Properties.sell` leaves out the closing costs `sim/property.py`

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "kube-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/kube-system"
@@ -14,17 +15,16 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/kube-system"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAME,
-            # Kyverno's default resourceFilters exclude kube-system, so label-driven
-            # diagnostics readers cannot create RoleBindings here. Keep both generic
-            # agent and public-coder opt-ins absent until we intentionally add an
-            # explicit binding or a narrowly scoped resource-filter exception.
-            labels={"goldilocks.fairwinds.com/enabled": "true", "goldilocks.fairwinds.com/vpa-update-mode": "initial"},
-        ),
+        name=NAME,
+        vpa=Vpa.INITIAL,
+        # Kyverno's default resourceFilters exclude kube-system, so label-driven
+        # diagnostics readers cannot create RoleBindings here. Keep both generic
+        # agent and public-coder opt-ins absent until we intentionally add an
+        # explicit binding or a narrowly scoped resource-filter exception.
+        agent_readable=None,
     )
     return chart
 

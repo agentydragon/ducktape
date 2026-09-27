@@ -18,14 +18,7 @@ from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, income_sou
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedBond,
-    PreparedFixedAmount,
-    PreparedIndexedCoupon,
-    PreparedJurisdiction,
-    PreparedSeries,
-)
+from finance.augur.sim.prepared import PreparedFixedAmount, PreparedIndexedCoupon, PreparedSeries
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
@@ -52,6 +45,21 @@ CPI_DEFLATING = [100.0] * 6 + [80.0] * (HORIZON + 1 - 6)
 TREASURY, MUNI, CORPORATE = JurisdictionId("federal_us"), JurisdictionId("california"), None
 
 
+@dataclass(frozen=True, kw_only=True)
+class DatedBond:
+    """A bond a case holds from month zero, bought at par, in quanta."""
+
+    bond_id: BondId
+    agent_id: AgentId
+    account_id: AccountId
+    issuer_jurisdiction_id: JurisdictionId | None
+    face_value: int
+    coupon: PreparedFixedAmount | PreparedIndexedCoupon
+    coupon_period_months: int
+    purchase_month_index: int
+    maturity_month_index: int
+
+
 def dated(
     bond_id: BondId,
     *,
@@ -64,17 +72,16 @@ def dated(
     maturity: int,
     issuer: JurisdictionId | None = None,
     indexed: bool = False,
-) -> PreparedBond:
+) -> DatedBond:
     """A bond bought at par; a nominal coupon is the annual rate's share of the face, rounded once."""
     face_quanta = int(currency_amount_to_quanta(face, quantum=QUANTUM))
     rate_ppb = rate_to_ppb(annual_rate)
-    return PreparedBond(
+    return DatedBond(
         bond_id=bond_id,
         agent_id=agent_id,
         account_id=account_id,
         issuer_jurisdiction_id=issuer,
         face_value=face_quanta,
-        purchase_price=face_quanta,
         coupon=PreparedIndexedCoupon(annual_rate_ppb=rate_ppb)
         if indexed
         else PreparedFixedAmount(
@@ -102,12 +109,12 @@ def cpi_series(paths: Sequence[Sequence[float]]) -> tuple[PreparedSeries, ...]:
     )
 
 
-def checking(*balances: tuple[AgentId, Decimal]) -> tuple[PreparedAccount, ...]:
-    """Opening balances for agents holding one `checking` account each."""
+def checking(*balances: tuple[AgentId, Decimal]) -> tuple[tuple[AccountRef, int], ...]:
+    """Each agent's one `checking` account with its opening balance."""
     return tuple(
-        PreparedAccount(
-            account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")),
-            opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
+        (
+            AccountRef(agent_id=agent_id, account_id=AccountId("checking")),
+            int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
         )
         for agent_id, balance in balances
     )
@@ -117,8 +124,9 @@ def checking(*balances: tuple[AgentId, Decimal]) -> tuple[PreparedAccount, ...]:
 class Situation:
     """Accounts, the bonds held from month zero and the CPI paths that index them."""
 
-    accounts: tuple[PreparedAccount, ...]
-    bonds: tuple[PreparedBond, ...]
+    # Each account with its opening balance.
+    accounts: tuple[tuple[AccountRef, int], ...]
+    bonds: tuple[DatedBond, ...]
     horizon_months: int
     series: tuple[PreparedSeries, ...] = ()
     rollout_count: int = 1
@@ -140,15 +148,26 @@ def compose(case: Situation, rollout_id: int = 0) -> World:
                 key=income_source_sort_key,
             )
         ),
-        jurisdictions=tuple(PreparedJurisdiction(jurisdiction_id=id_, level=rules[id_].level) for id_ in sorted(rules)),
+        jurisdictions={id_: rules[id_].level for id_ in sorted(rules)},
     )
-    for account in case.accounts:
-        world.declare_account(account)
+    for account, balance in case.accounts:
+        world.declare_account(account=account, opening_balance=balance)
     for agent_id in case.taxpayers:
         profile = TaxProfile(agent_id=agent_id, jurisdiction_ids=list(filed_in), tax_authority_agent_id=AgentId("irs"))
         world.track(TaxAuthority(compile_profile(profile, rules, currency=USD), indexation=FixedNominalLaw()))
     for bond in case.bonds:
-        world.hold(bond)
+        world.hold_bond(
+            bond_id=bond.bond_id,
+            agent_id=bond.agent_id,
+            account_id=bond.account_id,
+            issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
+            face_value=bond.face_value,
+            purchase_price=bond.face_value,
+            coupon=bond.coupon,
+            coupon_period_months=bond.coupon_period_months,
+            purchase_month_index=bond.purchase_month_index,
+            maturity_month_index=bond.maturity_month_index,
+        )
     return world
 
 

@@ -32,15 +32,7 @@ from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, QualifiedD
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import Currency
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedDistribution,
-    PreparedDistributionSlice,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedSeries,
-)
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.tax import PreparedTaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -220,21 +212,15 @@ def _federal_ca_taxes(panel: AnnualPanel, start_years: Sequence[int], tax_law: T
 
 def _declare_taxes(world: World, taxes: FederalCaTaxes, rollout_id: int) -> None:
     """The window's tax authority, with sleeve payouts characterized by issuer."""
-    world.declare_account(
-        PreparedAccount(account=AccountRef(agent_id=TAX_AUTHORITY, account_id=CHECKING), opening_balance=0)
-    )
+    world.declare_account(account=AccountRef(agent_id=TAX_AUTHORITY, account_id=CHECKING), opening_balance=0)
     world.track(TaxAuthority(taxes.profile, indexation=taxes.laws[rollout_id]))
     for sleeve in Sleeve:
         world.declare_distribution(
-            PreparedDistribution(
-                agent_id=RETIREE,
-                holding_account_id=BROKERAGE,
-                asset_id=AssetId(sleeve),
-                to_account_id=INCOME[sleeve],
-                tax_character=(
-                    PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1), income_category=PAYOUT_INCOME[sleeve]),
-                ),
-            )
+            agent_id=RETIREE,
+            holding_account_id=BROKERAGE,
+            asset_id=AssetId(sleeve),
+            to_account_id=INCOME[sleeve],
+            tax_character={PAYOUT_INCOME[sleeve]: rate_to_ppb(1)},
         )
 
 
@@ -254,24 +240,17 @@ def compose_world(windows: AnnualWindows, rollout_id: int, *, wealth: Decimal, w
         MarketPath(windows.series, rollout_id, rollout_count=len(windows.start_years)),
         horizon_months=windows.horizon_months,
         income_sources=(ORDINARY_INCOME, *dict.fromkeys(PAYOUT_INCOME.values())) if taxed else (),
-        jurisdictions=(
-            PreparedJurisdiction(jurisdiction_id=FEDERAL, level=JurisdictionLevel.FEDERAL),
-            PreparedJurisdiction(jurisdiction_id=CALIFORNIA, level=JurisdictionLevel.STATE),
-        )
-        if taxed
-        else (),
+        jurisdictions={FEDERAL: JurisdictionLevel.FEDERAL, CALIFORNIA: JurisdictionLevel.STATE} if taxed else {},
     )
     retiree_accounts = [CHECKING, *([TAX_RESERVE, *INCOME.values()] if taxed else [])]
     for account in (
         *(AccountRef(agent_id=RETIREE, account_id=account_id) for account_id in retiree_accounts),
         AccountRef(agent_id=WORLD, account_id=CHECKING),
     ):
-        world.declare_account(PreparedAccount(account=account, opening_balance=0))
+        world.declare_account(account=account, opening_balance=0)
     for sleeve in Sleeve:
         world.declare_pool(
-            PreparedHoldingPool(
-                agent_id=RETIREE, account_id=BROKERAGE, asset_id=AssetId(sleeve), quantity_scale=QUANTITY_SCALE
-            )
+            agent_id=RETIREE, account_id=BROKERAGE, asset_id=AssetId(sleeve), quantity_scale=QUANTITY_SCALE
         )
     if taxes is not None:
         _declare_taxes(world, taxes, rollout_id)
@@ -279,16 +258,14 @@ def compose_world(windows: AnnualWindows, rollout_id: int, *, wealth: Decimal, w
         if not weights[sleeve]:
             continue
         value = round_currency_amount(wealth * weights[sleeve] / total, quantum=CURRENCY.quantum)
-        world.hold(
-            PreparedLot(
-                lot_id=LotId(f"{sleeve}_opening"),
-                agent_id=RETIREE,
-                account_id=BROKERAGE,
-                asset_id=AssetId(sleeve),
-                purchase_month=-1,
-                quantity_scale=QUANTITY_SCALE,
-                units=quantity_to_quanta(value, scale=QUANTITY_SCALE),
-                basis=CURRENCY.quanta(value),
-            )
+        world.hold_lot(
+            lot_id=LotId(f"{sleeve}_opening"),
+            agent_id=RETIREE,
+            account_id=BROKERAGE,
+            asset_id=AssetId(sleeve),
+            purchase_month=-1,
+            quantity_scale=QUANTITY_SCALE,
+            units=quantity_to_quanta(value, scale=QUANTITY_SCALE),
+            basis=CURRENCY.quanta(value),
         )
     return world

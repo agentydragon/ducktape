@@ -1,43 +1,15 @@
 """Owned, resolved simulation facts: exact money/quantity counts and supplied paths.
 
-The declaration vocabulary a composed world takes. Underscored configured records
-preserve existing consumers until their policies move to the common action session.
+Values a declaration's arguments take (amounts, coupons, a location), supplied series, and the
+underscored configured records the housing, tender and deduction declarations take until their
+policies move to the common action session.
 """
 
 from dataclasses import dataclass
 from typing import Literal
 
 from finance.augur.model.series import LocationId
-from finance.augur.sim.books import AccountRef
-from finance.augur.sim.ids import (
-    AccountId,
-    AgentId,
-    AssetId,
-    BondId,
-    JurisdictionId,
-    LiabilityId,
-    LotId,
-    PortfolioId,
-    PropertyId,
-)
-from finance.augur.sim.income import TransferDeductionCategory, TransferIncomeCategory
-from finance.augur.sim.jurisdictions import JurisdictionLevel
-from finance.augur.sim.schedule import Schedule
-from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedAccount:
-    account: AccountRef
-    opening_balance: int
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedHoldingPool:
-    agent_id: AgentId
-    account_id: AccountId
-    asset_id: AssetId
-    quantity_scale: int
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -59,100 +31,9 @@ type PreparedAmount = int | PreparedFixedAmount | PreparedIndexedAmount
 
 
 @dataclass(frozen=True, kw_only=True)
-class PreparedFlow:
-    cause_id: str
-    from_account: AccountRef
-    to_account: AccountRef
-    amount: PreparedAmount
-    income_category: TransferIncomeCategory | None
-    deduction_category: TransferDeductionCategory | None
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedTransfer(PreparedFlow):
-    month: int
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedRecurringTransfer(PreparedFlow):
-    start_month: int
-    end_month: int | None
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedPropertyCashflow(PreparedTransfer):
-    property_id: PropertyId
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedRecurringPropertyCashflow(PreparedRecurringTransfer):
-    property_id: PropertyId
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedObligation:
-    obligation_id: str
-    obligation_type: str
-    from_account: AccountRef
-    to_account: AccountRef
-    amount_due: PreparedAmount
-    property_id: PropertyId | None
-    deduction_category: TransferDeductionCategory | None
-    deductible_fraction_ppb: int
-    schedule: Schedule
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedLot:
-    lot_id: LotId
-    agent_id: AgentId
-    account_id: AccountId
-    asset_id: AssetId
-    purchase_month: int
-    quantity_scale: int
-    units: int
-    basis: int
-
-
-@dataclass(frozen=True, kw_only=True)
 class PreparedIndexedCoupon:
     annual_rate_ppb: int
     kind: Literal["indexed"] = "indexed"
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedBond:
-    bond_id: BondId
-    agent_id: AgentId
-    account_id: AccountId
-    issuer_jurisdiction_id: JurisdictionId | None
-    face_value: int
-    purchase_price: int
-    coupon: PreparedFixedAmount | PreparedIndexedCoupon
-    coupon_period_months: int
-    purchase_month_index: int
-    maturity_month_index: int
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedDistributionSlice:
-    fraction_ppb: int
-    income_category: TransferIncomeCategory
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedDistribution:
-    agent_id: AgentId
-    holding_account_id: AccountId
-    asset_id: AssetId
-    to_account_id: AccountId
-    tax_character: tuple[PreparedDistributionSlice, ...]
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedJurisdiction:
-    jurisdiction_id: JurisdictionId
-    level: JurisdictionLevel
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -169,16 +50,6 @@ class _TenderPolicy:
     owner_agent_id: AgentId
     proceeds_account_id: AccountId
     liquid_net_worth_floor: PreparedAmount
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedTlhPortfolio:
-    portfolio_id: PortfolioId
-    owner_agent_id: AgentId
-    account_id: AccountId
-    asset_id: AssetId
-    initial_cohorts: tuple[TlhOpeningCohort, ...]
-    assumptions: TlhAssumptions
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -24,10 +24,9 @@ instrument or that its forecasts are adequate for a particular decision. Fitted
 market models are experimental (`x/models/`); core supplies historical replay and
 the market-path and instrument-pricing infrastructure.
 
-A caller builds its declarations, rules and supplied paths as `Prepared*` records
-(`sim/prepared.py`) of exact integer money, resolved tax rules and integer paths, and
-declares them on a `World` (`declare_*`, `hold`, `track`). There is no scenario
-object or compile step between the two. Execution does not reread the caller's
+A caller declares its month-0 facts on a `World` (`declare_*`, `hold_lot`, `hold_bond`,
+`track`) as keyword arguments of exact integer money, alongside resolved tax rules and
+integer paths. There is no scenario object or compile step between the two. Execution does not reread the caller's
 inputs or load evidence/tax configuration. Missing or non-finite required paths reject;
 they are not synthesized as zero observations. Ordinary public-security and
 home-value prices are positive. Prices used exclusively by reduced-form TLH

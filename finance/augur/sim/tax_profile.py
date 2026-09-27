@@ -7,9 +7,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
-from finance.augur.sim.distributions import distribution_income_categories
 from finance.augur.sim.fixed_point import rate_to_ppb
-from finance.augur.sim.held_bonds import bond_income_categories
 from finance.augur.sim.ids import CHECKING, AccountId, AgentId, JurisdictionId
 from finance.augur.sim.income import InterestIncome, OrdinaryIncome, TransferIncomeCategory, income_source_sort_key
 from finance.augur.sim.jurisdictions import (
@@ -21,7 +19,6 @@ from finance.augur.sim.jurisdictions import (
     load_jurisdiction,
 )
 from finance.augur.sim.money import Currency, NonNegativeCurrencyAmount
-from finance.augur.sim.prepared import PreparedBond, PreparedDistribution, PreparedFlow
 from finance.augur.sim.tax import PreparedTaxBracket, PreparedTaxProfile, PreparedTaxRules, PreparedThresholdTax
 
 
@@ -80,20 +77,10 @@ def section_121_exclusion_for(filing_status: FilingStatus) -> Decimal:
     return _SECTION_121_EXCLUSION_BY_FILING_STATUS[filing_status]
 
 
-def compile_income_sources(
-    *, flows: Iterable[PreparedFlow], bonds: Iterable[PreparedBond], distributions: Iterable[PreparedDistribution]
-) -> tuple[TransferIncomeCategory, ...]:
-    """Ordinary income plus every category cashflows, held bonds or fund distributions name, in reporting order."""
+def compile_income_sources(named: Iterable[TransferIncomeCategory]) -> tuple[TransferIncomeCategory, ...]:
+    """Ordinary income plus every category the cashflows, held bonds or fund distributions name, in reporting order."""
 
-    sources = sorted(
-        {
-            OrdinaryIncome(),
-            *(item.income_category for item in flows if item.income_category is not None),
-            *bond_income_categories(bonds),
-            *distribution_income_categories(distributions),
-        },
-        key=income_source_sort_key,
-    )
+    sources = sorted({OrdinaryIncome(), *named}, key=income_source_sort_key)
     # Every named issuer must resolve, including issuers found only on cashflows.
     for source in sources:
         if isinstance(source, InterestIncome) and source.issuer_jurisdiction_id is not None:

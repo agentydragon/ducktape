@@ -1,5 +1,6 @@
 """Independent public-distribution controls through the common Python action session."""
 
+from collections.abc import Mapping
 from decimal import Decimal
 from itertools import pairwise
 
@@ -20,20 +21,11 @@ from finance.augur.sim.fixed_point import (
     rate_to_ppb,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, income_source_sort_key
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferIncomeCategory, income_source_sort_key
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedDistribution,
-    PreparedDistributionSlice,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedObligation,
-    PreparedSeries,
-)
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Finished, Paid, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
@@ -99,65 +91,47 @@ def _paths(payout: np.ndarray | None) -> tuple[PreparedSeries, ...]:
     )
 
 
-def _account(agent_id: AgentId, balance: Decimal) -> PreparedAccount:
-    return PreparedAccount(
+def _account(world: World, agent_id: AgentId, balance: Decimal) -> None:
+    world.declare_account(
         account=AccountRef(agent_id=agent_id, account_id=CHECKING),
         opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
     )
 
 
-def _bill(amount: Decimal) -> PreparedObligation:
-    """A one-off required payment from alice to the tax authority's cash account."""
-
-    return PreparedObligation(
-        schedule=Once(month=0),
-        obligation_id="bill",
-        obligation_type=ObligationType.CASH_SPEND,
-        from_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
-        to_account=AccountRef(agent_id=IRS, account_id=CHECKING),
-        amount_due=int(currency_amount_to_quanta(amount, quantum=QUANTUM)),
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=rate_to_ppb(1),
-    )
-
-
 def compose(
     *,
-    tax_character: tuple[PreparedDistributionSlice, ...] = TREASURY,
+    tax_character: Mapping[TransferIncomeCategory, int] = TREASURY,
     is_taxed: bool = True,
     distributes: bool = True,
     holding_account_id: AccountId = BROKERAGE,
     payout: np.ndarray | None = PAYOUT,
     opening_cash: Decimal = Decimal(50_000),
-    bill: PreparedObligation | None = None,
+    bill: Decimal | None = None,
 ) -> World:
-    """Alice holds one fund in a brokerage account and its payout lands in checking.
+    """Alice holds one fund in a brokerage account and its payout lands in checking; `bill` is a one-off
+    month-zero payment she owes the tax authority's cash account.
 
     `is_taxed=False` leaves the payout standing alone in the cash channel, which the
     cashflow cases want: with a tax authority the year-end settlement lands in the same months.
     """
 
-    slices = tax_character if distributes else ()
+    categories = tuple(tax_character) if distributes else ()
     # The vocabulary a taxpayer shares: what the fund's slices name, plus where alice files.
     issuers = {
-        part.income_category.issuer_jurisdiction_id
-        for part in slices
-        if isinstance(part.income_category, InterestIncome) and part.income_category.issuer_jurisdiction_id is not None
+        category.issuer_jurisdiction_id
+        for category in categories
+        if isinstance(category, InterestIncome) and category.issuer_jurisdiction_id is not None
     }
     world = World(
         MarketPath(_paths(payout), 0, rollout_count=1),
         horizon_months=HORIZON,
-        income_sources=tuple(
-            sorted({ORDINARY_INCOME, *(part.income_category for part in slices)}, key=income_source_sort_key)
-        ),
-        jurisdictions=tuple(
-            PreparedJurisdiction(jurisdiction_id=id_, level=load_jurisdiction(id_).level)
-            for id_ in sorted(issuers | (set(FILED_IN) if is_taxed else set()))
-        ),
+        income_sources=tuple(sorted({ORDINARY_INCOME, *categories}, key=income_source_sort_key)),
+        jurisdictions={
+            id_: load_jurisdiction(id_).level for id_ in sorted(issuers | (set(FILED_IN) if is_taxed else set()))
+        },
     )
-    world.declare_account(_account(ALICE, opening_cash))
-    world.declare_account(_account(IRS, Decimal(0)))
+    _account(world, ALICE, opening_cash)
+    _account(world, IRS, Decimal(0))
     if is_taxed:
         # One single filer paying from checking to the irs agent; the rates, brackets and
         # exemptions come from the deployment's own jurisdiction records.
@@ -172,33 +146,39 @@ def compose(
             )
         )
     scale = quantity_scale_for_asset(FUND)
-    world.declare_pool(
-        PreparedHoldingPool(agent_id=ALICE, account_id=BROKERAGE, asset_id=AssetId(SYMBOL), quantity_scale=scale)
-    )
-    world.hold(
-        PreparedLot(
-            lot_id=LotId("bnd-lot"),
-            agent_id=ALICE,
-            account_id=BROKERAGE,
-            asset_id=AssetId(SYMBOL),
-            purchase_month=-24,
-            quantity_scale=scale,
-            units=quantity_to_quanta(UNITS, scale=scale),
-            basis=int(currency_amount_to_quanta(UNITS * PRICE, quantum=QUANTUM)),
-        )
+    world.declare_pool(agent_id=ALICE, account_id=BROKERAGE, asset_id=AssetId(SYMBOL), quantity_scale=scale)
+    world.hold_lot(
+        lot_id=LotId("bnd-lot"),
+        agent_id=ALICE,
+        account_id=BROKERAGE,
+        asset_id=AssetId(SYMBOL),
+        purchase_month=-24,
+        quantity_scale=scale,
+        units=quantity_to_quanta(UNITS, scale=scale),
+        basis=int(currency_amount_to_quanta(UNITS * PRICE, quantum=QUANTUM)),
     )
     if distributes:
         world.declare_distribution(
-            PreparedDistribution(
-                agent_id=ALICE,
-                holding_account_id=holding_account_id,
-                asset_id=AssetId(SYMBOL),
-                to_account_id=CHECKING,
-                tax_character=slices,
-            )
+            agent_id=ALICE,
+            holding_account_id=holding_account_id,
+            asset_id=AssetId(SYMBOL),
+            to_account_id=CHECKING,
+            tax_character=tax_character,
         )
     if bill is not None:
-        world.track(Biller(bill))
+        world.track(
+            Biller(
+                obligation_id="bill",
+                obligation_type=ObligationType.CASH_SPEND,
+                from_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
+                to_account=AccountRef(agent_id=IRS, account_id=CHECKING),
+                amount_due=int(currency_amount_to_quanta(bill, quantum=QUANTUM)),
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=rate_to_ppb(1),
+                schedule=Once(month=0),
+            )
+        )
     return world
 
 
@@ -391,7 +371,7 @@ def test_a_declared_distribution_with_no_sampled_payout_series_is_rejected() -> 
 
 
 def test_current_payout_funds_an_explicit_same_month_claim() -> None:
-    result = _run(compose(is_taxed=False, opening_cash=Decimal(0), bill=_bill(Decimal(2_000))))
+    result = _run(compose(is_taxed=False, opening_cash=Decimal(0), bill=Decimal(2_000)))
     assert result.summary.cash[0].values[:2] == [0, 0]
     assert result.summary.cash[0].values[-1] == 2_400_000
     [payment] = result.summary.payments

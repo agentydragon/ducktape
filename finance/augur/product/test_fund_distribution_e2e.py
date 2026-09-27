@@ -34,14 +34,13 @@ from finance.augur.model.deterministic import Constant
 from finance.augur.model.level_series_groups import SecurityDistributionGroups
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.conftest import MakeProductService
-from finance.augur.product.holdings import opening_holdings
+from finance.augur.product.holdings import Distribution, opening_holdings
 from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, resolve_primary_agent_id, sim_locations_from_config
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import RolloutRequest, ScenarioKey, SpendIndex
 from finance.augur.sim.fixed_point import rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId, PortfolioId
 from finance.augur.sim.income import InterestIncome
-from finance.augur.sim.prepared import PreparedDistribution
 from finance.augur.sim.tlh import TlhAssumptions
 from finance.augur.x.models.independent import IndependentProviderConfig
 from finance.augur.x.models.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
@@ -237,7 +236,7 @@ def test_a_tlh_portfolio_of_a_declared_fund_is_paid_on_its_value(
     assert gain == [pytest.approx(month * (_MONTHLY_PAYOUT_USD + 110) * 100) for month in range(len(declared))]
 
 
-def _distributions(config: Config) -> tuple[PreparedDistribution, ...]:
+def _distributions(config: Config) -> tuple[Distribution, ...]:
     return opening_holdings(
         config.portfolio_sources.fixed.portfolio,
         config.security_distributions,
@@ -258,9 +257,28 @@ def test_the_tax_character_fractions_reach_the_scenario(augur_config: Config) ->
 
     config = _with_bond_fund(augur_config, _AGGREGATE)
 
-    assert [(slice_.fraction_ppb, slice_.income_category) for slice_ in one(_distributions(config)).tax_character] == [
-        (rate_to_ppb(Decimal("0.4")), InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us"))),
-        (rate_to_ppb(Decimal("0.6")), InterestIncome()),
+    assert list(one(_distributions(config)).tax_character.items()) == [
+        (InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us")), rate_to_ppb(Decimal("0.4"))),
+        (InterestIncome(), rate_to_ppb(Decimal("0.6"))),
+    ]
+
+
+def test_shares_naming_one_issuer_add(augur_config: Config) -> None:
+    """A fund's disclosure lists corporate, mortgage-backed and asset-backed debt on separate lines,
+    all non-governmental; copied line by line they are one tax character."""
+
+    config = _with_bond_fund(
+        augur_config,
+        (
+            DistributionTaxShareConfig(fraction=0.4, issuer_jurisdiction_id=JurisdictionId("federal_us")),
+            DistributionTaxShareConfig(fraction=0.35),
+            DistributionTaxShareConfig(fraction=0.25),
+        ),
+    )
+
+    assert list(one(_distributions(config)).tax_character.items()) == [
+        (InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us")), rate_to_ppb(Decimal("0.4"))),
+        (InterestIncome(), rate_to_ppb(Decimal("0.6"))),
     ]
 
 
