@@ -46,7 +46,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecEndpoints
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecEndpoints, ServiceMonitorSpecSelector
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
@@ -296,7 +296,7 @@ class HaMcpApp(Construct):
                     )
                 },
             ),
-            selector=_APP_LABELS,
+            endpoint_selector=_APP_LABELS,
             ingress=[
                 IngressRule.from_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": "agentplane-staging"}, ports=[_APP_FACADE_PORT]
@@ -312,7 +312,7 @@ class HaMcpApp(Construct):
             self,
             "servicemonitor",
             metadata=ApiObjectMetadata(name=_APP_NAME, namespace=_NAMESPACE),
-            selector=_APP_LABELS,
+            selector=ServiceMonitorSpecSelector(match_labels=_APP_LABELS),
             endpoints=[ServiceMonitorSpecEndpoints(port="metrics")],
         )
 

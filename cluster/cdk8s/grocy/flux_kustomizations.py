@@ -11,7 +11,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 def grocy_sf(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    gateway: Kustomization,
     cert_manager_environment: Kustomization,
     authentik: Kustomization,
     volsync: Kustomization,
@@ -22,7 +21,7 @@ def grocy_sf(
         name,
         artifact,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(gateway, cert_manager_environment, authentik, volsync),
+        depends_on=flux_kustomization_depends_on_many(cert_manager_environment, authentik, volsync),
     )
 
 
@@ -30,7 +29,6 @@ def grocy_mcp_sf(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_config: Kustomization,
-    gateway: Kustomization,
     grocy_sf: Kustomization,
     valkey: Kustomization,
     agent_machine_access_tf: Kustomization,
@@ -45,7 +43,6 @@ def grocy_mcp_sf(
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_config,
-            gateway,
             grocy_sf,
             valkey,
             agent_machine_access_tf,
@@ -76,7 +73,6 @@ def grocy_sf_user_perms(
 def grocy_vallejo(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    gateway: Kustomization,
     cert_manager_environment: Kustomization,
     authentik: Kustomization,
     volsync: Kustomization,
@@ -87,7 +83,7 @@ def grocy_vallejo(
         name,
         artifact,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(gateway, cert_manager_environment, authentik, volsync),
+        depends_on=flux_kustomization_depends_on_many(cert_manager_environment, authentik, volsync),
     )
 
 
@@ -95,7 +91,6 @@ def grocy_mcp_vallejo(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_config: Kustomization,
-    gateway: Kustomization,
     grocy_vallejo: Kustomization,
     valkey: Kustomization,
     agent_machine_access_tf: Kustomization,
@@ -110,7 +105,6 @@ def grocy_mcp_vallejo(
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_config,
-            gateway,
             grocy_vallejo,
             valkey,
             agent_machine_access_tf,

@@ -136,7 +136,6 @@ def haku_openclaw_spike_app(
 def plaid_mcp(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    gateway: Kustomization,
     cnpg: Kustomization,
     local_path_provisioner: Kustomization,
     external_secrets_config: Kustomization,
@@ -153,7 +152,6 @@ def plaid_mcp(
         timeout="10m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            gateway,
             cnpg,
             local_path_provisioner,
             external_secrets_config,
