@@ -38,6 +38,13 @@ build time.
   from the conversation history -- rather than where the confirmed message will eventually land, styled like the
   `confirmed_input` bubble (`.agentplane-user-bubble`, same file ~line 349). Consider rendering it inline in the
   history instead, using that same bubble style but visually marked pending (italic, reduced opacity, or similar).
+- **Reasoning disclosure toggle with nothing behind it**: the reasoning branch of `EntityCard`'s body
+  (`projected_session.tsx` ~line 404) wraps a reasoning item's text in `LazyBody`'s `RetainedDisclosure` -- a
+  `<details>` (`retained_disclosures.tsx`) whose payload isn't fetched until expanded -- whenever `entity.textRef`
+  is non-null. A reasoning item can still resolve to empty text once that payload loads, and by then the toggle
+  has already invited a click for nothing. Unlike the `textRef === null` case just below it (plain dimmed
+  "Reasoning" text, no toggle at all), there's no cheap signal to suppress the toggle before the lazy fetch
+  resolves; worth figuring out one (e.g. from the fold/view layer) rather than always rendering it optimistically.
 - **Consider squashing the "observation" naming layer**: not remembered as a deliberate design choice. `Event`
   (`protocol/event.proto`)'s payload is a `oneof` field literally named `observation`; that name then propagated
   outward into `runner/observation.py`'s `Observation` type, the archive/API layer
