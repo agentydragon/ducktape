@@ -1648,8 +1648,6 @@ spec:
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
     - name: external-creds
       namespace: ducktape-flux
     - name: external-secrets-config
@@ -1677,8 +1675,6 @@ spec:
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/forgejo/agentydragon
   prune: true
@@ -1702,8 +1698,6 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
@@ -1900,8 +1894,6 @@ spec:
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
     - name: authentik
       namespace: ducktape-flux
   healthChecks:
@@ -1927,8 +1919,6 @@ metadata:
 spec:
   dependsOn:
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
       namespace: ducktape-flux
     - name: authentik
       namespace: ducktape-flux
@@ -1956,8 +1946,6 @@ spec:
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
     - name: authentik
       namespace: ducktape-flux
   healthChecks:
@@ -1984,8 +1972,6 @@ spec:
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
     - name: github-secrets-sync-secrets
       namespace: ducktape-flux
   interval: 10m
@@ -2007,8 +1993,6 @@ metadata:
 spec:
   dependsOn:
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
       namespace: ducktape-flux
     - name: github-secrets-sync-secrets
       namespace: ducktape-flux
@@ -2847,8 +2831,6 @@ spec:
       namespace: ducktape-flux
     - name: tofu-controller
       namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/parked/cloud-agent-tf
   prune: true
@@ -2872,8 +2854,6 @@ spec:
       namespace: ducktape-flux
     - name: tofu-controller
       namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/forgejo/agentydragon-repos
   prune: true
@@ -2895,8 +2875,6 @@ spec:
     - name: forgejo
       namespace: ducktape-flux
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
       namespace: ducktape-flux
     - name: budget-namespace
       namespace: ducktape-flux
@@ -2921,8 +2899,6 @@ spec:
     - name: forgejo
       namespace: ducktape-flux
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
       namespace: ducktape-flux
     - name: claude-rbac
       namespace: ducktape-flux
@@ -2955,8 +2931,6 @@ spec:
     - name: forgejo
       namespace: ducktape-flux
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/forgejo-images
@@ -3474,8 +3448,6 @@ spec:
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
     - name: github-secrets-sync-secrets
       namespace: ducktape-flux
     - name: forgejo-images
@@ -3801,8 +3773,6 @@ spec:
       namespace: ducktape-flux
     - name: tofu-controller
       namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
     - name: agentplane-index
       namespace: ducktape-flux
     - name: haku-namespace
@@ -3826,8 +3796,6 @@ metadata:
 spec:
   dependsOn:
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
       namespace: ducktape-flux
     - name: authentik-jwt-rotation
       namespace: ducktape-flux
@@ -3923,8 +3891,6 @@ spec:
     - name: forgejo
       namespace: ducktape-flux
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
       namespace: ducktape-flux
     - name: cpap-sync
       namespace: ducktape-flux
@@ -4181,8 +4147,6 @@ spec:
     - name: litellm
       namespace: ducktape-flux
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/litellm/keys-tf

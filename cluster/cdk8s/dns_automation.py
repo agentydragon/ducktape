@@ -88,7 +88,6 @@ def dns_automation(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     tofu_controller: Kustomization,
-    tofu_state_db: Kustomization,
     external_creds: Kustomization,
     external_secrets_config: Kustomization,
 ) -> Kustomization:
@@ -105,7 +104,5 @@ def dns_automation(
                 namespace="flux-system",
             )
         ],
-        depends_on=flux_kustomization_depends_on_many(
-            tofu_controller, tofu_state_db, external_creds, external_secrets_config
-        ),
+        depends_on=flux_kustomization_depends_on_many(tofu_controller, external_creds, external_secrets_config),
     )
