@@ -28,6 +28,19 @@ and reports actual receipts, tax payment and per-path stopping.
 <x/joint_spending_allocation/README.md> composes spending flexibility and allocation
 on the same synthetic taxable paths, with intended/paid consumption and selected replay.
 
+## Stability tiers
+
+- **Core**, everything outside `study/` and `x/`, composes in the ways this README and
+  <SPEC.md> document, and is kept hard to misuse.
+- **Studies** (`study/`) are demonstrations, such as reproductions of published results
+  (<study/README.md>).
+- **Experimental** code (`x/`) is untrusted and may break without notice.
+
+Core must not depend on `study/` or `x/`. Bazel visibility enforces it: every package there is
+visible only to `//finance/augur/study:__subpackages__` and `//finance/augur/x:__subpackages__`.
+The VECM, state-space and private-equity samplers (`model/`, fitted in `fit/`) are experimental
+but still live in core: labelled here, not isolated, until they move.
+
 ## Planning boundary
 
 Public, generic Augur work is tracked in this repo: simulator contracts,
