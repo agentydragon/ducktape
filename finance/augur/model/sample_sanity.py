@@ -1,4 +1,8 @@
-"""Model-agnostic sanity checks for sampled exogenous trajectories."""
+"""Model-agnostic sanity checks for sampled exogenous trajectories.
+
+These serve only the parked calibration endpoint's checks over sampled bundles; the result-time
+gate is `plausibility.py`.
+"""
 
 from __future__ import annotations
 

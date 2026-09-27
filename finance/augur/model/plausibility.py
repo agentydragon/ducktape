@@ -3,7 +3,8 @@
 A band bounds one percentile of one measure at one horizon — "the two-year real equity wealth
 factor's 99.99th percentile is at most 10" — and cites where the limit comes from. A `REFUSE`
 band's breach stops the paths from producing an answer unless the caller records an
-`Override`, logged whenever it is used; a `FLAG` band's breach is reported and the run goes on.
+`Override`, whose use comes back as `OverriddenRefusal` records and is logged; a `FLAG` band's
+breach is reported and the run goes on.
 Each limit states what crossing it means: too optimistic, too pessimistic, too wide or too
 narrow.
 
@@ -17,8 +18,7 @@ With `n` rollouts, a percentile above `100 * (1 - 1/n)` (or below `100 / n`) is 
 sample's extreme: such a band refuses on evidence, but its pass does not establish the tail
 probability.
 
-`sample_sanity` scores reasonableness bands over emitted level series for the calibration
-tab's display; nothing acts on its failures.
+`sample_sanity` serves only the parked calibration endpoint's checks over sampled bundles.
 """
 
 from __future__ import annotations
@@ -254,7 +254,7 @@ def _check(band: Band, values: np.ndarray | None) -> Outcome:
 
 @dataclass(frozen=True)
 class Override:
-    """A caller's recorded decision to answer despite blocking bands; logged each time it is used."""
+    """A caller's recorded decision to answer despite the blocking bands it names."""
 
     bands: frozenset[Band]
     reason: str
@@ -262,6 +262,18 @@ class Override:
     def __post_init__(self) -> None:
         if not self.bands or not self.reason.strip():
             raise ValueError("an override names the blocking bands it accepts and says why")
+
+
+@dataclass(frozen=True)
+class OverriddenRefusal:
+    """A blocking band an `Override` accepted: the outcome (with value and limit when the band was
+    checked) and the caller's reason, for an answer to report beside its numbers."""
+
+    outcome: Breached | Unmodeled
+    reason: str
+
+    def __str__(self) -> str:
+        return f"overridden ({self.reason}): {self.outcome}"
 
 
 class RefusalError(Exception):
@@ -273,12 +285,18 @@ class RefusalError(Exception):
         super().__init__(f"{result.model_id} paths ({result.rollout_count} rollouts) refused:{lines}")
 
 
-def require_plausible(result: GateResult, *, override: Override | None = None) -> None:
-    """Raise `RefusalError` for any blocking band `override` does not name; log each one it does."""
+def require_plausible(result: GateResult, *, override: Override | None = None) -> tuple[OverriddenRefusal, ...]:
+    """Raise `RefusalError` for any blocking band `override` does not name.
+
+    Returns a record of each blocking band the override accepted, each also logged at WARNING.
+    """
 
     accepted: frozenset[Band] = frozenset() if override is None else override.bands
     if refusals := tuple(outcome for outcome in result.blocking if outcome.band not in accepted):
         raise RefusalError(result, refusals)
-    if override is not None:
-        for outcome in result.blocking:
-            logger.warning("plausibility override for %s (%s): %s", result.model_id, override.reason, outcome)
+    if override is None:
+        return ()
+    overridden = tuple(OverriddenRefusal(outcome=outcome, reason=override.reason) for outcome in result.blocking)
+    for record in overridden:
+        logger.warning("plausibility override for %s: %s", result.model_id, record)
+    return overridden

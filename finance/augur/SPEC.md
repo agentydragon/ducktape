@@ -35,7 +35,9 @@ Market paths can be checked against plausibility bands before they produce an
 answer. Each band bounds one percentile of equity wealth, inflation or a rate at
 one horizon and cites its source. Breaching a refusing band, or lacking the
 series a refusing band reads, stops the answer unless the caller records an
-override naming that band; every use of an override is logged. A flagging
+override naming that band; each band an override accepts comes back as a record
+(its value and limit where it was checked, and the caller's reason) and is
+logged. A flagging
 band's breach is reported with its direction: too optimistic, too pessimistic,
 too wide or too narrow. No band passes unchecked, but where the sample cannot
 resolve a band's percentile, its pass does not establish the tail.

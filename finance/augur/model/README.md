@@ -41,7 +41,8 @@ require_plausible(result)  # RefusalError unless every REFUSE band was checked a
 
 `plausibility.py` defines the band-file schema and the verdicts. Sample at least
 `BandFile.horizon_months`. An `Override` naming refused bands, with a reason, lets
-`require_plausible` pass and logs a warning for each band it accepts.
+`require_plausible` pass; it returns an `OverriddenRefusal` per accepted band, for the
+answer to report beside its numbers, and logs a warning for each.
 
 Fitted VECM and state-space inputs carry dated `ExogenousObservedPoint` records
 with actual source units. Evidence loaders choose each factor's anchor explicitly;

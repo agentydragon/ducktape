@@ -27,6 +27,7 @@ from finance.augur.model.plausibility import (
     GateResult,
     Limit,
     Measure,
+    OverriddenRefusal,
     Override,
     Passed,
     RefusalError,
@@ -89,6 +90,7 @@ def _band(
     percentile: float,
     lower: Limit | None = None,
     upper: Limit | None = None,
+    severity: Severity = Severity.FLAG,
 ) -> Band:
     return Band(
         measure=measure,
@@ -96,7 +98,7 @@ def _band(
         percentile=percentile,
         lower=lower,
         upper=upper,
-        severity=Severity.FLAG,
+        severity=severity,
         source="test: hand-set band",
     )
 
@@ -107,8 +109,27 @@ def bands() -> BandFile:
 
 
 @pytest.fixture
-def equity_free_result(bands: BandFile) -> GateResult:
-    return evaluate(_structural_market(equity=None), bands)
+def unmodeled_and_breached() -> GateResult:
+    """Paths with no equity and 50% inflation against two REFUSE bands, blocking in that order."""
+
+    return evaluate(
+        _twelve_month_paths(cpi_growth=1.5),
+        BandFile(
+            bands=(
+                _band(
+                    Measure.REAL_EQUITY_WEALTH_FACTOR,
+                    percentile=50,
+                    upper=Limit(value=2.0, breach=BreachDirection.TOO_OPTIMISTIC),
+                    severity=Severity.REFUSE,
+                ),
+                _band(
+                    percentile=99,
+                    upper=Limit(value=1.3, breach=BreachDirection.TOO_PESSIMISTIC),
+                    severity=Severity.REFUSE,
+                ),
+            )
+        ),
+    )
 
 
 def test_an_explosive_equity_drift_is_refused(bands: BandFile) -> None:
@@ -138,39 +159,48 @@ def test_historical_replay_passes_every_band(bands: BandFile) -> None:
     require_plausible(result)
 
 
-def test_equity_bands_on_a_model_without_equity_are_unmodeled_not_passed(
-    bands: BandFile, equity_free_result: GateResult
-) -> None:
-    for outcome in equity_free_result.outcomes:
+def test_equity_bands_on_a_model_without_equity_are_unmodeled_not_passed(bands: BandFile) -> None:
+    result = evaluate(_structural_market(equity=None), bands)
+
+    for outcome in result.outcomes:
         assert isinstance(outcome, Unmodeled) == (outcome.band.measure in EQUITY_MEASURES), str(outcome)
     refusing = {band for band in bands.bands if band.measure in EQUITY_MEASURES and band.severity is Severity.REFUSE}
     assert refusing  # without a refusing equity band the check below proves nothing
 
     # An unmodeled REFUSE band blocks; an unmodeled FLAG band is only reported.
     with pytest.raises(RefusalError) as refused:
-        require_plausible(equity_free_result)
+        require_plausible(result)
     assert {outcome.band for outcome in refused.value.refusals} == refusing
 
 
-def test_an_override_accepts_only_the_bands_it_names_and_logs_each(
-    equity_free_result: GateResult, caplog: pytest.LogCaptureFixture
-) -> None:
-    *accepted, remaining = equity_free_result.blocking
-    assert accepted  # a partial override needs a band left over
+def test_an_override_accepts_only_the_bands_it_names(unmodeled_and_breached: GateResult) -> None:
+    unmodeled, breached = unmodeled_and_breached.blocking
+
     with pytest.raises(RefusalError) as refused:
         require_plausible(
-            equity_free_result,
-            override=Override(bands=frozenset(outcome.band for outcome in accepted), reason="test: partial"),
+            unmodeled_and_breached, override=Override(bands=frozenset({unmodeled.band}), reason="test: partial")
         )
-    assert refused.value.refusals == (remaining,)
 
-    everything = Override(bands=frozenset(outcome.band for outcome in equity_free_result.blocking), reason="test: all")
+    assert refused.value.refusals == (breached,)
+
+
+def test_accepted_overrides_come_back_as_records_and_are_logged(
+    unmodeled_and_breached: GateResult, caplog: pytest.LogCaptureFixture
+) -> None:
+    unmodeled, breached = unmodeled_and_breached.blocking
+    assert isinstance(breached, Breached)  # so a record carries a checked value and its limit
+    everything = Override(bands=frozenset({unmodeled.band, breached.band}), reason="test: all")
+
     with caplog.at_level(logging.WARNING, logger="finance.augur.model.plausibility"):
-        require_plausible(equity_free_result, override=everything)
-    for record, outcome in zip(caplog.records, equity_free_result.blocking, strict=True):
-        assert record.levelno == logging.WARNING
-        assert "test: all" in record.getMessage()
-        assert outcome.band.label in record.getMessage()
+        records = require_plausible(unmodeled_and_breached, override=everything)
+
+    assert records == (
+        OverriddenRefusal(outcome=unmodeled, reason="test: all"),
+        OverriddenRefusal(outcome=breached, reason="test: all"),
+    )
+    for log, record in zip(caplog.records, records, strict=True):
+        assert log.levelno == logging.WARNING
+        assert str(record) in log.getMessage()
 
 
 def test_each_measure_reads_its_definition_off_the_paths() -> None:
