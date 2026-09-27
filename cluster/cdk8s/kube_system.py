@@ -29,5 +29,12 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def kube_system(chart: Chart, directory: RenderedDirectory, goldilocks: Kustomization) -> Kustomization:
-    return flux_kustomization(chart, NAME, directory, wait=None, depends_on=[flux_kustomization_depends_on(goldilocks)])
+def kube_system(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        NAME,
+        directory,
+        wait=None,
+        # Kyverno's failurePolicy: Fail webhooks admit the Namespace.
+        depends_on=[flux_kustomization_depends_on(kyverno)],
+    )

@@ -17,10 +17,10 @@ already supplied paths. Forecast-only evaluation does not require simulator
 instrument declarations. Sharing a model does not imply it supports every
 instrument or that its forecasts are adequate for a particular decision.
 
-Preparation lowers authored declarations, rules and supplied paths into typed
-records of exact monetary terms, resolved tax rules and integer paths, which a
-composed world declares. Execution does not reread the authored declarations or
-load evidence/tax configuration. Missing or non-finite required paths reject;
+A caller prepares its declarations, rules and supplied paths as typed records of
+exact monetary terms, resolved tax rules and integer paths, which a composed world
+declares. Execution does not reread the caller's inputs or load evidence/tax
+configuration. Missing or non-finite required paths reject;
 they are not synthesized as zero observations. Ordinary public-security and
 home-value prices are positive. Prices used exclusively by reduced-form TLH
 portfolios may be zero, allowing worthless exposure to be liquidated; negative

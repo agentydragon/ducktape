@@ -19,20 +19,19 @@ from finance.augur.product.portfolio import product_portfolio_response
 from finance.augur.sim.actions import DecisionActions, LotSale, Sell
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
-from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot
 from finance.augur.sim.results import Finished
-from finance.augur.sim.scenario import InitialLot
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 
 CHECKING = AccountId("checking")
 
 ASSET = SecurityKey(symbol=SecuritySymbol("test-security"))
-QUANTUM = Decimal("0.01")
 OWNER = AgentId("test-owner")
 
 
@@ -57,21 +56,19 @@ def portfolio() -> PortfolioConfig:
     )
 
 
-def _prepared(lot: InitialLot) -> PreparedLot:
-    """The imported lot as the books hold it: quantity in unit quanta, basis in exact currency quanta."""
-    asset = lot.asset
-    if not isinstance(asset, SecurityKey):
-        raise TypeError(f"an imported portfolio holds public securities; got {asset!r}")
-    scale = quantity_scale_for_asset(asset)
+def _prepared(lot: HoldingTaxLotConfig) -> PreparedLot:
+    """The imported lot in the owner's `checking` account as the books hold it: quantity in unit quanta,
+    basis in exact currency quanta."""
+    scale = quantity_scale_for_asset(ASSET)
     return PreparedLot(
         lot_id=lot.lot_id,
-        agent_id=lot.agent_id,
-        account_id=lot.account_id,
-        asset_id=AssetId(asset.symbol),
-        purchase_month=int(lot.purchase_month_index),
+        agent_id=OWNER,
+        account_id=CHECKING,
+        asset_id=AssetId(ASSET.symbol),
+        purchase_month=-lot.holding_period_months_at_start,
         quantity_scale=scale,
-        units=int(quantity_to_quanta(lot.quantity, scale=scale)),
-        basis=int(currency_amount_to_quanta(lot.cost_basis, quantum=QUANTUM)),
+        units=quantity_to_quanta(Decimal(lot.quantity), scale=scale),
+        basis=USD.quanta(lot.cost_basis),
     )
 
 
@@ -82,9 +79,7 @@ def _compose(lots: list[PreparedLot], *, horizon_months: int) -> World:
     )
     world = World(
         MarketPath(
-            compile_series(paths, rollout_count=1, horizon_months=horizon_months, currency_quantum=QUANTUM),
-            0,
-            rollout_count=1,
+            compile_series(paths, rollout_count=1, horizon_months=horizon_months, currency=USD), 0, rollout_count=1
         ),
         horizon_months=horizon_months,
         income_sources=(ORDINARY_INCOME,),
@@ -105,7 +100,10 @@ def _compose(lots: list[PreparedLot], *, horizon_months: int) -> World:
 
 def test_product_display_keeps_one_dollar_total_over_three_units(portfolio: PortfolioConfig) -> None:
     response = product_portfolio_response(
-        snapshot=FinanceSnapshot(as_of_date="2026-01-01", cash=Decimal(0)), portfolio=portfolio, tlh_portfolios=()
+        snapshot=FinanceSnapshot(as_of_date="2026-01-01", cash=Decimal(0)),
+        portfolio=portfolio,
+        tlh_portfolios=(),
+        currency=USD,
     )
     [position] = response.holdings
     [lot] = position.lots
@@ -115,7 +113,7 @@ def test_product_display_keeps_one_dollar_total_over_three_units(portfolio: Port
 
 
 def test_total_basis_still_requires_exact_currency_quanta(portfolio: PortfolioConfig) -> None:
-    [lot] = portfolio.to_initial_lots()
+    [lot] = portfolio.holdings[0].lots
     with pytest.raises(ValueError, match=r"1\.001 is not an integer multiple of currency quantum 0\.01"):
         _prepared(lot.model_copy(update={"cost_basis": Decimal("1.001")}))
 
@@ -126,7 +124,7 @@ def test_imported_basis_is_exact_through_sales(
 ) -> None:
     horizon = len(sales)
     session = ActionSession(
-        {0: _compose([_prepared(lot) for lot in portfolio.to_initial_lots()], horizon_months=horizon)}, OWNER
+        {0: _compose([_prepared(lot) for lot in portfolio.holdings[0].lots], horizon_months=horizon)}, OWNER
     )
     try:
         batch = session.start()

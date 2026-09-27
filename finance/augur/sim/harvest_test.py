@@ -18,7 +18,7 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, L
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.money import position_value
+from finance.augur.sim.money import USD, position_value
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -70,7 +70,7 @@ class Situation:
 
 
 def _lot(
-    lot_id: LotId, asset: SecurityKey, *, quantity: float, cost_basis: Decimal, purchase_month: int
+    lot_id: LotId, asset: SecurityKey, *, quantity: Decimal | int, cost_basis: Decimal, purchase_month: int
 ) -> PreparedLot:
     scale = quantity_scale_for_asset(asset)
     return PreparedLot(
@@ -80,7 +80,7 @@ def _lot(
         asset_id=AssetId(asset.symbol),
         purchase_month=purchase_month,
         quantity_scale=scale,
-        units=int(quantity_to_quanta(quantity, scale=scale)),
+        units=quantity_to_quanta(quantity, scale=scale),
         basis=int(currency_amount_to_quanta(cost_basis, quantum=QUANTUM)),
     )
 
@@ -89,7 +89,7 @@ def situation(
     levels: Mapping[SecurityKey, Sequence[Sequence[float]]],
     *,
     with_harvest: bool,
-    quantity: float = 1000.0,
+    quantity: Decimal | int = 1000,
     cost_basis_per_unit: int = 1,
     purchase_month: int = 0,
     short_term_fraction: float = 1.0,
@@ -104,14 +104,14 @@ def situation(
         horizon_months=horizon,
     )
     return Situation(
-        series=compile_series(paths, rollout_count=rollouts, horizon_months=horizon, currency_quantum=QUANTUM),
+        series=compile_series(paths, rollout_count=rollouts, horizon_months=horizon, currency=USD),
         rollout_count=rollouts,
         horizon_months=horizon,
         sleeve=_lot(
             LotId("alice_sp500"),
             SP500,
             quantity=quantity,
-            cost_basis=Decimal(str(quantity)) * cost_basis_per_unit,
+            cost_basis=Decimal(quantity) * cost_basis_per_unit,
             purchase_month=purchase_month,
         ),
         with_harvest=with_harvest,
@@ -142,7 +142,7 @@ def compose(case: Situation, rollout_id: int) -> World:
                     tax_authority_agent_id=IRS,
                 ),
                 jurisdictions,
-                quantum=QUANTUM,
+                currency=USD,
             ),
             indexation=FixedNominalLaw(),
         )
@@ -303,7 +303,7 @@ def test_harvest_index_validation_rejects_negative_or_nonfinite_prices(bad_level
 def test_a_security_price_is_required_at_the_terminal_snapshot_too() -> None:
     """The managed portfolio's supplied price is checked at every snapshot, the terminal one included."""
     with pytest.raises(ValueError, match=r"(?i)price must be nonnegative"):
-        run(situation({SP500: [[1.0, 1.0, -1.0]]}, with_harvest=True, quantity=100.0))
+        run(situation({SP500: [[1.0, 1.0, -1.0]]}, with_harvest=True, quantity=100))
 
 
 def test_down_month_harvests_strictly_more_than_flat_month() -> None:
@@ -335,7 +335,7 @@ def test_harvested_short_term_loss_offsets_realized_gain_lowering_tax() -> None:
     # Alice realizes a real short-term capital GAIN (a separate crypto-like lot sold at a profit) in
     # the same year she harvests SP500 losses. With harvesting on, the harvested ST loss nets against
     # that gain (§1211/§1212), lowering the year's tax vs the no-harvest baseline.
-    gain_lot = _lot(LotId("alice_gain"), GAINCO, quantity=100.0, cost_basis=Decimal(10_000), purchase_month=-3)
+    gain_lot = _lot(LotId("alice_gain"), GAINCO, quantity=100, cost_basis=Decimal(10_000), purchase_month=-3)
     # SP500 sleeve drops then recovers so harvesting books meaningful losses through the year.
     levels = {
         SP500: [[1.0, 0.85, 0.85, 0.9, 0.9, 0.9, 0.95] + [0.95] * 7],

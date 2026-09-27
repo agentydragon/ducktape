@@ -30,7 +30,7 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        # Declared by the vpa directory, which this one's Kustomization depends on.
+        # Declared by the vpa directory.
         repository=vpa.REPOSITORY_SOURCE_REF,
         chart=NAME,
         version="11.1.0",
@@ -88,5 +88,12 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def goldilocks(chart: Chart, directory: RenderedDirectory, vpa: Kustomization) -> Kustomization:
-    return flux_kustomization(chart, NAME, directory, timeout="5m", depends_on=[flux_kustomization_depends_on(vpa)])
+def goldilocks(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        NAME,
+        directory,
+        timeout="5m",
+        # Kyverno's failurePolicy: Fail webhooks admit the Namespace.
+        depends_on=[flux_kustomization_depends_on(kyverno)],
+    )

@@ -23,6 +23,7 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, L
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, income_source_sort_key
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedDistribution,
@@ -34,7 +35,6 @@ from finance.augur.sim.prepared import (
     PreparedSeries,
 )
 from finance.augur.sim.results import Finished, Paid, Rollout
-from finance.augur.sim.scenario import DistributionTaxSlice
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -94,16 +94,7 @@ def _paths(payout: np.ndarray | None) -> tuple[PreparedSeries, ...]:
         ExternalSeriesContext.from_level_blocks(blocks, rollout_count=1, horizon_months=HORIZON),
         rollout_count=1,
         horizon_months=HORIZON,
-        currency_quantum=QUANTUM,
-    )
-
-
-def _slices(tax_character: tuple[DistributionTaxSlice, ...]) -> tuple[PreparedDistributionSlice, ...]:
-    return tuple(
-        PreparedDistributionSlice(
-            fraction_ppb=rate_to_ppb(tax_slice.fraction), income_category=tax_slice.income_category
-        )
-        for tax_slice in tax_character
+        currency=USD,
     )
 
 
@@ -126,13 +117,13 @@ def _bill(amount: Decimal) -> PreparedObligation:
         amount_due=int(currency_amount_to_quanta(amount, quantum=QUANTUM)),
         property_id=None,
         deduction_category=None,
-        deductible_fraction_ppb=rate_to_ppb(1.0),
+        deductible_fraction_ppb=rate_to_ppb(1),
     )
 
 
 def compose(
     *,
-    tax_character: tuple[DistributionTaxSlice, ...] = TREASURY,
+    tax_character: tuple[PreparedDistributionSlice, ...] = TREASURY,
     is_taxed: bool = True,
     distributes: bool = True,
     holding_account_id: AccountId = BROKERAGE,
@@ -146,7 +137,7 @@ def compose(
     cashflow cases want: with a tax authority the year-end settlement lands in the same months.
     """
 
-    slices = _slices(tax_character) if distributes else ()
+    slices = tax_character if distributes else ()
     # The vocabulary a taxpayer shares: what the fund's slices name, plus where alice files.
     issuers = {
         part.income_category.issuer_jurisdiction_id
@@ -174,7 +165,7 @@ def compose(
                 compile_profile(
                     TaxProfile(agent_id=ALICE, jurisdiction_ids=list(FILED_IN), tax_authority_agent_id=IRS),
                     {id_: load_jurisdiction(id_) for id_ in FILED_IN},
-                    quantum=QUANTUM,
+                    currency=USD,
                 ),
                 indexation=FixedNominalLaw(),
             )
@@ -191,8 +182,8 @@ def compose(
             asset_id=AssetId(SYMBOL),
             purchase_month=-24,
             quantity_scale=scale,
-            units=int(quantity_to_quanta(UNITS, scale=scale)),
-            basis=int(currency_amount_to_quanta(Decimal(str(UNITS)) * PRICE, quantum=QUANTUM)),
+            units=quantity_to_quanta(UNITS, scale=scale),
+            basis=int(currency_amount_to_quanta(UNITS * PRICE, quantum=QUANTUM)),
         )
     )
     if distributes:
