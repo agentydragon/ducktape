@@ -7,7 +7,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -21,7 +20,7 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
+from cluster.cdk8s.metadata import metadata
 
 NAME = "atuin"
 NAMESPACE = "atuin"
@@ -44,7 +43,7 @@ def _database(chart: Chart) -> None:
         node_selector=_ZONE_SELECTOR,
         storage_class="local-path-ovh-ssd",
         size="2Gi",
-        initdb=ClusterSpecBootstrapInitdb(database=NAME, owner=NAME),
+        initdb=cnpg.same_owner_initdb(NAME),
     )
 
 
@@ -60,7 +59,9 @@ def _server(chart: Chart) -> None:
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(name=_SERVER, namespace=NAMESPACE, labels=_LABELS, annotations=RELOADER_AUTO),
+        metadata=k8s.ObjectMeta(
+            name=_SERVER, namespace=NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
+        ),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -120,7 +121,7 @@ def _server(chart: Chart) -> None:
         chart,
         "route",
         metadata=metadata(NAME, NAMESPACE),
-        hostname="atuin.allegedly.works",
+        hostnames=["atuin.allegedly.works"],
         backend=_SERVER,
         port=_PORT,
         hsts=False,

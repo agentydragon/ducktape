@@ -76,7 +76,7 @@ from seaweed_seaweed_crds.com.seaweedfs.seaweed import (
 from cluster.cdk8s import stateful_infra
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
+from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import filer_db, namespace, s3_config
 
 NAME = "seaweedfs"
@@ -377,7 +377,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 # comes from Reloader's cluster-wide `autoReloadAll: true` (see
                 # cluster/generated/reloader/). Kept for intent/future-proofing if the operator ever
                 # sets Deployment annotations.
-                annotations=RELOADER_AUTO,
+                annotations={"reloader.stakater.com/auto": "true"},
                 metrics_port=9327,
                 # QoS / eviction protection. No PDB: it is stateless and freely
                 # reschedulable, so descheduler moves are harmless.

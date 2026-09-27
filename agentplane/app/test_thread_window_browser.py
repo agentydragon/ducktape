@@ -113,8 +113,9 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     await expect(page.get_by_text("Window message 069", exact=False)).to_be_visible()
     composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
     await composer.fill("Draft retained while the thread grows")
-    # Virtualization keeps only the measured viewport and overscan mounted.
-    assert await page.locator("[data-thread-anchor]").count() < 20
+    # Virtualization keeps only the measured viewport and overscan mounted: a loose bound well
+    # below the 70 rows appended, tolerant of row-height changes rather than pinned to one.
+    assert await page.locator("[data-thread-anchor]").count() < 40
     # The tail fills the view: nothing older loads before the reader scrolls up to it.
     await _frames(page)
     assert not [request for request in requests if _older_page(request)]

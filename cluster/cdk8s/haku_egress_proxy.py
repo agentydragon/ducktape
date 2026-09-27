@@ -39,7 +39,6 @@ from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import RELOADER_AUTO
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAME = "haku-egress-proxy"
@@ -89,7 +88,9 @@ def _mitmproxy(chart: Chart) -> None:
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAME, labels=_LABELS, annotations=RELOADER_AUTO),
+        metadata=k8s.ObjectMeta(
+            name=NAME, namespace=NAME, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
+        ),
         spec=k8s.DeploymentSpec(
             # Two, so one container's restart never empties the Service. mitmproxy OOM-kills
             # under haku-ci traffic (#5846), and with one replica every kill was a CI outage:
@@ -273,7 +274,10 @@ def _iron_proxy(chart: Chart, name: str, *, description: str, config: dict, port
         chart,
         f"{name}-deployment",
         metadata=k8s.ObjectMeta(
-            name=name, namespace=NAME, labels=labels, annotations={"description": description, **RELOADER_AUTO}
+            name=name,
+            namespace=NAME,
+            labels=labels,
+            annotations={"description": description, "reloader.stakater.com/auto": "true"},
         ),
         spec=k8s.DeploymentSpec(
             replicas=1,

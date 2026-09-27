@@ -1,26 +1,34 @@
 """Ergonomic wrapper for cert-manager's `Certificate`, following cdk8s-plus's own
-construction pattern: a class named after the kind, constructed as `Certificate(scope, id,
-props)`. `CertificateSpec` has no real variant shapes at this level -- `privateKey`,
+construction pattern: a class named after the kind, constructed as `Certificate(scope, id, *,
+metadata, ...)`. `CertificateSpec` has no real variant shapes at this level -- `privateKey`,
 `secretTemplate` and `issuerRef` are each a single fixed shape, not alternatives -- so every
-keyword below is a `CertificateSpec` field under its own name and type; `None` leaves it
+other keyword below is a `CertificateSpec` field under its own name and type; `None` leaves it
 unset, so cert-manager's own default applies.
+
+`CertificatePrivateKey` groups `CertificateSpecPrivateKey`'s real algorithm/size variance
+(RSA/ECDSA/Ed25519, each with its own valid sizes) under named `@staticmethod` factories that
+return the struct itself. `LONG_LIVED_CA` is this cluster's one CA
+duration/renewal policy (10-year cert, 1-year renewal window), spread as
+`Certificate(..., **LONG_LIVED_CA)` by every long-lived signing Certificate.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import TypedDict
 
+from cdk8s import ApiObjectMetadata
 from cert_manager_crds.io.cert_manager import (
     Certificate as _Certificate,
     CertificateSpec,
     CertificateSpecIssuerRef,
     CertificateSpecPrivateKey,
+    CertificateSpecPrivateKeyAlgorithm,
+    CertificateSpecPrivateKeyRotationPolicy,
     CertificateSpecSecretTemplate,
     CertificateSpecUsages,
 )
 from constructs import Construct
-
-from cluster.cdk8s.metadata import metadata
 
 
 class Certificate(_Certificate):
@@ -33,8 +41,7 @@ class Certificate(_Certificate):
         scope: Construct,
         id: str,
         *,
-        name: str,
-        namespace: str,
+        metadata: ApiObjectMetadata,
         secret_name: str,
         issuer_ref: CertificateSpecIssuerRef,
         is_ca: bool | None = None,
@@ -45,12 +52,11 @@ class Certificate(_Certificate):
         private_key: CertificateSpecPrivateKey | None = None,
         secret_template: CertificateSpecSecretTemplate | None = None,
         usages: Sequence[CertificateSpecUsages] | None = None,
-        annotations: dict[str, str] | None = None,
     ) -> None:
         super().__init__(
             scope,
             id,
-            metadata=metadata(name, namespace, annotations=annotations),
+            metadata=metadata,
             spec=CertificateSpec(
                 secret_name=secret_name,
                 issuer_ref=issuer_ref,
@@ -64,3 +70,21 @@ class Certificate(_Certificate):
                 usages=list(usages) if usages else None,
             ),
         )
+
+
+class CertificatePrivateKey:
+    """Named factories for `CertificateSpecPrivateKey`'s real algorithm/size combinations."""
+
+    @staticmethod
+    def ecdsa_p256(rotation_policy: CertificateSpecPrivateKeyRotationPolicy | None = None) -> CertificateSpecPrivateKey:
+        return CertificateSpecPrivateKey(
+            algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA, size=256, rotation_policy=rotation_policy
+        )
+
+
+class _LongLivedCa(TypedDict):
+    duration: str
+    renew_before: str
+
+
+LONG_LIVED_CA: _LongLivedCa = {"duration": "87600h", "renew_before": "8760h"}  # 10 years / 1 year

@@ -13,12 +13,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb, ClusterSpecBootstrapInitdbSecret
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-)
 from grafana_grafana_crds.org.integreatly.grafana import (
     GrafanaSpec,
     GrafanaSpecClient,
@@ -40,10 +34,10 @@ from grafana_grafanadashboard_crds.org.integreatly.grafana import (
 from grafana_grafanadatasource_crds.org.integreatly.grafana import GrafanaDatasourceSpecDatasource
 
 from cluster.cdk8s import cnpg
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
+from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.grafana_operator.grafana import Grafana
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
@@ -145,7 +139,9 @@ def _grafana(chart: Chart) -> None:
             deployment=GrafanaSpecDeployment(
                 spec=GrafanaSpecDeploymentSpec(
                     template=GrafanaSpecDeploymentSpecTemplate(
-                        metadata=GrafanaSpecDeploymentSpecTemplateMetadata(annotations=RELOADER_AUTO),
+                        metadata=GrafanaSpecDeploymentSpecTemplateMetadata(
+                            annotations={"reloader.stakater.com/auto": "true"}
+                        ),
                         spec=GrafanaSpecDeploymentSpecTemplateSpec(
                             containers=[
                                 GrafanaSpecDeploymentSpecTemplateSpecContainers(
@@ -183,15 +179,15 @@ def _grafana(chart: Chart) -> None:
             ),
         ),
     )
-    HttpRoute(
+    https_route(
         chart,
         "route",
         metadata=metadata(_NAME, _NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=["grafana.allegedly.works"],
-            rules=[HttpRouteSpecRules(backend_refs=[HttpRouteSpecRulesBackendRefs(name="grafana-service", port=3000)])],
-        ),
+        hostnames=["grafana.allegedly.works"],
+        backend="grafana-service",
+        port=3000,
+        hsts=False,
+        listener=None,
     )
 
 

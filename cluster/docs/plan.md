@@ -33,8 +33,8 @@ editing a route.
       KS-5 HDD control plane (`ovh-ns103656`) is a worker. The 2026-06-28 outage and
       its mitigations remain documented in
       <lessons_learned/2026_06_19_etcd_hdd_io_contention.md>. Worker-first workload
-      placement, control-plane I/O alerting, and the remaining tofu-runner/augur pins
-      are defense in depth; they are no longer blockers for the etcd-on-NVMe move.
+      placement, control-plane I/O alerting, and the remaining tofu-runner pins are
+      defense in depth; they are no longer blockers for the etcd-on-NVMe move.
 - [ ] **Investigate whether to re-enable VPA/Goldilocks recommendations.**
       Forgejo's namespace is Goldilocks-enabled and has a generated
       `goldilocks-forgejo` VPA, but the VPA control-plane deployments in

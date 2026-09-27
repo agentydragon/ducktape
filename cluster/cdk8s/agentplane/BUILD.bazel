@@ -19,22 +19,15 @@ py_library(
 )
 
 py_library(
-    name = "container_security",
-    srcs = ["container_security.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = ["@pypi//cdk8s_plus_34"],
-)
-
-py_library(
     name = "electric",
     srcs = ["electric.py"],
     deps = [
-        ":container_security",
         ":database",
         ":environment",
-        ":node_scheduling",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:container_security",
         "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_spec_patches",
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s/providers/cilium:network_policy",
@@ -42,13 +35,6 @@ py_library(
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
-)
-
-py_library(
-    name = "node_scheduling",
-    srcs = ["node_scheduling.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = ["@pypi//cdk8s_plus_34"],
 )
 
 py_library(
@@ -64,7 +50,7 @@ py_library(
     name = "migrate_container",
     srcs = ["migrate_container.py"],
     deps = [
-        ":container_security",
+        "//cluster/cdk8s:container_security",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -75,13 +61,11 @@ py_library(
     srcs = ["database.py"],
     deps = [
         ":environment",
-        ":node_scheduling",
         "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/cnpg:database",
-        "//cluster/cdk8s/providers/external_secrets:external_secret",
-        "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//cluster/cdk8s/providers/external_secrets:passwordgenerator",
         "@pypi//cdk8s",
         "@pypi//constructs",
     ],
@@ -113,13 +97,11 @@ py_library(
     deps = [
         ":actions",
         ":app_settings",
-        ":container_security",
         ":database",
         ":egress_credentials",
         ":environment",
         ":llm_ingress",
         ":migrate_container",
-        ":node_scheduling",
         ":pod_disruption_budget",
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:egresspolicy",
@@ -128,8 +110,10 @@ py_library(
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:container_security",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_spec_patches",
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s:token_reviewer_rbac",
@@ -149,14 +133,14 @@ py_library(
     name = "llm_ingress",
     srcs = ["llm_ingress.py"],
     deps = [
-        ":container_security",
         ":environment",
-        ":node_scheduling",
         "//agentplane/llm_ingress:main",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:container_security",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_spec_patches",
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s:token_reviewer_rbac",
@@ -182,6 +166,7 @@ py_library(
         "//cluster/cdk8s/providers/agent_sandbox:sandboxtemplate",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
+        "@pypi//cdk8s",
         "@pypi//constructs",
     ],
 )
@@ -210,14 +195,12 @@ py_library(
     srcs = ["app.py"],
     deps = [
         ":actions",
-        ":container_security",
         ":database",
         ":egress",
         ":electric",
         ":environment",
         ":llm_ingress",
         ":migrate_container",
-        ":node_scheduling",
         ":pod_disruption_budget",
         ":sandbox_pod",
         "//agentplane/action_service/sandbox:binding",
@@ -225,9 +208,11 @@ py_library(
         "//agentplane/app:oidc",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:container_security",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_spec_patches",
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s:token_reviewer_rbac",
@@ -246,21 +231,21 @@ py_library(
     name = "actions",
     srcs = ["actions.py"],
     deps = [
-        ":container_security",
         ":database",
         ":environment",
         ":llm_ingress",
         ":migrate_container",
-        ":node_scheduling",
         ":pod_disruption_budget",
         "//agentplane/action_service:main",
         "//agentplane/app:main",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:container_security",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_spec_patches",
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s:token_reviewer_rbac",
@@ -307,8 +292,8 @@ py_library(
     name = "actions_testing_fixtures",
     srcs = ["actions_testing_fixtures.py"],
     deps = [
-        ":container_security",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:container_security",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s:pod_spec_patches",
@@ -323,6 +308,27 @@ py_library(
 py_library(
     name = "app_settings",
     srcs = ["app_settings.py"],
+    deps = [":model_display_names"],
+)
+
+py_library(
+    name = "model_display_names",
+    srcs = ["model_display_names.py"],
+    deps = ["//cluster/cdk8s:model_rosters"],
+)
+
+py_test(
+    name = "test_model_display_names",
+    srcs = ["test_model_display_names.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":model_display_names",
+        "//:conftest",
+        "//cluster/cdk8s/litellm:keys",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_library(
@@ -414,11 +420,11 @@ py_library(
         "//agentplane/action_service/sandbox:actions",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:external_creds",
+        "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//cluster/cdk8s/providers/external_secrets:passwordgenerator",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/ssh_mcp:config",
         "@pypi//cdk8s",

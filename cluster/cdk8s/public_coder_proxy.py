@@ -37,11 +37,12 @@ from cluster.cdk8s import cilium, external_creds, public_coder_devbox
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
+from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
@@ -248,12 +249,6 @@ def _config_map(scope: Construct) -> k8s.KubeConfigMap:
     )
 
 
-def _secret_env(name: str, secret_name: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret_name, key=key))
-    )
-
-
 def _container(aiquota_bearer: k8s.SecretKeySelector) -> k8s.Container:
     return k8s.Container(
         name="iron-proxy",
@@ -266,14 +261,14 @@ def _container(aiquota_bearer: k8s.SecretKeySelector) -> k8s.Container:
         env=[
             # The real GitHub credential lives here and nowhere else. It reaches the agent's
             # traffic only as a substitution performed here.
-            _secret_env(_GITHUB_TOKEN_ENV, "public-coder-agent-github-token", "GITHUB_TOKEN"),
+            secret_env_var(_GITHUB_TOKEN_ENV, "public-coder-agent-github-token", "GITHUB_TOKEN"),
             # Dedicated Haku Console bearer, held by the proxy rather than the agent. iron.yaml
             # substitutes it only for the exact public Haku host's Authorization header.
-            _secret_env(_HAKU_CONSOLE_TOKEN_ENV, "haku-console-public-coder-agent", "token"),
+            secret_env_var(_HAKU_CONSOLE_TOKEN_ENV, "haku-console-public-coder-agent", "token"),
             # The agent sees only the corresponding placeholder. This password is valid solely for
             # the native read-only public_coder_analytics ClickHouse account and is substituted by
             # iron.yaml on the private ClusterIP host.
-            _secret_env(_CLICKHOUSE_PASSWORD_ENV, client.PUBLIC_CODER_CREDENTIALS, client.PASSWORD_KEY),
+            secret_env_var(_CLICKHOUSE_PASSWORD_ENV, client.PUBLIC_CODER_CREDENTIALS, client.PASSWORD_KEY),
             # The same bearer used by aiquota-api. It is reflected here solely for iron-proxy to
             # substitute into the agent's placeholder on the two read endpoints; the OpenClaw
             # workload never receives it.
@@ -282,11 +277,11 @@ def _container(aiquota_bearer: k8s.SecretKeySelector) -> k8s.Container:
             # non-secret placeholder that is swapped only for Brave's X-Subscription-Token header
             # on its API host. Synced into this namespace from the external-creds source at
             # cluster/k8s/external-creds/brave-search-api-key.sops.yaml.
-            _secret_env(_BRAVE_API_KEY_ENV, "brave-search-api-key", "api-key"),
+            secret_env_var(_BRAVE_API_KEY_ENV, "brave-search-api-key", "api-key"),
             # Matrix password login is the one credential that lives in a JSON body rather than
             # Authorization. iron.yaml swaps the app's placeholder only on the Matrix login
             # endpoint.
-            _secret_env(_MATRIX_PASSWORD_ENV, "public-coder-agent-matrix-bot-password", "password"),
+            secret_env_var(_MATRIX_PASSWORD_ENV, "public-coder-agent-matrix-bot-password", "password"),
         ],
         ports=[
             k8s.ContainerPort(name="proxy", container_port=PROXY_PORT),
@@ -310,7 +305,9 @@ def _deployment(scope: Construct, config_map: k8s.KubeConfigMap, aiquota_bearer:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=LABELS, annotations=RELOADER_AUTO),
+        metadata=k8s.ObjectMeta(
+            name=NAME, namespace=NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}
+        ),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=LABELS),

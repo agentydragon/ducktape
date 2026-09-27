@@ -15,7 +15,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
+from cluster.cdk8s.metadata import metadata
 
 NAME = "headlamp"
 NAMESPACE = "headlamp"
@@ -72,7 +72,7 @@ def chart(app: App) -> Chart:
         upgrade=HelmReleaseSpecUpgrade(remediation=HelmReleaseSpecUpgradeRemediation(retries=3)),
         values={
             "replicaCount": 1,
-            "podAnnotations": RELOADER_AUTO,
+            "podAnnotations": {"reloader.stakater.com/auto": "true"},
             "config": {
                 # OIDC mode: Headlamp redirects to Authentik, JWT forwarded to K8s API server
                 # which validates it via oidc-issuer-url (in Talos machine config).

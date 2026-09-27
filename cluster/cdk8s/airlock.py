@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngress,
@@ -19,30 +19,17 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPorts,
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
-from external_secrets_clusterexternalsecret_crds.io.external_secrets import (
-    ClusterExternalSecret,
-    ClusterExternalSecretSpec,
-    ClusterExternalSecretSpecExternalSecretSpec,
-    ClusterExternalSecretSpecExternalSecretSpecDataFrom,
-    ClusterExternalSecretSpecExternalSecretSpecDataFromExtract,
-    ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef,
-    ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind,
-    ClusterExternalSecretSpecExternalSecretSpecTarget,
-)
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTargetCreationPolicy,
-    ExternalSecretSpecTargetTemplate,
-)
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
+from cluster.cdk8s.env_helpers import secret_env_var
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
+from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.providers.external_secrets.external_secret import ClusterDataFrom, ClusterExternalSecret
 
 NAME = "airlock"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/airlock"
@@ -53,12 +40,6 @@ _SECRET_WRITER = "airlock-secret-writer"
 # image-pins/ overrides the tag and copies it into AIRLOCK_IMAGE_TAG.
 _PLACEHOLDER_TAG = "unset"
 _CONFIG_MOUNT = "/etc/airlock"
-
-
-def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
-    )
 
 
 def _probe(path: str, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
@@ -73,7 +54,9 @@ def _deployment(chart: Chart) -> None:
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAME, labels=_LABELS, annotations=RELOADER_AUTO),
+        metadata=k8s.ObjectMeta(
+            name=NAME, namespace=NAME, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
+        ),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -92,20 +75,22 @@ def _deployment(chart: Chart) -> None:
                             env=[
                                 k8s.EnvVar(name="AIRLOCK_IMAGE_TAG", value=_PLACEHOLDER_TAG),
                                 k8s.EnvVar(name="CONFIG_PATH", value=f"{_CONFIG_MOUNT}/config.yaml"),
-                                _secret_env("AIRLOCK_OIDC_CLIENT_ID", "airlock-oidc-config", "client-id"),
-                                _secret_env("AIRLOCK_OIDC_CLIENT_SECRET", "airlock-oidc-config", "client-secret"),
-                                _secret_env("AIRLOCK_OIDC_SESSION_SECRET", _SESSION_SECRET, "session-secret"),
-                                _secret_env("OURA_CLIENT_ID", "oura-client-credentials", "client_id"),
-                                _secret_env("OURA_CLIENT_SECRET", "oura-client-credentials", "client_secret"),
-                                _secret_env("GOOGLE_CLIENT_ID", "google-client-credentials", "client_id"),
-                                _secret_env("GOOGLE_CLIENT_SECRET", "google-client-credentials", "client_secret"),
+                                secret_env_var("AIRLOCK_OIDC_CLIENT_ID", "airlock-oidc-config", "client-id"),
+                                secret_env_var("AIRLOCK_OIDC_CLIENT_SECRET", "airlock-oidc-config", "client-secret"),
+                                secret_env_var("AIRLOCK_OIDC_SESSION_SECRET", _SESSION_SECRET, "session-secret"),
+                                secret_env_var("OURA_CLIENT_ID", "oura-client-credentials", "client_id"),
+                                secret_env_var("OURA_CLIENT_SECRET", "oura-client-credentials", "client_secret"),
+                                secret_env_var("GOOGLE_CLIENT_ID", "google-client-credentials", "client_id"),
+                                secret_env_var("GOOGLE_CLIENT_SECRET", "google-client-credentials", "client_secret"),
                                 # The `google-write` provider reuses this same GCP OAuth client
                                 # (config.yaml); scope is a per-authorize-flow parameter, not fixed to
                                 # the client registration.
-                                _secret_env("GOOGLE_WRITE_CLIENT_ID", "google-client-credentials", "client_id"),
-                                _secret_env("GOOGLE_WRITE_CLIENT_SECRET", "google-client-credentials", "client_secret"),
-                                _secret_env("BSC_CLIENT_ID", "bsc-client-credentials", "client_id"),
-                                _secret_env("BSC_CLIENT_SECRET", "bsc-client-credentials", "client_secret"),
+                                secret_env_var("GOOGLE_WRITE_CLIENT_ID", "google-client-credentials", "client_id"),
+                                secret_env_var(
+                                    "GOOGLE_WRITE_CLIENT_SECRET", "google-client-credentials", "client_secret"
+                                ),
+                                secret_env_var("BSC_CLIENT_ID", "bsc-client-credentials", "client_id"),
+                                secret_env_var("BSC_CLIENT_SECRET", "bsc-client-credentials", "client_secret"),
                             ],
                             volume_mounts=[k8s.VolumeMount(name="config", mount_path=_CONFIG_MOUNT, read_only=True)],
                             resources=k8s.ResourceRequirements(
@@ -133,21 +118,15 @@ def _deployment(chart: Chart) -> None:
 def _session_secret(chart: Chart) -> None:
     """Airlock's session-signing key is app-local. A key rotation invalidates existing browser
     sessions but does not need to update Authentik or another credential store."""
-    generator = Password(
-        chart,
-        "session-secret-generator",
-        metadata=metadata(_SESSION_SECRET, NAME),
-        spec=PasswordSpec(allow_repeat=True, digits=16, length=64, no_upper=False, symbols=0),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         chart,
         "session-secret",
         name=_SESSION_SECRET,
         namespace=NAME,
-        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[DataFrom.from_password_generator(generator.name)],
+        key="session-secret",
+        length=64,
+        digits=16,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
-        template=ExternalSecretSpecTargetTemplate(data={"session-secret": "{{ .password }}"}, type="Opaque"),
         immutable=True,
     )
 
@@ -157,23 +136,11 @@ def _mirror(chart: Chart, name: str, namespaces: list[str]) -> None:
     ClusterExternalSecret(
         chart,
         name,
-        metadata=ApiObjectMetadata(name=name),
-        spec=ClusterExternalSecretSpec(
-            namespaces=namespaces,
-            external_secret_spec=ClusterExternalSecretSpecExternalSecretSpec(
-                refresh_interval="1m",
-                secret_store_ref=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef(
-                    name="kubernetes-airlock-secret-store",
-                    kind=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-                ),
-                target=ClusterExternalSecretSpecExternalSecretSpecTarget(name=name),
-                data_from=[
-                    ClusterExternalSecretSpecExternalSecretSpecDataFrom(
-                        extract=ClusterExternalSecretSpecExternalSecretSpecDataFromExtract(key=name)
-                    )
-                ],
-            ),
-        ),
+        name=name,
+        namespaces=namespaces,
+        store_name="kubernetes-airlock-secret-store",
+        refresh="1m",
+        data_from=[ClusterDataFrom.from_extract(name)],
     )
 
 
@@ -255,7 +222,7 @@ def chart(app: App) -> Chart:
         chart,
         "httproute",
         metadata=metadata(NAME, NAME),
-        hostname="airlock.allegedly.works",
+        hostnames=["airlock.allegedly.works"],
         backend=NAME,
         port=_PORT,
         timeout="120s",

@@ -47,6 +47,19 @@ py_library(
 )
 
 py_library(
+    name = "minted_secret",
+    srcs = ["minted_secret.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//cluster/cdk8s/providers/external_secrets:passwordgenerator",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "single_secret_store",
     srcs = ["single_secret_store.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],

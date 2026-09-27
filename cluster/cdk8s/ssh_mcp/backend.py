@@ -28,21 +28,16 @@ from cdk8s_plus_34 import (
 )
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTargetCreationPolicy,
-    ExternalSecretSpecTargetTemplate,
-)
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
-from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
+from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from cluster.cdk8s.ssh_mcp.config import (
     BEARER_SECRET_KEY,
     BEARER_SECRET_NAME,
@@ -63,28 +58,6 @@ _KEY_VOLUMES = (
     ("keys-public-coder-devbox", "ssh-mcp-keys-public-coder-devbox", f"{CONFIG_DIR}/keys-public-coder-devbox"),
     ("keys-atlas", "ssh-mcp-keys-atlas", f"{CONFIG_DIR}/keys-atlas"),
 )
-
-
-def _bearer_credentials(scope: Construct) -> None:
-    """agentplane-staging copies it with ESO through a store that can read this one Secret
-    (cluster/cdk8s/agentplane/staging.py): this namespace also holds every target's SSH private
-    key, which no store may reach."""
-    Password(
-        scope,
-        "bearer-password-generator",
-        metadata=metadata(BEARER_SECRET_NAME, NAMESPACE),
-        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
-        scope,
-        "bearer-external-secret",
-        name=BEARER_SECRET_NAME,
-        namespace=NAMESPACE,
-        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[DataFrom.from_password_generator(BEARER_SECRET_NAME)],
-        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={BEARER_SECRET_KEY: "{{ .password }}"}),
-    )
 
 
 def _config_map(scope: Construct, config: SshMcpConfig) -> ConfigMap:
@@ -130,13 +103,23 @@ class SshMcp(Construct):
         forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=NAMESPACE)
 
     def _add_credentials(self) -> None:
-        _bearer_credentials(self)
+        # agentplane-staging copies it with ESO through a store that can read this one Secret
+        # (cluster/cdk8s/agentplane/staging.py): this namespace also holds every target's SSH
+        # private key, which no store may reach.
+        mint_bearer_secret(
+            self,
+            "bearer-external-secret",
+            name=BEARER_SECRET_NAME,
+            namespace=NAMESPACE,
+            key=BEARER_SECRET_KEY,
+            creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        )
 
     def _add_deployment(self, config_map: ConfigMap, *, config: SshMcpConfig, mesh: Mesh) -> Deployment:
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(NAME, NAMESPACE, labels=LABELS, annotations=RELOADER_AUTO),
+            metadata=metadata(NAME, NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}),
             pod_metadata=ApiObjectMetadata(labels=LABELS),
             replicas=1,
             select=False,
@@ -147,7 +130,7 @@ class SshMcp(Construct):
         )
         # The Deployment selector is immutable; retain its existing labels for Flux adoption.
         deployment.select(LabelSelector.of(labels=LABELS))
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
+        apply_pod_spec_patches(deployment)
         bearer = Secret.from_secret_name(self, "bearer-secret-ref", BEARER_SECRET_NAME)
         deployment.add_container(
             name="server",
@@ -167,7 +150,6 @@ class SshMcp(Construct):
             readiness=http_probe("/healthz", port=HTTP_PORT, initial_delay_seconds=3),
             liveness=http_probe("/healthz", port=HTTP_PORT, initial_delay_seconds=15, period_seconds=20),
             security_context=ContainerSecurityContextProps(
-                allow_privilege_escalation=False,
                 capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
                 ensure_non_root=True,
                 user=1000,

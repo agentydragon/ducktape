@@ -106,7 +106,7 @@ async def model(client: Client, harness: protocol_pb2.Harness) -> str:
     """A model this deployment offers for this harness, asked of the app rather than hardcoded."""
     catalog = await client.models()
     config_harness = Harness(protocol_pb2.Harness.Name(harness))
-    offered = catalog[config_harness]
+    offered = catalog.harnesses[config_harness]
     assert offered, f"the deployment offers no model for {harness}"
     return offered[0]
 

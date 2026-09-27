@@ -64,8 +64,8 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.litellm.config import ConfigMapSpec, proxy_configs
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
+from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
@@ -283,7 +283,9 @@ class LiteLLMProxy(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(self.spec.name, self.spec.namespace, labels=labels, annotations=RELOADER_AUTO),
+            metadata=metadata(
+                self.spec.name, self.spec.namespace, labels=labels, annotations={"reloader.stakater.com/auto": "true"}
+            ),
             pod_metadata=ApiObjectMetadata(labels=labels),
             replicas=self.spec.replicas,
             strategy=self.spec.strategy,
@@ -319,7 +321,7 @@ class LiteLLMProxy(Construct):
             # Same rationale as the pod-level override above.
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False, ensure_non_root=False),
         )
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
+        apply_pod_spec_patches(deployment)
         volume = Volume.from_config_map(
             self, "config-volume", config_map, items={"config.yaml": PathMapping(path="config.yaml")}
         )
@@ -368,7 +370,7 @@ class LiteLLMProxy(Construct):
             self,
             "httproute",
             metadata=metadata(self.spec.name, self.spec.namespace),
-            hostname=hostname,
+            hostnames=[hostname],
             backend=self.spec.name,
             port=4000,
             timeout="600s",

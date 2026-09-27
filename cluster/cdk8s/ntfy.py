@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     Capability,
     ContainerPort,
@@ -32,7 +32,6 @@ from cdk8s_plus_34 import (
     Service,
     ServicePort,
 )
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from external_secret_store_crds.io.external_secrets import (
     ClusterSecretStore,
@@ -55,8 +54,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cnpg, fleet_rules
-from cluster.cdk8s.agentplane import node_scheduling
+from cluster.cdk8s import cnpg, fleet_rules, node_scheduling
 from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,
@@ -66,8 +64,8 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import sops_decryption, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
+from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -196,7 +194,7 @@ def _database(scope: Construct) -> None:
         node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
         storage_class="local-path-ovh-hdd",
         size="2Gi",
-        initdb=ClusterSpecBootstrapInitdb(database=NAME, owner=NAME),
+        initdb=cnpg.same_owner_initdb(NAME),
     )
 
 
@@ -218,7 +216,9 @@ class Ntfy(Construct):
         _alertmanager_webhook_secret(self)
         deployment = self._add_deployment()
         self._add_service(deployment)
-        https_route(self, "httproute", metadata=metadata("ntfy", NAMESPACE), hostname=HOSTNAME, backend=NAME, port=PORT)
+        https_route(
+            self, "httproute", metadata=metadata("ntfy", NAMESPACE), hostnames=[HOSTNAME], backend=NAME, port=PORT
+        )
         self._add_service_monitor()
 
     def _add_deployment(self) -> Deployment:
@@ -231,7 +231,7 @@ class Ntfy(Construct):
                 labels=_LABELS,
                 annotations={
                     "description": "Single ntfy server backed by the two-instance ntfy PostgreSQL cluster.",
-                    **RELOADER_AUTO,
+                    "reloader.stakater.com/auto": "true",
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
@@ -274,7 +274,7 @@ class Ntfy(Construct):
                 read_only_root_filesystem=True,
             ),
         )
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
+        apply_pod_spec_patches(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
@@ -290,7 +290,7 @@ class Ntfy(Construct):
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=metadata(NAME, NAMESPACE, labels={"release": "kube-prometheus-stack", **_LABELS}),
+            metadata=metadata(NAME, NAMESPACE, labels=_LABELS),
             selector=_LABELS,
             endpoints=[Endpoint.plain(port="http")],
         )

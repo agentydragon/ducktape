@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from cdk8s import ApiObjectMetadata
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecAffinity,
     ClusterSpecAffinityTolerations,
@@ -42,6 +43,16 @@ def _affinity(*, node_selector: dict[str, str], storage_class: str) -> ClusterSp
     )
 
 
+def same_owner_initdb(
+    name: str, *, locale_c_type: str | None = None, locale_collate: str | None = None
+) -> ClusterSpecBootstrapInitdb:
+    """`ClusterSpecBootstrapInitdb` for the common case where the app's database and its
+    owning role both take the app's own name."""
+    return ClusterSpecBootstrapInitdb(
+        database=name, owner=name, locale_c_type=locale_c_type, locale_collate=locale_collate
+    )
+
+
 def cluster(
     scope: Construct,
     id: str,
@@ -71,8 +82,7 @@ def cluster(
     return Cluster(
         scope,
         id,
-        name=name,
-        namespace=namespace,
+        metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=annotations),
         storage_class=storage_class,
         size=size,
         instances=instances,
@@ -88,5 +98,4 @@ def cluster(
         ),
         # TODO: Migrate to manually managed PodMonitors (enablePodMonitor is deprecated).
         monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-        annotations=annotations,
     )

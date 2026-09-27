@@ -28,19 +28,10 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesMatches,
-    HttpRouteSpecRulesMatchesPath,
-    HttpRouteSpecRulesMatchesPathType,
-    HttpRouteSpecRulesTimeouts,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -49,10 +40,10 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.forgejo_images import SECRET_NAME
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
+from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
@@ -142,18 +133,14 @@ def _config(scope: Construct) -> None:
     )
 
 
-def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
-    )
-
-
 def _deployment(scope: Construct) -> None:
     tcp_probe = k8s.TcpSocketAction(port=k8s.IntOrString.from_number(PORT))
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_LABELS, annotations=RELOADER_AUTO),
+        metadata=k8s.ObjectMeta(
+            name=NAME, namespace=NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
+        ),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -194,9 +181,11 @@ def _deployment(scope: Construct) -> None:
                             image=_IMAGE,
                             args=["-config", "/config/config.yaml"],
                             env=[
-                                _secret_env("MANAGEMENT_PASSWORD", "cli-proxy-api-management", "management-password"),
+                                secret_env_var(
+                                    "MANAGEMENT_PASSWORD", "cli-proxy-api-management", "management-password"
+                                ),
                                 *(
-                                    _secret_env(key, _ADMIN_OIDC_SECRET, key)
+                                    secret_env_var(key, _ADMIN_OIDC_SECRET, key)
                                     for key in (
                                         "MANAGEMENT_OIDC_ISSUER",
                                         "MANAGEMENT_OIDC_CLIENT_ID",
@@ -253,34 +242,24 @@ def _service(scope: Construct) -> None:
 
 
 def _routes(scope: Construct) -> None:
-    HttpRoute(
+    # CLIProxyAPI streams model responses (incl. long Codex reasoning); allow long requests.
+    https_route(
         scope,
         "route",
         metadata=metadata(NAME, NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=["cli-proxy-api.allegedly.works"],
-            rules=[
-                # CLIProxyAPI streams model responses (incl. long Codex reasoning); allow long requests.
-                HttpRouteSpecRules(
-                    timeouts=HttpRouteSpecRulesTimeouts(request="600s", backend_request="600s"),
-                    matches=[
-                        HttpRouteSpecRulesMatches(
-                            path=HttpRouteSpecRulesMatchesPath(
-                                type=HttpRouteSpecRulesMatchesPathType.PATH_PREFIX, value="/v1"
-                            )
-                        )
-                    ],
-                    backend_refs=[HttpRouteSpecRulesBackendRefs(name=NAME, port=PORT)],
-                )
-            ],
-        ),
+        hostnames=["cli-proxy-api.allegedly.works"],
+        backend=NAME,
+        port=PORT,
+        path_prefix="/v1",
+        timeout="600s",
+        hsts=False,
+        listener=None,
     )
     https_route(
         scope,
         "admin-route",
         metadata=metadata("cli-proxy-api-admin", NAMESPACE),
-        hostname="cli-proxy-api-admin.allegedly.works",
+        hostnames=["cli-proxy-api-admin.allegedly.works"],
         backend=NAME,
         port=PORT,
         hsts=False,

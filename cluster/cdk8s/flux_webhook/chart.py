@@ -170,7 +170,7 @@ def chart(app: App) -> Chart:
         chart,
         "route",
         metadata=metadata(NAME, NAMESPACE),
-        hostname="flux-webhook.allegedly.works",
+        hostnames=["flux-webhook.allegedly.works"],
         backend="webhook-receiver",
         port=80,
         hsts=False,

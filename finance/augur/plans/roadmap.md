@@ -1,5 +1,7 @@
 # Augur: experiment-driven modularization
 
+**[Consolidation](consolidation.md) comes first:** no item below is dispatched until it lands.
+
 This is the landing plan for a composable financial simulator: an experiment
 loads or samples worlds, varies financial decisions, runs the shared mechanics,
 and examines distributions and individual timelines. The primary acceptance
@@ -202,7 +204,6 @@ flowchart TB
     GX{"GX: backstop jurisdiction and realism"}
     GL{"GL: future measured workload tuning; parked"}
     RUNTIME["RUNTIME: future bottleneck investigation; parked"] --> GE{"GE: future optimization choice; parked"}
-    IDTYPES["IDTYPES: typed entity IDs"]
 
     P12["P12: retire the configured housing and PE strategies"]
     MA3["MA3: runnable TLH comparison"]
@@ -330,12 +331,6 @@ to finish P12.
 [The P12 reader list](cleanup_migration.md) names the configured strategy's live
 readers and their deletion criteria.
 
-| Unit    | Change                           | Needs |
-| ------- | -------------------------------- | ----- |
-| IDTYPES | Typed config-model construction. | None  |
-
-The [entity-ID note](typed_series_config.md) scopes IDTYPES without turning artifact/wire churn into an active cleanup prerequisite.
-
 ### Deletion checkpoints, not another interface family
 
 P12 removes the world's scripted housing lifecycle and PE tender policy. The
@@ -426,9 +421,9 @@ migrations, without reopening the settled ordered-action/no-retry contract:
 | GL — future batch tuning (parked)                  | When an actual workload needs optimization, measure representation/transfer/capture and consider bounded changes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Domain/API work, Python migrations and studies proceed without performance budgets. Keep one batch interface; correctness is not deferred.                                                                                          |
 | GE — future optimization choice (parked)           | Use actual bottleneck evidence to choose Python/vectorized/native implementation details later.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | No near-term Python switch needs speedup evidence. Preserve the domain model and one canonical implementation regardless of optimization choice.                                                                                    |
 
-The [Guyton–Klinger source contract](../docs/guyton_klinger.md) grounds GS for
+The [Guyton–Klinger source contract](../study/guyton_klinger/README.md) grounds GS for
 that consumer: source versions and portfolio/spending rules, data access and
-remaining convention choices. Its [implementation plan](guyton_klinger.md) maps
+remaining convention choices. Its [implementation plan](../study/guyton_klinger/PLAN.md) maps
 small STUDY slices onto the current session. Historical application of the 2006
 policy is distinct from its Monte Carlo table results.
 
@@ -463,8 +458,8 @@ all the others to be solved first.
    the capabilities they actually need; do not remove those regressions or add
    a compatibility driver to claim convergence. Public reader deletions proceed.
    **GL and RUNTIME/GE remain parked** without outgoing gates to this work.
-   **IDTYPES** has no prerequisite, the “exogenous” rename is only a consideration, and
-   constituent-level managed portfolios wait for decision-relevant fidelity gaps.
+   The “exogenous” rename is only a consideration, and constituent-level managed
+   portfolios wait for decision-relevant fidelity gaps.
    New evidence-fetch/cache infrastructure waits for observed throttling; richer
    PE app controls are dropped, not a deferred product feature.
 

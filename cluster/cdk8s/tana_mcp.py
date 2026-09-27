@@ -21,11 +21,12 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import external_creds
+from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
+from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -52,12 +53,6 @@ _METRICS_PORT = 9090
 _TANA_HEALTH = f"http://127.0.0.1:{_TANA_PORT}/health"
 
 
-def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
-    )
-
-
 def _tana_health_check() -> k8s.ExecAction:
     return k8s.ExecAction(command=["/usr/bin/curl", "--fail", "--silent", _TANA_HEALTH])
 
@@ -70,7 +65,9 @@ def _tana_deployment(chart: Chart) -> None:
     k8s.KubeDeployment(
         chart,
         "tana-deployment",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations=RELOADER_AUTO),
+        metadata=k8s.ObjectMeta(
+            name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
+        ),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -144,7 +141,7 @@ def _tana_deployment(chart: Chart) -> None:
                             # accepts it (POST /mcp initialize -> 200), so a renderer that
                             # drifts off the matching account drives a re-sign instead of
                             # silently leaving the facade serving zero tools.
-                            env=[_secret_env("PAT", _PAT_SECRET, "token")],
+                            env=[secret_env_var("PAT", _PAT_SECRET, "token")],
                             resources=k8s.ResourceRequirements(
                                 requests={
                                     "cpu": k8s.Quantity.from_string("10m"),
@@ -258,7 +255,7 @@ def _facade(chart: Chart) -> None:
                     " Access is enforced by Authentik group membership; the server injects a static downstream"
                     " PAT."
                 ),
-                **RELOADER_AUTO,
+                "reloader.stakater.com/auto": "true",
                 # CPU: VPA manages requests only — no CPU limit so cold-start bursts aren't
                 # throttled. fastmcp takes ~6 CPU-seconds to import; at a 60m limit that's
                 # 100s wall time even on an idle node (cgroups CFS is a hard rate limiter
@@ -294,11 +291,11 @@ def _facade(chart: Chart) -> None:
                                 k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name="tana-mcp-facade-config"))
                             ],
                             env=[
-                                _secret_env("MCP_FACADE_AUTH__OIDC_CLIENT_ID", _FACADE_OIDC_SECRET, "client_id"),
-                                _secret_env(
+                                secret_env_var("MCP_FACADE_AUTH__OIDC_CLIENT_ID", _FACADE_OIDC_SECRET, "client_id"),
+                                secret_env_var(
                                     "MCP_FACADE_AUTH__OIDC_CLIENT_SECRET", _FACADE_OIDC_SECRET, "client_secret"
                                 ),
-                                _secret_env("MCP_FACADE_UPSTREAM__BEARER_TOKEN", _PAT_SECRET, "token"),
+                                secret_env_var("MCP_FACADE_UPSTREAM__BEARER_TOKEN", _PAT_SECRET, "token"),
                             ],
                             resources=k8s.ResourceRequirements(
                                 requests={
@@ -336,7 +333,7 @@ def _facade(chart: Chart) -> None:
         chart,
         "facade-httproute",
         metadata=metadata(_FACADE, _NAMESPACE),
-        hostname="tana-mcp-facade.allegedly.works",
+        hostnames=["tana-mcp-facade.allegedly.works"],
         backend=_FACADE,
         port=_FACADE_PORT,
         timeout="60s",
@@ -376,7 +373,7 @@ def _facade(chart: Chart) -> None:
     PrometheusRule(
         chart,
         "facade-prometheusrule",
-        metadata=metadata(_FACADE, _NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=metadata(_FACADE, _NAMESPACE),
         groups=[
             group(
                 _FACADE,

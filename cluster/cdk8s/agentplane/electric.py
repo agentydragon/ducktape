@@ -23,8 +23,8 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import container_security, database, node_scheduling
+from cluster.cdk8s import cilium, container_security, node_scheduling
+from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches

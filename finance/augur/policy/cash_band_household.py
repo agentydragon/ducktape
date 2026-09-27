@@ -419,7 +419,7 @@ class CashBandHousehold(EconomicAgent):
             candidates = sorted(
                 (lot for lot in selected if lot.account_id == account), key=lambda lot: (lot.purchase_month, lot.lot_id)
             )
-            lot_sales, _ = sleeves._sale_lots(candidates, 0, full_exit=orders.full_exit, unit_target=wanted)
+            lot_sales, _ = sleeves.sale_lots(candidates, 0, full_exit=orders.full_exit, unit_target=wanted)
             if lot_sales:
                 sales.append(
                     Sell(

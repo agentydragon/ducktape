@@ -2,19 +2,6 @@
    The classes are attached through Mantine's `classNames`, which names the part each one dresses:
    a bare `className` on an input component does not land on the element these selectors expect. */
 
-/* The title and the thread id take the room the header has, and a whole row of it on a phone: an
-   input clips where a heading would wrap, so the narrow screen is where the field needs the most
-   width. 48em is Mantine's `sm`, the breakpoint the rest of this app folds at. */
-.agentplane-thread-name {
-  flex: 1 1 12rem;
-}
-
-@media (max-width: 48em) {
-  .agentplane-thread-name {
-    flex: 1 1 100%;
-  }
-}
-
 /* The thread name is edited where it is read, so at rest it has to look like the heading it is and
    not like a form: no border, and only a hover to say it takes typing. Mantine's own variables, so
    the hues follow the scheme attribute Mantine puts on the document. */

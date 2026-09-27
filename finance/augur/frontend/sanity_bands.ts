@@ -1,7 +1,7 @@
 // Pure presentation logic for the calibration page's "Reasonableness bands" panel.
 //
 // These are the deployment's hardcoded `sample_sanity` reasonableness bands (see
-// `augur.model.sample_sanity`) evaluated against the calibration run's own rollouts: an
+// `augur.x.models.sample_sanity`) evaluated against the calibration run's own rollouts: an
 // expected range vs the observed value(s), same shape as the model-vs-market table but checked
 // against this run. Kept React-free so the sort/summary/format logic is unit-testable.
 

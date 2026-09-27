@@ -15,11 +15,12 @@ from pathlib import Path
 from cdk8s import App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
 
+from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
+from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.plaid_mcp.app import NAMESPACE
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -35,12 +36,6 @@ _UPSTREAM_PORT = 8000
 _HTTP_PORT = 8765
 _METRICS_PORT = 9090
 _VALKEY = "plaid-valkey-kimsufi"
-
-
-def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
-    )
 
 
 def _container_security_context() -> k8s.SecurityContext:
@@ -68,7 +63,7 @@ def _deployment(chart: Chart) -> None:
                     "Read-only Postgres MCP over the Plaid sync database, fronted by mcp-oauth-facade. The"
                     " upstream MCP uses Streamable HTTP and connects with the plaid_ro role."
                 ),
-                **RELOADER_AUTO,
+                "reloader.stakater.com/auto": "true",
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -96,7 +91,7 @@ def _deployment(chart: Chart) -> None:
                             ],
                             ports=[k8s.ContainerPort(name="upstream", container_port=_UPSTREAM_PORT, protocol="TCP")],
                             # The read-only credentials db.py mints.
-                            env=[_secret_env("AIRMAN_MCP_DATABASE_URL", "plaid-mcp-db-readonly", "DATABASE_URL")],
+                            env=[secret_env_var("AIRMAN_MCP_DATABASE_URL", "plaid-mcp-db-readonly", "DATABASE_URL")],
                             resources=k8s.ResourceRequirements(
                                 requests={
                                     "memory": k8s.Quantity.from_string("128Mi"),
@@ -119,8 +114,8 @@ def _deployment(chart: Chart) -> None:
                             ],
                             env_from=[k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=_CONFIG_MAP))],
                             env=[
-                                _secret_env("MCP_FACADE_AUTH__OIDC_CLIENT_ID", _OIDC_SECRET, "client_id"),
-                                _secret_env("MCP_FACADE_AUTH__OIDC_CLIENT_SECRET", _OIDC_SECRET, "client_secret"),
+                                secret_env_var("MCP_FACADE_AUTH__OIDC_CLIENT_ID", _OIDC_SECRET, "client_id"),
+                                secret_env_var("MCP_FACADE_AUTH__OIDC_CLIENT_SECRET", _OIDC_SECRET, "client_secret"),
                             ],
                             resources=k8s.ResourceRequirements(
                                 requests={
@@ -192,7 +187,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        hostname="plaid-db.allegedly.works",
+        hostnames=["plaid-db.allegedly.works"],
         backend=_NAME,
         port=_HTTP_PORT,
         timeout="60s",

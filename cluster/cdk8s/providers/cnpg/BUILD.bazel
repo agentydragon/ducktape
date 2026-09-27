@@ -45,7 +45,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":cluster",
-        "//cluster/cdk8s:metadata",
+        "@pypi//cdk8s",
         "@pypi//constructs",
     ],
 )

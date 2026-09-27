@@ -15,7 +15,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
+from cluster.cdk8s.metadata import metadata
 
 NAME = "kubectl-passthrough-mcp"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agents/kubectl-passthrough-mcp/app"
@@ -58,7 +58,7 @@ def _deployment(chart: Chart) -> None:
                     "containers/kubernetes-mcp-server in OAuth passthrough mode. Caller's Authentik JWT is"
                     " forwarded directly to kube-apiserver; server itself is unprivileged."
                 ),
-                **RELOADER_AUTO,
+                "reloader.stakater.com/auto": "true",
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -149,7 +149,7 @@ def chart(app: App) -> Chart:
         chart,
         "httproute",
         metadata=metadata(NAME, NAME),
-        hostname="kubectl-passthrough-mcp.allegedly.works",
+        hostnames=["kubectl-passthrough-mcp.allegedly.works"],
         backend=NAME,
         port=_PORT,
         timeout="60s",

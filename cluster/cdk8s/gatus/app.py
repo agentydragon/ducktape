@@ -12,7 +12,6 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress, CiliumNetworkPolicySpecEgressToEntities
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -29,7 +28,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
+from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
@@ -68,7 +67,7 @@ def _database(scope: Construct) -> None:
         storage_class="local-path-ovh",
         size="1Gi",
         # CNPG auto-generates credentials in secret gatus-db-app
-        initdb=ClusterSpecBootstrapInitdb(database="gatus", owner="gatus"),
+        initdb=cnpg.same_owner_initdb("gatus"),
     )
 
 
@@ -104,7 +103,7 @@ def _helm_release(scope: Construct) -> None:
                 "LITELLM_API_KEY": {"valueFrom": {"secretKeyRef": {"name": "litellm-master-key", "key": "api-key"}}},
             },
             "envFrom": [{"secretRef": {"name": "gatus-oidc-secret"}}],
-            "podAnnotations": RELOADER_AUTO,
+            "podAnnotations": {"reloader.stakater.com/auto": "true"},
             "ingress": {"enabled": False},
             # Storage moved off the local SQLite PVC onto the gatus-db CNPG
             # cluster on OVH-HA (the Cluster above).
@@ -201,7 +200,7 @@ def chart(app: App) -> Chart:
         chart,
         "route",
         metadata=metadata(_NAME, _NAMESPACE),
-        hostname="status.allegedly.works",
+        hostnames=["status.allegedly.works"],
         backend=_NAME,
         port=80,
         hsts=False,

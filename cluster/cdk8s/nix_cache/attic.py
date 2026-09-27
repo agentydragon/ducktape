@@ -13,7 +13,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -22,10 +21,11 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import cnpg, external_creds, forgejo_images
+from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
+from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.seaweedfs import s3
 
@@ -50,12 +50,6 @@ _CONTROL_PLANE_TOLERATION = k8s.Toleration(
 _ZONE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh"}
 
 
-def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
-    )
-
-
 def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
@@ -67,7 +61,7 @@ def _database(scope: Construct) -> None:
         storage_class="local-path-ovh",
         size="2Gi",
         # CNPG generates the credentials in Secret attic-db-app.
-        initdb=ClusterSpecBootstrapInitdb(database="attic", owner="attic"),
+        initdb=cnpg.same_owner_initdb("attic"),
     )
 
 
@@ -93,7 +87,7 @@ def _server(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, annotations=RELOADER_AUTO),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, annotations={"reloader.stakater.com/auto": "true"}),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_SELECTOR),
@@ -119,10 +113,12 @@ def _server(scope: Construct) -> None:
                                 seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
                             ),
                             env=[
-                                _secret_env("ATTIC_SERVER_DATABASE_URL", f"{_DB}-app", "uri"),
-                                _secret_env("ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64", "attic-jwt-token", "jwt-token"),
-                                _secret_env("AWS_ACCESS_KEY_ID", _S3_SECRET, "AWS_ACCESS_KEY_ID"),
-                                _secret_env("AWS_SECRET_ACCESS_KEY", _S3_SECRET, "AWS_SECRET_ACCESS_KEY"),
+                                secret_env_var("ATTIC_SERVER_DATABASE_URL", f"{_DB}-app", "uri"),
+                                secret_env_var(
+                                    "ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64", "attic-jwt-token", "jwt-token"
+                                ),
+                                secret_env_var("AWS_ACCESS_KEY_ID", _S3_SECRET, "AWS_ACCESS_KEY_ID"),
+                                secret_env_var("AWS_SECRET_ACCESS_KEY", _S3_SECRET, "AWS_SECRET_ACCESS_KEY"),
                             ],
                             args=["-f", "/config/server.toml", "--mode", "monolithic"],
                             ports=[k8s.ContainerPort(name="http", container_port=_PORT, protocol="TCP")],
@@ -170,7 +166,7 @@ def _server(scope: Construct) -> None:
         scope,
         "route",
         metadata=metadata(NAMESPACE, NAMESPACE),
-        hostname="cache.allegedly.works",
+        hostnames=["cache.allegedly.works"],
         backend=NAME,
         port=_PORT,
         hsts=False,
@@ -279,7 +275,7 @@ def _rotation(scope: Construct) -> None:
                                     name="rotate",
                                     image=_ROTATOR_IMAGE,
                                     args=["rotate", "--config", "/config/rotators.yaml"],
-                                    env=[_secret_env("GIT_TOKEN", _GITHUB_PAT_SECRET, "token")],
+                                    env=[secret_env_var("GIT_TOKEN", _GITHUB_PAT_SECRET, "token")],
                                     security_context=k8s.SecurityContext(
                                         allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                                     ),
