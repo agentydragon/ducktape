@@ -15,7 +15,6 @@ def nix_cache(
     external_creds: Kustomization,
     external_secrets_config: Kustomization,
     forgejo_images: Kustomization,
-    cert_manager: Kustomization,
     seaweedfs_cluster: Kustomization,
 ) -> Kustomization:
     name = "nix-cache"
@@ -26,6 +25,6 @@ def nix_cache(
         timeout="5m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            cnpg, external_creds, external_secrets_config, forgejo_images, cert_manager, seaweedfs_cluster
+            cnpg, external_creds, external_secrets_config, forgejo_images, seaweedfs_cluster
         ),
     )

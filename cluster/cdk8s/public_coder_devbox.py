@@ -297,7 +297,6 @@ def public_coder_agent_devbox(
     external_creds: Kustomization,
     external_secrets_config: Kustomization,
     agent_shared_secrets: Kustomization,
-    public_coder_agent_app_kustomization: Kustomization,
 ) -> Kustomization:
     name = "public-coder-agent-devbox"
     return flux_kustomization(
@@ -307,12 +306,7 @@ def public_coder_agent_devbox(
         timeout="30m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            kubevirt,
-            forgejo_images,
-            external_creds,
-            external_secrets_config,
-            agent_shared_secrets,
-            public_coder_agent_app_kustomization,
+            kubevirt, forgejo_images, external_creds, external_secrets_config, agent_shared_secrets
         ),
         description=(
             "KubeVirt build/test devbox for public-coder-agent "

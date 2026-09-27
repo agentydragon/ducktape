@@ -171,9 +171,7 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
 
 
-def gateway(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cert_manager: Kustomization, kyverno: Kustomization
-) -> Kustomization:
+def gateway(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart, "gateway", artifact, timeout="5m", depends_on=flux_kustomization_depends_on_many(cert_manager, kyverno)
+        chart, "gateway", artifact, timeout="5m", depends_on=flux_kustomization_depends_on_many(kyverno)
     )

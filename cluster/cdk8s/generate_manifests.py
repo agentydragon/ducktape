@@ -507,7 +507,7 @@ def generate_manifests(root: Path) -> None:
     user_agentydragon_kustomization = user_agentydragon.user_agentydragon(flux_chart, user_agentydragon_artifact)
     valkey_artifact = artifact("valkey", valkey.OUTPUT_DIR)
     valkey_kustomization = valkey.valkey(flux_chart, valkey_artifact)
-    gaffer_private_source_kustomization = gaffer_private_source_flux_kustomizations.gaffer_private_source(
+    gaffer_private_source_flux_kustomizations.gaffer_private_source(
         flux_chart, flux_image_automation_ghcr_kustomization
     )
     kubevirt_artifact = artifact("kubevirt", kubevirt_app.OUTPUT_DIR)
@@ -529,9 +529,7 @@ def generate_manifests(root: Path) -> None:
     cdi_artifact = artifact("cdi", kubevirt_cdi.OUTPUT_DIR)
     reloader_artifact = artifact("reloader", reloader.OUTPUT_DIR)
     reloader.reloader(flux_chart, reloader_artifact, kyverno_kustomization)
-    cdi_kustomization = kubevirt_cdi.cdi(
-        flux_chart, cdi_artifact, cdi_operator_kustomization, local_path_provisioner_kustomization
-    )
+    kubevirt_cdi.cdi(flux_chart, cdi_artifact, cdi_operator_kustomization, local_path_provisioner_kustomization)
     clickhouse_operator_artifact = artifact("clickhouse-operator", clickhouse_operator.OUTPUT_DIR)
     clickhouse_operator_kustomization = clickhouse_operator.clickhouse_operator(
         flux_chart, clickhouse_operator_artifact, monitoring_crds_kustomization
@@ -565,9 +563,7 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_operator_kustomization = seaweedfs_operator_release.seaweedfs_operator(
         flux_chart, seaweedfs_operator_artifact, seaweedfs_namespace_kustomization
     )
-    snapshot_controller_kustomization = snapshot_controller_flux_kustomizations.snapshot_controller(
-        flux_chart, snapshot_controller_crds_kustomization
-    )
+    snapshot_controller_kustomization = snapshot_controller_flux_kustomizations.snapshot_controller(flux_chart)
     forgejo_cache_artifact = artifact("forgejo-cache", forgejo_cache.OUTPUT_DIR)
     forgejo_cache.forgejo_cache(
         flux_chart, forgejo_cache_artifact, valkey_kustomization, local_path_provisioner_kustomization
@@ -580,7 +576,7 @@ def generate_manifests(root: Path) -> None:
     )
     clickhouse_artifact = artifact("clickhouse", clickhouse_installation.OUTPUT_DIR)
     vpa_artifact = artifact("vpa", vpa.OUTPUT_DIR)
-    vpa_kustomization = vpa.vpa(flux_chart, vpa_artifact, kyverno_kustomization, metrics_server_kustomization)
+    vpa.vpa(flux_chart, vpa_artifact, kyverno_kustomization, metrics_server_kustomization)
     clickhouse_kustomization = clickhouse_installation.clickhouse(
         flux_chart, clickhouse_artifact, clickhouse_operator_kustomization
     )
@@ -603,17 +599,15 @@ def generate_manifests(root: Path) -> None:
         flux_chart, external_secrets_config_artifact, external_secrets_operator_kustomization
     )
     gateway_artifact = artifact("gateway", gateway.OUTPUT_DIR)
-    gateway.gateway(flux_chart, gateway_artifact, cert_manager_kustomization, kyverno_kustomization)
+    gateway.gateway(flux_chart, gateway_artifact, kyverno_kustomization)
     tofu_controller_artifact = artifact("tofu-controller", tofu_controller_release.OUTPUT_DIR)
     tofu_controller_kustomization = tofu_controller_release.tofu_controller(
-        flux_chart, tofu_controller_artifact, cert_manager_kustomization, kyverno_kustomization
+        flux_chart, tofu_controller_artifact, kyverno_kustomization
     )
     volsync_artifact = artifact("volsync", volsync.OUTPUT_DIR)
     volsync_kustomization = volsync.volsync(flux_chart, volsync_artifact, snapshot_controller_kustomization)
     agent_shared_rbac_artifact = artifact("agent-shared-rbac", agent_shared_rbac.OUTPUT_DIR)
-    agent_shared_rbac.agent_shared_rbac(
-        flux_chart, agent_shared_rbac_artifact, claude_rbac_kustomization, kyverno_policies_kustomization
-    )
+    agent_shared_rbac.agent_shared_rbac(flux_chart, agent_shared_rbac_artifact, claude_rbac_kustomization)
     agent_shared_secrets_artifact = artifact("agent-shared-secrets", f"{HAND_WRITTEN_ROOT}/agents/shared-secrets")
     agent_shared_secrets_kustomization = agents_flux_kustomizations.agent_shared_secrets(
         flux_chart, agent_shared_secrets_artifact, claude_rbac_kustomization
@@ -623,7 +617,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, external_creds_artifact, root, claude_rbac_kustomization
     )
     goldilocks_artifact = artifact("goldilocks", goldilocks.OUTPUT_DIR)
-    goldilocks_kustomization = goldilocks.goldilocks(flux_chart, goldilocks_artifact, vpa_kustomization)
+    goldilocks.goldilocks(flux_chart, goldilocks_artifact, kyverno_kustomization)
     clickhouse_schema_artifact = artifact("clickhouse-schema", clickhouse_schema.OUTPUT_DIR)
     clickhouse_schema_kustomization = clickhouse_schema.clickhouse_schema(
         flux_chart, clickhouse_schema_artifact, root, clickhouse_kustomization
@@ -655,7 +649,7 @@ def generate_manifests(root: Path) -> None:
     proxmox_proxy_artifact = artifact("proxmox-proxy", proxmox_proxy.OUTPUT_DIR)
     proxmox_proxy.proxmox_proxy(flux_chart, proxmox_proxy_artifact, kyverno_kustomization)
     kube_system_artifact = artifact("kube-system", kube_system.OUTPUT_DIR)
-    kube_system.kube_system(flux_chart, kube_system_artifact, goldilocks_kustomization)
+    kube_system.kube_system(flux_chart, kube_system_artifact, kyverno_kustomization)
     agents_mitmproxy_artifact = artifact("agents-mitmproxy", mitmproxy.OUTPUT_DIR)
     mitmproxy.agents_mitmproxy(flux_chart, agents_mitmproxy_artifact, root, cert_manager_trust_kustomization)
     docker_ci_artifact = artifact("docker-ci", f"{HAND_WRITTEN_ROOT}/parked/docker-ci")
@@ -669,7 +663,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, authentik_artifact, cnpg_kustomization, monitoring_crds_kustomization
     )
     gaffer_private_source_flux_kustomizations.gaffer_private_bridge(
-        flux_chart, gaffer_private_source_kustomization, authentik_kustomization, kyverno_kustomization
+        flux_chart, authentik_kustomization, kyverno_kustomization
     )
     dns_automation_artifact = artifact("dns-automation", dns_automation.OUTPUT_DIR)
     dns_automation.dns_automation(
@@ -974,7 +968,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         agent_box_artifact,
         kubevirt_kustomization,
-        cdi_kustomization,
         external_secrets_operator_kustomization,
         seaweedfs_public_s3_kustomization,
         local_path_provisioner_kustomization,
@@ -985,7 +978,6 @@ def generate_manifests(root: Path) -> None:
         gecko_artifact,
         gecko_namespace_kustomization,
         kubevirt_kustomization,
-        cdi_kustomization,
         external_secrets_operator_kustomization,
         seaweedfs_public_s3_kustomization,
         local_path_provisioner_kustomization,
@@ -1146,7 +1138,6 @@ def generate_manifests(root: Path) -> None:
         external_creds_kustomization,
         external_secrets_config_kustomization,
         forgejo_images_kustomization,
-        cert_manager_kustomization,
         seaweedfs_cluster_kustomization,
     )
     sdr_artifact = artifact("sdr", f"{HAND_WRITTEN_ROOT}/parked/sdr")
@@ -1366,7 +1357,7 @@ def generate_manifests(root: Path) -> None:
         public_coder_proxy.OUTPUT_DIR,
         public_coder_sshpiper.OUTPUT_DIR,
     )
-    public_coder_agent_app_kustomization = agents_flux_kustomizations.public_coder_agent_app(
+    agents_flux_kustomizations.public_coder_agent_app(
         flux_chart,
         public_coder_agent_app_artifact,
         cert_manager_kustomization,
@@ -1383,7 +1374,6 @@ def generate_manifests(root: Path) -> None:
         external_creds_kustomization,
         external_secrets_config_kustomization,
         agent_shared_secrets_kustomization,
-        public_coder_agent_app_kustomization,
     )
     agentplane_staging_artifact = artifact("agentplane-staging", agentplane_generation.output_dir(staging.ENV))
     staging.agentplane_staging(

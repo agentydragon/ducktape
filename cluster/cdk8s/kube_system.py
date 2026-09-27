@@ -37,5 +37,12 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
 
 
-def kube_system(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, goldilocks: Kustomization) -> Kustomization:
-    return flux_kustomization(chart, NAME, artifact, wait=None, depends_on=[flux_kustomization_depends_on(goldilocks)])
+def kube_system(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno: Kustomization) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        NAME,
+        artifact,
+        wait=None,
+        # Kyverno's failurePolicy: Fail webhooks admit the Namespace.
+        depends_on=[flux_kustomization_depends_on(kyverno)],
+    )

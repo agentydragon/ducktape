@@ -18,7 +18,6 @@ def agent_box(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     kubevirt: Kustomization,
-    cdi: Kustomization,
     external_secrets_operator: Kustomization,
     seaweedfs_public_s3: Kustomization,
     local_path_provisioner: Kustomization,
@@ -35,7 +34,7 @@ def agent_box(
         timeout="30m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            kubevirt, cdi, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
+            kubevirt, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
         ),
     )
 
@@ -108,7 +107,6 @@ def gecko(
     artifact: ArtifactGeneratorSpecArtifacts,
     gecko_namespace: Kustomization,
     kubevirt: Kustomization,
-    cdi: Kustomization,
     external_secrets_operator: Kustomization,
     seaweedfs_public_s3: Kustomization,
     local_path_provisioner: Kustomization,
@@ -125,7 +123,7 @@ def gecko(
         timeout="30m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            gecko_namespace, kubevirt, cdi, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
+            gecko_namespace, kubevirt, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
         ),
     )
 

@@ -71,14 +71,7 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
 
 
-def tofu_controller(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cert_manager: Kustomization, kyverno: Kustomization
-) -> Kustomization:
+def tofu_controller(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart,
-        NAME,
-        artifact,
-        interval="10m0s",
-        timeout="10m0s",
-        depends_on=flux_kustomization_depends_on_many(cert_manager, kyverno),
+        chart, NAME, artifact, interval="10m0s", timeout="10m0s", depends_on=flux_kustomization_depends_on_many(kyverno)
     )
