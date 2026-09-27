@@ -443,11 +443,9 @@ def _state_claims(scope: Construct) -> None:
             namespace=_NAMESPACE,
             annotations={
                 "description": (
-                    "Worker-local (optiplex SSD) replacement for the OpenClaw spike state, migrating "
-                    "it off the ovh-ns103656 HDD (which fell over under I/O contention with "
-                    "etcd+kubelet). WaitForFirstConsumer binds it on optiplex when the VolSync "
-                    "restore mover is created; it must not be mounted by the Deployment before the "
-                    "restore completes."
+                    "Persistent OpenClaw home, agent workspace, memory, and Claude Code session "
+                    "transcripts for the isolated Haku spike, on the optiplex worker's local SSD, "
+                    "away from the control-plane disks etcd and kubelet need."
                 )
             },
         ),
