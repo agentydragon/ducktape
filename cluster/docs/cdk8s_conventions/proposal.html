@@ -10973,8 +10973,10 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
               <p>
                 An object created before Kyverno runs misses those mutations at least until Flux next applies it;
                 whether Flux&#39;s dry-run diff picks them up on its own is unverified. 51 units that render
-                Kyverno-matched kinds already have no path to <code>kyverno</code>. The edge PRs kept Kyverno ordering
-                where they found it (#8181, #8185) so as not to decide this for you.
+                Kyverno-matched kinds already have no path to <code>kyverno</code>. The edge PRs added 19 direct
+                <code>kyverno</code> edges where their own removals would have cut a path (#8181, #8190, #8191), so as
+                not to decide this for you; every other unit&#39;s reach to Kyverno is incidental, and nothing checks
+                it.
               </p>
             </div>
           </div>
@@ -11231,14 +11233,16 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
               <p>
                 Edge-removal batches, one class or target per PR. You asked for the edges before the check in step 4, so
                 they land without it. Landed: <code>gateway</code> (#8181: 18 edges, 5 retargeted to
-                <code>kyverno</code>), the ESO store (#8183: 34, 31 retargeted to
-                <code>external-secrets-operator</code>) and <code>forgejo-images</code> (#8186: 25, 2 retargeted to
-                <code>seaweedfs-operator</code>). Open: the namespace units (#8185: 27) and
-                <code>seaweedfs-cluster</code> (#8187: 17, 15 retargeted to <code>seaweedfs-operator</code>). Still
-                being prepared: the other credential sources (<code>external-creds</code>, Reflector, the minted-secret
-                Terraform units), the remaining readiness targets (among them <code>tofu-state-db</code>,
-                <code>local-path-provisioner</code>, <code>cert-manager-environment</code> and <code>authentik</code>)
-                and the ordering-only edges.
+                <code>kyverno</code>), <code>tofu-state-db</code> (#8176: 18), the ESO store (#8183: 34, 31 retargeted
+                to <code>external-secrets-operator</code>), <code>forgejo-images</code> (#8186: 25, 2 retargeted to
+                <code>seaweedfs-operator</code>), the credential sources (#8188: 48, 2 retargeted) and
+                <code>seaweedfs-cluster</code> (#8187: 17, 12 retargeted to <code>seaweedfs-operator</code>). Open: the
+                namespace units (#8185: 27), the ordering-only edges (#8190: 11 removed, 2 retargeted to
+                <code>kyverno</code>, 2 kept as CRD edges) and the rest of service readiness (#8191: 65 removed, 16
+                added, and the first 5 edges kept as registered exceptions). Two CRD edges were already missing on devel
+                and are still to add: <code>volsync</code> to <code>monitoring-crds</code> (its chart&#39;s
+                ServiceMonitor) and <code>gaffer-private</code> to <code>tofu-controller</code> (a Terraform CR from the
+                private repo).
               </p>
             </div>
           </div>
@@ -11557,7 +11561,7 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
                 <code>SandboxWarmPool</code>, Terraform, <code>VirtualMachine</code> and <code>CleanupPolicy</code> at 2
                 or 3 each); and naming (cilium <code>NetworkPolicy</code> against <code>CiliumNetworkPolicy</code>, the
                 <code>flux_</code> prefix in <code>flux_kustomization.py</code>). The rest of the step landed in #8168,
-                #8173 to #8180 and #8182.
+                #8173 to #8175, #8177 to #8180 and #8182.
               </p>
             </div>
           </div>
