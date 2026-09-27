@@ -609,7 +609,9 @@ def generate_manifests(root: Path) -> None:
         flux_chart, tofu_controller_artifact, cert_manager_kustomization, kyverno_kustomization
     )
     volsync_artifact = artifact("volsync", volsync.OUTPUT_DIR)
-    volsync_kustomization = volsync.volsync(flux_chart, volsync_artifact, snapshot_controller_kustomization)
+    volsync_kustomization = volsync.volsync(
+        flux_chart, volsync_artifact, snapshot_controller_kustomization, monitoring_crds_kustomization
+    )
     agent_shared_rbac_artifact = artifact("agent-shared-rbac", agent_shared_rbac.OUTPUT_DIR)
     agent_shared_rbac.agent_shared_rbac(
         flux_chart, agent_shared_rbac_artifact, claude_rbac_kustomization, kyverno_policies_kustomization
@@ -666,7 +668,11 @@ def generate_manifests(root: Path) -> None:
         flux_chart, authentik_artifact, cnpg_kustomization, monitoring_crds_kustomization
     )
     gaffer_private_source_flux_kustomizations.gaffer_private_bridge(
-        flux_chart, gaffer_private_source_kustomization, authentik_kustomization, kyverno_kustomization
+        flux_chart,
+        gaffer_private_source_kustomization,
+        authentik_kustomization,
+        kyverno_kustomization,
+        tofu_controller_kustomization,
     )
     dns_automation_artifact = artifact("dns-automation", dns_automation.OUTPUT_DIR)
     dns_automation.dns_automation(
