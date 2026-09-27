@@ -296,7 +296,7 @@ class HaMcpApp(Construct):
                     )
                 },
             ),
-            selector=_APP_LABELS,
+            endpoint_selector=_APP_LABELS,
             ingress=[
                 IngressRule.from_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": "agentplane-staging"}, ports=[_APP_FACADE_PORT]

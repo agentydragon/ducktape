@@ -447,7 +447,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "networkpolicy-egress-to-testing-app",
         metadata=ApiObjectMetadata(name=f"{egress.NAME}-to-testing-app", namespace=_NAMESPACE),
-        selector={"app.kubernetes.io/name": egress.NAME},
+        endpoint_selector={"app.kubernetes.io/name": egress.NAME},
         egress=[
             EgressRule.to_endpoints(
                 cilium.endpoint_labels(testing.ENV.namespace, app_component.NAME), app_component.CONTAINER_PORT

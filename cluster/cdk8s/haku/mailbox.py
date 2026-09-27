@@ -356,7 +356,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
         chart,
         "smtp-ingress-policy",
         metadata=ApiObjectMetadata(name=_INGRESS_NAME, namespace=NAMESPACE),
-        selector=_INGRESS_LABELS,
+        endpoint_selector=_INGRESS_LABELS,
         ingress=[
             CiliumNetworkPolicySpecIngress(
                 from_entities=[
@@ -381,7 +381,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
         chart,
         "policy",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        selector=_LABELS,
+        endpoint_selector=_LABELS,
         ingress=[
             IngressRule.from_endpoints(_INGRESS_LABELS, ports=[_SMTP_PORT]),
             IngressRule.from_gateway(_HTTP_PORT),

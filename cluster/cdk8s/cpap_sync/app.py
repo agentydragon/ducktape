@@ -296,7 +296,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        selector={"app.kubernetes.io/name": NAME},
+        endpoint_selector={"app.kubernetes.io/name": NAME},
         egress=[
             cilium.dns_egress(),
             # The Service is port 80, but Cilium enforces the translated backend

@@ -254,7 +254,7 @@ def _network_policy(chart: Chart) -> None:
         chart,
         "server-ingress",
         metadata=ApiObjectMetadata(name="authentik-server-ingress", namespace=NAMESPACE),
-        selector=_SERVER_LABELS,
+        endpoint_selector=_SERVER_LABELS,
         ingress=[
             IngressRule.from_gateway(_HTTP, _HTTPS),
             # Outposts sync their config from the server API.

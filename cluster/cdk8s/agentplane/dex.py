@@ -300,7 +300,7 @@ def _add_network_policy(scope: Construct) -> None:
         scope,
         "networkpolicy",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        selector=_LABELS,
+        endpoint_selector=_LABELS,
         ingress=[
             IngressRule.from_gateway(_PORT),
             IngressRule.from_endpoints(cilium.endpoint_labels(_NAMESPACE, "agentplane-app"), ports=[_PORT]),

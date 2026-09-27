@@ -384,7 +384,7 @@ def _network_policy(scope: Construct) -> None:
         scope,
         "network-policy",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        selector=_LABELS,
+        endpoint_selector=_LABELS,
         ingress=[
             IngressRule.from_gateway(_PROXY_PORT),
             IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy"), ports=[_METRICS_PORT]),

@@ -589,7 +589,7 @@ class Egress(Construct):
             self,
             "networkpolicy",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            selector=_LABELS,
+            endpoint_selector=_LABELS,
             ingress=[
                 # Runner Pods, and the sandbox Actions' command boxes (command_sandbox.py, which
                 # imports this module).

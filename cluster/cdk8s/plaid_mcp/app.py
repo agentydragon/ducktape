@@ -225,7 +225,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        selector=_LABELS,
+        endpoint_selector=_LABELS,
         ingress=[IngressRule.from_endpoints(cilium.endpoint_labels("authentik", "authentik"), ports=[_HTTP_PORT])],
     )
     return chart

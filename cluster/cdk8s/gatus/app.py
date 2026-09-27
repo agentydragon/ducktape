@@ -146,7 +146,7 @@ def _network_policies(scope: Construct) -> None:
         scope,
         "ingress",
         metadata=ApiObjectMetadata(name="gatus-ingress", namespace=_NAMESPACE),
-        selector=_LABELS,
+        endpoint_selector=_LABELS,
         ingress=[
             # Cilium Gateway API (reserved:ingress identity) → Gatus
             IngressRule.from_gateway(_PORT),
@@ -167,7 +167,7 @@ def _network_policies(scope: Construct) -> None:
         scope,
         "dns-visibility",
         metadata=ApiObjectMetadata(name="gatus-dns-visibility", namespace=_NAMESPACE),
-        selector=_LABELS,
+        endpoint_selector=_LABELS,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
             # Everything else, deliberately unrestricted.
