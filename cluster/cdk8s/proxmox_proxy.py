@@ -4,20 +4,17 @@ WebSocket for the noVNC/xterm.js consoles)."""
 from __future__ import annotations
 
 import textwrap
-from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
     Kustomization,
+    RenderedDirectory,
     flux_kustomization,
     flux_kustomization_depends_on,
-    kustomize_kustomization,
 )
-from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.scripts import nebula_mesh
 
@@ -31,7 +28,7 @@ _PROXMOX_HOST = "atlas"
 _PROXMOX_UI_PORT = 8006
 
 
-def _config_map(mesh: nebula_mesh.Mesh) -> ConfigMapArgs:
+def config_map(mesh: nebula_mesh.Mesh) -> ConfigMapArgs:
     nginx_conf = textwrap.dedent(f"""\
         worker_processes auto;
         error_log /dev/stderr warn;
@@ -148,19 +145,11 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path, mesh: nebula_mesh.Mesh) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"], config_map_generator=[_config_map(mesh)]),
-    )
-
-
-def proxmox_proxy(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno: Kustomization) -> Kustomization:
+def proxmox_proxy(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         suspend=False,
         timeout="5m",
         # Kyverno's failurePolicy: Fail webhooks admit the Deployment.

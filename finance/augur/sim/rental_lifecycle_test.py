@@ -36,6 +36,7 @@ from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityI
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -95,7 +96,7 @@ SF_LOCATION = PreparedLocation(
     location_id=SF,
     display_name="San Francisco, CA",
     jurisdiction_ids=(FEDERAL, CALIFORNIA),
-    annual_property_tax_rate_ppb=rate_to_ppb(0.01180),
+    annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.01180")),
     annual_special_assessment=0,
 )
 
@@ -130,7 +131,7 @@ def series(
         rollout_count=rollout_count,
         horizon_months=horizon_months,
     )
-    return compile_series(paths, rollout_count=rollout_count, horizon_months=horizon_months, currency_quantum=QUANTUM)
+    return compile_series(paths, rollout_count=rollout_count, horizon_months=horizon_months, currency=USD)
 
 
 def recurring_transfer(
@@ -234,7 +235,7 @@ def dues(
     amount: PreparedAmount,
     end_month: int | None = None,
     property_id: PropertyId | None = None,
-    deductible_fraction: float = 1.0,
+    deductible_fraction: Decimal | int = 1,
 ) -> PreparedRecurringObligation:
     return PreparedRecurringObligation(
         start_month=0,
@@ -251,7 +252,11 @@ def dues(
 
 
 def financing(
-    liability_id: LiabilityId, *, principal: Decimal | int, rate: float = 0.06, term_months: int = 360
+    liability_id: LiabilityId,
+    *,
+    principal: Decimal | int,
+    rate: Decimal | int = Decimal("0.06"),
+    term_months: int = 360,
 ) -> _MortgageFinancing:
     return _MortgageFinancing(
         liability_id=liability_id,
@@ -269,8 +274,8 @@ def purchase(
     buyer: AgentId = OWNER,
     month: int = 0,
     price: Decimal | int = 500_000,
-    rented_fraction: float = 0.0,
-    land_value_fraction: float = 0.20,
+    rented_fraction: Decimal | int = 0,
+    land_value_fraction: Decimal | int = Decimal("0.20"),
     closing_cost: Decimal | int = 0,
     mortgage: _MortgageFinancing | None = None,
 ) -> _PropertyPurchase:
@@ -296,7 +301,7 @@ def purchase(
 
 
 def property_tax(
-    property_id: PropertyId, owner: AgentId, *, rate: float | None = None, end_month: int | None = None
+    property_id: PropertyId, owner: AgentId, *, rate: Decimal | int | None = None, end_month: int | None = None
 ) -> _PropertyTax:
     return _PropertyTax(
         property_id=property_id,
@@ -376,9 +381,7 @@ def compose(situation: Situation, rollout_id: int) -> World:
     for opening in situation.accounts:
         world.declare_account(opening)
     for profile in situation.tax_profiles:
-        world.track(
-            TaxAuthority(compile_profile(profile, jurisdictions, quantum=QUANTUM), indexation=FixedNominalLaw())
-        )
+        world.track(TaxAuthority(compile_profile(profile, jurisdictions, currency=USD), indexation=FixedNominalLaw()))
     for salt in situation.salt_policies:
         world.declare_deduction(salt)
     for interest in situation.mortgage_interest_policies:
@@ -501,11 +504,11 @@ def sale_rows(rollout: Rollout) -> dict[str, dict[str, Any]]:
 
 
 def mortgage_monthly_payment(
-    principal: Decimal, annual_interest_rate: float, term_months: int, *, currency_quantum: Decimal
+    principal: Decimal, annual_interest_rate: Decimal, term_months: int, *, currency_quantum: Decimal
 ) -> Decimal:
     """Independent high-precision annuity expectation, rounded once to currency."""
 
-    monthly_rate = Decimal(str(annual_interest_rate)) / 12
+    monthly_rate = annual_interest_rate / 12
     if monthly_rate == 0:
         payment = principal / term_months
     else:
@@ -514,7 +517,7 @@ def mortgage_monthly_payment(
 
 
 def mortgage_balance_and_interest_after_payments(
-    *, principal: float, annual_interest_rate: float, term_months: int, payment_count: int
+    *, principal: float, annual_interest_rate: Decimal, term_months: int, payment_count: int
 ) -> tuple[float, float]:
     balance = float(principal)
     interest_paid = 0.0
@@ -522,7 +525,7 @@ def mortgage_balance_and_interest_after_payments(
         mortgage_monthly_payment(Decimal(str(principal)), annual_interest_rate, term_months, currency_quantum=QUANTUM)
     )
     for _ in range(payment_count):
-        interest = balance * annual_interest_rate / 12
+        interest = balance * float(annual_interest_rate) / 12
         amount = min(payment, balance + interest)
         principal_paid = amount - interest
         balance = max(0, balance - principal_paid)
@@ -656,8 +659,12 @@ def sale_situation(
         tax_profiles=(taxpayer(),),
         recurring_transfers=tuple(recurring),
         housing=Housing(
-            purchases=(purchase(PropertyId("p1"), rented_fraction=1.0 if rented else 0.0),),
-            sales=(_PropertySale(month=sale_month, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(0.06)),),
+            purchases=(purchase(PropertyId("p1"), rented_fraction=1 if rented else 0),),
+            sales=(
+                _PropertySale(
+                    month=sale_month, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(Decimal("0.06"))
+                ),
+            ),
         ),
         locations=(SF_LOCATION,),
     )
@@ -902,7 +909,7 @@ class TestRentalIncomeTaxation:
                     income=ORDINARY_INCOME,
                 ),
             ),
-            housing=Housing(purchases=(purchase(PropertyId("p1"), rented_fraction=1.0),)),
+            housing=Housing(purchases=(purchase(PropertyId("p1"), rented_fraction=1),)),
             locations=(SF_LOCATION,),
         )
         [rollout] = run(situation)
@@ -939,9 +946,9 @@ class TestRentalIncomeTaxation:
                 ),
             ),
             housing=Housing(
-                purchases=(purchase(PropertyId("p1"), rented_fraction=0.0),),
+                purchases=(purchase(PropertyId("p1"), rented_fraction=0),),
                 rented_fraction_events=(
-                    _RentedFraction(month=12, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(1.0)),
+                    _RentedFraction(month=12, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(1)),
                 ),
             ),
             locations=(SF_LOCATION,),
@@ -993,13 +1000,13 @@ class TestRentalIncomeTaxation:
             ),
             housing=Housing(
                 # Land-only basis isolates the comparison from depreciation.
-                purchases=(purchase(PropertyId("p1"), land_value_fraction=1.0, mortgage=loan),),
+                purchases=(purchase(PropertyId("p1"), land_value_fraction=1, mortgage=loan),),
                 rented_fraction_events=(
                     ()
                     if start_renting_at is None
                     else (
                         _RentedFraction(
-                            month=start_renting_at, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(1.0)
+                            month=start_renting_at, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(1)
                         ),
                     )
                 ),
@@ -1034,9 +1041,9 @@ class TestRentalIncomeTaxation:
                 ),
             ),
             housing=Housing(
-                purchases=(purchase(PropertyId("p1"), rented_fraction=1.0),),
+                purchases=(purchase(PropertyId("p1"), rented_fraction=1),),
                 rented_fraction_events=(
-                    _RentedFraction(month=12, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(0.0)),
+                    _RentedFraction(month=12, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(0)),
                 ),
             ),
             locations=(SF_LOCATION,),
@@ -1072,7 +1079,7 @@ class TestRentalIncomeTaxation:
                 ),
             ),
             housing=Housing(
-                purchases=(purchase(PropertyId("p1"), rented_fraction=1.0),),
+                purchases=(purchase(PropertyId("p1"), rented_fraction=1),),
                 capital_improvements=(
                     _CapitalImprovement(
                         month=6, property_id=PropertyId("p1"), amount=money(100_000), description="new roof"
@@ -1115,9 +1122,9 @@ class TestRentalIncomeTaxation:
                 ),
             ),
             housing=Housing(
-                purchases=(purchase(PropertyId("p1"), rented_fraction=0.0),),
+                purchases=(purchase(PropertyId("p1"), rented_fraction=0),),
                 rented_fraction_events=(
-                    _RentedFraction(month=6, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(1.0)),
+                    _RentedFraction(month=6, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(1)),
                 ),
                 capital_improvements=(
                     _CapitalImprovement(
@@ -1179,7 +1186,7 @@ class TestRentalIncomeTaxation:
 
         purchase_price = 500_000
         mortgage_principal = 400_000
-        annual_interest_rate = 0.06
+        annual_interest_rate = Decimal("0.06")
         mortgage_term_months = 360
         sale_month = 36
         horizon = 48
@@ -1213,7 +1220,7 @@ class TestRentalIncomeTaxation:
                 purchases=(
                     purchase(
                         PropertyId("p1"),
-                        rented_fraction=1.0,
+                        rented_fraction=1,
                         mortgage=financing(
                             LiabilityId("p1_mortgage"),
                             principal=mortgage_principal,
@@ -1223,11 +1230,13 @@ class TestRentalIncomeTaxation:
                     ),
                 ),
                 sales=(
-                    _PropertySale(month=sale_month, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(0.06)),
+                    _PropertySale(
+                        month=sale_month, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(Decimal("0.06"))
+                    ),
                 ),
                 residence_events=(_PrimaryResidenceEvent(month=12, agent_id=OWNER, property_id=PropertyId("p1")),),
                 rented_fraction_events=(
-                    _RentedFraction(month=12, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(0.0)),
+                    _RentedFraction(month=12, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(0)),
                 ),
             ),
             locations=(SF_LOCATION,),
@@ -1274,9 +1283,9 @@ class TestRentalIncomeTaxation:
 
         purchase_price = 500_000
         mortgage_principal = 400_000
-        annual_interest_rate = 0.06
+        annual_interest_rate = Decimal("0.06")
         mortgage_term_months = 360
-        annual_property_tax_rate = 0.012
+        annual_property_tax_rate = Decimal("0.012")
         monthly_rent = 5_000
         sale_month = 30
         horizon = 36
@@ -1322,7 +1331,7 @@ class TestRentalIncomeTaxation:
                     purchase(
                         PropertyId("alice_rental"),
                         buyer=ALICE,
-                        rented_fraction=1.0,
+                        rented_fraction=1,
                         mortgage=financing(
                             LiabilityId("alice_rental_mortgage"),
                             principal=mortgage_principal,
@@ -1333,7 +1342,7 @@ class TestRentalIncomeTaxation:
                     purchase(
                         PropertyId("bob_home"),
                         buyer=BOB,
-                        rented_fraction=0.0,
+                        rented_fraction=0,
                         mortgage=financing(
                             LiabilityId("bob_home_mortgage"),
                             principal=mortgage_principal,
@@ -1344,10 +1353,14 @@ class TestRentalIncomeTaxation:
                 ),
                 sales=(
                     _PropertySale(
-                        month=sale_month, property_id=PropertyId("alice_rental"), closing_cost_ppb=rate_to_ppb(0.06)
+                        month=sale_month,
+                        property_id=PropertyId("alice_rental"),
+                        closing_cost_ppb=rate_to_ppb(Decimal("0.06")),
                     ),
                     _PropertySale(
-                        month=sale_month, property_id=PropertyId("bob_home"), closing_cost_ppb=rate_to_ppb(0.06)
+                        month=sale_month,
+                        property_id=PropertyId("bob_home"),
+                        closing_cost_ppb=rate_to_ppb(Decimal("0.06")),
                     ),
                 ),
                 initial_residences=(_PrimaryResidence(agent_id=BOB, property_id=PropertyId("bob_home")),),
@@ -1368,7 +1381,7 @@ class TestRentalIncomeTaxation:
         settlements = trace(rollout).events.obligation_settlements.filter(
             pl.col("obligation_type") == ObligationType.PROPERTY_TAX
         )
-        monthly_property_tax = purchase_price * annual_property_tax_rate / 12
+        monthly_property_tax = purchase_price * float(annual_property_tax_rate) / 12
         for agent_id in (ALICE, BOB):
             paid = settlements.filter(pl.col("agent_id") == agent_id).sort("month_index")
             assert paid.height == sale_month - 1
@@ -1615,9 +1628,11 @@ class TestRentalIncomeTaxation:
             accounts=(account(OWNER, 600_000), account(SELLER), account(IRS)),
             tax_profiles=(taxpayer(),),
             housing=Housing(
-                purchases=(purchase(PropertyId("p1"), rented_fraction=0.0),),
+                purchases=(purchase(PropertyId("p1"), rented_fraction=0),),
                 sales=(
-                    _PropertySale(month=sale_month, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(0.06)),
+                    _PropertySale(
+                        month=sale_month, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(Decimal("0.06"))
+                    ),
                 ),
                 initial_residences=(_PrimaryResidence(agent_id=OWNER, property_id=PropertyId("p1")),),
             ),
@@ -1663,9 +1678,11 @@ class TestRentalIncomeTaxation:
             accounts=(account(OWNER, 600_000), account(SELLER), account(IRS)),
             tax_profiles=(taxpayer(),),
             housing=Housing(
-                purchases=(purchase(PropertyId("p1"), rented_fraction=0.0),),
+                purchases=(purchase(PropertyId("p1"), rented_fraction=0),),
                 sales=(
-                    _PropertySale(month=sale_month, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(0.06)),
+                    _PropertySale(
+                        month=sale_month, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(Decimal("0.06"))
+                    ),
                 ),
                 residence_events=(
                     _PrimaryResidenceEvent(month=primary_start_month, agent_id=OWNER, property_id=PropertyId("p1")),
@@ -1701,9 +1718,11 @@ class TestRentalIncomeTaxation:
             accounts=(account(OWNER, 600_000), account(SELLER), account(IRS)),
             tax_profiles=(taxpayer(),),
             housing=Housing(
-                purchases=(purchase(PropertyId("p1"), rented_fraction=0.0),),
+                purchases=(purchase(PropertyId("p1"), rented_fraction=0),),
                 sales=(
-                    _PropertySale(month=sale_month, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(0.06)),
+                    _PropertySale(
+                        month=sale_month, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(Decimal("0.06"))
+                    ),
                 ),
             ),
             locations=(SF_LOCATION,),
@@ -1728,9 +1747,11 @@ class TestRentalIncomeTaxation:
             accounts=(account(OWNER, 600_000), account(SELLER), account(IRS)),
             tax_profiles=(taxpayer(),),
             housing=Housing(
-                purchases=(purchase(PropertyId("p1"), rented_fraction=0.0),),
+                purchases=(purchase(PropertyId("p1"), rented_fraction=0),),
                 sales=(
-                    _PropertySale(month=sale_month, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(0.06)),
+                    _PropertySale(
+                        month=sale_month, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(Decimal("0.06"))
+                    ),
                 ),
                 residence_events=(_PrimaryResidenceEvent(month=6, agent_id=OWNER, property_id=PropertyId("p1")),),
             ),
@@ -1795,10 +1816,14 @@ class TestRentalIncomeTaxation:
             accounts=(account(OWNER, 800_000), account(SELLER), account(IRS)),
             tax_profiles=(taxpayer(),),
             housing=Housing(
-                purchases=(purchase(PropertyId("p1"), rented_fraction=0.0),),
-                sales=(_PropertySale(month=12, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(0.06)),),
+                purchases=(purchase(PropertyId("p1"), rented_fraction=0),),
+                sales=(
+                    _PropertySale(
+                        month=12, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(Decimal("0.06"))
+                    ),
+                ),
                 rented_fraction_events=(
-                    _RentedFraction(month=6, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(1.0)),
+                    _RentedFraction(month=6, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(1)),
                 ),
                 capital_improvements=(
                     _CapitalImprovement(
@@ -1868,7 +1893,7 @@ class TestRentalIncomeTaxation:
                     income=ORDINARY_INCOME,
                 ),
             ),
-            housing=Housing(purchases=(purchase(PropertyId("p1"), rented_fraction=0.0),)),
+            housing=Housing(purchases=(purchase(PropertyId("p1"), rented_fraction=0),)),
             locations=(SF_LOCATION,),
         )
         [rollout] = run(situation)
@@ -1883,12 +1908,12 @@ class TestRentalIncomeTaxation:
         fully let, the same dollars of interest reduce ordinary income — through different
         mechanisms, so only the owner-occupied case carries a MID line."""
 
-        owner_occupied = self._mortgage_breakdown(rented_fraction=0.0)
-        rented = self._mortgage_breakdown(rented_fraction=1.0)
+        owner_occupied = self._mortgage_breakdown(rented_fraction=0)
+        rented = self._mortgage_breakdown(rented_fraction=1)
         assert owner_occupied["mortgage_interest_deduction_quanta"] / 100 > 0
         assert rented["mortgage_interest_deduction_quanta"] / 100 == pytest.approx(0, abs=1e-6)
 
-    def _mortgage_breakdown(self, *, rented_fraction: float) -> dict[str, Any]:
+    def _mortgage_breakdown(self, *, rented_fraction: Decimal | int) -> dict[str, Any]:
         purchase_price = 600_000
         situation = Situation(
             horizon_months=12,
@@ -1913,7 +1938,7 @@ class TestRentalIncomeTaxation:
                         PropertyId("p1"),
                         price=purchase_price,
                         # Land-only basis isolates the MID-vs-Schedule-E comparison from depreciation.
-                        land_value_fraction=1.0,
+                        land_value_fraction=1,
                         rented_fraction=rented_fraction,
                         mortgage=financing(
                             LiabilityId("p1_mortgage"), principal=Decimal(purchase_price) * Decimal("0.80")
@@ -1932,8 +1957,8 @@ class TestRentalIncomeTaxation:
         portion) and 75% to Schedule E (the let portion)."""
 
         purchase_price = 600_000
-        rented_fraction = 0.75
-        annual_tax_rate = 0.012  # 1.2% of price = $7,200/yr → $600/mo
+        rented_fraction = Decimal("0.75")
+        annual_tax_rate = Decimal("0.012")  # 1.2% of price = $7,200/yr → $600/mo
         situation = Situation(
             horizon_months=12,
             rollout_count=1,
@@ -1959,7 +1984,7 @@ class TestRentalIncomeTaxation:
                         rented_fraction=rented_fraction,
                         # A land-only basis makes the building basis zero, so no §168
                         # depreciation accrues to blur the property-tax assertion.
-                        land_value_fraction=1.0,
+                        land_value_fraction=1,
                     ),
                 )
             ),
@@ -1996,7 +2021,7 @@ class TestRentalIncomeTaxation:
                     payee=HOA,
                     amount=indexed(400),
                     end_month=11,
-                    deductible_fraction=0.5,
+                    deductible_fraction=Decimal("0.5"),
                 ),
             ),
         )

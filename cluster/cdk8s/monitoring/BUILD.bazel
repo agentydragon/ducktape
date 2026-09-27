@@ -284,13 +284,11 @@ py_library(
     deps = [
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

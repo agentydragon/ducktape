@@ -21,6 +21,7 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, L
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -64,7 +65,7 @@ class Situation:
     wages: Decimal
 
 
-def _situation(prices: np.ndarray, *, quantity: float, cost_basis: Decimal, wages: Decimal) -> Situation:
+def _situation(prices: np.ndarray, *, quantity: Decimal | int, cost_basis: Decimal, wages: Decimal) -> Situation:
     """One stipulated `(rollout, month)` price block; the horizon is the snapshots it carries."""
     rollout_count, snapshots = prices.shape
     horizon = snapshots - 1
@@ -73,7 +74,7 @@ def _situation(prices: np.ndarray, *, quantity: float, cost_basis: Decimal, wage
     )
     scale = quantity_scale_for_asset(VTI)
     return Situation(
-        series=compile_series(paths, rollout_count=rollout_count, horizon_months=horizon, currency_quantum=QUANTUM),
+        series=compile_series(paths, rollout_count=rollout_count, horizon_months=horizon, currency=USD),
         rollout_count=rollout_count,
         horizon_months=horizon,
         lot=PreparedLot(
@@ -83,7 +84,7 @@ def _situation(prices: np.ndarray, *, quantity: float, cost_basis: Decimal, wage
             asset_id=AssetId(VTI.symbol),
             purchase_month=-24,
             quantity_scale=scale,
-            units=int(quantity_to_quanta(quantity, scale=scale)),
+            units=quantity_to_quanta(quantity, scale=scale),
             basis=int(currency_amount_to_quanta(cost_basis, quantum=QUANTUM)),
         ),
         wages=wages,
@@ -112,9 +113,7 @@ def _compose(case: Situation, rollout_id: int) -> World:
     profile = TaxProfile(
         agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS, prior_year_tax=Decimal(0)
     )
-    world.track(
-        TaxAuthority(compile_profile(profile, {FEDERAL: federal}, quantum=QUANTUM), indexation=FixedNominalLaw())
-    )
+    world.track(TaxAuthority(compile_profile(profile, {FEDERAL: federal}, currency=USD), indexation=FixedNominalLaw()))
     world.declare_pool(
         PreparedHoldingPool(
             agent_id=ALICE,
@@ -225,7 +224,7 @@ def test_sale_receipt_cannot_be_rewritten_through_policy_memory() -> None:
 
 
 def _gain_situation(*, wages: Decimal) -> Situation:
-    return _situation(np.full((1, 13), 60_000.0), quantity=1.0, cost_basis=Decimal(10_000), wages=wages)
+    return _situation(np.full((1, 13), 60_000.0), quantity=1, cost_basis=Decimal(10_000), wages=wages)
 
 
 @pytest.fixture
@@ -262,7 +261,7 @@ def test_unused_standard_deduction_shelters_long_term_gain(bare_gain: TaxAccrual
     ids=["under-the-cap", "over-the-cap"],
 )
 def test_capital_loss_offsets_ordinary_income_only_up_to_1211_cap(loss: Decimal, offset: int) -> None:
-    case = _situation(np.full((1, 13), 1_000.0), quantity=1.0, cost_basis=Decimal(1_000) + loss, wages=Decimal(0))
+    case = _situation(np.full((1, 13), 1_000.0), quantity=1, cost_basis=Decimal(1_000) + loss, wages=Decimal(0))
     [rollout] = _run(case, sale_month=0, rollout_ids=[0]).rollouts
     assert rollout.stop is None
     [assessment] = rollout.summary.tax_accruals
@@ -287,7 +286,7 @@ def test_gain_is_rated_from_where_ordinary_income_leaves_off(wages_and_gain: Tax
 def independent_paths() -> Situation:
     prices = np.full((2, 26), 100.0)
     prices[TAXED, :] = 20_000.0
-    return _situation(prices, quantity=10.0, cost_basis=Decimal(1_000), wages=Decimal(0))
+    return _situation(prices, quantity=10, cost_basis=Decimal(1_000), wages=Decimal(0))
 
 
 @pytest.fixture

@@ -11,7 +11,6 @@ files beside the generated output.
 from __future__ import annotations
 
 import textwrap
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
@@ -28,20 +27,12 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.env_helpers import secret_env_var
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -55,7 +46,7 @@ PORT = 8317
 _CONFIG_SECRET = "cli-proxy-api-config"
 _DATA_CLAIM = "cli-proxy-api-data"
 _ADMIN_OIDC_SECRET = "cli-proxy-api-admin-oidc"
-_KEY_FILES = ("client-key.sops.yaml", "management-key.sops.yaml")
+KEY_FILES = ("client-key.sops.yaml", "management-key.sops.yaml")
 
 _CONFIG = textwrap.dedent(
     """\
@@ -313,17 +304,9 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml", *_KEY_FILES], components=["./image-pins"]),
-    )
-
-
 def cli_proxy_api(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     external_secrets_operator: Kustomization,
     cert_manager_environment: Kustomization,
 ) -> Kustomization:
@@ -331,9 +314,8 @@ def cli_proxy_api(
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         retry_interval=None,
         timeout="5m",
-        decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(external_secrets_operator, cert_manager_environment),
     )

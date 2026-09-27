@@ -12,7 +12,6 @@ from finance.augur.sim.income import TransferIncomeCategory, income_source_wire_
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, distribution_value, mul_div
 from finance.augur.sim.prepared import PreparedDistribution
-from finance.augur.sim.scenario import SecurityDistribution
 
 
 class Distributions:
@@ -78,7 +77,7 @@ class Distributions:
             self.outcomes.extend(outcomes)
 
 
-def distribution_income_categories(distributions: Iterable[SecurityDistribution]) -> set[TransferIncomeCategory]:
+def distribution_income_categories(distributions: Iterable[PreparedDistribution]) -> set[TransferIncomeCategory]:
     """Income sources needed by tax compilation for every distribution slice."""
 
     return {tax_slice.income_category for distribution in distributions for tax_slice in distribution.tax_character}

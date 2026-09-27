@@ -3,6 +3,7 @@ from dataclasses import replace
 
 import pytest
 import pytest_bazel
+from pydantic import ValidationError
 
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.tlh import (
@@ -199,6 +200,11 @@ def test_unrepresentable_rate_is_rejected_before_model_runs() -> None:
             drawdown_sensitivity=0,
             short_term_fraction=1,
         )
+
+
+def test_removed_or_misplaced_fields_cannot_silently_disable_the_model(assumptions: TlhAssumptions) -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        TlhAssumptions.model_validate({**assumptions.model_dump(), "cumulative_harvest": 1})
 
 
 def test_financial_effects_balance_each_transition(assumptions: TlhAssumptions) -> None:

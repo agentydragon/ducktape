@@ -82,8 +82,8 @@ eligibility terms, or other holder-specific account details.
 
 `sim/tax_profile.py` resolves filing status and currency quantum into immutable
 tax profiles with variable-length jurisdiction/bracket records and typed income
-categories. Execution-input lowering serializes those records; it does not
-reconstruct tax schedules from padded arrays or reread jurisdiction rules.
+categories. A world declares those records as they are; it does not reconstruct tax
+schedules from padded arrays or reread jurisdiction rules.
 
 | Directory   | Purpose                                                                                                                                 |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |

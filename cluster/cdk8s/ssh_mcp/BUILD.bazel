@@ -74,14 +74,11 @@ py_library(
         ":sshpiper",
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
     ],
 )
 
