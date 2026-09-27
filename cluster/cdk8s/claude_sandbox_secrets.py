@@ -6,32 +6,22 @@ beside the output stay hand-written.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAME = "claude-sandbox-secrets"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/claude-sandbox-secrets"
 _NAMESPACE = "claude-sandbox"
-_SOPS_FILES = ("claude-web-age-key.sops.yaml", "claude-forgejo-tea.sops.yaml")
+SOPS_FILES = ("claude-web-age-key.sops.yaml", "claude-forgejo-tea.sops.yaml")
 _TELEGRAM_BOT_TOKEN = "openclaw-telegram-bot-token"
 _BUILDBUDDY_API_KEY = "buildbuddy-api-key"
 
@@ -67,24 +57,13 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=[*_SOPS_FILES, f"{NAME}.k8s.yaml"])
-    )
-
-
 def claude_sandbox_secrets(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    claude_rbac: Kustomization,
-    external_secrets_operator: Kustomization,
+    chart: Chart, directory: RenderedDirectory, claude_rbac: Kustomization, external_secrets_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         timeout="5m",
-        decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(claude_rbac, external_secrets_operator),
     )
