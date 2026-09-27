@@ -4,8 +4,6 @@ SeaweedFS bucket. The SOPS-encrypted Restic password beside the output stays han
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
@@ -26,7 +24,6 @@ from external_secrets_secretstore_crds.io.external_secrets import (
     SecretStoreSpecProviderKubernetesServerCaProvider,
     SecretStoreSpecProviderKubernetesServerCaProviderType,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSource,
     ReplicationSourceSpec,
@@ -47,14 +44,7 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.seaweedfs import s3
@@ -297,17 +287,9 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml", "repository.sops.yaml"]),
-    )
-
-
 def public_coder_agent_backup(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     seaweedfs_operator: Kustomization,
     external_secrets_operator: Kustomization,
     volsync: Kustomization,
@@ -315,9 +297,8 @@ def public_coder_agent_backup(
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         timeout="5m",
-        decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(seaweedfs_operator, external_secrets_operator, volsync),
         description=(
             "Restic/VolSync backup of Public Coder's worker-local OpenClaw state "

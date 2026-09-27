@@ -8,8 +8,6 @@ are reviewed in.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
@@ -23,10 +21,8 @@ from kyverno_cleanuppolicy_crds.io.kyverno import (
     CleanupPolicySpecMatchAny,
     CleanupPolicySpecMatchAnyResources,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "agent-rbac-base"
@@ -301,10 +297,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def claude_rbac(
-    flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path, kyverno_policies: Kustomization
-) -> Kustomization:
-    write_charts(root, OUTPUT_DIR, chart)
+def claude_rbac(flux_chart: Chart, directory: RenderedDirectory, kyverno_policies: Kustomization) -> Kustomization:
     # TODO: migrate this live Flux object name to agent-rbac-base in a staged
     # change. Renaming it directly would delete the old Kustomization and may prune
     # its inventory before the replacement owns the same RBAC resources.
@@ -312,7 +305,7 @@ def claude_rbac(
     return flux_kustomization(
         flux_chart,
         name,
-        artifact,
+        directory,
         retry_interval=None,
         wait=None,
         timeout="2m",
