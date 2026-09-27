@@ -22,6 +22,13 @@ build time.
   one is set. Once a title exists, the id line adds clutter for no benefit; it should move somewhere less
   prominent instead -- the composer's overflow menu (`Menu.Dropdown` in `projected_session.tsx`, currently "Debug
   history" / "Shut down harness") is one candidate.
+- **Consider squashing the "observation" naming layer**: not remembered as a deliberate design choice. `Event`
+  (`protocol/event.proto`)'s payload is a `oneof` field literally named `observation`; that name then propagated
+  outward into `runner/observation.py`'s `Observation` type, the archive/API layer
+  (`app/agent_runtime/events/event_log.py`'s `observations()`/`observation_entry()`, `api.py`'s
+  `/observations/{cursor}` and `/evidence/{observation_cursor}/frames` routes), and the debug UI
+  (`chronological_debug.tsx`'s "Observation N raw frames"). Worth revisiting whether this is a distinction worth
+  keeping or whether it should just say "Event" everywhere a stored `Event` is meant.
 
 ## Hidden characters in what the operator approves
 
