@@ -50,7 +50,7 @@ def chart(app: App) -> Chart:
             },
         ),
     )
-    terraform.gitops_terraform(chart, "terraform", name=NAME, variables={})
+    terraform.gitops_terraform(chart, "terraform", name=NAME, variables=None)
     # Flux's own copy, for the image-automation ImageRepositories that scan the registry.
     forgejo_images_creds_external_secret(chart, "flux-system-creds", namespace="flux-system")
     return chart
