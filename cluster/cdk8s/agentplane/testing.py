@@ -42,8 +42,8 @@ _NAMESPACE = "agentplane-testing"
 _HOSTNAME = "agentplane-testing.allegedly.works"
 _DEX_HOSTNAME = "agentplane-dex-testing.allegedly.works"
 _DEX_ISSUER = f"https://{_DEX_HOSTNAME}/dex"
-# The Terraform-owned key, replicated into this namespace by `litellm/credentials.py`'s
-# ExternalSecret; its `litellm-credentials.k8s.yaml` sits in this Kustomization's directory.
+# The Terraform-owned key, replicated into this namespace by the ExternalSecret that
+# `litellm/credentials.py` writes as `litellm-credentials.k8s.yaml` beside `agentplane.k8s.yaml`.
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
 _OAUTH_FIXTURE_MCP_URL = f"http://{OAUTH_FIXTURE_NAME}.{_NAMESPACE}.svc.cluster.local:{OAUTH_FIXTURE_PORT}/mcp"
 
