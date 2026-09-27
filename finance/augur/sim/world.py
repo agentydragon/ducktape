@@ -58,9 +58,7 @@ from finance.augur.sim.prepared import (
     PreparedJurisdiction,
     PreparedLocation,
     PreparedLot,
-    PreparedObligation,
     PreparedPropertyCashflow,
-    PreparedRecurringObligation,
     PreparedRecurringPropertyCashflow,
     PreparedRecurringTransfer,
     PreparedTlhPortfolio,
@@ -73,6 +71,7 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.property import Housing, Properties, mortgage_terms
 from finance.augur.sim.property_tax import PropertyTaxAuthority, PropertyTaxBill
+from finance.augur.sim.schedule import Once, Schedule
 from finance.augur.sim.tax_authority import Assessment, TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw
 from finance.augur.sim.tlh import ModeledRealizations, TlhMarketUpdate, TlhOpening, TlhPortfolio
@@ -492,13 +491,9 @@ class World:
             raise ValueError(f"{label} for {claimant!r} names no taxpayer")
         authority.declare_deduction(policy)
 
-    def _due_months(
-        self,
-        label: str,
-        schedule: PreparedTransfer | PreparedRecurringTransfer | PreparedObligation | PreparedRecurringObligation,
-    ) -> range:
+    def _due_months(self, label: str, schedule: PreparedTransfer | PreparedRecurringTransfer | Schedule) -> range:
         """The horizon months a schedule is due in; a one-off month must fall inside the horizon."""
-        if isinstance(schedule, PreparedTransfer | PreparedObligation):
+        if isinstance(schedule, PreparedTransfer | Once):
             if not 0 <= schedule.month < self.horizon_months:
                 raise ValueError(f"{label} has month {schedule.month}, outside the horizon [0, {self.horizon_months})")
             return range(schedule.month, schedule.month + 1)
@@ -591,7 +586,7 @@ class World:
         if spec.from_account not in self.accounting.declared:
             raise ValueError("bill payer account is not declared")
         label = f"obligation {spec.obligation_id!r}"
-        self._check_amount(label, spec.amount_due, self._due_months(label, spec))
+        self._check_amount(label, spec.amount_due, self._due_months(label, spec.schedule))
         self.billers.append(biller)
 
     def _track_mortgage(self, mortgage: Mortgage) -> None:

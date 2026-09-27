@@ -32,6 +32,7 @@ from finance.augur.sim.prepared import (
     PreparedSeries,
 )
 from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 from finance.augur.x.allocation_glide.policy import decide
@@ -104,7 +105,7 @@ def compose(case: Situation, rollout_id: int) -> World:
         world.track(
             Biller(
                 PreparedObligation(
-                    month=month,
+                    schedule=Once(month=month),
                     obligation_id="test-consumption",
                     obligation_type="cash_spend",
                     from_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),

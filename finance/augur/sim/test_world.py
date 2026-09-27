@@ -26,11 +26,11 @@ from finance.augur.sim.prepared import (
     PreparedHoldingPool,
     PreparedLot,
     PreparedObligation,
-    PreparedRecurringObligation,
     PreparedSeries,
     PreparedTransfer,
 )
 from finance.augur.sim.results import ConsumptionTarget, Executed, Finished, Rejected, RejectedAction, UnpaidClaims
+from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax import PreparedTaxBracket, PreparedTaxProfile
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, opening, taxpayer, world_on
@@ -187,7 +187,7 @@ def consume(amount: int) -> Consume:
 
 def bill(amount: int) -> PreparedObligation:
     return PreparedObligation(
-        month=0,
+        schedule=Once(month=0),
         obligation_id="bill",
         obligation_type="rent",
         from_account=CASH,
@@ -479,7 +479,7 @@ def year_situation() -> Situation:
         initial_lots=(lot, replace(lot, lot_id=LotId("second-lot"), asset_id=AssetId("second"))),
         holding_pools=(*run.holding_pools, replace(run.holding_pools[0], asset_id=AssetId("second"))),
         tax_profiles=(replace(profile, jurisdictions=(rules,)),),
-        obligations=(bill(50_000), replace(bill(5000), month=12)),
+        obligations=(bill(50_000), replace(bill(5000), schedule=Once(month=12))),
         scheduled_transfers=(
             PreparedTransfer(
                 month=12,
@@ -582,7 +582,7 @@ def test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books(
         run = replace(
             run,
             horizon_months=15,
-            obligations=(bill(1000), replace(bill(999_999), month=12)),
+            obligations=(bill(1000), replace(bill(999_999), schedule=Once(month=12))),
             series=tuple(replace(s, snapshots=16, values=(*s.values, 9000, 10_000)) for s in run.series),
         )
     sales = tuple(
@@ -848,7 +848,7 @@ def test_tracked_mortgage_is_serviced_from_the_ledger_through_payoff() -> None:
 def rent() -> Biller:
     """Rent of 500 due in months 1 and 2."""
     return Biller(
-        PreparedRecurringObligation(
+        PreparedObligation(
             obligation_id="test-rent",
             obligation_type="rent",
             from_account=CASH,
@@ -857,8 +857,7 @@ def rent() -> Biller:
             property_id=None,
             deduction_category=None,
             deductible_fraction_ppb=1_000_000_000,
-            start_month=1,
-            end_month=2,
+            schedule=Recurring(start_month=1, end_month=2),
         )
     )
 
