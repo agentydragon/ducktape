@@ -22,9 +22,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def sso_providers_tf(
-    chart: Chart, directory: RenderedDirectory, tofu_controller: Kustomization, authentik: Kustomization
-) -> Kustomization:
+def sso_providers_tf(chart: Chart, directory: RenderedDirectory, tofu_controller: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         "sso-providers-tf",
@@ -39,5 +37,5 @@ def sso_providers_tf(
             )
         ],
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(tofu_controller, authentik),
+        depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )

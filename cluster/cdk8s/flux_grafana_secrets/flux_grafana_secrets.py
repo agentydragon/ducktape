@@ -48,9 +48,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def flux_grafana_secrets(
-    chart: Chart, directory: RenderedDirectory, grafana_instance: Kustomization, grafana_operator: Kustomization
-) -> Kustomization:
+def flux_grafana_secrets(chart: Chart, directory: RenderedDirectory, grafana_operator: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
@@ -65,5 +63,5 @@ def flux_grafana_secrets(
             )
         ],
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(grafana_instance, grafana_operator),
+        depends_on=flux_kustomization_depends_on_many(grafana_operator),
     )

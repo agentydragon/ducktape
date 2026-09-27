@@ -337,7 +337,6 @@ def ha_mcp(
     flux_chart: Chart,
     directory: RenderedDirectory,
     external_secrets_operator: Kustomization,
-    home_assistant: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
@@ -347,7 +346,6 @@ def ha_mcp(
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_operator,
-            home_assistant,
             # the ServiceMonitor CRD
             monitoring_crds,
         ),

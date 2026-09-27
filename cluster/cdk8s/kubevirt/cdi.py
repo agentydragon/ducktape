@@ -116,16 +116,14 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def cdi(
-    chart: Chart, directory: RenderedDirectory, cdi_operator: Kustomization, local_path_provisioner: Kustomization
-) -> Kustomization:
+def cdi(chart: Chart, directory: RenderedDirectory, cdi_operator: Kustomization) -> Kustomization:
     name = "cdi"
     return flux_kustomization(
         chart,
         name,
         directory,
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(cdi_operator, local_path_provisioner),
+        depends_on=flux_kustomization_depends_on_many(cdi_operator),
         # The CDI CR has no Ready condition, so `wait` alone passes it before cdi-operator rolls
         # out cdi-apiserver/-deployment/-uploadproxy. The operator enters phase Deployed with
         # Available=True once none of them is degraded, and phase Error on failure

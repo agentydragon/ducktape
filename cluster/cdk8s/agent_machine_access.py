@@ -23,7 +23,7 @@ def chart(app: App) -> Chart:
 
 
 def agent_machine_access_tf(
-    chart: Chart, directory: RenderedDirectory, tofu_controller: Kustomization, authentik: Kustomization
+    chart: Chart, directory: RenderedDirectory, tofu_controller: Kustomization
 ) -> Kustomization:
     name = "agent-machine-access-tf"
     return flux_kustomization(
@@ -40,5 +40,5 @@ def agent_machine_access_tf(
             )
         ],
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(tofu_controller, authentik),
+        depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )

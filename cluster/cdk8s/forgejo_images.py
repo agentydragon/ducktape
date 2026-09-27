@@ -46,23 +46,14 @@ def chart(app: App) -> Chart:
 
 
 def forgejo_images(
-    chart: Chart,
-    directory: RenderedDirectory,
-    external_secrets_operator: Kustomization,
-    forgejo: Kustomization,
-    tofu_controller: Kustomization,
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, tofu_controller: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         directory,
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(
-            external_secrets_operator,
-            # Forgejo API must be up (provider target)
-            forgejo,
-            tofu_controller,
-        ),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, tofu_controller),
         description=(
             "ducktape-ci Forgejo registry tenant — shared credential (read by "
             "consumers, including flux-system, via per-namespace ExternalSecrets "

@@ -22,9 +22,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def gatus_sso_tf(
-    chart: Chart, directory: RenderedDirectory, tofu_controller: Kustomization, authentik: Kustomization
-) -> Kustomization:
+def gatus_sso_tf(chart: Chart, directory: RenderedDirectory, tofu_controller: Kustomization) -> Kustomization:
     name = "gatus-sso-tf"
     return flux_kustomization(
         chart,
@@ -40,5 +38,5 @@ def gatus_sso_tf(
             )
         ],
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(tofu_controller, authentik),
+        depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )
