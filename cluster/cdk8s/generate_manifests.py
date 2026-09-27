@@ -107,7 +107,6 @@ from cluster.cdk8s.clickhouse import (
     operator as clickhouse_operator,
     schema as clickhouse_schema,
 )
-from cluster.cdk8s.coredns_custom import flux_kustomizations as coredns_custom_flux_kustomizations
 from cluster.cdk8s.cpap_sync import app as cpap_sync_app
 from cluster.cdk8s.dcgm_exporter import (
     exporter as dcgm_exporter_exporter,
@@ -349,8 +348,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart, agent_sandbox_controller_artifact
     )
     artifact_generators_factory(flux_chart)
-    coredns_custom_artifact = artifact("coredns-custom", f"{HAND_WRITTEN_ROOT}/coredns-custom")
-    coredns_custom_flux_kustomizations.coredns_custom(flux_chart, coredns_custom_artifact)
     external_secrets_crds_kustomization = external_secrets_flux_kustomizations.external_secrets_crds(flux_chart)
     flux_image_automation_ghcr_artifact = artifact("flux-image-automation-ghcr", flux_image_automation_ghcr.OUTPUT_DIR)
     flux_image_automation_ghcr_kustomization = flux_image_automation_ghcr.flux_image_automation_ghcr(
@@ -1508,7 +1505,6 @@ def generate_manifests(root: Path) -> None:
             cli_proxy_api_artifact,
             clickhouse_operator_artifact,
             clickhouse_schema_artifact,
-            coredns_custom_artifact,
             cpap_sync_artifact,
             dcgm_exporter_artifact,
             descheduler_artifact,
