@@ -11,7 +11,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 def grocy_sf(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    forgejo_images: Kustomization,
     gateway: Kustomization,
     cert_manager_environment: Kustomization,
     authentik: Kustomization,
@@ -23,9 +22,7 @@ def grocy_sf(
         name,
         artifact,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(
-            forgejo_images, gateway, cert_manager_environment, authentik, volsync
-        ),
+        depends_on=flux_kustomization_depends_on_many(gateway, cert_manager_environment, authentik, volsync),
     )
 
 
@@ -33,7 +30,6 @@ def grocy_mcp_sf(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
     gateway: Kustomization,
     grocy_sf: Kustomization,
     valkey: Kustomization,
@@ -49,7 +45,6 @@ def grocy_mcp_sf(
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_config,
-            forgejo_images,
             gateway,
             grocy_sf,
             valkey,
@@ -62,7 +57,7 @@ def grocy_mcp_sf(
 
 
 def grocy_sf_user_perms(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, forgejo_images: Kustomization, grocy_sf: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, grocy_sf: Kustomization
 ) -> Kustomization:
     name = "grocy-sf-user-perms"
     return flux_kustomization(
@@ -74,14 +69,13 @@ def grocy_sf_user_perms(
         # wait on the Job's completion makes this kustomization Ready only once the policy
         # in policy.yaml has actually been applied — so a fresh cluster converges to the
         # committed user→permission policy.
-        depends_on=flux_kustomization_depends_on_many(forgejo_images, grocy_sf),
+        depends_on=flux_kustomization_depends_on_many(grocy_sf),
     )
 
 
 def grocy_vallejo(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    forgejo_images: Kustomization,
     gateway: Kustomization,
     cert_manager_environment: Kustomization,
     authentik: Kustomization,
@@ -93,9 +87,7 @@ def grocy_vallejo(
         name,
         artifact,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(
-            forgejo_images, gateway, cert_manager_environment, authentik, volsync
-        ),
+        depends_on=flux_kustomization_depends_on_many(gateway, cert_manager_environment, authentik, volsync),
     )
 
 
@@ -103,7 +95,6 @@ def grocy_mcp_vallejo(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
     gateway: Kustomization,
     grocy_vallejo: Kustomization,
     valkey: Kustomization,
@@ -119,7 +110,6 @@ def grocy_mcp_vallejo(
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_config,
-            forgejo_images,
             gateway,
             grocy_vallejo,
             valkey,
@@ -132,7 +122,7 @@ def grocy_mcp_vallejo(
 
 
 def grocy_vallejo_user_perms(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, forgejo_images: Kustomization, grocy_vallejo: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, grocy_vallejo: Kustomization
 ) -> Kustomization:
     name = "grocy-vallejo-user-perms"
     return flux_kustomization(
@@ -144,5 +134,5 @@ def grocy_vallejo_user_perms(
         # the wait on the Job's completion makes this kustomization Ready only once the
         # policy in policy.yaml has actually been applied — so a fresh cluster converges
         # to the committed user→permission policy.
-        depends_on=flux_kustomization_depends_on_many(forgejo_images, grocy_vallejo),
+        depends_on=flux_kustomization_depends_on_many(grocy_vallejo),
     )

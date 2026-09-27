@@ -328,7 +328,6 @@ def cli_proxy_api(
     gateway: Kustomization,
     cert_manager_environment: Kustomization,
     sso_providers_tf: Kustomization,
-    forgejo_images: Kustomization,
 ) -> Kustomization:
     name = "cli-proxy-api"
     return flux_kustomization(
@@ -339,6 +338,6 @@ def cli_proxy_api(
         timeout="5m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config, gateway, cert_manager_environment, sso_providers_tf, forgejo_images
+            external_secrets_config, gateway, cert_manager_environment, sso_providers_tf
         ),
     )
