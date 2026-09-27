@@ -82,6 +82,8 @@ spec:
           - mistral/oai-chat/voxtral-small-latest
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
           - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
           - ollama/oai-chat/gpt-oss-20b-128k
           - ollama/olm-chat/gpt-oss-20b-128k
           - ollama/oai-chat/gpt-oss-20b-256k
@@ -131,6 +133,8 @@ spec:
         ollama_chat_client_models:
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
           - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
           - ollama/oai-chat/gpt-oss-20b-128k
           - ollama/olm-chat/gpt-oss-20b-128k
           - ollama/oai-chat/gpt-oss-20b-256k

@@ -31,14 +31,35 @@ create_request=$(awk '
     print "},\"parameters\":{\"num_ctx\":131072,\"num_thread\":6,\"temperature\":0.6,\"min_p\":0.05},\"stream\":false}"
   }
 ' /scripts/qwen38-ssd-shards.tsv)
-create_response=$(curl -sS --fail-with-body --max-time 120 \
+if ! create_response=$(curl -sS --fail-with-body --max-time 120 \
   -H 'Content-Type: application/json' \
-  --data-binary "$create_request" "$OLLAMA_HOST/api/create")
+  --data-binary "$create_request" "$OLLAMA_HOST/api/create"); then
+  printf '%s\n' "$create_response" >&2
+  exit 1
+fi
 printf '%s\n' "$create_response"
 case "$create_response" in
   *'"status":"success"'*) ;;
   *)
     echo "SSD model registration failed" >&2
+    exit 1
+    ;;
+esac
+
+# A separate alias makes 256K effective through Ollama's OpenAI-compatible API,
+# which does not consume native options.num_ctx. This reuses the same SSD blobs.
+if ! create_response=$(curl -sS --fail-with-body --max-time 120 \
+  -H 'Content-Type: application/json' \
+  --data-binary '{"model":"qwen3.8-flash-next-iq4xs-256k","from":"qwen3.8-flash-next-iq4xs","parameters":{"num_ctx":262144},"stream":false}' \
+  "$OLLAMA_HOST/api/create"); then
+  printf '%s\n' "$create_response" >&2
+  exit 1
+fi
+printf '%s\n' "$create_response"
+case "$create_response" in
+  *'"status":"success"'*) ;;
+  *)
+    echo "256K model registration failed" >&2
     exit 1
     ;;
 esac

@@ -146,7 +146,9 @@ def _ollama_container() -> k8s.Container:
             k8s.EnvVar(name="OLLAMA_NOPRUNE", value="true"),
             k8s.EnvVar(name="OLLAMA_NUM_PARALLEL", value="1"),
             k8s.EnvVar(name="OLLAMA_MAX_LOADED_MODELS", value="1"),
-            k8s.EnvVar(name="LLAMA_ARG_FIT_TARGET", value="8192,2048"),
+            # Operator-approved desktop headroom: 2 GiB on GPU0, no extra
+            # placement margin on GPU1. Verify actual free VRAM after loading.
+            k8s.EnvVar(name="LLAMA_ARG_FIT_TARGET", value="2048,0"),
             k8s.EnvVar(name="OLLAMA_HOST", value=f"0.0.0.0:{_OLLAMA_PORT}"),
             k8s.EnvVar(name="NVIDIA_VISIBLE_DEVICES", value="all"),
             k8s.EnvVar(name="OLLAMA_KV_CACHE_TYPE", value="q8_0"),
@@ -320,32 +322,74 @@ def _setup_job(scope: Construct) -> None:
     k8s.KubeJob(
         scope,
         "setup-gpt-oss",
-        # Versioned so a changed bootstrap model list creates a fresh Job.
-        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v5", namespace=_NAMESPACE),
+        # Versioned so changed model registration creates a fresh Job.
+        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v6", namespace=_NAMESPACE),
         spec=k8s.JobSpec(
             ttl_seconds_after_finished=86400,
             template=k8s.PodTemplateSpec(
                 spec=k8s.PodSpec(
                     restart_policy="OnFailure",
-                    node_selector={"topology.kubernetes.io/region": "proxmox"},
+                    node_selector={"kubernetes.io/hostname": "wyrm2"},
                     volumes=[
                         k8s.Volume(
                             name="scripts",
                             config_map=k8s.ConfigMapVolumeSource(name=_SCRIPTS_CONFIG_MAP, default_mode=0o755),
-                        )
+                        ),
+                        k8s.Volume(
+                            name="models",
+                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_MODELS_CLAIM),
+                        ),
+                        k8s.Volume(
+                            name="ssd-models",
+                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_SSD_MODELS_CLAIM),
+                        ),
+                    ],
+                    init_containers=[
+                        k8s.Container(
+                            name="link-ssd-models",
+                            image="ollama/ollama:0.34.4",
+                            command=["/bin/sh", "/scripts/link-ssd-models.sh"],
+                            volume_mounts=[
+                                k8s.VolumeMount(name="models", mount_path="/models"),
+                                k8s.VolumeMount(name="ssd-models", mount_path="/ssd-models", read_only=True),
+                                k8s.VolumeMount(name="scripts", mount_path="/scripts", read_only=True),
+                            ],
+                        ),
+                        # Native sidecar exits when the setup container finishes.
+                        # Import touches blob mtimes, requiring a writable mount here.
+                        # No GPU resources/runtime and no generation requests: the
+                        # serving Deployment keeps its SSD mount read-only.
+                        k8s.Container(
+                            name="registration-api",
+                            image="ollama/ollama:0.34.4",
+                            args=["serve"],
+                            restart_policy="Always",
+                            env=[
+                                k8s.EnvVar(name="OLLAMA_HOST", value="127.0.0.1:11434"),
+                                k8s.EnvVar(name="OLLAMA_MODELS", value="/models"),
+                                k8s.EnvVar(name="OLLAMA_NOPRUNE", value="true"),
+                                k8s.EnvVar(name="OLLAMA_NO_CLOUD", value="true"),
+                            ],
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "cpu": k8s.Quantity.from_string("100m"),
+                                    "memory": k8s.Quantity.from_string("128Mi"),
+                                },
+                                limits={"cpu": k8s.Quantity.from_number(1), "memory": k8s.Quantity.from_string("1Gi")},
+                            ),
+                            volume_mounts=[
+                                k8s.VolumeMount(name="models", mount_path="/models"),
+                                k8s.VolumeMount(name="ssd-models", mount_path="/ssd-models"),
+                            ],
+                        ),
                     ],
                     containers=[
                         k8s.Container(
                             name="setup",
-                            # curl + busybox awk; we hit /api/pull directly (no ollama CLI needed).
                             image="curlimages/curl:8.22.0",
                             command=["/scripts/setup-gpt-oss-v2.sh"],
-                            env=[
-                                k8s.EnvVar(
-                                    name="OLLAMA_HOST", value=f"http://ollama.ollama.svc.cluster.local:{_OLLAMA_PORT}"
-                                )
-                            ],
-                            volume_mounts=[k8s.VolumeMount(name="scripts", mount_path="/scripts")],
+                            env=[k8s.EnvVar(name="OLLAMA_HOST", value="http://127.0.0.1:11434")],
+                            volume_mounts=[k8s.VolumeMount(name="scripts", mount_path="/scripts", read_only=True)],
                         )
                     ],
                 )

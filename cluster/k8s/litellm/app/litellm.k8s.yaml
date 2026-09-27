@@ -27,6 +27,27 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+      - model_name: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+        litellm_params:
+          model: openai/qwen3.8-flash-next-iq4xs-256k:latest
+          api_base: http://ollama.ollama.svc.cluster.local:11434/v1
+          api_key: ollama
+          extra_body:
+            options:
+              num_ctx: 262144
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
+        litellm_params:
+          model: ollama/qwen3.8-flash-next-iq4xs-256k:latest
+          api_base: http://ollama.ollama.svc.cluster.local:11434
+          extra_body:
+            options:
+              num_ctx: 262144
+        model_info:
+          mode: chat
+          supports_function_calling: true
       - model_name: ollama/oai-chat/gpt-oss-20b-128k
         litellm_params:
           model: openai/gpt-oss:20b
