@@ -6,21 +6,11 @@ against what the main proxy serves before it is written.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 from pydantic import BaseModel, ConfigDict
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import terraform
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.litellm.config import main_proxy_config
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_rosters import (
@@ -171,14 +161,6 @@ def keys_chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, keys_chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=["litellm-keys.k8s.yaml", "litellm-clients-sops-age-key.sops.yaml"]),
-    )
-
-
 # The litellm-keys Terraform CR lives DOWNSTREAM of the litellm app, not in
 # litellm-secrets: minting virtual keys needs a serving LiteLLM with its
 # virtual-key DB. Coupling the TF's health into litellm-secrets (the app's
@@ -186,18 +168,14 @@ def write_manifests(root: Path) -> None:
 # DATABASE_URL deployment because its secrets layer waited on a TF apply that
 # needed the app. Dependency direction here is the fix.
 def litellm_keys_tf(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, litellm: Kustomization, tofu_controller: Kustomization
+    chart: Chart, directory: RenderedDirectory, litellm: Kustomization, tofu_controller: Kustomization
 ) -> Kustomization:
     name = "litellm-keys-tf"
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         timeout="10m",
-        # Decrypt litellm-clients-sops-age-key.sops.yaml (the narrow SOPS_AGE_KEY for
-        # the tf-runner) so sops_file in tf/gitops/litellm-keys can read the virtual-key
-        # SSOT. Added when that SOPS file arrived — previously this dir held only plain YAML.
-        decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
             # The app must serve (with its DB) before keys can mint.
             litellm,

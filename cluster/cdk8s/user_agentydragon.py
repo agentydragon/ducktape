@@ -5,14 +5,10 @@ The Secret stays hand-written: `nix/home/modules/atuin.nix` decrypts the same fi
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "user-agentydragon"
@@ -26,13 +22,5 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml", "atuin-user-password.sops.yaml"]),
-    )
-
-
-def user_agentydragon(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    return flux_kustomization(chart, NAME, artifact, wait=None, timeout="10m", decryption=SOPS_DECRYPTION)
+def user_agentydragon(chart: Chart, directory: RenderedDirectory) -> Kustomization:
+    return flux_kustomization(chart, NAME, directory, wait=None, timeout="10m")

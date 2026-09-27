@@ -22,6 +22,7 @@ from finance.augur.sim.ids import AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import Currency
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedDistribution,
@@ -162,7 +163,9 @@ def world(paths: list[Path], rollout_id: int) -> World:
         )
         result.track(
             TaxAuthority(
-                compile_profile(profile, load_jurisdictions_for([profile]), quantum=Decimal(1)),
+                compile_profile(
+                    profile, load_jurisdictions_for([profile]), currency=Currency(code="USD", quantum=Decimal(1))
+                ),
                 indexation=FixedNominalLaw(),
             )
         )

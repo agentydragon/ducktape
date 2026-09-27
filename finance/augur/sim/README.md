@@ -28,10 +28,11 @@ batch actions.
 Shared proposal helpers live in <../policy/>; they do not settle trades or taxes.
 
 <prepared.py> holds the typed resolved facts a world declares: exact integer money,
-quantities, tax rules and supplied paths. The compiler's per-table pieces in <compiler/>
-lower the authored records of <scenario.py> into them; the app lowers its request through
-them and tracks its household (<../policy/cash_band_household.py>, or a claims-only
-<../policy/funding.py> `ClaimPayer`) on each world it composes.
+quantities, tax rules and supplied paths. Callers build them, converting money through a
+`Currency` (<money.py>) and the exact helpers in <fixed_point.py>, and declare them on a
+`World`. The app builds its own from its request in <../product/> and tracks its household
+(<../policy/cash_band_household.py>, or a claims-only <../policy/funding.py> `ClaimPayer`)
+on each world it composes.
 
 ## Outcomes and failure
 

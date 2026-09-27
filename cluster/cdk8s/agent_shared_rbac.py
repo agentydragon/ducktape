@@ -50,9 +50,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def agent_shared_rbac(
-    chart: Chart, directory: RenderedDirectory, claude_rbac: Kustomization, kyverno_policies: Kustomization
-) -> Kustomization:
+def agent_shared_rbac(chart: Chart, directory: RenderedDirectory, claude_rbac: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
@@ -60,7 +58,7 @@ def agent_shared_rbac(
         retry_interval=None,
         wait=None,
         timeout="2m",
-        depends_on=flux_kustomization_depends_on_many(claude_rbac, kyverno_policies),
+        depends_on=flux_kustomization_depends_on_many(claude_rbac),
         description=(
             "Cluster-scoped agent RBAC (ClusterRoleBindings) + flux-system "
             "RoleBindings only. Namespace-scoped RoleBindings live in per-service "

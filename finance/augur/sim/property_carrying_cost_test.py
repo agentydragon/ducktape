@@ -37,7 +37,7 @@ SAN_FRANCISCO = PreparedLocation(
     location_id=LocationId("san_francisco"),
     display_name="San Francisco, CA",
     jurisdiction_ids=(JurisdictionId("federal_us"), JurisdictionId("california")),
-    annual_property_tax_rate_ppb=rate_to_ppb(0.01180),
+    annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.01180")),
     annual_special_assessment=0,
 )
 # Mare Island (Vallejo) carries flat-USD CFD special assessments on top of the ad-valorem rate.
@@ -45,7 +45,7 @@ VALLEJO_MARE_ISLAND = PreparedLocation(
     location_id=LocationId("vallejo_mare_island"),
     display_name="Vallejo, CA — Mare Island",
     jurisdiction_ids=(JurisdictionId("federal_us"), JurisdictionId("california")),
-    annual_property_tax_rate_ppb=rate_to_ppb(0.0115),
+    annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.0115")),
     annual_special_assessment=int(currency_amount_to_quanta(Decimal(2300), quantum=QUANTUM)),
 )
 
@@ -91,12 +91,14 @@ def purchase(
         down_payment=money(down),
         buyer_closing_cost=money(closing),
         rented_fraction_ppb=0,
-        land_value_fraction_ppb=rate_to_ppb(0.20),
+        land_value_fraction_ppb=rate_to_ppb(Decimal("0.20")),
         mortgage=mortgage,
     )
 
 
-def financing(liability_id: LiabilityId, *, principal: int, annual_rate: float, term_months: int) -> _MortgageFinancing:
+def financing(
+    liability_id: LiabilityId, *, principal: int, annual_rate: Decimal | int, term_months: int
+) -> _MortgageFinancing:
     return _MortgageFinancing(
         liability_id=liability_id,
         lender_agent_id=BANK,
@@ -107,7 +109,7 @@ def financing(liability_id: LiabilityId, *, principal: int, annual_rate: float, 
     )
 
 
-def property_tax(property_id: PropertyId, collector: AgentId, *, annual_rate: float | None) -> _PropertyTax:
+def property_tax(property_id: PropertyId, collector: AgentId, *, annual_rate: Decimal | int | None) -> _PropertyTax:
     return _PropertyTax(
         property_id=property_id,
         owner_agent_id=ALICE,
@@ -189,11 +191,13 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
                     down=100_000,
                     closing=10_000,
                     mortgage=financing(
-                        LiabilityId("sf_home_mortgage"), principal=400_000, annual_rate=0.06, term_months=360
+                        LiabilityId("sf_home_mortgage"), principal=400_000, annual_rate=Decimal("0.06"), term_months=360
                     ),
                 ),
             ),
-            tax_policies=(property_tax(PropertyId("sf_home"), AgentId("sf_tax_collector"), annual_rate=0.012),),
+            tax_policies=(
+                property_tax(PropertyId("sf_home"), AgentId("sf_tax_collector"), annual_rate=Decimal("0.012")),
+            ),
         )
     )
     assert rollout.trace is not None

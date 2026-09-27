@@ -12,6 +12,14 @@ from more_itertools import one
 
 from finance.augur.api.config import Config
 from finance.augur.api.finance import FinanceSnapshot
+from finance.augur.api.portfolio import (
+    HoldingTaxLotConfig,
+    PortfolioAccountConfig,
+    PortfolioConfig,
+    SecurityHoldingConfig,
+    TlhCohort,
+    TlhPortfolioSpec,
+)
 from finance.augur.api.wire import CatalogResponse
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, Sampler
@@ -40,8 +48,10 @@ from finance.augur.policy.cash_band_household import CashBandHousehold, ManagedS
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.product import service
 from finance.augur.product.conftest import MakeProductService
+from finance.augur.product.holdings import Holdings, opening_holdings
 from finance.augur.product.metrics import ProductMetricFanSummary, ProductTerminalSummary
 from finance.augur.product.scenarios import (
+    PRIMARY_ACCOUNT_ID,
     Home,
     Situation,
     build_situation,
@@ -94,7 +104,6 @@ from finance.augur.sim.prepared import (
     PreparedRecurringPropertyCashflow,
 )
 from finance.augur.sim.quantiles import currency_quantiles
-from finance.augur.sim.scenario import InitialLot, TlhCohort, TlhPortfolioSpec
 from finance.augur.sim.tlh import TlhAssumptions
 from finance.augur.sim.world import World
 from finance.augur.x.models.independent import IndependentProviderConfig
@@ -171,6 +180,16 @@ def _quanta_int(value: object) -> int:
 
     assert isinstance(value, str)
     return int(value)
+
+
+def _no_holdings(primary_agent_id: AgentId) -> Holdings:
+    return opening_holdings(
+        PortfolioConfig(),
+        (),
+        tlh_portfolios=(),
+        primary_agent_id=primary_agent_id,
+        payout_account_id=PRIMARY_ACCOUNT_ID,
+    )
 
 
 def _home(situation: Situation) -> Home:
@@ -1143,14 +1162,33 @@ def test_a_managed_sleeve_weight_lowers_to_its_portfolio_and_draws_on_its_accoun
     """
 
     owner = resolve_primary_agent_id(augur_config)
-    ordinary = InitialLot(
-        lot_id=LotId("test-ordinary"),
-        agent_id=owner,
+    ordinary = SecurityHoldingConfig(
+        position_id="test-ordinary",
         account_id=AccountId("test_ordinary_brokerage"),
-        asset=SecurityKey(symbol=SecuritySymbol("test-other")),
-        purchase_month_index=-12,
-        quantity=10.0,
-        cost_basis=Decimal(1_000),
+        symbol=SecuritySymbol("test-other"),
+        unit_value=Decimal(100),
+        lots=(
+            HoldingTaxLotConfig(
+                lot_id=LotId("test-ordinary"),
+                holding_period_months_at_start=12,
+                quantity=10.0,
+                cost_basis=Decimal(1_000),
+            ),
+        ),
+    )
+    managed = TlhPortfolioSpec(
+        portfolio_id=TEST_MANAGED,
+        owner_agent_id=owner,
+        account_id=AccountId("test_managed_brokerage"),
+        asset=SecurityKey(symbol=SecuritySymbol("test-index")),
+        initial_cohorts=[TlhCohort(value=Decimal(3_000), cost_basis=Decimal(3_000), purchase_month_index=-24)],
+        assumptions=TlhAssumptions(
+            peak_annual_yield=0,
+            floor_annual_yield=0,
+            maturity_decay_exponent=1,
+            drawdown_sensitivity=0,
+            short_term_fraction=1,
+        ),
     )
 
     def lowered(*sleeves: SleeveWeight) -> Situation:
@@ -1164,27 +1202,18 @@ def test_a_managed_sleeve_weight_lowers_to_its_portfolio_and_draws_on_its_accoun
             ),
             primary_agent_id=owner,
             initial_cash=Decimal(1_000),
-            initial_lots=(ordinary,),
+            holdings=opening_holdings(
+                PortfolioConfig(
+                    accounts=(PortfolioAccountConfig(account_id=ordinary.account_id, owner_agent_id=owner),),
+                    holdings=(ordinary,),
+                ),
+                (),
+                tlh_portfolios=(managed,),
+                primary_agent_id=owner,
+                payout_account_id=PRIMARY_ACCOUNT_ID,
+            ),
             properties_by_id=catalog.properties_by_id,
             locations=sim_locations_from_config(augur_config.locations),
-            tlh_portfolios=(
-                TlhPortfolioSpec(
-                    portfolio_id=TEST_MANAGED,
-                    owner_agent_id=owner,
-                    account_id=AccountId("test_managed_brokerage"),
-                    asset=SecurityKey(symbol=SecuritySymbol("test-index")),
-                    initial_cohorts=[
-                        TlhCohort(value=Decimal(3_000), cost_basis=Decimal(3_000), purchase_month_index=-24)
-                    ],
-                    assumptions=TlhAssumptions(
-                        peak_annual_yield=0,
-                        floor_annual_yield=0,
-                        maturity_decay_exponent=1,
-                        drawdown_sensitivity=0,
-                        short_term_fraction=1,
-                    ),
-                ),
-            ),
         )
 
     situation = lowered(
@@ -1193,7 +1222,7 @@ def test_a_managed_sleeve_weight_lowers_to_its_portfolio_and_draws_on_its_accoun
     )
     household = situation.household()
     lot = one(situation.lots)
-    assert lot.lot_id == ordinary.lot_id
+    assert lot.lot_id == "test-ordinary"
     assert isinstance(household, CashBandHousehold)
     assert household.sleeves == (
         ManagedSleeve(portfolio_id=TEST_MANAGED, weight=3),
@@ -1440,7 +1469,7 @@ def test_product_lowers_primary_residence_assignments_to_housing(
             scenario,
             primary_agent_id=primary_agent_id,
             initial_cash=Decimal(1200000),
-            initial_lots=(),
+            holdings=_no_holdings(primary_agent_id),
             properties_by_id=catalog.properties_by_id,
             locations=sim_locations_from_config(augur_config.locations),
         )
@@ -1481,7 +1510,7 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
             scenario,
             primary_agent_id=primary_agent_id,
             initial_cash=Decimal(1200000),
-            initial_lots=(),
+            holdings=_no_holdings(primary_agent_id),
             properties_by_id=catalog.properties_by_id,
             locations=sim_locations_from_config(augur_config.locations),
         )
@@ -1549,7 +1578,7 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
             scenario,
             primary_agent_id=primary_agent_id,
             initial_cash=Decimal(1200000),
-            initial_lots=(),
+            holdings=_no_holdings(primary_agent_id),
             properties_by_id=catalog.properties_by_id,
             locations=sim_locations_from_config(augur_config.locations),
         )
@@ -1633,7 +1662,7 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
             scenario,
             primary_agent_id=primary_agent_id,
             initial_cash=Decimal(1200000),
-            initial_lots=(),
+            holdings=_no_holdings(primary_agent_id),
             properties_by_id=catalog.properties_by_id,
             locations=sim_locations_from_config(augur_config.locations),
         )
@@ -1837,7 +1866,7 @@ def test_build_situation_wires_property_expenses_to_payees(augur_config: Config,
         scenario,
         primary_agent_id=primary_agent_id,
         initial_cash=Decimal(600_000),
-        initial_lots=(),
+        holdings=_no_holdings(primary_agent_id),
         properties_by_id=catalog.properties_by_id,
         locations=sim_locations_from_config(augur_config.locations),
     )
