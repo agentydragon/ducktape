@@ -47,8 +47,8 @@ SECURITIES = (GROWTH, STEADY)
 _FLAT_TAX = Jurisdiction(
     jurisdiction_id=JurisdictionId("test-flat-tax"),
     level=JurisdictionLevel.FEDERAL,
-    ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.20)]},
-    ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.10)]},
+    ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
+    ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
     standard_deduction={FilingStatus.SINGLE: Decimal(0)},
     max_capital_loss_ordinary_offset={FilingStatus.SINGLE: Decimal(0)},
     law_year=2024,
@@ -150,7 +150,7 @@ def compose(situation: Situation, rollout_id: int) -> World:
                 asset_id=AssetId(symbol),
                 purchase_month=-24,
                 quantity_scale=scale,
-                units=int(quantity_to_quanta(500, scale=scale)),
+                units=quantity_to_quanta(500, scale=scale),
                 basis=int(currency_amount_to_quanta(Decimal(40_000), quantum=QUANTUM)),
             )
         )

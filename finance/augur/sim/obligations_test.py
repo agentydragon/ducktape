@@ -85,7 +85,7 @@ def lot(
         asset_id=AssetId(VTI.symbol),
         purchase_month=purchase_month,
         quantity_scale=SCALE,
-        units=int(quantity_to_quanta(quantity, scale=SCALE)),
+        units=quantity_to_quanta(quantity, scale=SCALE),
         basis=money(cost_basis),
     )
 

@@ -163,7 +163,7 @@ def test_a_private_equity_mark_is_required_at_the_terminal_snapshot_too() -> Non
         asset_id=AssetId(f"private_equity:{ACME}"),
         purchase_month=-36,
         quantity_scale=SCALE,
-        units=int(quantity_to_quanta(100.0, scale=SCALE)),
+        units=quantity_to_quanta(100, scale=SCALE),
         basis=money(1000),
     )
 

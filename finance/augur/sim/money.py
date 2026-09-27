@@ -5,9 +5,14 @@ from decimal import Decimal
 from fractions import Fraction
 from typing import Annotated
 
-from pydantic import BaseModel, BeforeValidator, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
-from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, validate_currency_amount, validate_currency_quantum
+from finance.augur.sim.fixed_point import (
+    MONEY_FACTOR_SCALE,
+    currency_amount_to_quanta,
+    validate_currency_amount,
+    validate_currency_quantum,
+)
 
 type CurrencyAmount = Annotated[Decimal, BeforeValidator(validate_currency_amount)]
 type NonNegativeCurrencyAmount = Annotated[CurrencyAmount, Field(ge=0)]
@@ -15,17 +20,17 @@ type PositiveCurrencyAmount = Annotated[CurrencyAmount, Field(gt=0)]
 
 
 class Currency(BaseModel):
-    """One scenario's money unit.
+    """A money unit; `World` counts integer quanta and knows no currency, so callers convert here.
 
-    ``quantum`` is deliberately an exact decimal rather than an ISO exponent:
-    it describes the smallest monetary amount this scenario represents.  The
-    current default preserves USD-cent scenarios while allowing a zero-decimal
-    currency, or another deliberately declared quantum, without hard-coding
-    USD into the simulation contract.
+    ``quantum`` is deliberately an exact decimal rather than an ISO exponent: it describes
+    the smallest monetary amount this unit represents, so a zero-decimal currency or another
+    deliberately declared quantum needs no special case.
     """
 
-    code: str = "USD"
-    quantum: Decimal = Decimal("0.01")
+    model_config = ConfigDict(frozen=True)
+
+    code: str
+    quantum: Decimal
 
     @field_validator("code")
     @classmethod
@@ -40,6 +45,12 @@ class Currency(BaseModel):
     def _validate_quantum(cls, quantum: object) -> Decimal:
         return validate_currency_quantum(quantum)
 
+    def quanta(self, amount: Decimal | int) -> int:
+        """`amount` as a count of quanta; raises on a float or an amount finer than one quantum."""
+        return int(currency_amount_to_quanta(amount, quantum=self.quantum))
+
+
+USD = Currency(code="USD", quantum=Decimal("0.01"))
 
 MIN_COUNT = -(1 << 63)
 MAX_COUNT = (1 << 63) - 1

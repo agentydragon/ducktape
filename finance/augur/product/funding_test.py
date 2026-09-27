@@ -321,8 +321,8 @@ def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim()
     rule = Jurisdiction(
         jurisdiction_id=JurisdictionId("test-flat"),
         level=JurisdictionLevel.FEDERAL,
-        ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.20)]},
-        ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.10)]},
+        ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
+        ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
         standard_deduction={FilingStatus.SINGLE: Decimal(0)},
         max_capital_loss_ordinary_offset={FilingStatus.SINGLE: Decimal(0)},
         law_year=2024,

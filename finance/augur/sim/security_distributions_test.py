@@ -18,6 +18,7 @@ from finance.augur.sim.fixed_point import (
     quantity_scale_for_asset,
     quantity_to_quanta,
     rate_to_ppb,
+    round_ppb,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, income_source_sort_key
@@ -101,7 +102,7 @@ def _paths(payout: np.ndarray | None) -> tuple[PreparedSeries, ...]:
 def _slices(tax_character: tuple[DistributionTaxSlice, ...]) -> tuple[PreparedDistributionSlice, ...]:
     return tuple(
         PreparedDistributionSlice(
-            fraction_ppb=rate_to_ppb(tax_slice.fraction), income_category=tax_slice.income_category
+            fraction_ppb=int(round_ppb(tax_slice.fraction)), income_category=tax_slice.income_category
         )
         for tax_slice in tax_character
     )
@@ -126,7 +127,7 @@ def _bill(amount: Decimal) -> PreparedObligation:
         amount_due=int(currency_amount_to_quanta(amount, quantum=QUANTUM)),
         property_id=None,
         deduction_category=None,
-        deductible_fraction_ppb=rate_to_ppb(1.0),
+        deductible_fraction_ppb=rate_to_ppb(1),
     )
 
 
@@ -191,8 +192,8 @@ def compose(
             asset_id=AssetId(SYMBOL),
             purchase_month=-24,
             quantity_scale=scale,
-            units=int(quantity_to_quanta(UNITS, scale=scale)),
-            basis=int(currency_amount_to_quanta(Decimal(str(UNITS)) * PRICE, quantum=QUANTUM)),
+            units=quantity_to_quanta(UNITS, scale=scale),
+            basis=int(currency_amount_to_quanta(UNITS * PRICE, quantum=QUANTUM)),
         )
     )
     if distributes:

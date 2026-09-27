@@ -60,7 +60,7 @@ SF = PreparedLocation(
     location_id=LocationId("sf"),
     display_name="SF",
     jurisdiction_ids=(FEDERAL, CALIFORNIA),
-    annual_property_tax_rate_ppb=rate_to_ppb(0.0118),
+    annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.0118")),
     annual_special_assessment=0,
 )
 
@@ -233,7 +233,7 @@ def test_security_sale_books_proceeds_and_a_long_term_gain() -> None:
     # makes the gain reportable rather than what assesses it.
     horizon = 6
     scale = quantity_scale_for_asset(SP500)
-    units = int(quantity_to_quanta(100.0, scale=scale))
+    units = quantity_to_quanta(100, scale=scale)
     series = compile_series(
         ExternalSeriesContext.from_level_blocks(
             [(SP500, np.full((1, horizon + 1), 120.0, dtype=np.float64))], rollout_count=1, horizon_months=horizon
@@ -307,7 +307,7 @@ def purchase(
         down_payment=money(down_payment),
         buyer_closing_cost=money(buyer_closing_cost),
         rented_fraction_ppb=0,
-        land_value_fraction_ppb=rate_to_ppb(0.2),
+        land_value_fraction_ppb=rate_to_ppb(Decimal("0.2")),
         mortgage=mortgage,
     )
 
@@ -340,7 +340,7 @@ def test_property_tax_accrues_only_once_the_property_is_held() -> None:
                 from_account_id=CHECKING,
                 tax_authority_agent_id=AgentId("county"),
                 tax_authority_account_id=CHECKING,
-                annual_tax_rate_ppb=rate_to_ppb(0.012),
+                annual_tax_rate_ppb=rate_to_ppb(Decimal("0.012")),
                 start_month=0,
                 end_month=None,
             ),
@@ -371,7 +371,7 @@ def test_financed_purchase_originates_then_services_the_loan() -> None:
                         lender_agent_id=AgentId("lender"),
                         lender_account_id=CHECKING,
                         principal=money(400_000),
-                        annual_interest_rate_ppb=rate_to_ppb(0.06),
+                        annual_interest_rate_ppb=rate_to_ppb(Decimal("0.06")),
                         term_months=360,
                     ),
                 ),

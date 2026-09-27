@@ -70,7 +70,9 @@ def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
     return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
 
 
-def lot(lot_id: LotId, asset: SecurityKey, *, quantity: float, cost_basis: int, purchase_month: int) -> PreparedLot:
+def lot(
+    lot_id: LotId, asset: SecurityKey, *, quantity: Decimal | int, cost_basis: int, purchase_month: int
+) -> PreparedLot:
     scale = quantity_scale_for_asset(asset)
     return PreparedLot(
         lot_id=lot_id,
@@ -79,19 +81,19 @@ def lot(lot_id: LotId, asset: SecurityKey, *, quantity: float, cost_basis: int, 
         asset_id=AssetId(asset.symbol),
         purchase_month=purchase_month,
         quantity_scale=scale,
-        units=int(quantity_to_quanta(quantity, scale=scale)),
+        units=quantity_to_quanta(quantity, scale=scale),
         basis=money(cost_basis),
     )
 
 
-def sale(cause_id: str, lot_id: LotId, asset: SecurityKey, *, quantity: float) -> Sell:
+def sale(cause_id: str, lot_id: LotId, asset: SecurityKey, *, quantity: Decimal | int) -> Sell:
     scale = quantity_scale_for_asset(asset)
     return Sell(
         cause_id=cause_id,
         agent_id=ALICE,
         proceeds_account_id=CHECKING,
         asset_id=AssetId(asset.symbol),
-        lots=(LotSale(account_id=CHECKING, lot_id=lot_id, units=int(quantity_to_quanta(quantity, scale=scale))),),
+        lots=(LotSale(account_id=CHECKING, lot_id=lot_id, units=quantity_to_quanta(quantity, scale=scale)),),
     )
 
 
@@ -361,9 +363,9 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
         Situation(
             horizon_months=12,
             accounts=(account(ALICE), account(PAYROLL), account(IRS)),
-            lots=(lot(LotId("alice_long_vti"), VTI, quantity=100.0, cost_basis=8000, purchase_month=-24),),
+            lots=(lot(LotId("alice_long_vti"), VTI, quantity=100, cost_basis=8000, purchase_month=-24),),
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, wage(50_000), income=True),),
-            sales={6: (sale("alice_long_sale", LotId("alice_long_vti"), VTI, quantity=100.0),)},
+            sales={6: (sale("alice_long_sale", LotId("alice_long_vti"), VTI, quantity=100),)},
             prices={VTI: [280.0] * 13},
         ),
         indexation,
@@ -475,9 +477,9 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics(indexation: TaxIndexa
             horizon_months=13,
             accounts=(account(ALICE, 1000), account(PAYROLL), account(IRS)),
             prior_year_tax=4000,
-            lots=(lot(LotId("alice_long_vti"), VTI, quantity=100.0, cost_basis=8000, purchase_month=-24),),
+            lots=(lot(LotId("alice_long_vti"), VTI, quantity=100, cost_basis=8000, purchase_month=-24),),
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, wage(50_000), income=True),),
-            sales={6: (sale("alice_long_sale", LotId("alice_long_vti"), VTI, quantity=100.0),)},
+            sales={6: (sale("alice_long_sale", LotId("alice_long_vti"), VTI, quantity=100),)},
             prices={VTI: [280.0] * 14},
         ),
         indexation,
@@ -524,14 +526,14 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics(indexation: Tax
             accounts=(account(ALICE), account(PAYROLL), account(IRS)),
             jurisdiction_ids=(FEDERAL,),
             lots=(
-                lot(LotId("alice_long_vti"), VTI, quantity=100.0, cost_basis=10000, purchase_month=-24),
-                lot(LotId("alice_short_ixus"), IXUS, quantity=10.0, cost_basis=500, purchase_month=0),
+                lot(LotId("alice_long_vti"), VTI, quantity=100, cost_basis=10000, purchase_month=-24),
+                lot(LotId("alice_short_ixus"), IXUS, quantity=10, cost_basis=500, purchase_month=0),
             ),
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, wage(50_000), income=True),),
             sales={
                 6: (
-                    sale("alice_long_sale", LotId("alice_long_vti"), VTI, quantity=100.0),
-                    sale("alice_short_sale", LotId("alice_short_ixus"), IXUS, quantity=10.0),
+                    sale("alice_long_sale", LotId("alice_long_vti"), VTI, quantity=100),
+                    sale("alice_short_sale", LotId("alice_short_ixus"), IXUS, quantity=10),
                 )
             },
             prices={VTI: [200.0] * 13, IXUS: [200.0] * 13},
@@ -568,7 +570,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(in
             accounts=(account(ALICE), account(PAYROLL), account(LANDLORD), account(IRS)),
             jurisdiction_ids=(FEDERAL,),
             prior_year_tax=2000,
-            lots=(lot(LotId("alice_vti_seed"), VTI, quantity=100.0, cost_basis=10000, purchase_month=-24),),
+            lots=(lot(LotId("alice_vti_seed"), VTI, quantity=100, cost_basis=10000, purchase_month=-24),),
             recurring_transfers=(
                 monthly("alice_paycheck", PAYROLL, ALICE, wage(50_000), income=True),
                 monthly("alice_rent", ALICE, LANDLORD, wage(50_000), income=False),

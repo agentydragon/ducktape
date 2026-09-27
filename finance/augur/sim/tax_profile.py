@@ -68,7 +68,7 @@ class TaxProfile(BaseModel):
     )
 
 
-SECTION_1250_FEDERAL_CAP_RATE = 0.25
+SECTION_1250_FEDERAL_CAP_RATE = Decimal("0.25")
 SECTION_1250_FEDERAL_JURISDICTION_ID = "federal_us"
 
 _SECTION_121_EXCLUSION_BY_FILING_STATUS: dict[FilingStatus, Decimal] = {FilingStatus.SINGLE: Decimal(250_000)}
@@ -178,7 +178,7 @@ def compile_profile(
                 ),
                 max_capital_loss_ordinary_offset=offset_cap,
                 section_1250_rate_ppb=rate_to_ppb(
-                    SECTION_1250_FEDERAL_CAP_RATE if jurisdiction_id == SECTION_1250_FEDERAL_JURISDICTION_ID else 0.0
+                    SECTION_1250_FEDERAL_CAP_RATE if jurisdiction_id == SECTION_1250_FEDERAL_JURISDICTION_ID else 0
                 ),
                 net_investment_income_tax=_threshold_tax(
                     jurisdiction.net_investment_income_tax, profile.filing_status, quantum=quantum

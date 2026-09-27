@@ -96,7 +96,7 @@ def compose(case: Situation, rollout_id: int) -> World:
                 asset_id=AssetId(asset.symbol),
                 purchase_month=-24,
                 quantity_scale=scale,
-                units=int(quantity_to_quanta(500, scale=scale)),
+                units=quantity_to_quanta(500, scale=scale),
                 basis=int(currency_amount_to_quanta(Decimal(50_000), quantum=QUANTUM)),
             )
         )

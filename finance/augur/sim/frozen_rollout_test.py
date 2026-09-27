@@ -146,7 +146,7 @@ def private_equity_world(*, freeze: bool) -> World:
             asset_id=PE_ASSET_ID,
             purchase_month=-12,
             quantity_scale=PE_SCALE,
-            units=int(quantity_to_quanta(10.0, scale=PE_SCALE)),
+            units=quantity_to_quanta(10, scale=PE_SCALE),
             basis=money(100),
         )
     )

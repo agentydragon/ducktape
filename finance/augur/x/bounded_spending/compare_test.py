@@ -65,7 +65,7 @@ def early_claim_failure() -> Finished:
                 asset_id=AssetId(stock.symbol),
                 purchase_month=-24,
                 quantity_scale=scale,
-                units=int(quantity_to_quanta(1, scale=scale)),
+                units=quantity_to_quanta(1, scale=scale),
                 basis=10_000,
             )
         )
@@ -80,7 +80,7 @@ def early_claim_failure() -> Finished:
                     amount_due=20_000,
                     property_id=None,
                     deduction_category=None,
-                    deductible_fraction_ppb=rate_to_ppb(1.0),
+                    deductible_fraction_ppb=rate_to_ppb(1),
                 )
             )
         )

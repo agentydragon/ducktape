@@ -37,7 +37,7 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, L
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.money import Currency
+from finance.augur.sim.money import USD
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import InitialAccountBalance, InitialLot, PropertySaleEvent, ScheduledPropertyPurchase
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -51,10 +51,9 @@ CHECKING = AccountId("checking")
 AGENT = AgentId("alice")
 IRS = AgentId("irs")
 SELLER = AgentId("seller")
-CURRENCY = Currency()
 HORIZON_MONTHS = 30
 SALE_MONTH = 14
-UNITS = 2.0
+UNITS = 2
 LOT_BASIS = Decimal(10_000)
 SALE_PRICE = Decimal(60_000)
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
@@ -94,7 +93,7 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
         asset=VTI,
         purchase_month_index=-24,  # comfortably long-term
         quantity=UNITS,
-        cost_basis=Decimal(str(UNITS)) * LOT_BASIS,
+        cost_basis=UNITS * LOT_BASIS,
     )
     sale = Sell(
         cause_id="sell-vti",
@@ -105,7 +104,7 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
             LotSale(
                 account_id=CHECKING,
                 lot_id=lot.lot_id,
-                units=int(quantity_to_quanta(UNITS, scale=quantity_scale_for_asset(VTI))),
+                units=quantity_to_quanta(UNITS, scale=quantity_scale_for_asset(VTI)),
             ),
         ),
     )
@@ -119,7 +118,7 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
         ),
         rollout_count=rollout_count,
         horizon_months=HORIZON_MONTHS,
-        currency_quantum=CURRENCY.quantum,
+        currency_quantum=USD.quantum,
     )
 
     def compose(rollout_id: int) -> World:
@@ -134,17 +133,15 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
                 InitialAccountBalance(agent_id=agent_id, account_id=CHECKING, balance=Decimal(0))
                 for agent_id in (AGENT, IRS)
             ],
-            quantum=CURRENCY.quantum,
+            quantum=USD.quantum,
         ):
             world.declare_account(account)
         world.track(
-            TaxAuthority(
-                compile_profile(profile, jurisdictions, quantum=CURRENCY.quantum), indexation=FixedNominalLaw()
-            )
+            TaxAuthority(compile_profile(profile, jurisdictions, quantum=USD.quantum), indexation=FixedNominalLaw())
         )
         for pool in compile_holding_pools(lots=[lot]):
             world.declare_pool(pool)
-        for held in compile_lots([lot], quantum=CURRENCY.quantum):
+        for held in compile_lots([lot], quantum=USD.quantum):
             world.hold(held)
         world.track(Scripted(ClaimPayer(AgentId(AGENT)), {SALE_MONTH: (sale,)}))
         return world
@@ -180,7 +177,7 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
         ExternalSeriesContext.from_level_blocks([(HOME_VALUE, levels)], rollout_count=1, horizon_months=HORIZON_MONTHS),
         rollout_count=1,
         horizon_months=HORIZON_MONTHS,
-        currency_quantum=CURRENCY.quantum,
+        currency_quantum=USD.quantum,
     )
     location = Location(
         location_id=LOCATION, display_name="Acceptance Town", jurisdiction_ids=[], annual_property_tax_rate=0.0
@@ -197,7 +194,7 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
                 InitialAccountBalance(agent_id=agent_id, account_id=CHECKING, balance=Decimal(1_000_000))
                 for agent_id in (AGENT, SELLER)
             ],
-            quantum=CURRENCY.quantum,
+            quantum=USD.quantum,
         ):
             world.declare_account(account)
         world.declare_housing(
@@ -210,10 +207,10 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
                         month=PROPERTY_SALE_MONTH, property_id=PropertyId("house"), closing_cost_pct=closing_cost_pct
                     )
                 ],
-                quantum=CURRENCY.quantum,
+                quantum=USD.quantum,
             ),
             (),
-            compile_locations([purchase], {LOCATION: location}, quantum=CURRENCY.quantum),
+            compile_locations([purchase], {LOCATION: location}, quantum=USD.quantum),
         )
         world.track(ClaimPayer(AgentId(AGENT)))
         return world
@@ -222,7 +219,7 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
 
 
 def product_metrics(worlds: Worlds) -> ProductMetricArrays:
-    return simulate_product_metrics(worlds(), horizon_months=HORIZON_MONTHS, currency=CURRENCY, primary_agent_id=AGENT)
+    return simulate_product_metrics(worlds(), horizon_months=HORIZON_MONTHS, currency=USD, primary_agent_id=AGENT)
 
 
 class TestConfigured:
@@ -275,7 +272,7 @@ class TestConfigured:
         for name in METRIC_NAMES:
             assert arrays[name].shape == (HORIZON_MONTHS + 1, 1), f"{name} is not snapshots by rollouts"
         assert metrics.failed_month.shape == (1,)
-        assert metrics.currency_code == CURRENCY.code
+        assert metrics.currency_code == USD.code
 
     def test_a_funded_rollout_does_not_report_a_failure(self, run: Worlds) -> None:
         """Anti-vacuity for the assertions above: they describe a rollout that ran to the end."""
@@ -353,7 +350,7 @@ class TestConfigured:
 def test_completed_capture_projects_same_financial_metrics(capture: Capture) -> None:
     run = sale_and_tax_year()
     completed = execute(run(), capture, AGENT)
-    arrays = project_product_metrics(completed, horizon_months=HORIZON_MONTHS, currency=CURRENCY)
+    arrays = project_product_metrics(completed, horizon_months=HORIZON_MONTHS, currency=USD)
     compact = product_metrics(run)
 
     assert arrays.rollout_ids == compact.rollout_ids
@@ -376,8 +373,8 @@ def test_projection_preserves_selected_original_path_identity() -> None:
     run = sale_and_tax_year(rollout_count=3)
     completed = execute(run(), "dense", AGENT)
     selected = (completed[-1], completed[0])
-    arrays = project_product_metrics(selected, horizon_months=HORIZON_MONTHS, currency=CURRENCY)
-    expected = project_product_metrics(completed, horizon_months=HORIZON_MONTHS, currency=CURRENCY).select(
+    arrays = project_product_metrics(selected, horizon_months=HORIZON_MONTHS, currency=USD)
+    expected = project_product_metrics(completed, horizon_months=HORIZON_MONTHS, currency=USD).select(
         tuple(result.rollout_id for result in selected)
     )
 

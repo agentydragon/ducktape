@@ -7,19 +7,14 @@ rejected rather than silently omitted.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.model.series import LocationId
 from finance.augur.sim.bonds import coupon_amount_quanta
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.external_series import INDEX_SERIES_KINDS, UnsupportedScenarioError
-from finance.augur.sim.fixed_point import (
-    currency_amount_to_quanta,
-    quantity_scale_for_asset,
-    quantity_to_quanta,
-    rate_to_ppb,
-)
+from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, round_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId
 from finance.augur.sim.income import InterestIncome
 from finance.augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
@@ -176,7 +171,8 @@ def compile_lots(lots: Iterable[InitialLot], *, quantum: Decimal) -> tuple[Prepa
                 asset_id=_asset_id(lot.asset),
                 purchase_month=int(lot.purchase_month_index),
                 quantity_scale=scale,
-                units=int(quantity_to_quanta(lot.quantity, scale=scale)),
+                # Scenario quantities are floats, often derived as value / price, so they round.
+                units=int((Decimal(str(lot.quantity)) * scale).quantize(Decimal(1), rounding=ROUND_HALF_UP)),
                 basis=int(currency_amount_to_quanta(lot.cost_basis, quantum=quantum)),
             )
         )
@@ -184,7 +180,7 @@ def compile_lots(lots: Iterable[InitialLot], *, quantum: Decimal) -> tuple[Prepa
 
 
 def compile_bond(bond: BondHolding, *, quantum: Decimal) -> PreparedBond:
-    rate_ppb = rate_to_ppb(bond.annual_coupon_rate)
+    rate_ppb = int(round_ppb(bond.annual_coupon_rate))
     face = int(currency_amount_to_quanta(bond.face_value, quantum=quantum))
     coupon = (
         PreparedIndexedCoupon(annual_rate_ppb=rate_ppb)
@@ -217,7 +213,7 @@ def compile_distribution(distribution: SecurityDistribution) -> PreparedDistribu
         to_account_id=distribution.to_account_id,
         tax_character=tuple(
             PreparedDistributionSlice(
-                fraction_ppb=rate_to_ppb(tax_slice.fraction), income_category=tax_slice.income_category
+                fraction_ppb=int(round_ppb(tax_slice.fraction)), income_category=tax_slice.income_category
             )
             for tax_slice in distribution.tax_character
         ),
@@ -294,7 +290,7 @@ def compile_recurring_obligation(obligation: RecurringObligation, *, quantum: De
         amount_due=_amount(obligation.amount_due, quantum=quantum, context=f"obligation {obligation.obligation_id!r}"),
         property_id=obligation.property_id,
         deduction_category=obligation.deduction_category,
-        deductible_fraction_ppb=rate_to_ppb(obligation.deductible_fraction),
+        deductible_fraction_ppb=int(round_ppb(obligation.deductible_fraction)),
     )
 
 
@@ -306,7 +302,7 @@ def _closing_cost_ppb(event: PropertySaleEvent) -> int:
     among them -- for no reason but the coarser grid.
     """
 
-    return rate_to_ppb(float(Decimal(str(event.closing_cost_pct)) / 100))
+    return int(round_ppb(float(Decimal(str(event.closing_cost_pct)) / 100)))
 
 
 def compile_housing(
@@ -332,8 +328,8 @@ def compile_housing(
                 purchase_price=int(currency_amount_to_quanta(purchase.purchase_price, quantum=quantum)),
                 down_payment=int(currency_amount_to_quanta(purchase.down_payment, quantum=quantum)),
                 buyer_closing_cost=int(currency_amount_to_quanta(purchase.buyer_closing_cost, quantum=quantum)),
-                rented_fraction_ppb=rate_to_ppb(purchase.rented_fraction),
-                land_value_fraction_ppb=rate_to_ppb(purchase.land_value_fraction),
+                rented_fraction_ppb=int(round_ppb(purchase.rented_fraction)),
+                land_value_fraction_ppb=int(round_ppb(purchase.land_value_fraction)),
                 mortgage=(
                     None
                     if purchase.mortgage is None
@@ -342,7 +338,7 @@ def compile_housing(
                         lender_agent_id=purchase.mortgage.lender_agent_id,
                         lender_account_id=purchase.mortgage.lender_account_id,
                         principal=int(currency_amount_to_quanta(purchase.mortgage.principal, quantum=quantum)),
-                        annual_interest_rate_ppb=rate_to_ppb(purchase.mortgage.annual_interest_rate),
+                        annual_interest_rate_ppb=int(round_ppb(purchase.mortgage.annual_interest_rate)),
                         term_months=int(purchase.mortgage.term_months),
                     )
                 ),
@@ -368,7 +364,7 @@ def compile_housing(
             _RentedFraction(
                 month=int(event.month),
                 property_id=event.property_id,
-                rented_fraction_ppb=rate_to_ppb(event.rented_fraction),
+                rented_fraction_ppb=int(round_ppb(event.rented_fraction)),
             )
             for event in lifecycle_events
             if isinstance(event, SetRentedFractionEvent)
@@ -408,7 +404,7 @@ def compile_locations(
             location_id=location_id,
             display_name=locations[location_id].display_name,
             jurisdiction_ids=tuple(locations[location_id].jurisdiction_ids),
-            annual_property_tax_rate_ppb=rate_to_ppb(locations[location_id].annual_property_tax_rate),
+            annual_property_tax_rate_ppb=int(round_ppb(locations[location_id].annual_property_tax_rate)),
             annual_special_assessment=int(
                 currency_amount_to_quanta(locations[location_id].annual_special_assessment, quantum=quantum)
             ),
@@ -424,7 +420,7 @@ def compile_property_tax(policy: PropertyTaxPolicy) -> _PropertyTax:
         from_account_id=policy.from_account_id,
         tax_authority_agent_id=policy.tax_authority_agent_id,
         tax_authority_account_id=policy.tax_authority_account_id,
-        annual_tax_rate_ppb=None if policy.annual_tax_rate is None else rate_to_ppb(policy.annual_tax_rate),
+        annual_tax_rate_ppb=None if policy.annual_tax_rate is None else int(round_ppb(policy.annual_tax_rate)),
         start_month=int(policy.start_month),
         end_month=None if policy.end_month is None else int(policy.end_month),
     )

@@ -38,7 +38,7 @@ HORIZON = 14
 NEVER_MATURES = 120
 
 FACE = Decimal(1_000_000)
-NOMINAL_RATE = 0.04
+NOMINAL_RATE = Decimal("0.04")
 # Semiannual on a $1M face at 4%, before any indexation.
 NOMINAL_COUPON = Decimal(20_000)
 
@@ -57,7 +57,7 @@ def dated(
     agent_id: AgentId,
     account_id: AccountId = CHECKING,
     face: Decimal,
-    annual_rate: float,
+    annual_rate: Decimal | int,
     period: int,
     purchase: int = 0,
     maturity: int,

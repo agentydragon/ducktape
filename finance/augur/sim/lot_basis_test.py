@@ -70,7 +70,7 @@ def _prepared(lot: InitialLot) -> PreparedLot:
         asset_id=AssetId(asset.symbol),
         purchase_month=int(lot.purchase_month_index),
         quantity_scale=scale,
-        units=int(quantity_to_quanta(lot.quantity, scale=scale)),
+        units=quantity_to_quanta(Decimal(lot.quantity), scale=scale),
         basis=int(currency_amount_to_quanta(lot.cost_basis, quantum=QUANTUM)),
     )
 

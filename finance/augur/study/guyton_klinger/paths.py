@@ -236,7 +236,7 @@ def _declare_taxes(world: World, taxes: FederalCaTaxes, rollout_id: int) -> None
                 asset_id=AssetId(sleeve),
                 to_account_id=INCOME[sleeve],
                 tax_character=(
-                    PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), income_category=PAYOUT_INCOME[sleeve]),
+                    PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1), income_category=PAYOUT_INCOME[sleeve]),
                 ),
             )
         )
@@ -291,7 +291,7 @@ def compose_world(windows: AnnualWindows, rollout_id: int, *, wealth: Decimal, w
                 asset_id=AssetId(sleeve),
                 purchase_month=-1,
                 quantity_scale=QUANTITY_SCALE,
-                units=int(quantity_to_quanta(value, scale=QUANTITY_SCALE)),
+                units=quantity_to_quanta(value, scale=QUANTITY_SCALE),
                 basis=int(currency_amount_to_quanta(value, quantum=QUANTUM)),
             )
         )

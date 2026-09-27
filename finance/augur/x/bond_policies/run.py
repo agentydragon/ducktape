@@ -127,7 +127,7 @@ def compose(case: Situation, rollout_id: int) -> World:
             asset_id=AssetId(STRATEGY),
             purchase_month=-1,
             quantity_scale=scale,
-            units=int(quantity_to_quanta(INITIAL_WEALTH / INITIAL_UNIT_PRICE, scale=scale)),
+            units=quantity_to_quanta(INITIAL_WEALTH / INITIAL_UNIT_PRICE, scale=scale),
             basis=int(currency_amount_to_quanta(INITIAL_WEALTH, quantum=QUANTUM)),
         )
     )
@@ -137,7 +137,7 @@ def compose(case: Situation, rollout_id: int) -> World:
             holding_account_id=BROKERAGE,
             asset_id=AssetId(STRATEGY),
             to_account_id=CHECKING,
-            tax_character=(PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), income_category=InterestIncome()),),
+            tax_character=(PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1), income_category=InterestIncome()),),
         )
     )
     if case.annual_spending > 0:
@@ -153,7 +153,7 @@ def compose(case: Situation, rollout_id: int) -> World:
                         amount_due=case.annual_spending,
                         property_id=None,
                         deduction_category=None,
-                        deductible_fraction_ppb=rate_to_ppb(1.0),
+                        deductible_fraction_ppb=rate_to_ppb(1),
                     )
                 )
             )

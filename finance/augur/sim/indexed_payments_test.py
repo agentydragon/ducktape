@@ -71,7 +71,7 @@ def _rent_obligation(amount: PreparedIndexedAmount) -> PreparedRecurringObligati
         amount_due=amount,
         property_id=None,
         deduction_category=None,
-        deductible_fraction_ppb=rate_to_ppb(1.0),
+        deductible_fraction_ppb=rate_to_ppb(1),
     )
 
 

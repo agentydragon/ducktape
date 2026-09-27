@@ -12,7 +12,7 @@ from finance.augur.sim.scenario import DistributionTaxSlice
 HORIZON = 13
 SYMBOL = SecuritySymbol("bnd")
 FUND = SecurityKey(symbol=SYMBOL)
-UNITS = 10_000.0
+UNITS = 10_000
 PRICE = Decimal(73)
 # A round monthly payout per unit, so `units x per unit` is exact at every split.
 PER_UNIT = Decimal("0.20")
@@ -25,7 +25,7 @@ LOSSY_PER_UNIT = Decimal("0.0123")
 
 
 def payout_quanta(per_unit: Decimal) -> int:
-    return int(Decimal(str(UNITS)) * per_unit * 100)
+    return int(UNITS * per_unit * 100)
 
 
 MONTHLY_PAYOUT_QUANTA = payout_quanta(PER_UNIT)

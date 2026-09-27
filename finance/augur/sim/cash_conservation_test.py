@@ -90,15 +90,15 @@ ACME_ASSET_ID = AssetId("private_equity:acme")
 ACME_SCALE = quantity_scale_for_asset(ACME)
 
 SALE_MONTH = 4
-SALE_UNITS, SALE_PRICE = 5_000.0, Decimal(150)
-SALE_PROCEEDS_QUANTA = int(SALE_UNITS * int(SALE_PRICE)) * QUANTA_PER_UNIT
+SALE_UNITS, SALE_PRICE = 5_000, Decimal(150)
+SALE_PROCEEDS_QUANTA = SALE_UNITS * int(SALE_PRICE) * QUANTA_PER_UNIT
 
 RENT_MONTH = 0
 RENT = Decimal(5_000)
 
 TENDER_MONTH, TENDER_HORIZON = 12, 24
-TENDER_UNITS, TENDER_MARK = 100.0, Decimal(50)
-TENDER_PROCEEDS_QUANTA = int(TENDER_UNITS * int(TENDER_MARK)) * QUANTA_PER_UNIT
+TENDER_UNITS, TENDER_MARK = 100, Decimal(50)
+TENDER_PROCEEDS_QUANTA = TENDER_UNITS * int(TENDER_MARK) * QUANTA_PER_UNIT
 
 PROPERTY_HORIZON, PROPERTY_SALE_MONTH, CAPEX_MONTH = 36, 24, 12
 PROPERTY_LOCATION_ID = LocationId("loc")
@@ -138,7 +138,7 @@ def path(key: LevelSeriesKey, levels: Sequence[Decimal], *, horizon_months: int)
     )
 
 
-def vti_lot(lot_id: LotId, *, quantity: float, cost_basis: Decimal | int, purchase_month: int) -> PreparedLot:
+def vti_lot(lot_id: LotId, *, quantity: Decimal | int, cost_basis: Decimal | int, purchase_month: int) -> PreparedLot:
     return PreparedLot(
         lot_id=lot_id,
         agent_id=ALICE,
@@ -146,7 +146,7 @@ def vti_lot(lot_id: LotId, *, quantity: float, cost_basis: Decimal | int, purcha
         asset_id=AssetId(VTI.symbol),
         purchase_month=purchase_month,
         quantity_scale=VTI_SCALE,
-        units=int(quantity_to_quanta(quantity, scale=VTI_SCALE)),
+        units=quantity_to_quanta(quantity, scale=VTI_SCALE),
         basis=money(cost_basis),
     )
 
@@ -223,7 +223,7 @@ def security_sale_world() -> World:
         income_sources=(ORDINARY_INCOME,),
     )
     world.declare_account(account(ALICE, Decimal(1_000_000)))
-    hold_vti(world, vti_lot(LotId("bought"), quantity=SALE_UNITS, cost_basis=int(SALE_UNITS) * 100, purchase_month=0))
+    hold_vti(world, vti_lot(LotId("bought"), quantity=SALE_UNITS, cost_basis=SALE_UNITS * 100, purchase_month=0))
     return world
 
 
@@ -237,7 +237,7 @@ def target_allocation_world() -> World:
     )
     world.declare_account(account(ALICE, Decimal(1_000)))
     world.declare_account(account(AgentId("landlord")))
-    hold_vti(world, vti_lot(LotId("alice-vti"), quantity=200.0, cost_basis=10_000, purchase_month=-1))
+    hold_vti(world, vti_lot(LotId("alice-vti"), quantity=200, cost_basis=10_000, purchase_month=-1))
     world.track(
         Biller(
             PreparedRecurringObligation(
@@ -250,7 +250,7 @@ def target_allocation_world() -> World:
                 amount_due=money(RENT),
                 property_id=None,
                 deduction_category=None,
-                deductible_fraction_ppb=rate_to_ppb(1.0),
+                deductible_fraction_ppb=rate_to_ppb(1),
             )
         )
     )
@@ -304,8 +304,8 @@ def private_equity_tender_world() -> World:
             asset_id=ACME_ASSET_ID,
             purchase_month=-36,
             quantity_scale=ACME_SCALE,
-            units=int(quantity_to_quanta(TENDER_UNITS, scale=ACME_SCALE)),
-            basis=money(Decimal(str(TENDER_UNITS)) * 10),
+            units=quantity_to_quanta(TENDER_UNITS, scale=ACME_SCALE),
+            basis=money(Decimal(TENDER_UNITS) * 10),
         )
     )
     world.declare_tender_policy(
@@ -369,20 +369,22 @@ def property_sale_world() -> World:
                     down_payment=money(100_000),
                     buyer_closing_cost=0,
                     rented_fraction_ppb=0,
-                    land_value_fraction_ppb=rate_to_ppb(0.2),
+                    land_value_fraction_ppb=rate_to_ppb(Decimal("0.2")),
                     mortgage=_MortgageFinancing(
                         liability_id=LiabilityId("house-mortgage"),
                         lender_agent_id=AgentId("bank"),
                         lender_account_id=CHECKING,
                         principal=money(400_000),
-                        annual_interest_rate_ppb=rate_to_ppb(0.06),
+                        annual_interest_rate_ppb=rate_to_ppb(Decimal("0.06")),
                         term_months=360,
                     ),
                 ),
             ),
             sales=(
                 _PropertySale(
-                    month=PROPERTY_SALE_MONTH, property_id=PropertyId("house"), closing_cost_ppb=rate_to_ppb(0.06)
+                    month=PROPERTY_SALE_MONTH,
+                    property_id=PropertyId("house"),
+                    closing_cost_ppb=rate_to_ppb(Decimal("0.06")),
                 ),
             ),
             capital_improvements=(
@@ -417,7 +419,7 @@ def test_a_security_sale_brings_in_exactly_its_proceeds() -> None:
                         LotSale(
                             account_id=CHECKING,
                             lot_id=LotId("bought"),
-                            units=int(quantity_to_quanta(SALE_UNITS, scale=VTI_SCALE)),
+                            units=quantity_to_quanta(SALE_UNITS, scale=VTI_SCALE),
                         ),
                     ),
                 ),

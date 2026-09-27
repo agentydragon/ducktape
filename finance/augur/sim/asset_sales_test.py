@@ -58,7 +58,7 @@ class Situation:
 
 def _lot(
     lot_id: LotId,
-    quantity: float,
+    quantity: Decimal | int,
     basis: Decimal,
     purchase_month: int,
     *,
@@ -73,7 +73,7 @@ def _lot(
         asset_id=AssetId(asset.symbol),
         purchase_month=purchase_month,
         quantity_scale=scale,
-        units=int(quantity_to_quanta(quantity, scale=scale)),
+        units=quantity_to_quanta(quantity, scale=scale),
         basis=int(currency_amount_to_quanta(basis, quantum=QUANTUM)),
     )
 
@@ -450,7 +450,7 @@ def test_gbm_sales_diverge_and_same_seed_reproduces_all_cash() -> None:
 
 
 def test_awkward_thirds_consume_exactly_the_whole_lot_basis() -> None:
-    case = _situation([_lot(LotId("seed"), 2.5, Decimal("83.33"), -24)], {VTI: [Decimal(50)] * 7})
+    case = _situation([_lot(LotId("seed"), Decimal("2.5"), Decimal("83.33"), -24)], {VTI: [Decimal(50)] * 7})
 
     def propose(obs: Observation) -> list[Action]:
         if obs.month not in (1, 2, 3):

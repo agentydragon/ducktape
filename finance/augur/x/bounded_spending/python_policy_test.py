@@ -214,7 +214,7 @@ def test_post_cashflow_review_and_ordered_claim_prefix_are_explicit() -> None:
                     amount_due=3_000,
                     property_id=None,
                     deduction_category=None,
-                    deductible_fraction_ppb=rate_to_ppb(1.0),
+                    deductible_fraction_ppb=rate_to_ppb(1),
                 )
             )
         )
@@ -264,8 +264,8 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
     rules = Jurisdiction(
         jurisdiction_id=JurisdictionId("synthetic-flat-tax"),
         level=JurisdictionLevel.FEDERAL,
-        ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.20)]},
-        ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.10)]},
+        ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
+        ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
         standard_deduction={FilingStatus.SINGLE: Decimal(0)},
         max_capital_loss_ordinary_offset={FilingStatus.SINGLE: Decimal(0)},
         law_year=2024,
@@ -324,7 +324,7 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
                 asset_id=AssetId(stock.symbol),
                 purchase_month=-24,
                 quantity_scale=scale,
-                units=int(quantity_to_quanta(10, scale=scale)),
+                units=quantity_to_quanta(10, scale=scale),
                 basis=40_000,
             )
         )

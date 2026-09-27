@@ -131,13 +131,13 @@ def test_profile_order_routes_and_jurisdiction_specific_rules_survive_preparatio
     assert [bracket.rate_ppb for bracket in federal.long_term_capital_gain_brackets] == [0, 150_000_000, 200_000_000]
 
 
-def test_prepared_thresholds_use_exact_quantum_and_rates_keep_half_away_rounding() -> None:
+def test_prepared_thresholds_and_rates_convert_exactly() -> None:
     jurisdiction = load_jurisdiction(FEDERAL_US).model_copy(
         update={
             "ordinary_income_brackets": {
                 "single": [
-                    TaxBracket(upper=Decimal("10.05"), rate=0.1000000005),
-                    TaxBracket(upper="Infinity", rate=0.20),
+                    TaxBracket(upper=Decimal("10.05"), rate=Decimal("0.100000001")),
+                    TaxBracket(upper="Infinity", rate=Decimal("0.20")),
                 ]
             },
             "standard_deduction": {"single": Decimal("5.05")},
@@ -162,8 +162,8 @@ def test_largest_finite_threshold_is_not_an_open_bracket_sentinel() -> None:
         update={
             "ordinary_income_brackets": {
                 "single": [
-                    TaxBracket(upper=Decimal(maximum) * CENT, rate=0.10),
-                    TaxBracket(upper="Infinity", rate=0.20),
+                    TaxBracket(upper=Decimal(maximum) * CENT, rate=Decimal("0.10")),
+                    TaxBracket(upper="Infinity", rate=Decimal("0.20")),
                 ]
             }
         }

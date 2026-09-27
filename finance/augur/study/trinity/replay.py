@@ -147,8 +147,8 @@ from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series, materialize_sampled_exogenous
 from finance.augur.sim.fixed_point import (
     currency_amount_to_quanta,
+    quantity_for_value,
     quantity_scale_for_asset,
-    quantity_to_quanta,
     rate_to_ppb,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
@@ -304,7 +304,11 @@ def opening_lots(equity_share: float, *, portfolio: Decimal = INITIAL_PORTFOLIO)
     for symbol, share in ((EQUITY, equity_share), (BONDS, 1.0 - equity_share)):
         if share <= 0.0:
             continue
-        value = portfolio * Decimal(str(share))
+        basis = int(
+            currency_amount_to_quanta(
+                (portfolio * Decimal(str(share))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), quantum=QUANTUM
+            )
+        )
         scale = quantity_scale_for_asset(SecurityKey(symbol=symbol))
         lots.append(
             PreparedLot(
@@ -314,10 +318,11 @@ def opening_lots(equity_share: float, *, portfolio: Decimal = INITIAL_PORTFOLIO)
                 asset_id=AssetId(symbol),
                 purchase_month=-1,
                 quantity_scale=scale,
-                units=int(quantity_to_quanta(float(value / UNIT_PRICE), scale=scale)),
-                basis=int(
-                    currency_amount_to_quanta(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), quantum=QUANTUM)
+                # What `basis` buys: a float share's unrounded value is no exact quantity.
+                units=quantity_for_value(
+                    basis, int(currency_amount_to_quanta(UNIT_PRICE, quantum=QUANTUM)), scale, round_up=False
                 ),
+                basis=basis,
             )
         )
     return tuple(lots)
@@ -373,7 +378,7 @@ def compose(case: Situation, rollout_id: int, *, lots: Sequence[PreparedLot], an
                     ),
                     property_id=None,
                     deduction_category=None,
-                    deductible_fraction_ppb=rate_to_ppb(1.0),
+                    deductible_fraction_ppb=rate_to_ppb(1),
                 )
             )
         )
@@ -388,7 +393,7 @@ def compose(case: Situation, rollout_id: int, *, lots: Sequence[PreparedLot], an
                 # payout that allocates less than all of itself would pay out less than the
                 # fund distributes.
                 tax_character=(
-                    PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), income_category=InterestIncome()),
+                    PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1), income_category=InterestIncome()),
                 ),
             )
         )
