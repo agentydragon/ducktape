@@ -1147,8 +1147,8 @@
           </p>
           <p>
             None of this is a big-bang rewrite. Each convention lands as a series of small PRs you can review as
-            rendered diffs. The Flux steps (the <code>wait</code> default, the edge check, folding tiny units) and pod
-            policy can start now; only C4 and the steps built on it wait on your decision.
+            rendered diffs. Pod policy, the writer and the edge check can start now. The <code>wait</code> default and
+            derived Orphan are postponed, and C4 and the steps built on it wait on your decision.
           </p>
         </div>
       </div>
@@ -1520,13 +1520,13 @@
                   </ul>
                   <p>
                     Reloader runs with <code>autoReloadAll</code> (<code>reloader.py:47</code>): a workload opts out
-                    with <code>&#34;false&#34;</code>, and the 44 <code>&#34;true&#34;</code> annotations are deleted
-                    (decision 11). 7 of them sit on pod templates, chart <code>podAnnotations</code> or operator CR
-                    templates (<code>headlamp.py:75</code>, <code>gatus/app.py:107</code>,
-                    <code>proxmox_proxy.py:102</code>, <code>seaweedfs/cluster.py:380</code>, ...), which Reloader never
-                    reads (<code>reloader.py:39-44</code>). The comments at
-                    <code>haku_egress_proxy.py:266, 438</code> and <code>public_coder_proxy.py:241</code> that credit
-                    the annotation with rolling a proxy point at <code>autoReloadAll</code> instead.
+                    with <code>&#34;false&#34;</code>, and the 44 <code>&#34;true&#34;</code> annotations are deleted. 7
+                    of them sit on pod templates, chart <code>podAnnotations</code> or operator CR templates
+                    (<code>headlamp.py:75</code>, <code>gatus/app.py:107</code>, <code>proxmox_proxy.py:102</code>,
+                    <code>seaweedfs/cluster.py:380</code>, ...), which Reloader never reads
+                    (<code>reloader.py:39-44</code>). The comments at <code>haku_egress_proxy.py:266, 438</code> and
+                    <code>public_coder_proxy.py:241</code> that credit the annotation with rolling a proxy point at
+                    <code>autoReloadAll</code> instead.
                   </p>
                 </div>
               </td>
@@ -2442,7 +2442,7 @@
                   <div class="rich">
                     <p>
                       It moves ownership of the module interface into the generator, and the relation test already
-                      catches the drift (decision 14).
+                      catches the drift.
                     </p>
                   </div>
                 </td>
@@ -5077,7 +5077,7 @@
                 <code>SettingsFile</code> keeps the data key, mount directory and <code>CONFIG_FILE_ENV</code> path in
                 agreement (checked in a scratch environment). Secrets ride Settings env names as
                 <code>SecretKey</code> projections (#7426), and rollout is Reloader&#39;s
-                <code>autoReloadAll</code> with no per-workload annotation (decision 11).
+                <code>autoReloadAll</code> with no per-workload annotation.
               </p>
             </div>
           </dd>
@@ -5145,7 +5145,7 @@
               <p>
                 <code>namespaces.namespace(scope, id, *, name, vpa: Vpa, agent_readable: AgentReadable | None)</code>
                 renders the labels from StrEnums that <code>kyverno/policies.py</code>, the reader of those keys,
-                imports too (X1). Labels are metadata, so no patch or mutator is involved, and under decision 12 the
+                imports too (X1). Labels are metadata, so no patch or mutator is involved, and under decision 11 the
                 <code>vpa</code> keyword carries the Goldilocks decision that 38
                 <code>enabled: &#34;true&#34;</code> labels restate today.
               </p>
@@ -7007,8 +7007,8 @@ def copy(scope: Construct, id: str, *, credential: Credential, target: SecretRef
             </ul>
             <p>
               Reloader runs with <code>autoReloadAll</code> (<code>reloader.py:47</code>): a workload opts out with
-              <code>&#34;false&#34;</code>, and the 44 <code>&#34;true&#34;</code> annotations are deleted (decision
-              11). 7 of them sit on pod templates, chart <code>podAnnotations</code> or operator CR templates
+              <code>&#34;false&#34;</code>, and the 44 <code>&#34;true&#34;</code> annotations are deleted. 7 of them
+              sit on pod templates, chart <code>podAnnotations</code> or operator CR templates
               (<code>headlamp.py:75</code>, <code>gatus/app.py:107</code>, <code>proxmox_proxy.py:102</code>,
               <code>seaweedfs/cluster.py:380</code>, ...), which Reloader never reads (<code>reloader.py:39-44</code>).
               The comments at <code>haku_egress_proxy.py:266, 438</code> and <code>public_coder_proxy.py:241</code> that
@@ -10657,8 +10657,8 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="q">
             <div class="rich">
               <p>
-                Flip <code>flux_kustomization</code>&#39;s <code>wait</code> default from <code>True</code> to
-                <code>None</code> and gate only admission targets?
+                Postponed by the owner. Flip <code>flux_kustomization</code>&#39;s <code>wait</code> default from
+                <code>True</code> to <code>None</code> and gate only admission targets?
               </p>
             </div>
           </div>
@@ -10691,8 +10691,8 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="q">
             <div class="rich">
               <p>
-                Derive <code>deletionPolicy: Orphan</code> for every generated directory that renders a stateful (group,
-                kind)?
+                Postponed by the owner. Derive <code>deletionPolicy: Orphan</code> for every generated directory that
+                renders a stateful (group, kind)?
               </p>
             </div>
           </div>
@@ -10884,35 +10884,6 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
         <li>
           <div class="q">
             <div class="rich">
-              <p>Delete the 44 <code>reloader.stakater.com/auto: &#34;true&#34;</code> annotations (revising #8108)?</p>
-            </div>
-          </div>
-          <div>
-            <span class="lbl">Recommendation</span>
-            <div class="rich">
-              <p>
-                Yes. <code>reloader.py:47</code> sets <code>autoReloadAll</code>, and the explicit per-workload decision
-                is the <code>&#34;false&#34;</code> opt-out. 37 of the annotations sit on workload metadata and change
-                nothing today; the other 7 sit on pod templates, chart <code>podAnnotations</code> or operator CR
-                templates, which Reloader never reads (<code>reloader.py:39-44</code>;
-                <code>seaweedfs/cluster.py:373-379</code> says so for its own). Three comments that credit the
-                annotation with rolling a proxy are reworded.
-              </p>
-            </div>
-          </div>
-          <div class="t">
-            <span class="lbl">Trade-off</span>
-            <div class="rich">
-              <p>
-                This depends on <code>autoReloadAll</code> staying on. Turning it off later means restoring the
-                annotations on workload metadata.
-              </p>
-            </div>
-          </div>
-        </li>
-        <li>
-          <div class="q">
-            <div class="rich">
               <p>
                 Delete the 38 goldilocks <code>enabled: &#34;true&#34;</code> namespace labels, leaving
                 <code>&#34;false&#34;</code> as the only per-namespace label?
@@ -10972,29 +10943,6 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             </div>
           </div>
         </li>
-        <li>
-          <div class="q">
-            <div class="rich">
-              <p>
-                Terraform vars: a relation test against <code>variables.tf</code>, or generate
-                <code>variables.tf</code> from the model?
-              </p>
-            </div>
-          </div>
-          <div>
-            <span class="lbl">Recommendation</span>
-            <div class="rich"><p>The relation test, on top-level names (pygohcl is already pinned).</p></div>
-          </div>
-          <div class="t">
-            <span class="lbl">Trade-off</span>
-            <div class="rich">
-              <p>
-                Two hand-kept artifacts checked against each other, versus moving ownership of the module interface into
-                the generator. Nested object attributes stay unchecked either way until someone needs more.
-              </p>
-            </div>
-          </div>
-        </li>
       </ol>
     </section>
 
@@ -11011,6 +10959,20 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             </tr>
           </thead>
           <tbody>
+            <tr>
+              <td><a href="https://github.com/agentydragon/ducktape/pull/8168">#8168</a></td>
+              <td>cdk8s: construct ApiObjectMetadata directly; delete the metadata() wrapper</td>
+              <td><span class="chip chip-land-as-is">land as is</span></td>
+              <td>
+                <div class="rich">
+                  <p>
+                    The last part of the providers step&#39;s <code>metadata=</code> convention: 305 calls construct
+                    <code>ApiObjectMetadata</code> directly. It conflicts with #8108 wherever an annotation sits inside
+                    a <code>metadata(...)</code> call; the codemod re-runs in seconds on whichever lands second.
+                  </p>
+                </div>
+              </td>
+            </tr>
             <tr>
               <td><a href="https://github.com/agentydragon/ducktape/pull/7094">#7094</a></td>
               <td>cluster: replace the Kustomization layering law with a blast-radius policy</td>
@@ -11037,40 +10999,6 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
                   <p>
                     Superseded by <code>pod_policy.harden()</code>, which fills drop-ALL on every dialect. Two per-tier
                     constants are the &#39;policy as a constant&#39; shape C5 replaces.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8114">#8114</a></td>
-              <td>cdk8s: extract mint_bearer_secret/mint_db_role_secret ESO helpers (C.1, C.2)</td>
-              <td><span class="chip chip-merged">merged</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    Merged; replaced in the secrets step. Its <code>mint_bearer_secret</code> and
-                    <code>mint_db_role_secret</code> return <code>None</code> and carry byte-identity knobs
-                    (<code>key=None</code>, <code>generator_name=</code>, <code>secret_type=None</code>,
-                    <code>target_annotations=</code>). The secrets step reworks them into the
-                    <code>MintedSecret</code> composite (C3), which returns its objects and takes a template, so a
-                    DB-role Secret builds its URI from <code>PostgresRef.rw</code>. Its 14 repointed call sites are the
-                    scope that step starts from.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8113">#8113</a></td>
-              <td>cdk8s: share a secret_env_var/secret_env_value helper (finding D.6)</td>
-              <td><span class="chip chip-merged">merged</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    Merged; replaced in the references step. <code>secret_env_var(name, secret, key)</code> forwards
-                    three strings into one struct, the <code>_secret_env</code> shape the owner turned down in #7461,
-                    and keeps the Secret name a string. Its 11 modules move to
-                    <code>SecretKey.env_var</code>/<code>env_value</code>, <code>env_helpers.py</code> is deleted, and
-                    the 7 local variants it left move with them; the merge makes that step a rewrite of one call shape.
                   </p>
                 </div>
               </td>
@@ -11105,15 +11033,13 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             </tr>
             <tr>
               <td><a href="https://github.com/agentydragon/ducktape/pull/8108">#8108</a></td>
-              <td>cdk8s: add RELOADER_AUTO constant, repoint 43 call sites (D.8)</td>
-              <td><span class="chip chip-revise">revise</span></td>
+              <td>cdk8s: drop reloader auto annotations; autoReloadAll already covers them</td>
+              <td><span class="chip chip-land-as-is">land as is</span></td>
               <td>
                 <div class="rich">
                   <p>
-                    Make it delete the 44 <code>&#34;true&#34;</code> annotations, with no constant (decision 11):
-                    <code>reloader.py:47</code> sets <code>autoReloadAll</code>, and 7 of the sites are pod templates or
-                    chart <code>podAnnotations</code> that Reloader never reads. Same files, a smaller diff, plus the
-                    three comments that credit the annotation.
+                    Reworked as recommended: it deletes the 36 remaining <code>&#34;true&#34;</code> annotations and
+                    adds no constant. CI green.
                   </p>
                 </div>
               </td>
@@ -11127,51 +11053,6 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
                   <p>
                     A thin wrapper over <code>Service(selector=, ports=)</code>. The repeated fact it targets, the port,
                     becomes a <code>ServiceRef</code> whose <code>Port</code> projects <code>service_port()</code>.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8105">#8105</a></td>
-              <td>cdk8s: dedupe same-owner CNPG initdb via cnpg.same_owner_initdb()</td>
-              <td><span class="chip chip-merged">merged</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    Merged; kept as is. <code>same_owner_initdb(name)</code> derives the owner role from the database
-                    name, a rule for one value shape that 12 sites share, which C2 allows. Callers pass it as
-                    <code>cnpg.cluster(ref=..., initdb=...)</code> in the cnpg step, and the four multi-line sites it
-                    left (<code>forgejo/db.py</code>, <code>authentik/db.py</code>,
-                    <code>monitoring/grafana_instance.py</code>, <code>seaweedfs/filer_db.py</code>) move to it when
-                    touched.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8098">#8098</a></td>
-              <td>cdk8s: home-assistant ServiceMonitor goes through Endpoint factory (B.5)</td>
-              <td><span class="chip chip-merged">merged</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    Merged; kept as is. <code>Endpoint.bearer_authorization</code> is C1&#39;s variant-factory shape, a
-                    <code>@staticmethod</code> returning the generated struct. In the references step its call site
-                    passes the minted token&#39;s <code>SecretKey</code> fields.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8097">#8097</a></td>
-              <td>chore(cluster): dedupe drifted image-pins header comment</td>
-              <td><span class="chip chip-merged">merged</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    Merged; kept as is. It removed a drifted comment from six hand-written image-pins Components, which
-                    stay YAML for their Setters markers (P18) and which <code>write_directory</code> lists as
-                    <code>components</code>.
                   </p>
                 </div>
               </td>
@@ -11362,31 +11243,30 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                Docs: the <code>cluster/cdk8s/AGENTS.md</code>, <code>cluster/AGENTS.md</code>, SKILL.md and PLAN.md
-                amendments with the convention table, including the admission-only rewrite of
-                <code>cluster/AGENTS.md:217-224</code>; revise and merge #7094 (decision 2).
+                Docs: record each convention in <code>cluster/cdk8s/AGENTS.md</code> or the
+                <code>cdk8s_builders</code> skill in the PR that lands it; the admission-only rewrite of
+                <code>cluster/AGENTS.md:217-224</code> with #7094 (decision 2); the boundary amendment C4 needs
+                (decision 1).
               </p>
             </div>
           </div>
           <div class="sc">
-            <div class="rich"><p>Docs only.</p></div>
+            <div class="rich"><p>Docs only, riding each wave.</p></div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
-            <div class="rich">
-              <p>None. Only the steps built on references wait on decision 1; the Flux steps and pod policy do not.</p>
-            </div>
+            <div class="rich"><p>None.</p></div>
           </div>
         </li>
         <li>
           <div class="st">
             <div class="rich">
               <p>
-                Flux <code>wait</code> (decision 3): the default becomes <code>None</code>; the 24 admission targets
-                pass <code>wait=True</code> or keep their <code>health_check_exprs</code>; health checks leave the 27
-                nodes no admission edge targets; the 54 explicit <code>wait=False</code>/<code>None</code> keywords go;
-                a synth-time rule on the kustomizations chart keeps <code>wait</code> and health checks on admission
-                targets only.
+                <strong>Postponed by the owner.</strong> Flux <code>wait</code> (decision 3): the default becomes
+                <code>None</code>; the 24 admission targets pass <code>wait=True</code> or keep their
+                <code>health_check_exprs</code>; health checks leave the 27 nodes no admission edge targets; the 54
+                explicit <code>wait=False</code>/<code>None</code> keywords go; a synth-time rule on the kustomizations
+                chart keeps <code>wait</code> and health checks on admission targets only.
               </p>
             </div>
           </div>
@@ -11414,59 +11294,6 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                Render <code>LETSENCRYPT_ISSUER</code> in Python and delete the
-                <code>cert-manager-issuer-config</code> unit, its <code>postBuild</code> substitution and the reflector
-                copy it feeds.
-              </p>
-            </div>
-          </div>
-          <div class="sc">
-            <div class="rich">
-              <p>
-                <code>cert_manager/issuer_config.py</code>, <code>CERT_MANAGER_ISSUER_SUBSTITUTION</code>, the six nodes
-                that use it, and the modules that write <code>${LETSENCRYPT_ISSUER}</code>. Removes 7 build-time edges,
-                3 stale ones (grocy-sf, grocy-vallejo, gaffer-private) and reflector&#39;s only admission reason.
-              </p>
-            </div>
-          </div>
-          <div class="sr">
-            <span class="lbl">Risk</span>
-            <div class="rich">
-              <p>
-                Low. The applied values are the same; <code>render_diff.py</code> compares before
-                <code>postBuild</code>, so its diff shows the literal replacing the variable.
-              </p>
-            </div>
-          </div>
-        </li>
-        <li>
-          <div class="st">
-            <div class="rich">
-              <p>
-                Complete <code>OPERATOR_CRDS</code> with the 16 rendered kinds it misses (<code>EgressCredential</code>,
-                <code>RedisReplication</code>, the four Grafana kinds, the two ClickHouse kinds, VolSync&#39;s
-                <code>ReplicationSource</code>/<code>ReplicationDestination</code>, <code>Seaweed</code>,
-                <code>AdminScript</code>, <code>S3Policy</code>, <code>S3PolicyBinding</code>, <code>ObjectStore</code>,
-                <code>VolumeSnapshotClass</code>) and their providers. Move the map out of the test-only
-                <code>cluster/validation</code> package into a library the kustomizations chart can import, since the
-                synth-time check reads it.
-              </p>
-            </div>
-          </div>
-          <div class="sc">
-            <div class="rich">
-              <p><code>cluster/validation/crd_layering.py</code>, plus any edge the completed map shows missing.</p>
-            </div>
-          </div>
-          <div class="sr">
-            <span class="lbl">Risk</span>
-            <div class="rich"><p>Low. A missing edge surfaces as a test failure, fixed in the same PR.</p></div>
-          </div>
-        </li>
-        <li>
-          <div class="st">
-            <div class="rich">
-              <p>
                 Edge-justification check with <code>flux.ORDERING_EXCEPTIONS</code>: every edge targets a CRD provider,
                 a Fail-webhook operator or a <code>postBuild</code> source of something the dependent renders, or is
                 listed with one of #7094 rule 2&#39;s two reasons. It lands with today&#39;s 271 unjustified edges in a
@@ -11478,7 +11305,7 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             <div class="rich">
               <p>
                 <code>flux.py</code> (the tables) and <code>cluster/validation/dependencies.py</code>, which already
-                builds every unit; the check moves to synth when the last directory converts (step 15). Until then the 6
+                builds every unit; the check moves to synth when the last directory converts (step 12). Until then the 6
                 edges that exist because a Helm chart renders a custom resource take their kinds from a six-entry table,
                 which <code>chart_kinds</code> replaces.
               </p>
@@ -11552,46 +11379,19 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                Revise #8108 (decision 11): delete the 44
-                <code>reloader.stakater.com/auto: &#34;true&#34;</code> annotations and reword the comments at
-                <code>haku_egress_proxy.py:266, 438</code> and <code>public_coder_proxy.py:241</code> to point at
-                <code>autoReloadAll</code>.
+                #8108: delete the remaining 36 <code>reloader.stakater.com/auto: &#34;true&#34;</code> annotations on
+                workload metadata, which <code>autoReloadAll</code> (<code>reloader.py</code>) already covers, and
+                reword the comments that credit the annotation.
               </p>
             </div>
           </div>
           <div class="sc">
-            <div class="rich"><p>About 40 generator files plus the regenerated manifests.</p></div>
+            <div class="rich"><p>About 30 generator files plus the regenerated manifests. Open, CI green.</p></div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
             <div class="rich">
-              <p>
-                Low. The render diff is annotations only, and correctness relies on
-                <code>autoReloadAll</code> (<code>reloader.py:47</code>).
-              </p>
-            </div>
-          </div>
-        </li>
-        <li>
-          <div class="st">
-            <div class="rich">
-              <p>
-                Delete the dead <code>release: kube-prometheus-stack</code> label (14 sites: 12 PrometheusRules, the
-                ntfy ServiceMonitor and ESO&#39;s chart values), after confirming on the cluster that Alloy&#39;s
-                ServiceMonitor discovery and its <code>mimir.rules.kubernetes</code> block, neither of which sets a
-                selector, pick up every object.
-              </p>
-            </div>
-          </div>
-          <div class="sc">
-            <div class="rich">
-              <p><code>monitoring/rules.py</code> and the 7 other modules that set it.</p>
-            </div>
-          </div>
-          <div class="sr">
-            <span class="lbl">Risk</span>
-            <div class="rich">
-              <p>Low. Labels only; Prometheus itself is disabled (<code>monitoring/stack.py:312</code>).</p>
+              <p>Low. The render diff is annotations only (37 Deployments, 1 DaemonSet, the Forgejo HelmRelease).</p>
             </div>
           </div>
         </li>
@@ -11600,7 +11400,7 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             <div class="rich">
               <p>
                 <code>namespaces.namespace(scope, id, *, name, vpa, agent_readable)</code> with StrEnum label choices
-                shared with <code>kyverno/policies.py</code> (X1); under decision 12, the 38
+                shared with <code>kyverno/policies.py</code> (X1); under decision 11, the 38
                 <code>enabled: &#34;true&#34;</code> labels and the two goldilocks checks that demand them change in the
                 same PR.
               </p>
@@ -11745,7 +11545,7 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
             <span class="lbl">Risk</span>
             <div class="rich">
               <p>
-                Low. It is a check, and each fix states the value already in effect. It must land before step 22
+                Low. It is a check, and each fix states the value already in effect. It must land before step 19
                 converts any ServiceAccount.
               </p>
             </div>
@@ -11755,9 +11555,10 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                Derived Orphan (decision 4): <code>flux_kustomization</code> sets Orphan from
-                <code>RenderedDirectory.stateful</code>; the audited HelmRelease directories (loki, mimir, matrix) pass
-                <code>ORPHAN</code> and disposable caches pass <code>MIRROR_PRUNE</code> or <code>DELETE</code>.
+                <strong>Postponed by the owner.</strong> Derived Orphan (decision 4):
+                <code>flux_kustomization</code> sets Orphan from <code>RenderedDirectory.stateful</code>; the audited
+                HelmRelease directories (loki, mimir, matrix) pass <code>ORPHAN</code> and disposable caches pass
+                <code>MIRROR_PRUNE</code> or <code>DELETE</code>.
               </p>
             </div>
           </div>
@@ -11780,8 +11581,9 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                Stateful folds, after step 17: forgejo-cache into forgejo, seaweedfs-filer-db into seaweedfs-cluster,
-                and authentik-db-backups into the unit that owns its database (E10).
+                <strong>Postponed with the step it waits on.</strong> Stateful folds, after step 14: forgejo-cache into
+                forgejo, seaweedfs-filer-db into seaweedfs-cluster, and authentik-db-backups into the unit that owns its
+                database (E10).
               </p>
             </div>
           </div>
@@ -11806,14 +11608,18 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                Providers cleanup: the <code>.to_spec()</code> wrappers become <code>@staticmethod</code>s returning
-                structs, and every kind constructor takes <code>metadata=</code>. Then a separate codemod replaces the
-                324 <code>metadata()</code> calls and deletes <code>metadata.py</code>.
+                Providers cleanup, the remainder: <code>ClusterExternalSecret</code> takes <code>metadata=</code>;
+                <code>ClusterIssuer</code>&#39;s per-variant classmethods become one constructor with
+                <code>self_signed=</code>/<code>ca=</code>/<code>acme=</code>; <code>LONG_LIVED_CA</code> moves out of
+                <code>providers/cert_manager</code>; the cnpg <code>Cluster</code> takes <code>storage</code> and
+                <code>bootstrap</code> under their own names; the single-site <code>ScaledJob</code> and
+                <code>TriggerAuthentication</code> wrappers give way to the generated bindings; #8168 deletes the
+                <code>metadata()</code> helper. SeaweedFS converts in its own step.
               </p>
             </div>
           </div>
           <div class="sc">
-            <div class="rich"><p>One PR per provider package, plus the codemod PR.</p></div>
+            <div class="rich"><p>One PR per provider package, plus #8168 (open).</p></div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
@@ -11875,7 +11681,7 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="st">
             <div class="rich">
               <p>
-                Secrets, after decisions 5 and 13 and step 16: <code>external_secrets/credentials.py</code> and
+                Secrets, after decisions 5 and 12 and step 13: <code>external_secrets/credentials.py</code> and
                 <code>MintedSecret</code> (#8114 reworked); the external-creds roster moves onto
                 <code>Credential</code> (its store moves into external-creds, whose node gains an edge to
                 <code>external-secrets-operator</code>, and flux-system&#39;s reader gets one owner); convert the minted
@@ -11894,7 +11700,7 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
               <p>
                 Medium. ExternalSecrets fail transiently while a store is renamed; check ExternalSecret status on the
                 live cluster after each PR. ServiceAccount conversions: grep each account&#39;s pods for
-                <code>service_account_name</code> before converting, and state the token on each (step 16&#39;s rule
+                <code>service_account_name</code> before converting, and state the token on each (step 13&#39;s rule
                 catches a miss).
               </p>
             </div>
@@ -11942,27 +11748,6 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
           <div class="sr">
             <span class="lbl">Risk</span>
             <div class="rich"><p>Medium. New buckets and identities are created; no existing data moves.</p></div>
-          </div>
-        </li>
-        <li>
-          <div class="st">
-            <div class="rich">
-              <p>
-                Terraform (decision 14):
-                <code>gitops_terraform(variables: BaseModel | None, depends_on: constructs)</code>, one vars model per
-                module (dns-records first), <code>test_terraform_vars.py</code>, and
-                <code>exports_files([&#34;variables.tf&#34;])</code> in each module&#39;s BUILD.
-              </p>
-            </div>
-          </div>
-          <div class="sc">
-            <div class="rich">
-              <p><code>terraform.py</code> plus 11 callers.</p>
-            </div>
-          </div>
-          <div class="sr">
-            <span class="lbl">Risk</span>
-            <div class="rich"><p>Low. The vars render identically.</p></div>
           </div>
         </li>
         <li>
@@ -12496,7 +12281,7 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
                 <div class="rich">
                   <p>
                     It moves ownership of the module interface into the generator, and a relation test between two live
-                    artifacts already catches the drift. Listed as decision 14.
+                    artifacts already catches the drift.
                   </p>
                 </div>
               </td>
@@ -12726,7 +12511,7 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
     {
       "title": "N12 \u00b7 Config via Settings, ConfigMap rollout",
       "today": "Settings contract at 7 sites; the ConfigMap key, mount directory and `CONFIG_FILE_ENV` path are spelled separately; 44 `reloader.stakater.com/auto: \"true\"` annotations restate `autoReloadAll`.",
-      "note": "`settings_file` already renders from the binary's Settings (7 sites), and `SettingsFile` keeps the data key, mount directory and `CONFIG_FILE_ENV` path in agreement (checked in a scratch environment). Secrets ride Settings env names as `SecretKey` projections (#7426), and rollout is Reloader's `autoReloadAll` with no per-workload annotation (decision 11).",
+      "note": "`settings_file` already renders from the binary's Settings (7 sites), and `SettingsFile` keeps the data key, mount directory and `CONFIG_FILE_ENV` path in agreement (checked in a scratch environment). Secrets ride Settings env names as `SecretKey` projections (#7426), and rollout is Reloader's `autoReloadAll` with no per-workload annotation.",
       "conventions": "C9, C3"
     },
     {
@@ -12762,7 +12547,7 @@ def write_manifests(root: Path) -&gt; RenderedDirectory:
     {
       "title": "N18 \u00b7 Namespaces with policy labels",
       "today": "62 Namespace constructions write label dicts per module, with `goldilocks.fairwinds.com/enabled: \"true\"` 38 times and `rbac.ducktape.io/agent-readable-logs` 24 times.",
-      "note": "`namespaces.namespace(scope, id, *, name, vpa: Vpa, agent_readable: AgentReadable | None)` renders the labels from StrEnums that `kyverno/policies.py`, the reader of those keys, imports too (X1). Labels are metadata, so no patch or mutator is involved, and under decision 12 the `vpa` keyword carries the Goldilocks decision that 38 `enabled: \"true\"` labels restate today.",
+      "note": "`namespaces.namespace(scope, id, *, name, vpa: Vpa, agent_readable: AgentReadable | None)` renders the labels from StrEnums that `kyverno/policies.py`, the reader of those keys, imports too (X1). Labels are metadata, so no patch or mutator is involved, and under decision 11 the `vpa` keyword carries the Goldilocks decision that 38 `enabled: \"true\"` labels restate today.",
       "conventions": "C2"
     },
     {
