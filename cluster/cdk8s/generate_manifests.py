@@ -14,6 +14,7 @@ from cluster.cdk8s import (
     airlock,
     alloy_otlp_bearer,
     authentik_jwt_rotation,
+    authentik_tf,
     claude_sandbox_secrets,
     cnpg_operator,
     descheduler,
@@ -777,19 +778,18 @@ def generate_manifests(root: Path) -> None:
         atuin_kustomization,
         user_agentydragon_kustomization,
     )
-    agent_machine_access_tf_artifact = artifact("agent-machine-access-tf", agent_machine_access.OUTPUT_DIR)
-    agent_machine_access.agent_machine_access_tf(
+    authentik_tf_artifact = artifact(authentik_tf.NAME, authentik_tf.OUTPUT_DIR)
+    authentik_tf.authentik_tf(
         flux_chart,
-        write_directory(root, agent_machine_access_tf_artifact, agent_machine_access.chart),
+        write_directory(
+            root,
+            authentik_tf_artifact,
+            sso_providers.chart,
+            agent_machine_access.chart,
+            gatus_sso.chart,
+            alloy_otlp_bearer_token.chart,
+        ),
         tofu_controller_kustomization,
-    )
-    sso_providers_tf_artifact = artifact("sso-providers-tf", sso_providers.OUTPUT_DIR)
-    sso_providers.sso_providers_tf(
-        flux_chart, write_directory(root, sso_providers_tf_artifact, sso_providers.chart), tofu_controller_kustomization
-    )
-    gatus_sso_tf_artifact = artifact("gatus-sso-tf", gatus_sso.OUTPUT_DIR)
-    gatus_sso.gatus_sso_tf(
-        flux_chart, write_directory(root, gatus_sso_tf_artifact, gatus_sso.chart), tofu_controller_kustomization
     )
     github_tf_artifact = artifact(github_tf.NAME, github_tf.OUTPUT_DIR)
     github_tf.github_tf(
@@ -1234,14 +1234,6 @@ def generate_manifests(root: Path) -> None:
     forgejo_gitops_modules.haku_state(
         flux_chart, haku_state_artifact, tofu_controller_kustomization, haku_namespace_kustomization
     )
-    monitoring_alloy_otlp_bearer_token_tf_artifact = artifact(
-        "monitoring-alloy-otlp-bearer-token-tf", alloy_otlp_bearer_token.OUTPUT_DIR
-    )
-    alloy_otlp_bearer_token.alloy_otlp_bearer_token_tf(
-        flux_chart,
-        write_directory(root, monitoring_alloy_otlp_bearer_token_tf_artifact, alloy_otlp_bearer_token.chart),
-        tofu_controller_kustomization,
-    )
     litellm_artifact = artifact("litellm", litellm_namespace.OUTPUT_DIR)
     litellm_proxy.litellm(
         flux_chart,
@@ -1425,9 +1417,8 @@ def generate_manifests(root: Path) -> None:
             ntfy_artifact,
             agentplane_testing_artifact,
             claude_rbac_artifact,
-            agent_machine_access_tf_artifact,
             authentik_artifact,
-            sso_providers_tf_artifact,
+            authentik_tf_artifact,
             cert_manager_artifact,
             cert_manager_environment_artifact,
             cnpg_artifact,
@@ -1521,7 +1512,6 @@ def generate_manifests(root: Path) -> None:
             forgejo_claude_artifact,
             cpap_data_artifact,
             gatus_artifact,
-            gatus_sso_tf_artifact,
             github_api_proxy_artifact,
             github_tf_artifact,
             github_exporter_artifact,
@@ -1552,7 +1542,6 @@ def generate_manifests(root: Path) -> None:
             metrics_server_artifact,
             agents_mitmproxy_artifact,
             monitoring_alloy_artifact,
-            monitoring_alloy_otlp_bearer_token_tf_artifact,
             monitoring_cilium_artifact,
             monitoring_etcd_artifact,
             monitoring_gateway_probe_artifact,

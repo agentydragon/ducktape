@@ -649,12 +649,24 @@ py_library(
     name = "agent_machine_access",
     srcs = ["agent_machine_access.py"],
     deps = [
-        ":artifact_generators",
+        ":terraform",
+        "//cluster/cdk8s/providers/tofu_controller:terraform",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "authentik_tf",
+    srcs = ["authentik_tf.py"],
+    deps = [
+        ":agent_machine_access",
         ":flux",
         ":manifest_roots",
         ":terraform",
+        "//cluster/cdk8s/authentik:sso_providers",
+        "//cluster/cdk8s/gatus:sso",
+        "//cluster/cdk8s/monitoring:alloy_otlp_bearer_token",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/tofu_controller:terraform",
         "@pypi//cdk8s",
     ],
 )
@@ -1281,6 +1293,7 @@ py_library(
         ":alloy_otlp_bearer",
         ":artifact_generators",
         ":authentik_jwt_rotation",
+        ":authentik_tf",
         ":claude_sandbox_secrets",
         ":descheduler",
         ":dns_automation",
