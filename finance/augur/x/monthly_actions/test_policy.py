@@ -11,7 +11,7 @@ from finance.augur.sim.ids import AccountId, AssetId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedObligation, PreparedSeries
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Finished, RejectedAction
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
@@ -44,17 +44,15 @@ def opening(bill_dollars: int) -> World:
     )
     world.track(
         Biller(
-            PreparedObligation(
-                schedule=Once(month=0),
-                obligation_id="opening-bill",
-                obligation_type=ObligationType.CASH_SPEND,
-                from_account=AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("checking")),
-                to_account=AccountRef(agent_id=CREDITOR, account_id=AccountId("checking")),
-                amount_due=USD.quanta(bill_dollars),
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=1_000_000_000,
-            )
+            schedule=Once(month=0),
+            obligation_id="opening-bill",
+            obligation_type=ObligationType.CASH_SPEND,
+            from_account=AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("checking")),
+            to_account=AccountRef(agent_id=CREDITOR, account_id=AccountId("checking")),
+            amount_due=USD.quanta(bill_dollars),
+            property_id=None,
+            deduction_category=None,
+            deductible_fraction_ppb=1_000_000_000,
         )
     )
     return world

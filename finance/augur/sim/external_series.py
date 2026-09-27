@@ -47,7 +47,6 @@ from finance.augur.sim.ids import AssetId
 from finance.augur.sim.money import Currency
 from finance.augur.sim.prepared import (
     PreparedAmount,
-    PreparedDistribution,
     PreparedFixedAmount,
     PreparedIndexedAmount,
     PreparedIndexedCoupon,
@@ -117,17 +116,18 @@ def level_series_demand(
     *,
     held_assets: Iterable[AssetId],
     bond_coupons: Iterable[PreparedFixedAmount | PreparedIndexedCoupon],
-    distributions: Iterable[PreparedDistribution],
+    distributing_assets: Iterable[AssetId],
     amounts: Iterable[PreparedAmount],
     tender_policies: Iterable[_TenderPolicy],
     purchases: Iterable[_PropertyPurchase],
 ) -> tuple[LevelSeriesKey, ...]:
     """Every level series these declarations REFERENCE — their exogenous demand.
 
-    `held_assets` are the lots' and managed portfolios' assets; `amounts` are the cashflows' and
-    obligations' amounts. Derivable before anything is sampled, which is the point: it lets the
-    caller ask the exogenous model for exactly this set instead of re-deriving the same fact from
-    the product wire type in a second, drifting implementation.
+    `held_assets` are the lots' and managed portfolios' assets, `distributing_assets` the
+    securities a distribution pays out on, and `amounts` the cashflows' and obligations' amounts.
+    Derivable before anything is sampled, which is the point: it lets the caller ask the exogenous
+    model for exactly this set instead of re-deriving the same fact from the product wire type in
+    a second, drifting implementation.
 
     Must stay exhaustive over the series the declarations read: a demand missing here is a
     series the path does not carry, which the declaration that reads it refuses.
@@ -155,8 +155,8 @@ def level_series_demand(
         add(InflationKey())
     # A distributing security demands TWO series: its price (already demanded by the lots that
     # hold it) and its dollars-per-unit payout, which nothing else references.
-    for distribution in distributions:
-        add(SecurityDistributionKey(symbol=asset_price_key(asset_key(distribution.asset_id)).symbol))
+    for asset_id in distributing_assets:
+        add(SecurityDistributionKey(symbol=asset_price_key(asset_key(asset_id)).symbol))
     for amount in amounts:
         _add_amount_series_key(amount, add)
     for pe_policy in tender_policies:

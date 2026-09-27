@@ -32,12 +32,7 @@ from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, QualifiedD
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import Currency
-from finance.augur.sim.prepared import (
-    PreparedDistribution,
-    PreparedDistributionSlice,
-    PreparedJurisdiction,
-    PreparedSeries,
-)
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.tax import PreparedTaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -221,15 +216,11 @@ def _declare_taxes(world: World, taxes: FederalCaTaxes, rollout_id: int) -> None
     world.track(TaxAuthority(taxes.profile, indexation=taxes.laws[rollout_id]))
     for sleeve in Sleeve:
         world.declare_distribution(
-            PreparedDistribution(
-                agent_id=RETIREE,
-                holding_account_id=BROKERAGE,
-                asset_id=AssetId(sleeve),
-                to_account_id=INCOME[sleeve],
-                tax_character=(
-                    PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1), income_category=PAYOUT_INCOME[sleeve]),
-                ),
-            )
+            agent_id=RETIREE,
+            holding_account_id=BROKERAGE,
+            asset_id=AssetId(sleeve),
+            to_account_id=INCOME[sleeve],
+            tax_character={PAYOUT_INCOME[sleeve]: rate_to_ppb(1)},
         )
 
 
@@ -249,12 +240,7 @@ def compose_world(windows: AnnualWindows, rollout_id: int, *, wealth: Decimal, w
         MarketPath(windows.series, rollout_id, rollout_count=len(windows.start_years)),
         horizon_months=windows.horizon_months,
         income_sources=(ORDINARY_INCOME, *dict.fromkeys(PAYOUT_INCOME.values())) if taxed else (),
-        jurisdictions=(
-            PreparedJurisdiction(jurisdiction_id=FEDERAL, level=JurisdictionLevel.FEDERAL),
-            PreparedJurisdiction(jurisdiction_id=CALIFORNIA, level=JurisdictionLevel.STATE),
-        )
-        if taxed
-        else (),
+        jurisdictions={FEDERAL: JurisdictionLevel.FEDERAL, CALIFORNIA: JurisdictionLevel.STATE} if taxed else {},
     )
     retiree_accounts = [CHECKING, *([TAX_RESERVE, *INCOME.values()] if taxed else [])]
     for account in (

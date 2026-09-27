@@ -21,7 +21,7 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, LotI
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.mortgage import Mortgage, MortgageTerms
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import PreparedObligation, PreparedSeries, PreparedTransfer
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import ConsumptionTarget, Executed, Finished, Rejected, RejectedAction, UnpaidClaims
 from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.session import ActionSession
@@ -63,8 +63,8 @@ class Situation:
     holding_pools: tuple[Pool, ...]
     initial_lots: tuple[Lot, ...]
     tax_profiles: tuple[PreparedTaxProfile, ...] = ()
-    obligations: tuple[PreparedObligation, ...] = ()
-    scheduled_transfers: tuple[PreparedTransfer, ...] = ()
+    obligations: tuple[Bill, ...] = ()
+    scheduled_transfers: tuple[Contribution, ...] = ()
 
 
 def situation(horizon: int = 2, paths: int = 1) -> Situation:
@@ -197,18 +197,21 @@ def consume(amount: int) -> Consume:
     )
 
 
-def bill(amount: int) -> PreparedObligation:
-    return PreparedObligation(
-        schedule=Once(month=0),
-        obligation_id="bill",
-        obligation_type="rent",
-        from_account=CASH,
-        to_account=EXOGENOUS,
-        amount_due=amount,
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=1_000_000_000,
-    )
+@dataclass(frozen=True)
+class Bill:
+    """Rent owed from checking to the world, due once."""
+
+    amount: int
+    month: int = 0
+
+
+@dataclass(frozen=True)
+class Contribution:
+    """A one-off transfer from the world into checking."""
+
+    cause_id: str
+    month: int
+    amount: int
 
 
 def test_cash_only_actor_observes_and_purchases_an_unheld_declared_asset(cash_only: Situation) -> None:
@@ -294,19 +297,9 @@ def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> No
     run = replace(
         run,
         tax_profiles=(replace(profile, jurisdictions=(rules,)),),
-        obligations=(bill(50_000),),
+        obligations=(Bill(50_000),),
         accounts=dict.fromkeys(run.accounts, 0),
-        scheduled_transfers=(
-            PreparedTransfer(
-                month=0,
-                cause_id="current-contribution",
-                from_account=EXOGENOUS,
-                to_account=CASH,
-                amount=20_000,
-                income_category=None,
-                deduction_category=None,
-            ),
-        ),
+        scheduled_transfers=(Contribution("current-contribution", month=0, amount=20_000),),
     )
     world = world_for(run)
     capture = FinancialCapture(world, capture="forensic")
@@ -381,7 +374,7 @@ def test_rejected_financial_request_preserves_prior_sale_and_independent_world()
 
 def test_payment_capture_names_the_actual_selected_source() -> None:
     run = situation(1)
-    world = world_for(replace(run, obligations=(bill(5000),)))
+    world = world_for(replace(run, obligations=(Bill(5000),)))
     [claim] = view(world).claims
     assert isinstance(world.execute(HOUSEHOLD, transfer(5000)).outcome, Executed)
     action = PayClaim(
@@ -440,7 +433,7 @@ def test_compact_capture_replays_observed_prefixes_and_canonical_payment_identit
 @pytest.mark.parametrize("mode", ["summary", "forensic"])
 def test_unpaid_claims_keep_occurrence_and_source_without_hidden_sales(mode: Capture) -> None:
     run = situation(3)
-    world = world_for(replace(run, obligations=(bill(5000), bill(7000))))
+    world = world_for(replace(run, obligations=(Bill(5000), Bill(7000))))
     capture = recorded(world, mode)
     unpaid = world.unpaid_claims(HOUSEHOLD)
     assert len(unpaid) == 2
@@ -491,18 +484,8 @@ def year_situation() -> Situation:
         initial_lots=(lot, replace(lot, lot_id=LotId("second-lot"), asset_id=AssetId("second"))),
         holding_pools=(*run.holding_pools, replace(run.holding_pools[0], asset_id=AssetId("second"))),
         tax_profiles=(replace(profile, jurisdictions=(rules,)),),
-        obligations=(bill(50_000), replace(bill(5000), schedule=Once(month=12))),
-        scheduled_transfers=(
-            PreparedTransfer(
-                month=12,
-                cause_id="test-contribution",
-                from_account=EXOGENOUS,
-                to_account=CASH,
-                amount=10_000,
-                income_category=None,
-                deduction_category=None,
-            ),
-        ),
+        obligations=(Bill(50_000), Bill(5000, month=12)),
+        scheduled_transfers=(Contribution("test-contribution", month=12, amount=10_000),),
         series=(*run.series, replace(run.series[0], series_id="security:second")),
     )
 
@@ -579,9 +562,29 @@ def composed(run: Situation, rollout: int = 0) -> World:
     )
     hold(world, run)
     for flow in run.scheduled_transfers:
-        world.declare_flow(flow)
-    for obligation in run.obligations:
-        world.track(Biller(obligation))
+        world.declare_flow(
+            cause_id=flow.cause_id,
+            from_account=EXOGENOUS,
+            to_account=CASH,
+            amount=flow.amount,
+            income_category=None,
+            deduction_category=None,
+            schedule=Once(month=flow.month),
+        )
+    for bill in run.obligations:
+        world.track(
+            Biller(
+                obligation_id="bill",
+                obligation_type="rent",
+                from_account=CASH,
+                to_account=EXOGENOUS,
+                amount_due=bill.amount,
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=1_000_000_000,
+                schedule=Once(month=bill.month),
+            )
+        )
     return world
 
 
@@ -614,7 +617,7 @@ def test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books(
         run = replace(
             run,
             horizon_months=15,
-            obligations=(bill(1000), replace(bill(999_999), schedule=Once(month=12))),
+            obligations=(Bill(1000), Bill(999_999, month=12)),
             series=tuple(replace(s, snapshots=16, values=(*s.values, 9000, 10_000)) for s in run.series),
         )
     sales = tuple(
@@ -682,17 +685,7 @@ def test_transfer_and_fifo_sale_remain_balanced(mode: Literal["dense", "forensic
         run,
         accounts={a: 1000 if a == CASH else 2000 if a == EXOGENOUS else 0 for a in run.accounts},
         initial_lots=(replace(run.initial_lots[0], units=2_000_000, basis=20_000),),
-        scheduled_transfers=(
-            PreparedTransfer(
-                month=0,
-                cause_id="gift",
-                from_account=EXOGENOUS,
-                to_account=CASH,
-                amount=500,
-                income_category=None,
-                deduction_category=None,
-            ),
-        ),
+        scheduled_transfers=(Contribution("gift", month=0, amount=500),),
         series=(replace(run.series[0], values=(10_000, 15_000, 15_000, 10_000, 20_000, 20_000)),),
     )
     sales = {
@@ -755,7 +748,7 @@ class _Household(EconomicAgent):
 
 def test_tracked_agent_steps_agree_with_the_batch_session() -> None:
     run = situation(horizon=3, paths=2)
-    run = replace(run, obligations=(bill(1000),))
+    run = replace(run, obligations=(Bill(1000),))
     amounts = {0: 500, 2: 700}
     world = composed(run, 1)
     agent = _Household(amounts)
@@ -874,20 +867,18 @@ def test_tracked_mortgage_is_serviced_from_the_ledger_through_payoff() -> None:
     assert checking(world) == 10_000 - sum(interest + principal for _, interest, principal in paid)
 
 
-def rent() -> Biller:
+def rent(*, from_account: AccountRef = CASH, property_id: PropertyId | None = None) -> Biller:
     """Rent of 500 due in months 1 and 2."""
     return Biller(
-        PreparedObligation(
-            obligation_id="test-rent",
-            obligation_type="rent",
-            from_account=CASH,
-            to_account=EXOGENOUS,
-            amount_due=500,
-            property_id=None,
-            deduction_category=None,
-            deductible_fraction_ppb=1_000_000_000,
-            schedule=Recurring(start_month=1, end_month=2),
-        )
+        obligation_id="test-rent",
+        obligation_type="rent",
+        from_account=from_account,
+        to_account=EXOGENOUS,
+        amount_due=500,
+        property_id=property_id,
+        deduction_category=None,
+        deductible_fraction_ppb=1_000_000_000,
+        schedule=Recurring(start_month=1, end_month=2),
     )
 
 
@@ -966,20 +957,11 @@ def test_an_unpaid_installment_stops_the_path_and_leaves_the_contract_open() -> 
 def test_tracked_bills_name_a_declared_payer_and_no_property() -> None:
     world = composed(situation(), 0)
     with pytest.raises(ValueError, match="property"):
-        world.track(Biller(replace(rent().spec, property_id=PropertyId("test-home"))))
+        world.track(rent(property_id=PropertyId("test-home")))
     with pytest.raises(ValueError, match="unknown actor"):
-        world.track(
-            Biller(
-                replace(
-                    rent().spec,
-                    from_account=AccountRef(agent_id=AgentId("test-nobody"), account_id=AccountId("checking")),
-                )
-            )
-        )
+        world.track(rent(from_account=AccountRef(agent_id=AgentId("test-nobody"), account_id=AccountId("checking"))))
     with pytest.raises(ValueError, match="not declared"):
-        world.track(
-            Biller(replace(rent().spec, from_account=AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("test-none"))))
-        )
+        world.track(rent(from_account=AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("test-none"))))
     world.track(rent())
     world.start()
     with pytest.raises(ValueError, match="before starting"):

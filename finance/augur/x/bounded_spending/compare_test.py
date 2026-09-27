@@ -18,7 +18,6 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedObligation
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.world import World
@@ -69,17 +68,15 @@ def early_claim_failure() -> Finished:
         )
         world.track(
             Biller(
-                PreparedObligation(
-                    schedule=Once(month=0),
-                    obligation_id="test-large-bill",
-                    obligation_type=ObligationType.OUTSIDE_RENT,
-                    from_account=AccountRef(agent_id=AgentId("retiree"), account_id=AccountId("checking")),
-                    to_account=AccountRef(agent_id=AgentId("world"), account_id=AccountId("checking")),
-                    amount_due=20_000,
-                    property_id=None,
-                    deduction_category=None,
-                    deductible_fraction_ppb=rate_to_ppb(1),
-                )
+                schedule=Once(month=0),
+                obligation_id="test-large-bill",
+                obligation_type=ObligationType.OUTSIDE_RENT,
+                from_account=AccountRef(agent_id=AgentId("retiree"), account_id=AccountId("checking")),
+                to_account=AccountRef(agent_id=AgentId("world"), account_id=AccountId("checking")),
+                amount_due=20_000,
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=rate_to_ppb(1),
             )
         )
         return world

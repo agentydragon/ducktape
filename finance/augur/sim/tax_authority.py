@@ -1,6 +1,6 @@
 """The authority a taxpayer's profile names: estimated instalments, the year's assessment at its close, a true-up."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from finance.augur.sim.accounting import Accounting, TaxLiabilityStatement
 from finance.augur.sim.actor import Actor, MonthOpened
@@ -9,10 +9,11 @@ from finance.augur.sim.claims import Demand, TaxPayment, TaxTrueUp
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AccountId, JurisdictionId
 from finance.augur.sim.income import OrdinaryIncome, QualifiedDividendIncome
+from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.market_path import MarketStatement
 from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
 from finance.augur.sim.mortgage import Mortgage
-from finance.augur.sim.prepared import PreparedJurisdiction, _MortgageInterestDeduction, _SaltDeduction
+from finance.augur.sim.prepared import _MortgageInterestDeduction, _SaltDeduction
 from finance.augur.sim.tax import (
     PreparedTaxProfile,
     PreparedTaxRules,
@@ -142,17 +143,20 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement | MarketStatement, 
         return assessments
 
     def assessments(
-        self, book: TaxBook, month: int, mortgages: Sequence[Mortgage], jurisdictions: Sequence[PreparedJurisdiction]
+        self,
+        book: TaxBook,
+        month: int,
+        mortgages: Sequence[Mortgage],
+        jurisdictions: Mapping[JurisdictionId, JurisdictionLevel],
     ) -> list[TaxAccrual]:
         """Quote the year's close, one row per profile jurisdiction, without mutating the book.
 
-        `jurisdictions` is the world's vocabulary, which says whose interest a rule exempts.
+        `jurisdictions` is the world's vocabulary: each jurisdiction's level says whose interest a rule exempts.
         """
         profile = self.profile
         agent = profile.agent_id
         income = book.income.copy()
         year = book.years[agent]
-        levels = {jurisdiction.jurisdiction_id: jurisdiction.level for jurisdiction in jurisdictions}
         for deduction in (year.depreciation_deduction, year.rental_interest_deduction):
             income.deduct_from_ordinary(agent, deduction)
         annual = []
@@ -168,7 +172,7 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement | MarketStatement, 
                     or taxes_interest_from(
                         rules,
                         source.issuer_jurisdiction_id,
-                        levels.get(source.issuer_jurisdiction_id) if source.issuer_jurisdiction_id else None,
+                        jurisdictions.get(source.issuer_jurisdiction_id) if source.issuer_jurisdiction_id else None,
                     )
                 ):
                     continue
@@ -255,7 +259,7 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement | MarketStatement, 
         accounting: Accounting,
         month: int,
         mortgages: Sequence[Mortgage],
-        jurisdictions: Sequence[PreparedJurisdiction],
+        jurisdictions: Mapping[JurisdictionId, JurisdictionLevel],
     ) -> None:
         """At the tax year's last month, post the assessment as expense against liability and reset the year.
 

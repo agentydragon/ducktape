@@ -323,6 +323,28 @@ def add_staging_action_policies(scope: Construct) -> None:
         automount_token=False,
     )
 
+    # A dedicated identity for the "haku" sandbox preset (app_settings.py), which clones
+    # haku-state and works from there the way Haku itself does. Separate from claude-ai
+    # rather than reusing it: claude-ai is the Claude.ai MCP connector's principal, and
+    # Haku's own credentials (forgejo-haku, haku-mailbox) are bound to claude-ai today only
+    # because claude-ai happens to be "the connection Haku runs through" (see the
+    # EgressBinding comment below) -- a historical accident, not a reason to keep growing
+    # that account's authority. Granted at least claude-ai's own permissions (egress,
+    # Action Service reads, the Coinbase Role, and the acceptance-suite token) below.
+    haku_agent = ServiceAccount(
+        scope,
+        "serviceaccount-haku-agent",
+        metadata=ApiObjectMetadata(
+            name="haku-agent",
+            namespace=_NAMESPACE,
+            labels={"agentplane.allegedly.works/use-action-service": "true"},
+            annotations={
+                "description": "The principal for the 'haku' sandbox preset: agents that clone haku-state and work from it, the way Haku itself does."
+            },
+        ),
+        automount_token=False,
+    )
+
     _policy_set(
         scope,
         "actionpolicyset-github-reads",
@@ -431,7 +453,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         "rolebinding-claude-ai-coinbase",
         metadata=ApiObjectMetadata(name="claude-ai-coinbase-reader", namespace=_NAMESPACE),
         role=coinbase_reader,
-    ).add_subjects(claude_ai)
+    ).add_subjects(claude_ai, haku_agent)
     EgressPolicy(
         scope,
         "egresspolicy-coinbase",
@@ -527,6 +549,12 @@ def add_staging_action_policies(scope: Construct) -> None:
     # header/metadata value, letting this caller's sandboxes run `bazel --config=rbe` directly
     # against BuildBuddy's remote cache and Remote Execution instead of needing bbr/BuildBuddy
     # CLI tooling this namespace otherwise lacks (egress_staging_credentials.py).
+    #
+    # TODO: `forgejo-haku` and `haku-mailbox` stay bound here for now even though haku-agent
+    # (below) exists specifically to run in-cluster Haku-like sandboxes: claude-ai is still the
+    # identity the same *logical* Haku agent runs as from Claude.ai/Claude Code's own
+    # out-of-cluster infrastructure, so it still needs Haku's credentials. Revisit whether
+    # claude-ai should keep carrying them once haku-agent has been in use for a while.
     EgressBinding(
         scope,
         "egressbinding-claude-ai",
@@ -555,6 +583,41 @@ def add_staging_action_policies(scope: Construct) -> None:
                 GITHUB_AGENTYDRAGON_AGENT_POLICY,
                 GITHUB_ACTIONS_LOGS_POLICY,
                 BUILDBUDDY_POLICY,
+            ],
+        ),
+    )
+
+    # What a sandbox of haku-agent's may reach: at least everything claude-ai's sandboxes may
+    # reach (see the comment above), so the "haku" preset (app_settings.py) -- which clones
+    # haku-state over `forgejo-haku` and works from it -- has no less reach than claude-ai's
+    # Haku-flavored sandboxes already have.
+    EgressBinding(
+        scope,
+        "egressbinding-haku-agent",
+        metadata=ApiObjectMetadata(
+            name="haku-agent",
+            namespace=_NAMESPACE,
+            annotations={"description": "What sandboxes running as the haku-agent ServiceAccount may reach."},
+        ),
+        spec=EgressBindingSpec(
+            subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="haku-agent")],
+            policies=[
+                BASIC_POLICY,
+                KUBERNETES_POLICY,
+                FORGEJO_HAKU_POLICY,
+                PACKAGES_POLICY,
+                GOOGLE_READONLY_POLICY,
+                GROCY_SF_READONLY_POLICY,
+                HOME_ASSISTANT_READONLY_POLICY,
+                ACTIVITYWATCH_READ_POLICY,
+                AIQUOTA_READ_POLICY,
+                HAKU_MAILBOX_POLICY,
+                COINBASE_POLICY,
+                _AGENTPLANE_TESTING_POLICY,
+                _GITHUB_DOWNLOADS_POLICY,
+                GITHUB_CLONE_POLICY,
+                GITHUB_AGENTYDRAGON_AGENT_POLICY,
+                GITHUB_ACTIONS_LOGS_POLICY,
             ],
         ),
     )
@@ -690,5 +753,30 @@ def add_staging_action_policies(scope: Construct) -> None:
             _TANA_READS_SET,
             _GROCY_SF_READS_SET,
             _SSH_READS_SET,
+        ],
+    )
+
+    # Same reviewed read sets and sandbox use, at least matching claude-ai-reads above, for the
+    # haku-agent ServiceAccount's in-cluster Haku-preset sandboxes.
+    _binding(
+        scope,
+        "actionpolicybinding-haku-agent-reads",
+        metadata=ApiObjectMetadata(
+            name="haku-agent-reads",
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF reads and sandbox use for the haku-agent ServiceAccount."
+            },
+        ),
+        subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="haku-agent"),
+        policy_sets=[
+            _GITHUB_READS_SET,
+            _GITHUB_IDENTITY_READS_SET,
+            _SANDBOX_SET,
+            _HOME_ASSISTANT_READS_SET,
+            _GMAIL_READS_SET,
+            _GOOGLE_CALENDAR_READS_SET,
+            _TANA_READS_SET,
+            _GROCY_SF_READS_SET,
         ],
     )

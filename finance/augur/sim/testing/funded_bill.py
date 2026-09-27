@@ -29,7 +29,7 @@ from finance.augur.sim.jurisdictions import (
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.prepared import PreparedJurisdiction, PreparedObligation, PreparedSeries
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -92,7 +92,7 @@ def compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=HORIZON,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=_FLAT_TAX.jurisdiction_id, level=_FLAT_TAX.level),),
+        jurisdictions={_FLAT_TAX.jurisdiction_id: _FLAT_TAX.level},
     )
     for agent_id in (HOUSEHOLD, CREDITOR, TAX_AUTHORITY):
         world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
@@ -121,17 +121,15 @@ def compose(case: Situation, rollout_id: int) -> World:
     )
     world.track(
         Biller(
-            PreparedObligation(
-                schedule=Once(month=0),
-                obligation_id="example-bill",
-                obligation_type=ObligationType.OUTSIDE_RENT,
-                from_account=AccountRef(agent_id=HOUSEHOLD, account_id=CHECKING),
-                to_account=AccountRef(agent_id=CREDITOR, account_id=CHECKING),
-                amount_due=USD.quanta(150),
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=1_000_000_000,
-            )
+            schedule=Once(month=0),
+            obligation_id="example-bill",
+            obligation_type=ObligationType.OUTSIDE_RENT,
+            from_account=AccountRef(agent_id=HOUSEHOLD, account_id=CHECKING),
+            to_account=AccountRef(agent_id=CREDITOR, account_id=CHECKING),
+            amount_due=USD.quanta(150),
+            property_id=None,
+            deduction_category=None,
+            deductible_fraction_ppb=1_000_000_000,
         )
     )
     return world

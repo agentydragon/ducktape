@@ -25,7 +25,6 @@ from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedLocation,
-    PreparedObligation,
     PreparedSeries,
     _MortgageFinancing,
     _PropertyPurchase,
@@ -363,17 +362,15 @@ def test_paid_groups_update_entities_but_a_failed_year_end_does_not_reset_intere
     if fail_year_end:
         world.track(
             Biller(
-                PreparedObligation(
-                    schedule=Once(month=11),
-                    obligation_id="unfundable",
-                    obligation_type="cash_spend",
-                    from_account=ref(ALICE),
-                    to_account=ref(AgentId("seller")),
-                    amount_due=money(1_000_000),
-                    property_id=None,
-                    deduction_category=None,
-                    deductible_fraction_ppb=1_000_000_000,
-                )
+                schedule=Once(month=11),
+                obligation_id="unfundable",
+                obligation_type="cash_spend",
+                from_account=ref(ALICE),
+                to_account=ref(AgentId("seller")),
+                amount_due=money(1_000_000),
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=1_000_000_000,
             )
         )
     books = drive(world, BOB, ALICE).books

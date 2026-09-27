@@ -27,7 +27,7 @@ from finance.augur.sim.books import AccountRef, Book, SecurityLotState
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedObligation, PreparedSeries, PreparedTlhPortfolio
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
@@ -68,10 +68,12 @@ class Situation:
 
     prices: dict[str, int]
     household: CashBandHousehold
+    # What Alice owes the creditor in month 0.
+    upkeep: int
     opening_cash: int = 0
     lots: tuple[OpeningLot, ...] = ()
-    portfolios: tuple[PreparedTlhPortfolio, ...] = ()
-    claims: tuple[PreparedObligation, ...] = ()
+    # The opening cohort of Alice's managed index portfolio, when she has one.
+    managed: TlhOpeningCohort | None = None
     horizon_months: int = 1
 
 
@@ -85,20 +87,6 @@ def reinvesting(*sleeves: Sleeve, ceiling: int, tolerance: int | None) -> CashBa
         source_account_ids=(HOLDINGS,),
         reinvest=Reinvest(rebalance_tolerance_ppb=tolerance),
         cause_id_prefix="fund",
-    )
-
-
-def claim(amount: int) -> PreparedObligation:
-    return PreparedObligation(
-        schedule=Once(month=0),
-        obligation_id="upkeep",
-        obligation_type="cash_spend",
-        from_account=AccountRef(agent_id=ALICE, account_id=CASH),
-        to_account=AccountRef(agent_id=CREDITOR, account_id=CASH),
-        amount_due=amount,
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=1_000_000_000,
     )
 
 
@@ -132,10 +120,28 @@ def run(case: Situation) -> FinancialOutput:
             units=held.units,
             basis=held.basis,
         )
-    for spec in case.portfolios:
-        world.declare_portfolio(spec)
-    for obligation in case.claims:
-        world.track(Biller(obligation))
+    if case.managed is not None:
+        world.declare_portfolio(
+            portfolio_id=PortfolioId("managed"),
+            owner_agent_id=ALICE,
+            account_id=HOLDINGS,
+            asset_id=AssetId("index"),
+            initial_cohorts=(case.managed,),
+            assumptions=QUIET,
+        )
+    world.track(
+        Biller(
+            schedule=Once(month=0),
+            obligation_id="upkeep",
+            obligation_type="cash_spend",
+            from_account=AccountRef(agent_id=ALICE, account_id=CASH),
+            to_account=AccountRef(agent_id=CREDITOR, account_id=CASH),
+            amount_due=case.upkeep,
+            property_id=None,
+            deduction_category=None,
+            deductible_fraction_ppb=1_000_000_000,
+        )
+    )
     case.household.check(world)
     world.track(case.household)
     recorder = FinancialCapture(world, capture="forensic")
@@ -182,7 +188,7 @@ def test_a_purchase_is_sized_to_what_the_months_claim_payment_leaves() -> None:
                 OpeningLot(LotId("opening-coarse"), AssetId("coarse"), units=5, basis=500),
                 OpeningLot(LotId("opening-fine"), AssetId("fine"), units=102, basis=102),
             ),
-            claims=(claim(50),),
+            upkeep=50,
         )
     )
     closed = output.months[1]
@@ -192,17 +198,6 @@ def test_a_purchase_is_sized_to_what_the_months_claim_payment_leaves() -> None:
     assert (balance(closed, ALICE), balance(closed, CREDITOR)) == (0, 50)
     # Exactness is the point: nothing this batch requested was trimmed or refused.
     assert [disposition.units for disposition in output.dispositions] == [1]
-
-
-def managed_portfolio(opening: TlhOpeningCohort) -> PreparedTlhPortfolio:
-    return PreparedTlhPortfolio(
-        portfolio_id=PortfolioId("managed"),
-        owner_agent_id=ALICE,
-        account_id=HOLDINGS,
-        asset_id=AssetId("index"),
-        initial_cohorts=(opening,),
-        assumptions=QUIET,
-    )
 
 
 def test_a_projected_purchase_into_a_managed_sleeve_contributes_what_is_left() -> None:
@@ -219,8 +214,8 @@ def test_a_projected_purchase_into_a_managed_sleeve_contributes_what_is_left() -
                 ManagedSleeve(portfolio_id=PortfolioId("managed"), weight=1), ceiling=0, tolerance=None
             ),
             opening_cash=1_000,
-            portfolios=(managed_portfolio(TlhOpeningCohort(value=100, cost_basis=100, purchase_month_index=-24)),),
-            claims=(claim(400),),
+            managed=TlhOpeningCohort(value=100, cost_basis=100, purchase_month_index=-24),
+            upkeep=400,
         )
     )
     closed = output.months[1]
@@ -244,8 +239,8 @@ def test_a_portfolio_at_a_zero_index_mark_is_not_offered_the_surplus() -> None:
                 ManagedSleeve(portfolio_id=PortfolioId("managed"), weight=1), ceiling=0, tolerance=None
             ),
             opening_cash=1_000,
-            portfolios=(managed_portfolio(TlhOpeningCohort(value=0, cost_basis=100, purchase_month_index=-24)),),
-            claims=(claim(400),),
+            managed=TlhOpeningCohort(value=0, cost_basis=100, purchase_month_index=-24),
+            upkeep=400,
             horizon_months=2,
         )
     )

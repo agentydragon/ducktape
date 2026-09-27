@@ -7,7 +7,7 @@ funded price and its lifecycle follows it, a cashflow or bill falls inside the h
 the path carries, and an issuer's protocol path stays in range.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from functools import partial
 
@@ -28,23 +28,16 @@ from finance.augur.sim.ids import (
     PortfolioId,
     PropertyId,
 )
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferIncomeCategory
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
-    PreparedDistribution,
-    PreparedDistributionSlice,
+    PreparedAmount,
     PreparedFixedAmount,
     PreparedIndexedAmount,
     PreparedIndexedCoupon,
-    PreparedJurisdiction,
     PreparedLocation,
-    PreparedObligation,
-    PreparedPropertyCashflow,
-    PreparedRecurringTransfer,
     PreparedSeries,
-    PreparedTlhPortfolio,
-    PreparedTransfer,
     _MortgageFinancing,
     _MortgageInterestDeduction,
     _PrimaryResidence,
@@ -55,7 +48,7 @@ from finance.augur.sim.prepared import (
     _RentedFraction,
 )
 from finance.augur.sim.property import Housing
-from finance.augur.sim.schedule import Once
+from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
@@ -67,7 +60,7 @@ STOCK = AssetId("test-stock")
 LOT = LotId("test-lot")
 SCALE = 1000
 HORIZON = 2
-TAX_HOME = PreparedJurisdiction(jurisdiction_id=JurisdictionId("test-jurisdiction"), level=JurisdictionLevel.STATE)
+TAX_HOME = JurisdictionId("test-jurisdiction")
 LOCATION = PreparedLocation(
     location_id=LocationId("test-market"),
     display_name="Test market",
@@ -75,6 +68,8 @@ LOCATION = PreparedLocation(
     annual_property_tax_rate_ppb=0,
     annual_special_assessment=0,
 )
+# A payout that is all interest from a non-governmental issuer.
+WHOLLY_INTEREST: Mapping[TransferIncomeCategory, int] = {InterestIncome(): 1_000_000_000}
 FLAT = TlhAssumptions(
     peak_annual_yield=0, floor_annual_yield=0, maturity_decay_exponent=1, drawdown_sensitivity=0, short_term_fraction=1
 )
@@ -98,7 +93,7 @@ def composed(*series: PreparedSeries, horizon_months: int = HORIZON) -> World:
         MarketPath(series, 0, rollout_count=1),
         horizon_months=horizon_months,
         income_sources=(ORDINARY_INCOME, InterestIncome(issuer_jurisdiction_id=None)),
-        jurisdictions=(TAX_HOME,),
+        jurisdictions={TAX_HOME: JurisdictionLevel.STATE},
     )
     for account in (ref(HOLDER), ref(HOLDER, BROKERAGE), ref(COUNTERPARTY)):
         world.declare_account(account=account, opening_balance=0)
@@ -292,13 +287,19 @@ def test_a_purchase_price_is_covered_by_the_down_payment_and_the_loan() -> None:
             housed(gap, LOCATION)
 
 
-DISTRIBUTION = PreparedDistribution(
-    agent_id=HOLDER,
-    holding_account_id=BROKERAGE,
-    asset_id=STOCK,
-    to_account_id=CHECKING,
-    tax_character=(PreparedDistributionSlice(fraction_ppb=1_000_000_000, income_category=InterestIncome()),),
-)
+def distribution(
+    world: World,
+    *,
+    holding_account_id: AccountId = BROKERAGE,
+    tax_character: Mapping[TransferIncomeCategory, int] = WHOLLY_INTEREST,
+) -> None:
+    world.declare_distribution(
+        agent_id=HOLDER,
+        holding_account_id=holding_account_id,
+        asset_id=STOCK,
+        to_account_id=CHECKING,
+        tax_character=tax_character,
+    )
 
 
 def holding_stock(*, payout: PreparedSeries) -> World:
@@ -309,64 +310,40 @@ def holding_stock(*, payout: PreparedSeries) -> World:
 
 
 def test_a_distribution_pays_whoever_holds_the_security_not_a_cash_account() -> None:
-    holding_stock(payout=payouts(0, 0, 0)).declare_distribution(DISTRIBUTION)
+    distribution(holding_stock(payout=payouts(0, 0, 0)))
     with pytest.raises(ValueError, match=f"references no lots for {HOLDER}:{CHECKING}:{STOCK}"):
-        holding_stock(payout=payouts(0, 0, 0)).declare_distribution(replace(DISTRIBUTION, holding_account_id=CHECKING))
+        distribution(holding_stock(payout=payouts(0, 0, 0)), holding_account_id=CHECKING)
     with pytest.raises(ValueError, match="missing distribution series"):
-        composed(prices(100, 100, 100)).declare_distribution(DISTRIBUTION)
+        distribution(composed(prices(100, 100, 100)))
 
 
 @pytest.mark.parametrize(
-    ("slices", "match"),
+    ("tax_character", "match"),
     [
-        ((PreparedDistributionSlice(fraction_ppb=400_000_000, income_category=InterestIncome()),), "tax character"),
-        (
-            (
-                PreparedDistributionSlice(
-                    fraction_ppb=1_000_000_000,
-                    income_category=InterestIncome(issuer_jurisdiction_id=JurisdictionId("test-unknown")),
-                ),
-            ),
-            "unknown",
-        ),
-        (
-            (
-                PreparedDistributionSlice(
-                    fraction_ppb=1_000_000_000,
-                    income_category=InterestIncome(issuer_jurisdiction_id=TAX_HOME.jurisdiction_id),
-                ),
-            ),
-            "undeclared income",
-        ),
+        ({InterestIncome(): 400_000_000}, "tax character"),
+        ({InterestIncome(issuer_jurisdiction_id=JurisdictionId("test-unknown")): 1_000_000_000}, "unknown"),
+        ({InterestIncome(issuer_jurisdiction_id=TAX_HOME): 1_000_000_000}, "undeclared income"),
     ],
     ids=["incomplete", "unknown-issuer", "undeclared-source"],
 )
 def test_a_distribution_splits_its_tax_character_across_known_reported_issuers(
-    slices: tuple[PreparedDistributionSlice, ...], match: str
+    tax_character: Mapping[TransferIncomeCategory, int], match: str
 ) -> None:
     with pytest.raises(ValueError, match=match):
-        holding_stock(payout=payouts(0, 0, 0)).declare_distribution(replace(DISTRIBUTION, tax_character=slices))
+        distribution(holding_stock(payout=payouts(0, 0, 0)), tax_character=tax_character)
 
 
 def test_a_zero_payout_is_valid_but_a_negative_one_is_not() -> None:
-    holding_stock(payout=payouts(0, 0, 0)).declare_distribution(DISTRIBUTION)
+    distribution(holding_stock(payout=payouts(0, 0, 0)))
     with pytest.raises(ValueError, match="negative security distribution"):
-        holding_stock(payout=payouts(0, 0, -1)).declare_distribution(DISTRIBUTION)
+        distribution(holding_stock(payout=payouts(0, 0, -1)))
 
 
 def test_a_zero_mark_is_valid_only_where_the_asset_is_held_exclusively_through_a_manager() -> None:
     written_off = TlhOpeningCohort(value=0, cost_basis=100, purchase_month_index=-2)
-    spec = PreparedTlhPortfolio(
-        portfolio_id=PortfolioId("test-managed"),
-        owner_agent_id=HOLDER,
-        account_id=BROKERAGE,
-        asset_id=STOCK,
-        initial_cohorts=(written_off,),
-        assumptions=FLAT,
-    )
     managed = composed(prices(0, 0, 0))
-    managed.declare_portfolio(spec)
-    observed = managed.portfolios[spec.portfolio_id].observe()
+    portfolio(managed, cohort=written_off)
+    observed = managed.portfolios[MANAGED].observe()
     assert (observed.value, observed.reported_tax_basis) == (0, written_off.cost_basis)
     # An ordinary purchase pool sharing the quote restores the positive-price requirement:
     # managed ownership is pool-scoped.
@@ -384,54 +361,41 @@ def indexed(*, series_id: str = "inflation", base_month_index: int = 0) -> Prepa
     )
 
 
-FLOW = PreparedTransfer(
-    month=0,
-    cause_id="test-transfer",
-    from_account=ref(COUNTERPARTY),
-    to_account=ref(HOLDER),
-    amount=1,
-    income_category=None,
-    deduction_category=None,
-)
+PAYER = ref(COUNTERPARTY)
+MONTH_ZERO = Once(month=0)
+
+
+def flow(
+    world: World,
+    *,
+    from_account: AccountRef = PAYER,
+    amount: PreparedAmount = 1,
+    income_category: TransferIncomeCategory | None = None,
+    schedule: Schedule = MONTH_ZERO,
+    property_id: PropertyId | None = None,
+) -> None:
+    world.declare_flow(
+        cause_id="test-transfer",
+        from_account=from_account,
+        to_account=ref(HOLDER),
+        amount=amount,
+        income_category=income_category,
+        deduction_category=None,
+        schedule=schedule,
+        property_id=property_id,
+    )
 
 
 @pytest.mark.parametrize(
     ("invalid", "match"),
     [
-        (replace(FLOW, from_account=ref(AgentId("test-stranger"))), "unknown declared account"),
-        (
-            replace(FLOW, income_category=InterestIncome(issuer_jurisdiction_id=TAX_HOME.jurisdiction_id)),
-            "undeclared income source",
-        ),
-        (replace(FLOW, month=HORIZON), "outside the horizon"),
-        (
-            PreparedRecurringTransfer(
-                start_month=1,
-                end_month=0,
-                cause_id=FLOW.cause_id,
-                from_account=FLOW.from_account,
-                to_account=FLOW.to_account,
-                amount=FLOW.amount,
-                income_category=None,
-                deduction_category=None,
-            ),
-            "before start month",
-        ),
-        (
-            PreparedPropertyCashflow(
-                month=0,
-                property_id=PropertyId("test-unbought"),
-                cause_id=FLOW.cause_id,
-                from_account=FLOW.from_account,
-                to_account=FLOW.to_account,
-                amount=FLOW.amount,
-                income_category=None,
-                deduction_category=None,
-            ),
-            "undeclared property",
-        ),
-        (replace(FLOW, amount=indexed(series_id="rent:test-nowhere")), "missing series"),
-        (replace(FLOW, amount=indexed(base_month_index=1)), "before base month"),
+        (partial(flow, from_account=ref(AgentId("test-stranger"))), "unknown declared account"),
+        (partial(flow, income_category=InterestIncome(issuer_jurisdiction_id=TAX_HOME)), "undeclared income source"),
+        (partial(flow, schedule=Once(month=HORIZON)), "outside the horizon"),
+        (partial(flow, schedule=Recurring(start_month=1, end_month=0)), "before start month"),
+        (partial(flow, property_id=PropertyId("test-unbought")), "undeclared property"),
+        (partial(flow, amount=indexed(series_id="rent:test-nowhere")), "missing series"),
+        (partial(flow, amount=indexed(base_month_index=1)), "before base month"),
     ],
     ids=[
         "unknown-account",
@@ -444,21 +408,20 @@ FLOW = PreparedTransfer(
     ],
 )
 def test_a_standing_flow_moves_declared_cash_from_a_declared_income_source_inside_the_horizon(
-    invalid: PreparedTransfer | PreparedRecurringTransfer, match: str
+    invalid: Callable[[World], None], match: str
 ) -> None:
     world = composed(cpi(1, 1, 1))
-    world.declare_flow(FLOW)
+    flow(world)
     world.start()
     assert world.account_balance(HOLDER, CHECKING) == 1
     with pytest.raises(ValueError, match=match):
-        composed(cpi(1, 1, 1)).declare_flow(invalid)
+        invalid(composed(cpi(1, 1, 1)))
 
 
 def test_an_indexed_amount_needs_a_nonzero_base_level() -> None:
-    world = composed(cpi(1, 2, 2))
-    world.declare_flow(replace(FLOW, amount=indexed()))
+    flow(composed(cpi(1, 2, 2)), amount=indexed())
     with pytest.raises(ValueError, match="zero base level"):
-        composed(cpi(0, 1, 1)).declare_flow(replace(FLOW, amount=indexed()))
+        flow(composed(cpi(0, 1, 1)), amount=indexed())
 
 
 def rented(month: int, property_id: PropertyId = PURCHASE.property_id) -> _RentedFraction:
@@ -598,65 +561,80 @@ def test_a_deduction_is_claimed_by_an_enrolled_taxpayer() -> None:
         )
 
 
-BILL = PreparedObligation(
-    schedule=Once(month=0),
-    obligation_id="test-bill",
-    obligation_type="cash_spend",
-    from_account=ref(HOLDER),
-    to_account=ref(COUNTERPARTY),
-    amount_due=1,
-    property_id=None,
-    deduction_category=None,
-    deductible_fraction_ppb=0,
-)
+def bill(*, amount_due: PreparedAmount = 1, schedule: Schedule = MONTH_ZERO) -> Biller:
+    return Biller(
+        obligation_id="test-bill",
+        obligation_type="cash_spend",
+        from_account=ref(HOLDER),
+        to_account=ref(COUNTERPARTY),
+        amount_due=amount_due,
+        property_id=None,
+        deduction_category=None,
+        deductible_fraction_ppb=0,
+        schedule=schedule,
+    )
 
 
 def test_a_bill_is_due_inside_the_horizon_on_an_index_the_path_carries() -> None:
-    composed().track(Biller(BILL))
+    composed().track(bill())
     with pytest.raises(ValueError, match="outside the horizon"):
-        composed().track(Biller(replace(BILL, schedule=Once(month=HORIZON))))
+        composed().track(bill(schedule=Once(month=HORIZON)))
     with pytest.raises(ValueError, match="missing series"):
-        composed().track(Biller(replace(BILL, amount_due=indexed())))
+        composed().track(bill(amount_due=indexed()))
 
 
 def test_a_holding_pays_out_through_one_distribution() -> None:
     world = holding_stock(payout=payouts(0, 0, 0))
-    world.declare_distribution(DISTRIBUTION)
+    distribution(world)
     with pytest.raises(ValueError, match="duplicate distribution"):
-        world.declare_distribution(DISTRIBUTION)
+        distribution(world)
 
 
-MANAGED = PreparedTlhPortfolio(
-    portfolio_id=PortfolioId("test-managed"),
-    owner_agent_id=HOLDER,
-    account_id=BROKERAGE,
-    asset_id=STOCK,
-    initial_cohorts=(TlhOpeningCohort(value=100, cost_basis=100, purchase_month_index=-2),),
-    assumptions=FLAT,
-)
+MANAGED = PortfolioId("test-managed")
+OPENING_COHORT = TlhOpeningCohort(value=100, cost_basis=100, purchase_month_index=-2)
+
+
+def portfolio(
+    world: World,
+    *,
+    portfolio_id: PortfolioId = MANAGED,
+    owner_agent_id: AgentId = HOLDER,
+    account_id: AccountId = BROKERAGE,
+    cohort: TlhOpeningCohort = OPENING_COHORT,
+) -> None:
+    world.declare_portfolio(
+        portfolio_id=portfolio_id,
+        owner_agent_id=owner_agent_id,
+        account_id=account_id,
+        asset_id=STOCK,
+        initial_cohorts=(cohort,),
+        assumptions=FLAT,
+    )
+
+
 SOLE_OWNER = "must have exactly one component owner and no ordinary holdings"
 
 
 def test_a_managed_portfolio_has_a_declared_owner_a_price_path_and_one_manager() -> None:
     world = composed(prices(100, 100, 100))
-    world.declare_portfolio(MANAGED)
+    portfolio(world)
     with pytest.raises(ValueError, match="duplicate TLH portfolio"):
-        world.declare_portfolio(replace(MANAGED, account_id=CHECKING))
+        portfolio(world, account_id=CHECKING)
     with pytest.raises(ValueError, match=SOLE_OWNER):
-        world.declare_portfolio(replace(MANAGED, portfolio_id=PortfolioId("test-second")))
+        portfolio(world, portfolio_id=PortfolioId("test-second"))
     with pytest.raises(ValueError, match="unknown owner"):
-        composed(prices(100, 100, 100)).declare_portfolio(replace(MANAGED, owner_agent_id=AgentId("test-stranger")))
+        portfolio(composed(prices(100, 100, 100)), owner_agent_id=AgentId("test-stranger"))
     with pytest.raises(ValueError, match="missing security series"):
-        composed().declare_portfolio(MANAGED)
+        portfolio(composed())
     # Zero is a mark a manager may carry; below zero is not a price at any snapshot, the terminal one included.
-    composed(prices(100, 0, 0)).declare_portfolio(MANAGED)
+    portfolio(composed(prices(100, 0, 0)))
     with pytest.raises(ValueError, match="index price must be nonnegative, got -1 at month 2"):
-        composed(prices(100, 100, -1)).declare_portfolio(MANAGED)
+        portfolio(composed(prices(100, 100, -1)))
 
 
 def test_a_managed_portfolio_holds_its_pool_alone_whichever_is_declared_first() -> None:
     managed_first = composed(prices(100, 100, 100))
-    managed_first.declare_portfolio(MANAGED)
+    portfolio(managed_first)
     with pytest.raises(ValueError, match=SOLE_OWNER):
         pool(managed_first)
     with pytest.raises(ValueError, match="references no declared holding pool"):
@@ -667,12 +645,12 @@ def test_a_managed_portfolio_holds_its_pool_alone_whichever_is_declared_first() 
 
     lot_first = holding_stock(payout=payouts(0, 0, 0))
     with pytest.raises(ValueError, match=SOLE_OWNER):
-        lot_first.declare_portfolio(MANAGED)
+        portfolio(lot_first)
     assert lot_first.managed is None
     pool_first = composed(prices(100, 100, 100))
     pool(pool_first)
     with pytest.raises(ValueError, match=SOLE_OWNER):
-        pool_first.declare_portfolio(MANAGED)
+        portfolio(pool_first)
 
 
 ISSUER = "test-issuer"

@@ -20,7 +20,7 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD, position_value
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import PreparedJurisdiction, PreparedSeries, PreparedTlhPortfolio
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -129,7 +129,7 @@ def compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=FEDERAL, level=jurisdictions[FEDERAL].level),),
+        jurisdictions={FEDERAL: jurisdictions[FEDERAL].level},
     )
     for agent_id, account_id in ((ALICE, BROKERAGE), (ALICE, CHECKING), (IRS, CHECKING)):
         world.declare_account(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=0)
@@ -166,20 +166,18 @@ def compose(case: Situation, rollout_id: int) -> World:
         # The statement values the sleeve's lot at the opening mark, as the plain lot would be.
         opening_price = world.market.value(f"security:{case.sleeve.asset_id}", 0)
         world.declare_portfolio(
-            PreparedTlhPortfolio(
-                portfolio_id=PortfolioId("alice-sp500"),
-                owner_agent_id=ALICE,
-                account_id=BROKERAGE,
-                asset_id=case.sleeve.asset_id,
-                initial_cohorts=(
-                    TlhOpeningCohort(
-                        value=position_value(opening_price, case.sleeve.units, case.sleeve.quantity_scale),
-                        cost_basis=case.sleeve.basis,
-                        purchase_month_index=case.sleeve.purchase_month,
-                    ),
+            portfolio_id=PortfolioId("alice-sp500"),
+            owner_agent_id=ALICE,
+            account_id=BROKERAGE,
+            asset_id=case.sleeve.asset_id,
+            initial_cohorts=(
+                TlhOpeningCohort(
+                    value=position_value(opening_price, case.sleeve.units, case.sleeve.quantity_scale),
+                    cost_basis=case.sleeve.basis,
+                    purchase_month_index=case.sleeve.purchase_month,
                 ),
-                assumptions=case.assumptions,
-            )
+            ),
+            assumptions=case.assumptions,
         )
     return world
 

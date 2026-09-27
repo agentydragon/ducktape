@@ -1,7 +1,7 @@
 """Explicit household funding, full claim payments, and stopped-path successful prefixes."""
 
 from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from decimal import Decimal
 from functools import partial
 
@@ -23,7 +23,7 @@ from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.prepared import PreparedObligation, PreparedRecurringTransfer, PreparedSeries
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import (
     Executed,
     Finished,
@@ -34,7 +34,7 @@ from finance.augur.sim.results import (
     RejectedAction,
     Rollout,
 )
-from finance.augur.sim.schedule import Once, Recurring
+from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 
@@ -69,48 +69,34 @@ class OpeningLot:
     purchase_month: int = -24
 
 
-def bill(
-    obligation_id: str,
-    obligation_type: str,
-    payer: AccountRef,
-    payee: AccountRef,
-    amount_due: Decimal | int,
-    *,
-    month: int = 0,
-) -> PreparedObligation:
-    return PreparedObligation(
-        schedule=Once(month=month),
-        obligation_id=obligation_id,
-        obligation_type=obligation_type,
-        from_account=payer,
-        to_account=payee,
-        amount_due=money(amount_due),
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=1_000_000_000,
-    )
+@dataclass(frozen=True)
+class Charge:
+    """A bill `payer` owes `payee`, in dollars."""
+
+    obligation_id: str
+    obligation_type: str
+    payer: AccountRef
+    payee: AccountRef
+    amount_due: Decimal | int
+    schedule: Schedule
+
+
+def bill(obligation_id: str, obligation_type: str, payer: AccountRef, payee: AccountRef, amount_due: Decimal) -> Charge:
+    return Charge(obligation_id, obligation_type, payer, payee, amount_due, Once(month=0))
 
 
 def monthly_bill(
-    obligation_id: str,
-    obligation_type: str,
-    payer: AccountRef,
-    payee: AccountRef,
-    amount_due: Decimal | int,
-    *,
-    start_month: int = 0,
-) -> PreparedObligation:
-    return PreparedObligation(
-        schedule=Recurring(start_month=start_month, end_month=None),
-        obligation_id=obligation_id,
-        obligation_type=obligation_type,
-        from_account=payer,
-        to_account=payee,
-        amount_due=money(amount_due),
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=1_000_000_000,
-    )
+    obligation_id: str, obligation_type: str, payer: AccountRef, payee: AccountRef, amount_due: Decimal
+) -> Charge:
+    return Charge(obligation_id, obligation_type, payer, payee, amount_due, Recurring(start_month=0, end_month=None))
+
+
+@dataclass(frozen=True)
+class Paycheck:
+    """The employer's monthly pay into Alice's checking from `start_month`, in dollars."""
+
+    start_month: int
+    amount: Decimal | int
 
 
 @dataclass
@@ -122,8 +108,8 @@ class Situation:
     # The accounts Alice holds a VTI pool in.
     pools: list[AccountId] = field(default_factory=list)
     lots: list[OpeningLot] = field(default_factory=list)
-    claims: list[PreparedObligation] = field(default_factory=list)
-    recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
+    claims: list[Charge] = field(default_factory=list)
+    paychecks: tuple[Paycheck, ...] = ()
 
 
 def compose(case: Situation, rollout_id: int, *, series: tuple[PreparedSeries, ...], rollout_count: int) -> World:
@@ -149,10 +135,30 @@ def compose(case: Situation, rollout_id: int, *, series: tuple[PreparedSeries, .
             units=quantity_to_quanta(held.quantity, scale=SCALE),
             basis=money(held.cost_basis),
         )
-    for flow in case.recurring_transfers:
-        world.declare_flow(flow)
+    for pay in case.paychecks:
+        world.declare_flow(
+            schedule=Recurring(start_month=pay.start_month, end_month=None),
+            cause_id="future_paycheck",
+            from_account=ref(AgentId("employer")),
+            to_account=ref(AgentId("alice")),
+            amount=money(pay.amount),
+            income_category=ORDINARY_INCOME,
+            deduction_category=None,
+        )
     for claim in case.claims:
-        world.track(Biller(claim))
+        world.track(
+            Biller(
+                schedule=claim.schedule,
+                obligation_id=claim.obligation_id,
+                obligation_type=claim.obligation_type,
+                from_account=claim.payer,
+                to_account=claim.payee,
+                amount_due=money(claim.amount_due),
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=1_000_000_000,
+            )
+        )
     return world
 
 
@@ -318,8 +324,8 @@ def test_funding_uses_rollout_specific_prices(rent: Situation) -> None:
 
 def test_funding_consumes_only_selected_account_fifo_pool(rent: Situation) -> None:
     rent.accounts[0] = account(AgentId("alice"), AccountId("taxable"))
-    rent.claims[0] = replace(
-        rent.claims[0], from_account=ref(AgentId("alice"), AccountId("taxable")), amount_due=money(Decimal(400))
+    rent.claims[0] = bill(
+        "rent_due", "rent", ref(AgentId("alice"), AccountId("taxable")), ref(AgentId("landlord")), Decimal(400)
     )
     rent.lots[0] = OpeningLot(LotId("alice_vti"), AccountId("taxable"), quantity=5, cost_basis=Decimal(250))
     rent.lots.append(OpeningLot(LotId("ira_vti"), AccountId("ira"), quantity=100, cost_basis=Decimal(5000)))
@@ -344,7 +350,7 @@ def test_funding_sells_from_source_account_into_cash_account(rent: Situation) ->
     rent.accounts[0] = account(AgentId("alice"))
     rent.lots[0] = OpeningLot(LotId("alice_vti"), AccountId("taxable"), quantity=5, cost_basis=Decimal(250))
     rent.pools = [AccountId("taxable")]
-    rent.claims[0] = replace(rent.claims[0], amount_due=money(Decimal(400)))
+    rent.claims[0] = bill("rent_due", "rent", ref(AgentId("alice")), ref(AgentId("landlord")), Decimal(400))
     [result], _ = _run(
         rent,
         partial(
@@ -403,7 +409,7 @@ def test_cash_band_uses_balance_after_planned_claims(
 ) -> None:
     rent.accounts[0] = account(AgentId("alice"), balance=Decimal(cash))
     rent.lots[0] = OpeningLot(LotId("alice_vti"), AccountId("checking"), quantity=100, cost_basis=Decimal(5000))
-    rent.claims[0] = replace(rent.claims[0], amount_due=money(Decimal(1000)))
+    rent.claims[0] = bill("rent_due", "rent", ref(AgentId("alice")), ref(AgentId("landlord")), Decimal(1000))
     [result], _ = _run(rent, _band_funding)
     assert result.stop is None
     assert result.trace is not None
@@ -429,11 +435,7 @@ def test_first_payment_survives_later_rejection_and_subsequent_action_is_skipped
     rent.accounts[0] = account(AgentId("alice"), balance=Decimal(600))
     rent.lots = []
     rent.accounts.append(account(AgentId("utility")))
-    rent.claims.append(
-        replace(
-            rent.claims[0], obligation_id="utility_due", obligation_type="utility", to_account=ref(AgentId("utility"))
-        )
-    )
+    rent.claims.append(bill("utility_due", "utility", ref(AgentId("alice")), ref(AgentId("utility")), Decimal(500)))
 
     def pay_then_transfer(batch: list[Decision]) -> list[DecisionActions]:
         return [
@@ -500,18 +502,7 @@ def test_failed_path_skips_future_transfers_and_policy_calls_while_other_path_co
         LotId("alice_vti"), AccountId("checking"), quantity=1, cost_basis=Decimal(80), purchase_month=-1
     )
     exhaustion.accounts.append(account(AgentId("employer")))
-    exhaustion.recurring_transfers = (
-        PreparedRecurringTransfer(
-            start_month=1,
-            end_month=None,
-            cause_id="future_paycheck",
-            from_account=ref(AgentId("employer")),
-            to_account=ref(AgentId("alice")),
-            amount=money(Decimal(10000)),
-            income_category=ORDINARY_INCOME,
-            deduction_category=None,
-        ),
-    )
+    exhaustion.paychecks = (Paycheck(start_month=1, amount=Decimal(10000)),)
     exhaustion.horizon_months = 2
     [stopped, continuing], calls = _run(
         exhaustion,

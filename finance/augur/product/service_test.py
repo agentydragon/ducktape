@@ -96,12 +96,9 @@ from finance.augur.product.wire import (
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId, PropertyId
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import (
-    PreparedIndexedAmount,
-    PreparedPropertyCashflow,
-    PreparedRecurringPropertyCashflow,
-)
+from finance.augur.sim.prepared import PreparedIndexedAmount
 from finance.augur.sim.quantiles import currency_quantiles
+from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.tlh import TlhAssumptions
 from finance.augur.sim.world import World
 from finance.augur.x.models.independent import IndependentProviderConfig
@@ -1513,8 +1510,7 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
     rent_transfer = one(
         transfer
         for transfer in home.cashflows
-        if isinstance(transfer, PreparedRecurringPropertyCashflow)
-        and transfer.cause_id == "rental_income:location_a_property"
+        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "rental_income:location_a_property"
     )
     assert rent_transfer.property_id == "location_a_property"
     assert isinstance(rent_transfer.amount, PreparedIndexedAmount)
@@ -1524,8 +1520,7 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
     management_fee = one(
         transfer
         for transfer in home.cashflows
-        if isinstance(transfer, PreparedRecurringPropertyCashflow)
-        and transfer.cause_id == "management_fee:location_a_property"
+        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "management_fee:location_a_property"
     )
     assert management_fee.property_id == "location_a_property"
     assert isinstance(management_fee.amount, PreparedIndexedAmount)
@@ -1534,7 +1529,7 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
     leasing_fee = one(
         transfer
         for transfer in home.cashflows
-        if isinstance(transfer, PreparedPropertyCashflow) and transfer.cause_id == "leasing_fee:location_a_property:m0"
+        if isinstance(transfer.schedule, Once) and transfer.cause_id == "leasing_fee:location_a_property:m0"
     )
     assert leasing_fee.property_id == "location_a_property"
     assert isinstance(leasing_fee.amount, PreparedIndexedAmount)
@@ -1581,11 +1576,12 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
     rent_transfers = [
         transfer
         for transfer in home.cashflows
-        if isinstance(transfer, PreparedRecurringPropertyCashflow)
-        and transfer.cause_id == "rental_income:location_a_property"
+        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "rental_income:location_a_property"
     ]
     assert {transfer.property_id for transfer in rent_transfers} == {"location_a_property"}
-    assert [(transfer.start_month, transfer.end_month) for transfer in rent_transfers] == [(0, 2), (3, 5), (8, 11)]
+    assert [transfer.schedule for transfer in rent_transfers] == [
+        Recurring(start_month=start, end_month=end) for start, end in ((0, 2), (3, 5), (8, 11))
+    ]
     rent_amounts = []
     for rent_transfer in rent_transfers:
         assert isinstance(rent_transfer.amount, PreparedIndexedAmount)
@@ -1599,11 +1595,12 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
     management_fees = [
         transfer
         for transfer in home.cashflows
-        if isinstance(transfer, PreparedRecurringPropertyCashflow)
-        and transfer.cause_id == "management_fee:location_a_property"
+        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "management_fee:location_a_property"
     ]
     assert {transfer.property_id for transfer in management_fees} == {"location_a_property"}
-    assert [(transfer.start_month, transfer.end_month) for transfer in management_fees] == [(0, 2), (3, 5), (8, 11)]
+    assert [transfer.schedule for transfer in management_fees] == [
+        Recurring(start_month=start, end_month=end) for start, end in ((0, 2), (3, 5), (8, 11))
+    ]
     fee_amounts = []
     for management_fee in management_fees:
         assert isinstance(management_fee.amount, PreparedIndexedAmount)
@@ -1613,17 +1610,20 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
         for amount in (6_000.0 * 0.25 * 0.90 * 0.08, 6_000.0 * 0.75 * 0.90 * 0.08, 6_000.0 * 0.5 * 0.90 * 0.08)
     ]
 
-    leasing_fees = sorted(
-        (
-            transfer
-            for transfer in home.cashflows
-            if isinstance(transfer, PreparedPropertyCashflow)
-            and transfer.cause_id.startswith("leasing_fee:location_a_property:")
-        ),
-        key=lambda transfer: transfer.month,
-    )
+    leasing_fees = [
+        transfer
+        for _, transfer in sorted(
+            (
+                (transfer.schedule.month, transfer)
+                for transfer in home.cashflows
+                if isinstance(transfer.schedule, Once)
+                and transfer.cause_id.startswith("leasing_fee:location_a_property:")
+            ),
+            key=lambda fee: fee[0],
+        )
+    ]
     assert {transfer.property_id for transfer in leasing_fees} == {"location_a_property"}
-    assert [transfer.month for transfer in leasing_fees] == [0, 3, 8]
+    assert [transfer.schedule for transfer in leasing_fees] == [Once(month=month) for month in (0, 3, 8)]
     leasing_amounts = []
     for leasing_fee in leasing_fees:
         assert isinstance(leasing_fee.amount, PreparedIndexedAmount)
@@ -1665,11 +1665,10 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
     rent_transfer = one(
         transfer
         for transfer in home.cashflows
-        if isinstance(transfer, PreparedRecurringPropertyCashflow)
-        and transfer.cause_id == "rental_income:location_a_property"
+        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "rental_income:location_a_property"
     )
     assert rent_transfer.property_id == "location_a_property"
-    assert (rent_transfer.start_month, rent_transfer.end_month) == (3, 5)
+    assert rent_transfer.schedule == Recurring(start_month=3, end_month=5)
     assert isinstance(rent_transfer.amount, PreparedIndexedAmount)
     assert rent_transfer.amount.base_amount == _quanta_int(_usd_quanta(4_200.0 * 0.5 * 0.95))
     assert rent_transfer.amount.series_id == RentKey(location_id=LOCATION_A).wire_id

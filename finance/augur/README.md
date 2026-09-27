@@ -37,7 +37,7 @@ for rollout_id in range(N):
     world.declare_account(account=checking, opening_balance=USD.quanta(200))
     world.declare_pool(...)
     world.hold_lot(..., units=quantity_to_quanta(2, scale=scale), basis=USD.quanta(80))
-    world.track(Biller(PreparedObligation(..., amount_due=USD.quanta(150))))
+    world.track(Biller(..., amount_due=USD.quanta(150), schedule=Once(month=0)))
     worlds[rollout_id] = world
 
 session = ActionSession(worlds, HOUSEHOLD)
@@ -55,9 +55,10 @@ for rollout in batch.rollouts:
    stipulates two price paths with
    `ExternalSeriesContext.from_level_blocks` instead of sampling a model.
 2. **Build and declare.** One `World` (<sim/world.py>) per path. Declare its month-0 state
-   from the `Prepared*` facts (<sim/prepared.py>) with `declare_*` and `hold`, then `track`
-   its actors: counterparties (`Biller`, `Mortgage`, `TaxAuthority`) and, for `step()`, the
-   household.
+   with `declare_*`, `hold_lot` and `hold_bond`, passing each fact as keyword arguments in
+   exact integer money, then `track` its actors: counterparties (`Biller`, `Mortgage`,
+   `TaxAuthority`) and, for `step()`, the household. A caller that keeps a description of its
+   situation to declare onto many worlds defines its own records for it.
 3. **Act each month.** Either track an `EconomicAgent` (<sim/agent.py>), call `start()`,
    then `step()` until `finished` and read state such as `book()` between steps; or hand
    the worlds to `ActionSession` (<sim/session.py>) and answer each batch of `Decision`s

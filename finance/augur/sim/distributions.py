@@ -1,25 +1,36 @@
 """Ordinary holding distributions, rounded once per pool and then per tax slice."""
 
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from copy import deepcopy
+from dataclasses import dataclass
 
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, DistributionOutcome, JournalEntry, Posting
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import Holdings
 from finance.augur.sim.ids import AccountId, AgentId, AssetId
-from finance.augur.sim.income import income_source_wire_id
+from finance.augur.sim.income import TransferIncomeCategory, income_source_wire_id
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, distribution_value, mul_div
-from finance.augur.sim.prepared import PreparedDistribution
+
+
+@dataclass(frozen=True, kw_only=True)
+class Distribution:
+    """A security's periodic payout to its holder, split by income category in parts per billion."""
+
+    agent_id: AgentId
+    holding_account_id: AccountId
+    asset_id: AssetId
+    to_account_id: AccountId
+    tax_character: Mapping[TransferIncomeCategory, int]
 
 
 class Distributions:
     def __init__(
-        self, specs: Sequence[PreparedDistribution], managed_slots: Collection[tuple[AgentId, AccountId, AssetId]]
+        self, specs: Sequence[Distribution], managed_slots: Collection[tuple[AgentId, AccountId, AssetId]]
     ) -> None:
         """`managed_slots` are the `(agent_id, holding_account_id, asset_id)` holdings a TLH component settles instead."""
-        self.specs: tuple[PreparedDistribution, ...] = tuple(specs)
+        self.specs: tuple[Distribution, ...] = tuple(specs)
         self.managed_slots: set[tuple[AgentId, AccountId, AssetId]] = set(managed_slots)
         # This month's outcomes, cleared by `begin_month`.
         self.outcomes: list[DistributionOutcome] = []
@@ -43,8 +54,8 @@ class Distributions:
             tax = deepcopy(accounting.tax)
             entries = []
             outcomes = []
-            for index, slice_ in enumerate(spec.tax_character):
-                amount = mul_div(total, slice_.fraction_ppb, MONEY_FACTOR_SCALE, "security distribution tax slice")
+            for index, (income_category, fraction_ppb) in enumerate(spec.tax_character.items()):
+                amount = mul_div(total, fraction_ppb, MONEY_FACTOR_SCALE, "security distribution tax slice")
                 cause = f"distribution:{spec.agent_id}:{spec.asset_id}:s{index}:m{month}"
                 entries.append(
                     JournalEntry(
@@ -58,7 +69,7 @@ class Distributions:
                         ],
                     )
                 )
-                tax.income.accrue(spec.agent_id, slice_.income_category, amount)
+                tax.income.accrue(spec.agent_id, income_category, amount)
                 outcomes.append(
                     DistributionOutcome(
                         month=month,
@@ -66,8 +77,8 @@ class Distributions:
                         holding_account_id=spec.holding_account_id,
                         asset_id=spec.asset_id,
                         slice_index=index,
-                        fraction_ppb=slice_.fraction_ppb,
-                        income_source=income_source_wire_id(slice_.income_category),
+                        fraction_ppb=fraction_ppb,
+                        income_source=income_source_wire_id(income_category),
                         units=units,
                         amount=amount,
                     )

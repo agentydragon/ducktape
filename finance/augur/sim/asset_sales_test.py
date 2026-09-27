@@ -23,7 +23,7 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import PreparedJurisdiction, PreparedSeries
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -132,10 +132,9 @@ def _compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=tuple(
-            PreparedJurisdiction(jurisdiction_id=jurisdiction_id, level=jurisdiction.level)
-            for jurisdiction_id, jurisdiction in sorted(jurisdictions.items())
-        ),
+        jurisdictions={
+            jurisdiction_id: jurisdiction.level for jurisdiction_id, jurisdiction in sorted(jurisdictions.items())
+        },
     )
     for agent_id in (ALICE, *(("irs",) if case.tax_profiles else ())):
         world.declare_account(

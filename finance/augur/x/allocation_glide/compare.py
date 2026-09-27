@@ -23,7 +23,7 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedIndexedAmount, PreparedObligation, PreparedSeries
+from finance.augur.sim.prepared import PreparedIndexedAmount, PreparedSeries
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
@@ -91,22 +91,20 @@ def compose(case: Situation, rollout_id: int) -> World:
     for month in range(0, HORIZON_MONTHS, 12):
         world.track(
             Biller(
-                PreparedObligation(
-                    schedule=Once(month=month),
-                    obligation_id="test-consumption",
-                    obligation_type="cash_spend",
-                    from_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
-                    to_account=AccountRef(agent_id=COUNTERPARTY, account_id=AccountId("checking")),
-                    amount_due=PreparedIndexedAmount(
-                        base_amount=int(currency_amount_to_quanta(Decimal(6_000), quantum=QUANTUM)),
-                        series_id=InflationKey().wire_id,
-                        base_month_index=0,
-                        adjustment_period_months=12,
-                    ),
-                    property_id=None,
-                    deduction_category=None,
-                    deductible_fraction_ppb=1_000_000_000,
-                )
+                schedule=Once(month=month),
+                obligation_id="test-consumption",
+                obligation_type="cash_spend",
+                from_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
+                to_account=AccountRef(agent_id=COUNTERPARTY, account_id=AccountId("checking")),
+                amount_due=PreparedIndexedAmount(
+                    base_amount=int(currency_amount_to_quanta(Decimal(6_000), quantum=QUANTUM)),
+                    series_id=InflationKey().wire_id,
+                    base_month_index=0,
+                    adjustment_period_months=12,
+                ),
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=1_000_000_000,
             )
         )
     return world

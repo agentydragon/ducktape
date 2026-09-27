@@ -11,8 +11,9 @@ from finance.augur.sim.books import TaxLiabilityState
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.observations import Observation, TaxRecords
-from finance.augur.sim.prepared import PreparedRecurringTransfer, PreparedSeries
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Executed
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.testing.accounting import (
     CASH,
     EXOGENOUS,
@@ -55,10 +56,9 @@ def sale(agent: AgentId, lot_id: LotId) -> Sell:
     )
 
 
-def wage(payee: AgentId, amount: int) -> PreparedRecurringTransfer:
-    return PreparedRecurringTransfer(
-        start_month=0,
-        end_month=None,
+def wage(world: World, payee: AgentId, amount: int) -> None:
+    world.declare_flow(
+        schedule=Recurring(start_month=0, end_month=None),
         cause_id=f"wage-{payee}",
         from_account=EXOGENOUS,
         to_account=CASH if payee == HOUSEHOLD else RECIPIENT,
@@ -103,9 +103,9 @@ def run(sales: Mapping[int, Sell], *, taxed: bool = True, other_trades: bool = T
         )
     lot(world, LotId("loser"), HOUSEHOLD, basis=1_000_000, purchase_month=-24)
     lot(world, LotId("winner"), OTHER, basis=0, purchase_month=-2)
-    world.declare_flow(wage(HOUSEHOLD, HOUSEHOLD_WAGE))
+    wage(world, HOUSEHOLD, HOUSEHOLD_WAGE)
     if other_trades:
-        world.declare_flow(wage(OTHER, OTHER_WAGE))
+        wage(world, OTHER, OTHER_WAGE)
     recorder = _Recorder(sales)
     world.track(recorder)
     world.start()

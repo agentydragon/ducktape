@@ -19,6 +19,30 @@ until curl -sSf -m 5 "$OLLAMA_HOST/" >/dev/null 2>&1; do
 done
 echo "=== ollama is up ==="
 
+echo "=== registering SSD Qwen3.8 IQ4_XS ==="
+# The init container links the verified SSD shards into the existing blob namespace.
+# Creating the manifest does not load the model or copy weights onto HDD.
+create_request=$(awk '
+  BEGIN {
+    printf "{\"model\":\"qwen3.8-flash-next-iq4xs\",\"files\":{"
+  }
+  { printf "%s\"%s\":\"sha256:%s\"", (NR == 1 ? "" : ","), $3, $1 }
+  END {
+    print "},\"parameters\":{\"num_ctx\":131072,\"num_thread\":6,\"temperature\":0.6,\"min_p\":0.05},\"stream\":false}"
+  }
+' /scripts/qwen38-ssd-shards.tsv)
+create_response=$(curl -sS --fail-with-body --max-time 120 \
+  -H 'Content-Type: application/json' \
+  --data-binary "$create_request" "$OLLAMA_HOST/api/create")
+printf '%s\n' "$create_response"
+case "$create_response" in
+  *'"status":"success"'*) ;;
+  *)
+    echo "SSD model registration failed" >&2
+    exit 1
+    ;;
+esac
+
 pull() {
   model=$1
   echo "=== pulling $model ==="

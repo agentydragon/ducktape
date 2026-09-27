@@ -55,9 +55,7 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
-    PreparedJurisdiction,
     PreparedLocation,
-    PreparedObligation,
     PreparedSeries,
     _CapitalImprovement,
     _MortgageFinancing,
@@ -236,17 +234,15 @@ def target_allocation_world() -> World:
     hold_vti(world, LotId("alice-vti"), quantity=200, cost_basis=10_000, purchase_month=-1)
     world.track(
         Biller(
-            PreparedObligation(
-                schedule=Recurring(start_month=RENT_MONTH, end_month=None),
-                obligation_id="alice-rent",
-                obligation_type="rent",
-                from_account=ref(ALICE),
-                to_account=ref(AgentId("landlord")),
-                amount_due=money(RENT),
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=rate_to_ppb(1),
-            )
+            schedule=Recurring(start_month=RENT_MONTH, end_month=None),
+            obligation_id="alice-rent",
+            obligation_type="rent",
+            from_account=ref(ALICE),
+            to_account=ref(AgentId("landlord")),
+            amount_due=money(RENT),
+            property_id=None,
+            deduction_category=None,
+            deductible_fraction_ppb=rate_to_ppb(1),
         )
     )
     return world
@@ -325,7 +321,7 @@ def property_sale_world() -> World:
         ),
         horizon_months=PROPERTY_HORIZON,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=FEDERAL, level=jurisdictions[FEDERAL].level),),
+        jurisdictions={FEDERAL: jurisdictions[FEDERAL].level},
     )
     for agent_id, balance in (
         (ALICE, Decimal(1_000_000)),

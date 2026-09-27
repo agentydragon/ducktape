@@ -41,14 +41,8 @@ from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
     PreparedAmount,
     PreparedIndexedAmount,
-    PreparedJurisdiction,
     PreparedLocation,
-    PreparedObligation,
-    PreparedPropertyCashflow,
-    PreparedRecurringPropertyCashflow,
-    PreparedRecurringTransfer,
     PreparedSeries,
-    PreparedTransfer,
     _CapitalImprovement,
     _MortgageFinancing,
     _MortgageInterestDeduction,
@@ -63,7 +57,7 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.property import Housing
 from finance.augur.sim.results import Executed, Finished, Rollout, Trace
-from finance.augur.sim.schedule import Recurring
+from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -135,6 +129,20 @@ def series(
     return compile_series(paths, rollout_count=rollout_count, horizon_months=horizon_months, currency=USD)
 
 
+@dataclass(frozen=True, kw_only=True)
+class Cashflow:
+    """A counterparty payment on a schedule; with `property_id`, it moves only while that property is held."""
+
+    cause_id: str
+    schedule: Schedule
+    payer: AgentId
+    payee: AgentId
+    amount: PreparedAmount
+    income: TransferIncomeCategory | None = None
+    deduction: TransferDeductionCategory | None = None
+    property_id: PropertyId | None = None
+
+
 def recurring_transfer(
     cause_id: str,
     *,
@@ -145,16 +153,15 @@ def recurring_transfer(
     amount: PreparedAmount,
     income: TransferIncomeCategory | None = None,
     deduction: TransferDeductionCategory | None = None,
-) -> PreparedRecurringTransfer:
-    return PreparedRecurringTransfer(
-        start_month=start_month,
-        end_month=end_month,
+) -> Cashflow:
+    return Cashflow(
         cause_id=cause_id,
-        from_account=ref(payer),
-        to_account=ref(payee),
+        schedule=Recurring(start_month=start_month, end_month=end_month),
+        payer=payer,
+        payee=payee,
         amount=amount,
-        income_category=income,
-        deduction_category=deduction,
+        income=income,
+        deduction=deduction,
     )
 
 
@@ -167,15 +174,15 @@ def scheduled_transfer(
     amount: PreparedAmount,
     income: TransferIncomeCategory | None = None,
     deduction: TransferDeductionCategory | None = None,
-) -> PreparedTransfer:
-    return PreparedTransfer(
-        month=month,
+) -> Cashflow:
+    return Cashflow(
         cause_id=cause_id,
-        from_account=ref(payer),
-        to_account=ref(payee),
+        schedule=Once(month=month),
+        payer=payer,
+        payee=payee,
         amount=amount,
-        income_category=income,
-        deduction_category=deduction,
+        income=income,
+        deduction=deduction,
     )
 
 
@@ -190,17 +197,16 @@ def recurring_property_cashflow(
     amount: PreparedAmount,
     income: TransferIncomeCategory | None = None,
     deduction: TransferDeductionCategory | None = None,
-) -> PreparedRecurringPropertyCashflow:
-    return PreparedRecurringPropertyCashflow(
-        start_month=start_month,
-        end_month=end_month,
-        property_id=property_id,
+) -> Cashflow:
+    return Cashflow(
         cause_id=cause_id,
-        from_account=ref(payer),
-        to_account=ref(payee),
+        schedule=Recurring(start_month=start_month, end_month=end_month),
+        payer=payer,
+        payee=payee,
         amount=amount,
-        income_category=income,
-        deduction_category=deduction,
+        income=income,
+        deduction=deduction,
+        property_id=property_id,
     )
 
 
@@ -214,41 +220,31 @@ def scheduled_property_cashflow(
     amount: PreparedAmount,
     income: TransferIncomeCategory | None = None,
     deduction: TransferDeductionCategory | None = None,
-) -> PreparedPropertyCashflow:
-    return PreparedPropertyCashflow(
-        month=month,
-        property_id=property_id,
+) -> Cashflow:
+    return Cashflow(
         cause_id=cause_id,
-        from_account=ref(payer),
-        to_account=ref(payee),
+        schedule=Once(month=month),
+        payer=payer,
+        payee=payee,
         amount=amount,
-        income_category=income,
-        deduction_category=deduction,
-    )
-
-
-def dues(
-    obligation_id: str,
-    *,
-    obligation_type: ObligationType,
-    payer: AgentId,
-    payee: AgentId,
-    amount: PreparedAmount,
-    end_month: int | None = None,
-    property_id: PropertyId | None = None,
-    deductible_fraction: Decimal | int = 1,
-) -> PreparedObligation:
-    return PreparedObligation(
-        schedule=Recurring(start_month=0, end_month=end_month),
-        obligation_id=obligation_id,
-        obligation_type=obligation_type,
-        from_account=ref(payer),
-        to_account=ref(payee),
-        amount_due=amount,
+        income=income,
+        deduction=deduction,
         property_id=property_id,
-        deduction_category="ordinary",
-        deductible_fraction_ppb=rate_to_ppb(deductible_fraction),
     )
+
+
+@dataclass(frozen=True, kw_only=True)
+class Dues:
+    """A monthly bill from month 0, deductible as ordinary expense by `deductible_fraction`."""
+
+    obligation_id: str
+    obligation_type: ObligationType
+    payer: AgentId
+    payee: AgentId
+    amount: PreparedAmount
+    end_month: int | None = None
+    property_id: PropertyId | None = None
+    deductible_fraction: Decimal | int = 1
 
 
 def financing(
@@ -355,11 +351,11 @@ class Situation:
     accounts: tuple[tuple[AccountRef, int], ...]
     income_sources: tuple[TransferIncomeCategory, ...] = (ORDINARY_INCOME,)
     tax_profiles: tuple[TaxProfile, ...] = ()
-    recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
-    scheduled_transfers: tuple[PreparedTransfer, ...] = ()
-    recurring_property_cashflows: tuple[PreparedRecurringPropertyCashflow, ...] = ()
-    scheduled_property_cashflows: tuple[PreparedPropertyCashflow, ...] = ()
-    obligations: tuple[PreparedObligation, ...] = ()
+    recurring_transfers: tuple[Cashflow, ...] = ()
+    scheduled_transfers: tuple[Cashflow, ...] = ()
+    recurring_property_cashflows: tuple[Cashflow, ...] = ()
+    scheduled_property_cashflows: tuple[Cashflow, ...] = ()
+    obligations: tuple[Dues, ...] = ()
     housing: Housing = field(default_factory=Housing)
     locations: tuple[PreparedLocation, ...] = ()
     property_tax_policies: tuple[_PropertyTax, ...] = ()
@@ -374,9 +370,7 @@ def compose(situation: Situation, rollout_id: int) -> World:
         MarketPath(situation.series, rollout_id, rollout_count=situation.rollout_count),
         horizon_months=situation.horizon_months,
         income_sources=situation.income_sources,
-        jurisdictions=tuple(
-            PreparedJurisdiction(jurisdiction_id=id_, level=jurisdictions[id_].level) for id_ in jurisdiction_ids
-        ),
+        jurisdictions={id_: jurisdictions[id_].level for id_ in jurisdiction_ids},
     )
     for opened, balance in situation.accounts:
         world.declare_account(account=opened, opening_balance=balance)
@@ -390,16 +384,36 @@ def compose(situation: Situation, rollout_id: int) -> World:
         world.declare_housing(situation.housing, situation.property_tax_policies, situation.locations)
     # Counterparty cashflows rather than actions: the world moves these when their month opens,
     # before the month's claims are assembled.
-    for transfer in situation.scheduled_transfers:
-        world.declare_flow(transfer)
-    for recurring in situation.recurring_transfers:
-        world.declare_flow(recurring)
-    for cashflow in situation.scheduled_property_cashflows:
-        world.declare_flow(cashflow)
-    for recurring_cashflow in situation.recurring_property_cashflows:
-        world.declare_flow(recurring_cashflow)
-    for obligation in situation.obligations:
-        world.track(Biller(obligation))
+    for flow in (
+        *situation.scheduled_transfers,
+        *situation.recurring_transfers,
+        *situation.scheduled_property_cashflows,
+        *situation.recurring_property_cashflows,
+    ):
+        world.declare_flow(
+            schedule=flow.schedule,
+            property_id=flow.property_id,
+            cause_id=flow.cause_id,
+            from_account=ref(flow.payer),
+            to_account=ref(flow.payee),
+            amount=flow.amount,
+            income_category=flow.income,
+            deduction_category=flow.deduction,
+        )
+    for owed in situation.obligations:
+        world.track(
+            Biller(
+                schedule=Recurring(start_month=0, end_month=owed.end_month),
+                obligation_id=owed.obligation_id,
+                obligation_type=owed.obligation_type,
+                from_account=ref(owed.payer),
+                to_account=ref(owed.payee),
+                amount_due=owed.amount,
+                property_id=owed.property_id,
+                deduction_category="ordinary",
+                deductible_fraction_ppb=rate_to_ppb(owed.deductible_fraction),
+            )
+        )
     return world
 
 
@@ -560,7 +574,7 @@ def rental(
             amount=indexed(monthly_rent),
         )
     ]
-    scheduled: list[PreparedTransfer] = []
+    scheduled: list[Cashflow] = []
     if monthly_management_fee is not None or leasing_fees_by_month is not None:
         accounts.append(account(AGENCY))
     if monthly_management_fee is not None:
@@ -872,8 +886,8 @@ class TestRentalIncomeTaxation:
             base,
             accounts=(*base.accounts, account(HOA)),
             obligations=(
-                dues(
-                    "hoa_dues",
+                Dues(
+                    obligation_id="hoa_dues",
                     obligation_type=ObligationType.HOA_DUES,
                     payer=OWNER,
                     payee=HOA,
@@ -1436,8 +1450,8 @@ class TestRentalIncomeTaxation:
             base,
             accounts=(*base.accounts, account(HOA)),
             obligations=(
-                dues(
-                    "hoa_dues:p1",
+                Dues(
+                    obligation_id="hoa_dues:p1",
                     obligation_type=ObligationType.HOA_DUES,
                     payer=OWNER,
                     payee=HOA,
@@ -2014,8 +2028,8 @@ class TestRentalIncomeTaxation:
             base,
             accounts=(*base.accounts, account(HOA)),
             obligations=(
-                dues(
-                    "hoa_dues",
+                Dues(
+                    obligation_id="hoa_dues",
                     obligation_type=ObligationType.HOA_DUES,
                     payer=OWNER,
                     payee=HOA,

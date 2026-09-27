@@ -34,7 +34,7 @@ from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedJurisdiction, PreparedObligation, PreparedSeries, _TenderPolicy
+from finance.augur.sim.prepared import PreparedSeries, _TenderPolicy
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
@@ -156,10 +156,7 @@ def compose(case: Holder, channels: Sequence[PreparedSeries]) -> World:
         MarketPath(channels, 0, rollout_count=1),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=tuple(
-            PreparedJurisdiction(jurisdiction_id=id_, level=jurisdiction.level)
-            for id_, jurisdiction in jurisdictions.items()
-        ),
+        jurisdictions={id_: jurisdiction.level for id_, jurisdiction in jurisdictions.items()},
     )
     for opened, balance in case.accounts:
         world.declare_account(account=opened, opening_balance=balance)
@@ -191,17 +188,15 @@ def compose(case: Holder, channels: Sequence[PreparedSeries]) -> World:
         )
     world.track(
         Biller(
-            PreparedObligation(
-                schedule=Recurring(start_month=0, end_month=case.horizon_months - 1),
-                obligation_id="monthly_spend",
-                obligation_type=ObligationType.CASH_SPEND,
-                from_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
-                to_account=AccountRef(agent_id=SPEND_SINK, account_id=CHECKING),
-                amount_due=case.monthly_spend,
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=rate_to_ppb(1),
-            )
+            schedule=Recurring(start_month=0, end_month=case.horizon_months - 1),
+            obligation_id="monthly_spend",
+            obligation_type=ObligationType.CASH_SPEND,
+            from_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
+            to_account=AccountRef(agent_id=SPEND_SINK, account_id=CHECKING),
+            amount_due=case.monthly_spend,
+            property_id=None,
+            deduction_category=None,
+            deductible_fraction_ppb=rate_to_ppb(1),
         )
     )
     return world

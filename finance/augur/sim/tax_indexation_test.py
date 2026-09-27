@@ -66,7 +66,7 @@ def test_a_hand_worked_year_at_index_one_and_a_half(profile: PreparedTaxProfile)
     book.enroll(FILER)
     book.income.accrue(FILER, ORDINARY_INCOME, dollars(150_000))
     book.gain(FILER, dollars(30_000), long_term=True)
-    federal, california = authority.assessments(book, 23, [], ())
+    federal, california = authority.assessments(book, 23, [], {})
     assert (federal.ordinary_tax, federal.capital_gain_tax, federal.net_investment_income_tax) == (
         dollars(Fraction(2_076_150, 100)),
         dollars(4_500),

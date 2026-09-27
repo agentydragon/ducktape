@@ -63,6 +63,10 @@ data:
           display_name: Gemini 3.1 Flash Lite
         - model: antigravity/ant-messages/gemini-3.5-flash-lite
           display_name: Gemini 3.5 Flash Lite
+        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          display_name: Qwen3.8 Flash Next IQ4_XS (128K)
+        - model: ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
+          display_name: Qwen3.8 Flash Next IQ4_XS (128K)
         - model: ollama/oai-chat/gpt-oss-20b-128k
           display_name: GPT-OSS 20B (128K)
         - model: ollama/olm-chat/gpt-oss-20b-128k
@@ -94,6 +98,8 @@ data:
           - anthropic-api/ant-messages/claude-haiku-4-5-20251001
           - antigravity/ant-messages/gemini-3.1-flash-lite
           - antigravity/ant-messages/gemini-3.5-flash-lite
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
           - ollama/oai-chat/gpt-oss-20b-128k
           - ollama/olm-chat/gpt-oss-20b-128k
           - ollama/oai-chat/gpt-oss-20b-256k
@@ -108,6 +114,8 @@ data:
           - ollama/olm-chat/gemma4-31b-it-q8_0-128k
         HARNESS_CODEX:
           - chatgpt/oai-responses/gpt-6-luna
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
           - ollama/oai-chat/gpt-oss-20b-128k
           - ollama/olm-chat/gpt-oss-20b-128k
           - ollama/oai-chat/gpt-oss-20b-256k
@@ -2856,6 +2864,10 @@ subjects:
   - apiGroup: ""
     kind: ServiceAccount
     name: claude-ai
+    namespace: agentplane-staging
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: haku-agent
     namespace: agentplane-staging
 ---
 apiVersion: cilium.io/v2

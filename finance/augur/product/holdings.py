@@ -9,7 +9,7 @@ request, in the request's currency; everything else is prepared once.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -25,17 +25,11 @@ from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.sim.bonds import coupon_amount_quanta
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, round_ppb
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, JurisdictionId, LotId
-from finance.augur.sim.income import InterestIncome
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, JurisdictionId, LotId, PortfolioId
+from finance.augur.sim.income import InterestIncome, TransferIncomeCategory
 from finance.augur.sim.money import Currency
-from finance.augur.sim.prepared import (
-    PreparedDistribution,
-    PreparedDistributionSlice,
-    PreparedFixedAmount,
-    PreparedIndexedCoupon,
-    PreparedTlhPortfolio,
-)
-from finance.augur.sim.tlh import TlhOpeningCohort
+from finance.augur.sim.prepared import PreparedFixedAmount, PreparedIndexedCoupon
+from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -72,13 +66,32 @@ class Bond:
     maturity_month_index: int
 
 
+@dataclass(frozen=True, kw_only=True)
+class ManagedPortfolio:
+    portfolio_id: PortfolioId
+    owner_agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
+    initial_cohorts: tuple[TlhOpeningCohort, ...]
+    assumptions: TlhAssumptions
+
+
+@dataclass(frozen=True, kw_only=True)
+class Distribution:
+    agent_id: AgentId
+    holding_account_id: AccountId
+    asset_id: AssetId
+    to_account_id: AccountId
+    tax_character: Mapping[TransferIncomeCategory, int]
+
+
 @dataclass(frozen=True)
 class Holdings:
     """The primary agent's opening positions, checked; what needs no currency is already prepared."""
 
     portfolio: PortfolioConfig
     tlh_portfolios: tuple[TlhPortfolioSpec, ...]
-    distributions: tuple[PreparedDistribution, ...]
+    distributions: tuple[Distribution, ...]
 
 
 def opening_holdings(
@@ -194,8 +207,8 @@ def prepared_bonds(portfolio: PortfolioConfig, *, coupon_account_id: AccountId, 
     )
 
 
-def prepared_tlh_portfolio(portfolio: TlhPortfolioSpec, *, currency: Currency) -> PreparedTlhPortfolio:
-    return PreparedTlhPortfolio(
+def prepared_tlh_portfolio(portfolio: TlhPortfolioSpec, *, currency: Currency) -> ManagedPortfolio:
+    return ManagedPortfolio(
         portfolio_id=portfolio.portfolio_id,
         owner_agent_id=portfolio.owner_agent_id,
         account_id=portfolio.account_id,
@@ -270,7 +283,7 @@ def _distributions(
     *,
     tlh_portfolios: tuple[TlhPortfolioSpec, ...],
     payout_account_id: AccountId,
-) -> tuple[PreparedDistribution, ...]:
+) -> tuple[Distribution, ...]:
     """A payout for every held pool of a security the deployment declares as distributing.
 
     The deployment's list says WHAT a fund is made of, the portfolio says WHERE it is held. A
@@ -280,7 +293,7 @@ def _distributions(
     """
 
     declaration_by_symbol = {declaration.symbol: declaration for declaration in declarations}
-    pools: dict[tuple[AgentId, AccountId, SecuritySymbol], PreparedDistribution] = {}
+    pools: dict[tuple[AgentId, AccountId, SecuritySymbol], Distribution] = {}
     for owner, position, _ in opening_lots(portfolio):
         asset = position.asset
         if isinstance(asset, SecurityKey) and asset.symbol in declaration_by_symbol:
@@ -314,8 +327,9 @@ def _distribution(
     agent_id: AgentId,
     holding_account_id: AccountId,
     payout_account_id: AccountId,
-) -> PreparedDistribution:
-    """One pool's payout. The split must allocate the whole payout; the wire's float fractions round onto the ppb grid."""
+) -> Distribution:
+    """One pool's payout. The split must allocate the whole payout; shares naming one issuer add, and the wire's float
+    fractions round onto the ppb grid."""
 
     total = sum(share.fraction for share in declaration.tax_character)
     # Exactly 1, not "at most 1": a short split would silently pay out less than the fund
@@ -325,16 +339,16 @@ def _distribution(
             f"security distribution on {asset.wire_id!r} allocates {total} of its payout; "
             "the tax-character fractions must sum to 1"
         )
-    return PreparedDistribution(
+    fractions: dict[JurisdictionId | None, float] = {}
+    for share in declaration.tax_character:
+        fractions[share.issuer_jurisdiction_id] = fractions.get(share.issuer_jurisdiction_id, 0.0) + share.fraction
+    return Distribution(
         agent_id=agent_id,
         holding_account_id=holding_account_id,
         asset_id=_asset_id(asset),
         to_account_id=payout_account_id,
-        tax_character=tuple(
-            PreparedDistributionSlice(
-                fraction_ppb=int(round_ppb(share.fraction)),
-                income_category=InterestIncome(issuer_jurisdiction_id=share.issuer_jurisdiction_id),
-            )
-            for share in declaration.tax_character
-        ),
+        tax_character={
+            InterestIncome(issuer_jurisdiction_id=issuer): int(round_ppb(fraction))
+            for issuer, fraction in fractions.items()
+        },
     )
