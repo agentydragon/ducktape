@@ -10,26 +10,23 @@ rather than relying on the layer beneath them already being Ready.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
     Kustomization,
+    RenderedDirectory,
     flux_kustomization,
     flux_kustomization_depends_on_many,
-    kustomize_kustomization,
 )
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
-from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption, write_yaml
+from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.haku import console
 from cluster.cdk8s.haku.console import Console
 from cluster.cdk8s.haku.database import Db
@@ -82,27 +79,9 @@ def console_chart(app: App) -> Chart:
     return chart
 
 
-def write_console_manifests(root: Path) -> None:
-    """Synthesize the console resource chart and its directory Kustomize config."""
-    out_dir = root / PATH
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    console_chart(app)
-    app.synth()
-    write_yaml(
-        out_dir / "kustomization.yaml",
-        kustomize_kustomization(
-            namespace=NAMESPACE,
-            resources=[f"{NAME}.k8s.yaml", *EXTRA_RESOURCES],
-            components=["./image-pins"],
-            config_map_generator=CONFIG_MAP_GENERATOR,
-        ),
-    )
-
-
 def haku_console(
     flux_chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
@@ -111,12 +90,11 @@ def haku_console(
     return flux_kustomization(
         flux_chart,
         NAME,
-        artifact,
+        directory,
         timeout=TIMEOUT,
         # This one Kustomization owns the CNPG Cluster's PVCs; pruning on deletion
         # would take the console's approval ledger with them.
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        decryption=sops_decryption(EXTRA_RESOURCES),
         # The two Jobs gate every dependent Kustomization: nothing downstream
         # reconciles until the schema is migrated and the indexer GRANTs applied.
         health_check_exprs=[

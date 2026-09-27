@@ -41,10 +41,9 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateMetadata,
 )
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, pod_policy
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy, deny_all_egress
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
@@ -270,7 +269,7 @@ def _add_deployment(scope: Construct) -> Deployment:
     deployment.containers[0].mount(_CONFIG_DIR, config_volume, read_only=True)
     deployment.containers[0].mount("/tmp", tmp_volume)
 
-    apply_pod_spec_patches(deployment)
+    pod_policy.harden(deployment)
     return deployment
 
 

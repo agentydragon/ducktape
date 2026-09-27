@@ -23,7 +23,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -98,7 +98,7 @@ def chart(app: App) -> Chart:
                 )
             )
         ],
-        values={"manageCRDs": True, "nodeSelector": {"topology.kubernetes.io/zone": "hil-ovh"}},
+        values={"manageCRDs": True, "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR},
     )
     return chart
 

@@ -14,8 +14,6 @@ instead of generating a replacement. DriveFS permissions come from its Bucket
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
@@ -36,11 +34,10 @@ from seaweed_s3policybinding_crds.com.seaweedfs.seaweed import (
     S3PolicyBindingSpecSubjects,
     S3PolicyBindingSpecSubjectsKind,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.seaweedfs import (
     cluster,
@@ -182,12 +179,8 @@ def _gateway(scope: Construct) -> None:
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
-                    node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
-                    tolerations=[
-                        k8s.Toleration(
-                            key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                        )
-                    ],
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     containers=[
                         k8s.Container(
                             name="s3",
@@ -276,18 +269,14 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
 def seaweedfs_public_s3(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_operator: Kustomization, kyverno: Kustomization
+    chart: Chart, directory: RenderedDirectory, seaweedfs_operator: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
     name = "seaweedfs-public-s3"
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         depends_on=flux_kustomization_depends_on_many(
             # S3Identity, S3Credentials, S3Policy and S3PolicyBinding CRDs
             seaweedfs_operator,

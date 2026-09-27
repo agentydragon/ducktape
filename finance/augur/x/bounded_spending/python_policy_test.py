@@ -38,6 +38,7 @@ from finance.augur.sim.prepared import (
     PreparedTransfer,
 )
 from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -206,7 +207,7 @@ def test_post_cashflow_review_and_ordered_claim_prefix_are_explicit() -> None:
         world.track(
             Biller(
                 PreparedObligation(
-                    month=0,
+                    schedule=Once(month=0),
                     obligation_id="due-bill",
                     obligation_type=ObligationType.OUTSIDE_RENT,
                     from_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),

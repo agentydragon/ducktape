@@ -60,7 +60,8 @@ py_library(
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:pod_spec_patches",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
@@ -90,6 +91,7 @@ py_library(
         "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:node_scheduling",
         "@pypi//cdk8s",
     ],
 )

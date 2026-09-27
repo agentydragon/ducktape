@@ -8,7 +8,7 @@ from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade, HelmReleaseSpecUpgradeRemediation
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -79,9 +79,7 @@ def chart(app: App) -> Chart:
             },
             "ingress": {"enabled": False},
             "nodeSelector": {"topology.kubernetes.io/region": "hil"},
-            "tolerations": [
-                {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
-            ],
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
             "resources": {"requests": {"cpu": "50m", "memory": "128Mi"}, "limits": {"cpu": "500m", "memory": "256Mi"}},
             "pluginsManager": {"enabled": True, "version": "0.1.1", "configContent": _PLUGINS_CONFIG},
         },

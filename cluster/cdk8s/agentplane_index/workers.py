@@ -7,8 +7,6 @@ image tag here is a placeholder the Component overrides.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
@@ -23,11 +21,10 @@ from cnpg_database_crds.io.cnpg.postgresql import (
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from agentplane.indexing.main import Settings
-from cluster.cdk8s import cnpg, forgejo_images
+from cluster.cdk8s import cnpg, forgejo_images, node_scheduling
 from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
-from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from util.settings_contract import env_name
 
@@ -43,7 +40,7 @@ _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-index:unset"
 _PORT = Settings.model_fields["port"].default
 _REPOSITORY_MOUNT = "/var/lib/agentplane-index"
 # The workers' shared settings, rendered by the kustomization.yaml's configMapGenerator.
-_CONFIG_MAP = ConfigMapArgs(
+CONFIG_MAP = ConfigMapArgs(
     name=f"{NAME}-config",
     namespace=NAME,
     literals=[
@@ -83,7 +80,7 @@ def _database(chart: Chart) -> None:
         "database-cluster",
         name=_DB_CLUSTER,
         namespace=NAME,
-        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh-ssd",
         size="20Gi",
         initdb=ClusterSpecBootstrapInitdb(database="ducktape", owner=_DB_OWNER),
@@ -146,7 +143,7 @@ def _worker(
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                             ),
-                            env_from=[k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=_CONFIG_MAP.name))],
+                            env_from=[k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=CONFIG_MAP.name))],
                             env=[
                                 secret_env_var("DB_USERNAME", _DB_APP_SECRET, "username"),
                                 secret_env_var("DB_PASSWORD", _DB_APP_SECRET, "password"),
@@ -243,13 +240,3 @@ def chart(app: App) -> Chart:
         ),
     )
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(
-            resources=[f"{NAME}.k8s.yaml"], components=["./image-pins"], config_map_generator=[_CONFIG_MAP]
-        ),
-    )

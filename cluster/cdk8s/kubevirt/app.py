@@ -28,6 +28,7 @@ from kubevirt_kubevirt_crds.io.kubevirt import (
     KubeVirtSpecWorkloadUpdateStrategy,
 )
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -90,7 +91,7 @@ def chart(app: App) -> Chart:
                                                 values=["hil", "home", "proxmox"],
                                             ),
                                             KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                                key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
+                                                key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="DoesNotExist"
                                             ),
                                         ]
                                     )

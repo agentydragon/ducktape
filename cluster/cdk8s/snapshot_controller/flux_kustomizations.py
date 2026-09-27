@@ -11,6 +11,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 
 
@@ -34,7 +35,7 @@ def snapshot_controller(chart: Chart) -> Kustomization:
                 ),
                 patch=(
                     "- op: add\n  path: /spec/template/spec/nodeSelector\n  value:\n    "
-                    "topology.kubernetes.io/zone: hil-ovh"
+                    f"{node_scheduling.ZONE_LABEL}: {node_scheduling.HIL_OVH_ZONE}"
                 ),
             )
         ],

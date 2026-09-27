@@ -17,6 +17,7 @@ from finance.augur.sim.money import USD, mul_div
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.prepared import PreparedAccount, PreparedObligation
 from finance.augur.sim.results import Finished
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import Capture, World
 
@@ -98,7 +99,7 @@ def test_an_experiment_defined_claim_label_reaches_the_policy() -> None:
     world.track(
         Biller(
             PreparedObligation(
-                month=0,
+                schedule=Once(month=0),
                 obligation_id="test-outflow",
                 obligation_type="experiment:annual-outflow",
                 from_account=AccountRef(agent_id=AgentId("retiree"), account_id=AccountId("checking")),

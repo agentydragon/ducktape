@@ -50,7 +50,7 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSel
 
 from aiquota.api import Settings
 from aiquota.config import Config
-from cluster.cdk8s import public_coder_proxy
+from cluster.cdk8s import pod_policy, public_coder_proxy
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE
 from cluster.cdk8s.cli_proxy_api import cli_proxy_api as cli_proxy_api_app  # aiquota()'s parameter is its Kustomization
 from cluster.cdk8s.clickhouse import client
@@ -66,7 +66,6 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -247,7 +246,6 @@ class Aiquota(Construct):
             ],
         )
         deployment.select(LabelSelector.of(labels=_LABELS))
-        apply_pod_spec_patches(deployment)
 
         bearer = Secret.from_secret_name(self, "bearer-ref", BEARER_SECRET_NAME)
         cli_proxy_api = Secret.from_secret_name(self, "cli-proxy-api-management-ref", "cli-proxy-api-management")
@@ -304,6 +302,7 @@ class Aiquota(Construct):
                 )
             ],
         )
+        pod_policy.harden(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:

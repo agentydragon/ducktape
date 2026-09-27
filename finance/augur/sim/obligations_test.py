@@ -28,7 +28,6 @@ from finance.augur.sim.prepared import (
     PreparedHoldingPool,
     PreparedLot,
     PreparedObligation,
-    PreparedRecurringObligation,
     PreparedRecurringTransfer,
     PreparedSeries,
 )
@@ -42,6 +41,7 @@ from finance.augur.sim.results import (
     RejectedAction,
     Rollout,
 )
+from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 
@@ -101,7 +101,7 @@ def bill(
     month: int = 0,
 ) -> PreparedObligation:
     return PreparedObligation(
-        month=month,
+        schedule=Once(month=month),
         obligation_id=obligation_id,
         obligation_type=obligation_type,
         from_account=payer,
@@ -121,10 +121,9 @@ def monthly_bill(
     amount_due: Decimal | int,
     *,
     start_month: int = 0,
-) -> PreparedRecurringObligation:
-    return PreparedRecurringObligation(
-        start_month=start_month,
-        end_month=None,
+) -> PreparedObligation:
+    return PreparedObligation(
+        schedule=Recurring(start_month=start_month, end_month=None),
         obligation_id=obligation_id,
         obligation_type=obligation_type,
         from_account=payer,
@@ -144,7 +143,7 @@ class Situation:
     accounts: list[PreparedAccount] = field(default_factory=list)
     pools: list[PreparedHoldingPool] = field(default_factory=list)
     lots: list[PreparedLot] = field(default_factory=list)
-    claims: list[PreparedObligation | PreparedRecurringObligation] = field(default_factory=list)
+    claims: list[PreparedObligation] = field(default_factory=list)
     recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
 
 

@@ -22,7 +22,7 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecResourcesRequests,
 )
 
-from cluster.cdk8s import cnpg
+from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.seaweedfs import namespace
@@ -50,7 +50,7 @@ def chart(app: App) -> Chart:
         },
         # Existing SSD-local replicas remain pinned by their PVs. Prefer a worker for
         # any future placement that is not constrained by an existing claim.
-        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh-ssd",
         size="2Gi",
         # QoS / eviction protection. Without these the instance pods are BestEffort -- the

@@ -50,13 +50,12 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, pod_policy
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 
@@ -116,7 +115,6 @@ class GoogleMcpApp(Construct):
         )
         # The Deployment selector is immutable; retain its existing labels for Flux adoption.
         deployment.select(LabelSelector.of(labels=_LABELS))
-        apply_pod_spec_patches(deployment)
         bearer = Secret.from_secret_name(self, "bearer-secret-ref", BEARER_SECRET_NAME)
         deployment.add_container(
             name="server",
@@ -152,6 +150,7 @@ class GoogleMcpApp(Construct):
         google_token_secret = Secret.from_secret_name(self, "google-token-secret-ref", GOOGLE_TOKEN_SECRET_NAME)
         google_token_volume = Volume.from_secret(self, "google-token-volume", google_token_secret)
         deployment.containers[0].mount(_GOOGLE_TOKEN_DIR, google_token_volume, read_only=True)
+        pod_policy.harden(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:

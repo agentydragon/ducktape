@@ -24,6 +24,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
 )
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRuleSpecGroupsRules
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -106,11 +107,7 @@ def _daemon_set(scope: Chart, nodes: list[str]) -> None:
                             )
                         )
                     ),
-                    tolerations=[
-                        k8s.Toleration(
-                            key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                        )
-                    ],
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     automount_service_account_token=False,
                     # The image sets no USER, so it would otherwise run as root.
                     security_context=k8s.PodSecurityContext(

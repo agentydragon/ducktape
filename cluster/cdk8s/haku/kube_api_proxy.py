@@ -39,11 +39,10 @@ from cdk8s_plus_34 import (
 from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef
 from constructs import Construct
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, pod_policy
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -203,7 +202,7 @@ class KubeApiProxy(Construct):
         # `autoReloadAll` rolls the pods on rotation.
         tls = Secret.from_secret_name(self, "tls-secret", _TLS_SECRET)
         container.mount(_TLS_DIR, Volume.from_secret(self, "tls-volume", tls), read_only=True)
-        apply_pod_spec_patches(deployment)
+        pod_policy.harden(deployment)
 
     def _add_network_policy(self) -> None:
         # Selecting the proxy makes both directions default-deny: ingress from the Gateway on
