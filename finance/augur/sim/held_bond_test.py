@@ -56,7 +56,7 @@ def held_case(*, indexed: bool = False, future_cpi: float = 2.0, rollout_count: 
                 BondId(f"{agent}-bond"),
                 agent_id=agent,
                 face=Decimal(100),
-                annual_rate=0.12,
+                annual_rate=Decimal("0.12"),
                 period=1,
                 purchase=-1,
                 maturity=2,
@@ -199,9 +199,14 @@ def test_existing_issuer_exemptions_survive_actor_capture(
 
 @pytest.mark.parametrize(
     ("face", "rate", "period", "coupon"),
-    [(600, 0.01, 1, 1), (180, 0.033333333, 1, 0), (1_250_627, 0.037, 5, 19_280), (600, 0.0, 1, 0)],
+    [
+        (600, Decimal("0.01"), 1, 1),
+        (180, Decimal("0.033333333"), 1, 0),
+        (1_250_627, Decimal("0.037"), 5, 19_280),
+        (600, 0, 1, 0),
+    ],
 )
-def test_fixed_coupon_rounds_once_and_funds_spending(face: int, rate: float, period: int, coupon: int) -> None:
+def test_fixed_coupon_rounds_once_and_funds_spending(face: int, rate: Decimal | int, period: int, coupon: int) -> None:
     case = Situation(
         accounts=checking((AgentId("alice"), Decimal(0)), (AgentId("world"), Decimal(0))),
         bonds=(

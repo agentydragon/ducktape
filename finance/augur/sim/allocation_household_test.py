@@ -30,7 +30,7 @@ from finance.augur.sim.jurisdictions import (
     TaxBracket,
 )
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.money import MAX_COUNT
+from finance.augur.sim.money import MAX_COUNT, USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedDistribution,
@@ -62,8 +62,8 @@ SYNTHETIC = JurisdictionId("synthetic")
 TAX = Jurisdiction(
     jurisdiction_id=SYNTHETIC,
     level=JurisdictionLevel.FEDERAL,
-    ordinary_income_brackets={"single": [TaxBracket(upper="Infinity", rate=0.2)]},
-    ltcg_brackets={"single": [TaxBracket(upper="Infinity", rate=0.1)]},
+    ordinary_income_brackets={"single": [TaxBracket(upper="Infinity", rate=Decimal("0.2"))]},
+    ltcg_brackets={"single": [TaxBracket(upper="Infinity", rate=Decimal("0.1"))]},
     standard_deduction={"single": Decimal(0)},
     max_capital_loss_ordinary_offset={"single": Decimal(0)},
     law_year=2024,
@@ -192,7 +192,7 @@ def compose(case: Situation, rollout_id: int) -> World:
                 compile_profile(
                     TaxProfile(agent_id=ALICE, jurisdiction_ids=[SYNTHETIC], tax_authority_agent_id=WORLD),
                     {SYNTHETIC: TAX},
-                    quantum=QUANTUM,
+                    currency=USD,
                 ),
                 indexation=FixedNominalLaw(),
             )

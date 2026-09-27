@@ -12,7 +12,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -58,9 +58,7 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
 
 
-def agent_shared_rbac(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno_policies: Kustomization
-) -> Kustomization:
+def agent_shared_rbac(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
@@ -68,7 +66,6 @@ def agent_shared_rbac(
         retry_interval=None,
         wait=None,
         timeout="2m",
-        depends_on=flux_kustomization_depends_on_many(kyverno_policies),
         description=(
             "Cluster-scoped agent RBAC (ClusterRoleBindings) + flux-system "
             "RoleBindings only. Namespace-scoped RoleBindings live in per-service "

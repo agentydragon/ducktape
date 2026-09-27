@@ -12,7 +12,6 @@ def home_assistant(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     local_path_provisioner: Kustomization,
-    seaweedfs_cluster: Kustomization,
     volsync: Kustomization,
     external_secrets_operator: Kustomization,
     seaweedfs_operator: Kustomization,
@@ -27,7 +26,6 @@ def home_assistant(
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
             local_path_provisioner,
-            seaweedfs_cluster,
             volsync,
             external_secrets_operator,
             # Bucket, S3Identity and S3Credentials CRDs

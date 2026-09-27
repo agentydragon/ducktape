@@ -85,6 +85,7 @@ cluster/k8s/user-agentydragon/kustomization.yaml linguist-generated=true
 cluster/schemas/**/*.json linguist-generated=true
 # cdk8s-generated ssh-mcp directory wiring.
 cluster/k8s/ssh-mcp/kustomization.yaml linguist-generated=true
+cluster/k8s/google-mcp/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/agent-sandbox/workspaces/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/workspaces/app/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/alloy-otlp-bearer/kustomization.yaml linguist-generated=true

@@ -19,7 +19,7 @@ import pytest_bazel
 from finance.augur.sim.ids import AssetId
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.study.guyton_klinger.panel import Sleeve, load_panel
-from finance.augur.study.guyton_klinger.paths import ADAPTATION_TARGET_PERCENT, QUANTUM, AnnualWindows, annual_windows
+from finance.augur.study.guyton_klinger.paths import ADAPTATION_TARGET_PERCENT, CURRENCY, AnnualWindows, annual_windows
 from finance.augur.study.guyton_klinger.policy import Cell, Guardrail, Inflation, Stage
 from finance.augur.study.guyton_klinger.run import Records, YearAmounts, YearRecordView, run
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
@@ -75,7 +75,7 @@ def wealth(rollout: Rollout, *months: int) -> list[Decimal]:
     """Holdings plus checking at each month's mark, in dollars."""
     summary = rollout.summary
     marks = list(zip(*(row.values for row in (*summary.public_holdings, *summary.cash)), strict=True))
-    return [sum(marks[month]) * QUANTUM for month in months]
+    return [sum(marks[month]) * CURRENCY.quantum for month in months]
 
 
 def dollars(*values: str) -> object:
@@ -83,7 +83,7 @@ def dollars(*values: str) -> object:
 
 
 def quanta(value: str) -> int:
-    return int(Decimal(value) / QUANTUM)
+    return int(Decimal(value) / CURRENCY.quantum)
 
 
 def withdrawals(rollout: Rollout) -> list[tuple[int, int]]:

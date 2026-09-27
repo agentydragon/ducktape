@@ -4,7 +4,7 @@ A fund of this shape holds a par bond of fixed maturity, collects its coupon, an
 sells it and buys a fresh one at the prevailing yield. That makes it the one fixed-income
 object a portfolio policy can treat like a stock: perpetual, fungible, divisible, marked every
 month, and "sell $X of it" is an order somebody can actually place. An individual bond is none
-of those — it matures, on a date, with a fixed cashflow schedule — which is why `BondHolding`
+of those — it matures, on a date, with a fixed cashflow schedule — which is why `PreparedBond`
 models that separately and marks it illiquid.
 
 **Only the fund's own yield is needed**, not a curve: a constant-maturity fund lives at one

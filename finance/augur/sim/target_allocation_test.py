@@ -22,6 +22,7 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_sc
 from finance.augur.sim.holdings import Disposition
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedHoldingPool,
@@ -41,7 +42,7 @@ LANDLORD = AgentId("landlord")
 CHECKING = AccountId("checking")
 # Weights default equal against a 9:1 holding, so stock is the overweight sleeve and every
 # raise has to come out of it first.
-STOCK_UNITS, BOND_UNITS = 900.0, 100.0
+STOCK_UNITS, BOND_UNITS = 900, 100
 QUANTA_PER_UNIT = 100
 FULL_DRIFT = 250_000_000  # A 25% drift band, in parts per billion.
 REINVEST = Reinvest(rebalance_tolerance_ppb=None)
@@ -68,8 +69,8 @@ class Situation:
     opening_cash: Decimal | int
     floor: Decimal | int
     ceiling: Decimal | int
-    stock_units: float = STOCK_UNITS
-    bond_units: float = BOND_UNITS
+    stock_units: int = STOCK_UNITS
+    bond_units: int = BOND_UNITS
     rent: Decimal | int = 0
     income: Decimal | int = 0
     rent_months: tuple[int, int | None] = (1, None)
@@ -78,7 +79,7 @@ class Situation:
     weights: tuple[int, int] = (1, 1)
 
 
-def lot(lot_id: LotId, asset: SecurityKey, quantity: float) -> PreparedLot:
+def lot(lot_id: LotId, asset: SecurityKey, quantity: Decimal | int) -> PreparedLot:
     scale = quantity_scale_for_asset(asset)
     return PreparedLot(
         lot_id=lot_id,
@@ -87,8 +88,8 @@ def lot(lot_id: LotId, asset: SecurityKey, quantity: float) -> PreparedLot:
         asset_id=AssetId(asset.symbol),
         purchase_month=0,
         quantity_scale=scale,
-        units=int(quantity_to_quanta(quantity, scale=scale)),
-        basis=money(Decimal(str(quantity)) * PRICE),
+        units=quantity_to_quanta(quantity, scale=scale),
+        basis=money(Decimal(quantity) * PRICE),
     )
 
 
@@ -99,9 +100,7 @@ def compose(case: Situation) -> World:
         horizon_months=HORIZON,
     )
     world = World(
-        MarketPath(
-            compile_series(paths, rollout_count=1, horizon_months=HORIZON, currency_quantum=QUANTUM), 0, rollout_count=1
-        ),
+        MarketPath(compile_series(paths, rollout_count=1, horizon_months=HORIZON, currency=USD), 0, rollout_count=1),
         horizon_months=HORIZON,
     )
     world.declare_account(PreparedAccount(account=ref(ALICE), opening_balance=money(case.opening_cash)))
@@ -383,8 +382,8 @@ def test_a_runtime_purchase_keeps_its_month_when_later_sold() -> None:
             opening_cash=0,
             floor=0,
             ceiling=1_000,
-            stock_units=1.0,
-            bond_units=1.0,
+            stock_units=1,
+            bond_units=1,
             income=30_000,
             income_months=(2, 2),
             rent=10_000,

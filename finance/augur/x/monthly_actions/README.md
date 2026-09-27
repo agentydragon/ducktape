@@ -50,15 +50,17 @@ All inputs are generated locally; the tests need no live service or evidence dat
 `run.py` composes the situation straight onto a `World` per path: `situation()`
 compiles the shared stipulated price paths, and
 `compose(case, rollout_id)` declares the three checking accounts, the tax authority,
-the household's holding pool and lot, and the bill onto one world. `execute` drives
+the household's holding pool and lot, and the bill onto one world. It converts its
+dollar amounts with `USD.quanta` (`sim/money.py`) and its share count with
+`quantity_to_quanta`; both are exact and raise rather than round. `execute` drives
 those worlds through the in-process
 [action session](../../sim/docs/financial_engine.md#scoped-household-action-batches)
 in a Python monthly loop. Policies are ordinary Python functions; editing one
 requires no Rust rebuild. Current observations and ordered actions cross the
 existing extension in memory. There is no native example binary, per-month
-subprocess or second financial implementation. `sim/test_results.py` and
-`product/test_action_projection.py` drive the same `situation` and `compose`, so
-their values move with this example's facts.
+subprocess or second financial implementation. Core cannot depend on `x/`, so
+`sim/testing/funded_bill.py` restates this situation for `sim/test_results.py` and
+`product/test_action_projection.py`; a change to one does not reach the other.
 
 ## Cash-only opening
 

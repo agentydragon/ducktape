@@ -21,15 +21,15 @@ indexation:
 
 ordinary_income_brackets:
   single:
-    - { upper: 10412, rate: 0.010 }
-    - { upper: 24684, rate: 0.020 }
-    - { upper: 38959, rate: 0.040 }
-    - { upper: 54081, rate: 0.060 }
-    - { upper: 68350, rate: 0.080 }
-    - { upper: 349137, rate: 0.093 }
-    - { upper: 418961, rate: 0.103 }
-    - { upper: 698271, rate: 0.113 }
-    - { upper: "Infinity", rate: 0.123 }
+    - { upper: 10412, rate: "0.010" }
+    - { upper: 24684, rate: "0.020" }
+    - { upper: 38959, rate: "0.040" }
+    - { upper: 54081, rate: "0.060" }
+    - { upper: 68350, rate: "0.080" }
+    - { upper: 349137, rate: "0.093" }
+    - { upper: 418961, rate: "0.103" }
+    - { upper: 698271, rate: "0.113" }
+    - { upper: "Infinity", rate: "0.123" }
 
 standard_deduction:
   single: 5363
@@ -50,6 +50,6 @@ exempts_own_issue: true
 # $1,000,000.
 # https://www.ftb.ca.gov/forms/2025/2025-540-instructions.html
 taxable_income_surtax:
-  rate: 0.01
+  rate: "0.01"
   threshold:
     single: 1000000
