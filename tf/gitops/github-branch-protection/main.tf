@@ -27,7 +27,7 @@
 # (~$4/mo). See README.md.
 #
 # Auth: github-secrets-sync-pat (Administration:R/W on ducktape; deployed
-# by cluster/k8s/github-secrets-sync/secrets/).
+# by cluster/k8s/github-secrets-sync-secrets/).
 
 provider "github" {
   owner = "agentydragon"

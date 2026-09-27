@@ -480,11 +480,6 @@ spec:
       name: flux-webhook
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/flux-webhook-token/**"
-          to: "@artifact/cluster/generated/flux-webhook-token/"
-      name: flux-webhook-token
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/forgejo/agentydragon/**"
           to: "@artifact/cluster/generated/forgejo/agentydragon/"
       name: forgejo-agentydragon
@@ -535,19 +530,14 @@ spec:
       name: github-api-proxy
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/github-branch-protection/**"
-          to: "@artifact/cluster/generated/github-branch-protection/"
-      name: github-branch-protection
+        - from: "@repo/cluster/generated/github-tf/**"
+          to: "@artifact/cluster/generated/github-tf/"
+      name: github-tf
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/github-exporter/**"
           to: "@artifact/cluster/k8s/github-exporter/"
       name: github-exporter
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/github-secrets-sync/**"
-          to: "@artifact/cluster/k8s/github-secrets-sync/"
-      name: github-secrets-sync
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/goldilocks/**"

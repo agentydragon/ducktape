@@ -30,6 +30,7 @@ from cluster.cdk8s import (
     forgejo_token_rotation,
     gateway,
     github_branch_protection,
+    github_tf,
     goldilocks,
     google_mcp,
     ha_mcp,
@@ -793,16 +794,16 @@ def generate_manifests(root: Path) -> None:
     gatus_sso.gatus_sso_tf(
         flux_chart, write_directory(root, gatus_sso_tf_artifact, gatus_sso.chart), tofu_controller_kustomization
     )
-    flux_webhook_token_artifact = artifact("flux-webhook-token", flux_webhook_token.OUTPUT_DIR)
-    flux_webhook_token.flux_webhook_token(
+    github_tf_artifact = artifact(github_tf.NAME, github_tf.OUTPUT_DIR)
+    github_tf.github_tf(
         flux_chart,
-        write_directory(root, flux_webhook_token_artifact, flux_webhook_token.chart),
-        tofu_controller_kustomization,
-    )
-    github_branch_protection_artifact = artifact("github-branch-protection", github_branch_protection.OUTPUT_DIR)
-    github_branch_protection.github_branch_protection(
-        flux_chart,
-        write_directory(root, github_branch_protection_artifact, github_branch_protection.chart),
+        write_directory(
+            root,
+            github_tf_artifact,
+            github_branch_protection.chart,
+            github_secrets_sync_gitops_module.chart,
+            flux_webhook_token.chart,
+        ),
         tofu_controller_kustomization,
     )
     monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
@@ -1165,12 +1166,6 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         grafana_operator_kustomization,
     )
-    github_secrets_sync_artifact = artifact("github-secrets-sync", github_secrets_sync_gitops_module.OUTPUT_DIR)
-    github_secrets_sync_gitops_module.github_secrets_sync(
-        flux_chart,
-        write_directory(root, github_secrets_sync_artifact, github_secrets_sync_gitops_module.chart),
-        tofu_controller_kustomization,
-    )
     grocy_sf_artifact = artifact("grocy-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/app")
     grocy_sf_kustomization = grocy_flux_kustomizations.grocy_sf(
         flux_chart, grocy_sf_artifact, volsync_kustomization, kyverno_kustomization
@@ -1522,7 +1517,6 @@ def generate_manifests(root: Path) -> None:
             flux_image_automation_forgejo_artifact,
             flux_monitoring_artifact,
             flux_webhook_artifact,
-            flux_webhook_token_artifact,
             forgejo_agentydragon_artifact,
             forgejo_agentydragon_repos_artifact,
             budget_ledger_artifact,
@@ -1533,9 +1527,8 @@ def generate_manifests(root: Path) -> None:
             gatus_artifact,
             gatus_sso_tf_artifact,
             github_api_proxy_artifact,
-            github_branch_protection_artifact,
+            github_tf_artifact,
             github_exporter_artifact,
-            github_secrets_sync_artifact,
             goldilocks_artifact,
             google_mcp_artifact,
             grocy_mcp_sf_artifact,
