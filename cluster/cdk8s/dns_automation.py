@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
@@ -34,8 +34,7 @@ def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
     ExternalSecret(
         chart,
         "credentials",
-        name=_CREDENTIALS_SECRET,
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(name=_CREDENTIALS_SECRET, namespace=_NAMESPACE),
         refresh="1h",
         store=external_creds.STORE,
         data=[

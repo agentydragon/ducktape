@@ -35,7 +35,7 @@ def chart(app: App) -> Chart:
     PrometheusRule(
         chart,
         "seaweedfs-replication",
-        metadata=metadata("seaweedfs-replication", namespace.NAME, labels={"release": "kube-prometheus-stack"}),
+        metadata=metadata("seaweedfs-replication", namespace.NAME),
         groups=[
             group(
                 "seaweedfs-replication",

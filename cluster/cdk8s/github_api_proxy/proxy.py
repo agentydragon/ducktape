@@ -482,12 +482,7 @@ def _monitoring(scope: Construct) -> None:
         selector=_LABELS,
         pod_metrics_endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
-    PrometheusRule(
-        scope,
-        "prometheus-rule",
-        metadata=metadata(_NAME, _NAMESPACE, labels={"release": "kube-prometheus-stack"}),
-        groups=[group(_NAME, _RULES)],
-    )
+    PrometheusRule(scope, "prometheus-rule", metadata=metadata(_NAME, _NAMESPACE), groups=[group(_NAME, _RULES)])
 
 
 def app_chart(app: App) -> Chart:

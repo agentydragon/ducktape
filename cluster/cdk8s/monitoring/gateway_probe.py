@@ -248,12 +248,7 @@ def chart(app: App, mesh: Mesh) -> Chart:
             _endpoint(Dial.GATEWAY_SERVICE, [], {"target": [f"{_GATEWAY_SERVICE}:{_GATEWAY_PORT}"]}),
         ],
     )
-    PrometheusRule(
-        chart,
-        "prometheus-rule",
-        metadata=metadata(_NAME, NAMESPACE, labels={"release": "kube-prometheus-stack"}),
-        groups=[group(_NAME, _rules(nodes))],
-    )
+    PrometheusRule(chart, "prometheus-rule", metadata=metadata(_NAME, NAMESPACE), groups=[group(_NAME, _rules(nodes))])
     add_fleet_rules(chart)
     return chart
 
