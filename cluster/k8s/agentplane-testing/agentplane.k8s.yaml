@@ -2857,6 +2857,10 @@ subjects:
     kind: ServiceAccount
     name: claude-ai
     namespace: agentplane-staging
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: haku-agent
+    namespace: agentplane-staging
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
