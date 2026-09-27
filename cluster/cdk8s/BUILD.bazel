@@ -401,6 +401,7 @@ py_library(
         ":artifact_generators",
         ":flux",
         ":manifest_roots",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "@pypi//cdk8s",
@@ -648,12 +649,24 @@ py_library(
     name = "agent_machine_access",
     srcs = ["agent_machine_access.py"],
     deps = [
-        ":artifact_generators",
+        ":terraform",
+        "//cluster/cdk8s/providers/tofu_controller:terraform",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "authentik_tf",
+    srcs = ["authentik_tf.py"],
+    deps = [
+        ":agent_machine_access",
         ":flux",
         ":manifest_roots",
         ":terraform",
+        "//cluster/cdk8s/authentik:sso_providers",
+        "//cluster/cdk8s/gatus:sso",
+        "//cluster/cdk8s/monitoring:alloy_otlp_bearer_token",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/tofu_controller:terraform",
         "@pypi//cdk8s",
     ],
 )
@@ -662,10 +675,17 @@ py_library(
     name = "github_branch_protection",
     srcs = ["github_branch_protection.py"],
     deps = [
-        ":artifact_generators",
+        ":terraform",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "github_tf",
+    srcs = ["github_tf.py"],
+    deps = [
         ":flux",
         ":manifest_roots",
-        ":terraform",
         "@pypi//cdk8s",
     ],
 )
@@ -1273,6 +1293,7 @@ py_library(
         ":alloy_otlp_bearer",
         ":artifact_generators",
         ":authentik_jwt_rotation",
+        ":authentik_tf",
         ":claude_sandbox_secrets",
         ":descheduler",
         ":dns_automation",
@@ -1286,6 +1307,7 @@ py_library(
         ":forgejo_images",
         ":forgejo_token_rotation",
         ":github_branch_protection",
+        ":github_tf",
         ":goldilocks",
         ":google_mcp",
         ":ha_mcp",
@@ -1353,7 +1375,6 @@ py_library(
         "//cluster/cdk8s/clickhouse:installation",
         "//cluster/cdk8s/clickhouse:operator",
         "//cluster/cdk8s/clickhouse:schema",
-        "//cluster/cdk8s/coredns_custom:flux_kustomizations",
         "//cluster/cdk8s/cpap_sync:app",
         "//cluster/cdk8s/dcgm_exporter:exporter",
         "//cluster/cdk8s/dcgm_exporter:flux_kustomizations",

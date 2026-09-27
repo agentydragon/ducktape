@@ -58,23 +58,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: coredns-custom
-  namespace: ducktape-flux
-spec:
-  interval: 10m0s
-  path: ./cluster/k8s/coredns-custom
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: coredns-custom
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: external-secrets-crds
   namespace: ducktape-flux
 spec:
@@ -521,10 +504,6 @@ metadata:
   name: gaffer-private-source
   namespace: flux-system
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: flux-image-automation-ghcr
       namespace: ducktape-flux
@@ -732,6 +711,7 @@ metadata:
   name: flux-monitoring
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -752,6 +732,7 @@ metadata:
   name: cilium-monitoring
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -772,6 +753,7 @@ metadata:
   name: etcd-monitoring
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -812,6 +794,7 @@ metadata:
   name: monitoring-rules
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -1807,31 +1790,7 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: agent-machine-access-tf
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
-      kind: Terraform
-      name: agent-machine-access
-      namespace: flux-system
-  interval: 10m
-  path: ./cluster/generated/agents/machine-access-tf
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: agent-machine-access-tf
-    namespace: ducktape-flux
-  timeout: 10m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: sso-providers-tf
+  name: authentik-tf
   namespace: ducktape-flux
 spec:
   dependsOn:
@@ -1842,76 +1801,44 @@ spec:
       kind: Terraform
       name: sso-providers
       namespace: flux-system
-  interval: 10m
-  path: ./cluster/generated/authentik/sso-providers-tf
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: sso-providers-tf
-    namespace: ducktape-flux
-  timeout: 10m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: gatus-sso-tf
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: agent-machine-access
+      namespace: flux-system
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
       kind: Terraform
       name: gatus-sso
       namespace: flux-system
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: alloy-otlp-bearer-token
+      namespace: flux-system
   interval: 10m
-  path: ./cluster/generated/gatus/sso-tf
+  path: ./cluster/generated/authentik/tf
   prune: true
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
-    name: gatus-sso-tf
+    name: authentik-tf
     namespace: ducktape-flux
   timeout: 10m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: flux-webhook-token
+  name: github-tf
   namespace: ducktape-flux
 spec:
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/generated/flux-webhook-token
+  path: ./cluster/generated/github-tf
   prune: true
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
-    name: flux-webhook-token
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: github-branch-protection
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/github-branch-protection
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: github-branch-protection
+    name: github-tf
     namespace: ducktape-flux
   timeout: 10m
   wait: true
@@ -2230,6 +2157,7 @@ metadata:
   name: seaweedfs-monitoring
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -2644,10 +2572,6 @@ metadata:
   name: seaweedfs-public-s3
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: seaweedfs-operator
       namespace: ducktape-flux
@@ -3228,26 +3152,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: github-secrets-sync
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/github-secrets-sync
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: github-secrets-sync
-    namespace: ducktape-flux
-  timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: grocy-sf
   namespace: ducktape-flux
 spec:
@@ -3523,30 +3427,6 @@ spec:
     namespace: ducktape-flux
   timeout: 10m
   wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: alloy-otlp-bearer-token-tf
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
-      kind: Terraform
-      name: alloy-otlp-bearer-token
-      namespace: flux-system
-  interval: 10m
-  path: ./cluster/generated/monitoring/alloy-otlp-bearer-token-tf
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: monitoring-alloy-otlp-bearer-token-tf
-    namespace: ducktape-flux
-  timeout: 10m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

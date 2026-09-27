@@ -14,6 +14,7 @@ from cluster.cdk8s import (
     airlock,
     alloy_otlp_bearer,
     authentik_jwt_rotation,
+    authentik_tf,
     claude_sandbox_secrets,
     cnpg_operator,
     descheduler,
@@ -30,6 +31,7 @@ from cluster.cdk8s import (
     forgejo_token_rotation,
     gateway,
     github_branch_protection,
+    github_tf,
     goldilocks,
     google_mcp,
     ha_mcp,
@@ -106,7 +108,6 @@ from cluster.cdk8s.clickhouse import (
     operator as clickhouse_operator,
     schema as clickhouse_schema,
 )
-from cluster.cdk8s.coredns_custom import flux_kustomizations as coredns_custom_flux_kustomizations
 from cluster.cdk8s.cpap_sync import app as cpap_sync_app
 from cluster.cdk8s.dcgm_exporter import (
     exporter as dcgm_exporter_exporter,
@@ -348,8 +349,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart, agent_sandbox_controller_artifact
     )
     artifact_generators_factory(flux_chart)
-    coredns_custom_artifact = artifact("coredns-custom", f"{HAND_WRITTEN_ROOT}/coredns-custom")
-    coredns_custom_flux_kustomizations.coredns_custom(flux_chart, coredns_custom_artifact)
     external_secrets_crds_kustomization = external_secrets_flux_kustomizations.external_secrets_crds(flux_chart)
     flux_image_automation_ghcr_artifact = artifact("flux-image-automation-ghcr", flux_image_automation_ghcr.OUTPUT_DIR)
     flux_image_automation_ghcr_kustomization = flux_image_automation_ghcr.flux_image_automation_ghcr(
@@ -755,30 +754,29 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, atuin_user_provisioner_artifact, atuin_user_provisioner.chart),
         atuin_kustomization,
     )
-    agent_machine_access_tf_artifact = artifact("agent-machine-access-tf", agent_machine_access.OUTPUT_DIR)
-    agent_machine_access.agent_machine_access_tf(
+    authentik_tf_artifact = artifact(authentik_tf.NAME, authentik_tf.OUTPUT_DIR)
+    authentik_tf.authentik_tf(
         flux_chart,
-        write_directory(root, agent_machine_access_tf_artifact, agent_machine_access.chart),
+        write_directory(
+            root,
+            authentik_tf_artifact,
+            sso_providers.chart,
+            agent_machine_access.chart,
+            gatus_sso.chart,
+            alloy_otlp_bearer_token.chart,
+        ),
         tofu_controller_kustomization,
     )
-    sso_providers_tf_artifact = artifact("sso-providers-tf", sso_providers.OUTPUT_DIR)
-    sso_providers.sso_providers_tf(
-        flux_chart, write_directory(root, sso_providers_tf_artifact, sso_providers.chart), tofu_controller_kustomization
-    )
-    gatus_sso_tf_artifact = artifact("gatus-sso-tf", gatus_sso.OUTPUT_DIR)
-    gatus_sso.gatus_sso_tf(
-        flux_chart, write_directory(root, gatus_sso_tf_artifact, gatus_sso.chart), tofu_controller_kustomization
-    )
-    flux_webhook_token_artifact = artifact("flux-webhook-token", flux_webhook_token.OUTPUT_DIR)
-    flux_webhook_token.flux_webhook_token(
+    github_tf_artifact = artifact(github_tf.NAME, github_tf.OUTPUT_DIR)
+    github_tf.github_tf(
         flux_chart,
-        write_directory(root, flux_webhook_token_artifact, flux_webhook_token.chart),
-        tofu_controller_kustomization,
-    )
-    github_branch_protection_artifact = artifact("github-branch-protection", github_branch_protection.OUTPUT_DIR)
-    github_branch_protection.github_branch_protection(
-        flux_chart,
-        write_directory(root, github_branch_protection_artifact, github_branch_protection.chart),
+        write_directory(
+            root,
+            github_tf_artifact,
+            github_branch_protection.chart,
+            github_secrets_sync_gitops_module.chart,
+            flux_webhook_token.chart,
+        ),
         tofu_controller_kustomization,
     )
     monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
@@ -1130,12 +1128,6 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         grafana_operator_kustomization,
     )
-    github_secrets_sync_artifact = artifact("github-secrets-sync", github_secrets_sync_gitops_module.OUTPUT_DIR)
-    github_secrets_sync_gitops_module.github_secrets_sync(
-        flux_chart,
-        write_directory(root, github_secrets_sync_artifact, github_secrets_sync_gitops_module.chart),
-        tofu_controller_kustomization,
-    )
     grocy_sf_artifact = artifact("grocy-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/app")
     grocy_sf_kustomization = grocy_flux_kustomizations.grocy_sf(
         flux_chart, grocy_sf_artifact, volsync_kustomization, kyverno_kustomization
@@ -1205,14 +1197,6 @@ def generate_manifests(root: Path) -> None:
     )
     haku_state_artifact = artifact("haku-state", forgejo_gitops_modules.HAKU_STATE_DIR)
     forgejo_gitops_modules.haku_state(flux_chart, haku_state_artifact, tofu_controller_kustomization)
-    monitoring_alloy_otlp_bearer_token_tf_artifact = artifact(
-        "monitoring-alloy-otlp-bearer-token-tf", alloy_otlp_bearer_token.OUTPUT_DIR
-    )
-    alloy_otlp_bearer_token.alloy_otlp_bearer_token_tf(
-        flux_chart,
-        write_directory(root, monitoring_alloy_otlp_bearer_token_tf_artifact, alloy_otlp_bearer_token.chart),
-        tofu_controller_kustomization,
-    )
     litellm_artifact = artifact("litellm", litellm_namespace.OUTPUT_DIR)
     litellm_proxy.litellm(
         flux_chart,
@@ -1389,9 +1373,8 @@ def generate_manifests(root: Path) -> None:
             ntfy_artifact,
             agentplane_testing_artifact,
             claude_rbac_artifact,
-            agent_machine_access_tf_artifact,
             authentik_artifact,
-            sso_providers_tf_artifact,
+            authentik_tf_artifact,
             cert_manager_artifact,
             cert_manager_environment_artifact,
             cnpg_artifact,
@@ -1469,7 +1452,6 @@ def generate_manifests(root: Path) -> None:
             cli_proxy_api_artifact,
             clickhouse_operator_artifact,
             clickhouse_schema_artifact,
-            coredns_custom_artifact,
             cpap_sync_artifact,
             dcgm_exporter_artifact,
             descheduler_artifact,
@@ -1478,7 +1460,6 @@ def generate_manifests(root: Path) -> None:
             flux_image_automation_forgejo_artifact,
             flux_monitoring_artifact,
             flux_webhook_artifact,
-            flux_webhook_token_artifact,
             forgejo_agentydragon_artifact,
             forgejo_agentydragon_repos_artifact,
             budget_ledger_artifact,
@@ -1487,11 +1468,9 @@ def generate_manifests(root: Path) -> None:
             forgejo_claude_artifact,
             cpap_data_artifact,
             gatus_artifact,
-            gatus_sso_tf_artifact,
             github_api_proxy_artifact,
-            github_branch_protection_artifact,
+            github_tf_artifact,
             github_exporter_artifact,
-            github_secrets_sync_artifact,
             goldilocks_artifact,
             google_mcp_artifact,
             grocy_mcp_sf_artifact,
@@ -1519,7 +1498,6 @@ def generate_manifests(root: Path) -> None:
             metrics_server_artifact,
             agents_mitmproxy_artifact,
             monitoring_alloy_artifact,
-            monitoring_alloy_otlp_bearer_token_tf_artifact,
             monitoring_cilium_artifact,
             monitoring_etcd_artifact,
             monitoring_gateway_probe_artifact,

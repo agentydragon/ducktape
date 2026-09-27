@@ -175,7 +175,8 @@ on the same node). Same family:
 
 - `*.allegedly.works` is five node A records, TTL 300
   (<../../../tf/gitops/dns-records/main.tf>); CoreDNS runs `loadbalance` and
-  `cache 30` (<../../k8s/coredns-custom/config/Corefile>).
+  `cache 30`, Talos's stock Corefile
+  ([`CoreDNSConfigMap`](https://github.com/siderolabs/talos/blob/main/internal/app/machined/pkg/controllers/k8s/internal/k8stemplates/coredns.go)).
 - JWKS: `httpx.get(..., timeout=10)` in <../../../mcp_infra/oidc_principal.py>,
   no retries; `socket.create_connection` stops at the first address whose TCP
   connect succeeds, which the policy proxy always is. The TLS reset is

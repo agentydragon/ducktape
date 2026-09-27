@@ -85,6 +85,7 @@ class Migration(Construct):
         )
         node_scheduling.attract_to_zone(job)
         apply_pod_spec_patches(job)
+        # cdk8s-plus's Container has no terminationMessagePolicy option.
         ApiObject.of(job).add_json_patch(
             JsonPatch.add("/spec/template/spec/containers/0/terminationMessagePolicy", "FallbackToLogsOnError")
         )

@@ -5,6 +5,7 @@ from __future__ import annotations
 from textwrap import dedent
 
 from cdk8s import ApiObjectMetadata, App, Chart
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -598,6 +599,7 @@ def monitoring_rules(chart: Chart, directory: RenderedDirectory, monitoring_crds
         chart,
         NAME,
         directory,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         retry_interval=None,
         wait=None,
         depends_on=[

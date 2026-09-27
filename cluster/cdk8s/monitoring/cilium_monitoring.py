@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpointsScheme,
     ServiceMonitorSpecNamespaceSelector,
@@ -57,6 +58,7 @@ def cilium_monitoring(chart: Chart, directory: RenderedDirectory, monitoring_crd
         chart,
         NAME,
         directory,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         timeout="2m",
         depends_on=[
             # ServiceMonitor
