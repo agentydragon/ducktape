@@ -1,9 +1,8 @@
 """The real session posts opaque component effects without owning its model state."""
 
-from collections.abc import Callable
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
-from functools import partial
 
 import pytest
 import pytest_bazel
@@ -14,7 +13,7 @@ from finance.augur.sim.actions import Action, Contribute, DecisionActions, Liqui
 from finance.augur.sim.books import AccountRef, Book, TlhPortfolioState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, PortfolioId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferIncomeCategory
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import Currency
@@ -63,7 +62,8 @@ class Situation:
     rollouts: int = 1
     harvest: bool = True
     prices: tuple[int, ...] | None = None
-    distributions: tuple[Callable[[World], None], ...] = ()
+    # How the index's payouts into the owner's checking split by income, in ppb; `None` declares no distribution.
+    payout_split: Mapping[TransferIncomeCategory, int] | None = None
     interest_sources: tuple[InterestIncome, ...] = ()
     distribution_rates: tuple[Decimal, ...] = ()
     taxed: bool = True
@@ -124,8 +124,14 @@ def compose(case: Situation, rollout_id: int) -> World:
         initial_cohorts=(COHORT,),
         assumptions=assumptions(harvest=case.harvest),
     )
-    for distribution in case.distributions:
-        distribution(world)
+    if case.payout_split is not None:
+        world.declare_distribution(
+            agent_id=OWNER,
+            holding_account_id=CHECKING,
+            asset_id=AssetId(ASSET.symbol),
+            to_account_id=CHECKING,
+            tax_character=case.payout_split,
+        )
     return world
 
 
@@ -352,19 +358,7 @@ def test_managed_subquantum_distribution_keeps_cash_and_issuer_character() -> No
         horizon=1,
         harvest=False,
         distribution_rates=(Decimal("0.015"), Decimal(0)),
-        distributions=(
-            partial(
-                World.declare_distribution,
-                agent_id=OWNER,
-                holding_account_id=CHECKING,
-                asset_id=AssetId(ASSET.symbol),
-                to_account_id=CHECKING,
-                tax_character={
-                    InterestIncome(issuer_jurisdiction_id=FEDERAL): 500_000_000,
-                    InterestIncome(): 500_000_000,
-                },
-            ),
-        ),
+        payout_split={InterestIncome(issuer_jurisdiction_id=FEDERAL): 500_000_000, InterestIncome(): 500_000_000},
         interest_sources=(InterestIncome(issuer_jurisdiction_id=FEDERAL), InterestIncome(issuer_jurisdiction_id=None)),
     )
     live = session(case)

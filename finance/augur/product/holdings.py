@@ -30,7 +30,6 @@ from finance.augur.sim.income import InterestIncome, TransferIncomeCategory
 from finance.augur.sim.money import Currency
 from finance.augur.sim.prepared import PreparedFixedAmount, PreparedIndexedCoupon
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
-from finance.augur.sim.world import World
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -76,16 +75,6 @@ class ManagedPortfolio:
     initial_cohorts: tuple[TlhOpeningCohort, ...]
     assumptions: TlhAssumptions
 
-    def declare(self, world: World) -> None:
-        world.declare_portfolio(
-            portfolio_id=self.portfolio_id,
-            owner_agent_id=self.owner_agent_id,
-            account_id=self.account_id,
-            asset_id=self.asset_id,
-            initial_cohorts=self.initial_cohorts,
-            assumptions=self.assumptions,
-        )
-
 
 @dataclass(frozen=True, kw_only=True)
 class Distribution:
@@ -94,15 +83,6 @@ class Distribution:
     asset_id: AssetId
     to_account_id: AccountId
     tax_character: Mapping[TransferIncomeCategory, int]
-
-    def declare(self, world: World) -> None:
-        world.declare_distribution(
-            agent_id=self.agent_id,
-            holding_account_id=self.holding_account_id,
-            asset_id=self.asset_id,
-            to_account_id=self.to_account_id,
-            tax_character=self.tax_character,
-        )
 
 
 @dataclass(frozen=True)

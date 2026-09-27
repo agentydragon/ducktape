@@ -11,10 +11,9 @@ capex, sale basis, §121 eligibility and mortgage payoff are all per property, a
 holding a primary home and a rental is where a leak between them shows.
 """
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
-from functools import partial
 
 import numpy as np
 import polars as pl
@@ -166,6 +165,14 @@ def property_tax(property_id: PropertyId, collector: AgentId) -> _PropertyTax:
 
 
 @dataclass(frozen=True)
+class Rent:
+    """The tenant's monthly rent to Alice, in dollars, from month 0 through `end_month`."""
+
+    amount: Decimal | int
+    end_month: int
+
+
+@dataclass(frozen=True)
 class Situation:
     """What Alice owns, what happens to it, and the market each property is valued in."""
 
@@ -176,7 +183,7 @@ class Situation:
     locations: tuple[PreparedLocation, ...] = LOCATIONS
     tax_policies: tuple[_PropertyTax, ...] = ()
     jurisdiction_ids: tuple[JurisdictionId, ...] = ()
-    recurring_transfers: tuple[Callable[[World], None], ...] = ()
+    rent: Rent | None = None
     home_values: Mapping[str, Sequence[float]] = field(default_factory=dict)
 
 
@@ -223,8 +230,16 @@ def compose(case: Situation, rollout_id: int) -> World:
             )
         )
     world.declare_housing(case.housing, case.tax_policies, case.locations)
-    for flow in case.recurring_transfers:
-        flow(world)
+    if case.rent is not None:
+        world.declare_flow(
+            schedule=Recurring(start_month=0, end_month=case.rent.end_month),
+            cause_id="rental-income:rental",
+            from_account=AccountRef(agent_id=TENANT, account_id=CHECKING),
+            to_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
+            amount=money(case.rent.amount),
+            income_category=ORDINARY_INCOME,
+            deduction_category=None,
+        )
     return world
 
 
@@ -343,18 +358,7 @@ def home_and_rental_case() -> Situation:
         ),
         locations=MULTI_PROPERTY_LOCATIONS,
         jurisdiction_ids=(FEDERAL, CALIFORNIA),
-        recurring_transfers=(
-            partial(
-                World.declare_flow,
-                schedule=Recurring(start_month=0, end_month=RENTAL_SALE_MONTH - 1),
-                cause_id="rental-income:rental",
-                from_account=AccountRef(agent_id=TENANT, account_id=CHECKING),
-                to_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
-                amount=money(MONTHLY_RENT),
-                income_category=ORDINARY_INCOME,
-                deduction_category=None,
-            ),
-        ),
+        rent=Rent(MONTHLY_RENT, end_month=RENTAL_SALE_MONTH - 1),
         housing=Housing(
             purchases=(
                 purchase(

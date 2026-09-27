@@ -47,7 +47,7 @@ TREASURY, MUNI, CORPORATE = JurisdictionId("federal_us"), JurisdictionId("califo
 
 @dataclass(frozen=True, kw_only=True)
 class DatedBond:
-    """A bond a case holds from month zero, in quanta."""
+    """A bond a case holds from month zero, bought at par, in quanta."""
 
     bond_id: BondId
     agent_id: AgentId
@@ -58,21 +58,6 @@ class DatedBond:
     coupon_period_months: int
     purchase_month_index: int
     maturity_month_index: int
-
-    def hold(self, world: World) -> None:
-        """Bought at par."""
-        world.hold_bond(
-            bond_id=self.bond_id,
-            agent_id=self.agent_id,
-            account_id=self.account_id,
-            issuer_jurisdiction_id=self.issuer_jurisdiction_id,
-            face_value=self.face_value,
-            purchase_price=self.face_value,
-            coupon=self.coupon,
-            coupon_period_months=self.coupon_period_months,
-            purchase_month_index=self.purchase_month_index,
-            maturity_month_index=self.maturity_month_index,
-        )
 
 
 def dated(
@@ -171,7 +156,18 @@ def compose(case: Situation, rollout_id: int = 0) -> World:
         profile = TaxProfile(agent_id=agent_id, jurisdiction_ids=list(filed_in), tax_authority_agent_id=AgentId("irs"))
         world.track(TaxAuthority(compile_profile(profile, rules, currency=USD), indexation=FixedNominalLaw()))
     for bond in case.bonds:
-        bond.hold(world)
+        world.hold_bond(
+            bond_id=bond.bond_id,
+            agent_id=bond.agent_id,
+            account_id=bond.account_id,
+            issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
+            face_value=bond.face_value,
+            purchase_price=bond.face_value,
+            coupon=bond.coupon,
+            coupon_period_months=bond.coupon_period_months,
+            purchase_month_index=bond.purchase_month_index,
+            maturity_month_index=bond.maturity_month_index,
+        )
     return world
 
 

@@ -333,6 +333,7 @@ py_test(
         "//finance/augur/api:config",
         "//finance/augur/api:portfolio",
         "//finance/augur/model:series",
+        "//finance/augur/sim:bills",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:jurisdictions",
@@ -535,7 +536,6 @@ py_library(
         "//finance/augur/sim:money",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:tlh",
-        "//finance/augur/sim:world",
     ],
 )
 

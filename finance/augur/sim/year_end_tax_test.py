@@ -102,17 +102,6 @@ class Monthly:
     income_category: TransferIncomeCategory | None
     end_month: int | None
 
-    def declare(self, world: World) -> None:
-        world.declare_flow(
-            cause_id=self.cause_id,
-            from_account=AccountRef(agent_id=self.payer, account_id=CHECKING),
-            to_account=AccountRef(agent_id=self.payee, account_id=CHECKING),
-            amount=self.amount,
-            income_category=self.income_category,
-            deduction_category=None,
-            schedule=Recurring(start_month=0, end_month=self.end_month),
-        )
-
 
 def monthly(
     cause_id: str, payer: AgentId, payee: AgentId, amount: Decimal, *, income: bool, end_month: int | None = 11
@@ -237,7 +226,15 @@ def compose(case: Situation, indexation: TaxIndexation) -> World:
             basis=money(held.cost_basis),
         )
     for flow in case.recurring_transfers:
-        flow.declare(world)
+        world.declare_flow(
+            cause_id=flow.cause_id,
+            from_account=AccountRef(agent_id=flow.payer, account_id=CHECKING),
+            to_account=AccountRef(agent_id=flow.payee, account_id=CHECKING),
+            amount=flow.amount,
+            income_category=flow.income_category,
+            deduction_category=None,
+            schedule=Recurring(start_month=0, end_month=flow.end_month),
+        )
     return world
 
 

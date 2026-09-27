@@ -34,7 +34,7 @@ from finance.augur.sim.results import (
     RejectedAction,
     Rollout,
 )
-from finance.augur.sim.schedule import Once, Recurring
+from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 
@@ -69,50 +69,34 @@ class OpeningLot:
     purchase_month: int = -24
 
 
-def bill(
-    obligation_id: str,
-    obligation_type: str,
-    payer: AccountRef,
-    payee: AccountRef,
-    amount_due: Decimal | int,
-    *,
-    month: int = 0,
-) -> Callable[[], Biller]:
-    return partial(
-        Biller,
-        schedule=Once(month=month),
-        obligation_id=obligation_id,
-        obligation_type=obligation_type,
-        from_account=payer,
-        to_account=payee,
-        amount_due=money(amount_due),
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=1_000_000_000,
-    )
+@dataclass(frozen=True)
+class Charge:
+    """A bill `payer` owes `payee`, in dollars."""
+
+    obligation_id: str
+    obligation_type: str
+    payer: AccountRef
+    payee: AccountRef
+    amount_due: Decimal | int
+    schedule: Schedule
+
+
+def bill(obligation_id: str, obligation_type: str, payer: AccountRef, payee: AccountRef, amount_due: Decimal) -> Charge:
+    return Charge(obligation_id, obligation_type, payer, payee, amount_due, Once(month=0))
 
 
 def monthly_bill(
-    obligation_id: str,
-    obligation_type: str,
-    payer: AccountRef,
-    payee: AccountRef,
-    amount_due: Decimal | int,
-    *,
-    start_month: int = 0,
-) -> Callable[[], Biller]:
-    return partial(
-        Biller,
-        schedule=Recurring(start_month=start_month, end_month=None),
-        obligation_id=obligation_id,
-        obligation_type=obligation_type,
-        from_account=payer,
-        to_account=payee,
-        amount_due=money(amount_due),
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=1_000_000_000,
-    )
+    obligation_id: str, obligation_type: str, payer: AccountRef, payee: AccountRef, amount_due: Decimal
+) -> Charge:
+    return Charge(obligation_id, obligation_type, payer, payee, amount_due, Recurring(start_month=0, end_month=None))
+
+
+@dataclass(frozen=True)
+class Paycheck:
+    """The employer's monthly pay into Alice's checking from `start_month`, in dollars."""
+
+    start_month: int
+    amount: Decimal | int
 
 
 @dataclass
@@ -124,9 +108,8 @@ class Situation:
     # The accounts Alice holds a VTI pool in.
     pools: list[AccountId] = field(default_factory=list)
     lots: list[OpeningLot] = field(default_factory=list)
-    # A fresh biller per path.
-    claims: list[Callable[[], Biller]] = field(default_factory=list)
-    recurring_transfers: tuple[Callable[[World], None], ...] = ()
+    claims: list[Charge] = field(default_factory=list)
+    paychecks: tuple[Paycheck, ...] = ()
 
 
 def compose(case: Situation, rollout_id: int, *, series: tuple[PreparedSeries, ...], rollout_count: int) -> World:
@@ -152,10 +135,30 @@ def compose(case: Situation, rollout_id: int, *, series: tuple[PreparedSeries, .
             units=quantity_to_quanta(held.quantity, scale=SCALE),
             basis=money(held.cost_basis),
         )
-    for flow in case.recurring_transfers:
-        flow(world)
+    for pay in case.paychecks:
+        world.declare_flow(
+            schedule=Recurring(start_month=pay.start_month, end_month=None),
+            cause_id="future_paycheck",
+            from_account=ref(AgentId("employer")),
+            to_account=ref(AgentId("alice")),
+            amount=money(pay.amount),
+            income_category=ORDINARY_INCOME,
+            deduction_category=None,
+        )
     for claim in case.claims:
-        world.track(claim())
+        world.track(
+            Biller(
+                schedule=claim.schedule,
+                obligation_id=claim.obligation_id,
+                obligation_type=claim.obligation_type,
+                from_account=claim.payer,
+                to_account=claim.payee,
+                amount_due=money(claim.amount_due),
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=1_000_000_000,
+            )
+        )
     return world
 
 
@@ -499,18 +502,7 @@ def test_failed_path_skips_future_transfers_and_policy_calls_while_other_path_co
         LotId("alice_vti"), AccountId("checking"), quantity=1, cost_basis=Decimal(80), purchase_month=-1
     )
     exhaustion.accounts.append(account(AgentId("employer")))
-    exhaustion.recurring_transfers = (
-        partial(
-            World.declare_flow,
-            schedule=Recurring(start_month=1, end_month=None),
-            cause_id="future_paycheck",
-            from_account=ref(AgentId("employer")),
-            to_account=ref(AgentId("alice")),
-            amount=money(Decimal(10000)),
-            income_category=ORDINARY_INCOME,
-            deduction_category=None,
-        ),
-    )
+    exhaustion.paychecks = (Paycheck(start_month=1, amount=Decimal(10000)),)
     exhaustion.horizon_months = 2
     [stopped, continuing], calls = _run(
         exhaustion,

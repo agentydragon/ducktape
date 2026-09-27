@@ -4,7 +4,7 @@ The tax schedule below is deliberately synthetic: 20% ordinary, 10% long-term,
 no deductions. Assertions pin accounting/timing, not statutory fidelity.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from functools import partial
@@ -31,8 +31,8 @@ from finance.augur.sim.jurisdictions import (
 )
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import MAX_COUNT, USD
-from finance.augur.sim.prepared import PreparedIndexedAmount, PreparedSeries
-from finance.augur.sim.schedule import Once, Recurring
+from finance.augur.sim.prepared import PreparedAmount, PreparedIndexedAmount, PreparedSeries
+from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
@@ -103,19 +103,26 @@ class OpeningLot:
     basis: Decimal | int
 
 
-def claim(month: int, amount: Decimal | int, identifier: str = "spending") -> Callable[[], Biller]:
-    return partial(
-        Biller,
-        schedule=Once(month=month),
-        obligation_id=identifier,
-        obligation_type="cash_spend",
-        from_account=ref(ALICE),
-        to_account=ref(WORLD),
-        amount_due=money(amount),
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=1_000_000_000,
-    )
+@dataclass(frozen=True)
+class Spending:
+    """A cash-spend bill Alice owes the world."""
+
+    obligation_id: str
+    schedule: Schedule
+    amount_due: PreparedAmount
+
+
+def claim(month: int, amount: Decimal | int, identifier: str = "spending") -> Spending:
+    return Spending(identifier, Once(month=month), money(amount))
+
+
+@dataclass(frozen=True)
+class Contribution:
+    """A one-off payment from the world into Alice's checking, in dollars."""
+
+    cause_id: str
+    month: int
+    amount: Decimal | int
 
 
 def allocation(*assets: SecurityKey, purchases: bool, zero_exit: bool) -> partial[CashBandHousehold]:
@@ -150,10 +157,10 @@ class Situation:
     # The securities Alice's brokerage holds a pool of, whether or not she holds any yet.
     pools: tuple[SecurityKey, ...] = ()
     lots: tuple[OpeningLot, ...] = ()
-    distributions: tuple[Callable[[World], None], ...] = ()
-    # A fresh biller per path.
-    claims: tuple[Callable[[], Biller], ...] = ()
-    transfers: tuple[Callable[[World], None], ...] = ()
+    # The securities whose payouts land in Alice's checking as interest.
+    distributions: tuple[SecurityKey, ...] = ()
+    claims: tuple[Spending, ...] = ()
+    transfers: tuple[Contribution, ...] = ()
     sales: Mapping[int, tuple[Sell, ...]] = field(default_factory=dict)
     interest_sources: tuple[InterestIncome, ...] = ()
     taxed: bool = True
@@ -193,10 +200,38 @@ def compose(case: Situation, rollout_id: int) -> World:
             units=held.shares * SCALE,
             basis=money(held.basis),
         )
-    for declare in (*case.distributions, *case.transfers):
-        declare(world)
-    for obligation in case.claims:
-        world.track(obligation())
+    for asset in case.distributions:
+        world.declare_distribution(
+            agent_id=ALICE,
+            holding_account_id=BROKERAGE,
+            asset_id=AssetId(asset.symbol),
+            to_account_id=CHECKING,
+            tax_character={InterestIncome(): 1_000_000_000},
+        )
+    for contribution in case.transfers:
+        world.declare_flow(
+            schedule=Once(month=contribution.month),
+            cause_id=contribution.cause_id,
+            from_account=ref(WORLD),
+            to_account=ref(ALICE),
+            amount=money(contribution.amount),
+            income_category=None,
+            deduction_category=None,
+        )
+    for bill in case.claims:
+        world.track(
+            Biller(
+                schedule=bill.schedule,
+                obligation_id=bill.obligation_id,
+                obligation_type="cash_spend",
+                from_account=ref(ALICE),
+                to_account=ref(WORLD),
+                amount_due=bill.amount_due,
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=1_000_000_000,
+            )
+        )
     world.track(Scripted(case.funding(), case.sales))
     return world
 
@@ -246,20 +281,7 @@ def base(*, purchases: bool = False, zero_exit: bool = False, single: bool = Fal
         pools=assets,
         lots=tuple(OpeningLot(asset, shares=100 // len(assets), basis=500 // len(assets)) for asset in assets),
         claims=(claim(0, 500), claim(12, 50)),
-        transfers=()
-        if zero_exit
-        else (
-            partial(
-                World.declare_flow,
-                schedule=Once(month=12),
-                cause_id="contribution",
-                from_account=ref(WORLD),
-                to_account=ref(ALICE),
-                amount=money(100),
-                income_category=None,
-                deduction_category=None,
-            ),
-        ),
+        transfers=() if zero_exit else (Contribution("contribution", month=12, amount=100),),
     )
 
 
@@ -323,19 +345,12 @@ def test_indexed_monthly_claims_keep_sales_and_next_year_tax_events() -> None:
             accounts=(account(ALICE), account(WORLD)),
             transfers=(),
             claims=(
-                partial(
-                    Biller,
-                    schedule=Recurring(start_month=0, end_month=None),
-                    obligation_id="indexed",
-                    obligation_type="cash_spend",
-                    from_account=ref(ALICE),
-                    to_account=ref(WORLD),
-                    amount_due=PreparedIndexedAmount(
+                Spending(
+                    "indexed",
+                    Recurring(start_month=0, end_month=None),
+                    PreparedIndexedAmount(
                         base_amount=money(10), series_id="inflation", base_month_index=0, adjustment_period_months=1
                     ),
-                    property_id=None,
-                    deduction_category=None,
-                    deductible_fraction_ppb=1_000_000_000,
                 ),
             ),
         )
@@ -359,16 +374,7 @@ def test_empty_buyable_pool_pays_coupon_only_after_first_purchase() -> None:
             transfers=(),
             claims=(),
             taxed=False,
-            distributions=(
-                partial(
-                    World.declare_distribution,
-                    agent_id=ALICE,
-                    holding_account_id=BROKERAGE,
-                    asset_id=AssetId(STOCK.symbol),
-                    to_account_id=CHECKING,
-                    tax_character={InterestIncome(): 1_000_000_000},
-                ),
-            ),
+            distributions=(STOCK,),
             interest_sources=(InterestIncome(issuer_jurisdiction_id=None),),
         )
     )
@@ -394,18 +400,7 @@ def test_fifo_across_two_purchase_dates_preserves_basis_and_tax_character() -> N
             accounts=(account(ALICE, balance=200), account(WORLD, balance=300), account(ALICE, AccountId("proceeds"))),
             lots=(),
             claims=(),
-            transfers=(
-                partial(
-                    World.declare_flow,
-                    schedule=Once(month=1),
-                    cause_id="later",
-                    from_account=ref(WORLD),
-                    to_account=ref(ALICE),
-                    amount=money(300),
-                    income_category=None,
-                    deduction_category=None,
-                ),
-            ),
+            transfers=(Contribution("later", month=1, amount=300),),
             sales={
                 12: (
                     Sell(

@@ -204,19 +204,6 @@ class Bill:
     amount: int
     month: int = 0
 
-    def biller(self) -> Biller:
-        return Biller(
-            obligation_id="bill",
-            obligation_type="rent",
-            from_account=CASH,
-            to_account=EXOGENOUS,
-            amount_due=self.amount,
-            property_id=None,
-            deduction_category=None,
-            deductible_fraction_ppb=1_000_000_000,
-            schedule=Once(month=self.month),
-        )
-
 
 @dataclass(frozen=True)
 class Contribution:
@@ -225,17 +212,6 @@ class Contribution:
     cause_id: str
     month: int
     amount: int
-
-    def declare(self, world: World) -> None:
-        world.declare_flow(
-            cause_id=self.cause_id,
-            from_account=EXOGENOUS,
-            to_account=CASH,
-            amount=self.amount,
-            income_category=None,
-            deduction_category=None,
-            schedule=Once(month=self.month),
-        )
 
 
 def test_cash_only_actor_observes_and_purchases_an_unheld_declared_asset(cash_only: Situation) -> None:
@@ -586,9 +562,29 @@ def composed(run: Situation, rollout: int = 0) -> World:
     )
     hold(world, run)
     for flow in run.scheduled_transfers:
-        flow.declare(world)
-    for obligation in run.obligations:
-        world.track(obligation.biller())
+        world.declare_flow(
+            cause_id=flow.cause_id,
+            from_account=EXOGENOUS,
+            to_account=CASH,
+            amount=flow.amount,
+            income_category=None,
+            deduction_category=None,
+            schedule=Once(month=flow.month),
+        )
+    for bill in run.obligations:
+        world.track(
+            Biller(
+                obligation_id="bill",
+                obligation_type="rent",
+                from_account=CASH,
+                to_account=EXOGENOUS,
+                amount_due=bill.amount,
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=1_000_000_000,
+                schedule=Once(month=bill.month),
+            )
+        )
     return world
 
 

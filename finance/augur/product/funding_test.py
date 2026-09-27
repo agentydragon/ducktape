@@ -37,6 +37,7 @@ from finance.augur.product.scenarios import (
     jurisdiction_levels,
 )
 from finance.augur.product.wire import FundingPolicy, ScenarioKey, SecuritySleeveWeight, SleeveWeight, SpendIndex
+from finance.augur.sim.bills import Biller
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import (
@@ -185,9 +186,27 @@ def run(
             basis=held.basis,
         )
     for distribution in situation.distributions:
-        distribution.declare(world)
+        world.declare_distribution(
+            agent_id=distribution.agent_id,
+            holding_account_id=distribution.holding_account_id,
+            asset_id=distribution.asset_id,
+            to_account_id=distribution.to_account_id,
+            tax_character=distribution.tax_character,
+        )
     for obligation in situation.obligations:
-        world.track(obligation.biller())
+        world.track(
+            Biller(
+                obligation_id=obligation.obligation_id,
+                obligation_type=obligation.obligation_type,
+                from_account=obligation.from_account,
+                to_account=obligation.to_account,
+                amount_due=obligation.amount_due,
+                property_id=obligation.property_id,
+                deduction_category=obligation.deduction_category,
+                deductible_fraction_ppb=obligation.deductible_fraction_ppb,
+                schedule=obligation.schedule,
+            )
+        )
     policy = Policy(
         config,
         actor_id=ACTOR,

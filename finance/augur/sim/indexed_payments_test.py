@@ -1,8 +1,7 @@
 """Path-indexed cashflows and explicit claim payments through the common session."""
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from decimal import Decimal
-from functools import partial
 
 import numpy as np
 import pytest
@@ -53,38 +52,6 @@ def _account(agent_id: AgentId, balance: Decimal) -> tuple[AccountRef, int]:
     return AccountRef(agent_id=agent_id, account_id=CHECKING), int(currency_amount_to_quanta(balance, quantum=QUANTUM))
 
 
-def _rent_obligation(amount: PreparedIndexedAmount) -> Callable[[], Biller]:
-    """Alice owes the landlord this amount every month of the horizon."""
-
-    return partial(
-        Biller,
-        schedule=Recurring(start_month=0, end_month=None),
-        obligation_id="outside_rent",
-        obligation_type=ObligationType.OUTSIDE_RENT,
-        from_account=AccountRef(agent_id=AgentId("alice"), account_id=CHECKING),
-        to_account=AccountRef(agent_id=AgentId("landlord"), account_id=CHECKING),
-        amount_due=amount,
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=rate_to_ppb(1),
-    )
-
-
-def _tenant_rent(amount: PreparedIndexedAmount) -> Callable[[World], None]:
-    """The tenant's monthly payment to alice; alice never decides it."""
-
-    return partial(
-        World.declare_flow,
-        schedule=Recurring(start_month=0, end_month=None),
-        cause_id="tenant_rent",
-        from_account=AccountRef(agent_id=AgentId("tenant"), account_id=CHECKING),
-        to_account=AccountRef(agent_id=AgentId("alice"), account_id=CHECKING),
-        amount=amount,
-        income_category=None,
-        deduction_category=None,
-    )
-
-
 def _compose(
     series: tuple[PreparedSeries, ...],
     rollout_id: int,
@@ -92,9 +59,10 @@ def _compose(
     rollout_count: int,
     horizon_months: int,
     accounts: Sequence[tuple[AccountRef, int]],
-    obligation: Callable[[], Biller] | None = None,
-    transfer: Callable[[World], None] | None = None,
+    owed_rent: PreparedIndexedAmount | None = None,
+    tenant_rent: PreparedIndexedAmount | None = None,
 ) -> World:
+    """`owed_rent` is what Alice owes the landlord every month; `tenant_rent` is the tenant's monthly payment to her."""
     world = World(
         MarketPath(series, rollout_id, rollout_count=rollout_count),
         horizon_months=horizon_months,
@@ -102,12 +70,32 @@ def _compose(
     )
     for opened, balance in accounts:
         world.declare_account(account=opened, opening_balance=balance)
-    if obligation is not None:
-        world.track(obligation())
-    if transfer is not None:
+    if owed_rent is not None:
+        world.track(
+            Biller(
+                schedule=Recurring(start_month=0, end_month=None),
+                obligation_id="outside_rent",
+                obligation_type=ObligationType.OUTSIDE_RENT,
+                from_account=AccountRef(agent_id=AgentId("alice"), account_id=CHECKING),
+                to_account=AccountRef(agent_id=AgentId("landlord"), account_id=CHECKING),
+                amount_due=owed_rent,
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=rate_to_ppb(1),
+            )
+        )
+    if tenant_rent is not None:
         # A counterparty's cashflow table, not an action: the world moves it in `prepare_month`,
-        # before this month's claims are assembled.
-        transfer(world)
+        # before this month's claims are assembled. Alice never decides it.
+        world.declare_flow(
+            schedule=Recurring(start_month=0, end_month=None),
+            cause_id="tenant_rent",
+            from_account=AccountRef(agent_id=AgentId("tenant"), account_id=CHECKING),
+            to_account=AccountRef(agent_id=AgentId("alice"), account_id=CHECKING),
+            amount=tenant_rent,
+            income_category=None,
+            deduction_category=None,
+        )
     return world
 
 
@@ -121,7 +109,7 @@ def _rent_worlds(amount: PreparedIndexedAmount, levels: list[list[float]], *, ho
             rollout_count=len(levels),
             horizon_months=horizon_months,
             accounts=accounts,
-            obligation=_rent_obligation(amount),
+            owed_rent=amount,
         )
         for rollout_id in range(len(levels))
     }
@@ -217,7 +205,7 @@ def test_series_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
                 rollout_count=1,
                 horizon_months=13,
                 accounts=(_account(AgentId("tenant"), Decimal(20_000)), _account(AgentId("alice"), Decimal(0))),
-                transfer=_tenant_rent(amount),
+                tenant_rent=amount,
             )
         }
     )
@@ -246,8 +234,8 @@ def test_half_quantum_indexing_funds_same_month_claim_without_losing_cash() -> N
                     _account(AgentId("landlord"), Decimal(0)),
                     _account(AgentId("tenant"), Decimal(1)),
                 ),
-                obligation=_rent_obligation(amount),
-                transfer=_tenant_rent(amount),
+                owed_rent=amount,
+                tenant_rent=amount,
             )
         }
     )

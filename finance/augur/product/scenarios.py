@@ -174,18 +174,6 @@ class PropertyCashflow:
     property_id: PropertyId
     schedule: Schedule
 
-    def declare(self, world: World) -> None:
-        world.declare_flow(
-            cause_id=self.cause_id,
-            from_account=self.from_account,
-            to_account=self.to_account,
-            amount=self.amount,
-            income_category=self.income_category,
-            deduction_category=self.deduction_category,
-            schedule=self.schedule,
-            property_id=self.property_id,
-        )
-
 
 @dataclass(frozen=True, kw_only=True)
 class Obligation:
@@ -200,19 +188,6 @@ class Obligation:
     deduction_category: TransferDeductionCategory | None
     deductible_fraction_ppb: int
     schedule: Schedule
-
-    def biller(self) -> Biller:
-        return Biller(
-            obligation_id=self.obligation_id,
-            obligation_type=self.obligation_type,
-            from_account=self.from_account,
-            to_account=self.to_account,
-            amount_due=self.amount_due,
-            property_id=self.property_id,
-            deduction_category=self.deduction_category,
-            deductible_fraction_ppb=self.deductible_fraction_ppb,
-            schedule=self.schedule,
-        )
 
 
 @dataclass(frozen=True)
@@ -510,7 +485,14 @@ def compose(situation: Situation, market: MarketPath) -> World:
             basis=lot.basis,
         )
     for portfolio in situation.tlh_portfolios:
-        portfolio.declare(world)
+        world.declare_portfolio(
+            portfolio_id=portfolio.portfolio_id,
+            owner_agent_id=portfolio.owner_agent_id,
+            account_id=portfolio.account_id,
+            asset_id=portfolio.asset_id,
+            initial_cohorts=portfolio.initial_cohorts,
+            assumptions=portfolio.assumptions,
+        )
     for bond in situation.bonds:
         world.hold_bond(
             bond_id=bond.bond_id,
@@ -527,14 +509,41 @@ def compose(situation: Situation, market: MarketPath) -> World:
     if situation.home is not None:
         world.declare_housing(situation.home.housing, (situation.home.property_tax,), (situation.home.location,))
     for distribution in situation.distributions:
-        distribution.declare(world)
+        world.declare_distribution(
+            agent_id=distribution.agent_id,
+            holding_account_id=distribution.holding_account_id,
+            asset_id=distribution.asset_id,
+            to_account_id=distribution.to_account_id,
+            tax_character=distribution.tax_character,
+        )
     if situation.tender_policy is not None:
         world.declare_tender_policy(situation.tender_policy)
     if situation.home is not None:
         for flow in situation.home.cashflows:
-            flow.declare(world)
+            world.declare_flow(
+                cause_id=flow.cause_id,
+                from_account=flow.from_account,
+                to_account=flow.to_account,
+                amount=flow.amount,
+                income_category=flow.income_category,
+                deduction_category=flow.deduction_category,
+                schedule=flow.schedule,
+                property_id=flow.property_id,
+            )
     for obligation in situation.obligations:
-        world.track(obligation.biller())
+        world.track(
+            Biller(
+                obligation_id=obligation.obligation_id,
+                obligation_type=obligation.obligation_type,
+                from_account=obligation.from_account,
+                to_account=obligation.to_account,
+                amount_due=obligation.amount_due,
+                property_id=obligation.property_id,
+                deduction_category=obligation.deduction_category,
+                deductible_fraction_ppb=obligation.deductible_fraction_ppb,
+                schedule=obligation.schedule,
+            )
+        )
     household = situation.household()
     if isinstance(household, CashBandHousehold):
         household.check(world)
