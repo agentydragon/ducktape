@@ -34,7 +34,7 @@ class BucketView(FrozenModel):
     label: str
     kind: BucketKind
     # Optional grouping key. Buckets sharing a `family` render together in the UI as
-    # one panel (e.g. "medical" groups esketamine + therapy + supplements + insurance
+    # one panel (e.g. "medical" groups prescriptions + therapy + supplements + insurance
     # premiums + medical reimbursements). The server doesn't compute family-level
     # totals; the frontend rolls them up from these per-bucket series.
     family: str | None

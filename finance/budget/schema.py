@@ -56,7 +56,7 @@ class BucketDef(FrozenModel):
     label: str
     kind: BucketKind
     # Optional grouping key. Buckets sharing a family render together as one panel
-    # ("medical": esketamine charges + therapy + supplements + insurance premiums +
+    # ("medical": prescription charges + therapy + supplements + insurance premiums +
     # insurance reimbursements). No semantics beyond visual grouping; totals are not
     # auto-netted across family members.
     family: str | None = Field(default=None, pattern=_ID_PATTERN)
@@ -107,7 +107,7 @@ class NameSubstringRule(_RuleBase):
     """Case-insensitive substring match against `transactions.name` (the raw descriptor).
 
     Use this for ACH descriptors where Plaid hasn't promoted a clean merchant name
-    (e.g. "ANTHEM BLUE CA5C DES:HCCLAIMPMT" reimbursements, "DD *DOORDASH ..." pass-through)."""
+    (e.g. "EXAMPLE HEALTH PLAN DES:CLAIMPMT" reimbursements, "DD *DOORDASH ..." pass-through)."""
 
     kind: Literal["name_substring"] = "name_substring"
     pattern: str = Field(min_length=1)

@@ -67,8 +67,8 @@ budget:
     - { id: government, label: Government, kind: expense, direction: outflow }
     # Related buckets share a `family`; the UI renders them in one panel showing inflow and
     # outflow side by side (no auto-netting -- reimbursement timing is too lumpy to net safely).
-    - { id: medical_reimbursement, label: Anthem reimbursements, kind: inflow, direction: inflow, family: medical }
-    - { id: esketamine, label: Esketamine, kind: expense, direction: outflow, family: medical }
+    - { id: medical_reimbursement, label: Insurance reimbursements, kind: inflow, direction: inflow, family: medical }
+    - { id: prescriptions, label: Prescriptions, kind: expense, direction: outflow, family: medical }
     - { id: therapy, label: Therapy, kind: expense, direction: outflow, family: medical }
     - { id: medical_other, label: Other medical, kind: expense, direction: outflow, family: medical }
     # Transfers are split by direction so each bucket stays single-sided.
