@@ -15,8 +15,8 @@ py_library(
         "//finance/augur/model:exogenous",
         "//finance/augur/model:historical_windows",
         "//finance/augur/model:series",
-        "//finance/augur/model:structural_macro",
         "//finance/augur/study/trinity:evidence_snapshot",
+        "//finance/augur/x/models:structural_macro",
         "@pypi//numpy",
     ],
 )

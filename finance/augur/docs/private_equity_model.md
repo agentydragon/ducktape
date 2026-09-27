@@ -1,6 +1,6 @@
 # Private-equity valuation and issuance models
 
-This describes existing conventions in <../model/private_equity_risk.py>, not
+This describes existing conventions in <../x/models/private_equity_risk.py>, not
 validated cap-table economics or a recommendation of a deployment preset.
 The [calibration contract](calibration.md) owns market resolution and reporting.
 
@@ -37,7 +37,7 @@ of these latent marks establishes a particular holder's liquidity or waterfall.
 
 ## Existing fit and controls
 
-<../fit/bayes_mint_streams.py> and <../fit/fit_mint_streams_report.py> already
+<../x/models/bayes_mint_streams.py> and <../x/models/fit_mint_streams_report.py> already
 implement the annotated-primary-round fit/report path. Round dates/cash are
 observed inputs. The fit uses fixed unit step-up and fixed drift-shape priors,
 NUTS for its remaining latent-path/issuance parameters, and a Gamma-Poisson event

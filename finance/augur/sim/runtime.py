@@ -6,7 +6,7 @@ from collections.abc import Iterable
 
 from finance.augur.sim.ids import JurisdictionId
 from finance.augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
-from finance.augur.sim.scenario import TaxProfile
+from finance.augur.sim.tax_profile import TaxProfile
 
 
 def load_jurisdictions_for(profiles: Iterable[TaxProfile]) -> dict[JurisdictionId, Jurisdiction]:

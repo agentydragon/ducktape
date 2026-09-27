@@ -20,8 +20,8 @@ from finance.augur.sim.ids import (
     PortfolioId,
     PropertyId,
 )
+from finance.augur.sim.income import TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.jurisdictions import JurisdictionLevel
-from finance.augur.sim.scenario import TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 
 

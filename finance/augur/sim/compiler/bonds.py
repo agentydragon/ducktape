@@ -2,7 +2,8 @@
 
 from collections.abc import Iterable
 
-from finance.augur.sim.scenario import BondHolding, InterestIncome
+from finance.augur.sim.income import InterestIncome
+from finance.augur.sim.scenario import BondHolding
 
 
 def bond_income_categories(bonds: Iterable[BondHolding]) -> set[InterestIncome]:

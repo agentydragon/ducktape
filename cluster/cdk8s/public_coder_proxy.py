@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -85,8 +85,7 @@ def _external_secrets(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "brave-search-api-key",
-        name=brave,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name=brave, namespace=NAMESPACE),
         refresh="1m",
         store=external_creds.STORE,
         data=[remote_data(brave, "api-key")],

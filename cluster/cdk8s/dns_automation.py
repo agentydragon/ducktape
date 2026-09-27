@@ -5,10 +5,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
+from pydantic import BaseModel, ConfigDict
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds, terraform
@@ -24,6 +25,22 @@ _CREDENTIALS_SECRET = "aws-route53-credentials"
 _CREDENTIALS_SOURCE = "aws-route53-dns-automation-credentials"
 
 
+class PublicNode(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    public_ip: str
+    role: str
+
+
+class DnsRecordsVars(BaseModel):
+    """The inputs of tf/gitops/dns-records; `aws_region` keeps its variables.tf default."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    route53_zone_id: str
+    public_nodes: dict[str, PublicNode]
+
+
 def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
     """Route 53 records for allegedly.works (tf/gitops/dns-records)."""
     chart = Chart(app, "dns-records", disable_resource_name_hashes=True)
@@ -34,8 +51,7 @@ def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
     ExternalSecret(
         chart,
         "credentials",
-        name=_CREDENTIALS_SECRET,
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(name=_CREDENTIALS_SECRET, namespace=_NAMESPACE),
         refresh="1h",
         store=external_creds.STORE,
         data=[
@@ -48,17 +64,17 @@ def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
         chart,
         "terraform",
         name="dns-records",
-        variables={
-            "route53_zone_id": "Z02901943N8ZFQFOD9P5I",
+        variables=DnsRecordsVars(
+            route53_zone_id="Z02901943N8ZFQFOD9P5I",
             # Inline rather than a ConfigMap read through varsFrom: tofu-controller writes
             # spec.vars structurally into the runner's tfvars (a varsFrom value arrives as one
             # string) and reconciles a spec change at once, while a referenced ConfigMap is
             # never watched and waits for the interval.
-            "public_nodes": {
-                name: {"public_ip": host.public_ip, "role": host.role}
+            public_nodes={
+                name: PublicNode.model_validate(host, from_attributes=True)
                 for name, host in sorted(mesh.public_kubernetes_nodes().items())
             },
-        },
+        ),
         env_from=[terraform.secret_env_from(_CREDENTIALS_SECRET)],
     )
     return chart

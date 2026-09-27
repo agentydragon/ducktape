@@ -97,7 +97,7 @@ def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, c
             "nothing but the host: treat a sandbox bound to this as holding haku's Forgejo "
             "account."
         ),
-        source=Source.secret_ref(name="haku-forgejo-git", key="password").to_spec(),
+        source=Source.secret_ref(name="haku-forgejo-git", key="password"),
         # Git over HTTP and Forgejo's REST API both authenticate with `Basic
         # base64(haku:<password>)`, so the placeholder travels as the password half. A client
         # sends the username itself; only the secret half is substituted here.
@@ -141,7 +141,7 @@ def _google_readonly(scope: Construct, *, namespace: str) -> None:
             "`insufficientPermissions`. `google-readonly`'s rules restrict where the proxy "
             "presents it."
         ),
-        source=Source.secret_ref(name="google-access-token", key="access_token").to_spec(),
+        source=Source.secret_ref(name="google-access-token", key="access_token"),
         targets=[
             EgressCredentialSpecTargets(
                 header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
@@ -215,7 +215,7 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
             "account as a user with no permissions, and `grocy-sf-readonly`'s rule presents the "
             "password only on GETs to Grocy's read routes."
         ),
-        source=Source.secret_ref(name="grocy-sf-readonly", key="password").to_spec(),
+        source=Source.secret_ref(name="grocy-sf-readonly", key="password"),
         # The grocy-sf.allegedly.works outpost turns HTTP Basic into a client_credentials grant
         # against its own proxy provider, so the placeholder travels as the password half. A
         # client sends the username itself; only the password is substituted here.
@@ -285,7 +285,7 @@ def _home_assistant_readonly(
             "call, and `home-assistant-readonly`'s rule presents the token only on GETs of "
             "entity states and their history."
         ),
-        source=Source.secret_ref(name="home-assistant-readonly", key="token").to_spec(),
+        source=Source.secret_ref(name="home-assistant-readonly", key="token"),
         targets=[
             EgressCredentialSpecTargets(
                 header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
@@ -340,7 +340,7 @@ def _activitywatch_read(
             "route's own proxy admits it on GETs and on POST /api/0/query/ only, so it cannot "
             "write; what it reads is every device's window titles, URLs and AFK history."
         ),
-        source=Source.secret_ref(name="activitywatch-read-token", key="token").to_spec(),
+        source=Source.secret_ref(name="activitywatch-read-token", key="token"),
         targets=[
             EgressCredentialSpecTargets(
                 header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
@@ -385,7 +385,7 @@ def _aiquota_read(scope: Construct, *, namespace: str) -> None:
         ),
         source=Source.secret_ref(
             name=AGENTPLANE_STAGING_BEARER.secret_name, key=AGENTPLANE_STAGING_BEARER.secret_key_selector.key
-        ).to_spec(),
+        ),
         targets=[
             EgressCredentialSpecTargets(
                 header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
@@ -433,7 +433,7 @@ def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, c
             "into this namespace by ESO. It reads and changes the contents of that one mailbox "
             "over JMAP; it cannot send mail or administer the server (haku/docs/security.md)."
         ),
-        source=Source.secret_ref(name=_HAKU_MAIL_TOKEN, key="jwt").to_spec(),
+        source=Source.secret_ref(name=_HAKU_MAIL_TOKEN, key="jwt"),
         targets=[
             EgressCredentialSpecTargets(
                 header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"

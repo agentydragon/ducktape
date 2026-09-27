@@ -22,10 +22,11 @@ from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot
 from finance.augur.sim.results import Finished
-from finance.augur.sim.scenario import ORDINARY_INCOME, InitialLot
+from finance.augur.sim.scenario import InitialLot
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 

@@ -5,7 +5,7 @@ import pytest_bazel
 
 from finance.augur.sim.compiler.income_sources import income_source_sort_key, income_source_wire_id
 from finance.augur.sim.ids import JurisdictionId
-from finance.augur.sim.scenario import InterestIncome, OrdinaryIncome, TransferIncomeCategory
+from finance.augur.sim.income import InterestIncome, OrdinaryIncome, TransferIncomeCategory
 
 
 @pytest.mark.parametrize(

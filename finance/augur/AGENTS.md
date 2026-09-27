@@ -13,7 +13,7 @@ adding parallel read-model tables over the captured long-form polars frames.
 
 ## numpy vs jnp
 
-JAX is the sampler, not the simulator: `model/` and `fit/` trace and jit;
+JAX is the sampler, not the simulator: `model/`, `fit/` and `x/models/` trace and jit;
 `sim/` runs ordinary Python financial steps. Inside the traced
 packages numpy still belongs, but only in specific places, and the
 line is not "whichever imports first":

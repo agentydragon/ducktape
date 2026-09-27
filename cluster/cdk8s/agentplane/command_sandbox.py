@@ -21,6 +21,7 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpecVolumesEmptyDir,
     SandboxTemplateSpecPodTemplateSpecVolumesEmptyDirSizeLimit,
 )
+from cdk8s import ApiObjectMetadata
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecIngress
 from constructs import Construct
 
@@ -138,9 +139,9 @@ def _template(
     SandboxTemplate(
         scope,
         id,
-        name=name,
-        namespace=env.namespace,
-        annotations={DESCRIPTION_ANNOTATION: description},
+        metadata=ApiObjectMetadata(
+            name=name, namespace=env.namespace, annotations={DESCRIPTION_ANNOTATION: description}
+        ),
         # The CiliumNetworkPolicy beside it is the box's fence.
         network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
         pod_template=SandboxTemplateSpecPodTemplate(

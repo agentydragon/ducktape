@@ -292,7 +292,6 @@ kind: ServiceMonitor
 metadata:
   labels:
     app.kubernetes.io/name: ntfy
-    release: kube-prometheus-stack
   name: ntfy
   namespace: ntfy
 spec:

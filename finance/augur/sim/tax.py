@@ -9,15 +9,15 @@ from typing import assert_never
 from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxRules
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AgentId, JurisdictionId
-from finance.augur.sim.jurisdictions import JurisdictionLevel
-from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
-from finance.augur.sim.scenario import (
+from finance.augur.sim.income import (
     ORDINARY_INCOME,
     InterestIncome,
     OrdinaryIncome,
     QualifiedDividendIncome,
     TransferIncomeCategory,
 )
+from finance.augur.sim.jurisdictions import JurisdictionLevel
+from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
 
 
 @dataclass

@@ -9,10 +9,10 @@ from finance.augur.sim.actions import Action, LotSale, PayClaim, Sell
 from finance.augur.sim.agent import EconomicAgent
 from finance.augur.sim.books import TaxLiabilityState
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.observations import Observation, TaxRecords
 from finance.augur.sim.prepared import PreparedHoldingPool, PreparedLot, PreparedRecurringTransfer, PreparedSeries
 from finance.augur.sim.results import Executed
-from finance.augur.sim.scenario import ORDINARY_INCOME
 from finance.augur.sim.testing.accounting import (
     CASH,
     EXOGENOUS,

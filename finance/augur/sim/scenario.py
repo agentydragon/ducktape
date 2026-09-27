@@ -7,27 +7,23 @@ composed world declares.
 from __future__ import annotations
 
 from decimal import Decimal
-from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
-    BeforeValidator,
     ConfigDict,
     Field,
     NonNegativeFloat,
     NonNegativeInt,
     PositiveFloat,
     PositiveInt,
-    field_validator,
     model_validator,
 )
 
 from finance.augur.model.asset_key import AssetKey
 from finance.augur.model.series import IndexSeriesKey, LocationId, SecurityKey
-from finance.augur.sim.enums import IncomeCategory
-from finance.augur.sim.fixed_point import validate_currency_amount, validate_currency_quantum
 from finance.augur.sim.ids import (
+    CHECKING,
     AccountId,
     AgentId,
     BondId,
@@ -37,50 +33,9 @@ from finance.augur.sim.ids import (
     PortfolioId,
     PropertyId,
 )
+from finance.augur.sim.income import TransferDeductionCategory, TransferIncomeCategory
+from finance.augur.sim.money import CurrencyAmount, NonNegativeCurrencyAmount, PositiveCurrencyAmount
 from finance.augur.sim.tlh import TlhAssumptions
-
-type CurrencyAmount = Annotated[Decimal, BeforeValidator(validate_currency_amount)]
-type NonNegativeCurrencyAmount = Annotated[CurrencyAmount, Field(ge=0)]
-type PositiveCurrencyAmount = Annotated[CurrencyAmount, Field(gt=0)]
-
-CHECKING = AccountId("checking")
-
-
-class FilingStatus(StrEnum):
-    """Federal/state filing status. Today only single-filer is wired through the tax + §121
-    math; adding a new variant requires touching every place that branches on filing status
-    (bracket lookup keys in jurisdiction YAMLs, §121 cap table in `_apply_property_sale`,
-    standard-deduction lookup, …). The enum makes this an explicit blocker on every
-    callsite rather than a string typo silently falling through to a missing-key error."""
-
-    SINGLE = "single"
-
-
-class Currency(BaseModel):
-    """One scenario's money unit.
-
-    ``quantum`` is deliberately an exact decimal rather than an ISO exponent:
-    it describes the smallest monetary amount this scenario represents.  The
-    current default preserves USD-cent scenarios while allowing a zero-decimal
-    currency, or another deliberately declared quantum, without hard-coding
-    USD into the simulation contract.
-    """
-
-    code: str = "USD"
-    quantum: Decimal = Decimal("0.01")
-
-    @field_validator("code")
-    @classmethod
-    def _validate_code(cls, code: str) -> str:
-        normalized = code.strip().upper()
-        if not normalized:
-            raise ValueError("currency code must not be empty")
-        return normalized
-
-    @field_validator("quantum", mode="before")
-    @classmethod
-    def _validate_quantum(cls, quantum: object) -> Decimal:
-        return validate_currency_quantum(quantum)
 
 
 class InitialAccountBalance(BaseModel):
@@ -128,61 +83,6 @@ type AmountSchedule = Annotated[FixedAmount | SeriesIndexedAmount, Field(discrim
 type AmountSpec = CurrencyAmount | AmountSchedule
 
 
-class OrdinaryIncome(BaseModel):
-    """Wages, rent, and everything else every jurisdiction taxes.
-
-    Frozen because the tag is a value, not a record: the compiler puts these in a set to
-    derive the income-bucket axis, so two `OrdinaryIncome()` must be one key.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    category: Literal[IncomeCategory.ORDINARY] = IncomeCategory.ORDINARY
-
-
-class InterestIncome(BaseModel):
-    """Interest, tagged with WHO ISSUED the debt — never with whether it is "in-state".
-
-    Whether a jurisdiction taxes this dollar is a relation between the issuer and that
-    jurisdiction (`Jurisdiction.taxes_interest_from`), so the same California muni coupon is
-    exempt for a Californian and taxable for a New Yorker without the instrument changing.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    category: Literal[IncomeCategory.INTEREST] = IncomeCategory.INTEREST
-    issuer_jurisdiction_id: JurisdictionId | None = Field(
-        default=None,
-        description=(
-            "The taxing authority that issued the debt — `federal_us` for a Treasury, "
-            "`california` for a CA muni. `None` means a non-governmental issuer (a corporate "
-            "bond), which no jurisdiction exempts."
-        ),
-    )
-
-
-# TODO: apply the holding-period test (IRC 1(h)(11)(B)(iii)) to the holder's lots rather than
-# trusting the declaration.
-class QualifiedDividendIncome(BaseModel):
-    """Dividends taxed at the long-term capital-gain rates where a jurisdiction has them, else as ordinary.
-
-    Declared simplification: the declaration says "qualified" and the engine trusts it; the
-    holding-period test (IRC 1(h)(11)(B)(iii)) is not checked.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    category: Literal[IncomeCategory.QUALIFIED_DIVIDEND] = IncomeCategory.QUALIFIED_DIVIDEND
-
-
-type TransferIncomeCategory = Annotated[
-    OrdinaryIncome | InterestIncome | QualifiedDividendIncome, Field(discriminator="category")
-]
-ORDINARY_INCOME = OrdinaryIncome()
-
-type TransferDeductionCategory = Literal["ordinary"]
-
-
 class ScheduledPropertyCashflow(BaseModel):
     """A property-domain cashflow lowered to a transfer event while the property is active.
 
@@ -220,24 +120,6 @@ class RecurringPropertyCashflow(BaseModel):
     amount: AmountSpec
     income_category: TransferIncomeCategory | None = None
     deduction_category: TransferDeductionCategory | None = None
-
-
-class ObligationType(StrEnum):
-    """Closed set of `obligation_type` values that flow through dense engine event tables.
-
-    Sim and product callers should use these enum members at construction sites and at
-    filter sites in decoded `obligation_settlements` / `obligation_failures` frames.
-    """
-
-    CASH_SPEND = "cash_spend"
-    OUTSIDE_RENT = "outside_rent"
-    ESTIMATED_TAX = "estimated_tax"
-    TAX_TRUE_UP = "tax_true_up"
-    MORTGAGE_PAYMENT = "mortgage_payment"
-    PROPERTY_TAX = "property_tax"
-    HOA_DUES = "hoa_dues"
-    HOMEOWNERS_INSURANCE = "homeowners_insurance"
-    PROPERTY_MAINTENANCE = "property_maintenance"
 
 
 class RecurringObligation(BaseModel):
@@ -428,34 +310,6 @@ class InitialLot(BaseModel):
     quantity: float
     cost_basis: CurrencyAmount = Field(
         description="Exact remaining total basis of the opening lot, not a per-unit quote."
-    )
-
-
-class TaxProfile(BaseModel):
-    """A taxed agent's tax-time configuration. At spike 1 only single filers are modeled;
-    later layers add MFJ / HoH and any filing-status-driven branching."""
-
-    agent_id: AgentId
-    filing_status: FilingStatus = FilingStatus.SINGLE
-    jurisdiction_ids: list[JurisdictionId] = Field(
-        description='Ordered list of taxing authorities — typically `["federal_us", "california"]` for a CA resident.'
-    )
-    tax_authority_agent_id: AgentId = Field(
-        description="Destination of tax-payment transfers — a bookkeeping sink, not a taxed agent itself."
-    )
-    payment_account_id: AccountId = Field(
-        default=CHECKING, description="The agent's account the engine debits for estimated-tax and true-up payments."
-    )
-    tax_authority_account_id: AccountId = Field(
-        default=CHECKING, description="The matching credit account on the tax authority's side."
-    )
-    prior_year_tax: NonNegativeCurrencyAmount = Field(
-        default=Decimal(0),
-        description=(
-            "Aggregate safe-harbor target used to size quarterly estimated payments. If "
-            "0, no quarterly estimates are emitted and the January true-up pays the full "
-            "accrued tax."
-        ),
     )
 
 

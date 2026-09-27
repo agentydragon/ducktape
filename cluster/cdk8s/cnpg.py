@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from cdk8s import ApiObjectMetadata
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecAffinity,
     ClusterSpecAffinityTolerations,
@@ -81,8 +82,7 @@ def cluster(
     return Cluster(
         scope,
         id,
-        name=name,
-        namespace=namespace,
+        metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=annotations),
         storage_class=storage_class,
         size=size,
         instances=instances,
@@ -98,5 +98,4 @@ def cluster(
         ),
         # TODO: Migrate to manually managed PodMonitors (enablePodMonitor is deprecated).
         monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-        annotations=annotations,
     )

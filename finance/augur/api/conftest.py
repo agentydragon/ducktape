@@ -31,11 +31,11 @@ from finance.augur.api.portfolio_source_config import (
 )
 from finance.augur.api.server import ApiServerConfig, create_app, static_price_clients
 from finance.augur.api.wire import ActorRole
-from finance.augur.model.independent import IndependentProviderConfig
-from finance.augur.model.provider_config import ProviderConfig
 from finance.augur.model.series import LocationId
 from finance.augur.model.testing import ConstantFrameModel
 from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.x.models.independent import IndependentProviderConfig
+from finance.augur.x.models.provider_config import ProviderConfig
 
 # Factories the fixtures below hand tests: build a Config (`minimal_config` overrides any field;
 # `make_catalog_config` takes the property-shortlist path for the catalog-builder tests) or a

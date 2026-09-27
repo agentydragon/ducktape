@@ -18,10 +18,11 @@ from finance.augur.sim.books import TaxAccrual
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import AgentId, JurisdictionId
+from finance.augur.sim.income import ORDINARY_INCOME, QualifiedDividendIncome
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.scenario import ORDINARY_INCOME, QualifiedDividendIncome, TaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile
 from finance.augur.sim.tax_year import TaxBook
 
 QUANTUM = Decimal("0.01")

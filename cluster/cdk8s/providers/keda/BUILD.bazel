@@ -27,7 +27,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":triggerauthentication",
-        "//cluster/cdk8s:metadata",
+        "@pypi//cdk8s",
         "@pypi//constructs",
     ],
 )
@@ -38,7 +38,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":scaledjob",
-        "//cluster/cdk8s:metadata",
+        "@pypi//cdk8s",
         "@pypi//constructs",
     ],
 )

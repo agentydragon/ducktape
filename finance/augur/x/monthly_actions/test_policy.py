@@ -5,12 +5,13 @@ import pytest_bazel
 
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
+from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.fixed_point import quantity_scale_for_asset
 from finance.augur.sim.ids import AccountId, AssetId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedObligation, PreparedSeries
 from finance.augur.sim.results import Finished, RejectedAction
-from finance.augur.sim.scenario import ORDINARY_INCOME, ObligationType
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 from finance.augur.x.monthly_actions.policy import decide

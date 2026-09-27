@@ -10,11 +10,11 @@ from finance.augur.sim.actions import Withdraw
 from finance.augur.sim.books import EXTERNAL_BOUNDARY
 from finance.augur.sim.holdings import gain_account
 from finance.augur.sim.ids import AccountId, AssetId, JurisdictionId, PortfolioId
+from finance.augur.sim.income import InterestIncome
 from finance.augur.sim.managed import ComponentEffects, IncomeCredit, ManagedPortfolios, basis_account
 from finance.augur.sim.money import MIN_COUNT
 from finance.augur.sim.observations import TlhPortfolioObservation
 from finance.augur.sim.prepared import PreparedSeries, PreparedTlhPortfolio
-from finance.augur.sim.scenario import InterestIncome
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, INCOME_SOURCES, accounting, world_on
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World

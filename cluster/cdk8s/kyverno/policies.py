@@ -146,7 +146,7 @@ def require_gitops_chart(app: App) -> Chart:
                         "Resource: {{request.object.kind}}/{{request.object.metadata.name}} "
                         "User: {{request.userInfo.username}}"
                     )
-                ).to_spec(),
+                ),
             )
         ],
     )
@@ -421,7 +421,7 @@ def restrict_agent_kustomization_patch_chart(app: App) -> Chart:
                             message="Only the reconcile.fluxcd.io/requestedAt annotation may be changed.",
                         ),
                     ],
-                ).to_spec(),
+                ),
             )
         ],
     )
@@ -483,7 +483,7 @@ def restrict_agent_gateway_routes_chart(app: App) -> Chart:
                         "`authentik` namespace) instead. "
                         "Resource: {{request.object.kind}}/{{request.object.metadata.name}}"
                     )
-                ).to_spec(),
+                ),
             )
         ],
     )
@@ -560,7 +560,7 @@ def require_secret_store_conditions_chart(app: App) -> Chart:
                             }
                         ]
                     },
-                ).to_spec(),
+                ),
             )
         ],
     )

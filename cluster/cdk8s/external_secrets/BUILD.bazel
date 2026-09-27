@@ -55,6 +55,7 @@ py_library(
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/external_secrets:passwordgenerator",
+        "@pypi//cdk8s",
         "@pypi//constructs",
     ],
 )

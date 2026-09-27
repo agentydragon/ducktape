@@ -9,6 +9,7 @@ from finance.augur.sim.compiler.distributions import distribution_income_categor
 from finance.augur.sim.compiler.income_sources import income_source_sort_key
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
+from finance.augur.sim.income import InterestIncome, OrdinaryIncome, TransferIncomeCategory
 from finance.augur.sim.jurisdictions import (
     Jurisdiction,
     JurisdictionLevel,
@@ -20,15 +21,11 @@ from finance.augur.sim.jurisdictions import (
 )
 from finance.augur.sim.scenario import (
     BondHolding,
-    FilingStatus,
-    InterestIncome,
-    OrdinaryIncome,
     RecurringPropertyCashflow,
     ScheduledPropertyCashflow,
     SecurityDistribution,
-    TaxProfile,
-    TransferIncomeCategory,
 )
+from finance.augur.sim.tax_profile import FilingStatus, TaxProfile
 
 SECTION_1250_FEDERAL_CAP_RATE = 0.25
 SECTION_1250_FEDERAL_JURISDICTION_ID = "federal_us"

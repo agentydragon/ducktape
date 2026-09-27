@@ -39,6 +39,7 @@ from finance.augur.product.wire import (
     SpendIndex,
 )
 from finance.augur.sim.bills import Biller
+from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.compiler.execution import (
     compile_accounts,
     compile_bond,
@@ -63,8 +64,10 @@ from finance.augur.sim.compiler.tax import PreparedTaxProfile, compile_income_so
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, PropertyId
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import Currency
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedBond,
@@ -86,19 +89,14 @@ from finance.augur.sim.pricing import OccupancyMode, insurance_rate, maintenance
 from finance.augur.sim.property import Housing
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import (
-    ORDINARY_INCOME,
     BondHolding,
     CapitalImprovementEvent,
-    Currency,
     DistributionTaxSlice,
-    FilingStatus,
     FixedAmount,
     InitialAccountBalance,
     InitialLot,
-    InterestIncome,
     MortgageFinancing as SimMortgageFinancing,
     MortgageInterestDeductionPolicy,
-    ObligationType,
     PrimaryResidenceAssignment,
     PrivateEquityTenderPolicy,
     PropertyLifecycleEvent,
@@ -112,13 +110,11 @@ from finance.augur.sim.scenario import (
     SeriesIndexedAmount,
     SetPrimaryResidenceEvent,
     SetRentedFractionEvent,
-    TaxProfile,
     TlhPortfolioSpec,
-    TransferDeductionCategory,
-    TransferIncomeCategory,
 )
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import FilingStatus, TaxProfile
 from finance.augur.sim.world import World
 
 PRIMARY_ACCOUNT_ID = AccountId("checking")

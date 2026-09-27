@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ServiceAccount, k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManaged,
@@ -119,8 +119,7 @@ def _readonly_copy(chart: Chart) -> None:
     ExternalSecret(
         chart,
         "consumer-copy",
-        name=_READONLY_SECRET,
-        namespace=_READONLY_CONSUMER,
+        metadata=ApiObjectMetadata(name=_READONLY_SECRET, namespace=_READONLY_CONSUMER),
         refresh="10m",
         store=SecretStoreRef.cluster(store),
         data_from=[DataFrom.from_extract(_READONLY_SECRET)],
