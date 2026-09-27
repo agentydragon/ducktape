@@ -7,7 +7,7 @@ import pytest_bazel
 
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.study.guyton_klinger.panel import AnnualPanel, Sleeve
-from finance.augur.study.guyton_klinger.paths import Taxes, annual_windows
+from finance.augur.study.guyton_klinger.paths import TaxLaw, annual_windows
 
 # Micro-dollar prices from $1, parts-per-billion CPI, and per-unit payouts in nano-quanta.
 DOLLAR = 1_000_000
@@ -25,7 +25,7 @@ def panel() -> AnnualPanel:
 
 
 def test_untaxed_levels_carry_total_returns_held_within_each_year_in_requested_start_order(panel: AnnualPanel) -> None:
-    windows = annual_windows(panel, start_years=[1991, 1990], years=2, taxes=Taxes.NONE)
+    windows = annual_windows(panel, start_years=[1991, 1990], years=2, tax_law=None)
     assert windows.start_years == (1991, 1990)
     later, earlier = (MarketPath(windows.series, id_, rollout_count=2) for id_ in (0, 1))
     # The terminal mark carries the last year.
@@ -37,7 +37,7 @@ def test_untaxed_levels_carry_total_returns_held_within_each_year_in_requested_s
 
 
 def test_taxed_levels_carry_price_returns_and_each_year_pays_its_income_in_december(panel: AnnualPanel) -> None:
-    windows = annual_windows(panel, start_years=[1991], years=2, taxes=Taxes.FEDERAL_CA)
+    windows = annual_windows(panel, start_years=[1991], years=2, tax_law=TaxLaw.FIXED_NOMINAL)
     window = MarketPath(windows.series, 0, rollout_count=1)
     assert window.path("security:equity") == [DOLLAR] * 12 + [770_000] * 12 + [1_155_000]
     assert window.path("security:cash") == [DOLLAR] * 25
@@ -60,7 +60,12 @@ def test_rejects_windows_the_panel_does_not_complete(
     panel: AnnualPanel, start_years: Sequence[int], years: int, match: str
 ) -> None:
     with pytest.raises(ValueError, match=match):
-        annual_windows(panel, start_years=start_years, years=years, taxes=Taxes.NONE)
+        annual_windows(panel, start_years=start_years, years=years, tax_law=None)
+
+
+def test_cpi_indexed_taxes_need_the_panel_to_cover_the_tables_law_year(panel: AnnualPanel) -> None:
+    with pytest.raises(ValueError, match="does not cover 2024"):
+        annual_windows(panel, start_years=[1990], years=2, tax_law=TaxLaw.CPI_INDEXED)
 
 
 if __name__ == "__main__":

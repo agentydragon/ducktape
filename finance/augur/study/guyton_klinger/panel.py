@@ -15,6 +15,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
+from fractions import Fraction
 from pathlib import Path
 
 INFLATION = "inflation"
@@ -82,6 +83,18 @@ class AnnualPanel:
     @property
     def years(self) -> range:
         return range(self.first_year, self.first_year + len(self.inflation))
+
+    def cpi_ratio(self, year: int, base: int) -> Fraction:
+        """CPI in January of `year` over January of `base`, both panel years, from the inflation column.
+
+        Its denominator is capped at a billion, so its product with ppb CPI levels keeps 64-bit terms.
+        """
+        for needed in (year, base):
+            if needed not in self.years:
+                raise ValueError(f"panel {self.years} does not cover {needed}, so has no CPI for its January")
+        low, high = (index - self.first_year for index in sorted((year, base)))
+        growth = math.prod((Fraction(1 + value) for value in self.inflation[low:high]), start=Fraction(1))
+        return (growth if year >= base else 1 / growth).limit_denominator(10**9)
 
     def total_return(self, sleeve: Sleeve) -> tuple[float, ...]:
         if sleeve not in self.price:

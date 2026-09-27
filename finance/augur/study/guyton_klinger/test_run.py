@@ -19,13 +19,7 @@ import pytest_bazel
 from finance.augur.sim.ids import AssetId
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.study.guyton_klinger.panel import Sleeve, load_panel
-from finance.augur.study.guyton_klinger.paths import (
-    ADAPTATION_TARGET_PERCENT,
-    QUANTUM,
-    AnnualWindows,
-    Taxes,
-    annual_windows,
-)
+from finance.augur.study.guyton_klinger.paths import ADAPTATION_TARGET_PERCENT, QUANTUM, AnnualWindows, annual_windows
 from finance.augur.study.guyton_klinger.policy import Cell, Guardrail, Inflation, Stage
 from finance.augur.study.guyton_klinger.run import Records, YearAmounts, YearRecordView, run
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
@@ -60,7 +54,7 @@ def panel_path(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def windows(panel_path: Path) -> AnnualWindows:
-    return annual_windows(load_panel(panel_path), start_years=[2001, 2003, 2005], years=2, taxes=Taxes.NONE)
+    return annual_windows(load_panel(panel_path), start_years=[2001, 2003, 2005], years=2, tax_law=None)
 
 
 def simulate(
@@ -69,7 +63,7 @@ def simulate(
     rollouts, _ = run(
         windows,
         Cell(initial_rate=Fraction(1, 10), years=2),
-        wealth=Decimal(100),
+        wealth=[Decimal(100)] * len(windows.start_years),
         weights=weights,
         rollout_ids=rollout_ids,
         capture="forensic",
@@ -234,7 +228,8 @@ def test_cli_runs_the_generated_placeholder_panel(tmp_path: Path) -> None:
     output = tmp_path / "study"
     cli(
         output,
-        *("--synthetic", "--taxes", "federal-ca", "--years", "5", "--initial-wealth", "1000000"),
+        *("--synthetic", "--taxes", "federal-ca", "--tax-law", "fixed-nominal", "--years", "5"),
+        *("--initial-wealth", "1000000"),
         *("--initial-rate", "0.04"),
     )
     study = json.loads((output / "study.json").read_text())
@@ -265,7 +260,7 @@ def test_cli_pays_each_years_federal_and_california_tax_out_of_its_withdrawal(tm
     panel = tmp_path / "taxed.csv"
     panel.write_text(TAXED)
     common = ("--panel", panel, "--years", "2", "--initial-wealth", "1000000", "--initial-rate", "0.05")
-    cli(tmp_path / "taxed", *common, "--taxes", "federal-ca")
+    cli(tmp_path / "taxed", *common, "--taxes", "federal-ca", "--tax-law", "fixed-nominal")
     cli(tmp_path / "untaxed", *common, "--taxes", "none")
     [path] = Records.model_validate_json((tmp_path / "taxed" / "records.json").read_text()).paths
     [taxed] = Finished.model_validate_json((tmp_path / "taxed" / "outcomes.json").read_text()).rollouts
@@ -320,6 +315,119 @@ def test_cli_pays_each_years_federal_and_california_tax_out_of_its_withdrawal(tm
         "96847.35",
         "47155.97",
     )
+
+
+# One-year windows from 2023 and 2025, $1M at w0 = 5%: year 0's $50k comes from the bills, and
+# December pays a 25% coupon on the $250k of bonds, $62,500 of Treasury interest that California
+# exempts. Nothing else pays or moves. CPI rises 25% over 2023 and 50% over 2024.
+INDEXED = textwrap.dedent(
+    f"""\
+    {HEADER}
+    2023,0,0.25,0,0,0,0.25
+    2024,0,0,0,0,0,0.5
+    2025,0,0.25,0,0,0,0
+    """
+)
+
+
+@pytest.mark.parametrize(
+    ("tax_law", "federal_tax"),
+    [
+        # 2024 tables: 62,500 - 14,600 = 47,900 taxable;
+        # 10% of 11,600 + 12% of 35,550 + 22% of 750 = 1160 + 4266 + 165 = 5591, in both years.
+        pytest.param("fixed-nominal", ["5591", "5591"], id="fixed-nominal"),
+        # 2023 at CPI 4/5 of 2024's: 62,500 - 11,680 = 50,820 over brackets at 9280 and 37,720:
+        #   928 + 12% of 28,440 + 22% of 13,100 = 928 + 3412.80 + 2882 = 7222.80.
+        # 2025 at 3/2: 62,500 - 21,900 = 40,600 over brackets at 17,400 and 70,725:
+        #   1740 + 12% of 23,200 = 1740 + 2784 = 4524, $1067 less than the nominal tables charge.
+        pytest.param("cpi-indexed", ["7222.80", "4524"], id="cpi-indexed"),
+    ],
+)
+def test_cpi_indexed_tables_carry_the_law_years_brackets_to_each_windows_price_level(
+    tmp_path: Path, tax_law: str, federal_tax: list[str]
+) -> None:
+    panel = tmp_path / "indexed.csv"
+    panel.write_text(INDEXED)
+    cli(
+        tmp_path / "study",
+        *("--panel", panel, "--years", "1", "--start-year", "2023", "--start-year", "2025"),
+        *("--initial-wealth", "1000000", "--initial-rate", "0.05", "--taxes", "federal-ca", "--tax-law", tax_law),
+    )
+    paths = Records.model_validate_json((tmp_path / "study" / "records.json").read_text()).paths
+    assert [
+        (path.start_year, path.years[0].nominal.federal_tax, path.years[0].nominal.california_tax) for path in paths
+    ] == [(2023, quanta(federal_tax[0]), 0), (2025, quanta(federal_tax[1]), 0)]
+
+
+@pytest.mark.parametrize(
+    "taxes",
+    [
+        pytest.param(("--taxes", "federal-ca"), id="taxed-without"),
+        pytest.param(("--taxes", "none", "--tax-law", "cpi-indexed"), id="untaxed-with"),
+    ],
+)
+def test_cli_requires_a_tax_law_exactly_when_taxed(tmp_path: Path, panel_path: Path, taxes: tuple[str, ...]) -> None:
+    with pytest.raises(subprocess.CalledProcessError) as failure:
+        subprocess.run(
+            [
+                get_required_path(own_repo_rlocation("finance/augur/study/guyton_klinger/run_bin")),
+                *("--panel", panel_path, "--years", "2", "--initial-wealth", "100", "--initial-rate", "0.1"),
+                *("--output-dir", tmp_path / "unwritten"),
+                *taxes,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    assert failure.value.returncode == 2
+    assert "--tax-law goes with --taxes federal-ca" in failure.value.stderr
+
+
+# One-year windows from 2001, 2002 and 2003 with $1000 of 2002 dollars at w0 = 10%, and no returns.
+# CPI rises 25% over 2001 and 50% over 2002: the windows open with $800, $1000 and $1500 nominal and
+# spend $80, $100 and $150, each $100 of 2002. They end with $720, $900 and $1350 in Januaries 2002,
+# 2003 and 2004, whose CPIs are 1, 1.5 and 1.5 times 2002's: $720, $600 and $900 of 2002.
+DEFLATED = textwrap.dedent(
+    f"""\
+    {HEADER}
+    2001,0,0,0,0,0,0.25
+    2002,0,0,0,0,0,0.5
+    2003,0,0,0,0,0,0
+    """
+)
+
+
+def test_initial_wealth_in_one_years_dollars_deflates_to_each_windows_start(tmp_path: Path) -> None:
+    panel = tmp_path / "deflated.csv"
+    panel.write_text(DEFLATED)
+    output = tmp_path / "study"
+    cli(
+        output,
+        *("--panel", panel, "--taxes", "none", "--years", "1", "--initial-rate", "0.1"),
+        *("--initial-wealth", "1000", "--initial-wealth-dollars-of", "2002"),
+    )
+    records = Records.model_validate_json((output / "records.json").read_text())
+    assert records.real_dollars_of == 2002
+    assert [
+        (path.start_year, path.initial_wealth, path.real_initial_wealth, path.years[0].nominal.withdrawal)
+        for path in records.paths
+    ] == [
+        (2001, 800 * DOLLAR, 1000 * DOLLAR, 80 * DOLLAR),
+        (2002, 1000 * DOLLAR, 1000 * DOLLAR, 100 * DOLLAR),
+        (2003, 1500 * DOLLAR, 1000 * DOLLAR, 150 * DOLLAR),
+    ]
+    assert [path.years[0].real for path in records.paths] == [untaxed(100 * DOLLAR)] * 3
+    assert [(path.terminal_wealth, path.real_terminal_wealth) for path in records.paths] == [
+        (720 * DOLLAR, 720 * DOLLAR),
+        (900 * DOLLAR, 600 * DOLLAR),
+        (1350 * DOLLAR, 900 * DOLLAR),
+    ]
+    headline = json.loads((output / "study.json").read_text())["headline"]
+    assert (headline["initial_wealth_range"], headline["real_initial_wealth_range"]) == (
+        ["800.00", "1500.00"],
+        ["1000.00", "1000.00"],
+    )
+    assert (headline["median_real_terminal_wealth"], headline["min_real_annual_spendable"]) == ("720.00", "100.00")
 
 
 if __name__ == "__main__":

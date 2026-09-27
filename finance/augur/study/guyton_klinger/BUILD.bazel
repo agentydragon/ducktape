@@ -25,6 +25,7 @@ py_library(
         "//finance/augur/sim:world",
         "//finance/augur/sim/compiler:execution",
         "//finance/augur/sim/compiler:tax",
+        "@pypi//more_itertools",
         "@pypi//numpy",
     ],
 )
@@ -37,6 +38,7 @@ py_library(
         ":paths",
         ":policy",
         ":synthetic",
+        "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:market_path",
         "//finance/augur/sim:results",
         "//finance/augur/sim:session",
