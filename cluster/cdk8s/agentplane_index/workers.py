@@ -219,10 +219,9 @@ def chart(app: App) -> Chart:
         # gitignore syntax. Specimens duplicate code indexed at its real path; the .gz
         # reference blobs are not text and would only cost the clone read.
         env=(k8s.EnvVar(name=env_name(Settings, "ignore"), value="props/specimens/\n*.gz\n"),),
-        # CLEANUP(added 2026-09-26): paused so its continuous /v1/embeddings traffic to
-        # ollama.ollama stops evicting the much larger qwen3.8-flash-next-q4 chat model
-        # mid-load during agentplane/debug/agentplane_ollama_live_smoke_2026_09_24.md's
-        # smoke testing. Remove once that test run is done and restore replicas=1.
+        # CLEANUP(added 2026-09-27): pause both workers while Ollama model setup and API
+        # smoke tests run. Their continuous /v1/embeddings traffic evicts the loaded chat
+        # model; restore replicas=1 for both workers when indexing resumes.
         replicas=0,
     )
     _worker(
@@ -235,5 +234,6 @@ def chart(app: App) -> Chart:
             secret_env_var(env_name(Settings, "git_username"), "haku-forgejo-git", "username"),
             secret_env_var(env_name(Settings, "git_password"), "haku-forgejo-git", "password"),
         ),
+        replicas=0,
     )
     return chart
