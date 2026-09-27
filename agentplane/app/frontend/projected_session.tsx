@@ -1147,7 +1147,7 @@ function VirtualizedHistory({
                 left: 0,
                 width: "100%",
                 transform: `translateY(${item.start}px)`,
-                paddingBottom: 8,
+                paddingBottom: 4,
               }}
             >
               <HistoryRowView
@@ -1435,6 +1435,8 @@ function ProjectedSessionBody({
                 </ActionIcon>
               </Menu.Target>
               <Menu.Dropdown>
+                <Menu.Label style={{ overflowWrap: "anywhere" }}>Thread ID: {threadId}</Menu.Label>
+                <Menu.Divider />
                 <Menu.Item leftSection={<IconHistory size={15} />} onClick={() => openDebug()}>
                   Debug history
                 </Menu.Item>

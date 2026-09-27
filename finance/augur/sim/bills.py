@@ -2,8 +2,9 @@
 
 from finance.augur.sim.actor import Actor, MonthOpened
 from finance.augur.sim.claims import Demand, OrdinaryDeduction
-from finance.augur.sim.prepared import PreparedAmount, PreparedObligation, PreparedRecurringObligation
+from finance.augur.sim.prepared import PreparedAmount, PreparedObligation
 from finance.augur.sim.property import PropertyStatement
+from finance.augur.sim.schedule import is_due
 
 
 class Bill(Demand):
@@ -20,22 +21,16 @@ class Biller(Actor[MonthOpened | PropertyStatement, Bill]):
     only while the property is held, deducting by the share that is let.
     """
 
-    def __init__(self, spec: PreparedObligation | PreparedRecurringObligation) -> None:
+    def __init__(self, spec: PreparedObligation) -> None:
         self.spec = spec
         self.property: PropertyStatement | None = None
-
-    def due(self, month: int) -> bool:
-        spec = self.spec
-        if isinstance(spec, PreparedObligation):
-            return spec.month == month
-        return spec.start_month <= month and (spec.end_month is None or month <= spec.end_month)
 
     def handle(self, message: MonthOpened | PropertyStatement) -> list[Bill]:
         if isinstance(message, PropertyStatement):
             self.property = message
             return []
         spec, month = self.spec, message.month
-        if not self.due(month):
+        if not is_due(spec.schedule, month):
             return []
         if spec.property_id is None:
             fraction = spec.deductible_fraction_ppb

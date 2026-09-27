@@ -19,6 +19,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -274,7 +275,7 @@ def _values() -> dict[str, object]:
             },
             "rules": {
                 "alertmanager": True,
-                # Static Talos etcd endpoints are scraped by monitoring/etcd; keep the
+                # Static Talos etcd endpoints are scraped through cluster/cdk8s/etcd.py; keep the
                 # chart's stock etcd rule bundle disabled until the scrape is verified.
                 "etcd": False,
                 "configReloaders": True,
@@ -320,27 +321,12 @@ def _values() -> dict[str, object]:
                     }
                 },
                 # Chart auto-generates podAntiAffinity when replicas > 1
-                "nodeSelector": {"topology.kubernetes.io/zone": "hil-ovh"},
+                "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
                 # The replica with its local PVC on a control plane must survive the
                 # default taint until monitoring-state migration. Prefer workers for
                 # any placement not constrained by that PVC.
-                "tolerations": [
-                    {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
-                ],
-                "affinity": {
-                    "nodeAffinity": {
-                        "preferredDuringSchedulingIgnoredDuringExecution": [
-                            {
-                                "weight": 100,
-                                "preference": {
-                                    "matchExpressions": [
-                                        {"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}
-                                    ]
-                                },
-                            }
-                        ]
-                    }
-                },
+                "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
+                "affinity": node_scheduling.PREFER_WORKERS,
                 "resources": {
                     "requests": {"cpu": "10m", "memory": "64Mi"},
                     "limits": {"cpu": "100m", "memory": "128Mi"},
@@ -440,7 +426,7 @@ def _values() -> dict[str, object]:
         "kubeControllerManager": {"enabled": True, "serviceMonitor": _CONTROL_PLANE_SERVICE_MONITOR},
         # `serviceMonitor.authorization: null` is patched in below.
         "coreDns": {"enabled": True, "serviceMonitor": {}},
-        # Static Talos etcd endpoints are managed in cluster/generated/monitoring/etcd.
+        # Static Talos etcd endpoints are managed in cluster/cdk8s/etcd.py.
         "kubeEtcd": {"enabled": False},
         "kubeScheduler": {"enabled": True, "serviceMonitor": _CONTROL_PLANE_SERVICE_MONITOR},
         # kube-proxy is intentionally absent: Cilium runs kube-proxy replacement,

@@ -1761,6 +1761,18 @@ if (scenario.openDebug) {
   openMenu.observe(document, { childList: true, subtree: true });
 }
 
+if (scenario.openMoreMenu) {
+  // Left open, unlike scenario.openDebug's use of the same trigger: this scene's point is the
+  // menu's own contents, not a page it navigates to.
+  const openMoreMenu = new MutationObserver(() => {
+    const trigger = document.querySelector('button[aria-label="More"]');
+    if (!(trigger instanceof HTMLButtonElement)) return;
+    openMoreMenu.disconnect();
+    trigger.click();
+  });
+  openMoreMenu.observe(document, { childList: true, subtree: true });
+}
+
 /** Opens the folded tool-call run, whose steps mount only once it is open. */
 function openRun(summaries: HTMLElement[]): void {
   summaries

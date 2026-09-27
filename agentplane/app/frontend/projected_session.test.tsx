@@ -287,6 +287,13 @@ it("sends the draft from the Send button, which an empty draft disables", async 
   expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
 });
 
+it("shows the thread id in the More menu, not inline once a name is set", async () => {
+  const container = await render();
+  expect(document.body.textContent).not.toContain(THREAD.id);
+  await act(async () => button(container, "More").click());
+  expect(document.body.textContent).toContain(THREAD.id);
+});
+
 it("shuts the harness down from the More menu, not a control on the row", async () => {
   const container = await render();
   expect(document.body.textContent).not.toContain("Shut down harness");

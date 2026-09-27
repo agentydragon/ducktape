@@ -153,6 +153,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":local_path_provisioner",
+        ":node_scheduling",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/cnpg:cnpg_cluster",
         "@pypi//cdk8s",
@@ -220,6 +221,7 @@ py_library(
         ":generation",
         ":manifest_roots",
         ":model_rosters",
+        ":node_scheduling",
         ":openclaw_gateway",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -237,13 +239,8 @@ py_library(
         ":artifact_generators",
         ":flux",
         ":manifest_roots",
-        "//cluster/cdk8s/providers/external_secrets:external_secret",
-        "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//cluster/cdk8s/providers/external_secrets:secretstore",
-        "//cluster/cdk8s/providers/volsync:replicationsource",
+        ":restic_backup",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
     ],
 )
 
@@ -325,11 +322,23 @@ py_library(
         ":artifact_generators",
         ":flux",
         ":manifest_roots",
+        ":restic_backup",
+        "//cluster/cdk8s/providers/volsync:replicationsource",
+        "//cluster/cdk8s/seaweedfs:s3",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "restic_backup",
+    srcs = ["restic_backup.py"],
+    deps = [
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/external_secrets:secretstore",
+        "//cluster/cdk8s/providers/volsync:replication_source",
         "//cluster/cdk8s/providers/volsync:replicationsource",
-        "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -398,11 +407,18 @@ py_library(
     name = "flux_monitoring",
     srcs = ["flux_monitoring.py"],
     deps = [
-        ":artifact_generators",
-        ":flux",
-        ":manifest_roots",
         "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "platform_monitoring",
+    srcs = ["platform_monitoring.py"],
+    deps = [
+        ":flux",
+        ":manifest_roots",
         "@pypi//cdk8s",
     ],
 )
@@ -648,12 +664,24 @@ py_library(
     name = "agent_machine_access",
     srcs = ["agent_machine_access.py"],
     deps = [
-        ":artifact_generators",
+        ":terraform",
+        "//cluster/cdk8s/providers/tofu_controller:terraform",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "authentik_tf",
+    srcs = ["authentik_tf.py"],
+    deps = [
+        ":agent_machine_access",
         ":flux",
         ":manifest_roots",
         ":terraform",
+        "//cluster/cdk8s/authentik:sso_providers",
+        "//cluster/cdk8s/gatus:sso",
+        "//cluster/cdk8s/monitoring:alloy_otlp_bearer_token",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/tofu_controller:terraform",
         "@pypi//cdk8s",
     ],
 )
@@ -662,10 +690,17 @@ py_library(
     name = "github_branch_protection",
     srcs = ["github_branch_protection.py"],
     deps = [
-        ":artifact_generators",
+        ":terraform",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "github_tf",
+    srcs = ["github_tf.py"],
+    deps = [
         ":flux",
         ":manifest_roots",
-        ":terraform",
         "@pypi//cdk8s",
     ],
 )
@@ -804,6 +839,7 @@ py_library(
         ":gateway",
         ":generation",
         ":manifest_roots",
+        ":node_scheduling",
         ":valkey",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
@@ -868,11 +904,7 @@ py_library(
     name = "etcd",
     srcs = ["etcd.py"],
     deps = [
-        ":artifact_generators",
         ":fleet_rules",
-        ":flux",
-        ":manifest_roots",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "//cluster/scripts:nebula_mesh",
@@ -1070,6 +1102,7 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "//cluster/cdk8s/providers/flux:kustomization",
@@ -1089,6 +1122,7 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -1118,6 +1152,7 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "@pypi//cdk8s",
@@ -1146,6 +1181,7 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "//cluster/cdk8s/providers/flux:kustomization",
@@ -1218,6 +1254,7 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "@pypi//cdk8s",
     ],
@@ -1273,6 +1310,7 @@ py_library(
         ":alloy_otlp_bearer",
         ":artifact_generators",
         ":authentik_jwt_rotation",
+        ":authentik_tf",
         ":claude_sandbox_secrets",
         ":descheduler",
         ":dns_automation",
@@ -1286,6 +1324,7 @@ py_library(
         ":forgejo_images",
         ":forgejo_token_rotation",
         ":github_branch_protection",
+        ":github_tf",
         ":goldilocks",
         ":google_mcp",
         ":ha_mcp",
@@ -1307,6 +1346,7 @@ py_library(
         ":ntfy",
         ":nvidia_device_plugin",
         ":nvidia_runtimeclass",
+        ":platform_monitoring",
         ":proxmox_proxy",
         ":public_coder_agent_config",
         ":public_coder_backup",
@@ -1353,7 +1393,6 @@ py_library(
         "//cluster/cdk8s/clickhouse:installation",
         "//cluster/cdk8s/clickhouse:operator",
         "//cluster/cdk8s/clickhouse:schema",
-        "//cluster/cdk8s/coredns_custom:flux_kustomizations",
         "//cluster/cdk8s/cpap_sync:app",
         "//cluster/cdk8s/dcgm_exporter:exporter",
         "//cluster/cdk8s/dcgm_exporter:flux_kustomizations",
@@ -1486,6 +1525,7 @@ py_library(
         ":flux",
         ":generation",
         ":manifest_roots",
+        ":node_scheduling",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/kubevirt:virtualmachine",
@@ -1579,6 +1619,7 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "@pypi//cdk8s",

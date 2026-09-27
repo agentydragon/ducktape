@@ -21,6 +21,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeRemediation,
 )
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -29,11 +30,16 @@ NAMESPACE = "seaweedfs-csi-system"
 RELEASE = "seaweedfs-csi-driver"
 OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs-csi"
 _VERSION = "v1.4.30"
-_ZONE = "topology.kubernetes.io/zone"
 _OVH_AFFINITY = {
     "nodeAffinity": {
         "requiredDuringSchedulingIgnoredDuringExecution": {
-            "nodeSelectorTerms": [{"matchExpressions": [{"key": _ZONE, "operator": "In", "values": ["hil-ovh"]}]}]
+            "nodeSelectorTerms": [
+                {
+                    "matchExpressions": [
+                        {"key": node_scheduling.ZONE_LABEL, "operator": "In", "values": [node_scheduling.HIL_OVH_ZONE]}
+                    ]
+                }
+            ]
         }
     }
 }
@@ -47,9 +53,7 @@ _OVH_AFFINITY = {
 # SeaweedFS on /dev/sdb and pinned only ephemeral-write batch jobs off the control planes.
 # Measured on ovh-ns103656: the mount pod writes ~0.8 KiB/s to the install disk (6.0 GiB over
 # 85 days, logs + FUSE metadata) against the 490-988 KiB/s writers that RCA actually pinned off.
-_CONTROL_PLANE_TOLERATIONS = [
-    {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
-]
+_CONTROL_PLANE_TOLERATIONS = [node_scheduling.CONTROL_PLANE_TOLERATION]
 
 
 def _values() -> dict[str, object]:
@@ -74,7 +78,7 @@ def _values() -> dict[str, object]:
         # `topology.kubernetes.io/zone` matches the node label OVH nodes actually carry
         # (cluster/terraform/main/ovh-nodes.tf nodeLabels, value "hil-ovh") and what the
         # StorageClasses' allowedTopologies match on.
-        "topologyKeys": [_ZONE],
+        "topologyKeys": [node_scheduling.ZONE_LABEL],
         # Bound the per-mount in-memory write buffer. `weed mount` accumulates dirty pages as
         # chunks of -chunkSizeLimitMB (2MB) and allocates a new in-memory one only while
         # `memChunkCounter < 4*writableChunkLimit` (weed/mount/page_writer/upload_pipeline.go),
@@ -179,7 +183,11 @@ def _storage_class(scope: Construct, name: str, *, description: str, parameters:
         # (cluster/terraform/main/ovh-nodes.tf nodeLabels).
         allowed_topologies=[
             k8s.TopologySelectorTerm(
-                match_label_expressions=[k8s.TopologySelectorLabelRequirement(key=_ZONE, values=["hil-ovh"])]
+                match_label_expressions=[
+                    k8s.TopologySelectorLabelRequirement(
+                        key=node_scheduling.ZONE_LABEL, values=[node_scheduling.HIL_OVH_ZONE]
+                    )
+                ]
             )
         ],
         # SeaweedFS CSI expansion is a collection-quota bump, so a growing PVC (e.g. Forgejo

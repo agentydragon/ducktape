@@ -19,14 +19,11 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 from cluster.scripts.nebula_mesh import Mesh
 
 NAME = "etcd-monitoring"
 NAMESPACE = "monitoring"
-OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/etcd"
 _NAME = "talos-etcd-metrics"
 _LABELS = {"app.kubernetes.io/name": _NAME, "app.kubernetes.io/part-of": NAMESPACE}
 _PORT_NAME = "metrics"
@@ -94,14 +91,3 @@ def chart(app: App, mesh: Mesh) -> Chart:
     TalosEtcdMetrics(chart, "etcd", mesh)
     add_fleet_rules(chart)
     return chart
-
-
-def etcd_monitoring(flux_chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        NAME,
-        directory,
-        timeout="2m",
-        # the ServiceMonitor CRD
-        depends_on=[flux_kustomization_depends_on(monitoring_crds)],
-    )

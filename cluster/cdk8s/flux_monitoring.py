@@ -1,5 +1,5 @@
 """The PodMonitor that scrapes Prometheus metrics from every Flux controller in
-flux-system, and its Flux Kustomization.
+flux-system.
 
 Without it the `gotk_reconcile_duration_seconds` series is not ingested, which leaves the
 flux_reconcile_audit skill partly blind. Flux CR Ready-condition metrics come from
@@ -11,12 +11,9 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 
 NAME = "flux-monitoring"
-OUTPUT_DIR = f"{GENERATED_ROOT}/flux-monitoring"
 # Every controller (kustomize-, source-, helm-, notification-, image-automation- and
 # image-reflector-controller) carries this label (per gotk-components.yaml) and exposes
 # /metrics on the `http-prom` named port (8080).
@@ -33,17 +30,3 @@ def chart(app: App) -> Chart:
         pod_metrics_endpoints=[Endpoint.plain(port="http-prom")],
     )
     return chart
-
-
-def flux_monitoring(chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        timeout="2m",
-        depends_on=[
-            # PodMonitor CRD ships with kube-prometheus-stack in monitoring-stack.
-            # PodMonitor
-            flux_kustomization_depends_on(monitoring_crds)
-        ],
-    )

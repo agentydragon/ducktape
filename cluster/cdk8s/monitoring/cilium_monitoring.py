@@ -9,13 +9,10 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecSelector,
 )
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
 NAME = "cilium-monitoring"
 NAMESPACE = "monitoring"
-OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/cilium"
 
 
 def _labels(name: str) -> dict[str, str]:
@@ -50,16 +47,3 @@ def chart(app: App) -> Chart:
         ],
     )
     return chart
-
-
-def cilium_monitoring(chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        timeout="2m",
-        depends_on=[
-            # ServiceMonitor
-            flux_kustomization_depends_on(monitoring_crds)
-        ],
-    )

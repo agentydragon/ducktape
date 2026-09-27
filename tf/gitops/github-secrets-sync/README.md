@@ -39,12 +39,12 @@ present in tofu-controller's remote state.
 
 The `FORGEJO_IMAGES_USERNAME` and `FORGEJO_IMAGES_PASSWORD` secrets for
 `gaffer-private` come from the canonical `forgejo-images/forgejo-images-creds`
-Secret. Do not copy those values into GitHub manually; the
-`github-secrets-sync` Kustomization waits for `forgejo-images` before its
-Terraform apply.
+Secret. Do not copy those values into GitHub manually. The Terraform reads that
+Secret through `data "kubernetes_secret"`; until it exists the plan fails and
+tofu-controller retries.
 
-If `github-secrets-sync` starts failing, check the accepted-permission header
-for the failing endpoint before broadening the token:
+If the `github-secrets-sync` Terraform starts failing, check the
+accepted-permission header for the failing endpoint before broadening the token:
 
 ```bash
 TOKEN=$(kubectl -n flux-system get secret github-secrets-sync-pat \
