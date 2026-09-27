@@ -19,7 +19,6 @@ from grafana_grafana_crds.org.integreatly.grafana import (
     GrafanaSpecDeployment,
     GrafanaSpecDeploymentSpec,
     GrafanaSpecDeploymentSpecTemplate,
-    GrafanaSpecDeploymentSpecTemplateMetadata,
     GrafanaSpecDeploymentSpecTemplateSpec,
     GrafanaSpecDeploymentSpecTemplateSpecContainers,
     GrafanaSpecDeploymentSpecTemplateSpecContainersEnv,
@@ -139,9 +138,6 @@ def _grafana(chart: Chart) -> None:
             deployment=GrafanaSpecDeployment(
                 spec=GrafanaSpecDeploymentSpec(
                     template=GrafanaSpecDeploymentSpecTemplate(
-                        metadata=GrafanaSpecDeploymentSpecTemplateMetadata(
-                            annotations={"reloader.stakater.com/auto": "true"}
-                        ),
                         spec=GrafanaSpecDeploymentSpecTemplateSpec(
                             containers=[
                                 GrafanaSpecDeploymentSpecTemplateSpecContainers(
@@ -173,7 +169,7 @@ def _grafana(chart: Chart) -> None:
                                     ],
                                 )
                             ]
-                        ),
+                        )
                     )
                 )
             ),
