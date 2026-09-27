@@ -6,7 +6,6 @@ from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
 from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
     Kustomization,
     flux_kustomization,
     flux_kustomization_depends_on,
@@ -25,7 +24,6 @@ def gaffer_private_source(chart: Chart, flux_image_automation_ghcr: Kustomizatio
         wait=None,
         timeout="10m",
         path=f"./{HAND_WRITTEN_ROOT}/gaffer-private-source",
-        decryption=SOPS_DECRYPTION,
         depends_on=[flux_kustomization_depends_on(flux_image_automation_ghcr)],
     )
 

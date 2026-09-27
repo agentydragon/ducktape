@@ -38,7 +38,7 @@ from seaweed_s3policybinding_crds.com.seaweedfs.seaweed import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -295,5 +295,4 @@ def seaweedfs_public_s3(
             kyverno,
         ),
         timeout="5m",
-        decryption=SOPS_DECRYPTION,
     )

@@ -1138,7 +1138,7 @@ function VirtualizedHistory({
                 left: 0,
                 width: "100%",
                 transform: `translateY(${item.start}px)`,
-                paddingBottom: 8,
+                paddingBottom: 4,
               }}
             >
               <HistoryRowView
