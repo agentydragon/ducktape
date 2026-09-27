@@ -107,7 +107,7 @@ class Electric(Construct):
             self,
             "networkpolicy",
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
-            selector=_LABELS,
+            endpoint_selector=_LABELS,
             ingress=[IngressRule.from_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-app"), ports=[PORT])],
             egress=[
                 cilium.dns_egress(),

@@ -186,11 +186,7 @@ def write_manifests(root: Path) -> None:
 # DATABASE_URL deployment because its secrets layer waited on a TF apply that
 # needed the app. Dependency direction here is the fix.
 def litellm_keys_tf(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    litellm: Kustomization,
-    tofu_controller: Kustomization,
-    tofu_state_db: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, litellm: Kustomization, tofu_controller: Kustomization
 ) -> Kustomization:
     name = "litellm-keys-tf"
     return flux_kustomization(
@@ -206,6 +202,5 @@ def litellm_keys_tf(
             # The app must serve (with its DB) before keys can mint.
             litellm,
             tofu_controller,
-            tofu_state_db,
         ),
     )

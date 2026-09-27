@@ -14,6 +14,7 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -109,7 +110,7 @@ def chart(app: App) -> Chart:
         chart,
         "podmonitor",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_LABELS),
-        selector=_LABELS,
+        selector=PodMonitorSpecSelector(match_labels=_LABELS),
         pod_metrics_endpoints=[Endpoint.plain(port="metrics")],
     )
     return chart

@@ -52,6 +52,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cnpg, fleet_rules, node_scheduling
@@ -136,8 +137,8 @@ def _auth_external_secret(scope: Construct) -> None:
                 "ntfy.ducktape.io/auth-generation": "1",
             },
         ),
-        refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
-        store=SecretStoreRef.cluster(SECRET_STORE),
+        refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
+        secret_store_ref=SecretStoreRef.cluster(SECRET_STORE),
         data=[
             remote_data(_AUTH_SOURCE_SECRET, "alertmanager-password", secret_key="alertmanager_password"),
             remote_data(_AUTH_SOURCE_SECRET, "alertmanager-token", secret_key="alertmanager_token"),
@@ -175,8 +176,8 @@ def _alertmanager_webhook_secret(scope: Construct) -> None:
                 "ntfy.ducktape.io/auth-generation": "1",
             },
         ),
-        refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
-        store=SecretStoreRef.cluster(SECRET_STORE),
+        refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
+        secret_store_ref=SecretStoreRef.cluster(SECRET_STORE),
         data=[remote_data(_AUTH_SOURCE_SECRET, "alertmanager-token", secret_key="alertmanager_token")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
@@ -296,7 +297,7 @@ class Ntfy(Construct):
             self,
             "servicemonitor",
             metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_LABELS),
-            selector=_LABELS,
+            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
             endpoints=[Endpoint.plain(port="http")],
         )
 
@@ -313,9 +314,9 @@ def ntfy(
     artifact: ArtifactGeneratorSpecArtifacts,
     root: Path,
     cnpg: Kustomization,
-    external_secrets_config: Kustomization,
-    gateway: Kustomization,
+    external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     """Generate ntfy's namespace, CNPG cluster, auth ESO, and app resources.
 
@@ -336,7 +337,13 @@ def ntfy(
         description="Self-hosted ntfy for Android and cluster alert notifications.",
         timeout="10m",
         decryption=sops_decryption(resources),
-        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_config, gateway, monitoring_crds),
+        depends_on=flux_kustomization_depends_on_many(
+            cnpg,
+            external_secrets_operator,
+            monitoring_crds,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+            kyverno,
+        ),
     )
     write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=resources))
     return kustomization

@@ -30,6 +30,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecValuesFromKind,
 )
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import kustomize_kustomization
@@ -449,7 +450,7 @@ def chart(app: App) -> Chart:
         "service-monitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         # Helm release name; robust regardless of the chart's app name label.
-        selector={"app.kubernetes.io/instance": _NAME},
+        selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/instance": _NAME}),
         endpoints=[Endpoint.bearer_token_secret(port="http", secret_name=_METRICS_TOKEN, key="token")],
     )
     _metrics_token(chart)

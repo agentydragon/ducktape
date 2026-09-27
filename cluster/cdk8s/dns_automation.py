@@ -52,8 +52,8 @@ def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
         chart,
         "credentials",
         metadata=ApiObjectMetadata(name=_CREDENTIALS_SECRET, namespace=_NAMESPACE),
-        refresh="1h",
-        store=external_creds.STORE,
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[
             remote_data(_CREDENTIALS_SOURCE, key)
             for key in ("AWS_ACCESS_KEY_ID", "AWS_REGION", "AWS_SECRET_ACCESS_KEY")
@@ -88,9 +88,7 @@ def dns_automation(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     tofu_controller: Kustomization,
-    tofu_state_db: Kustomization,
-    external_creds: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -105,7 +103,5 @@ def dns_automation(
                 namespace="flux-system",
             )
         ],
-        depends_on=flux_kustomization_depends_on_many(
-            tofu_controller, tofu_state_db, external_creds, external_secrets_config
-        ),
+        depends_on=flux_kustomization_depends_on_many(tofu_controller, external_secrets_operator),
     )

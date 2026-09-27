@@ -150,7 +150,7 @@ def chart(app: App) -> Chart:
         chart,
         "networkpolicy-app-from-staging-egress",
         metadata=ApiObjectMetadata(name=f"{app_component.NAME}-from-staging-egress", namespace=ENV.namespace),
-        selector={"app.kubernetes.io/name": app_component.NAME},
+        endpoint_selector={"app.kubernetes.io/name": app_component.NAME},
         ingress=[
             IngressRule.from_endpoints(
                 cilium.endpoint_labels("agentplane-staging", egress.NAME), ports=[app_component.CONTAINER_PORT]
@@ -176,7 +176,7 @@ def agentplane_testing(
     cert_manager_trust: Kustomization,
     claude_rbac: Kustomization,
     cnpg: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -202,6 +202,6 @@ def agentplane_testing(
             cert_manager_trust,
             claude_rbac,
             cnpg,
-            external_secrets_config,
+            external_secrets_operator,
         ),
     )

@@ -54,6 +54,7 @@ py_library(
         "//cluster/cdk8s/providers/clickhouse:clickhousekeeperinstallation",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
+        "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

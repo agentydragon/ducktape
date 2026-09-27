@@ -158,10 +158,7 @@ def write_manifests(root: Path) -> None:
 
 
 def flux_image_automation_forgejo(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    forgejo_images: Kustomization,
-    flux_image_automation_ghcr: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, flux_image_automation_ghcr: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -169,7 +166,7 @@ def flux_image_automation_forgejo(
         artifact,
         retry_interval=None,
         wait=None,
-        depends_on=flux_kustomization_depends_on_many(forgejo_images, flux_image_automation_ghcr),
+        depends_on=flux_kustomization_depends_on_many(flux_image_automation_ghcr),
         description=(
             "Image automation for images hosted in our Forgejo registry "
             "(authenticated scans via the reflected ducktape-ci credential)."

@@ -98,8 +98,8 @@ def _external_secrets(chart: Chart) -> None:
         chart,
         "forgejo-images-creds",
         metadata=ApiObjectMetadata(name=forgejo_images.SECRET_NAME, namespace=NAMESPACE),
-        refresh="1h",
-        store=SecretStoreRef.cluster("kubernetes-flux-system-secret-store"),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster("kubernetes-flux-system-secret-store"),
         data_from=[DataFrom.from_extract(forgejo_images.SECRET_NAME)],
         template=ExternalSecretSpecTargetTemplate(
             type="kubernetes.io/dockerconfigjson", merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE
@@ -115,16 +115,16 @@ def _external_secrets(chart: Chart) -> None:
         chart,
         "activitywatch-read-token",
         metadata=ApiObjectMetadata(name="activitywatch-read-token", namespace=NAMESPACE),
-        refresh="1h",
-        store=SecretStoreRef.cluster("kubernetes-activitywatch-secret-store"),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster("kubernetes-activitywatch-secret-store"),
         data=[remote_data("activitywatch-read-token", "token")],
     )
     ExternalSecret(
         chart,
         "coinbase-api-credentials",
         metadata=ApiObjectMetadata(name="coinbase-api-credentials", namespace=NAMESPACE),
-        refresh="1h",
-        store=external_creds.STORE,
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data("coinbase-api-credentials", key) for key in ("api_key", "api_secret")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         target_name="haku-sandbox-coinbase-api-credentials",
@@ -396,7 +396,7 @@ def haku_workspaces(
     haku_rbac: Kustomization,
     haku_egress_proxy: Kustomization,
     kyverno_policies: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     name = "haku-workspaces"
     return flux_kustomization(
@@ -413,8 +413,8 @@ def haku_workspaces(
             haku_egress_proxy,
             # CleanupPolicy CRD and cleanup-controller permissions
             kyverno_policies,
-            # ESO CRDs and shared ClusterSecretStore
-            external_secrets_config,
+            # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
+            external_secrets_operator,
         ),
         description="General Haku workspaces in haku-sandbox.",
     )

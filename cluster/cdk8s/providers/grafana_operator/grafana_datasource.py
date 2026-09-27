@@ -1,6 +1,6 @@
-"""Ergonomic wrapper for grafana-operator's `GrafanaDatasource`. Like `GrafanaDashboard`,
-every real call site picks the target `Grafana` instance(s) through the same
-`spec.instanceSelector` label match.
+"""Ergonomic wrapper for grafana-operator's `GrafanaDatasource`, following cdk8s-plus's own
+construction pattern: a class named after the kind, constructed as `GrafanaDatasource(scope,
+id, *, metadata, ...)` with `GrafanaDatasourceSpec` fields under their own names and types.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ class GrafanaDatasource(_GrafanaDatasource):
         id: str,
         *,
         metadata: ApiObjectMetadata,
-        instance_selector_labels: dict[str, str],
+        instance_selector: GrafanaDatasourceSpecInstanceSelector,
         datasource: GrafanaDatasourceSpecDatasource,
         values_from: Sequence[GrafanaDatasourceSpecValuesFrom] | None = None,
     ) -> None:
@@ -37,7 +37,7 @@ class GrafanaDatasource(_GrafanaDatasource):
             id,
             metadata=metadata,
             spec=GrafanaDatasourceSpec(
-                instance_selector=GrafanaDatasourceSpecInstanceSelector(match_labels=instance_selector_labels),
+                instance_selector=instance_selector,
                 datasource=datasource,
                 values_from=list(values_from) if values_from is not None else None,
             ),

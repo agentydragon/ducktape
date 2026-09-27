@@ -177,7 +177,7 @@ class GoogleMcpApp(Construct):
             self,
             "network-policy",
             metadata=ApiObjectMetadata(name=_NAME, namespace=_NAME),
-            selector=_LABELS,
+            endpoint_selector=_LABELS,
             ingress=[
                 IngressRule.from_endpoints(
                     cilium.endpoint_labels("agentplane-staging", "agentplane-actions"), ports=[_HTTP_PORT]
@@ -208,11 +208,7 @@ class GoogleMcp(Construct):
 
 
 def google_mcp(
-    flux_chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    root: Path,
-    external_secrets_operator: Kustomization,
-    forgejo_images: Kustomization,
+    flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path, external_secrets_operator: Kustomization
 ) -> Kustomization:
     app_dir = root / OUTPUT_DIR
     app_dir.mkdir(parents=True, exist_ok=True)
@@ -228,7 +224,7 @@ def google_mcp(
         artifact,
         description="Gmail/Calendar MCP backend for Agentplane staging.",
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, forgejo_images),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
     )
     write_yaml(
         app_dir / "kustomization.yaml",

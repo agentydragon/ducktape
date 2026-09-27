@@ -50,8 +50,8 @@ def _external_secret(
         chart,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
-        refresh="1h",
-        store=external_creds.STORE,
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data(source, secret_key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
@@ -101,10 +101,7 @@ def write_manifests(root: Path) -> None:
 
 
 def github_secrets_sync_secrets(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_creds: Kustomization,
-    external_secrets_config: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -115,7 +112,7 @@ def github_secrets_sync_secrets(
         # and the old SOPS inventory entry has been retired safely.
         prune=False,
         timeout="2m",
-        depends_on=flux_kustomization_depends_on_many(external_creds, external_secrets_config),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
         health_checks=[
             KustomizationSpecHealthChecks(
                 api_version="external-secrets.io/v1",

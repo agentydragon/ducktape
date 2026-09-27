@@ -156,7 +156,13 @@ def write_manifests(root: Path, mesh: nebula_mesh.Mesh) -> None:
     )
 
 
-def proxmox_proxy(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, gateway: Kustomization) -> Kustomization:
+def proxmox_proxy(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart, NAME, artifact, suspend=False, timeout="5m", depends_on=[flux_kustomization_depends_on(gateway)]
+        chart,
+        NAME,
+        artifact,
+        suspend=False,
+        timeout="5m",
+        # Kyverno's failurePolicy: Fail webhooks admit the Deployment.
+        depends_on=[flux_kustomization_depends_on(kyverno)],
     )

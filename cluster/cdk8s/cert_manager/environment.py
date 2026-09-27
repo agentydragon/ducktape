@@ -38,8 +38,8 @@ def chart(app: App) -> Chart:
         chart,
         "route53-credentials",
         metadata=ApiObjectMetadata(name=_ROUTE53_SECRET, namespace=NAMESPACE),
-        refresh="1h",
-        store=external_creds.STORE,
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[
             remote_data(_ROUTE53_SOURCE, key) for key in ("AWS_ACCESS_KEY_ID", "AWS_REGION", "AWS_SECRET_ACCESS_KEY")
         ],
@@ -68,15 +68,12 @@ def cert_manager_environment(
     artifact: ArtifactGeneratorSpecArtifacts,
     cert_manager: Kustomization,
     cert_manager_trust: Kustomization,
-    external_creds: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         artifact,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(
-            cert_manager, cert_manager_trust, external_creds, external_secrets_config
-        ),
+        depends_on=flux_kustomization_depends_on_many(cert_manager, cert_manager_trust, external_secrets_operator),
     )

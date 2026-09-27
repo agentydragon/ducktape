@@ -113,9 +113,8 @@ def remote_data(key: str, property: str, *, secret_key: str | None = None) -> Ex
 class ExternalSecret(_ExternalSecret):
     """The target Secret is `target_name`, else `metadata.name`.
 
-    `refresh` is a `refreshInterval` duration or a non-periodic `refreshPolicy`. Exactly one of
-    `data` and `data_from` is given; `store` is omitted only for a generator source. `None`
-    leaves a field unset, so ESO's own default applies.
+    Exactly one of `data` and `data_from` is given; `secret_store_ref` is omitted only for a
+    generator source. `None` leaves a field unset, so ESO's own default applies.
     """
 
     def __init__(
@@ -124,8 +123,9 @@ class ExternalSecret(_ExternalSecret):
         id: str,
         *,
         metadata: ApiObjectMetadata,
-        refresh: str | ExternalSecretSpecRefreshPolicy,
-        store: ExternalSecretSpecSecretStoreRef | None = None,
+        refresh_interval: str | None = None,
+        refresh_policy: ExternalSecretSpecRefreshPolicy | None = None,
+        secret_store_ref: ExternalSecretSpecSecretStoreRef | None = None,
         data: Sequence[ExternalSecretSpecData] = (),
         data_from: Sequence[ExternalSecretSpecDataFrom] = (),
         creation_policy: ExternalSecretSpecTargetCreationPolicy | None = None,
@@ -136,13 +136,6 @@ class ExternalSecret(_ExternalSecret):
     ) -> None:
         if bool(data) == bool(data_from):
             raise ValueError(f"{metadata.name=}: give exactly one of data and data_from")
-        refresh_interval: str | None = None
-        refresh_policy: ExternalSecretSpecRefreshPolicy | None = None
-        match refresh:
-            case str():
-                refresh_interval = refresh
-            case ExternalSecretSpecRefreshPolicy():
-                refresh_policy = refresh
         super().__init__(
             scope,
             id,
@@ -150,7 +143,7 @@ class ExternalSecret(_ExternalSecret):
             spec=ExternalSecretSpec(
                 refresh_interval=refresh_interval,
                 refresh_policy=refresh_policy,
-                secret_store_ref=store,
+                secret_store_ref=secret_store_ref,
                 data=list(data) or None,
                 data_from=list(data_from) or None,
                 target=ExternalSecretSpecTarget(
@@ -180,6 +173,18 @@ def cluster_remote_data(
     )
 
 
+class ClusterSecretStoreRef:
+    """`SecretStoreRef` for a `ClusterExternalSecret`'s embedded `ExternalSecretSpec`, generated as
+    its own type by the `ClusterExternalSecret` CRD import. Only `cluster`: a namespaced
+    `SecretStore` would have to exist identically in every namespace the object mirrors into."""
+
+    @staticmethod
+    def cluster(name: str) -> ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef:
+        return ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef(
+            kind=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE, name=name
+        )
+
+
 class ClusterDataFrom:
     """One `dataFrom` source for a `ClusterExternalSecret`'s embedded `ExternalSecretSpec`. Same
     variant shape as `DataFrom` (see its docstring), generated as its own type by the
@@ -195,15 +200,12 @@ class ClusterDataFrom:
 
 
 class ClusterExternalSecret(_ClusterExternalSecret):
-    """Adds `namespaces`: which namespaces get the mirrored `ExternalSecret`. `name`'s target
-    Secret is `target_name`, else also `name`. `store_name` always names a `ClusterSecretStore`:
-    every current caller wants one, and a namespaced `SecretStore` of that name would need to
-    exist identically in every namespace listed in `namespaces` -- add a `kind` parameter the day
-    a caller needs that instead.
+    """Adds `namespaces`: which namespaces get the mirrored `ExternalSecret`. Its target Secret is
+    `target_name`, else `metadata.name`. Cluster-scoped, unlike `ExternalSecret`: `metadata`
+    carries no `namespace`.
 
-    `refresh` is a `refreshInterval` duration or a non-periodic `refreshPolicy`. Exactly one of
-    `data` and `data_from` is given. `None` leaves a field unset, so ESO's own default applies.
-    Cluster-scoped, unlike `ExternalSecret`: its `ApiObjectMetadata` carries no `namespace`.
+    Exactly one of `data` and `data_from` is given. `None` leaves a field unset, so ESO's own
+    default applies.
     """
 
     def __init__(
@@ -211,10 +213,11 @@ class ClusterExternalSecret(_ClusterExternalSecret):
         scope: Construct,
         id: str,
         *,
-        name: str,
+        metadata: ApiObjectMetadata,
         namespaces: Sequence[str],
-        store_name: str,
-        refresh: str | ClusterExternalSecretSpecExternalSecretSpecRefreshPolicy,
+        secret_store_ref: ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef,
+        refresh_interval: str | None = None,
+        refresh_policy: ClusterExternalSecretSpecExternalSecretSpecRefreshPolicy | None = None,
         data: Sequence[ClusterExternalSecretSpecExternalSecretSpecData] = (),
         data_from: Sequence[ClusterExternalSecretSpecExternalSecretSpecDataFrom] = (),
         creation_policy: ClusterExternalSecretSpecExternalSecretSpecTargetCreationPolicy | None = None,
@@ -222,34 +225,23 @@ class ClusterExternalSecret(_ClusterExternalSecret):
         template: ClusterExternalSecretSpecExternalSecretSpecTargetTemplate | None = None,
         immutable: bool | None = None,
         target_name: str | None = None,
-        annotations: dict[str, str] | None = None,
     ) -> None:
         if bool(data) == bool(data_from):
-            raise ValueError(f"{name=}: give exactly one of data and data_from")
-        refresh_interval: str | None = None
-        refresh_policy: ClusterExternalSecretSpecExternalSecretSpecRefreshPolicy | None = None
-        match refresh:
-            case str():
-                refresh_interval = refresh
-            case ClusterExternalSecretSpecExternalSecretSpecRefreshPolicy():
-                refresh_policy = refresh
+            raise ValueError(f"{metadata.name=}: give exactly one of data and data_from")
         super().__init__(
             scope,
             id,
-            metadata=ApiObjectMetadata(name=name, annotations=annotations),
+            metadata=metadata,
             spec=ClusterExternalSecretSpec(
                 namespaces=list(namespaces),
                 external_secret_spec=ClusterExternalSecretSpecExternalSecretSpec(
                     refresh_interval=refresh_interval,
                     refresh_policy=refresh_policy,
-                    secret_store_ref=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef(
-                        kind=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-                        name=store_name,
-                    ),
+                    secret_store_ref=secret_store_ref,
                     data=list(data) or None,
                     data_from=list(data_from) or None,
                     target=ClusterExternalSecretSpecExternalSecretSpecTarget(
-                        name=target_name or name,
+                        name=target_name or metadata.name,
                         creation_policy=creation_policy,
                         deletion_policy=deletion_policy,
                         template=template,

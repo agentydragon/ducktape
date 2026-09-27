@@ -72,6 +72,7 @@ py_library(
         "//cluster/cdk8s/providers/gateway_api:http_route",
         "//cluster/cdk8s/providers/gateway_api:httproute",
         "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
+        "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

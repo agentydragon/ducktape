@@ -511,7 +511,7 @@ def _network_policy(chart: Chart) -> None:
         chart,
         "network-policy",
         metadata=ApiObjectMetadata(name="loki-ingress", namespace=NAME),
-        selector={"app.kubernetes.io/name": NAME},
+        endpoint_selector={"app.kubernetes.io/name": NAME},
         ingress=[
             # Promtail → Loki (log push)
             CiliumNetworkPolicySpecIngress(
