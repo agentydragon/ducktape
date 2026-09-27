@@ -46,7 +46,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecEndpoints
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecEndpoints, ServiceMonitorSpecSelector
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
@@ -97,8 +97,8 @@ def _home_assistant_token(scope: Construct) -> None:
         scope,
         "home-assistant-token",
         metadata=ApiObjectMetadata(name=_HOME_ASSISTANT_TOKEN_SECRET_NAME, namespace=_NAMESPACE),
-        refresh="1h",
-        store=SecretStoreRef.cluster(
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster(
             single_secret_store(
                 scope,
                 "ha-mcp-home-assistant-token",
@@ -296,7 +296,7 @@ class HaMcpApp(Construct):
                     )
                 },
             ),
-            selector=_APP_LABELS,
+            endpoint_selector=_APP_LABELS,
             ingress=[
                 IngressRule.from_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": "agentplane-staging"}, ports=[_APP_FACADE_PORT]
@@ -312,7 +312,7 @@ class HaMcpApp(Construct):
             self,
             "servicemonitor",
             metadata=ApiObjectMetadata(name=_APP_NAME, namespace=_NAMESPACE),
-            selector=_APP_LABELS,
+            selector=ServiceMonitorSpecSelector(match_labels=_APP_LABELS),
             endpoints=[ServiceMonitorSpecEndpoints(port="metrics")],
         )
 
@@ -339,7 +339,6 @@ def ha_mcp(
     artifact: ArtifactGeneratorSpecArtifacts,
     root: Path,
     external_secrets_operator: Kustomization,
-    forgejo_images: Kustomization,
     home_assistant: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
@@ -359,7 +358,6 @@ def ha_mcp(
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_operator,
-            forgejo_images,
             home_assistant,
             # the ServiceMonitor CRD
             monitoring_crds,

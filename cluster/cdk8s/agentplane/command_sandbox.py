@@ -116,7 +116,7 @@ class CommandSandbox(Construct):
             self,
             "networkpolicy",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            selector=_LABELS,
+            endpoint_selector=_LABELS,
             ingress=[CiliumNetworkPolicySpecIngress()],
             egress=[
                 cilium.dns_egress(),

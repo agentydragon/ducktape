@@ -43,8 +43,8 @@ def _external_secret(
         chart,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE, annotations=annotations),
-        refresh="1h",
-        store=SecretStoreRef.cluster(store),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster(store),
         data=[remote_data(source, source_property, secret_key=secret_key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         target_name=target,
@@ -115,8 +115,8 @@ def _chart(app: App) -> Chart:
         chart,
         "tana",
         metadata=ApiObjectMetadata(name=_TANA_REFRESH_TOKEN, namespace=_NAMESPACE),
-        refresh="10m",
-        store=SecretStoreRef.cluster(
+        refresh_interval="10m",
+        secret_store_ref=SecretStoreRef.cluster(
             single_secret_store(
                 chart,
                 f"litellm-{_TANA_REFRESH_TOKEN}",

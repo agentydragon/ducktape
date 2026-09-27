@@ -54,6 +54,7 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import container_security, node_scheduling
 from cluster.cdk8s.config_format import yaml_config
@@ -424,7 +425,7 @@ class Console(Construct):
             self,
             "servicemonitor",
             metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-            selector=LABELS,
+            selector=ServiceMonitorSpecSelector(match_labels=LABELS),
             endpoints=[Endpoint.plain(port="metrics")],
         )
 

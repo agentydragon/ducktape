@@ -327,7 +327,7 @@ class Actions(Construct):
             self,
             "networkpolicy",
             metadata=ApiObjectMetadata(name=_NAME, namespace=namespace),
-            selector=_LABELS,
+            endpoint_selector=_LABELS,
             ingress=[
                 IngressRule.from_gateway(CONTAINER_PORT),
                 IngressRule.from_endpoints(

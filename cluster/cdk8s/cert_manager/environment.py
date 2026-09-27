@@ -38,8 +38,8 @@ def chart(app: App) -> Chart:
         chart,
         "route53-credentials",
         metadata=ApiObjectMetadata(name=_ROUTE53_SECRET, namespace=NAMESPACE),
-        refresh="1h",
-        store=external_creds.STORE,
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[
             remote_data(_ROUTE53_SOURCE, key) for key in ("AWS_ACCESS_KEY_ID", "AWS_REGION", "AWS_SECRET_ACCESS_KEY")
         ],

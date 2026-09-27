@@ -15,7 +15,7 @@ def _policy(egress: list[CiliumNetworkPolicySpecEgress]) -> None:
         Cdk8sTesting.chart(),
         "policy",
         metadata=ApiObjectMetadata(name="test-policy", namespace="test-namespace"),
-        selector={"app.kubernetes.io/name": "test-app"},
+        endpoint_selector={"app.kubernetes.io/name": "test-app"},
         egress=egress,
     )
 

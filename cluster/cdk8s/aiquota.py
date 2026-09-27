@@ -46,6 +46,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMetadata,
 )
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from aiquota.api import Settings
@@ -194,8 +195,8 @@ class Aiquota(Construct):
             self,
             f"bearer-{mirror.consumer}",
             metadata=ApiObjectMetadata(name=mirror.secret_name, namespace=NAMESPACE),
-            refresh="1h",
-            store=SecretStoreRef.cluster("kubernetes-cli-proxy-api-secret-store"),
+            refresh_interval="1h",
+            secret_store_ref=SecretStoreRef.cluster("kubernetes-cli-proxy-api-secret-store"),
             data=[remote_data(BEARER_SECRET_NAME, _BEARER_KEY)],
             creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
             deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
@@ -332,7 +333,7 @@ class Aiquota(Construct):
             self,
             "servicemonitor",
             metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-            selector=_LABELS,
+            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
             endpoints=[Endpoint.plain(port="http", scrape_timeout="15s")],
         )
 
@@ -347,7 +348,6 @@ def aiquota(
     flux_chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     root: Path,
-    forgejo_images: Kustomization,
     cli_proxy_api: Kustomization,
     external_secrets_operator: Kustomization,
     clickhouse_schema: Kustomization,
@@ -371,7 +371,6 @@ def aiquota(
         # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            forgejo_images,
             # Provides the shared namespace and the CLIProxyAPI management Secret.
             cli_proxy_api,
             # Materializes the narrow mirrored copies of the API bearer for its

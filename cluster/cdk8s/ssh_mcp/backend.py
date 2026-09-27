@@ -199,7 +199,7 @@ class SshMcp(Construct):
             self,
             "network-policy",
             metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-            selector=LABELS,
+            endpoint_selector=LABELS,
             ingress=[
                 IngressRule.from_endpoints(
                     cilium.endpoint_labels("agentplane-staging", "agentplane-actions"), ports=[HTTP_PORT]

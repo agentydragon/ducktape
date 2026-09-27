@@ -175,7 +175,6 @@ def haku_dispatch(
 def haku_managed_agent(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    forgejo_images: Kustomization,
     external_creds: Kustomization,
     external_secrets_operator: Kustomization,
     haku_namespace: Kustomization,
@@ -193,7 +192,6 @@ def haku_managed_agent(
         timeout="5m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            forgejo_images,
             # provides the canonical AnkiWeb credential and source-side grant
             external_creds,
             # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
@@ -212,8 +210,6 @@ def sdr(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_operator: Kustomization,
-    forgejo_images: Kustomization,
-    gateway: Kustomization,
     authentik: Kustomization,
 ) -> Kustomization:
     name = "sdr"
@@ -225,5 +221,5 @@ def sdr(
         # Temporarily disabled until the radio is set up again after relocation.
         suspend=True,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, forgejo_images, gateway, authentik),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, authentik),
     )

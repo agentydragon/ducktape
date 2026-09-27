@@ -29,6 +29,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsRelabelings,
     ServiceMonitorSpecEndpointsScheme,
+    ServiceMonitorSpecSelector,
 )
 
 from cluster.cdk8s import external_creds, forgejo_images
@@ -66,8 +67,8 @@ def _token_external_secret(chart: Chart, account: str) -> None:
         chart,
         f"token-{account}",
         metadata=ApiObjectMetadata(name=_token_secret(account), namespace=_NAMESPACE),
-        refresh="1h",
-        store=external_creds.STORE,
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data(_TOKEN_SOURCES[account], "token")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
@@ -221,7 +222,9 @@ def _service_monitor(chart: Chart, app: str, endpoint: ServiceMonitorSpecEndpoin
         chart,
         f"{app}-monitor",
         metadata=ApiObjectMetadata(name=app, namespace=_NAMESPACE),
-        selector={"app.kubernetes.io/name": app, "app.kubernetes.io/component": "quota"},
+        selector=ServiceMonitorSpecSelector(
+            match_labels={"app.kubernetes.io/name": app, "app.kubernetes.io/component": "quota"}
+        ),
         endpoints=[endpoint],
     )
 

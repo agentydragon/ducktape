@@ -97,8 +97,8 @@ def forgejo_images_creds_external_secret(scope: Construct, id: str, *, namespace
         scope,
         id,
         metadata=ApiObjectMetadata(name=SECRET_NAME, namespace=namespace),
-        refresh="1h",
-        store=SecretStoreRef.cluster("kubernetes-forgejo-images-secret-store"),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster("kubernetes-forgejo-images-secret-store"),
         data_from=[DataFrom.from_extract(SECRET_NAME)],
         template=ExternalSecretSpecTargetTemplate(
             type="kubernetes.io/dockerconfigjson", merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE

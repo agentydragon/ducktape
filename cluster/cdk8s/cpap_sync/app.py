@@ -296,7 +296,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        selector={"app.kubernetes.io/name": NAME},
+        endpoint_selector={"app.kubernetes.io/name": NAME},
         egress=[
             cilium.dns_egress(),
             # The Service is port 80, but Cilium enforces the translated backend
@@ -359,7 +359,6 @@ def cpap_sync(
     artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_operator: Kustomization,
     kubevirt: Kustomization,
-    forgejo_images_kustomization: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -367,7 +366,5 @@ def cpap_sync(
         artifact,
         decryption=SOPS_DECRYPTION,
         timeout="30m",
-        depends_on=flux_kustomization_depends_on_many(
-            external_secrets_operator, kubevirt, forgejo_images_kustomization
-        ),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, kubevirt),
     )

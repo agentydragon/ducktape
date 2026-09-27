@@ -241,7 +241,7 @@ def _network_policy(scope: Construct) -> None:
         scope,
         "network-policy",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        selector=_LABELS,
+        endpoint_selector=_LABELS,
         ingress=[
             CiliumNetworkPolicySpecIngress(
                 from_entities=[CiliumNetworkPolicySpecIngressFromEntities.KUBE_HYPHEN_APISERVER],

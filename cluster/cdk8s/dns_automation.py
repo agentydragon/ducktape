@@ -52,8 +52,8 @@ def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
         chart,
         "credentials",
         metadata=ApiObjectMetadata(name=_CREDENTIALS_SECRET, namespace=_NAMESPACE),
-        refresh="1h",
-        store=external_creds.STORE,
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[
             remote_data(_CREDENTIALS_SOURCE, key)
             for key in ("AWS_ACCESS_KEY_ID", "AWS_REGION", "AWS_SECRET_ACCESS_KEY")
