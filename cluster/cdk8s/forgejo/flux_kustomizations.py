@@ -16,6 +16,7 @@ def forgejo(
     external_secrets_operator: Kustomization,
     seaweedfs_operator: Kustomization,
     monitoring_crds: Kustomization,
+    valkey: Kustomization,
 ) -> Kustomization:
     name = "forgejo"
     return flux_kustomization(
@@ -27,6 +28,11 @@ def forgejo(
         decryption=SOPS_DECRYPTION,
         # Admission needs these CRDs; runtime dependencies converge independently.
         depends_on=flux_kustomization_depends_on_many(
-            cnpg, external_secrets_operator, seaweedfs_operator, monitoring_crds
+            cnpg,
+            external_secrets_operator,
+            seaweedfs_operator,
+            monitoring_crds,
+            # the cache's RedisReplication CRD and its operator
+            valkey,
         ),
     )

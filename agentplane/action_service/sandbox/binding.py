@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 # The sandbox Actions' own namespace, for the labels they stamp and the annotation they read.
 PREFIX = "sandbox-actions.agentplane.allegedly.works"
@@ -48,3 +48,9 @@ class SandboxExecutorBinding(BaseModel):
         if self.exec_ttl_extension_seconds < self.max_timeout_seconds:
             raise ValueError("exec_ttl_extension_seconds must be at least max_timeout_seconds")
         return self
+
+    @field_serializer("templates")
+    def _sorted_templates(self, templates: set[str]) -> list[str]:
+        # A set's iteration order follows per-process string hashing, and the manifest generator
+        # writes this binding into a ConfigMap that has to come out the same on every run.
+        return sorted(templates)

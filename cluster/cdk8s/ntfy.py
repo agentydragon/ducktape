@@ -11,7 +11,6 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     Capability,
-    ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
     ContainerSecutiryContextCapabilities,
@@ -22,13 +21,8 @@ from cdk8s_plus_34 import (
     ImagePullPolicy,
     LabelSelector,
     MemoryResources,
-    Namespace,
     PodSecurityContextProps,
-    Protocol,
-    Secret,
-    SecretValue,
     Service,
-    ServicePort,
 )
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -40,31 +34,33 @@ from external_secrets_crds.io.external_secrets import (
 )
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import cnpg, fleet_rules, node_scheduling, pod_policy
+from cluster.cdk8s import cnpg, fleet_rules, namespaces, node_scheduling, pod_policy
 from cluster.cdk8s.external_secrets.kubernetes_store import ESO_SERVICE_ACCOUNT, cluster_secret_store
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "ntfy"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ntfy"
 NAMESPACE = NAME
 HOSTNAME = "ntfy.allegedly.works"
-PORT = 2586
 _IMAGE = "binwiederhier/ntfy:v2.28.0"
-_LABELS = {"app.kubernetes.io/name": NAME}
+SERVICE = ServiceRef(
+    name=NAME,
+    port=Port(name="http", number=2586),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
+)
 _DATABASE_CLUSTER = "ntfy-db"
-_DATABASE_APP_SECRET = f"{_DATABASE_CLUSTER}-app"
+_DATABASE_APP = SecretRef(namespace=NAMESPACE, name=f"{_DATABASE_CLUSTER}-app")
 _AUTH_SOURCE_SECRET = "ntfy-credentials"
-_AUTH_SECRET = "ntfy-auth"
+_AUTH = SecretRef(namespace=NAMESPACE, name="ntfy-auth")
 SECRET_STORE = "kubernetes-ntfy-secret-store"
-
-
-def _secret_env(scope: Construct, id: str, *, name: str, key: str) -> EnvValue:
-    return EnvValue.from_secret_value(SecretValue(secret=Secret.from_secret_name(scope, f"{id}-ref", name), key=key))
 
 
 def _secret_store(scope: Construct) -> None:
@@ -88,7 +84,7 @@ def _auth_external_secret(scope: Construct) -> None:
         scope,
         "auth-external-secret",
         metadata=ApiObjectMetadata(
-            name=_AUTH_SECRET,
+            name=_AUTH.name,
             namespace=NAMESPACE,
             annotations={
                 "description": "Derives ntfy bcrypt users and declarative tokens from SOPS values.",
@@ -168,12 +164,13 @@ class Ntfy(Construct):
 
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
-        Namespace(
+        namespaces.namespace(
             self,
             "namespace",
-            metadata=ApiObjectMetadata(
-                name=NAMESPACE, labels={"app.kubernetes.io/name": NAMESPACE, "goldilocks.fairwinds.com/enabled": "true"}
-            ),
+            name=NAMESPACE,
+            vpa=Vpa.RECOMMEND,
+            agent_readable=None,
+            labels={"app.kubernetes.io/name": NAMESPACE},
         )
         _secret_store(self)
         _database(self)
@@ -186,8 +183,7 @@ class Ntfy(Construct):
             "httproute",
             metadata=ApiObjectMetadata(name="ntfy", namespace=NAMESPACE),
             hostnames=[HOSTNAME],
-            backend=NAME,
-            port=PORT,
+            backend=SERVICE,
         )
         self._add_service_monitor()
 
@@ -198,42 +194,42 @@ class Ntfy(Construct):
             metadata=ApiObjectMetadata(
                 name=NAME,
                 namespace=NAMESPACE,
-                labels=_LABELS,
+                labels=SERVICE.pods.selector,
                 annotations={"description": "Single ntfy server backed by the two-instance ntfy PostgreSQL cluster."},
             ),
-            pod_metadata=ApiObjectMetadata(labels=_LABELS),
+            pod_metadata=ApiObjectMetadata(labels=SERVICE.pods.selector),
             replicas=1,
             select=False,
             automount_service_account_token=False,
             enable_service_links=False,
             security_context=PodSecurityContextProps(ensure_non_root=True, user=65532, group=65532),
         )
-        deployment.select(LabelSelector.of(labels=_LABELS))
+        deployment.select(LabelSelector.of(labels=SERVICE.pods.selector))
 
         deployment.add_container(
             name=NAME,
             image=_IMAGE,
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             args=["serve"],
-            ports=[ContainerPort(name="http", number=PORT, protocol=Protocol.TCP)],
+            ports=[SERVICE.port.container_port()],
             env_variables={
                 "NTFY_BASE_URL": EnvValue.from_value(f"https://{HOSTNAME}"),
                 # Run above Linux's privileged-port range with all capabilities dropped.
-                "NTFY_LISTEN_HTTP": EnvValue.from_value(f":{PORT}"),
+                "NTFY_LISTEN_HTTP": EnvValue.from_value(f":{SERVICE.pod_port}"),
                 "NTFY_AUTH_DEFAULT_ACCESS": EnvValue.from_value("deny-all"),
                 "NTFY_AUTH_ACCESS": EnvValue.from_value("alertmanager:alerts:wo,android:alerts:ro"),
                 "NTFY_BEHIND_PROXY": EnvValue.from_value("true"),
                 "NTFY_ENABLE_METRICS": EnvValue.from_value("true"),
-                "NTFY_DATABASE_URL": _secret_env(self, "database-url", name=_DATABASE_APP_SECRET, key="uri"),
-                "NTFY_AUTH_USERS": _secret_env(self, "auth-users", name=_AUTH_SECRET, key="NTFY_AUTH_USERS"),
-                "NTFY_AUTH_TOKENS": _secret_env(self, "auth-tokens", name=_AUTH_SECRET, key="NTFY_AUTH_TOKENS"),
+                "NTFY_DATABASE_URL": _DATABASE_APP.key("uri").env_value(self, "database-url-ref"),
+                "NTFY_AUTH_USERS": _AUTH.key("NTFY_AUTH_USERS").env_value(self, "auth-users-ref"),
+                "NTFY_AUTH_TOKENS": _AUTH.key("NTFY_AUTH_TOKENS").env_value(self, "auth-tokens-ref"),
             },
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(20), limit=Cpu.millis(200)),
                 memory=MemoryResources(request=Size.mebibytes(64), limit=Size.mebibytes(256)),
             ),
-            readiness=http_probe("/v1/health", port=PORT, initial_delay_seconds=10, failure_threshold=12),
-            liveness=http_probe("/v1/health", port=PORT, initial_delay_seconds=20, period_seconds=20),
+            readiness=http_probe("/v1/health", port=SERVICE.pod_port, initial_delay_seconds=10, failure_threshold=12),
+            liveness=http_probe("/v1/health", port=SERVICE.pod_port, initial_delay_seconds=20, period_seconds=20),
             security_context=ContainerSecurityContextProps(
                 capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
                 user=65532,
@@ -248,18 +244,18 @@ class Ntfy(Construct):
         Service(
             self,
             "service",
-            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_LABELS),
+            metadata=ApiObjectMetadata(name=SERVICE.name, namespace=NAMESPACE, labels=SERVICE.labels),
             selector=deployment,
-            ports=[ServicePort(name="http", port=PORT, target_port=PORT, protocol=Protocol.TCP)],
+            ports=[SERVICE.port.service_port()],
         )
 
     def _add_service_monitor(self) -> None:
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_LABELS),
-            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-            endpoints=[Endpoint.plain(port="http")],
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=SERVICE.labels),
+            selector=ServiceMonitorSpecSelector(match_labels=SERVICE.labels),
+            endpoints=[Endpoint.plain(port=SERVICE.port.name)],
         )
 
 

@@ -9,7 +9,13 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 
 
 def grocy_sf(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, volsync: Kustomization, kyverno: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    volsync: Kustomization,
+    external_secrets_operator: Kustomization,
+    mcp_oauth_state: Kustomization,
+    monitoring_crds: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     name = "grocy-sf"
     return flux_kustomization(
@@ -19,32 +25,11 @@ def grocy_sf(
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
             volsync,
-            # Kyverno's failurePolicy: Fail webhooks admit the Deployment, Job and Namespace.
-            kyverno,
-        ),
-    )
-
-
-def grocy_mcp_sf(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_operator: Kustomization,
-    valkey: Kustomization,
-    monitoring_crds: Kustomization,
-    kyverno: Kustomization,
-) -> Kustomization:
-    name = "grocy-mcp-sf"
-    return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(
             external_secrets_operator,
-            valkey,
+            mcp_oauth_state,
             # the ServiceMonitor/PodMonitor CRD
             monitoring_crds,
-            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployments, Job, Namespace and HTTPRoute.
             kyverno,
         ),
     )
@@ -65,7 +50,13 @@ def grocy_sf_user_perms(
 
 
 def grocy_vallejo(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, volsync: Kustomization, kyverno: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    volsync: Kustomization,
+    external_secrets_operator: Kustomization,
+    mcp_oauth_state: Kustomization,
+    monitoring_crds: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     name = "grocy-vallejo"
     return flux_kustomization(
@@ -75,32 +66,11 @@ def grocy_vallejo(
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
             volsync,
-            # Kyverno's failurePolicy: Fail webhooks admit the Deployment, Job and Namespace.
-            kyverno,
-        ),
-    )
-
-
-def grocy_mcp_vallejo(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_operator: Kustomization,
-    valkey: Kustomization,
-    monitoring_crds: Kustomization,
-    kyverno: Kustomization,
-) -> Kustomization:
-    name = "grocy-mcp-vallejo"
-    return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(
             external_secrets_operator,
-            valkey,
+            mcp_oauth_state,
             # the ServiceMonitor/PodMonitor CRD
             monitoring_crds,
-            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployments, Job, Namespace and HTTPRoute.
             kyverno,
         ),
     )

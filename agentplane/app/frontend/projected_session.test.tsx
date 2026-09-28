@@ -2,14 +2,14 @@
 
 import { create, equals, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import { MantineProvider } from "@mantine/core";
-import { act } from "react";
+import { act, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CommandSchema, type Command } from "../../protocol/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
 import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
-import { command, getThread, models, type ThreadView } from "./client";
+import { command, getThread, models, resumeThread, type ThreadView } from "./client";
 import { historyRows, rowKey } from "./history_rows";
 import { LocalCommands } from "./local_commands";
 import { EntityCard, HistoryRowView, ProjectedSession, pruneCommandErrors } from "./projected_session";
@@ -30,10 +30,16 @@ vi.mock("./client", async (importOriginal) => ({
   command: vi.fn(),
   getThread: vi.fn(),
   models: vi.fn(),
+  resumeThread: vi.fn(),
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
+const mounted: Array<{
+  root: ReturnType<typeof createRoot>;
+  container: HTMLDivElement;
+  topbarTitle?: HTMLDivElement;
+  topbarActions?: HTMLDivElement;
+}> = [];
 const THREAD: ThreadView = {
   id: "10000000-0000-4000-8000-000000000001",
   sandbox: "composer-test",
@@ -68,6 +74,7 @@ beforeEach(() => {
     harnesses: { HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] },
   });
   vi.mocked(command).mockReturnValue(new Promise(() => {}));
+  vi.mocked(resumeThread).mockResolvedValue({} as never);
   vi.stubGlobal(
     "EventSource",
     class extends EventTarget {
@@ -170,12 +177,6 @@ function threadState({
 }
 
 async function render(state: ThreadState = threadState()): Promise<HTMLDivElement> {
-  const sync: ThreadSync = {
-    Thread: ({ children }) => <>{children}</>,
-    useThread: () => state,
-    useCommandRows: () => [],
-    usePayload: () => ({ body: null, error: null, retry: () => {} }),
-  };
   const container = document.createElement("div");
   document.body.append(container);
   // The real shell topbar (app.tsx) isn't mounted here, so ProjectedSession's title/menu need
@@ -184,20 +185,39 @@ async function render(state: ThreadState = threadState()): Promise<HTMLDivElemen
   const topbarTitle = document.createElement("div");
   const topbarActions = document.createElement("div");
   const root = createRoot(container);
-  mounted.push({ root, container });
+  mounted.push({ root, container, topbarTitle, topbarActions });
   await act(async () => {
-    root.render(
-      <MantineProvider env="test">
-        <ThreadSyncContext.Provider value={sync}>
-          <TopbarContext.Provider value={{ title: topbarTitle, actions: topbarActions }}>
-            <ProjectedSession threadId={THREAD.id} />
-          </TopbarContext.Provider>
-        </ThreadSyncContext.Provider>
-      </MantineProvider>
-    );
+    root.render(page(state, topbarTitle, topbarActions));
   });
   container.append(topbarTitle, topbarActions);
   return container;
+}
+
+function page(state: ThreadState, topbarTitle: HTMLDivElement, topbarActions: HTMLDivElement): JSX.Element {
+  const sync: ThreadSync = {
+    Thread: ({ children }) => <>{children}</>,
+    useThread: () => state,
+    useCommandRows: () => [],
+    usePayload: () => ({ body: null, error: null, retry: () => {} }),
+  };
+  return (
+    <MantineProvider env="test">
+      <ThreadSyncContext.Provider value={sync}>
+        <TopbarContext.Provider value={{ title: topbarTitle, actions: topbarActions }}>
+          <ProjectedSession threadId={THREAD.id} />
+        </TopbarContext.Provider>
+      </ThreadSyncContext.Provider>
+    </MantineProvider>
+  );
+}
+
+async function rerender(container: HTMLDivElement, state: ThreadState): Promise<void> {
+  const current = mounted.find((entry) => entry.container === container);
+  const topbarTitle = current?.topbarTitle;
+  const topbarActions = current?.topbarActions;
+  if (!current || !topbarTitle || !topbarActions) throw new Error("Missing mounted thread page");
+  await act(async () => current.root.render(page(state, topbarTitle, topbarActions)));
+  container.append(topbarTitle, topbarActions);
 }
 
 function composer(container: HTMLDivElement): HTMLTextAreaElement {
@@ -294,6 +314,36 @@ it("sends the draft from the Send button, which an empty draft disables", async 
   await type(composer(container), "hello");
   await act(async () => button(container, "Send").click());
   expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
+});
+
+it("resumes the existing Thread and restores sending on the open and reloaded pages", async () => {
+  const ended = threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] });
+  const original = await render(ended);
+  expect(composer(original).disabled).toBe(true);
+  await act(async () => button(original, "Resume harness").click());
+  expect(resumeThread).toHaveBeenCalledWith(THREAD.id);
+
+  const running = threadState();
+  await rerender(original, running);
+  expect(composer(original).disabled).toBe(false);
+  await type(composer(original), "from the open page");
+  await press(composer(original), {});
+
+  const reloaded = await render(running);
+  expect(composer(reloaded).disabled).toBe(false);
+  await type(composer(reloaded), "from the reloaded page");
+  await press(composer(reloaded), {});
+  expect(sentOperations()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ case: "submitInput", value: expect.objectContaining({ text: "from the open page" }) }),
+      expect.objectContaining({
+        case: "submitInput",
+        value: expect.objectContaining({ text: "from the reloaded page" }),
+      }),
+    ])
+  );
+  expect(new Set(vi.mocked(command).mock.calls.map(([, value]) => value.commandId)).size).toBe(2);
+  expect(vi.mocked(command).mock.calls.every(([threadId]) => threadId === THREAD.id)).toBe(true);
 });
 
 it("shows the thread id in the More menu, not inline once a name is set", async () => {
@@ -562,6 +612,22 @@ function entity(
   };
 }
 
+it("keeps a still-pending sent message out of the pending-commands box, since it renders inline instead", async () => {
+  const container = await render(
+    threadState({
+      rows: [
+        viewState(),
+        entity(
+          "command",
+          { operation: "submit_input", outcome: "pending", outcome_cursor: null, outcome_reason: null },
+          { inputRef: reference("test-message", "command_input") }
+        ),
+      ],
+    })
+  );
+  expect(container.querySelector('[aria-label="Pending commands"]')).toBeNull();
+});
+
 /** Serves every body at once; a card reads nothing else from the thread. */
 function serving(bodies: ReadonlyMap<string, string>): ThreadSync {
   const unread = (): never => {
@@ -750,6 +816,20 @@ describe("EntityCard", () => {
     );
     expect(container.querySelector(".agentplane-user-bubble .agentplane-verbatim")?.textContent).toBe(PROSE);
     expect(container.querySelector(".agentplane-markdown, strong, li")).toBeNull();
+  });
+
+  it("renders a still-pending sent message as the same bubble, marked pending", async () => {
+    const container = await renderCard(
+      entity(
+        "command",
+        { operation: "submit_input", outcome: "pending", outcome_cursor: null, outcome_reason: null },
+        { inputRef: reference("test-message", "command_input") }
+      ),
+      { "test-message:command_input": PROSE }
+    );
+    const bubble = container.querySelector<HTMLElement>(".agentplane-user-bubble");
+    expect(bubble?.querySelector(".agentplane-verbatim")?.textContent).toBe(PROSE);
+    expect(bubble?.style.fontStyle).toBe("italic");
   });
 
   it.each<[string, Observation, string]>([

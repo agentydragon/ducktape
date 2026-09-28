@@ -22,7 +22,6 @@ from cilium_crds.io.cilium import (
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from cluster.cdk8s import namespaces
-from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
@@ -35,12 +34,21 @@ from cluster.cdk8s.providers.external_secrets.external_secret import (
     ClusterExternalSecret,
     ClusterSecretStoreRef,
 )
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "airlock"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/airlock"
 _LABELS = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "server"}
 _PORT = 8765
-_SESSION_SECRET = "airlock-session-secret"
+SERVICE = ServiceRef(
+    name=NAME, port=Port(name="http", number=_PORT), pods=Pods(namespace=NAME, labels=tuple(_LABELS.items()))
+)
+_SESSION = SecretRef(namespace=NAME, name="airlock-session-secret").key("session-secret")
+_OIDC = SecretRef(namespace=NAME, name="airlock-oidc-config")
+_OURA = SecretRef(namespace=NAME, name="oura-client-credentials")
+_GOOGLE = SecretRef(namespace=NAME, name="google-client-credentials")
+_BSC = SecretRef(namespace=NAME, name="bsc-client-credentials")
 _SECRET_WRITER = "airlock-secret-writer"
 # image-pins/ overrides the tag and copies it into AIRLOCK_IMAGE_TAG.
 _PLACEHOLDER_TAG = "unset"
@@ -78,22 +86,20 @@ def _deployment(chart: Chart) -> None:
                             env=[
                                 k8s.EnvVar(name="AIRLOCK_IMAGE_TAG", value=_PLACEHOLDER_TAG),
                                 k8s.EnvVar(name="CONFIG_PATH", value=f"{_CONFIG_MOUNT}/config.yaml"),
-                                secret_env_var("AIRLOCK_OIDC_CLIENT_ID", "airlock-oidc-config", "client-id"),
-                                secret_env_var("AIRLOCK_OIDC_CLIENT_SECRET", "airlock-oidc-config", "client-secret"),
-                                secret_env_var("AIRLOCK_OIDC_SESSION_SECRET", _SESSION_SECRET, "session-secret"),
-                                secret_env_var("OURA_CLIENT_ID", "oura-client-credentials", "client_id"),
-                                secret_env_var("OURA_CLIENT_SECRET", "oura-client-credentials", "client_secret"),
-                                secret_env_var("GOOGLE_CLIENT_ID", "google-client-credentials", "client_id"),
-                                secret_env_var("GOOGLE_CLIENT_SECRET", "google-client-credentials", "client_secret"),
+                                _OIDC.key("client-id").env_var("AIRLOCK_OIDC_CLIENT_ID"),
+                                _OIDC.key("client-secret").env_var("AIRLOCK_OIDC_CLIENT_SECRET"),
+                                _SESSION.env_var("AIRLOCK_OIDC_SESSION_SECRET"),
+                                _OURA.key("client_id").env_var("OURA_CLIENT_ID"),
+                                _OURA.key("client_secret").env_var("OURA_CLIENT_SECRET"),
+                                _GOOGLE.key("client_id").env_var("GOOGLE_CLIENT_ID"),
+                                _GOOGLE.key("client_secret").env_var("GOOGLE_CLIENT_SECRET"),
                                 # The `google-write` provider reuses this same GCP OAuth client
                                 # (config.yaml); scope is a per-authorize-flow parameter, not fixed to
                                 # the client registration.
-                                secret_env_var("GOOGLE_WRITE_CLIENT_ID", "google-client-credentials", "client_id"),
-                                secret_env_var(
-                                    "GOOGLE_WRITE_CLIENT_SECRET", "google-client-credentials", "client_secret"
-                                ),
-                                secret_env_var("BSC_CLIENT_ID", "bsc-client-credentials", "client_id"),
-                                secret_env_var("BSC_CLIENT_SECRET", "bsc-client-credentials", "client_secret"),
+                                _GOOGLE.key("client_id").env_var("GOOGLE_WRITE_CLIENT_ID"),
+                                _GOOGLE.key("client_secret").env_var("GOOGLE_WRITE_CLIENT_SECRET"),
+                                _BSC.key("client_id").env_var("BSC_CLIENT_ID"),
+                                _BSC.key("client_secret").env_var("BSC_CLIENT_SECRET"),
                             ],
                             volume_mounts=[k8s.VolumeMount(name="config", mount_path=_CONFIG_MOUNT, read_only=True)],
                             resources=k8s.ResourceRequirements(
@@ -124,9 +130,9 @@ def _session_secret(chart: Chart) -> None:
     mint_bearer_secret(
         chart,
         "session-secret",
-        name=_SESSION_SECRET,
-        namespace=NAME,
-        key="session-secret",
+        name=_SESSION.secret.name,
+        namespace=_SESSION.secret.namespace,
+        key=_SESSION.key,
         length=64,
         digits=16,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
@@ -221,8 +227,7 @@ def chart(app: App) -> Chart:
         "httproute",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAME),
         hostnames=["airlock.allegedly.works"],
-        backend=NAME,
-        port=_PORT,
+        backend=SERVICE,
         timeout="120s",
         hsts=False,
         listener=None,

@@ -883,14 +883,15 @@ function command(
   id: string,
   operation: string,
   outcome: "pending" | "effected" | "failed" | "noop",
-  reason: string | null = null
+  reason: string | null = null,
+  text: string | null = null
 ): Record<string, unknown> {
   return entity(
     "command",
     id,
     cursor,
     { operation, outcome, outcome_cursor: outcome === "pending" ? null : String(cursor), outcome_reason: reason },
-    { pending: outcome === "pending" }
+    { pending: outcome === "pending", input_ref: text === null ? null : payload(cursor, id, "command_input", text) }
   );
 }
 
@@ -1024,6 +1025,15 @@ function interleavedRows(threadId: string): Record<string, unknown>[] {
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
+function endedAttachmentRows(threadId: string): Record<string, unknown>[] {
+  return interleavedRows(threadId).map((row) => {
+    if (row.entity_kind !== "view_state") return row;
+    const state = row.state as Record<string, unknown>;
+    const operational = state.operational as Record<string, unknown>;
+    return { ...row, state: { ...state, operational: { ...operational, status: "ended" } } };
+  });
+}
+
 function statesRows(threadId: string): Record<string, unknown>[] {
   const rows = [
     viewState(23, "t2"),
@@ -1061,6 +1071,9 @@ function statesRows(threadId: string): Record<string, unknown>[] {
       scenario.pendingCommands === "outcomes" ? "noop" : "pending",
       "Target turn already ended"
     ),
+    // Admitted and still pending, so it renders inline as a pending message bubble rather than in
+    // the pending-commands box below -- see projected_session.tsx's pendingSentMessage.
+    command(26, "queued-submit", "submit_input", "pending", null, "Continue past the failing test once it lands."),
   ];
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
@@ -1139,6 +1152,7 @@ function standaloneReasoningRows(threadId: string): Record<string, unknown>[] {
 }
 
 function threadEntityRows(threadId: string): Record<string, unknown>[] {
+  if (scenario.endedAttachment) return endedAttachmentRows(threadId);
   if (scenario.failedTurn) return failedRows(threadId, scenario.failedTurn === "after-content");
   if (scenario.interleavedEvents) return interleavedRows(threadId);
   if (scenario.lifecycleGroup) return lifecycleGroupRows(threadId);

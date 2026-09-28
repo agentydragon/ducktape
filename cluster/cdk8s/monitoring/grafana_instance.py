@@ -42,14 +42,24 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.grafana_operator.grafana import Grafana
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
+from cluster.cdk8s.secret_ref import SecretKey, SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAME = "grafana"
 _NAMESPACE = "monitoring"
+# The Service grafana-operator creates for the Grafana named `_NAME`.
+_SERVICE = ServiceRef(
+    name=f"{_NAME}-service",
+    port=Port(name="grafana", number=3000),
+    pods=Pods(namespace=_NAMESPACE, labels=(("app", _NAME),)),
+)
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/grafana-instance"
 _DB_NAME = "grafana-db-ovh"
 # The credentials CNPG generated for the retired `grafana-db`, which this cluster was cloned
 # from; the role's password came with the clone.
-_DB_CREDENTIALS_SECRET = "grafana-db-app"
+_DB_CREDENTIALS = SecretRef(namespace=_NAMESPACE, name="grafana-db-app")
+_ADMIN = SecretRef(namespace=_NAMESPACE, name="grafana-admin-password")
+_OIDC = SecretRef(namespace=_NAMESPACE, name="grafana-oidc-config")
 # The label the Grafana CR carries and every dashboard and datasource selects.
 _INSTANCE_LABELS = {"dashboards": _NAME}
 
@@ -69,16 +79,19 @@ def _database(chart: Chart) -> None:
         # password in sync with the Secret Grafana also authenticates with. Without it CNPG
         # defaults to `app`, which does not exist here.
         initdb=ClusterSpecBootstrapInitdb(
-            database=_NAME, owner=_NAME, secret=ClusterSpecBootstrapInitdbSecret(name=_DB_CREDENTIALS_SECRET)
+            database=_NAME, owner=_NAME, secret=ClusterSpecBootstrapInitdbSecret(name=_DB_CREDENTIALS.name)
         ),
     )
 
 
-def _secret_env(name: str, secret: str, key: str) -> GrafanaSpecDeploymentSpecTemplateSpecContainersEnv:
+def _secret_env(name: str, key: SecretKey) -> GrafanaSpecDeploymentSpecTemplateSpecContainersEnv:
+    """The Grafana CRD's own env struct: its schema, not `k8s.EnvVar`."""
     return GrafanaSpecDeploymentSpecTemplateSpecContainersEnv(
         name=name,
         value_from=GrafanaSpecDeploymentSpecTemplateSpecContainersEnvValueFrom(
-            secret_key_ref=GrafanaSpecDeploymentSpecTemplateSpecContainersEnvValueFromSecretKeyRef(name=secret, key=key)
+            secret_key_ref=GrafanaSpecDeploymentSpecTemplateSpecContainersEnvValueFromSecretKeyRef(
+                name=key.secret.name, key=key.key
+            )
         ),
     )
 
@@ -152,20 +165,15 @@ def _grafana(chart: Chart) -> None:
                                         value="/etc/ssl/certs:/var/run/secrets/kubernetes.io/serviceaccount",
                                     ),
                                     # Secret key names don't match GF_* env var names — explicit mapping.
-                                    _secret_env("GF_SECURITY_ADMIN_USER", "grafana-admin-password", "admin-user"),
-                                    _secret_env(
-                                        "GF_SECURITY_ADMIN_PASSWORD", "grafana-admin-password", "admin-password"
-                                    ),
-                                    _secret_env("GF_DATABASE_PASSWORD", _DB_CREDENTIALS_SECRET, "password"),
-                                    _secret_env(
-                                        "GF_AUTH_GENERIC_OAUTH_CLIENT_ID",
-                                        "grafana-oidc-config",
-                                        "GF_AUTH_GENERIC_OAUTH_CLIENT_ID",
-                                    ),
-                                    _secret_env(
-                                        "GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET",
-                                        "grafana-oidc-config",
-                                        "GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET",
+                                    _secret_env("GF_SECURITY_ADMIN_USER", _ADMIN.key("admin-user")),
+                                    _secret_env("GF_SECURITY_ADMIN_PASSWORD", _ADMIN.key("admin-password")),
+                                    _secret_env("GF_DATABASE_PASSWORD", _DB_CREDENTIALS.key("password")),
+                                    *(
+                                        _secret_env(key, _OIDC.key(key))
+                                        for key in (
+                                            "GF_AUTH_GENERIC_OAUTH_CLIENT_ID",
+                                            "GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET",
+                                        )
                                     ),
                                 ],
                             )
@@ -180,8 +188,7 @@ def _grafana(chart: Chart) -> None:
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["grafana.allegedly.works"],
-        backend="grafana-service",
-        port=3000,
+        backend=_SERVICE,
         hsts=False,
         listener=None,
     )

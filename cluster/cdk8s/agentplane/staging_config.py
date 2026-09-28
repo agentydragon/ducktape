@@ -5,6 +5,8 @@ model_rosters.py for the model-name scheme.
 
 from __future__ import annotations
 
+from agentplane.app.action_federation import ActionFederationSettings
+from agentplane.app.main import AppSettingsConfig
 from cluster.cdk8s.agentplane.app_settings import OLLAMA_MODELS, settings
 from cluster.cdk8s.litellm.keys import ANTIGRAVITY_CLIENT_MODELS, CLAUDE_CLIENT_MODELS, GPT6_OAI_LANE_MODELS
 from cluster.cdk8s.model_rosters import ApiShape, Provider, codex_responses_name, exposed_name
@@ -25,7 +27,7 @@ PUBLIC_CODER_ACTION_POLICY_SETS = (
 )
 
 
-def config() -> dict:
+def config(action_federation: ActionFederationSettings | None = None) -> AppSettingsConfig:
     return settings(
         namespace=_NAMESPACE,
         # The staging key admits GPT-6 subscription routes, the full Antigravity lineup,
@@ -33,6 +35,7 @@ def config() -> dict:
         harness_claude=[*CLAUDE_CLIENT_MODELS, *ANTIGRAVITY_CLIENT_MODELS, *OLLAMA_MODELS],
         harness_codex=[*GPT6_OAI_LANE_MODELS, *OLLAMA_MODELS],
         thread_preset_codex_model=codex_responses_name("gpt-6-luna"),
+        action_federation=action_federation,
         action_policy_sets=list(PUBLIC_CODER_ACTION_POLICY_SETS),
         # The "haku" sandbox preset (app_settings.py) exists only here, not in
         # agentplane-testing. claude-sonnet-5 to match what Haku's own managed agents run

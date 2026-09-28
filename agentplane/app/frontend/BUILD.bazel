@@ -744,6 +744,7 @@ ts_library(
         ":live",
         ":raw_switch",
         ":stream_status",
+        ":topbar",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",

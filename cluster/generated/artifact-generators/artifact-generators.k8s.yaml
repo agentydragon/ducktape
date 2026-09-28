@@ -136,6 +136,11 @@ spec:
       name: tofu-state-db
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/k8s/mcp-oauth-state/**"
+          to: "@artifact/cluster/k8s/mcp-oauth-state/"
+      name: mcp-oauth-state
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/valkey/**"
           to: "@artifact/cluster/generated/valkey/"
       name: valkey
@@ -144,11 +149,6 @@ spec:
         - from: "@repo/cluster/generated/kyverno/policies/**"
           to: "@artifact/cluster/generated/kyverno/policies/"
       name: kyverno-policies
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/forgejo/haku-state/**"
-          to: "@artifact/cluster/generated/forgejo/haku-state/"
-      name: haku-state
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/agentplane-crds/**"
@@ -263,11 +263,19 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/grocy/sf/app/**"
           to: "@artifact/cluster/k8s/grocy/sf/app/"
+        - from: "@repo/cluster/k8s/grocy/sf/mcp/**"
+          to: "@artifact/cluster/k8s/grocy/sf/mcp/"
+        - from: "@repo/cluster/k8s/grocy/mcp-base/**"
+          to: "@artifact/cluster/k8s/grocy/mcp-base/"
       name: grocy-sf
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/grocy/vallejo/app/**"
           to: "@artifact/cluster/k8s/grocy/vallejo/app/"
+        - from: "@repo/cluster/k8s/grocy/vallejo/mcp/**"
+          to: "@artifact/cluster/k8s/grocy/vallejo/mcp/"
+        - from: "@repo/cluster/k8s/grocy/mcp-base/**"
+          to: "@artifact/cluster/k8s/grocy/mcp-base/"
       name: grocy-vallejo
       originRevision: "@repo"
     - copy:
@@ -465,39 +473,14 @@ spec:
       name: flux-webhook
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/forgejo/agentydragon/**"
-          to: "@artifact/cluster/generated/forgejo/agentydragon/"
-      name: forgejo-agentydragon
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/forgejo/agentydragon-repos/**"
-          to: "@artifact/cluster/generated/forgejo/agentydragon-repos/"
-      name: forgejo-agentydragon-repos
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/forgejo/budget-ledger/**"
-          to: "@artifact/cluster/generated/forgejo/budget-ledger/"
-      name: budget-ledger
+        - from: "@repo/cluster/generated/forgejo/gitops/**"
+          to: "@artifact/cluster/generated/forgejo/gitops/"
+      name: forgejo-gitops
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/forgejo/budget-namespace/**"
           to: "@artifact/cluster/generated/forgejo/budget-namespace/"
       name: budget-namespace
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/forgejo/cache/**"
-          to: "@artifact/cluster/generated/forgejo/cache/"
-      name: forgejo-cache
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/forgejo/claude/**"
-          to: "@artifact/cluster/generated/forgejo/claude/"
-      name: forgejo-claude
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/forgejo/cpap-data/**"
-          to: "@artifact/cluster/generated/forgejo/cpap-data/"
-      name: cpap-data
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/gatus/**"
@@ -530,25 +513,11 @@ spec:
       name: google-mcp
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/grocy/sf/mcp/**"
-          to: "@artifact/cluster/k8s/grocy/sf/mcp/"
-        - from: "@repo/cluster/k8s/grocy/mcp-base/**"
-          to: "@artifact/cluster/k8s/grocy/mcp-base/"
-      name: grocy-mcp-sf
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/grocy/sf/user-perms/**"
           to: "@artifact/cluster/k8s/grocy/sf/user-perms/"
         - from: "@repo/cluster/k8s/grocy/user-perms-base/**"
           to: "@artifact/cluster/k8s/grocy/user-perms-base/"
       name: grocy-sf-user-perms
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/grocy/vallejo/mcp/**"
-          to: "@artifact/cluster/k8s/grocy/vallejo/mcp/"
-        - from: "@repo/cluster/k8s/grocy/mcp-base/**"
-          to: "@artifact/cluster/k8s/grocy/mcp-base/"
-      name: grocy-mcp-vallejo
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/grocy/vallejo/user-perms/**"
@@ -596,11 +565,6 @@ spec:
         - from: "@repo/cluster/generated/headlamp/**"
           to: "@artifact/cluster/generated/headlamp/"
       name: headlamp-app
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/hubble-ui/**"
-          to: "@artifact/cluster/generated/hubble-ui/"
-      name: hubble-ui
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/infra-drift/**"
