@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from cdk8s import App, Chart
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import terraform
@@ -79,6 +80,7 @@ def forgejo_claude(
         # claude-forgejo-credentials Secret) so repo read-grants (e.g. gaffer-private
         # tf/thrive-scrape) and agent sessions can depend on it.
         artifact,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )
@@ -91,6 +93,7 @@ def haku_state(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_cont
         # Wait for the Terraform apply (creates the Forgejo repo + service user + the
         # haku-forgejo-git Secret) so scan runs can depend on it.
         artifact,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )
@@ -105,6 +108,7 @@ def budget_ledger(
         # Wait for the Terraform apply (creates the Forgejo repo + service user + the
         # budget-ledger-git-creds Secret) so the exporter/Fava can depend on it.
         artifact,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )
@@ -117,6 +121,7 @@ def cpap_data(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_contr
         # Wait for the Terraform apply (creates the Forgejo repo + service users + the
         # cpap-data-git-{write,read} Secrets) so the sync CronJob can depend on it.
         artifact,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )
@@ -131,6 +136,7 @@ def forgejo_agentydragon_repos(
         # Wait for the Terraform apply (adopts ducktape/gaffer-private, creates
         # collaborator service users/keys, and grants repo access).
         artifact,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )
@@ -140,5 +146,10 @@ def forgejo_agentydragon(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
-        chart, AGENTYDRAGON, artifact, timeout="10m", depends_on=flux_kustomization_depends_on_many(tofu_controller)
+        chart,
+        AGENTYDRAGON,
+        artifact,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        timeout="10m",
+        depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )
