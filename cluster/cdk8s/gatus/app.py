@@ -31,6 +31,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.service_ref import Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/gatus"
 _NAME = "gatus"
@@ -39,6 +40,8 @@ _LABELS = {"app.kubernetes.io/name": _NAME}
 _DB_NAME = "gatus-db"
 _HELM_REPOSITORY = "twin"
 _PORT = 8080
+# The chart's Service: port 80 to the Pods' `http` (8080), selecting `app.kubernetes.io/name`.
+SERVICE = ServiceRef(name=_NAME, port=Port(name="http", number=80), pods=cilium.PROBER, target_port=_PORT)
 
 
 def _namespace(scope: Construct) -> None:
@@ -119,7 +122,7 @@ def _network_policies(scope: Construct) -> None:
             # Cilium Gateway API (reserved:ingress identity) → Gatus
             IngressRule.from_gateway(_PORT),
             # Prometheus → Gatus (ServiceMonitor scraping)
-            IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_PORT]),
+            cilium.SCRAPERS.admit(_PORT),
         ],
     )
     # Route Gatus's DNS through Cilium's DNS proxy, so its queries are observable
@@ -167,8 +170,7 @@ def chart(app: App) -> Chart:
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["status.allegedly.works"],
-        backend=_NAME,
-        port=80,
+        backend=SERVICE,
         hsts=False,
         listener=None,
     )
