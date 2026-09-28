@@ -94,21 +94,27 @@ class _FakePlaidApi:
 
     def link_token_create(self, request: LinkTokenCreateRequest) -> LinkTokenCreateResponse:
         self.link_token_requests.append(request.to_dict())
-        return LinkTokenCreateResponse(
-            link_token=f"link-token-{len(self.link_token_requests)}",
-            expiration=datetime(2026, 6, 1, tzinfo=UTC),
-            request_id="req-link-token",
+        return cast(
+            LinkTokenCreateResponse,
+            LinkTokenCreateResponse(
+                link_token=f"link-token-{len(self.link_token_requests)}",
+                expiration=datetime(2026, 6, 1, tzinfo=UTC),
+                request_id="req-link-token",
+            ),
         )
 
     def item_public_token_exchange(self, request: ItemPublicTokenExchangeRequest) -> ItemPublicTokenExchangeResponse:
         self.exchanged_public_tokens.append(request.public_token)
-        return ItemPublicTokenExchangeResponse(
-            access_token="access-sandbox-new", item_id="item-sandbox-new", request_id="req-token-exchange"
+        return cast(
+            ItemPublicTokenExchangeResponse,
+            ItemPublicTokenExchangeResponse(
+                access_token="access-sandbox-new", item_id="item-sandbox-new", request_id="req-token-exchange"
+            ),
         )
 
     def item_remove(self, request: ItemRemoveRequest) -> ItemRemoveResponse:
         self.removed_access_tokens.append(request.access_token)
-        return ItemRemoveResponse(request_id="req-item-remove")
+        return cast(ItemRemoveResponse, ItemRemoveResponse(request_id="req-item-remove"))
 
     def item_get(self, request: ItemGetRequest) -> object:
         raise AssertionError("unexpected sync call in smoke test")
@@ -129,23 +135,32 @@ class _FakePlaidApi:
         raise AssertionError("unexpected sync call in smoke test")
 
     def institutions_search(self, request: InstitutionsSearchRequest) -> InstitutionsSearchResponse:
-        return InstitutionsSearchResponse(institutions=[_institution()], request_id="req-institutions-search")
+        return cast(
+            InstitutionsSearchResponse,
+            InstitutionsSearchResponse(institutions=[_institution()], request_id="req-institutions-search"),
+        )
 
     def institutions_get_by_id(self, request: InstitutionsGetByIdRequest) -> InstitutionsGetByIdResponse:
-        return InstitutionsGetByIdResponse(
-            institution=_institution(url="https://chase.example"), request_id="req-institutions-get"
+        return cast(
+            InstitutionsGetByIdResponse,
+            InstitutionsGetByIdResponse(
+                institution=_institution(url="https://chase.example"), request_id="req-institutions-get"
+            ),
         )
 
 
 def _institution(*, url: str | None = None) -> Institution:
-    return Institution(
-        institution_id="ins_3",
-        name="Chase",
-        products=[Products("auth"), Products("transactions"), Products("identity"), Products("liabilities")],
-        country_codes=[CountryCode("US")],
-        routing_numbers=[],
-        oauth=False,
-        url=url,
+    return cast(
+        Institution,
+        Institution(
+            institution_id="ins_3",
+            name="Chase",
+            products=[Products("auth"), Products("transactions"), Products("identity"), Products("liabilities")],
+            country_codes=[CountryCode("US")],
+            routing_numbers=[],
+            oauth=False,
+            url=url,
+        ),
     )
 
 
