@@ -160,9 +160,10 @@ py_test(
         "//agentplane/app:presets",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
-        "@pypi//protobuf",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
 
