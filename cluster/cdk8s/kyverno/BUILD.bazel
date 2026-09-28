@@ -17,6 +17,18 @@ py_library(
 )
 
 py_library(
+    name = "janitor",
+    srcs = ["janitor.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/kyverno:cleanup_policy",
+        "//cluster/cdk8s/providers/kyverno:cleanuppolicy",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "policies",
     srcs = ["policies.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],

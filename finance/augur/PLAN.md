@@ -107,21 +107,21 @@ without them.
 
 **Items**, each landing its rule, data and tests together:
 
-- **DISTRICTS** (after ASSESS): district files with a per-category maximum, escalation and
+- **DISTRICTS**: district files with a per-category maximum, escalation and
   end date from each district's rate-and-method document: Mare Island's CFDs 2002-1, 2005-1A
   and 2005-1B (research so far: <docs/mare_island_special_taxes.md>), and San Francisco's parcel
   taxes.
-- **SUPPLEMENTAL** (after ASSESS): the purchase-year supplemental bill on the change in assessed
+- **SUPPLEMENTAL**: the purchase-year supplemental bill on the change in assessed
   value, prorated over the rest of the fiscal year.
-- **DECLINE** (after ASSESS): a Proposition 8 reduction while the home-value path is below the
+- **DECLINE**: a Proposition 8 reduction while the home-value path is below the
   factored base, recovering toward it.
-- **INSTALLMENTS** (after ASSESS and MIDYEAR): the July–June secured bill is paid in its two
+- **INSTALLMENTS** (after MIDYEAR): the July–June secured bill is paid in its two
   installments on their due dates.
 - **DEDUCT** (after DISTRICTS): only ad-valorem tax is an itemizable real-property tax; today
   `TaxBook.property_tax` puts the whole bill, special assessment included, into SALT. On a
   rented share, service charges are expenses and local-benefit assessments are added to basis,
   federal and California.
-- **TRANSFER** (after ASSESS): at a sale the parcel's authority charges its situs's transfer
+- **TRANSFER**: at a sale the parcel's authority charges its situs's transfer
   taxes: San Francisco's tiered tax on the whole price at its bracket's rate, Solano County's
   documentary transfer tax, and Vallejo's if it has one. Seller-paid by default and reducing
   the amount realized; a buyer-paid share is added to basis. `closing_cost_ppb` splits into

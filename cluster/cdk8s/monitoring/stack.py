@@ -20,7 +20,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCh
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.helm import helm_release, helm_repository
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "monitoring-stack"
@@ -465,7 +465,7 @@ def chart(app: App) -> Chart:
         chart,
         "kube-prometheus-stack",
         _NAMESPACE,
-        repository=helm_repository(
+        repository=https_helm_repository(
             chart,
             _HELM_REPOSITORY,
             "flux-system",

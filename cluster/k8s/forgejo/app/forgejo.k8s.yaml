@@ -4,7 +4,6 @@ metadata:
   name: forgejo
   namespace: forgejo
 spec:
-  interval: 24h
   type: oci
   url: oci://code.forgejo.org/forgejo-helm
 ---

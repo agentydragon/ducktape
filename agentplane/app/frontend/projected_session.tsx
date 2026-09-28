@@ -369,12 +369,10 @@ export function EntityCard({
     if (!prominent) {
       return (
         <Stack gap={0} style={{ position: "relative" }}>
-          <Text size="xs" c="dimmed">
-            {label}
-          </Text>
+          <Text c="dimmed">{label}</Text>
           <EvidenceToggle entity={entity} style={{ position: "absolute", top: 0, right: 0 }} />
           {diagnostic && (
-            <Text size="xs" c="dimmed" style={wrapped}>
+            <Text c="dimmed" style={wrapped}>
               {diagnostic}
             </Text>
           )}
@@ -1308,12 +1306,13 @@ function ProjectedSessionBody({
   function composerKey(event: KeyboardEvent<HTMLTextAreaElement>): void {
     if (event.key !== "Enter") return;
     event.preventDefault();
-    if (!(event.ctrlKey || event.metaKey)) {
+    if (!(event.ctrlKey || event.metaKey || event.shiftKey)) {
       submit();
       return;
     }
-    // Insert the newline by hand: a textarea ignores Ctrl+Enter, and setting a controlled value
-    // leaves the caret at the end, so put it back where the newline went.
+    // Insert the newline by hand: the preventDefault above already swallowed whatever the browser
+    // would otherwise have done for Ctrl/Cmd/Shift+Enter, and setting a controlled value leaves the
+    // caret at the end, so put it back where the newline went.
     const field = event.currentTarget;
     const at = field.selectionStart;
     setDraft(`${draft.slice(0, at)}\n${draft.slice(field.selectionEnd)}`);
@@ -1384,7 +1383,7 @@ function ProjectedSessionBody({
         <Textarea
           value={draft}
           onChange={(event) => setDraft(event.currentTarget.value)}
-          placeholder="Enter sends, Ctrl+Enter for a new line"
+          placeholder="Enter sends, Shift+Enter or Ctrl+Enter for a new line"
           autosize
           minRows={2}
           maxRows={12}

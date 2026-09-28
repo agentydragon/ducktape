@@ -2,7 +2,7 @@
 pattern: a class named after the kind, constructed as `HelmRepository(scope, id, ...)`.
 Every keyword is a `HelmRepositorySpec` field under its own name and type; `None` leaves it
 unset, so Flux's own default applies. No ducktape namespace or policy default (interval)
-lives here -- those are `cluster.cdk8s.helm.helm_repository`'s own.
+lives here -- those are `cluster.cdk8s.helm.https_helm_repository`'s own.
 """
 
 from __future__ import annotations
