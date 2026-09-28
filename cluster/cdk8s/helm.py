@@ -1,4 +1,5 @@
-"""Builds the Flux `HelmRelease` custom resources the generators install charts with."""
+"""Builds the Flux `HelmRepository` and `HelmRelease` custom resources the generators install
+charts with."""
 
 from __future__ import annotations
 
@@ -20,10 +21,25 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgrade,
     HelmReleaseSpecValuesFrom,
 )
-from flux_source.io.fluxcd.toolkit.source import HelmRepository
+from flux_source.io.fluxcd.toolkit.source import HelmRepositorySpecType
+
+from cluster.cdk8s.providers.flux.helm_repository import HelmRepository
 
 # Uninstall and retry a failed install three times before the release stalls.
 RETRY_FAILED_INSTALL = HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3))
+
+
+def helm_repository(scope: Construct, name: str, namespace: str, *, url: str, interval: str = "24h") -> HelmRepository:
+    """Add and return a Flux `HelmRepository` serving the charts at `url`: an OCI repository for an
+    `oci://` URL, else Flux's default HTTP/S type. Our policy: `interval="24h"`."""
+    return HelmRepository(
+        scope,
+        f"helm-repository-{name}",
+        metadata=ApiObjectMetadata(name=name, namespace=namespace),
+        url=url,
+        type=HelmRepositorySpecType.OCI if url.startswith("oci://") else None,
+        interval=interval,
+    )
 
 
 def helm_repository_source_ref(name: str, namespace: str) -> HelmReleaseSpecChartSpecSourceRef:
