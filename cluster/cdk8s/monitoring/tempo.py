@@ -10,7 +10,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
-from cluster.cdk8s.providers.seaweedfs.s3 import AWS_ENV_KEY_FIELDS
+from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "tempo"
@@ -20,20 +20,24 @@ _CREDENTIALS_SECRET = "tempo-seaweedfs-credentials"
 
 
 def _storage(chart: Chart) -> None:
-    bucket = s3.Bucket(
+    s3.bucket(
         chart,
         "bucket",
         name=NAME,
         namespace=_NAMESPACE,
+        access=[BucketAccess.read_write(NAME)],
         adopt_existing=True,
         description="Tempo's tenant-local SeaweedFS trace bucket.",
     )
-    identity = s3.Identity(chart, "identity", name=NAME, namespace=_NAMESPACE)
-    bucket.grant_read_write(identity)
-    identity.credentials(
+    s3.cluster_grant(chart, "grant", name=NAME, namespace=_NAMESPACE, kinds=["Bucket", "S3Identity", "S3Credentials"])
+    identity = s3.identity(chart, "identity", name=NAME, namespace=_NAMESPACE)
+    s3.credentials(
+        chart,
+        "credentials",
+        identity=identity.name,
         namespace=_NAMESPACE,
         secret=_CREDENTIALS_SECRET,
-        key_fields=AWS_ENV_KEY_FIELDS,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
         description="Tempo's tenant-local SeaweedFS credentials.",
     )
     # Retain the previous credential Secret during the staged handoff. The old

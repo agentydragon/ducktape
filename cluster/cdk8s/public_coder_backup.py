@@ -16,7 +16,7 @@ from volsync_replicationsource_crds.backube.volsync import (
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.providers.seaweedfs.s3 import AWS_ENV_KEY_FIELDS
+from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.restic_backup import ResticBackup
 from cluster.cdk8s.seaweedfs import s3
 
@@ -28,20 +28,26 @@ _S3_CREDENTIALS_SECRET_NAME = "public-coder-agent-seaweedfs-credentials"
 
 
 def _bucket(scope: Construct) -> None:
-    bucket = s3.Bucket(
+    s3.bucket(
         scope,
         "bucket",
         name=_BUCKET_NAME,
         namespace=_NAMESPACE,
+        access=[BucketAccess.read_write(_BUCKET_NAME)],
         adopt_existing=True,
         description="Public Coder's tenant-local SeaweedFS backup bucket.",
     )
-    identity = s3.Identity(scope, "identity", name=_BUCKET_NAME, namespace=_NAMESPACE)
-    bucket.grant_read_write(identity)
-    identity.credentials(
+    s3.cluster_grant(
+        scope, "grant", name=_BUCKET_NAME, namespace=_NAMESPACE, kinds=["Bucket", "S3Identity", "S3Credentials"]
+    )
+    identity = s3.identity(scope, "identity", name=_BUCKET_NAME, namespace=_NAMESPACE)
+    s3.credentials(
+        scope,
+        "credentials",
+        identity=identity.name,
         namespace=_NAMESPACE,
         secret=_S3_CREDENTIALS_SECRET_NAME,
-        key_fields=AWS_ENV_KEY_FIELDS,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
         description="Public Coder's tenant-local SeaweedFS backup credentials.",
     )
 

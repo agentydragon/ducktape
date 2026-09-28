@@ -27,7 +27,7 @@ from cnpg_scheduledbackup_crds.io.cnpg.postgresql import (
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.providers.seaweedfs.s3 import AWS_ENV_KEY_FIELDS
+from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "authentik-db-backups"
@@ -39,29 +39,34 @@ _OBJECT_STORE = "authentik-db-ovh"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "db-backups", disable_resource_name_hashes=True)
-    # Tenant-local, so the grant below covers S3Identity too.
-    identity = s3.Identity(
+    identity = s3.identity(
         chart,
         "identity",
         name=NAME,
         namespace=NAMESPACE,
         description="Dedicated SeaweedFS identity for Authentik CNPG backups.",
     )
-    identity.credentials(
+    # Tenant-local, so the grant covers S3Identity too.
+    s3.cluster_grant(chart, "grant", name=NAME, namespace=NAMESPACE, kinds=["S3Identity", "S3Credentials", "Bucket"])
+    s3.credentials(
+        chart,
+        "credentials",
+        identity=identity.name,
         namespace=NAMESPACE,
         # The operator creates and owns this Secret in the credential's namespace, where the
         # ObjectStore below consumes it.
         secret=_CREDENTIALS_SECRET,
-        key_fields=AWS_ENV_KEY_FIELDS,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
     )
-    s3.Bucket(
+    s3.bucket(
         chart,
         "bucket",
         name=NAME,
         namespace=NAMESPACE,
+        access=[BucketAccess.read_write(identity.name)],
         adopt_existing=True,
         description="Private CNPG physical backups and WAL archive for Authentik.",
-    ).grant_read_write(identity)
+    )
     ObjectStore(
         chart,
         "object-store",

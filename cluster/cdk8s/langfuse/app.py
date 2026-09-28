@@ -25,7 +25,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.seaweedfs.s3 import SecretKeyFields
+from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.valkey import valkey_instance
 
@@ -68,22 +68,26 @@ def _storage(scope: Construct) -> None:
         ),
         type="Opaque",
     )
-    bucket = s3.Bucket(
+    s3.bucket(
         scope,
         "bucket",
         name=_NAME,
         namespace=_NAMESPACE,
+        access=[BucketAccess.read_write(_NAME)],
         adopt_existing=True,
         description="Langfuse event, export, and media objects.",
     )
-    identity = s3.Identity(scope, "identity", name=_NAME, namespace=_NAMESPACE)
-    bucket.grant_read_write(identity)
-    identity.credentials(
+    s3.cluster_grant(scope, "grant", name=_NAME, namespace=_NAMESPACE, kinds=["Bucket", "S3Identity", "S3Credentials"])
+    identity = s3.identity(scope, "identity", name=_NAME, namespace=_NAMESPACE)
+    s3.credentials(
+        scope,
+        "credentials",
+        identity=identity.name,
         namespace=_NAMESPACE,
         # A new Secret during the staged handoff: the existing one is populated by the old
         # cross-namespace S3Credentials object and cannot be adopted here.
         secret=_S3_CREDENTIALS_SECRET,
-        key_fields=SecretKeyFields(access_key="s3-access-key-id", secret_key="s3-secret-access-key"),
+        key_fields=s3.SecretKeyFields(access_key="s3-access-key-id", secret_key="s3-secret-access-key"),
         description="Langfuse's tenant-local SeaweedFS credentials.",
     )
 

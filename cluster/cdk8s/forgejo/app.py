@@ -39,7 +39,7 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
-from cluster.cdk8s.providers.seaweedfs.s3 import SecretKeyFields
+from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/app"
@@ -83,20 +83,24 @@ def _git_storage(scope: Construct) -> None:
 
 
 def _object_storage(scope: Construct) -> None:
-    bucket = s3.Bucket(
+    s3.bucket(
         scope,
         "bucket",
         name=_NAME,
         namespace=_NAMESPACE,
+        access=[BucketAccess.read_write(_NAME)],
         adopt_existing=True,
         description="Forgejo packages, LFS, attachments, and artifacts.",
     )
-    identity = s3.Identity(scope, "identity", name=_NAME, namespace=_NAMESPACE)
-    bucket.grant_read_write(identity)
-    identity.credentials(
+    s3.cluster_grant(scope, "grant", name=_NAME, namespace=_NAMESPACE, kinds=["Bucket", "S3Identity", "S3Credentials"])
+    identity = s3.identity(scope, "identity", name=_NAME, namespace=_NAMESPACE)
+    s3.credentials(
+        scope,
+        "credentials",
+        identity=identity.name,
         namespace=_NAMESPACE,
         secret=_S3_CREDENTIALS_SECRET,
-        key_fields=SecretKeyFields(access_key="accessKey", secret_key="secretKey"),
+        key_fields=s3.SecretKeyFields(access_key="accessKey", secret_key="secretKey"),
         description="Forgejo's SeaweedFS S3 credentials.",
     )
 

@@ -27,7 +27,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
-from cluster.cdk8s.providers.seaweedfs.s3 import AWS_ENV_KEY_FIELDS
+from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "attic"
@@ -65,19 +65,28 @@ def _database(scope: Construct) -> None:
 def _storage(scope: Construct) -> None:
     # attic's NAR chunks. Replication is per-volume (the SeaweedFS cluster's
     # defaultReplication), so the bucket is backed by replicated storage.
-    bucket = s3.Bucket(
+    s3.bucket(
         scope,
         "bucket",
         name=NAME,
         namespace=NAMESPACE,
+        access=[BucketAccess.read_write(NAME)],
         adopt_existing=True,
         # Unset: the CRD defaults to Retain.
         reclaim_policy=None,
-        grant_name=NAMESPACE,
     )
-    identity = s3.Identity(scope, "identity", name=NAME, namespace=NAMESPACE)
-    bucket.grant_read_write(identity)
-    identity.credentials(namespace=NAMESPACE, secret=_S3_SECRET, key_fields=AWS_ENV_KEY_FIELDS)
+    s3.cluster_grant(
+        scope, "grant", name=NAMESPACE, namespace=NAMESPACE, kinds=["Bucket", "S3Identity", "S3Credentials"]
+    )
+    identity = s3.identity(scope, "identity", name=NAME, namespace=NAMESPACE)
+    s3.credentials(
+        scope,
+        "credentials",
+        identity=identity.name,
+        namespace=NAMESPACE,
+        secret=_S3_SECRET,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
+    )
 
 
 def _server(scope: Construct) -> None:

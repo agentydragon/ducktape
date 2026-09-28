@@ -36,7 +36,7 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
-from cluster.cdk8s.providers.seaweedfs.s3 import AWS_ENV_KEY_FIELDS
+from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import namespace, s3
 
 NAME = "loki"
@@ -84,44 +84,52 @@ def _storage(chart: Chart) -> None:
     # Permit only the SeaweedFS operator's S3Credentials resource to populate
     # this exact workload Secret across namespaces.
     s3.secret_grant(chart, secret=_LEGACY_CREDENTIALS_SECRET, namespace=NAME)
-    identity = s3.Identity(chart, "identity", name=NAME, namespace=NAME)
-    identity.credentials(
+    identity = s3.identity(chart, "identity", name=NAME, namespace=NAME)
+    # Covers the tenant-local objects below; the legacy ones in the SeaweedFS namespace need none.
+    s3.cluster_grant(chart, "grant", name=NAME, namespace=NAME, kinds=["S3Identity", "Bucket", "S3Credentials"])
+    s3.credentials(
+        chart,
+        "legacy-s3-credentials",
+        identity=identity.name,
         namespace=namespace.NAME,
         secret=_LEGACY_CREDENTIALS_SECRET,
         secret_namespace=NAME,
-        key_fields=AWS_ENV_KEY_FIELDS,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
     )
     # Single bucket "loki" carrying chunks, ruler, and admin sub-paths
     # (Loki splits them internally by key prefix). See the HelmRelease's
     # `storage.bucketNames` — all three point at the same bucket.
-    legacy_bucket = s3.Bucket(
+    s3.bucket(
         chart,
         "legacy-bucket",
         name=NAME,
         namespace=namespace.NAME,
+        access=[BucketAccess.read_write(identity.name)],
         adopt_existing=False,
         # Unset: the CRD defaults to Retain.
         reclaim_policy=None,
     )
-    legacy_bucket.grant_read_write(identity)
     # Tenant-local ownership for Loki's existing Seaweed bucket and credentials.
     # The old seaweedfs-namespace resources remain until the consumer cutover and
     # data-path verification are complete.
-    bucket = s3.Bucket(
+    s3.bucket(
         chart,
         "bucket",
         name=NAME,
         namespace=NAME,
+        access=[BucketAccess.read_write(identity.name)],
         adopt_existing=True,
         description="Loki chunks, ruler, and admin objects.",
     )
-    bucket.grant_read_write(identity)
-    identity.credentials(
+    s3.credentials(
+        chart,
+        "credentials",
+        identity=identity.name,
         namespace=NAME,
         # A new Secret during the staged handoff: the existing one is populated by the old
         # cross-namespace S3Credentials object and cannot be adopted here.
         secret=_CREDENTIALS_SECRET,
-        key_fields=AWS_ENV_KEY_FIELDS,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
         description="Loki's tenant-local SeaweedFS credentials.",
     )
 

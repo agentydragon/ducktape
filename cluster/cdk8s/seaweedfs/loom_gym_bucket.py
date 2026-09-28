@@ -6,6 +6,7 @@ from cdk8s import App, Chart
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import namespace, s3
 
 NAME = "loom-gym"
@@ -15,8 +16,13 @@ _CHART = "loom-gym-bucket"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _CHART, disable_resource_name_hashes=True)
-    s3.Bucket(chart, "bucket", name=NAME, namespace=namespace.NAME, adopt_existing=False).grant_read_write(
-        "claude-reader"
+    s3.bucket(
+        chart,
+        "bucket",
+        name=NAME,
+        namespace=namespace.NAME,
+        access=[BucketAccess.read_write("claude-reader")],
+        adopt_existing=False,
     )
     return chart
 

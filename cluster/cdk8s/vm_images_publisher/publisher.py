@@ -17,6 +17,8 @@ from constructs import Construct
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
+from cluster.cdk8s.providers.seaweedfs.s3_identity import S3Identity
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "vm-images-publisher"
@@ -30,26 +32,35 @@ def _credentials_secret(identity: str) -> str:
     return f"{identity}-s3-credentials"
 
 
-def _identity(scope: Construct, name: str) -> s3.Identity:
+def _identity(scope: Construct, name: str) -> S3Identity:
     """A publisher-local S3Identity plus the S3Credentials the operator mints its key pair
     into (Secret `<name>-s3-credentials` in this namespace)."""
-    identity = s3.Identity(scope, name, name=name, namespace=NAME)
-    identity.credentials(namespace=NAME, secret=_credentials_secret(name), key_fields=None)
+    identity = s3.identity(scope, name, name=name, namespace=NAME)
+    s3.credentials(
+        scope,
+        f"{name}-credentials",
+        identity=identity.name,
+        namespace=NAME,
+        secret=_credentials_secret(name),
+        key_fields=None,
+    )
     return identity
 
 
 def _storage(scope: Construct) -> None:
-    bucket = s3.Bucket(
+    s3.bucket(
         scope,
         "bucket",
         name=_BUCKET,
         namespace=NAME,
+        access=[BucketAccess.read_write(_WRITER), BucketAccess.read(_READER)],
         # The physical bucket already exists; this CR is moving to the publisher's
         # namespace without deleting or recreating its data.
         adopt_existing=True,
     )
-    bucket.grant_read_write(_identity(scope, _WRITER))
-    bucket.grant_read(_identity(scope, _READER))
+    s3.cluster_grant(scope, "grant", name=_BUCKET, namespace=NAME, kinds=["Bucket", "S3Identity", "S3Credentials"])
+    _identity(scope, _WRITER)
+    _identity(scope, _READER)
 
 
 def _writer_env(name: str, key: str) -> k8s.EnvVar:

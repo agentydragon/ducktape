@@ -32,7 +32,7 @@ from cluster.cdk8s.openclaw_gateway import (
     session_memory_hook,
     trusted_proxy_gateway,
 )
-from cluster.cdk8s.providers.seaweedfs.s3 import AWS_ENV_KEY_FIELDS
+from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
 
 _NAMESPACE = "haku-openclaw-spike"
@@ -554,24 +554,27 @@ def _network_policies(scope: Construct) -> None:
 
 def _backup_bucket(scope: Construct) -> None:
     """The VolSync backup bucket and the credentials Secret ../backup's SecretStore reads."""
+    # No S3Identity declares this IAM identity; S3Credentials uses the existing one by name.
+    identity = "haku-openclaw-spike-backups"
     # Restic retention/pruning is managed by VolSync, not by Bucket deletion.
-    bucket = s3.Bucket(
+    s3.bucket(
         scope,
         "backup-bucket",
         name="haku-openclaw-spike-backups",
         namespace=_NAMESPACE,
+        access=[BucketAccess.read_write(identity)],
         adopt_existing=True,
         description="Haku OpenClaw spike VolSync backup bucket.",
-        grant_name=_NAME,
     )
-    # No S3Identity declares this IAM identity; S3Credentials uses the existing one by name.
-    identity = s3.IdentityRef(scope, "backup-identity", name="haku-openclaw-spike-backups")
-    bucket.grant_read_write(identity)
-    identity.credentials(
+    s3.cluster_grant(scope, "backup-grant", name=_NAME, namespace=_NAMESPACE, kinds=["Bucket", "S3Credentials"])
+    s3.credentials(
+        scope,
+        "backup-credentials",
+        identity=identity,
         namespace=_NAMESPACE,
         # Generated directly where the VolSync SecretStore reads it.
         secret="haku-openclaw-spike-volsync-s3-credentials",
-        key_fields=AWS_ENV_KEY_FIELDS,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
         description="Haku OpenClaw spike VolSync SeaweedFS credentials.",
     )
 
