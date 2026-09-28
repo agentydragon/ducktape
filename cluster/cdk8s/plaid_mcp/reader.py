@@ -16,6 +16,7 @@ from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from cluster.cdk8s import cilium
 from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
@@ -24,6 +25,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.plaid_mcp.app import NAMESPACE
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/reader"
@@ -35,6 +37,9 @@ _OIDC_SECRET = "plaid-db-mcp-oidc"
 _UPSTREAM_PORT = 8000
 _HTTP_PORT = 8765
 _METRICS_PORT = 9090
+_HTTP = ServiceRef(
+    name=_NAME, port=Port(name="http", number=_HTTP_PORT), pods=Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items()))
+)
 _VALKEY = "plaid-valkey-kimsufi"
 
 
@@ -187,8 +192,7 @@ def chart(app: App) -> Chart:
             },
         ),
         hostnames=["plaid-db.allegedly.works"],
-        backend=_NAME,
-        port=_HTTP_PORT,
+        backend=_HTTP,
         timeout="60s",
         hsts=False,
         listener=None,
@@ -210,7 +214,7 @@ def chart(app: App) -> Chart:
         ingress=[
             IngressRule.from_gateway(_HTTP_PORT),
             # monitoring: Prometheus metrics scraping
-            IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_METRICS_PORT]),
+            cilium.SCRAPERS.admit(_METRICS_PORT),
         ],
     )
     valkey_instance(

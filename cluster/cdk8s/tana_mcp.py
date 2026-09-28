@@ -31,6 +31,7 @@ from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/tana-mcp"
@@ -50,6 +51,11 @@ _PROXY_PORT = 8263
 _NOVNC_PORT = 6080
 _FACADE_PORT = 8765
 _METRICS_PORT = 9090
+_FACADE_HTTP = ServiceRef(
+    name=_FACADE,
+    port=Port(name="http", number=_FACADE_PORT),
+    pods=Pods(namespace=_NAMESPACE, labels=tuple(_FACADE_LABELS.items())),
+)
 # Tana only serves /health on loopback inside the container.
 _TANA_HEALTH = f"http://127.0.0.1:{_TANA_PORT}/health"
 
@@ -332,8 +338,7 @@ def _facade(chart: Chart) -> None:
         "facade-httproute",
         metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
         hostnames=["tana-mcp-facade.allegedly.works"],
-        backend=_FACADE,
-        port=_FACADE_PORT,
+        backend=_FACADE_HTTP,
         timeout="60s",
         hsts=False,
         listener=None,
