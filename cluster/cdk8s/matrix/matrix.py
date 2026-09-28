@@ -40,6 +40,7 @@ NAMESPACE = "matrix"
 SYNAPSE = "matrix-synapse"
 _NAME = "matrix"
 _DB_NAME = "matrix-db"
+DATABASE = cnpg.PostgresRef.generated(name=_DB_NAME, namespace=NAMESPACE)
 _HELM_REPOSITORY = "ananace-charts"
 # The chart's main Service: its selector is the chart name, the release and the component.
 _SYNAPSE_HTTP = ServiceRef(
@@ -103,18 +104,18 @@ def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
         "database",
-        name=_DB_NAME,
-        namespace=NAMESPACE,
+        ref=DATABASE,
         image_name=None,
         # OVH-HA profile (docs/cnpg_conventions.md R2/R3), replacing the Proxmox-single
         # shape this had before the namespace was parked: Synapse's media store is on
         # SeaweedFS now, whose CSI node plugin only runs on the OVH nodes, so the app
         # moved there and R5 requires the database to follow it.
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="10Gi",
         # CNPG auto-generates credentials in secret matrix-db-app
         initdb=cnpg.same_owner_initdb("synapse", locale_c_type="C", locale_collate="C"),
+        wal_archive=False,
     )
 
 

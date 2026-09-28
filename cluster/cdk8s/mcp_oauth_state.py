@@ -48,6 +48,7 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/mcp-oauth-state"
 NAMESPACE = "mcp-oauth-state"
 CLUSTER_NAME = "mcp-oauth-state-db"
 POSTGRES_PORT = 5432
+DATABASE = cnpg.PostgresRef.generated(name=CLUSTER_NAME, namespace=NAMESPACE)
 CONSUMER_SECRET = "mcp-oauth-db-credentials"
 
 
@@ -157,13 +158,13 @@ def _db_chart(app: App) -> Chart:
     cnpg.cluster(
         chart,
         "cluster",
-        name=CLUSTER_NAME,
-        namespace=NAMESPACE,
+        ref=DATABASE,
         annotations={"description": "Shared OVH-HA CNPG cluster for MCP OAuth state."},
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh-hdd",
         size="5Gi",
         initdb=cnpg.same_owner_initdb("app"),
+        wal_archive=False,
         managed=ClusterSpecManaged(
             roles=[
                 ClusterSpecManagedRoles(

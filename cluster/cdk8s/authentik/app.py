@@ -139,7 +139,7 @@ def _values() -> dict[str, object]:
             # Beside the database: Django issues many serialized queries per request, and an
             # unpinned server once landed at home, 114ms from the OVH primary, where the static
             # OIDC discovery document took ~1.6s. It also made `Home down` take SSO with it.
-            "nodeSelector": dict(db.NODE_SELECTOR),
+            "nodeSelector": dict(db.PLACEMENT.node_selector),
             **_spread("server"),
             # 20 minutes for first-boot migrations: a startup kill mid-migration leaves the
             # connection idle-in-transaction and blocks the next attempt.

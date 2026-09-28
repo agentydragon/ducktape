@@ -37,6 +37,7 @@ INDEXER_ROLE = "haku_indexer"
 INDEXER_SECRET = f"{CLUSTER_NAME}-indexer"
 RW_HOST = f"{CLUSTER_NAME}-rw.{NAMESPACE}.svc"
 _POSTGRES_PORT = 5432
+POSTGRES = cnpg.PostgresRef.generated(name=CLUSTER_NAME, namespace=NAMESPACE)
 
 
 class Db(Construct):
@@ -48,18 +49,18 @@ class Db(Construct):
         cnpg.cluster(
             self,
             "cluster",
-            name=CLUSTER_NAME,
-            namespace=NAMESPACE,
+            ref=POSTGRES,
             # CNPG owns the data PVCs through this object, and nothing backs this database
             # up, so a prune is unrecoverable. The annotation exempts it whichever
             # Kustomization's inventory lists it (cluster/cdk8s/AGENTS.md) -- including
             # while ownership moves between them. Removing this Cluster is a deliberate
             # `kubectl delete`, never a manifest edit.
             annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
-            node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+            placement=node_scheduling.HIL_OVH,
             storage_class="local-path-ovh",
             size="2Gi",
             initdb=cnpg.same_owner_initdb(DATABASE),
+            wal_archive=False,
             managed=ClusterSpecManaged(
                 roles=[
                     # The haku-indexer worker's narrow credential: recall-index read/write.

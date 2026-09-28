@@ -40,6 +40,7 @@ _NAME = "study-casino"
 _NAMESPACE = "study-casino"
 _PORT = 8080
 _DB_NAME = "study-casino-db"
+POSTGRES = cnpg.PostgresRef.generated(name=_DB_NAME, namespace=_NAMESPACE)
 _DATABASE = "studycasino"
 _REGION = "hil"
 _IMMUTABLE = "public, max-age=31536000, immutable"
@@ -77,14 +78,13 @@ def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
         "database",
-        name=_DB_NAME,
-        namespace=_NAMESPACE,
+        ref=POSTGRES,
         annotations={"description": "CNPG Postgres for study-casino state."},
         # 3 instances, one per OVH SSD (control-plane) node. Tolerates 1-node loss without read-quorum or
         # primary-availability impact.
         instances=3,
         image_name=None,
-        node_selector={"topology.kubernetes.io/region": _REGION},
+        placement=node_scheduling.Placement(node_selector={"topology.kubernetes.io/region": _REGION}),
         storage_class="local-path-ovh-ssd",
         size="1Gi",
         # Declaratively-managed roles. CNPG creates `study_casino_ro` on first
@@ -105,6 +105,7 @@ def _database(scope: Construct) -> None:
         ),
         # CNPG auto-generates credentials in secret study-casino-db-app
         initdb=cnpg.same_owner_initdb(_DATABASE),
+        wal_archive=False,
     )
 
 

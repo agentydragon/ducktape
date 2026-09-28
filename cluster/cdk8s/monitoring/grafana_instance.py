@@ -12,7 +12,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb, ClusterSpecBootstrapInitdbSecret
 from grafana_grafana_crds.org.integreatly.grafana import (
     GrafanaSpecClient,
     GrafanaSpecDeployment,
@@ -58,6 +57,7 @@ _DB_NAME = "grafana-db-ovh"
 # The credentials CNPG generated for the retired `grafana-db`, which this cluster was cloned
 # from; the role's password came with the clone.
 _DB_CREDENTIALS = SecretRef(namespace=_NAMESPACE, name="grafana-db-app")
+DATABASE = cnpg.PostgresRef(name=_DB_NAME, namespace=_NAMESPACE, app_secret=_DB_CREDENTIALS)
 _ADMIN = SecretRef(namespace=_NAMESPACE, name="grafana-admin-password")
 _OIDC = SecretRef(namespace=_NAMESPACE, name="grafana-oidc-config")
 # The label the Grafana CR carries and every dashboard and datasource selects.
@@ -68,9 +68,8 @@ def _database(chart: Chart) -> None:
     cnpg.cluster(
         chart,
         "database",
-        name=_DB_NAME,
-        namespace=_NAMESPACE,
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        ref=DATABASE,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="2Gi",
         # Created by pg_basebackup from the retired grafana-db, so this never initializes
@@ -78,9 +77,8 @@ def _database(chart: Chart) -> None:
         # exporter's default queries run against the database, and CNPG keeps the role's
         # password in sync with the Secret Grafana also authenticates with. Without it CNPG
         # defaults to `app`, which does not exist here.
-        initdb=ClusterSpecBootstrapInitdb(
-            database=_NAME, owner=_NAME, secret=ClusterSpecBootstrapInitdbSecret(name=_DB_CREDENTIALS.name)
-        ),
+        initdb=cnpg.same_owner_initdb(_NAME, secret=DATABASE.app_secret),
+        wal_archive=False,
     )
 
 

@@ -39,6 +39,7 @@ SERVICE = ServiceRef(
     name=NAME, port=Port(name="http", number=_PORT), pods=Pods(namespace=NAMESPACE, labels=tuple(_SELECTOR.items()))
 )
 _DB = "attic-db"
+DATABASE = cnpg.PostgresRef.generated(name=_DB, namespace=NAMESPACE)
 # The operator mints the S3 key pair straight into this namespace (`_storage` below).
 _S3 = SecretRef(namespace=NAMESPACE, name="attic-s3-credentials")
 _GITHUB_PAT = SecretRef(namespace=NAMESPACE, name="github-secrets-sync-pat")
@@ -54,14 +55,14 @@ def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
         "db",
-        name=_DB,
-        namespace=NAMESPACE,
+        ref=DATABASE,
         image_name=None,
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="2Gi",
         # CNPG generates the credentials in Secret attic-db-app.
         initdb=cnpg.same_owner_initdb("attic"),
+        wal_archive=False,
     )
 
 

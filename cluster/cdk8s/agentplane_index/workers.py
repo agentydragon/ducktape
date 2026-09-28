@@ -33,6 +33,7 @@ from util.settings_contract import env_name
 NAME = "agentplane-index"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agentplane-index"
 _DB_CLUSTER = f"{NAME}-db"
+DATABASE = cnpg.PostgresRef.generated(name=_DB_CLUSTER, namespace=NAME)
 # CNPG owns this Secret (username/password).
 _DB_APP = SecretRef(namespace=NAME, name=f"{_DB_CLUSTER}-app")
 _DB_OWNER = "indexer"
@@ -81,12 +82,12 @@ def _database(chart: Chart) -> None:
     cnpg.cluster(
         chart,
         "database-cluster",
-        name=_DB_CLUSTER,
-        namespace=NAME,
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        ref=DATABASE,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh-ssd",
         size="20Gi",
         initdb=ClusterSpecBootstrapInitdb(database="ducktape", owner=_DB_OWNER),
+        wal_archive=False,
     )
 
 

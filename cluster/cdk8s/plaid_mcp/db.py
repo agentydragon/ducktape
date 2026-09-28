@@ -36,6 +36,7 @@ from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/db"
 _CLUSTER = "plaid-mcp-db"
+POSTGRES = cnpg.PostgresRef.generated(name=_CLUSTER, namespace=NAMESPACE)
 _DATABASE = "plaidmcp"
 _READONLY_ROLE = "plaid_ro"
 # CNPG generates the owner's credentials into `<cluster>-app`.
@@ -56,15 +57,14 @@ def _cluster(chart: Chart) -> None:
     cnpg.cluster(
         chart,
         "cluster",
-        name=_CLUSTER,
-        namespace=NAMESPACE,
+        ref=POSTGRES,
         annotations={
             "description": (
                 "CNPG Postgres mirror for Plaid link metadata, full-refresh sync state, and Plaid-shaped"
                 " financial data."
             )
         },
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="5Gi",
         managed=ClusterSpecManaged(
@@ -83,6 +83,7 @@ def _cluster(chart: Chart) -> None:
         ),
         # CNPG auto-generates credentials in secret plaid-mcp-db-app.
         initdb=cnpg.same_owner_initdb(_DATABASE),
+        wal_archive=False,
     )
 
 

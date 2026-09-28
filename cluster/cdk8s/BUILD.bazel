@@ -268,6 +268,8 @@ py_library(
     deps = [
         ":local_path_provisioner",
         ":node_scheduling",
+        ":secret_ref",
+        ":service_ref",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/cnpg:cnpg_cluster",
         "@pypi//cdk8s",

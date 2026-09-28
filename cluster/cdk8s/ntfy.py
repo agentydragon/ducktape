@@ -57,6 +57,7 @@ SERVICE = ServiceRef(
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
 )
 _DATABASE_CLUSTER = "ntfy-db"
+DATABASE = cnpg.PostgresRef.generated(name=_DATABASE_CLUSTER, namespace=NAMESPACE)
 _DATABASE_APP = SecretRef(namespace=NAMESPACE, name=f"{_DATABASE_CLUSTER}-app")
 _AUTH_SOURCE_SECRET = "ntfy-credentials"
 _AUTH = SecretRef(namespace=NAMESPACE, name="ntfy-auth")
@@ -150,12 +151,12 @@ def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
         "database",
-        name=_DATABASE_CLUSTER,
-        namespace=NAMESPACE,
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        ref=DATABASE,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh-hdd",
         size="2Gi",
         initdb=cnpg.same_owner_initdb(NAME),
+        wal_archive=False,
     )
 
 

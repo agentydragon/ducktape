@@ -6,25 +6,25 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from cnpg_cluster_crds.io.cnpg.postgresql import (
-    ClusterSpecBootstrapInitdb,
-    ClusterSpecBootstrapInitdbSecret,
-    ClusterSpecPlugins,
-)
 
 from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.secret_ref import SecretRef
 
 NAME = "authentik-db-ovh"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/db"
+_NAMESPACE = "authentik"
 # The database is on node-local `local-path-ovh` storage and cannot move; Authentik's server
 # selects the same zone to stay beside it.
-NODE_SELECTOR = node_scheduling.HIL_OVH_NODE_SELECTOR
+PLACEMENT = node_scheduling.HIL_OVH
 DATABASE = "authentik"
 # The credentials CNPG generated for the retired `authentik-db`, which this cluster was
 # cloned from; the role's password came with the clone.
 CREDENTIALS_SECRET = "authentik-db-app"
+POSTGRES = cnpg.PostgresRef(
+    name=NAME, namespace=_NAMESPACE, app_secret=SecretRef(namespace=_NAMESPACE, name=CREDENTIALS_SECRET)
+)
 
 
 def chart(app: App) -> Chart:
@@ -32,9 +32,8 @@ def chart(app: App) -> Chart:
     cnpg.cluster(
         chart,
         "cluster",
-        name=NAME,
-        namespace="authentik",
-        node_selector=NODE_SELECTOR,
+        ref=POSTGRES,
+        placement=PLACEMENT,
         storage_class="local-path-ovh-ssd",
         size="8Gi",
         # The cluster was created by pg_basebackup from the retired authentik-db, so this
@@ -42,18 +41,10 @@ def chart(app: App) -> Chart:
         # CNPG uses: the metrics exporter runs its default queries against the database,
         # and CNPG keeps the role's password in sync with the Secret Authentik also
         # authenticates with. Without it CNPG defaults to `app`, which does not exist here.
-        initdb=ClusterSpecBootstrapInitdb(
-            database=DATABASE, owner=DATABASE, secret=ClusterSpecBootstrapInitdbSecret(name=CREDENTIALS_SECRET)
-        ),
+        initdb=cnpg.same_owner_initdb(DATABASE, secret=POSTGRES.app_secret),
         # The plugin sidecar archives WAL continuously and provides physical base
         # backups to the Authentik-specific SeaweedFS ObjectStore (authentik/db-backups).
-        plugins=[
-            ClusterSpecPlugins(
-                name="barman-cloud.cloudnative-pg.io",
-                is_wal_archiver=True,
-                parameters={"barmanObjectName": "authentik-db-ovh"},
-            )
-        ],
+        wal_archive=True,
     )
     return chart
 

@@ -35,6 +35,11 @@ _ROLE_NAMES = ["actions", "egress"]
 _ELECTRIC_ROLE = "electric"
 
 
+def postgres(env: Environment) -> cnpg.PostgresRef:
+    """The environment's shared Cluster."""
+    return cnpg.PostgresRef.generated(name=_CLUSTER_NAME, namespace=env.namespace)
+
+
 def _role_credentials(
     scope: Construct, id: str, *, role: str, namespace: str, database_name: str | None = None
 ) -> None:
@@ -72,10 +77,9 @@ class Db(Construct):
         cnpg.cluster(
             self,
             "cluster",
-            name=_CLUSTER_NAME,
-            namespace=env.namespace,
+            ref=postgres(env),
             instances=env.db.instances,
-            node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+            placement=node_scheduling.HIL_OVH,
             storage_class=_STORAGE_CLASS,
             size=_STORAGE_SIZE,
             # Electric's WAL-loss recovery purges every shape, then stays unready while
@@ -83,6 +87,7 @@ class Db(Construct):
             # 5Gi volume instead of silently recycling the logical slot's WAL.
             postgresql=ClusterSpecPostgresql(parameters={"max_slot_wal_keep_size": "512MB"}),
             initdb=cnpg.same_owner_initdb("app"),
+            wal_archive=False,
             managed=ClusterSpecManaged(
                 roles=[
                     ClusterSpecManagedRoles(

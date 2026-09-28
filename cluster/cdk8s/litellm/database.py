@@ -21,6 +21,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/db"
 _CLUSTER_NAME = "litellm-db"
 MANIFEST = f"{_CLUSTER_NAME}.k8s.yaml"
+DATABASE = cnpg.PostgresRef.generated(name=_CLUSTER_NAME, namespace="litellm")
 
 
 def _chart(app: App) -> Chart:
@@ -28,13 +29,13 @@ def _chart(app: App) -> Chart:
     cnpg.cluster(
         chart,
         "cluster",
-        name=_CLUSTER_NAME,
-        namespace="litellm",
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        ref=DATABASE,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="5Gi",
         # CNPG auto-generates credentials in secret litellm-db-app.
         initdb=cnpg.same_owner_initdb("litellm"),
+        wal_archive=False,
     )
     return chart
 

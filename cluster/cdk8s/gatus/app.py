@@ -38,6 +38,7 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/gatus"
 _NAME = "gatus"
 _NAMESPACE = "gatus"
 _DB_NAME = "gatus-db"
+DATABASE = cnpg.PostgresRef.generated(name=_DB_NAME, namespace=_NAMESPACE)
 _HELM_REPOSITORY = "twin"
 # The chart's Service: port 80 to the Pods' `http` (8080), selecting `app.kubernetes.io/name`.
 SERVICE = ServiceRef(name=_NAME, port=Port(name="http", number=80), pods=cilium.PROBER, target_port=8080)
@@ -52,13 +53,13 @@ def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
         "database",
-        name=_DB_NAME,
-        namespace=_NAMESPACE,
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        ref=DATABASE,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="1Gi",
         # CNPG auto-generates credentials in secret gatus-db-app
         initdb=cnpg.same_owner_initdb("gatus"),
+        wal_archive=False,
     )
 
 
