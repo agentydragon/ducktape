@@ -157,7 +157,7 @@ async function selectInstitution(institutionId) {
   // "not synced by this institution" or "not synced by this app" — opposite claims. And it is
   // about products this app does not *request*, not data it lacks: `balance` and
   // `transactions_refresh` are on-demand re-pull products, while balances and transactions are
-  // already mirrored from /accounts/get and /transactions/get.
+  // already mirrored from /accounts/get and /transactions/sync.
   if (detail.syncable_products.length === 0) {
     hint.textContent = `${detail.name} offers no Plaid product this app knows how to sync.`;
   } else if (detail.unsupported_products.length > 0) {

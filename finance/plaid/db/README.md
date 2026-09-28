@@ -31,11 +31,11 @@ free on the Trial plan for teams created on/after 2026-04-15) remain.
 - **Amount sign:** positive = money **out** of the account (purchases, debits,
   card charges); negative = money **in** (payments, refunds, deposits). Same
   convention on credit and depository accounts.
-- **`/transactions/get` vs `/transactions/sync`:** the MCP server uses
-  `/transactions/get` for ad-hoc **date-range** reads — it natively takes
-  `start_date`/`end_date` + `offset`/`count` and returns `total_transactions`.
-  `/transactions/sync` is for stateful incremental mirroring (a cursor you must
-  persist) and is the wrong primitive for range queries.
+- **`/transactions/get` vs `/transactions/sync`:** the mirror uses
+  `/transactions/sync` with one durable cursor per Item, applying added,
+  modified, and removed transactions before committing the next cursor.
+  `/transactions/get` remains the date-range API (`start_date`/`end_date` plus
+  `offset`/`count`) for callers that explicitly need a bounded query.
 - **Cached vs live balances:** `/accounts/get` returns cached balances (Plaid
   refreshes 1–4×/day); `/accounts/balance/get` hits the bank live but is heavily
   rate-limited (5/min, 30/hour per Item).

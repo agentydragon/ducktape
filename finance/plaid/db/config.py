@@ -28,6 +28,7 @@ class PlaidSettings(BaseSettings):
     client_secret: str
     database_url: str = Field(validation_alias="DATABASE_URL")
     public_base_url: str
+    webhook_url: str = Field(description="Public HTTPS URL for Plaid webhook delivery.")
     target_namespace: str | None = None
     managed_by: str = "plaid-mcp"
     host: str = "0.0.0.0"
@@ -38,6 +39,13 @@ class PlaidSettings(BaseSettings):
     @field_validator("public_base_url", mode="after")
     @classmethod
     def _strip_trailing_slash(cls, value: str) -> str:
+        return value.rstrip("/")
+
+    @field_validator("webhook_url", mode="after")
+    @classmethod
+    def _require_https_webhook_url(cls, value: str) -> str:
+        if not value.startswith("https://"):
+            raise ValueError("webhook_url must use HTTPS")
         return value.rstrip("/")
 
     @property
@@ -54,9 +62,7 @@ class PlaidSettings(BaseSettings):
 
     @property
     def sync_windows(self) -> SyncWindows:
-        return SyncWindows(
-            transaction_days=self.transaction_days, investment_transaction_days=self.investment_transaction_days
-        )
+        return SyncWindows(investment_transaction_days=self.investment_transaction_days)
 
 
 class PlaidWebSettings(PlaidSettings):

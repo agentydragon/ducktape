@@ -1,4 +1,4 @@
-"""Synchronous v0 full-refresh sync from Plaid into Postgres."""
+"""Sync Plaid Items and their product snapshots into Postgres."""
 
 from __future__ import annotations
 
@@ -18,21 +18,23 @@ from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetR
 from plaid.model.investments_transactions_get_request import InvestmentsTransactionsGetRequest
 from plaid.model.investments_transactions_get_request_options import InvestmentsTransactionsGetRequestOptions
 from plaid.model.item_get_request import ItemGetRequest
+from plaid.model.item_webhook_update_request import ItemWebhookUpdateRequest
 from plaid.model.liabilities_get_request import LiabilitiesGetRequest
-from plaid.model.transactions_get_request import TransactionsGetRequest
-from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
+from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
-from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink
+from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
 from finance.plaid.db.models import (
     AccountsGetResponse,
     InvestmentsHoldingsGetResponse,
     InvestmentsTransactionsGetResponse,
     ItemGetResponse,
+    ItemWebhookUpdateResponse,
     LiabilitiesGetResponse,
     PlaidApiResponse,
     PlaidInvestmentTransaction,
+    PlaidRemovedTransaction,
     PlaidTransaction,
-    TransactionsGetResponse,
+    TransactionsSyncResponse,
 )
 from finance.plaid.db.products import Product
 from finance.plaid.db.secret_store import SecretStore
@@ -59,8 +61,9 @@ class PlaidApiLike(Protocol):
     def api_client(self) -> PlaidApiClientLike: ...
 
     def item_get(self, request: ItemGetRequest, /) -> object: ...
+    def item_webhook_update(self, request: ItemWebhookUpdateRequest, /) -> object: ...
     def accounts_get(self, request: AccountsGetRequest, /) -> object: ...
-    def transactions_get(self, request: TransactionsGetRequest, /) -> object: ...
+    def transactions_sync(self, request: TransactionsSyncRequest, /) -> object: ...
     def investments_holdings_get(self, request: InvestmentsHoldingsGetRequest, /) -> object: ...
     def investments_transactions_get(self, request: InvestmentsTransactionsGetRequest, /) -> object: ...
     def liabilities_get(self, request: LiabilitiesGetRequest, /) -> object: ...
@@ -68,14 +71,10 @@ class PlaidApiLike(Protocol):
 
 @dataclass(frozen=True)
 class SyncWindows:
-    transaction_days: int = 730
     investment_transaction_days: int = 730
 
-    def as_dict(self) -> dict[str, int]:
-        return {
-            "transaction_days": self.transaction_days,
-            "investment_transaction_days": self.investment_transaction_days,
-        }
+    def as_dict(self) -> dict[str, int | str]:
+        return {"transactions": "cursor", "investment_transaction_days": self.investment_transaction_days}
 
 
 def redact_payload(value: Any) -> Any:
@@ -97,6 +96,7 @@ async def sync_all(
     secrets: SecretStore,
     trigger: str = "cron",
     windows: SyncWindows | None = None,
+    webhook_url: str | None = None,
 ) -> list[UUID]:
     """Sync every active link; one link's failure must not starve the links after it."""
     sync_windows = windows or SyncWindows()
@@ -106,9 +106,17 @@ async def sync_all(
         try:
             run_ids.append(
                 await sync_link(
-                    api=api, storage=storage, secrets=secrets, link=link, trigger=trigger, windows=sync_windows
+                    api=api,
+                    storage=storage,
+                    secrets=secrets,
+                    link=link,
+                    trigger=trigger,
+                    windows=sync_windows,
+                    webhook_url=webhook_url,
                 )
             )
+        except SyncAlreadyRunningError:
+            logger.info("skipping already-running sync for item %s", link.item_id)
         except Exception as exc:
             logger.exception("sync failed for item %s (%s)", link.item_id, link.institution_name)
             failures.append(exc)
@@ -125,6 +133,7 @@ async def sync_link(
     link: StoredLink,
     trigger: str,
     windows: SyncWindows | None = None,
+    webhook_url: str | None = None,
 ) -> UUID:
     sync_windows = windows or SyncWindows()
     run_id = await storage.begin_sync_run(
@@ -132,8 +141,56 @@ async def sync_link(
     )
     try:
         await _sync_link_inner(
-            api=api, storage=storage, secrets=secrets, link=link, run_id=run_id, windows=sync_windows
+            api=api,
+            storage=storage,
+            secrets=secrets,
+            link=link,
+            run_id=run_id,
+            windows=sync_windows,
+            webhook_url=webhook_url,
         )
+    except asyncio.CancelledError:
+        await storage.finish_sync_run(run_id, status="failed", error_summary="sync task was cancelled")
+        raise
+    except Exception as exc:
+        await storage.finish_sync_run(run_id, status="failed", error_summary=f"{type(exc).__name__}: {exc}")
+        raise
+    await storage.finish_sync_run(run_id, status="succeeded")
+    return run_id
+
+
+async def sync_transactions_only(
+    *, api: PlaidApiLike, storage: PlaidLinkStorage, secrets: SecretStore, link: StoredLink, trigger: str = "webhook"
+) -> UUID:
+    run_id = await storage.begin_sync_run(
+        trigger=trigger, item_id=link.item_id, configured_windows={"transactions": "cursor"}
+    )
+    try:
+        access_token = await secrets.read_access_token(link.access_token_secret)
+        captured_at = datetime.now(UTC)
+        accounts_payload = await _call(
+            api,
+            storage,
+            run_id,
+            "accounts/get",
+            api.accounts_get,
+            AccountsGetRequest(access_token=access_token),
+            link.item_id,
+            response_model=AccountsGetResponse,
+        )
+        await storage.apply_accounts(item_id=link.item_id, accounts=accounts_payload.accounts, captured_at=captured_at)
+        await _sync_transactions_inner(
+            api=api,
+            storage=storage,
+            run_id=run_id,
+            access_token=access_token,
+            item_id=link.item_id,
+            cursor=link.transactions_cursor,
+            captured_at=captured_at,
+        )
+    except asyncio.CancelledError:
+        await storage.finish_sync_run(run_id, status="failed", error_summary="sync task was cancelled")
+        raise
     except Exception as exc:
         await storage.finish_sync_run(run_id, status="failed", error_summary=f"{type(exc).__name__}: {exc}")
         raise
@@ -149,6 +206,7 @@ async def _sync_link_inner(
     link: StoredLink,
     run_id: UUID,
     windows: SyncWindows,
+    webhook_url: str | None,
 ) -> None:
     access_token = await secrets.read_access_token(link.access_token_secret)
     captured_at = datetime.now(UTC)
@@ -176,6 +234,21 @@ async def _sync_link_inner(
         label=link.label,
         status="active",
     )
+    if (
+        Product.TRANSACTIONS.value in link.products_requested
+        and webhook_url is not None
+        and item_payload.webhook != webhook_url
+    ):
+        await _call(
+            api,
+            storage,
+            run_id,
+            "item/webhook/update",
+            api.item_webhook_update,
+            ItemWebhookUpdateRequest(access_token=access_token, webhook=webhook_url),
+            link.item_id,
+            response_model=ItemWebhookUpdateResponse,
+        )
 
     accounts_payload = await _call(
         api,
@@ -192,11 +265,14 @@ async def _sync_link_inner(
     )
 
     if Product.TRANSACTIONS.value in link.products_requested:
-        end = captured_at.date()
-        start = end - timedelta(days=windows.transaction_days)
-        transactions = await _fetch_transactions(api, storage, run_id, access_token, link.item_id, start, end)
-        await storage.reconcile_transactions(
-            item_id=link.item_id, start_date=start, end_date=end, transactions=transactions, captured_at=captured_at
+        await _sync_transactions_inner(
+            api=api,
+            storage=storage,
+            run_id=run_id,
+            access_token=access_token,
+            item_id=link.item_id,
+            cursor=link.transactions_cursor,
+            captured_at=captured_at,
         )
 
     if Product.INVESTMENTS.value in link.products_requested:
@@ -257,36 +333,58 @@ async def _sync_link_inner(
             )
 
 
-async def _fetch_transactions(
-    api: PlaidApiLike, storage: PlaidLinkStorage, run_id: UUID, access_token: str, item_id: str, start: date, end: date
-) -> list[PlaidTransaction]:
-    offset = 0
-    count = 500
-    out: list[PlaidTransaction] = []
-    total = None
-    while total is None or offset < total:
-        payload = await _call(
-            api,
-            storage,
-            run_id,
-            "transactions/get",
-            api.transactions_get,
-            TransactionsGetRequest(
-                access_token=access_token,
-                start_date=start,
-                end_date=end,
-                options=TransactionsGetRequestOptions(offset=offset, count=count),
-            ),
-            item_id,
-            response_model=TransactionsGetResponse,
+async def _sync_transactions_inner(
+    *,
+    api: PlaidApiLike,
+    storage: PlaidLinkStorage,
+    run_id: UUID,
+    access_token: str,
+    item_id: str,
+    cursor: str | None,
+    captured_at: datetime | None = None,
+) -> None:
+    original_cursor = cursor
+    for attempt in range(3):
+        page_cursor = original_cursor
+        added: list[PlaidTransaction] = []
+        modified: list[PlaidTransaction] = []
+        removed: list[PlaidRemovedTransaction] = []
+        try:
+            while True:
+                request_args: dict[str, object] = {"access_token": access_token}
+                if page_cursor is not None:
+                    request_args["cursor"] = page_cursor
+                payload = await _call(
+                    api,
+                    storage,
+                    run_id,
+                    "transactions/sync",
+                    api.transactions_sync,
+                    TransactionsSyncRequest(**request_args),
+                    item_id,
+                    response_model=TransactionsSyncResponse,
+                )
+                added.extend(payload.added)
+                modified.extend(payload.modified)
+                removed.extend(payload.removed)
+                page_cursor = payload.next_cursor
+                if not payload.has_more:
+                    break
+        except Exception as exc:
+            if _plaid_error_code(exc) != "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION" or attempt == 2:
+                raise
+            logger.warning("transactions/sync pagination changed for item %s; restarting from saved cursor", item_id)
+            continue
+
+        await storage.apply_transaction_delta(
+            item_id=item_id,
+            added=[txn.model_dump(mode="json", exclude_unset=True) for txn in added],
+            modified=[txn.model_dump(mode="json", exclude_unset=True) for txn in modified],
+            removed=[txn.model_dump(mode="json", exclude_unset=True) for txn in removed],
+            next_cursor=page_cursor,
+            captured_at=captured_at or datetime.now(UTC),
         )
-        total = payload.total_transactions
-        page = payload.transactions or []
-        out.extend(page)
-        offset += len(page)
-        if not page:
-            break
-    return out
+        return
 
 
 async def _fetch_investment_transactions(

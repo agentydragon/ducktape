@@ -29,6 +29,8 @@ from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchan
 from plaid.model.item_public_token_exchange_response import ItemPublicTokenExchangeResponse
 from plaid.model.item_remove_request import ItemRemoveRequest
 from plaid.model.item_remove_response import ItemRemoveResponse
+from plaid.model.item_webhook_update_request import ItemWebhookUpdateRequest
+from plaid.model.item_webhook_update_response import ItemWebhookUpdateResponse
 from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.liabilities_get_response import LiabilitiesGetResponse
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
@@ -42,6 +44,8 @@ from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_get_response import TransactionsGetResponse
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
 from plaid.model.transactions_sync_response import TransactionsSyncResponse
+from plaid.model.webhook_verification_key_get_request import WebhookVerificationKeyGetRequest
+from plaid.model.webhook_verification_key_get_response import WebhookVerificationKeyGetResponse
 from pydantic import ValidationError
 
 from finance.plaid.db.models import PlaidError
@@ -140,6 +144,10 @@ class PlaidSdkApiLike(Protocol):
     ) -> ItemPublicTokenExchangeResponse: ...
     def item_remove(self, request: ItemRemoveRequest, /) -> ItemRemoveResponse: ...
     def item_get(self, request: ItemGetRequest, /) -> ItemGetResponse: ...
+    def item_webhook_update(self, request: ItemWebhookUpdateRequest, /) -> ItemWebhookUpdateResponse: ...
+    def webhook_verification_key_get(
+        self, request: WebhookVerificationKeyGetRequest, /
+    ) -> WebhookVerificationKeyGetResponse: ...
     def accounts_get(self, request: AccountsGetRequest, /) -> AccountsGetResponse: ...
     def accounts_balance_get(self, request: AccountsBalanceGetRequest, /) -> AccountsGetResponse: ...
     def transactions_get(self, request: TransactionsGetRequest, /) -> TransactionsGetResponse: ...
@@ -311,6 +319,20 @@ class PlaidClient:
 
     def item_get(self, request: ItemGetRequest, /) -> ItemGetResponse:
         return self._api.item_get(request)
+
+    def item_webhook_update(self, request: ItemWebhookUpdateRequest, /) -> ItemWebhookUpdateResponse:
+        try:
+            return self._api.item_webhook_update(request)
+        except PlaidApiException as exc:
+            raise _plaid_api_error("/item/webhook/update", exc) from exc
+
+    def webhook_verification_key_get(
+        self, request: WebhookVerificationKeyGetRequest, /
+    ) -> WebhookVerificationKeyGetResponse:
+        try:
+            return self._api.webhook_verification_key_get(request)
+        except PlaidApiException as exc:
+            raise _plaid_api_error("/webhook_verification_key/get", exc) from exc
 
     def accounts_get(self, request: AccountsGetRequest, /) -> AccountsGetResponse:
         return self._api.accounts_get(request)

@@ -78,10 +78,22 @@ in the typeahead; the UI looks up what that institution supports and offers exac
 products this app can mirror, so Link is never opened requesting a product the bank
 lacks — which would fail the whole session.
 
-`plaid-mcp-sync` runs every 12 hours and performs the full-refresh mirror. It
-uses date-window `/transactions/get` and `/investments/transactions/get`, not
-stateful `/transactions/sync` cursors yet. It does not call real-time balance
-endpoints; cached balances from product responses are snapshotted into Postgres.
+Plaid posts signed webhooks to `https://plaid-webhook.allegedly.works/webhooks/plaid`.
+The app verifies Plaid's JWT signature and request-body hash, durably queues
+`TRANSACTIONS / SYNC_UPDATES_AVAILABLE`, then applies the `/transactions/sync`
+delta and cursor in the background. New Items receive the webhook URL through
+Link token creation; the next daily/manual sync updates existing Items.
+
+`plaid-mcp-sync` runs daily as a missed-webhook catch-up and refreshes every
+active Item. It uses `/transactions/sync` for transaction deltas and retains
+date-window `/investments/transactions/get` for investment history. It does not
+call real-time balance endpoints; cached balances from product responses are
+snapshotted into Postgres.
+
+The app's `PLAID_MCP_WEBHOOK_URL` must match the public HTTPS Gateway route.
+The route and network policy are generated from
+`cluster/cdk8s/plaid_mcp/app.py`; Plaid receives the URL per Item, so there is
+no global dashboard webhook URL to configure.
 
 ## Verification
 

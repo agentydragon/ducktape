@@ -114,7 +114,7 @@ apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
   annotations:
-    description: CNPG Postgres mirror for Plaid link metadata, full-refresh sync state, and Plaid-shaped financial data.
+    description: CNPG Postgres mirror for Plaid link metadata, webhook queue state, and Plaid-shaped financial data.
   name: plaid-mcp-db
   namespace: plaid-mcp
 spec:

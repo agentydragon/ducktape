@@ -3,7 +3,7 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
-# Plaid full-refresh sync process (cron). Pulls from Plaid into the mirror DB.
+# Daily Plaid catch-up sync process (cron). Pulls linked Items into the mirror DB.
 
 py_library(
     name = "sync_cli",
