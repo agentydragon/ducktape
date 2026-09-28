@@ -2482,8 +2482,6 @@ spec:
                   name: postgres-actions
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
               value: postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)
-            - name: AGENTPLANE_ACTIONS_CONFIG_FILE
-              value: /etc/agentplane-actions/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:unset
           imagePullPolicy: Always
           name: migrate
