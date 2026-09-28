@@ -14,7 +14,7 @@ from fractions import Fraction
 
 from finance.augur.sim.jurisdictions import StatutoryAmount
 from finance.augur.sim.money import scaled
-from finance.augur.sim.tax import PreparedTaxBracket, PreparedTaxRules, PreparedThresholdTax
+from finance.augur.sim.tax import TaxBracket, TaxRules, ThresholdTax
 
 
 @dataclass(frozen=True)
@@ -38,7 +38,7 @@ class CpiIndexedLaw:
         if self.law_year_to_start <= 0:
             raise ValueError(f"a CPI ratio must be positive, not {self.law_year_to_start}")
 
-    def check(self, rules: Sequence[PreparedTaxRules]) -> None:
+    def check(self, rules: Sequence[TaxRules]) -> None:
         """Reject rules this start cannot index: several law years, or an anchor its own year contradicts."""
         law_years = {row.law_year for row in rules}
         if len(law_years) > 1:
@@ -58,19 +58,19 @@ class CpiIndexedLaw:
 type TaxIndexation = FixedNominalLaw | CpiIndexedLaw
 
 
-def rules_for_year(rules: PreparedTaxRules, index: Fraction) -> PreparedTaxRules:
+def rules_for_year(rules: TaxRules, index: Fraction) -> TaxRules:
     """`rules` with every amount statute indexes scaled by `index`, rounded to the quantum; the rest unchanged."""
 
     def amount(value: int, kind: StatutoryAmount) -> int:
         return scaled(value, index, f"indexed {kind}") if kind in rules.indexed else value
 
-    def brackets(schedule: Sequence[PreparedTaxBracket], kind: StatutoryAmount) -> tuple[PreparedTaxBracket, ...]:
+    def brackets(schedule: Sequence[TaxBracket], kind: StatutoryAmount) -> tuple[TaxBracket, ...]:
         return tuple(
             replace(bracket, upper=None if bracket.upper is None else amount(bracket.upper, kind))
             for bracket in schedule
         )
 
-    def threshold(tax: PreparedThresholdTax | None, kind: StatutoryAmount) -> PreparedThresholdTax | None:
+    def threshold(tax: ThresholdTax | None, kind: StatutoryAmount) -> ThresholdTax | None:
         return None if tax is None else replace(tax, threshold=amount(tax.threshold, kind))
 
     return replace(

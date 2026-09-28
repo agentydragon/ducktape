@@ -5,8 +5,8 @@ import pytest_bazel
 
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.ids import AccountId, AssetId, LotId
-from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedSeries, _TenderPolicy
+from finance.augur.sim.market_path import MarketPath, Series
+from finance.augur.sim.private_equity import TenderPolicy
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, opening
 from finance.augur.sim.world import World
 
@@ -30,7 +30,7 @@ def recovered(total: int, positions: tuple[tuple[int, int], ...], *, earlier_sal
         "company_valuation": 0,
     }
     series = tuple(
-        PreparedSeries(
+        Series(
             series_id=f"private_equity_{channel}:test_issuer",
             snapshots=horizon + 1,
             values=(
@@ -65,7 +65,7 @@ def recovered(total: int, positions: tuple[tuple[int, int], ...], *, earlier_sal
             basis=3 + index,
         )
     world.declare_tender_policy(
-        _TenderPolicy(owner_agent_id=HOUSEHOLD, proceeds_account_id=AccountId("checking"), liquid_net_worth_floor=0)
+        TenderPolicy(owner_agent_id=HOUSEHOLD, proceeds_account_id=AccountId("checking"), liquid_net_worth_floor=0)
     )
     return world
 

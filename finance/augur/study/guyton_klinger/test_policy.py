@@ -20,9 +20,8 @@ from finance.augur.sim.actions import Action, Buy, Consume, LotSale, PayClaim, S
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Treasury
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import Currency
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Executed, Finished, Receipt, Rejected, RejectedAction, Rollout
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.session import ActionSession
@@ -93,7 +92,7 @@ def world(paths: list[Path], rollout_id: int) -> World:
         f"security:{Sleeve.EQUITY}": [path.equity for path in paths],
     }
     series = [
-        PreparedSeries(
+        Series(
             series_id=series_id,
             snapshots=12 * years + 1,
             values=tuple(chain.from_iterable(monthly(row) for row in rows)),
@@ -103,7 +102,7 @@ def world(paths: list[Path], rollout_id: int) -> World:
     path = paths[rollout_id]
     if path.taxed:
         series.append(
-            PreparedSeries(
+            Series(
                 series_id=f"security_distribution:{Sleeve.BONDS}",
                 snapshots=12 * years + 1,
                 values=tuple(

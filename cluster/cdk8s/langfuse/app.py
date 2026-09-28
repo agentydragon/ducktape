@@ -18,12 +18,11 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategyName,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
 from cluster.cdk8s import cnpg, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.seaweedfs import s3
@@ -277,17 +276,11 @@ def _values() -> dict[str, object]:
 
 
 def _helm_release(scope: Construct) -> None:
-    repository = HelmRepository(
-        scope,
-        "helm-repository",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://langfuse.github.io/langfuse-k8s"),
-    )
     helm_release(
         scope,
         _NAME,
         _NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(scope, _NAME, _NAMESPACE, url="https://langfuse.github.io/langfuse-k8s"),
         chart=_NAME,
         version="2.1.0",
         interval="15m",

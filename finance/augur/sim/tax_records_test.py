@@ -10,8 +10,8 @@ from finance.augur.sim.agent import EconomicAgent
 from finance.augur.sim.books import TaxLiabilityState
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
+from finance.augur.sim.market_path import Series
 from finance.augur.sim.observations import Observation, TaxRecords
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Executed
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.testing.accounting import (
@@ -92,7 +92,7 @@ class _Recorder(EconomicAgent):
 def run(sales: Mapping[int, Sell], *, taxed: bool = True, other_trades: bool = True) -> tuple[World, list[Observation]]:
     """Both actors are flat-10% taxpayers with wages; the other may also sell a short-term winner in month 0."""
     world = world_on(
-        (PreparedSeries(series_id="security:stock", snapshots=HORIZON + 1, values=(PRICE,) * (HORIZON + 1)),),
+        (Series(series_id="security:stock", snapshots=HORIZON + 1, values=(PRICE,) * (HORIZON + 1)),),
         horizon_months=HORIZON,
         accounts=opening({EXOGENOUS: 10_000_000}),
         taxpayers=(taxpayer(HOUSEHOLD), taxpayer(OTHER)) if taxed else (),

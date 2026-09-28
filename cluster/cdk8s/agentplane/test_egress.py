@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -127,6 +128,29 @@ def test_sandbox_sidecars_gate_readiness_on_the_loopback_listener(
         assert probe["port"] == readiness_port == sidecar.READINESS_PORT
         assert probe["path"] == sidecar.READINESS_PATH
         assert "livenessProbe" not in egress_sidecar
+
+
+def test_runner_context_configuration_matches_the_verified_qwen_roster(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    expected = {
+        "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k": 128 * 1024,
+        "ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k": 128 * 1024,
+        "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k": 256 * 1024,
+        "ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k": 256 * 1024,
+    }
+    for namespace, manifests in agentplane_manifests.items():
+        templates = [doc for doc in manifests if doc["kind"] == "SandboxTemplate"]
+        runner_containers = [
+            container
+            for template in templates
+            for container in template["spec"]["podTemplate"]["spec"]["containers"]
+            if container["name"] == "runner"
+        ]
+        assert runner_containers, namespace
+        for container in runner_containers:
+            environment = {variable["name"]: variable.get("value") for variable in container.get("env", [])}
+            assert json.loads(environment["AGENTPLANE_MODEL_CONTEXT_WINDOWS"]) == expected
 
 
 if __name__ == "__main__":

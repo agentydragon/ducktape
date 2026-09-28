@@ -9,8 +9,8 @@ from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.agent import assemble
 from finance.augur.sim.claims import Claim, Claims
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.market_path import Series
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Executed
 from finance.augur.sim.testing.accounting import (
     CASH,
@@ -51,7 +51,7 @@ class Scoped:
     """Lots across both household accounts and another actor's, on one path of prices and CPI."""
 
     lots: tuple[Lot, ...]
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
 
 
 @pytest.fixture
@@ -76,7 +76,7 @@ def scoped() -> Scoped:
             )
         ),
         series=tuple(
-            PreparedSeries(series_id=id_, snapshots=4, values=values)
+            Series(series_id=id_, snapshots=4, values=values)
             for id_, values in (
                 ("inflation", (1_000_000_000, 1_500_000_000, 2_000_000_000, 3_000_000_000)),
                 ("security:stock", (1, 3, 5, 7)),

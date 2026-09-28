@@ -2,7 +2,7 @@
 
 The deployment YAML should read like a portfolio statement: accounts contain
 positions, and positions contain actual tax lots. `product/holdings.py` turns
-this shape into the prepared facts a world declares.
+this shape into the exact facts a world declares.
 """
 
 from __future__ import annotations

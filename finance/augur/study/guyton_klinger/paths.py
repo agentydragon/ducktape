@@ -24,6 +24,7 @@ from finance.augur.model.series import (
     SecurityKey,
     SecuritySymbol,
 )
+from finance.augur.sim import tax
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import quantity_to_quanta, rate_to_ppb, round_currency_amount
@@ -35,11 +36,9 @@ from finance.augur.sim.income import (
     TransferIncomeCategory,
     Treasury,
 )
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import Currency
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.runtime import load_jurisdictions_for
-from finance.augur.sim.tax import PreparedTaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw, FixedNominalLaw, TaxIndexation
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
@@ -88,7 +87,7 @@ California-exempt. S&P dividends are declared qualified; their holding period is
 class FederalCaTaxes:
     """A single California resident's compiled federal and state tax, and the law window `i` applies it under."""
 
-    profile: PreparedTaxProfile
+    profile: tax.TaxProfile
     laws: tuple[TaxIndexation, ...]
 
 
@@ -99,7 +98,7 @@ class AnnualWindows:
     start_years: tuple[int, ...]
     years: int
     taxes: FederalCaTaxes | None
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
 
     @property
     def horizon_months(self) -> int:

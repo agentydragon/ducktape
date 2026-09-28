@@ -19,7 +19,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategy,
     HelmReleaseSpecUpgradeStrategyName,
 )
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRulesFiltersResponseHeaderModifierSet
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
@@ -27,7 +26,7 @@ from cluster.cdk8s.authentik import db
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter
@@ -170,17 +169,11 @@ def _values() -> dict[str, object]:
 
 
 def _helm_release(chart: Chart) -> None:
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://charts.goauthentik.io"),
-    )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(chart, NAME, NAMESPACE, url="https://charts.goauthentik.io"),
         chart="authentik",
         version="2026.8.2",
         interval="15m",

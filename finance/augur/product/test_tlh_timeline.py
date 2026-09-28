@@ -19,9 +19,8 @@ from finance.augur.sim.events import TlhOperation
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, PortfolioId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import Currency
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Finished
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -42,9 +41,7 @@ FEDERAL = load_jurisdiction(FEDERAL_US)
 def compose(price: int) -> World:
     """The owner's $10 and a managed cohort of 100 index units bought for $100 two years ago, at `price` throughout."""
     world = World(
-        MarketPath(
-            (PreparedSeries(series_id=f"security:{ASSET}", snapshots=2, values=(price, price)),), 0, rollout_count=1
-        ),
+        MarketPath((Series(series_id=f"security:{ASSET}", snapshots=2, values=(price, price)),), 0, rollout_count=1),
         horizon_months=1,
         income_sources=(ORDINARY_INCOME,),
     )

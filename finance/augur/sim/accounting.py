@@ -20,7 +20,7 @@ from finance.augur.sim.income import TransferDeductionCategory, TransferIncomeCa
 from finance.augur.sim.ledger import Ledger
 from finance.augur.sim.money import checked_count
 from finance.augur.sim.observations import TaxRecords
-from finance.augur.sim.tax import PreparedTaxProfile
+from finance.augur.sim.tax import TaxProfile
 from finance.augur.sim.tax_year import TaxBook
 
 
@@ -108,7 +108,7 @@ class Accounting:
                 )
             )
 
-    def enroll(self, profile: PreparedTaxProfile) -> None:
+    def enroll(self, profile: TaxProfile) -> None:
         """Take on a taxpayer: its year state, prepayment asset and the accounts its assessments post to."""
         self.tax.enroll(profile.agent_id)
         self.ledger.ensure_account(AccountRef(agent_id=profile.agent_id, account_id=AccountId("asset:tax-prepayments")))

@@ -410,7 +410,6 @@ class PrivateEquityRiskProviderConfig(FrozenModel):
 @dataclass(frozen=True)
 class PrivateEquityRiskModel:
     issuers: dict[IssuerId, PrivateEquityRiskIssuerConfig]
-    label: str = "private_equity_risk"
 
     def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
         return frozenset()
@@ -444,7 +443,6 @@ class PrivateEquityRiskModel:
 
         sampled = SampledExogenousBundle(
             private_equity=PrivateEquityBundle.combine(pe_bundle_parts),
-            model_id=self.label,
             provenance={"private_equity_issuers": tuple(sorted(self.issuers))},
         )
         validate_sample_satisfies_request(request, sampled)

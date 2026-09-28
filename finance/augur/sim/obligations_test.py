@@ -20,10 +20,9 @@ from finance.augur.sim.external_series import ExternalSeriesContext, compile_ser
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import (
     Executed,
     Finished,
@@ -112,7 +111,7 @@ class Situation:
     paychecks: tuple[Paycheck, ...] = ()
 
 
-def compose(case: Situation, rollout_id: int, *, series: tuple[PreparedSeries, ...], rollout_count: int) -> World:
+def compose(case: Situation, rollout_id: int, *, series: tuple[Series, ...], rollout_count: int) -> World:
     world = World(
         MarketPath(series, rollout_id, rollout_count=rollout_count),
         horizon_months=case.horizon_months,

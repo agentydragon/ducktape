@@ -248,6 +248,16 @@ class Session:
             if model == self.record.model:
                 await self._noop(command_id, "the requested model is already active", sources=[])
                 return
+            current_window = self.config.model_context_windows.get(self.record.model)
+            requested_window = self.config.model_context_windows.get(model)
+            if current_window != requested_window:
+                await self._fail(
+                    command_id,
+                    "changing to a model with a different configured context window requires a new thread; "
+                    "start a new session with the requested model",
+                    sources=[],
+                )
+                return
             await self.journal.dispatch_planned(command_id)
             self._dispatched_commands.add(command_id)
             try:

@@ -76,6 +76,7 @@ import { Markdown } from "./markdown";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 import { ChronologicalDebugIcon, ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
+import { TopbarActions, TopbarTitle } from "./topbar";
 import "./projected_session.css";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
@@ -1426,11 +1427,10 @@ function ProjectedSessionBody({
               }
             />
           </Group>
-          <Group gap="xs" wrap="nowrap">
-            {/* Opens upward: the composer sits at the bottom of the viewport. */}
-            <Menu position="top-end" withArrow shadow="md">
+          <TopbarActions>
+            <Menu position="bottom-end" withArrow shadow="md">
               <Menu.Target>
-                <ActionIcon size="lg" variant="light" aria-label="More">
+                <ActionIcon size="sm" variant="subtle" color="gray" aria-label="More">
                   <IconDotsVertical size={16} />
                 </ActionIcon>
               </Menu.Target>
@@ -1458,6 +1458,8 @@ function ProjectedSessionBody({
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
+          </TopbarActions>
+          <Group gap="xs" wrap="nowrap">
             <ActionIcon
               size="lg"
               variant="light"
@@ -1557,8 +1559,17 @@ export function ProjectedSession({ threadId }: { threadId: string }): JSX.Elemen
   }, [threadId]);
   return (
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
+      <TopbarTitle>
+        <Stack gap={0} style={{ minWidth: 0 }}>
+          <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
+          {thread && (
+            <Text size="xs" c="dimmed" truncate>
+              {thread.sandbox}
+            </Text>
+          )}
+        </Stack>
+      </TopbarTitle>
       <Stack style={{ flex: 1, minHeight: 0 }}>
-        <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
         {/* The controls wait on this stream's word that the sandbox runs, so one down past a blip, or
             whose watch has stalled, disables them as surely as a stopped sandbox. The sidebar's
             connection indicator says the first; this says the second. */}
@@ -1567,11 +1578,6 @@ export function ProjectedSession({ threadId }: { threadId: string }): JSX.Elemen
         {error && (
           <Text role="alert" c="red">
             {error}
-          </Text>
-        )}
-        {thread && (
-          <Text size="xs" c="dimmed">
-            {thread.sandbox}
           </Text>
         )}
         {thread?.archived && (

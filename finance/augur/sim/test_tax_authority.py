@@ -9,8 +9,7 @@ import pytest_bazel
 from finance.augur.sim.ids import JurisdictionId, LiabilityId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.ledger import Ledger
-from finance.augur.sim.prepared import _MortgageInterestDeduction, _SaltCap, _SaltDeduction
-from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_authority import MortgageInterestDeduction, SaltCap, SaltDeduction, TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, OTHER, accounting, flat_rules, taxpayer
 
@@ -29,10 +28,10 @@ def test_year_close_nets_once_then_reassesses_federal_salt_and_resets() -> None:
     books = accounting(taxpayers=(profile,))
     authority = TaxAuthority(profile, indexation=FixedNominalLaw())
     authority.declare_deduction(
-        _SaltDeduction(
+        SaltDeduction(
             profile_id=HOUSEHOLD,
             federal_jurisdiction_id=JurisdictionId("test_federal"),
-            cap_schedule=(_SaltCap(effective_year_index=0, cap=1000),),
+            cap_schedule=(SaltCap(effective_year_index=0, cap=1000),),
         )
     )
     books.tax.income.accrue(HOUSEHOLD, ORDINARY_INCOME, 10_000)
@@ -84,7 +83,7 @@ def test_an_authority_refuses_a_deduction_claimed_by_another_taxpayer() -> None:
     authority = TaxAuthority(taxpayer(HOUSEHOLD), indexation=FixedNominalLaw())
     with pytest.raises(ValueError, match="not 'test_household'"):
         authority.declare_deduction(
-            _MortgageInterestDeduction(
+            MortgageInterestDeduction(
                 liability_id=LiabilityId("test-loan"),
                 owner_agent_id=OTHER,
                 debt_class="acquisition",

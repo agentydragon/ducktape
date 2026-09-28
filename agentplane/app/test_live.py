@@ -139,7 +139,7 @@ async def test_the_index_selects_the_bindings_a_request_would(seeded: LiveIndex,
     assert [binding.name for binding in seeded.bindings_for(runner)] == ["runner-1-picked"]
 
 
-EMPTY_POLICY = ActionPolicyView(synced=True, bindings=[], auto_approve_if=[], auto_deny_if=[], auto_deny_unless=[])
+EMPTY_POLICY = ActionPolicyView(synced=True, bindings=[], auto_approve_if=[])
 
 
 async def test_the_sandbox_stream_asks_the_service_again_only_when_a_policy_object_changed(seeded: LiveIndex) -> None:

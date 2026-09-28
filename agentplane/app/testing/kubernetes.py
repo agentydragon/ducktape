@@ -286,8 +286,6 @@ def action_policy_set(
     name: str,
     *,
     auto_approve_if: list[dict[str, Any]] | None = None,
-    auto_deny_if: list[dict[str, Any]] | None = None,
-    auto_deny_unless: list[dict[str, Any]] | None = None,
     generation: int = 1,
     ready: tuple[str, str, str] | None = None,
     observed_generation: int | None = None,
@@ -304,11 +302,7 @@ def action_policy_set(
             "labels": {FLUX_KUSTOMIZATION_LABEL: "agentplane-test-actions"},
             "creationTimestamp": "2026-09-01T11:30:00Z",
         },
-        "spec": {
-            **({"autoApproveIf": auto_approve_if} if auto_approve_if is not None else {}),
-            **({"autoDenyIf": auto_deny_if} if auto_deny_if is not None else {}),
-            **({"autoDenyUnless": auto_deny_unless} if auto_deny_unless is not None else {}),
-        },
+        "spec": {**({"autoApproveIf": auto_approve_if} if auto_approve_if is not None else {})},
         **_ready_status(ready, generation if observed_generation is None else observed_generation),
     }
 

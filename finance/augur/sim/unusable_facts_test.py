@@ -23,9 +23,8 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.private_equity_series import compile_pe_channels
 from finance.augur.sim.world import World
 
@@ -55,7 +54,7 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
-def alice_holding(*series: PreparedSeries) -> World:
+def alice_holding(*series: Series) -> World:
     """Alice's brokerage and checking accounts on a path carrying exactly `series`."""
     world = World(MarketPath(series, 0, rollout_count=1), horizon_months=HORIZON)
     for account_id in (CHECKING, AccountId("brokerage")):
@@ -63,7 +62,7 @@ def alice_holding(*series: PreparedSeries) -> World:
     return world
 
 
-def vti_series(*levels: float) -> tuple[PreparedSeries, ...]:
+def vti_series(*levels: float) -> tuple[Series, ...]:
     return compile_series(
         ExternalSeriesContext.from_level_blocks(
             [(VTI, np.asarray([levels], dtype=np.float64))], rollout_count=1, horizon_months=len(levels) - 1
@@ -74,10 +73,10 @@ def vti_series(*levels: float) -> tuple[PreparedSeries, ...]:
     )
 
 
-def private_equity_series(**overrides: tuple[int, ...]) -> tuple[PreparedSeries, ...]:
+def private_equity_series(**overrides: tuple[int, ...]) -> tuple[Series, ...]:
     """One issuer's ten channels, flat over the horizon unless a channel states its own path."""
     return tuple(
-        PreparedSeries(
+        Series(
             series_id=f"private_equity_{channel}:{ACME}",
             snapshots=HORIZON + 1,
             values=overrides.get(channel, (level,) * (HORIZON + 1)),
@@ -157,7 +156,7 @@ def test_a_private_equity_mark_is_required_at_the_terminal_snapshot_too() -> Non
     """
     asset_id = AssetId(f"private_equity:{ACME}")
 
-    def holder(*series: PreparedSeries) -> None:
+    def holder(*series: Series) -> None:
         world = alice_holding(*series)
         world.declare_pool(agent_id=ALICE, account_id=CHECKING, asset_id=asset_id, quantity_scale=SCALE)
         world.hold_lot(

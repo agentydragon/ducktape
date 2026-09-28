@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
+from cdk8s import App, Chart
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "metrics-server"
@@ -16,17 +15,13 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/metrics-server"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name=NAME, namespace="flux-system"),
-        spec=HelmRepositorySpec(interval="24h", url="https://kubernetes-sigs.github.io/metrics-server/"),
-    )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(
+            chart, NAME, "flux-system", url="https://kubernetes-sigs.github.io/metrics-server/"
+        ),
         chart="metrics-server",
         version="3.14.0",
         interval="30m",

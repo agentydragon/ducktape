@@ -1,6 +1,6 @@
 # Remaining YAML and configuration boundaries
 
-Source audit at `eec338cb4e`, 2026-09-24. Priorities live in
+Source audit at `f84301e72c`, 2026-09-28. Priorities live in
 [the adoption plan](../cdk8s/PLAN.md). Treatments below are recommendations unless
 identified as an existing boundary; they do not authorize a runtime ownership change.
 
@@ -127,7 +127,7 @@ verified against Authentik.
 
 ### Other payloads and Helm values
 
-Keep SQL, Nginx/Caddy/CoreDNS configuration, Alloy, dashboard JSON, shell scripts and
+Keep SQL, Nginx/Caddy configuration, Alloy, dashboard JSON, shell scripts and
 static known-hosts files in their native form unless shared values or repeated
 structures justify generation. Examples remain under `activitywatch`, `monitoring`,
 `haku/mailbox`, `nix-cache`, `oci-cache`, `ollama` and `seaweedfs/cluster`.
