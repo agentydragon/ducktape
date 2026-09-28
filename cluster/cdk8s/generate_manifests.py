@@ -1018,9 +1018,7 @@ def generate_manifests(root: Path) -> None:
     budget_ledger_artifact = artifact("budget-ledger", forgejo_gitops_modules.BUDGET_LEDGER_DIR)
     forgejo_gitops_modules.budget_ledger(flux_chart, budget_ledger_artifact, tofu_controller_kustomization)
     forgejo_claude_artifact = artifact("forgejo-claude", forgejo_gitops_modules.CLAUDE_DIR)
-    forgejo_gitops_modules.forgejo_claude(
-        flux_chart, forgejo_claude_artifact, tofu_controller_kustomization, claude_rbac_kustomization
-    )
+    forgejo_gitops_modules.forgejo_claude(flux_chart, forgejo_claude_artifact, tofu_controller_kustomization)
     forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
     forgejo_images.forgejo_images(
         flux_chart,
@@ -1300,7 +1298,9 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     forgejo_token_rotation_artifact = artifact("forgejo-token-rotation", forgejo_token_rotation.OUTPUT_DIR)
-    agents_flux_kustomizations.forgejo_token_rotation(flux_chart, forgejo_token_rotation_artifact)
+    agents_flux_kustomizations.forgejo_token_rotation(
+        flux_chart, forgejo_token_rotation_artifact, external_secrets_operator_kustomization
+    )
     haku_egress_proxy_artifact = artifact("haku-egress-proxy", haku_egress_proxy.OUTPUT_DIR)
     haku_egress_proxy_kustomization = agents_flux_kustomizations.haku_egress_proxy(
         flux_chart,

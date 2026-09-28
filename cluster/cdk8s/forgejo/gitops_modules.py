@@ -70,7 +70,7 @@ def write_manifests(root: Path) -> None:
 
 
 def forgejo_claude(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization, claude_rbac: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -80,11 +80,7 @@ def forgejo_claude(
         # tf/thrive-scrape) and agent sessions can depend on it.
         artifact,
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(
-            tofu_controller,
-            # the credentials Secret lands in claude-sandbox
-            claude_rbac,
-        ),
+        depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )
 
 

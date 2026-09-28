@@ -2619,8 +2619,6 @@ spec:
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
-    - name: claude-rbac
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/forgejo/claude
   prune: true
@@ -3588,6 +3586,9 @@ metadata:
   name: forgejo-token-rotation
   namespace: ducktape-flux
 spec:
+  dependsOn:
+    - name: external-secrets-operator
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/forgejo-token-rotation
   prune: true
