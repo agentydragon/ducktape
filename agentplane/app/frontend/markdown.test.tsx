@@ -2,6 +2,7 @@
 // jsdom rather than this package's usual happy-dom: DOMPurify.sanitize (in `Markdown`) strips the
 // tag off the first top-level node of what it sanitizes under happy-dom -- see the note in
 // syntax_highlight.test.ts -- and every case here starts with a different element (h1, pre, ...).
+import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
@@ -16,7 +17,13 @@ async function render(source: string): Promise<HTMLDivElement> {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () => root.render(<Markdown source={source} />));
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <Markdown source={source} />
+      </MantineProvider>
+    )
+  );
   return container;
 }
 

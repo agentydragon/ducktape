@@ -26,7 +26,6 @@ Each CRD family's `cdk8s_import` bindings and generic constructors live in
 [the builder-authoring skill](../skills/cdk8s_builders/SKILL.md) states. Kinds still
 built raw at more than one call site, counted on devel 9904055a45:
 
-- Flux `ImageRepository`, `ImagePolicy` and `ImageUpdateAutomation` (2 each).
 - Flux `Receiver` (2), and `Alert` and `Provider` (2 each, both in `flux_webhook/chart.py`).
 - Flux `HelmRelease`: `seaweedfs_csi/driver.py` builds one raw beside `helm.helm_release`.
 - External Secrets `ClusterSecretStore` (4), `SecretStore` (3) and the `Password`

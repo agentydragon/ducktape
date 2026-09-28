@@ -21,7 +21,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
-from cluster.cdk8s import external_creds, public_coder_proxy, public_coder_sshpiper
+from cluster.cdk8s import external_creds, forgejo_images, public_coder_proxy, public_coder_sshpiper
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.env_helpers import secret_env_var
@@ -587,6 +587,9 @@ def _deployment(scope: Construct) -> None:
                             )
                         )
                     ),
+                    # The Secret comes from public_coder_proxy's ExternalSecret, rendered into this
+                    # same Flux Kustomization through app/kustomization.yaml's ../proxy.
+                    image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
                     init_containers=[
                         k8s.Container(
                             name="seed-config",

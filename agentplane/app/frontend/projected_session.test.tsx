@@ -248,7 +248,7 @@ it("drops request errors after their local commands are dismissed", () => {
   expect(pruneCommandErrors(errors, new Set(errors.keys()))).toBe(errors);
 });
 
-it.each<KeyboardEventInit>([{ ctrlKey: true }, { metaKey: true }])(
+it.each<KeyboardEventInit>([{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }])(
   "inserts a newline at the caret on Enter with %o, without sending",
   async (modifier) => {
     const field = composer(await render());
