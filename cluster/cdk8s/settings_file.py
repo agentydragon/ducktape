@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -18,7 +19,8 @@ class SettingsFile(Construct):
     """`content`, each key checked against `model`, as the YAML file the binary reads at `path`.
     ConfigMap `metadata.name` holds it under the file's name; `mount_into` mounts that ConfigMap
     read-only on the file's directory and points the binary's config-file env var at `path`, so the
-    key, the mount and the path cannot disagree."""
+    key, the mount and the path cannot disagree. `supplied` names the leaves another source (a
+    Secret's env var) completes; with it the whole file also validates as `model`."""
 
     def __init__(
         self,
@@ -29,11 +31,15 @@ class SettingsFile(Construct):
         model: type[BaseModel],
         content: dict[str, Any],
         path: str,
+        supplied: Iterable[Sequence[str]] = (),
     ) -> None:
         super().__init__(scope, id)
         self._path = PurePosixPath(path)
         self.config_map = ConfigMap(
-            self, "config-map", metadata=metadata, data={self._path.name: yaml_config(settings_file(model, content))}
+            self,
+            "config-map",
+            metadata=metadata,
+            data={self._path.name: yaml_config(settings_file(model, content, supplied=supplied))},
         )
 
     def mount_into(self, container: Container, *, env: str) -> None:
