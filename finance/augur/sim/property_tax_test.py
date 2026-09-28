@@ -132,6 +132,7 @@ def assess(case: Holding) -> Assessed:
                     rented_fraction_ppb=0,
                     owner_occupied=month in case.occupied,
                     new_construction=case.construction.get(month, 0),
+                    transfer_tax=0,
                 )
             )
         authority.handle(MarketStatement(month=month, cpi=None if case.cpi is None else (case.cpi[month], case.cpi[0])))

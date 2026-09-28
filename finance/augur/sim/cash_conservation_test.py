@@ -373,7 +373,8 @@ def property_sale_world() -> World:
                 ScheduledSale(
                     month=PROPERTY_SALE_MONTH,
                     property_id=PropertyId("house"),
-                    closing_cost_ppb=rate_to_ppb(Decimal("0.06")),
+                    commission_ppb=rate_to_ppb(Decimal("0.06")),
+                    escrow_title_ppb=0,
                 ),
             ),
             capital_improvements=(

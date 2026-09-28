@@ -181,6 +181,12 @@ seller's assessed value, its fiscal year is billed on that value plus a suppleme
 increase, prorated by R&TC 75.41's factor. Supplemental bills on new construction, Proposition 8
 reductions, special districts and the two installment dates are not modeled.
 
+A purchase or sale pays each level's transfer tax on the whole consideration, seller-paid unless
+the caller gives the buyer a share; the owner's share is billed by the parcel's authority. A
+property's basis is its price plus the buyer's closing costs and share of transfer tax, divided
+between land and building by the declared land fraction; a sale's amount realized is its value
+less commissions, escrow and title, and the seller's share of transfer tax.
+
 PE paths distinguish marks, voluntary opportunities, eligibility/capacity,
 liquidity blocks and forced sale/recovery. A stated recovery cashout is a total
 for the remaining position, not a per-unit quote; proceeds and disposed basis
@@ -213,9 +219,8 @@ this scope: NIIT's net investment income leaves out net rental income and the in
 deductions IRS Form 8960 allows; the bundled tables are 2024 law; a taxpayer starts with no
 year-to-date income, gains or payments; the SALT cap has no income phase-out; estimated payments are equal quarters of one
 aggregate prior-year amount rather than per-jurisdiction schedules; fund capital-gain and
-return-of-capital distributions are not processed; one capital-loss carryforward serves every
-jurisdiction; and a property sale's gain basis leaves out the buyer's closing costs that its
-purchase capitalized.
+return-of-capital distributions are not processed; and one capital-loss carryforward serves
+every jurisdiction.
 
 ## Outputs and observation boundaries
 

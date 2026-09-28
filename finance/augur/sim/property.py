@@ -43,7 +43,11 @@ class Parcel:
 
 @dataclass(frozen=True, kw_only=True)
 class ScheduledPurchase:
-    """`market` is the region whose `home_value:` and `rent:` series price the property."""
+    """`market` is the region whose `home_value:` and `rent:` series price the property.
+
+    `buyer_closing_cost` is paid to the seller at closing; with the buyer's share of the transfer tax,
+    which the parcel's authority bills, it is capitalized into the property's basis.
+    """
 
     month: int
     cause_id: str
@@ -60,13 +64,21 @@ class ScheduledPurchase:
     rented_fraction_ppb: int
     land_value_fraction_ppb: int
     mortgage: MortgageFinancing | None
+    # Seller-paid by default.
+    buyer_transfer_tax_share_ppb: int = 0
 
 
 @dataclass(frozen=True, kw_only=True)
 class ScheduledSale:
+    """A sale at the property's market value, less commissions and escrow/title fees withheld at closing
+    and the seller's share of the transfer tax, which the parcel's authority bills."""
+
     month: int
     property_id: PropertyId
-    closing_cost_ppb: int
+    commission_ppb: int
+    escrow_title_ppb: int
+    # Seller-paid by default.
+    buyer_transfer_tax_share_ppb: int = 0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -97,6 +109,7 @@ class Purchase:
     buyer_agent_id: AgentId
     purchase_price: int
     closing_cost: int
+    transfer_tax: int
     adjusted_basis: int
     stake_contribution: int
     equity_ledger: int
@@ -107,6 +120,9 @@ class Sale:
     month: int
     property_id: PropertyId
     gross_proceeds: int
+    commission: int
+    escrow_title: int
+    transfer_tax: int
     mortgage_payoff: int
     net_cash_to_owner: int
     realized_gain: int
@@ -152,6 +168,11 @@ class Origination:
     annual_interest_rate_ppb: int
     term_months: int
     monthly_payment: int
+
+
+def seller_share(transfer_tax: int, buyer_share_ppb: int) -> int:
+    """The seller's part of a transfer tax the buyer pays `buyer_share_ppb` of."""
+    return transfer_tax - mul_div(transfer_tax, buyer_share_ppb, MONEY_FACTOR_SCALE, "buyer's transfer tax")
 
 
 def asset_account(purchase: ScheduledPurchase) -> AccountRef:
@@ -292,6 +313,7 @@ class PropertyStatement(Statement):
     rented_fraction_ppb: int
     owner_occupied: bool
     new_construction: int
+    transfer_tax: int
 
 
 class Properties:
@@ -358,6 +380,9 @@ class Properties:
             owner_occupied=self.owner_occupied(property_.state),
             new_construction=sum(
                 improvement.amount for improvement in self.improvements if improvement.property_id == property_id
+            ),
+            transfer_tax=sum(
+                row.transfer_tax for row in (*self.purchases, *self.sales) if row.property_id == property_id
             ),
         )
 
@@ -457,12 +482,11 @@ class Properties:
     ) -> LiabilityId | None:
         property_ = self.properties[sale.property_id]
         state = property_.state
-        gross = mul_div(
-            self.market_value(purchase, market, sale.month),
-            MONEY_FACTOR_SCALE - sale.closing_cost_ppb,
-            MONEY_FACTOR_SCALE,
-            "property sale proceeds",
-        )
+        value = self.market_value(purchase, market, sale.month)
+        commission = mul_div(value, sale.commission_ppb, MONEY_FACTOR_SCALE, "sale commission")
+        escrow_title = mul_div(value, sale.escrow_title_ppb, MONEY_FACTOR_SCALE, "sale escrow and title")
+        gross = checked_count(value - commission - escrow_title, "property sale proceeds")
+        transfer_tax = seller_share(purchase.parcel.situs.transfer_tax(value), sale.buyer_transfer_tax_share_ppb)
         loan = purchase.mortgage
         payoff = 0
         paid_off = None
@@ -475,23 +499,17 @@ class Properties:
                 paid_off = loan.liability_id
         net_cash = checked_count(gross - payoff, "money subtraction")
         capex = checked_count(state.building_basis - state.building_basis_initial, "money subtraction")
-        # Sale gain excludes capitalized buyer closing costs under the current contract.
-        adjusted = checked_count(
-            checked_count(purchase.purchase_price + capex, "money addition") - state.cumulative_depreciation,
-            "money subtraction",
-        )
-        gain = checked_count(gross - adjusted, "money subtraction")
+        property_basis = checked_count(state.adjusted_basis + capex, "money addition")
+        adjusted = checked_count(property_basis - state.cumulative_depreciation, "money subtraction")
+        # The ledger's gain account takes the sale before the seller's transfer tax, which leaves as
+        # a bill like every tax payment; the amount realized for tax is net of it.
+        booked = checked_count(gross - adjusted, "money subtraction")
+        gain = checked_count(booked - transfer_tax, "money subtraction")
         recapture = min(max(0, gain), state.cumulative_depreciation)
         remainder = max(0, checked_count(gain - recapture, "money subtraction"))
         cap = section_121_exclusions.get(purchase.buyer_agent_id, 0)
         exclusion = min(remainder, cap) if sum(property_.occupied_window) >= 24 else 0
         long_gain = checked_count(remainder - exclusion, "money subtraction")
-        property_basis = checked_count(state.adjusted_basis + capex, "money addition")
-        writeoff = checked_count(
-            checked_count(state.adjusted_basis - purchase.purchase_price, "money subtraction")
-            + state.cumulative_depreciation,
-            "money addition",
-        )
         postings = [
             Posting(
                 account=AccountRef(agent_id=purchase.buyer_agent_id, account_id=purchase.buyer_account_id),
@@ -503,9 +521,9 @@ class Properties:
                     agent_id=purchase.buyer_agent_id,
                     account_id=AccountId(f"expense:property-basis:{purchase.property_id}"),
                 ),
-                amount=writeoff,
+                amount=state.cumulative_depreciation,
             ),
-            Posting(account=gain_account(purchase.buyer_agent_id), amount=checked_count(-gain, "money negation")),
+            Posting(account=gain_account(purchase.buyer_agent_id), amount=checked_count(-booked, "money negation")),
         ]
         if loan is not None and paid_off is not None:
             postings.extend(
@@ -546,7 +564,20 @@ class Properties:
         if self.primary.get(purchase.buyer_agent_id) == sale.property_id:
             self.primary[purchase.buyer_agent_id] = None
         self.sales.append(
-            Sale(sale.month, sale.property_id, gross, payoff, net_cash, gain, recapture, exclusion, long_gain)
+            Sale(
+                sale.month,
+                sale.property_id,
+                gross,
+                commission,
+                escrow_title,
+                transfer_tax,
+                payoff,
+                net_cash,
+                gain,
+                recapture,
+                exclusion,
+                long_gain,
+            )
         )
         return paid_off
 
@@ -559,16 +590,20 @@ class Properties:
                 continue
             loan = purchase.mortgage
             debt = 0 if loan is None else loan.principal
-            adjusted = checked_count(purchase.purchase_price + purchase.buyer_closing_cost, "money addition")
-            building = checked_count(
-                mul_div(
-                    purchase.purchase_price,
-                    MONEY_FACTOR_SCALE - purchase.land_value_fraction_ppb,
-                    MONEY_FACTOR_SCALE,
-                    "property building basis",
-                )
-                + purchase.buyer_closing_cost,
-                "money addition",
+            tax = purchase.parcel.situs.transfer_tax(purchase.purchase_price)
+            transfer_tax = checked_count(
+                tax - seller_share(tax, purchase.buyer_transfer_tax_share_ppb), "buyer's transfer tax"
+            )
+            adjusted = checked_count(
+                purchase.purchase_price + purchase.buyer_closing_cost + transfer_tax, "money addition"
+            )
+            # IRS Publication 527, "Basis of Depreciable Property": settlement costs are part of the cost,
+            # which is divided between land and building.
+            building = mul_div(
+                adjusted,
+                MONEY_FACTOR_SCALE - purchase.land_value_fraction_ppb,
+                MONEY_FACTOR_SCALE,
+                "property building basis",
             )
             stake = checked_count(purchase.down_payment + purchase.buyer_closing_cost, "money addition")
             equity = checked_count(purchase.purchase_price - debt, "money subtraction")
@@ -583,6 +618,17 @@ class Properties:
                 Posting(account=asset_account(purchase), amount=adjusted),
                 Posting(account=clearing, amount=checked_count(-stake, "money negation")),
             ]
+            if transfer_tax:
+                # The buyer's transfer tax leaves as its bill; its basis is capitalized here.
+                postings.append(
+                    Posting(
+                        account=AccountRef(
+                            agent_id=purchase.buyer_agent_id,
+                            account_id=AccountId(f"expense:property-basis:{purchase.property_id}"),
+                        ),
+                        amount=checked_count(-transfer_tax, "money negation"),
+                    )
+                )
             origination = None
             if loan is not None:
                 mortgage = originations.get(loan.liability_id)
@@ -663,6 +709,7 @@ class Properties:
                     purchase.buyer_agent_id,
                     purchase.purchase_price,
                     purchase.buyer_closing_cost,
+                    transfer_tax,
                     adjusted,
                     stake,
                     equity,

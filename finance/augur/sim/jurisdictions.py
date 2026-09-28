@@ -195,6 +195,26 @@ class Proposition13(BaseModel):
     )
 
 
+class TransferTaxBracket(BaseModel):
+    """The rate a consideration pays once it reaches `lower`; `lower_included` says whether `lower` itself does."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lower: CurrencyAmount
+    lower_included: bool
+    rate: CurrencyAmount = Field(description="The tax on each `per` of the whole consideration, or part of one.")
+
+
+class TransferTax(BaseModel):
+    """A documentary or city transfer tax on the whole consideration at the rate of the highest bracket it
+    reaches; below the lowest bracket nothing is due."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    per: CurrencyAmount
+    brackets: list[TransferTaxBracket] = Field(min_length=1)
+
+
 class Jurisdiction(BaseModel):
     """One level of the tree: the law this level sets, and the level above it."""
 
@@ -219,6 +239,10 @@ class Jurisdiction(BaseModel):
             "How the rate area's collector rounds a secured bill. Absent where no rule is published, and "
             "the bill rounds to the nearest quantum."
         ),
+    )
+    transfer_tax: TransferTax | None = Field(
+        default=None,
+        description="The tax this level levies on a transfer of real property; absent where it levies none.",
     )
 
     def lineage(self) -> tuple[Jurisdiction, ...]:

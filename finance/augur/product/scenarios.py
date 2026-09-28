@@ -933,7 +933,10 @@ def _housing(
                     ScheduledSale(
                         month=month,
                         property_id=property_.id,
-                        closing_cost_ppb=_closing_cost_ppb(float(event.closing_cost_pct)),
+                        # The form asks one selling-cost percent and does not split commissions from
+                        # escrow and title; the situs's transfer tax is charged on top of it.
+                        commission_ppb=_closing_cost_ppb(float(event.closing_cost_pct)),
+                        escrow_title_ppb=0,
                     )
                 )
             case _:

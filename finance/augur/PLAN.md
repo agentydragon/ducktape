@@ -34,9 +34,6 @@ Every change is checked against an independent calculation, never a copy of the 
 - **SALT phase-out:** the SALT cap's income phase-out.
 - **NIIT:** net rental income becomes net investment income (`OrdinaryIncome` merges rent with
   wages today); Form 8960 line 9 deductions.
-- **Housing basis:** `Properties.sell` leaves out the closing costs `sim/property.py`
-  capitalized at purchase. Pin which acquisition costs are capitalized, then test purchase,
-  depreciation and disposal against independently calculated basis and gains.
 - **TIPS check:** independently reconcile maturity-period CPI change, indexed redemption and
   final taxable accretion in the existing indexed-bond slice.
 - Pin cases to the selected year's IRS inflation adjustments, Publications 550 and 505,
@@ -48,8 +45,8 @@ Every change is checked against an independent calculation, never a copy of the 
 Goal: Augur computes a homeowner's and a landlord's property-related taxes correctly in San
 Francisco, mainland Vallejo and Mare Island. Today a parcel's situs is a tax rate area loaded
 from `sim/data/jurisdictions/`, and `sim/property_tax.py` assesses it under Proposition 13 and
-bills its secured tax in monthly twelfths in San Francisco and mainland Vallejo, and a sale pays
-one flat `closing_cost_ppb`.
+bills its secured tax in monthly twelfths in San Francisco and mainland Vallejo; a purchase or sale
+pays each level's transfer tax.
 
 **Model.**
 
@@ -88,9 +85,6 @@ seller's prior assessed value.
 **First milestone: San Francisco and mainland Vallejo, county and city level.** Accepted when
 each of these holds against an independent calculation or published source:
 
-- **D. Transfer tax:** San Francisco's table just below, at and above bracket edges;
-  Solano County's documentary transfer tax, plus Vallejo's own if the sources show one;
-  seller-paid reduces the amount realized, buyer-paid adds to basis.
 - **E. Income tax:** the owner's share of ad-valorem tax paid in a calendar year goes to SALT
   under the cap, a rented share is a rental expense, transfer tax is never itemized; federal
   and California.
@@ -117,11 +111,6 @@ without them.
   `TaxBook.property_tax` puts the whole bill, special assessment included, into SALT. On a
   rented share, service charges are expenses and local-benefit assessments are added to basis,
   federal and California.
-- **TRANSFER**: at a sale the parcel's authority charges its situs's transfer
-  taxes: San Francisco's tiered tax on the whole price at its bracket's rate, Solano County's
-  documentary transfer tax, and Vallejo's if it has one. Seller-paid by default and reducing
-  the amount realized; a buyer-paid share is added to basis. `closing_cost_ppb` splits into
-  commissions, escrow/title and these taxes. Joins **Housing basis** above.
 - **LIFECYCLE** (after the above): the hand-calculated lifecycle for each location.
 - Pin cases to the San Francisco Assessor-Recorder and Treasurer-Tax Collector (secured rate,
   transfer-tax table), the Solano County Auditor-Controller's rate book, the City of Vallejo's

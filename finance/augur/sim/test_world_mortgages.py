@@ -61,7 +61,7 @@ def case() -> Situation:
                 term_months=60,
             ),
         ),
-        sale=ScheduledSale(month=5, property_id=PropertyId("test-home"), closing_cost_ppb=0),
+        sale=ScheduledSale(month=5, property_id=PropertyId("test-home"), commission_ppb=0, escrow_title_ppb=0),
         home_values=Series(series_id="home_value:test-market", snapshots=7, values=(50, 100, 200, 240, 300, 360, 800)),
     )
 
