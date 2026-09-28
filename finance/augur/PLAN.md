@@ -102,6 +102,8 @@ without them.
   taxes. A district's charge is never an itemizable real-property tax: on a rented share a
   service charge is an expense and a local-benefit assessment is added to basis, federal and
   California.
+- **DEBTPATH**: a rate area's debt rate for unpublished fiscal years comes from a supplied
+  exogenous series, in place of carrying the last published rate forward.
 - **DECLINE**: a Proposition 8 reduction while the home-value path is below the
   factored base, recovering toward it.
 - **INSTALLMENTS** (after MIDYEAR): the July–June secured bill is paid in its two

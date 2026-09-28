@@ -20,16 +20,9 @@ from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, SecurityLotState
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, currency_amount_to_quanta, quantity_scale_for_asset
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable
-from finance.augur.sim.jurisdictions import (
-    IncomeTax,
-    InterestExemptions,
-    Jurisdiction,
-    StatutoryAmount,
-    StatutoryIndexation,
-    TaxBracket,
-)
+from finance.augur.sim.jurisdictions import HYPOTHETICAL_FLAT_TAX, flat_income_tax
 from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
 from finance.augur.sim.money import MAX_COUNT, USD
 from finance.augur.sim.schedule import Once, Recurring, Schedule
@@ -47,28 +40,7 @@ ALICE = AgentId("alice")
 WORLD = AgentId("world")
 CHECKING = AccountId("checking")
 BROKERAGE = AccountId("brokerage")
-SYNTHETIC = JurisdictionId("synthetic")
-TAX = Jurisdiction(
-    jurisdiction_id=SYNTHETIC,
-    income_tax=IncomeTax(
-        exempt_interest=InterestExemptions(treasury=False, municipal=set()),
-        itemizes_real_property_tax=False,
-        ordinary_income_brackets={"single": [TaxBracket(upper="Infinity", rate=Decimal("0.2"))]},
-        ltcg_brackets={"single": [TaxBracket(upper="Infinity", rate=Decimal("0.1"))]},
-        standard_deduction={"single": Decimal(0)},
-        max_capital_loss_ordinary_offset={"single": Decimal(0)},
-        law_year=2024,
-        indexation=dict.fromkeys(
-            (
-                StatutoryAmount.ORDINARY_INCOME_BRACKETS,
-                StatutoryAmount.LTCG_BRACKETS,
-                StatutoryAmount.STANDARD_DEDUCTION,
-                StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET,
-            ),
-            StatutoryIndexation.FIXED,
-        ),
-    ),
-)
+TAX = flat_income_tax(HYPOTHETICAL_FLAT_TAX, ordinary_rate=Decimal("0.20"), ltcg_rate=Decimal("0.10"))
 
 
 def money(amount: Decimal | int) -> int:
@@ -182,8 +154,8 @@ def compose(case: Situation, rollout_id: int) -> World:
         world.track(
             TaxAuthority(
                 compile_profile(
-                    TaxProfile(agent_id=ALICE, jurisdiction_ids=[SYNTHETIC], tax_authority_agent_id=WORLD),
-                    {SYNTHETIC: TAX},
+                    TaxProfile(agent_id=ALICE, jurisdiction_ids=[HYPOTHETICAL_FLAT_TAX], tax_authority_agent_id=WORLD),
+                    {HYPOTHETICAL_FLAT_TAX: TAX},
                     currency=USD,
                 ),
                 indexation=FixedNominalLaw(),

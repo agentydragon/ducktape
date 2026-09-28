@@ -33,22 +33,15 @@ from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, TAX_AUTHORITY_AG
 from finance.augur.product.wire import FundingPolicy, ScenarioKey, SecuritySleeveWeight, SleeveWeight, SpendIndex
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, LotId
 from finance.augur.sim.income import Taxable
-from finance.augur.sim.jurisdictions import (
-    IncomeTax,
-    InterestExemptions,
-    Jurisdiction,
-    StatutoryAmount,
-    StatutoryIndexation,
-    TaxBracket,
-)
+from finance.augur.sim.jurisdictions import HYPOTHETICAL_FLAT_TAX, Jurisdiction, flat_income_tax
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.world import World
 
 BROKERAGE = AccountId("brokerage")
@@ -371,27 +364,7 @@ def test_product_spend_tracks_monthly_cpi_but_rent_resets_only_annually() -> Non
 
 def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim() -> None:
     config = FundingPolicy(sleeve_weights=(SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),))
-    rule = Jurisdiction(
-        jurisdiction_id=JurisdictionId("test-flat"),
-        income_tax=IncomeTax(
-            exempt_interest=InterestExemptions(treasury=False, municipal=set()),
-            itemizes_real_property_tax=False,
-            ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
-            ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
-            standard_deduction={FilingStatus.SINGLE: Decimal(0)},
-            max_capital_loss_ordinary_offset={FilingStatus.SINGLE: Decimal(0)},
-            law_year=2024,
-            indexation=dict.fromkeys(
-                (
-                    StatutoryAmount.ORDINARY_INCOME_BRACKETS,
-                    StatutoryAmount.LTCG_BRACKETS,
-                    StatutoryAmount.STANDARD_DEDUCTION,
-                    StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET,
-                ),
-                StatutoryIndexation.FIXED,
-            ),
-        ),
-    )
+    rule = flat_income_tax(HYPOTHETICAL_FLAT_TAX, ordinary_rate=Decimal("0.20"), ltcg_rate=Decimal("0.10"))
     product = product_situation(
         config,
         spend=Decimal(50),
