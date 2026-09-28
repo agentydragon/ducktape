@@ -10,18 +10,17 @@ from more_itertools import one
 
 from agentplane.egress import sidecar
 from cluster.cdk8s.agentplane import testing
-from cluster.cdk8s.agentplane.app_settings import (
+from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, GITHUB_AGENTYDRAGON_AGENT_POLICY
+from cluster.cdk8s.agentplane.conftest import NAMESPACES
+from cluster.cdk8s.agentplane.staging_config import (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
-    BASIC_POLICY,
     FORGEJO_HAKU_POLICY,
-    GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
 )
-from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from util.settings_contract import env_name
 
 # What a workload token may reach on the Actions service: the MCP endpoint, its schema and

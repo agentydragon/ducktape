@@ -17,7 +17,14 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
-from cluster.cdk8s.agentplane.app_settings import (
+from cluster.cdk8s.agentplane.egress import FORGEJO_HOST, HOME_ASSISTANT_HOST
+from cluster.cdk8s.agentplane.egress_credentials import (
+    EXTERNAL_CREDS_READER,
+    EXTERNAL_CREDS_STORE,
+    GITHUB_PAT_SECRET,
+    credential_external_secret,
+)
+from cluster.cdk8s.agentplane.staging_config import (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
     BUILDBUDDY_POLICY,
@@ -26,13 +33,6 @@ from cluster.cdk8s.agentplane.app_settings import (
     GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
-)
-from cluster.cdk8s.agentplane.egress import FORGEJO_HOST, HOME_ASSISTANT_HOST
-from cluster.cdk8s.agentplane.egress_credentials import (
-    EXTERNAL_CREDS_READER,
-    EXTERNAL_CREDS_STORE,
-    GITHUB_PAT_SECRET,
-    credential_external_secret,
 )
 from cluster.cdk8s.aiquota import AGENTPLANE_STAGING_BEARER
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store

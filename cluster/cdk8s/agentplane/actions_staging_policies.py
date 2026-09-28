@@ -35,23 +35,23 @@ from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxActi
 from cluster.cdk8s import cilium, external_creds
 from cluster.cdk8s.agentplane import app as app_component, egress, testing
 from cluster.cdk8s.agentplane.app_settings import (
-    ACTIVITYWATCH_READ_POLICY,
-    AIQUOTA_READ_POLICY,
     BASIC_POLICY,
-    BUILDBUDDY_POLICY,
-    COINBASE_POLICY,
-    FORGEJO_HAKU_POLICY,
     GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
-    GOOGLE_READONLY_POLICY,
-    GROCY_SF_READONLY_POLICY,
-    HAKU_MAILBOX_POLICY,
-    HOME_ASSISTANT_READONLY_POLICY,
     KUBERNETES_POLICY,
     PACKAGES_POLICY,
 )
 from cluster.cdk8s.agentplane.staging_config import (
+    ACTIVITYWATCH_READ_POLICY,
+    AIQUOTA_READ_POLICY,
+    BUILDBUDDY_POLICY,
+    COINBASE_POLICY,
+    FORGEJO_HAKU_POLICY,
+    GOOGLE_READONLY_POLICY,
+    GROCY_SF_READONLY_POLICY,
+    HAKU_MAILBOX_POLICY,
+    HOME_ASSISTANT_READONLY_POLICY,
     PUBLIC_DUCKTAPE_FORK_READS_SET,
     PUBLIC_DUCKTAPE_READS_SET,
     PUBLIC_GAFFER_PRIVATE_READS_SET,

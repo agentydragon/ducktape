@@ -222,6 +222,7 @@ data:
           - github-agentydragon-agent
           - github-clone
           - github-actions-logs
+          - buildbuddy
         action_policy_sets:
           - public-github-reads
           - public-ducktape-reads
