@@ -35,9 +35,13 @@ from cluster.cdk8s.model_rosters import (
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/keys-tf"
 
 # The Codex-subscription models on LiteLLM's Responses surface, for Codex CLI clients
-# (codex-pod, agent-workspaces-codex, the agentplane staging session form) -- served
-# by CLIProxyAPI.
+# (codex-pod and agent-workspaces-codex) -- served by CLIProxyAPI. Agentplane staging
+# intentionally uses only GPT-6 from this roster.
 OAI_LANE_MODELS = [codex_responses_name(model) for model in CLIPROXY_MODELS]
+# Agentplane staging's default Codex harness and server-held key expose GPT-6 only.
+AGENTPLANE_STAGING_OAI_MODELS = [
+    codex_responses_name(model) for model in CLIPROXY_MODELS if model.startswith("gpt-6-")
+]
 # The same models on the Anthropic Messages surface -- Claude Code clients
 # (laptop codex-claude, agent-box, codex-pod).
 CODEX_CLIENT_MODELS = [codex_messages_name(model) for model in CLIPROXY_MODELS]
@@ -116,6 +120,7 @@ def model_allowlists() -> dict[str, list[str]]:
     served = {entry["model_name"] for entry in main_proxy_config()["model_list"]}
     lanes = {
         "oai_lane_models": OAI_LANE_MODELS,
+        "agentplane_staging_oai_models": AGENTPLANE_STAGING_OAI_MODELS,
         "tana_client_models": TANA_CLIENT_MODELS,
         "codex_client_models": CODEX_CLIENT_MODELS,
         "claude_client_models": CLAUDE_CLIENT_MODELS,

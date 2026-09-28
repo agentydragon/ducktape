@@ -85,7 +85,8 @@ resource "kubernetes_secret" "cheap_experiments" {
 
 resource "litellm_key" "agentplane_staging" {
   key_alias       = "agentplane-staging"
-  models          = concat(var.model_allowlists.oai_lane_models, var.model_allowlists.claude_client_models, var.model_allowlists.antigravity_client_models, var.model_allowlists.ollama_chat_client_models)
+  # The staging harness offers GPT-6 only; other consumers retain the full Codex roster.
+  models          = concat(var.model_allowlists.agentplane_staging_oai_models, var.model_allowlists.claude_client_models, var.model_allowlists.antigravity_client_models, var.model_allowlists.ollama_chat_client_models)
   max_budget      = 50
   budget_duration = "30d"
   metadata = {
