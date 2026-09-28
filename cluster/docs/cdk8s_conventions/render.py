@@ -232,11 +232,13 @@ class Proposal(_Model):
         return {p for c in row.chosen_conventions for p in by_id[c].patterns_used}
 
     def tracks(self) -> list[tuple[Track, list[MigrationStep]]]:
-        """The migration grouped by track, in `Track` order; raises if the steps are not already grouped so."""
+        """The non-empty tracks in `Track` order, each with its steps; raises if the steps are not already grouped so."""
         order = [step.track for step in self.migration]
         if order != sorted(order, key=list(Track).index):
             raise ValueError(f"migration steps must be grouped by track in Track order: {order}")
-        return [(track, [step for step in self.migration if step.track is track]) for track in Track]
+        return [
+            (track, steps) for track in Track if (steps := [step for step in self.migration if step.track is track])
+        ]
 
 
 def inline(text: str) -> Markup:

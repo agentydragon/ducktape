@@ -14,7 +14,7 @@
   <div class="eyebrow">cluster/cdk8s · design proposal · draft</div>
   <h1>Ducktape cdk8s Conventions</h1>
   <p class="lede">{{ p.lede | inline }}</p>
-  <div class="meta"><span>baseline <b>{{ p.baseline }}</b></span><span>date <b>{{ p.date }}</b></span><span>branch <b>{{ p.branch }}</b></span><span>status <b>awaiting your decisions</b></span></div>
+  <div class="meta"><span>baseline <b>{{ p.baseline }}</b></span><span>date <b>{{ p.date }}</b></span><span>branch <b>{{ p.branch }}</b></span><span>status <b>{% if p.decisions | selectattr("status", "equalto", "open") | list %}awaiting your decisions{% else %}no open decisions{% endif %}</b></span></div>
 </header>
 <nav class="toc" aria-label="Sections">
   <span class="toc-h">Contents</span>
