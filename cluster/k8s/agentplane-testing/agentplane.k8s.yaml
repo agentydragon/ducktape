@@ -3500,6 +3500,8 @@ kind: Namespace
 metadata:
   annotations:
     description: Outbound credentials readable only by the agentplane-testing egress proxy.
+  labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
   name: agentplane-testing-egress-credentials
 spec: {}
 ---

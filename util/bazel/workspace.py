@@ -302,7 +302,10 @@ class BazelWorkspace:
             (persist_dir / "exit_code").write_text(str(result.returncode))
         ok_codes = {0, 3} if keep_going else {0}
         if result.returncode not in ok_codes:
-            raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+            error = subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+            # CalledProcessError's message omits stderr, where Bazel says why the query failed.
+            error.add_note(result.stderr)
+            raise error
 
         # TODO: bbr mixes its own log lines (git sync, progress) into
         # stdout.  We filter to lines that look like Bazel labels.  A cleaner

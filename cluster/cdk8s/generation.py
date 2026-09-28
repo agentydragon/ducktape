@@ -6,10 +6,11 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart, Names, Yaml
-from cdk8s_plus_34 import ConfigMap, k8s
+from cdk8s_plus_34 import ConfigMap
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDecryption
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     ConfigMapArgs,
@@ -18,6 +19,7 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 
 CNPG_DATABASE_READY = (
     "has(status.applied) && status.applied && "
@@ -103,16 +105,28 @@ def sops_decryption(resources: Sequence[str]) -> KustomizationSpecDecryption | N
 
 
 def write_namespace(
-    root: Path, directory: str, *, name: str, labels: Mapping[str, str], annotations: Mapping[str, str] | None = None
+    root: Path,
+    directory: str,
+    *,
+    name: str,
+    vpa: Vpa,
+    agent_readable: AgentReadable | None,
+    labels: Mapping[str, str] | None = None,
+    annotations: Mapping[str, str] | None = None,
 ) -> None:
-    """Write only `namespace.k8s.yaml` into `directory`; its `kustomization.yaml`, hand-written or
-    generated elsewhere, lists it, so the Namespace stays owned by that directory's Kustomization."""
+    """Write only `namespace.k8s.yaml`, `namespaces.namespace`'s Namespace, into `directory`; its
+    `kustomization.yaml`, hand-written or generated elsewhere, lists it, so the Namespace stays
+    owned by that directory's Kustomization."""
     out_dir = root / directory
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
-    k8s.KubeNamespace(
+    namespaces.namespace(
         Chart(app, "namespace", disable_resource_name_hashes=True),
         "namespace",
-        metadata=k8s.ObjectMeta(name=name, labels=dict(labels), annotations=dict(annotations) if annotations else None),
+        name=name,
+        vpa=vpa,
+        agent_readable=agent_readable,
+        labels=labels,
+        annotations=annotations,
     )
     app.synth()

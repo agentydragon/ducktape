@@ -883,14 +883,15 @@ function command(
   id: string,
   operation: string,
   outcome: "pending" | "effected" | "failed" | "noop",
-  reason: string | null = null
+  reason: string | null = null,
+  text: string | null = null
 ): Record<string, unknown> {
   return entity(
     "command",
     id,
     cursor,
     { operation, outcome, outcome_cursor: outcome === "pending" ? null : String(cursor), outcome_reason: reason },
-    { pending: outcome === "pending" }
+    { pending: outcome === "pending", input_ref: text === null ? null : payload(cursor, id, "command_input", text) }
   );
 }
 
@@ -1061,6 +1062,9 @@ function statesRows(threadId: string): Record<string, unknown>[] {
       scenario.pendingCommands === "outcomes" ? "noop" : "pending",
       "Target turn already ended"
     ),
+    // Admitted and still pending, so it renders inline as a pending message bubble rather than in
+    // the pending-commands box below -- see projected_session.tsx's pendingSentMessage.
+    command(26, "queued-submit", "submit_input", "pending", null, "Continue past the failing test once it lands."),
   ];
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
