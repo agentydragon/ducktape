@@ -32,6 +32,7 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.gateway_api.gateway import Gateway
 from cluster.cdk8s.providers.gateway_api.http_route import HttpRoute, RouteFilter, RouteMatch
 from cluster.cdk8s.providers.gateway_api.listener import Listener, ListenerTls
+from cluster.cdk8s.service_ref import HostNetworkServiceRef, ServiceRef
 
 _NAME = "cluster-gateway"
 _NAMESPACE = "gateway-system"
@@ -53,8 +54,7 @@ def https_route(
     *,
     metadata: ApiObjectMetadata,
     hostnames: Sequence[str],
-    backend: str,
-    port: int,
+    backend: ServiceRef | HostNetworkServiceRef,
     paths: Sequence[str] = (),
     path_prefix: str | None = None,
     timeout: str | None = None,
@@ -62,11 +62,13 @@ def https_route(
     listener: str | None = HTTPS_LISTENER,
     extra_filters: Sequence[HttpRouteSpecRulesFilters] = (),
 ) -> HttpRoute:
-    """`hostnames` on the shared Gateway to one Service port. `paths` restricts the route to those
+    """`hostnames` on the shared Gateway to `backend`'s Service port. `paths` restricts the route to those
     exact paths; `path_prefix` adds a path-prefix match alongside them. `hsts` sets
     Strict-Transport-Security at the TLS-aware edge, which the backend's own hop cannot see was
     HTTPS; `extra_filters` appends further filters after the HSTS one (when `hsts` is set).
     `timeout` bounds the request and the backend request alike."""
+    if metadata.namespace != backend.pods.namespace:
+        raise ValueError(f"a backendRef resolves in the route's own namespace: {metadata.namespace=} {backend=}")
     matches = [RouteMatch.path_exact(path) for path in paths]
     if path_prefix is not None:
         matches.append(RouteMatch.path_prefix(path_prefix))
@@ -92,7 +94,7 @@ def https_route(
             HttpRouteSpecRules(
                 matches=matches or None,
                 filters=filters or None,
-                backend_refs=[HttpRouteSpecRulesBackendRefs(name=backend, port=port)],
+                backend_refs=[HttpRouteSpecRulesBackendRefs(name=backend.name, port=backend.port.number)],
                 timeouts=HttpRouteSpecRulesTimeouts(request=timeout, backend_request=timeout) if timeout else None,
             )
         ],

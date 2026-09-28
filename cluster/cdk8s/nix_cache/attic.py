@@ -28,12 +28,16 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "attic"
 NAMESPACE = "nix-cache"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/nix-cache"
 _PORT = 8080
 _SELECTOR = {"app.kubernetes.io/name": NAME}
+SERVICE = ServiceRef(
+    name=NAME, port=Port(name="http", number=_PORT), pods=Pods(namespace=NAMESPACE, labels=tuple(_SELECTOR.items()))
+)
 _DB = "attic-db"
 # The operator mints the S3 key pair straight into this namespace (`_storage` below).
 _S3_SECRET = "attic-s3-credentials"
@@ -163,8 +167,7 @@ def _server(scope: Construct) -> None:
         "route",
         metadata=ApiObjectMetadata(name=NAMESPACE, namespace=NAMESPACE),
         hostnames=["cache.allegedly.works"],
-        backend=NAME,
-        port=_PORT,
+        backend=SERVICE,
         hsts=False,
         listener=None,
     )

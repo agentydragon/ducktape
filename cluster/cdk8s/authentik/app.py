@@ -22,6 +22,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRulesFiltersResponseHeaderModifierSet
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
+from cluster.cdk8s import cilium
 from cluster.cdk8s.authentik import db
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
@@ -31,6 +32,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "authentik"
@@ -49,6 +51,13 @@ _SOPS_SECRETS = (
 _SERVER_LABELS = {"app.kubernetes.io/component": "server", "app.kubernetes.io/name": NAME}
 # Pod ports: 9000 (HTTP), 9443 (HTTPS), 9300 (metrics).
 _HTTP, _HTTPS, _METRICS = 9000, 9443, 9300
+# The chart's server Service, which also serves the embedded proxy outpost.
+SERVER = ServiceRef(
+    name="authentik-server",
+    port=Port(name="http", number=80),
+    pods=Pods(namespace=NAMESPACE, labels=tuple(_SERVER_LABELS.items())),
+    target_port=_HTTP,
+)
 
 
 def _pod_env() -> dict[str, object]:
@@ -211,8 +220,7 @@ def _http_route(chart: Chart) -> None:
         "route",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         hostnames=["auth.allegedly.works"],
-        backend="authentik-server",
-        port=80,
+        backend=SERVER,
         hsts=False,
         listener=None,
         # Let the operator-owned Haku console (haku.allegedly.works) frame Authentik's pages, so
@@ -258,7 +266,7 @@ def _network_policy(chart: Chart) -> None:
             # Grafana OIDC token exchange and Prometheus scraping.
             IngressRule.from_endpoints(_namespace_source("monitoring"), ports=[_HTTP, _METRICS]),
             # Gatus liveness probes.
-            IngressRule.from_endpoints(_namespace_source("gatus"), ports=[_HTTP]),
+            IngressRule.from_endpoints(_namespace_source(cilium.PROBER.namespace), ports=[_HTTP]),
             # The agentplane app and Action Service use the public issuer so discovery returns the
             # canonical external endpoints. When the public hostname resolves to the caller's own
             # node, hostNetwork Gateway hairpin traffic can arrive with the caller's namespace

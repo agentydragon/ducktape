@@ -69,6 +69,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.settings_contract import checked_value, env_name, settings_file
 
 NAME = "aiquota"
@@ -112,6 +113,9 @@ _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _HOSTNAME = "aiquota.allegedly.works"
 _PORT = 8080
 _LABELS = {"app.kubernetes.io/name": NAME}
+SERVICE = ServiceRef(
+    name=_API_NAME, port=Port(name="http", number=_PORT), pods=Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items()))
+)
 _BEARER_KEY = "bearer-token"
 
 
@@ -179,8 +183,7 @@ class Aiquota(Construct):
             "httproute",
             metadata=ApiObjectMetadata(name=_API_NAME, namespace=NAMESPACE),
             hostnames=[_HOSTNAME],
-            backend=_API_NAME,
-            port=_PORT,
+            backend=SERVICE,
             hsts=False,
             listener=None,
         )

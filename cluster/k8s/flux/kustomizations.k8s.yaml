@@ -107,6 +107,7 @@ metadata:
   name: hubble-ui
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   interval: 10m
   path: ./cluster/generated/hubble-ui
   prune: true

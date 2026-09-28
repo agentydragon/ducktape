@@ -47,6 +47,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
+from cluster.cdk8s.service_ref import HostNetworkServiceRef, Pods, Port
 
 # Aliased: each provisioner names its model `Settings`, in a module named `settings`.
 from homeassistant.provisioner.components import settings as components
@@ -61,6 +62,10 @@ _NAME = "home-assistant"
 _NAMESPACE = "home-assistant"
 _HOSTNAME = "home.allegedly.works"
 _LABELS = {"app.kubernetes.io/name": _NAME}
+# Caddy in the hostNetwork Pod answers on the node.
+SERVICE = HostNetworkServiceRef(
+    name=_NAME, port=Port(name="http", number=8123), pods=Pods(namespace=_NAMESPACE, labels=tuple(_LABELS.items()))
+)
 _CONFIG_CLAIM = "home-assistant-config"
 _METRICS_TOKEN = "home-assistant-metrics-token"
 _BACKUP = "home-assistant-config-restic"
@@ -674,8 +679,7 @@ def chart(app: App) -> Chart:
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=[_HOSTNAME],
-        backend=_NAME,
-        port=8123,
+        backend=SERVICE,
         hsts=False,
         listener=None,
     )

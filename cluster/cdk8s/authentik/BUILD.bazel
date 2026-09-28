@@ -36,6 +36,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:namespaces",
     ],
 )
 
@@ -57,11 +58,13 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":db",
+        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/gateway_api:http_route",
@@ -93,6 +96,7 @@ py_library(
     srcs = ["proxy_routes.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":app",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",

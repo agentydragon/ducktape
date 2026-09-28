@@ -26,6 +26,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.valkey import valkey_instance
 
 BASE_DIR = f"{HAND_WRITTEN_ROOT}/grocy/mcp-base"
@@ -34,8 +35,18 @@ _LABELS = {"app.kubernetes.io/name": "grocy-mcp", "app.kubernetes.io/component":
 _IMAGE = "git.allegedly.works/ducktape-ci/grocy-mcp:unset"
 _HTTP_PORT = 8765
 _METRICS_PORT = 9090
+
 # The base's placeholder; each household's kustomization.yaml patches in its own Secret.
 _OIDC_SECRET = "grocy-mcp-oidc"
+
+
+def _service(household: str) -> ServiceRef:
+    """The Service base_chart renders, as the household overlay places it."""
+    return ServiceRef(
+        name=_NAME,
+        port=Port(name="http", number=_HTTP_PORT),
+        pods=Pods(namespace=f"grocy-{household}", labels=tuple(_LABELS.items())),
+    )
 
 
 def _secret_env(name: str, key: str) -> k8s.EnvVar:
@@ -170,8 +181,7 @@ def household_chart(app: App, *, household: str, display_name: str) -> Chart:
         "httproute",
         metadata=ApiObjectMetadata(name=f"grocy-mcp-{household}-server", namespace=namespace),
         hostnames=[f"grocy-mcp-{household}.allegedly.works"],
-        backend=_NAME,
-        port=_HTTP_PORT,
+        backend=_service(household),
         timeout="60s",
         hsts=False,
         listener=None,
