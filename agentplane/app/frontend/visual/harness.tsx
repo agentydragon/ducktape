@@ -1878,7 +1878,7 @@ if (scenario.openMobileSidebar) {
   // The drawer has no route of its own; open it the way an operator would, by tapping the
   // phone-width hamburger.
   const openMobileSidebar = new MutationObserver(() => {
-    const button = document.querySelector('button[aria-label="Open navigation"]');
+    const button = document.querySelector('button[aria-label="Toggle navigation"]');
     if (!button) return;
     openMobileSidebar.disconnect();
     (button as HTMLButtonElement).click();

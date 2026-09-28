@@ -1,7 +1,7 @@
 import { ActionIcon, Anchor, Stack, Text } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconMenu2 from "@tabler/icons-react/dist/esm/icons/IconMenu2.mjs";
-import { type JSX, useState } from "react";
+import { type JSX, useCallback, useMemo, useState } from "react";
 import { HashRouter, Route, Routes, useLocation, useMatch, useNavigate, useParams } from "react-router";
 
 import { ActionRequests } from "./actions/requests";
@@ -14,6 +14,7 @@ import { Settings, type SettingsTab } from "./settings/dialog";
 import { Sidebar } from "./sidebar";
 import { electricThreadSync } from "./thread_store";
 import { ThreadSyncContext } from "./thread_sync";
+import { TopbarContext, type TopbarSlots } from "./topbar";
 import "./shell.css";
 
 // Hash routing: the API serves the bundle at "/" only, so no path has to reach the server.
@@ -77,34 +78,49 @@ function AppRoutes(): JSX.Element {
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(() =>
     location.pathname === "/mcp-servers" ? "mcp-servers" : null
   );
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  // Open by default at desktop width, closed at phone width; the CSS media query then decides
+  // whether "closed" means a collapsed-to-nothing column or a fully hidden overlay.
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia("(min-width: 561px)").matches);
+  const [titleNode, setTitleNode] = useState<HTMLDivElement | null>(null);
+  const [actionsNode, setActionsNode] = useState<HTMLDivElement | null>(null);
+  // Stable identities so React attaches each ref once instead of on every render.
+  const titleRef = useCallback((node: HTMLDivElement | null) => setTitleNode(node), []);
+  const actionsRef = useCallback((node: HTMLDivElement | null) => setActionsNode(node), []);
+  const topbarSlots = useMemo<TopbarSlots>(
+    () => ({ title: titleNode, actions: actionsNode }),
+    [titleNode, actionsNode]
+  );
   const fullBleed = threadRoute !== null;
   return (
     <div className="agentplane-shell">
       <Sidebar
         settingsOpen={settingsTab !== null}
         onOpenSettings={() => setSettingsTab("oauth-clients")}
-        mobileOpen={mobileSidebarOpen}
-        onMobileClose={() => setMobileSidebarOpen(false)}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
       />
       <div className={`agentplane-shell-main${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
-        <div className="agentplane-mobile-topbar">
-          <ActionIcon variant="subtle" aria-label="Open navigation" onClick={() => setMobileSidebarOpen(true)}>
+        <div className="agentplane-topbar">
+          <ActionIcon variant="subtle" aria-label="Toggle navigation" onClick={() => setSidebarOpen((open) => !open)}>
             <IconMenu2 size={18} />
           </ActionIcon>
+          <div className="agentplane-topbar-title" ref={titleRef} />
+          <div className="agentplane-topbar-actions" ref={actionsRef} />
         </div>
         <div className={`agentplane-shell-main-content${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
-          <Routes>
-            <Route path="/" element={<ThreadsLanding />} />
-            <Route path="/sandboxes" element={<SandboxListRoute />} />
-            <Route path="/actions" element={<ActionRequests />} />
-            <Route path="/actions/history" element={<ActionHistory />} />
-            <Route path="/actions/:requestId" element={<ActionRequests />} />
-            <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
-            <Route path="/sandboxes/:name" element={<SandboxRoute />} />
-            <Route path="/threads/:threadId" element={<ThreadRoute />} />
-            <Route path="*" element={<ThreadsLanding />} />
-          </Routes>
+          <TopbarContext.Provider value={topbarSlots}>
+            <Routes>
+              <Route path="/" element={<ThreadsLanding />} />
+              <Route path="/sandboxes" element={<SandboxListRoute />} />
+              <Route path="/actions" element={<ActionRequests />} />
+              <Route path="/actions/history" element={<ActionHistory />} />
+              <Route path="/actions/:requestId" element={<ActionRequests />} />
+              <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
+              <Route path="/sandboxes/:name" element={<SandboxRoute />} />
+              <Route path="/threads/:threadId" element={<ThreadRoute />} />
+              <Route path="*" element={<ThreadsLanding />} />
+            </Routes>
+          </TopbarContext.Provider>
         </div>
       </div>
       <Settings

@@ -77,8 +77,8 @@ async function pushSnapshot(stream: EventTarget, value: ThreadsSnapshot): Promis
 async function render(
   threads: ThreadView[],
   sandboxes: Record<string, SandboxView>,
-  options: { initialPath?: string; settingsOpen?: boolean; mobileOpen?: boolean } = {}
-): Promise<{ onOpenSettings: ReturnType<typeof vi.fn>; onMobileClose: ReturnType<typeof vi.fn>; stream: EventTarget }> {
+  options: { initialPath?: string; settingsOpen?: boolean; open?: boolean } = {}
+): Promise<{ onOpenSettings: ReturnType<typeof vi.fn>; onClose: ReturnType<typeof vi.fn>; stream: EventTarget }> {
   const streams: EventTarget[] = [];
   vi.stubGlobal(
     "EventSource",
@@ -110,7 +110,7 @@ async function render(
   document.body.append(container);
   root = createRoot(container);
   const onOpenSettings = vi.fn();
-  const onMobileClose = vi.fn();
+  const onClose = vi.fn();
   await act(async () =>
     root.render(
       <MantineProvider env="test">
@@ -118,8 +118,8 @@ async function render(
           <Sidebar
             settingsOpen={options.settingsOpen ?? false}
             onOpenSettings={onOpenSettings}
-            mobileOpen={options.mobileOpen ?? false}
-            onMobileClose={onMobileClose}
+            open={options.open ?? false}
+            onClose={onClose}
           />
           <Routes>
             <Route path="*" element={<LocationProbe />} />
@@ -128,7 +128,7 @@ async function render(
       </MantineProvider>
     )
   );
-  return { onOpenSettings, onMobileClose, stream: streams[0] };
+  return { onOpenSettings, onClose, stream: streams[0] };
 }
 
 function rows(): HTMLElement[] {
@@ -274,12 +274,12 @@ it("opens the details of a provisioning Sandbox with no Threads", async () => {
 });
 
 it.each([false, true])(
-  "links a Sandbox name to its details without changing Thread navigation (mobile=%s)",
-  async (mobileOpen) => {
-    const { onMobileClose } = await render(
+  "links a Sandbox name to its details without changing Thread navigation (open=%s)",
+  async (open) => {
+    const { onClose } = await render(
       [thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" })],
       { "demo-a1b2": sandbox("demo-a1b2") },
-      { initialPath: "/threads/t-1", mobileOpen }
+      { initialPath: "/threads/t-1", open }
     );
     const link = container.querySelector('a[href="/sandboxes/demo-a1b2"]');
     if (!(link instanceof HTMLAnchorElement)) throw new Error("missing Sandbox details link");
@@ -287,7 +287,7 @@ it.each([false, true])(
 
     await act(async () => link.click());
     expect(location()).toBe("/sandboxes/demo-a1b2");
-    expect(onMobileClose).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
 
     await act(async () => row("First thread").click());
     expect(location()).toBe("/threads/t-1");
@@ -429,44 +429,44 @@ it("persists the resized width across a remount", async () => {
   expect(sidebarWidth()).toBe(256);
 });
 
-function backdrop(): HTMLElement | null {
-  return container.querySelector(".agentplane-sidebar-backdrop");
+function closeButton(): HTMLElement {
+  const found = container.querySelector('button[aria-label="Close navigation"]');
+  if (!(found instanceof HTMLButtonElement)) throw new Error("missing close button");
+  return found;
 }
 
-it("renders a backdrop and the mobile-open class only while mobileOpen is true", async () => {
-  await render([], {}, { mobileOpen: false });
-  expect(backdrop()).toBeNull();
-  expect(container.querySelector("nav.agentplane-sidebar")?.className).not.toContain("agentplane-sidebar-mobile-open");
+it("applies the open class only while open is true", async () => {
+  await render([], {}, { open: false });
+  expect(container.querySelector("nav.agentplane-sidebar")?.className).not.toContain("agentplane-sidebar-open");
 
   await act(async () => root.unmount());
   container.remove();
-  await render([], {}, { mobileOpen: true });
-  expect(backdrop()).not.toBeNull();
-  expect(container.querySelector("nav.agentplane-sidebar")?.className).toContain("agentplane-sidebar-mobile-open");
+  await render([], {}, { open: true });
+  expect(container.querySelector("nav.agentplane-sidebar")?.className).toContain("agentplane-sidebar-open");
 });
 
-it("closes the mobile drawer on backdrop click and on Escape", async () => {
-  const { onMobileClose } = await render([], {}, { mobileOpen: true });
+it("closes on its own close button and on Escape, only while open", async () => {
+  const { onClose } = await render([], {}, { open: true });
 
-  await act(async () => backdrop()?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-  expect(onMobileClose).toHaveBeenCalledOnce();
+  await act(async () => closeButton().click());
+  expect(onClose).toHaveBeenCalledOnce();
 
   await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
-  expect(onMobileClose).toHaveBeenCalledTimes(2);
+  expect(onClose).toHaveBeenCalledTimes(2);
 });
 
-it("closes the mobile drawer when opening a thread, the Sandboxes stub, or a footer icon", async () => {
-  const { onMobileClose: closeOnOpenThread } = await render(
+it("closes when opening a thread, the Sandboxes stub, or a footer icon", async () => {
+  const { onClose: closeOnOpenThread } = await render(
     [thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" })],
     { "demo-a1b2": sandbox("demo-a1b2") },
-    { mobileOpen: true }
+    { open: true }
   );
   await act(async () => row("First thread").click());
   expect(closeOnOpenThread).toHaveBeenCalledOnce();
 
   await act(async () => root.unmount());
   container.remove();
-  const { onMobileClose: closeOnFooter } = await render([], {}, { mobileOpen: true });
+  const { onClose: closeOnFooter } = await render([], {}, { open: true });
   await act(async () => footerButton("Sandboxes").click());
   expect(closeOnFooter).toHaveBeenCalledOnce();
 });
