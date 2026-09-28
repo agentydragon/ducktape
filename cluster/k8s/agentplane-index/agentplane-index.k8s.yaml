@@ -116,8 +116,6 @@ metadata:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   name: ducktape
   namespace: agentplane-index
 spec:
@@ -254,12 +252,10 @@ metadata:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   name: haku-state
   namespace: agentplane-index
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app.kubernetes.io/instance: haku-state

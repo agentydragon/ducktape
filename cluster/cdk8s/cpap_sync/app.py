@@ -9,9 +9,7 @@ image-automation markers override this chart's placeholder image tags
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEgress,
@@ -45,19 +43,11 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecVolumesContainerDisk,
     VirtualMachineSpecTemplateSpecVolumesSecret,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cilium, forgejo_images
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
+from cluster.cdk8s import cilium, forgejo_images, namespaces, node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 
 NAME = "cpap-sync"
@@ -67,14 +57,13 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cpap-sync"
 _IMAGE = "git.allegedly.works/ducktape-ci/cpap-sync:unset"
 _GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/cpap-gateway:unset"
 _LABELS = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "sync"}
-_NODE_SELECTOR = {"kubernetes.io/hostname": "optiplex"}  # the host the CPAP card's USB WiFi adapter is attached to
 _CARD_SERVICE = "cpap-card"
 _GATEWAY = "cpap-gateway"
 _GATEWAY_PORT = 18080
 _GIT_CREDENTIALS = "cpap-data-git-write"
 _WORKDIR = "/workdir"
 _CARD_SECRET = "cpap-ezshare"
-_RESOURCES = ["namespace.k8s.yaml", f"{_CARD_SECRET}.sops.yaml", f"{NAME}.k8s.yaml"]
+CARD_SECRET_FILE = f"{_CARD_SECRET}.sops.yaml"
 
 
 def _git_env(name: str, key: str) -> k8s.EnvVar:
@@ -88,9 +77,9 @@ def _gateway_vm(chart: Chart) -> None:
     VirtualMachine(
         chart,
         "gateway-vm",
-        metadata=metadata(
-            _GATEWAY,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_GATEWAY,
+            namespace=NAMESPACE,
             labels=labels,
             annotations={
                 "description": (
@@ -105,7 +94,8 @@ def _gateway_vm(chart: Chart) -> None:
             template=VirtualMachineSpecTemplate(
                 metadata=k8s.ObjectMeta(labels={"kubevirt.io/domain": _GATEWAY} | labels),
                 spec=VirtualMachineSpecTemplateSpec(
-                    node_selector=_NODE_SELECTOR,
+                    # The host the CPAP card's USB WiFi adapter is attached to.
+                    node_selector=node_scheduling.OPTIPLEX.node_selector,
                     domain=VirtualMachineSpecTemplateSpecDomain(
                         cpu=VirtualMachineSpecTemplateSpecDomainCpu(cores=2),
                         resources=VirtualMachineSpecTemplateSpecDomainResources(
@@ -178,6 +168,19 @@ def _gateway_vm(chart: Chart) -> None:
     )
 
 
+def namespace_chart(app: App) -> Chart:
+    chart = Chart(app, "namespace", disable_resource_name_hashes=True)
+    namespaces.namespace(
+        chart,
+        "namespace",
+        name=NAMESPACE,
+        vpa=Vpa.DISABLED,
+        agent_readable=None,
+        labels={"name": NAMESPACE, "pod-security.kubernetes.io/enforce": "baseline"},
+    )
+    return chart
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
@@ -212,7 +215,7 @@ def chart(app: App) -> Chart:
                         metadata=k8s.ObjectMeta(labels=_LABELS),
                         spec=k8s.PodSpec(
                             restart_policy="OnFailure",
-                            node_selector=_NODE_SELECTOR,
+                            node_selector=node_scheduling.OPTIPLEX.node_selector,
                             automount_service_account_token=False,
                             volumes=[k8s.Volume(name="workdir", empty_dir=k8s.EmptyDirVolumeSource())],
                             containers=[
@@ -287,9 +290,9 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "egress",
-        metadata=metadata(
-            "cpap-sync-egress",
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name="cpap-sync-egress",
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "The sync Job may resolve DNS, reach the in-cluster CPAP gateway Service, and push to Forgejo "
@@ -297,7 +300,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        selector={"app.kubernetes.io/name": NAME},
+        endpoint_selector={"app.kubernetes.io/name": NAME},
         egress=[
             cilium.dns_egress(),
             # The Service is port 80, but Cilium enforces the translated backend
@@ -337,36 +340,13 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_namespace(
-        root,
-        OUTPUT_DIR,
-        name=NAMESPACE,
-        labels={
-            "name": NAMESPACE,
-            "pod-security.kubernetes.io/enforce": "baseline",
-            "goldilocks.fairwinds.com/enabled": "false",
-        },
-    )
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=_RESOURCES, components=["./image-pins"]),
-    )
-
-
 def cpap_sync(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
-    kubevirt: Kustomization,
-    forgejo_images_kustomization: Kustomization,
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, kubevirt: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
-        decryption=SOPS_DECRYPTION,
+        directory,
         timeout="30m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_config, kubevirt, forgejo_images_kustomization),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, kubevirt),
     )

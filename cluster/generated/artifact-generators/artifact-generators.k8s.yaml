@@ -31,19 +31,14 @@ spec:
       name: claude-rbac
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/agents/machine-access-tf/**"
-          to: "@artifact/cluster/generated/agents/machine-access-tf/"
-      name: agent-machine-access-tf
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/authentik/**"
           to: "@artifact/cluster/k8s/authentik/"
       name: authentik
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/authentik/sso-providers-tf/**"
-          to: "@artifact/cluster/generated/authentik/sso-providers-tf/"
-      name: sso-providers-tf
+        - from: "@repo/cluster/generated/authentik/tf/**"
+          to: "@artifact/cluster/generated/authentik/tf/"
+      name: authentik-tf
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/cert-manager/app/**"
@@ -54,11 +49,6 @@ spec:
         - from: "@repo/cluster/generated/cert-manager/environment/**"
           to: "@artifact/cluster/generated/cert-manager/environment/"
       name: cert-manager-environment
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/cert-manager/issuer-config/**"
-          to: "@artifact/cluster/generated/cert-manager/issuer-config/"
-      name: cert-manager-issuer-config
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/cnpg/**"
@@ -440,11 +430,6 @@ spec:
       name: clickhouse-schema
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/coredns-custom/**"
-          to: "@artifact/cluster/k8s/coredns-custom/"
-      name: coredns-custom
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/cpap-sync/**"
           to: "@artifact/cluster/k8s/cpap-sync/"
       name: cpap-sync
@@ -475,19 +460,9 @@ spec:
       name: flux-image-automation-forgejo
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/flux-monitoring/**"
-          to: "@artifact/cluster/generated/flux-monitoring/"
-      name: flux-monitoring
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/flux-webhook/**"
           to: "@artifact/cluster/generated/flux-webhook/"
       name: flux-webhook
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/flux-webhook-token/**"
-          to: "@artifact/cluster/generated/flux-webhook-token/"
-      name: flux-webhook-token
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/forgejo/agentydragon/**"
@@ -530,29 +505,19 @@ spec:
       name: gatus
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/gatus/sso-tf/**"
-          to: "@artifact/cluster/generated/gatus/sso-tf/"
-      name: gatus-sso-tf
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/github-api-proxy/**"
           to: "@artifact/cluster/k8s/github-api-proxy/"
       name: github-api-proxy
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/github-branch-protection/**"
-          to: "@artifact/cluster/generated/github-branch-protection/"
-      name: github-branch-protection
+        - from: "@repo/cluster/generated/github-tf/**"
+          to: "@artifact/cluster/generated/github-tf/"
+      name: github-tf
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/github-exporter/**"
           to: "@artifact/cluster/k8s/github-exporter/"
       name: github-exporter
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/github-secrets-sync/**"
-          to: "@artifact/cluster/k8s/github-secrets-sync/"
-      name: github-secrets-sync
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/goldilocks/**"
@@ -698,21 +663,6 @@ spec:
       name: monitoring-alloy
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/monitoring/alloy-otlp-bearer-token-tf/**"
-          to: "@artifact/cluster/generated/monitoring/alloy-otlp-bearer-token-tf/"
-      name: monitoring-alloy-otlp-bearer-token-tf
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/monitoring/cilium/**"
-          to: "@artifact/cluster/generated/monitoring/cilium/"
-      name: monitoring-cilium
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/monitoring/etcd/**"
-          to: "@artifact/cluster/generated/monitoring/etcd/"
-      name: monitoring-etcd
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/monitoring/gateway-probe/**"
           to: "@artifact/cluster/generated/monitoring/gateway-probe/"
       name: monitoring-gateway-probe
@@ -726,11 +676,6 @@ spec:
         - from: "@repo/cluster/generated/monitoring/mimir/**"
           to: "@artifact/cluster/generated/monitoring/mimir/"
       name: monitoring-mimir
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/monitoring/rules/**"
-          to: "@artifact/cluster/generated/monitoring/rules/"
-      name: monitoring-rules
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/monitoring/tempo/**"
@@ -758,6 +703,11 @@ spec:
       name: openebs-lvm
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/platform-monitoring/**"
+          to: "@artifact/cluster/generated/platform-monitoring/"
+      name: platform-monitoring
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/proxmox-proxy/**"
           to: "@artifact/cluster/generated/proxmox-proxy/"
       name: proxmox-proxy
@@ -781,11 +731,6 @@ spec:
         - from: "@repo/cluster/generated/seaweedfs/loom-gym-bucket/**"
           to: "@artifact/cluster/generated/seaweedfs/loom-gym-bucket/"
       name: seaweedfs-loom-gym-bucket
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/seaweedfs/monitoring/**"
-          to: "@artifact/cluster/generated/seaweedfs/monitoring/"
-      name: seaweedfs-monitoring
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/seaweedfs/pr-visuals-bucket/**"

@@ -6,18 +6,71 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import assert_never
 
-from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxRules
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
-from finance.augur.sim.ids import AgentId, JurisdictionId
-from finance.augur.sim.jurisdictions import JurisdictionLevel
-from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
-from finance.augur.sim.scenario import (
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
+from finance.augur.sim.income import (
     ORDINARY_INCOME,
+    InterestCharacter,
     InterestIncome,
+    Municipal,
     OrdinaryIncome,
     QualifiedDividendIncome,
+    Taxable,
     TransferIncomeCategory,
+    Treasury,
 )
+from finance.augur.sim.jurisdictions import InterestExemptions, StatutoryAmount
+from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
+
+
+@dataclass(frozen=True)
+class PreparedTaxBracket:
+    """One marginal slice: inclusive upper edge in currency quanta, or no upper bound."""
+
+    upper: int | None
+    rate_ppb: int
+
+
+@dataclass(frozen=True)
+class PreparedThresholdTax:
+    """A flat rate on the part of an income measure above `threshold` quanta."""
+
+    rate_ppb: int
+    threshold: int
+
+
+@dataclass(frozen=True)
+class PreparedTaxRules:
+    """One jurisdiction's rules resolved for a taxpayer's filing status; money is integer quanta."""
+
+    jurisdiction_id: JurisdictionId
+    exempt_interest: InterestExemptions
+    ordinary_brackets: tuple[PreparedTaxBracket, ...]
+    long_term_capital_gain_brackets: tuple[PreparedTaxBracket, ...]
+    standard_deduction: int
+    max_capital_loss_ordinary_offset: int
+    # Positive caps federal-style unrecaptured depreciation; zero uses ordinary brackets.
+    section_1250_rate_ppb: int
+    # The tax year the amounts are law for, and those of them statute adjusts for inflation.
+    law_year: int
+    indexed: frozenset[StatutoryAmount]
+    # Over modified adjusted gross income, on the lesser of the excess and net investment income.
+    net_investment_income_tax: PreparedThresholdTax | None = None
+    # Over taxable income.
+    taxable_income_surtax: PreparedThresholdTax | None = None
+
+
+@dataclass(frozen=True)
+class PreparedTaxProfile:
+    """A taxpayer's payment routing, quantized allowances and ordered jurisdiction rules."""
+
+    agent_id: AgentId
+    tax_authority_agent_id: AgentId
+    payment_account_id: AccountId
+    tax_authority_account_id: AccountId
+    prior_year_tax: int
+    section_121_exclusion: int
+    jurisdictions: tuple[PreparedTaxRules, ...]
 
 
 @dataclass
@@ -100,14 +153,17 @@ class IncomeLedger:
         return clone
 
 
-def taxes_interest_from(
-    rules: PreparedTaxRules, issuer_jurisdiction_id: JurisdictionId | None, issuer_level: JurisdictionLevel | None
-) -> bool:
-    if issuer_jurisdiction_id is None or issuer_level is None:
-        return True
-    if issuer_jurisdiction_id == rules.jurisdiction_id:
-        return not rules.exempts_own_issue
-    return issuer_level not in rules.exempt_interest_from_levels
+def taxes_interest_from(rules: PreparedTaxRules, character: InterestCharacter) -> bool:
+    exempt = rules.exempt_interest
+    match character:
+        case Treasury():
+            return not exempt.treasury
+        case Municipal(state=state):
+            return exempt.municipal != "all" and state not in exempt.municipal
+        case Taxable():
+            return True
+        case _:
+            assert_never(character)
 
 
 def is_investment_income(source: TransferIncomeCategory) -> bool:

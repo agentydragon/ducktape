@@ -1,9 +1,15 @@
 """Scheduled and recurring obligations as the counterparties that demand them."""
 
+from dataclasses import dataclass, field
+
 from finance.augur.sim.actor import Actor, MonthOpened
+from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import Demand, OrdinaryDeduction
-from finance.augur.sim.prepared import PreparedAmount, PreparedObligation, PreparedRecurringObligation
+from finance.augur.sim.ids import PropertyId
+from finance.augur.sim.income import TransferDeductionCategory
+from finance.augur.sim.prepared import PreparedAmount
 from finance.augur.sim.property import PropertyStatement
+from finance.augur.sim.schedule import Schedule, is_due
 
 
 class Bill(Demand):
@@ -13,6 +19,7 @@ class Bill(Demand):
     deduction: OrdinaryDeduction | None
 
 
+@dataclass(kw_only=True)
 class Biller(Actor[MonthOpened | PropertyStatement, Bill]):
     """One obligation: bills its payer in the months it is due.
 
@@ -20,36 +27,37 @@ class Biller(Actor[MonthOpened | PropertyStatement, Bill]):
     only while the property is held, deducting by the share that is let.
     """
 
-    def __init__(self, spec: PreparedObligation | PreparedRecurringObligation) -> None:
-        self.spec = spec
-        self.property: PropertyStatement | None = None
-
-    def due(self, month: int) -> bool:
-        spec = self.spec
-        if isinstance(spec, PreparedObligation):
-            return spec.month == month
-        return spec.start_month <= month and (spec.end_month is None or month <= spec.end_month)
+    obligation_id: str
+    obligation_type: str
+    from_account: AccountRef
+    to_account: AccountRef
+    amount_due: PreparedAmount
+    property_id: PropertyId | None
+    deduction_category: TransferDeductionCategory | None
+    deductible_fraction_ppb: int
+    schedule: Schedule
+    property: PropertyStatement | None = field(init=False, default=None)
 
     def handle(self, message: MonthOpened | PropertyStatement) -> list[Bill]:
         if isinstance(message, PropertyStatement):
             self.property = message
             return []
-        spec, month = self.spec, message.month
-        if not self.due(month):
+        month = message.month
+        if not is_due(self.schedule, month):
             return []
-        if spec.property_id is None:
-            fraction = spec.deductible_fraction_ppb
+        if self.property_id is None:
+            fraction = self.deductible_fraction_ppb
         elif self.property is None or self.property.month != month or not self.property.active:
             return []
         else:
             fraction = self.property.rented_fraction_ppb
         return [
             Bill(
-                cause_id=f"{spec.obligation_id}_m{month}",
-                obligation_type=spec.obligation_type,
-                from_account=spec.from_account,
-                to_account=spec.to_account,
-                amount=spec.amount_due,
-                deduction=OrdinaryDeduction(fraction) if spec.deduction_category == "ordinary" else None,
+                cause_id=f"{self.obligation_id}_m{month}",
+                obligation_type=self.obligation_type,
+                from_account=self.from_account,
+                to_account=self.to_account,
+                amount=self.amount_due,
+                deduction=OrdinaryDeduction(fraction) if self.deduction_category == "ordinary" else None,
             )
         ]

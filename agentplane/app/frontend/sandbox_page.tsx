@@ -25,10 +25,12 @@ import {
   displayableError,
   findThread,
   listSessions,
+  modelsForHarness,
   openSession,
   RunnerUnavailableError,
   type Condition,
   type Harness,
+  type ModelOption,
   type SandboxView,
   type ThreadView,
 } from "./client";
@@ -163,7 +165,7 @@ export function SandboxPage({
   const [defaultsLabel, setDefaultsLabel] = useState<string | null>(null);
   // The app's catalog of what this sandbox's Harness may run; the thread carries the choice.
   const [harness, setHarness] = useState<Harness>("HARNESS_CLAUDE");
-  const [models, setModels] = useState<string[]>([]);
+  const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -229,9 +231,11 @@ export function SandboxPage({
         setError(displayableError(failure));
         return;
       }
-      const offered = data?.[harness] ?? [];
+      const offered = data ? modelsForHarness(data, harness) : [];
       setModels(offered);
-      setModel((current) => (current && offered.includes(current) ? current : (offered[0] ?? null)));
+      setModel((current) =>
+        current && offered.some((option) => option.model === current) ? current : (offered[0]?.model ?? null)
+      );
     })();
   }, [harness]);
 
@@ -381,7 +385,12 @@ export function SandboxPage({
                 value={harness}
                 onChange={(value) => value && setHarness(value as Harness)}
               />
-              <Select label="Model" data={models} value={model} onChange={setModel} />
+              <Select
+                label="Model"
+                data={models.map((option) => ({ value: option.model, label: option.display_name }))}
+                value={model}
+                onChange={setModel}
+              />
               <Select
                 label="Reasoning effort"
                 data={["low", "medium", "high"]}

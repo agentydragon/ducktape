@@ -11,13 +11,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRulesFiltersResponseHeaderModifierSet
 
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter
 
 NAME = "proxy-routes"
@@ -102,7 +101,7 @@ def _proxy_route(chart: Chart, name: str, hostname: str, *, timeout: str | None 
     https_route(
         chart,
         name,
-        metadata=metadata(name, NAMESPACE),
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
         hostnames=[hostname],
         backend=_OUTPOST,
         port=_OUTPOST_PORT,
@@ -120,7 +119,7 @@ def _haku_ui_route(chart: Chart) -> None:
     https_route(
         chart,
         "haku-ui",
-        metadata=metadata("haku-ui", NAMESPACE),
+        metadata=ApiObjectMetadata(name="haku-ui", namespace=NAMESPACE),
         hostnames=["haku-ui.allegedly.works"],
         backend=_OUTPOST,
         port=_OUTPOST_PORT,

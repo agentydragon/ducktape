@@ -24,7 +24,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
-from finance.augur.fit.macro_var import MACRO_STATE_NAMES, MacroStatePath
 from finance.augur.study.macro_window.holdout import (
     FRED_WINDOW_START,
     HORIZONS,
@@ -35,6 +34,7 @@ from finance.augur.study.macro_window.holdout import (
     score_arms,
     single_window,
 )
+from finance.augur.x.models.macro_var import MACRO_STATE_NAMES, MacroStatePath
 
 logger = logging.getLogger(__name__)
 

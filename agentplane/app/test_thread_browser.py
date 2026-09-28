@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
+from typing import cast
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -18,6 +19,7 @@ import pytest_bazel
 from google.protobuf import json_format
 from playwright.async_api import (
     APIResponse,
+    Locator,
     Page,
     Request,
     Route,
@@ -229,7 +231,7 @@ async def test_switching_threads_starts_at_each_threads_tail(
         source.attached.session_id = f"test-navigation-session-{number}"
         source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
         source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="test-navigation-turn")))
-        for index in range(80):
+        for index in range(130):
             item_id = f"test-navigation-item-{index}"
             source.append(
                 event_pb2.Event(
@@ -255,21 +257,23 @@ async def test_switching_threads_starts_at_each_threads_tail(
         http2_proxy(app.url, certificate) as ingress,
     ):
         await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
-        await expect(page.locator('[data-thread-anchor="161"]')).to_be_visible()
-        await expect(page.get_by_text("Thread 0 message 79", exact=True)).to_be_visible()
+        await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible()
         await page.get_by_role("region", name="Thread history", exact=True).hover()
+        # The eager initial load holds message 40 (well up from the tail) but not the thread's start;
+        # scrolling all the way up lands at the top of what's already loaded -- mounting message 40 --
+        # and, being within a screen of that top, triggers the fetch for the page before it.
         async with page.expect_request(
             lambda request: request.method == "POST" and "entity_index < $1" in (request.post_data or "")
         ):
             await page.mouse.wheel(0, -10_000)
+        await expect(page.get_by_text("Thread 0 message 40", exact=True)).to_be_visible()
         for number in (1, 0):
             async with page.expect_request(f"**/threads/{threads[number]}/sync/scope"):
                 await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()
             await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value(
                 f"Test navigation thread {number}"
             )
-            await expect(page.locator('[data-thread-anchor="161"]')).to_be_visible()
-            await expect(page.get_by_text(f"Thread {number} message 79", exact=True)).to_be_visible()
+            await expect(page.get_by_text(f"Thread {number} message 129", exact=True)).to_be_visible()
         await page.screenshot(path=undeclared_outputs_dir() / "thread-navigation.png")
 
 
@@ -746,30 +750,14 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
     await history.hover()
     # The app adopts the reader's position at the gesture's scrollend. Rows entering the window can
     # still load and be re-measured after it, and the scroll correction for a re-measure lands a
-    # frame after its commit. Sample that same position once two consecutive frames agree.
+    # frame after its commit; capture_reading_anchor samples once two consecutive frames agree.
     gesture = await history.evaluate_handle(
         "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
     )
     await page.mouse.wheel(0, -600)
     async with asyncio.timeout(30):
         await gesture.evaluate("gesture => gesture.ended")
-        reading_anchor = await history.evaluate(
-            """area => new Promise(resolve => {
-                const sample = () => {
-                    const top = area.getBoundingClientRect().top;
-                    const item = [...area.querySelectorAll('[data-thread-anchor]')].find(
-                        item => item.getBoundingClientRect().bottom > top
-                    );
-                    return {cursor: item.dataset.threadAnchor, offset: item.getBoundingClientRect().top - top};
-                };
-                const settle = previous => requestAnimationFrame(() => {
-                    const current = sample();
-                    if (current.cursor === previous.cursor && current.offset === previous.offset) resolve(current);
-                    else settle(current);
-                });
-                requestAnimationFrame(() => settle(sample()));
-            })"""
-        )
+        reading_anchor = await capture_reading_anchor(history)
     await gesture.dispose()
     updated = source.append(
         event_pb2.Event(
@@ -830,6 +818,33 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
     await page.set_viewport_size({"width": 412 if phone else 1280, "height": 900})
     await expect_history_bottom(page)
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-resumed.png")
+
+
+async def capture_reading_anchor(area: Locator) -> dict[str, str | float]:
+    """The first row whose bottom is below the viewport top, and its position -- the reader's
+    place, sampled once two consecutive frames agree so a pending re-measure right after a
+    just-ended gesture cannot register as a false position."""
+    return cast(
+        "dict[str, str | float]",
+        await area.evaluate(
+            """area => new Promise(resolve => {
+            const sample = () => {
+                const top = area.getBoundingClientRect().top;
+                const row = [...area.querySelectorAll('[data-thread-anchor]')].find(
+                    candidate => candidate.getBoundingClientRect().bottom > top
+                );
+                const rowTop = row.getBoundingClientRect().top;
+                return { cursor: row.dataset.threadAnchor, top: rowTop, offset: rowTop - top };
+            };
+            const settle = previous => requestAnimationFrame(() => {
+                const current = sample();
+                if (current.cursor === previous.cursor && current.top === previous.top) resolve(current);
+                else settle(current);
+            });
+            requestAnimationFrame(() => settle(sample()));
+        })"""
+        ),
+    )
 
 
 async def expect_reading_anchor(page: Page, anchor: dict[str, str | float]) -> None:
@@ -1507,7 +1522,7 @@ async def test_ahead_snapshot_is_not_a_thread_or_effective_model(thread_browser:
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     await expect(page.get_by_role("status")).to_have_count(0)
-    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_have_value("test-model-before")
+    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_have_value("Test Model Before")
     await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_enabled()
     await expect(page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")).to_be_enabled()
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_enabled()

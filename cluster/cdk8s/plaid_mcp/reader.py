@@ -12,15 +12,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.plaid_mcp.app import NAMESPACE
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -62,8 +62,7 @@ def _deployment(chart: Chart) -> None:
                 "description": (
                     "Read-only Postgres MCP over the Plaid sync database, fronted by mcp-oauth-facade. The"
                     " upstream MCP uses Streamable HTTP and connects with the plaid_ro role."
-                ),
-                "reloader.stakater.com/auto": "true",
+                )
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -177,9 +176,9 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "httproute",
-        metadata=metadata(
-            _NAME,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_NAME,
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "Authentik-gated Postgres MCP for querying the synced Plaid database through the read-only"
@@ -197,9 +196,9 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "ingress-policy",
-        metadata=metadata(
-            "plaid-db-mcp-ingress",
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name="plaid-db-mcp-ingress",
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "Default-deny ingress for plaid-db-mcp pods. Only Gateway ingress may reach the OAuth facade;"
@@ -207,7 +206,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        selector=_LABELS,
+        endpoint_selector=_LABELS,
         ingress=[
             IngressRule.from_gateway(_HTTP_PORT),
             # monitoring: Prometheus metrics scraping
@@ -234,8 +233,8 @@ def servicemonitor_chart(app: App) -> Chart:
     ServiceMonitor(
         chart,
         "servicemonitor",
-        metadata=metadata(_NAME, NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
+        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
         endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
     return chart

@@ -22,25 +22,28 @@ import pytest_bazel
 from more_itertools import one
 
 from finance.augur.api.config import Config, DistributionTaxShareConfig, SecurityDistributionConfig
-from finance.augur.api.portfolio import HoldingKind, HoldingTaxLotConfig, SecurityHoldingConfig
+from finance.augur.api.portfolio import (
+    HoldingKind,
+    HoldingTaxLotConfig,
+    SecurityHoldingConfig,
+    TlhCohort,
+    TlhPortfolioSpec,
+)
 from finance.augur.api.wire import CatalogResponse
 from finance.augur.model.deterministic import Constant
-from finance.augur.model.independent import IndependentProviderConfig
 from finance.augur.model.level_series_groups import SecurityDistributionGroups
-from finance.augur.model.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.conftest import MakeProductService
-from finance.augur.product.scenarios import (
-    PRIMARY_ACCOUNT_ID,
-    resolve_primary_agent_id,
-    security_distributions_from_portfolio,
-    sim_locations_from_config,
-)
+from finance.augur.product.holdings import Distribution, opening_holdings
+from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, resolve_primary_agent_id, sim_locations_from_config
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import RolloutRequest, ScenarioKey, SpendIndex
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId, PortfolioId
-from finance.augur.sim.scenario import InterestIncome, TlhCohort, TlhPortfolioSpec
+from finance.augur.sim.fixed_point import rate_to_ppb
+from finance.augur.sim.ids import AccountId, AgentId, LotId, PortfolioId
+from finance.augur.sim.income import InterestIncome, Taxable, Treasury
 from finance.augur.sim.tlh import TlhAssumptions
+from finance.augur.x.models.independent import IndependentProviderConfig
+from finance.augur.x.models.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
 
 _SYMBOL = SecuritySymbol("bnd")
 _UNITS = 2_000.0
@@ -52,10 +55,10 @@ _MONTHLY_PAYOUT_USD = _UNITS * _PER_UNIT_USD
 # An aggregate fund: part Treasury (state-exempt), part corporate (exempt nowhere). The mixed
 # case a single tag cannot express, and the reason the declaration is a vector.
 _AGGREGATE = (
-    DistributionTaxShareConfig(fraction=0.4, issuer_jurisdiction_id=JurisdictionId("federal_us")),
-    DistributionTaxShareConfig(fraction=0.6),
+    DistributionTaxShareConfig(fraction=0.4, character=Treasury()),
+    DistributionTaxShareConfig(fraction=0.6, character=Taxable()),
 )
-_ALL_TREASURY = (DistributionTaxShareConfig(fraction=1.0, issuer_jurisdiction_id=JurisdictionId("federal_us")),)
+_ALL_TREASURY = (DistributionTaxShareConfig(fraction=1.0, character=Treasury()),)
 
 
 def _with_bond_fund_series(model: ProviderConfig, *, distributes: bool) -> ProviderConfig:
@@ -233,8 +236,18 @@ def test_a_tlh_portfolio_of_a_declared_fund_is_paid_on_its_value(
     assert gain == [pytest.approx(month * (_MONTHLY_PAYOUT_USD + 110) * 100) for month in range(len(declared))]
 
 
+def _distributions(config: Config) -> tuple[Distribution, ...]:
+    return opening_holdings(
+        config.portfolio_sources.fixed.portfolio,
+        config.security_distributions,
+        tlh_portfolios=(),
+        primary_agent_id=AgentId("agent_a"),
+        payout_account_id=PRIMARY_ACCOUNT_ID,
+    ).distributions
+
+
 def test_the_tax_character_fractions_reach_the_scenario(augur_config: Config) -> None:
-    """The declaration's split survives the config-to-scenario conversion.
+    """The declaration's split survives preparation into the facts a world declares.
 
     Asserted on the conversion rather than on tax paid downstream: the fixture's only ordinary
     income is this payout, which the standard deduction absorbs entirely, so every split
@@ -243,16 +256,29 @@ def test_the_tax_character_fractions_reach_the_scenario(augur_config: Config) ->
     """
 
     config = _with_bond_fund(augur_config, _AGGREGATE)
-    distributions = security_distributions_from_portfolio(
-        config.portfolio_sources.fixed.portfolio,
-        config.security_distributions,
-        tlh_portfolios=(),
-        primary_agent_id=AgentId("agent_a"),
+
+    assert list(one(_distributions(config)).tax_character.items()) == [
+        (InterestIncome(character=Treasury()), rate_to_ppb(Decimal("0.4"))),
+        (InterestIncome(character=Taxable()), rate_to_ppb(Decimal("0.6"))),
+    ]
+
+
+def test_shares_of_one_character_add(augur_config: Config) -> None:
+    """A fund's disclosure lists corporate, mortgage-backed and asset-backed debt on separate lines,
+    all taxable; copied line by line they are one tax character."""
+
+    config = _with_bond_fund(
+        augur_config,
+        (
+            DistributionTaxShareConfig(fraction=0.4, character=Treasury()),
+            DistributionTaxShareConfig(fraction=0.35, character=Taxable()),
+            DistributionTaxShareConfig(fraction=0.25, character=Taxable()),
+        ),
     )
 
-    assert [(slice_.fraction, slice_.income_category) for slice_ in one(distributions).tax_character] == [
-        (0.4, InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us"))),
-        (0.6, InterestIncome()),
+    assert list(one(_distributions(config)).tax_character.items()) == [
+        (InterestIncome(character=Treasury()), rate_to_ppb(Decimal("0.4"))),
+        (InterestIncome(character=Taxable()), rate_to_ppb(Decimal("0.6"))),
     ]
 
 
@@ -262,17 +288,10 @@ def test_the_payout_is_scoped_to_the_pool_that_holds_it(augur_config: Config) ->
     payout routed to one would have nowhere to go."""
 
     config = _with_bond_fund(augur_config, _ALL_TREASURY)
-    distribution = one(
-        security_distributions_from_portfolio(
-            config.portfolio_sources.fixed.portfolio,
-            config.security_distributions,
-            tlh_portfolios=(),
-            primary_agent_id=AgentId("agent_a"),
-        )
-    )
+    distribution = one(_distributions(config))
 
     assert (distribution.holding_account_id, distribution.to_account_id) == ("taxable_brokerage", PRIMARY_ACCOUNT_ID)
-    assert distribution.asset.wire_id == "security:bnd"
+    assert distribution.asset_id == "bnd"
 
 
 def test_a_declared_security_nobody_holds_contributes_nothing(augur_config: Config) -> None:
@@ -286,15 +305,7 @@ def test_a_declared_security_nobody_holds_contributes_nothing(augur_config: Conf
         }
     )
 
-    assert (
-        security_distributions_from_portfolio(
-            config.portfolio_sources.fixed.portfolio,
-            config.security_distributions,
-            tlh_portfolios=(),
-            primary_agent_id=AgentId("agent_a"),
-        )
-        == ()
-    )
+    assert _distributions(config) == ()
 
 
 if __name__ == "__main__":

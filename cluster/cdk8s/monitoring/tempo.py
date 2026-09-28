@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
@@ -101,24 +97,15 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
 def tempo(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    monitoring_crds: Kustomization,
-    grafana_helmrepository: Kustomization,
-    seaweedfs_cluster: Kustomization,
+    chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization, seaweedfs_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         "tempo",
-        artifact,
+        directory,
         wait=None,
         suspend=False,
-        decryption=SOPS_DECRYPTION,
         health_checks=[
             KustomizationSpecHealthChecks(
                 api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="tempo", namespace="monitoring"
@@ -134,7 +121,6 @@ def tempo(
         depends_on=flux_kustomization_depends_on_many(
             # the chart's serviceMonitor.enabled
             monitoring_crds,
-            grafana_helmrepository,
-            seaweedfs_cluster,
+            seaweedfs_operator,
         ),
     )

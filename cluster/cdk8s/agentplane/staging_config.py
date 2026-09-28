@@ -12,7 +12,7 @@ from cluster.cdk8s.litellm.keys import (
     OAI_LANE_MODELS,
     OLLAMA_CHAT_CLIENT_MODELS,
 )
-from cluster.cdk8s.model_rosters import codex_responses_name
+from cluster.cdk8s.model_rosters import ApiShape, Provider, codex_responses_name, exposed_name
 
 _NAMESPACE = "agentplane-staging"
 # The ActionPolicySet objects actions_staging_policies creates for the public-coder
@@ -39,4 +39,8 @@ def config() -> dict:
         harness_codex=[*OAI_LANE_MODELS, *OLLAMA_CHAT_CLIENT_MODELS],
         thread_preset_codex_model=codex_responses_name("gpt-6-luna"),
         action_policy_sets=list(PUBLIC_CODER_ACTION_POLICY_SETS),
+        # The "haku" sandbox preset (app_settings.py) exists only here, not in
+        # agentplane-testing. claude-sonnet-5 to match what Haku's own managed agents run
+        # today (haku/runtime/managed_agent/self_hosted/haku.agent.yaml).
+        haku_preset_model=exposed_name(Provider.ANTHROPIC_MAX20, ApiShape.ANT_MESSAGES, "claude-sonnet-5"),
     )

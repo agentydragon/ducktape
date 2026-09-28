@@ -188,12 +188,10 @@ def product_row(world: World, actor: AgentId) -> tuple[int, int, int, int, int, 
     )
     private = sum(
         position_value(
-            world.market.value(f"private_equity_mark:{issuer}", mark), lot.units_remaining, lot.spec.quantity_scale
+            world.market.value(f"private_equity_mark:{issuer}", mark), lot.units_remaining, lot.quantity_scale
         )
         for lot in world.holdings.lots
-        if lot.spec.agent_id == actor
-        and lot.units_remaining
-        and (issuer := private_issuer(lot.spec.asset_id)) is not None
+        if lot.agent_id == actor and lot.units_remaining and (issuer := private_issuer(lot.asset_id)) is not None
     )
     properties = world.properties
     property_value = (

@@ -2,21 +2,17 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s import ApiObjectMetadata, App, Chart
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEndpointSelector,
     CiliumNetworkPolicySpecIngress,
     CiliumNetworkPolicySpecIngressFromEndpoints,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s import namespaces
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 
 NAME = "haku-namespace"
@@ -26,23 +22,21 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/haku/namespace"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "name": NAMESPACE,
-                # Pin the cluster-default (Talos) baseline profile explicitly. The Haku egress fence
-                # depends on it: baseline forbids hostNetwork/hostPort/host*, which is what stops a
-                # pod (Haku has full CRUD here) from escaping the namespace-scoped force-proxy CCNP
-                # via the host netns. Making it a visible label documents that load-bearing
-                # assumption and stops it silently drifting to privileged. See haku/workspaces.py.
-                "pod-security.kubernetes.io/enforce": "baseline",
-            },
-        ),
+        name=NAMESPACE,
+        vpa=Vpa.AUTO,
+        agent_readable=None,
+        labels={
+            "name": NAMESPACE,
+            # Pin the cluster-default (Talos) baseline profile explicitly. The Haku egress fence
+            # depends on it: baseline forbids hostNetwork/hostPort/host*, which is what stops a
+            # pod (Haku has full CRUD here) from escaping the namespace-scoped force-proxy CCNP
+            # via the host netns. Making it a visible label documents that load-bearing
+            # assumption and stops it silently drifting to privileged. See haku/workspaces.py.
+            "pod-security.kubernetes.io/enforce": "baseline",
+        },
     )
     # One ingress boundary for the whole namespace: haku-sandbox is a single trust domain (Haku's
     # code at Haku's privilege -- operator ruling 2026-07-30), and the only way in from outside is
@@ -63,8 +57,8 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "ingress",
-        metadata=metadata("haku-sandbox-ingress", NAMESPACE),
-        selector=CiliumNetworkPolicySpecEndpointSelector(),
+        metadata=ApiObjectMetadata(name="haku-sandbox-ingress", namespace=NAMESPACE),
+        endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(),
         ingress=[
             CiliumNetworkPolicySpecIngress(
                 from_endpoints=[
@@ -84,6 +78,5 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def haku_namespace(flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path) -> Kustomization:
-    write_charts(root, OUTPUT_DIR, chart)
-    return flux_kustomization(flux_chart, NAME, artifact, retry_interval=None, wait=None, timeout="2m")
+def haku_namespace(flux_chart: Chart, directory: RenderedDirectory) -> Kustomization:
+    return flux_kustomization(flux_chart, NAME, directory, retry_interval=None, wait=None, timeout="2m")

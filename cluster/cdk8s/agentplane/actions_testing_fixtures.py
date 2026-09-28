@@ -32,10 +32,8 @@ from cilium_crds.io.cilium import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import cilium, container_security
+from cluster.cdk8s import cilium, pod_policy
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy, deny_all_egress
 
 _NAMESPACE = "agentplane-testing"
@@ -58,7 +56,7 @@ def _add_mcp_everything(scope: Construct) -> None:
     deployment = Deployment(
         scope,
         "mcp-everything-deployment",
-        metadata=metadata(MCP_EVERYTHING_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=MCP_EVERYTHING_NAME, namespace=_NAMESPACE),
         pod_metadata=ApiObjectMetadata(labels=_MCP_EVERYTHING_LABELS),
         replicas=1,
         strategy=DeploymentStrategy.recreate(),
@@ -87,11 +85,11 @@ def _add_mcp_everything(scope: Construct) -> None:
             read_only_root_filesystem=True, capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL])
         ),
     )
-    apply_pod_spec_patches(deployment)
+    pod_policy.harden(deployment)
     Service(
         scope,
         "mcp-everything-service",
-        metadata=metadata(MCP_EVERYTHING_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=MCP_EVERYTHING_NAME, namespace=_NAMESPACE),
         selector=deployment,
         ports=[
             ServicePort(name="http", port=MCP_EVERYTHING_PORT, target_port=MCP_EVERYTHING_PORT, protocol=Protocol.TCP)
@@ -103,8 +101,8 @@ def _add_mcp_everything(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "mcp-everything-networkpolicy",
-        metadata=metadata(MCP_EVERYTHING_NAME, _NAMESPACE),
-        selector=_MCP_EVERYTHING_LABELS,
+        metadata=ApiObjectMetadata(name=MCP_EVERYTHING_NAME, namespace=_NAMESPACE),
+        endpoint_selector=_MCP_EVERYTHING_LABELS,
         ingress=[
             IngressRule.from_endpoints(
                 cilium.endpoint_labels(_NAMESPACE, "agentplane-app"),
@@ -119,8 +117,8 @@ def _add_mcp_everything(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "mcp-everything-callers-networkpolicy",
-        metadata=metadata(f"{MCP_EVERYTHING_NAME}-callers", _NAMESPACE),
-        selector=CiliumNetworkPolicySpecEndpointSelector(
+        metadata=ApiObjectMetadata(name=f"{MCP_EVERYTHING_NAME}-callers", namespace=_NAMESPACE),
+        endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(
             match_expressions=[
                 CiliumNetworkPolicySpecEndpointSelectorMatchExpressions(
                     key="app.kubernetes.io/name",
@@ -137,9 +135,9 @@ def _add_oauth_fixture(scope: Construct) -> None:
     deployment = Deployment(
         scope,
         "oauth-fixture-deployment",
-        metadata=metadata(
-            OAUTH_FIXTURE_NAME,
-            _NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=OAUTH_FIXTURE_NAME,
+            namespace=_NAMESPACE,
             annotations={
                 "description": "Dex-backed OAuth-protected MCP server for acceptance-testing MCP OAuth linkage; the fixture verifies Dex JWTs locally and has no credentials."
             },
@@ -183,13 +181,13 @@ def _add_oauth_fixture(scope: Construct) -> None:
         # at startup inside the image's own runfiles directory, so the root filesystem
         # must stay writable (see cluster/cdk8s/ssh_mcp/backend.py for the same
         # constraint).
-        security_context=container_security.WRITABLE_ROOT,
+        security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
     )
-    apply_pod_spec_patches(deployment)
+    pod_policy.harden(deployment)
     Service(
         scope,
         "oauth-fixture-service",
-        metadata=metadata(OAUTH_FIXTURE_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=OAUTH_FIXTURE_NAME, namespace=_NAMESPACE),
         selector=deployment,
         ports=[
             ServicePort(name="http", port=OAUTH_FIXTURE_PORT, target_port=OAUTH_FIXTURE_PORT, protocol=Protocol.TCP)
@@ -202,8 +200,8 @@ def _add_oauth_fixture(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "oauth-fixture-networkpolicy",
-        metadata=metadata(OAUTH_FIXTURE_NAME, _NAMESPACE),
-        selector=_OAUTH_FIXTURE_LABELS,
+        metadata=ApiObjectMetadata(name=OAUTH_FIXTURE_NAME, namespace=_NAMESPACE),
+        endpoint_selector=_OAUTH_FIXTURE_LABELS,
         ingress=[
             IngressRule.from_endpoints(
                 cilium.endpoint_labels(_NAMESPACE, "agentplane-actions"), ports=[OAUTH_FIXTURE_PORT]

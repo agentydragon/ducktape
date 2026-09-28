@@ -1,0 +1,92 @@
+{
+  "load-128k.json": {
+    "model": "qwen3.8-flash-next-iq4xs",
+    "created_at": "2026-09-27T23:49:06.015237243Z",
+    "done": true,
+    "done_reason": "load"
+  },
+  "load-256k.json": {
+    "model": "qwen3.8-flash-next-iq4xs-256k",
+    "created_at": "2026-09-27T23:38:18.17518184Z",
+    "done": true,
+    "done_reason": "load"
+  },
+  "perf-128k.response.json": {
+    "model": "qwen3.8-flash-next-iq4xs",
+    "created_at": "2026-09-27T23:50:40.093969834Z",
+    "done": true,
+    "done_reason": "length",
+    "total_duration": 22887534662,
+    "load_duration": 2768824,
+    "prompt_eval_count": 51,
+    "prompt_eval_duration": 2489716000,
+    "eval_count": 1024,
+    "eval_duration": 20392335000,
+    "decode_tokens_per_second": 50.214945958861506
+  },
+  "perf-128k-repeat.response.json": {
+    "model": "qwen3.8-flash-next-iq4xs",
+    "created_at": "2026-09-27T23:51:29.726970124Z",
+    "done": true,
+    "done_reason": "length",
+    "total_duration": 17235853875,
+    "load_duration": 940588,
+    "prompt_eval_count": 51,
+    "prompt_eval_duration": 89914000,
+    "eval_count": 1024,
+    "eval_duration": 17062640000,
+    "decode_tokens_per_second": 60.01415959077845
+  },
+  "perf-256k.response.json": {
+    "model": "qwen3.8-flash-next-iq4xs-256k",
+    "created_at": "2026-09-27T23:44:28.841993826Z",
+    "done": true,
+    "done_reason": "length",
+    "total_duration": 27420030644,
+    "load_duration": 1104201,
+    "prompt_eval_count": 51,
+    "prompt_eval_duration": 3580556000,
+    "eval_count": 1024,
+    "eval_duration": 23068400000,
+    "decode_tokens_per_second": 44.389727939519
+  },
+  "perf-256k-repeat.response.json": {
+    "model": "qwen3.8-flash-next-iq4xs-256k",
+    "created_at": "2026-09-27T23:45:32.03616305Z",
+    "done": true,
+    "done_reason": "length",
+    "total_duration": 20881781625,
+    "load_duration": 999706,
+    "prompt_eval_count": 51,
+    "prompt_eval_duration": 103063000,
+    "eval_count": 1024,
+    "eval_duration": 20693454000,
+    "decode_tokens_per_second": 49.48424753064423
+  },
+  "long-256k.response.json": {
+    "model": "qwen3.8-flash-next-iq4xs-256k",
+    "created_at": "2026-09-27T23:41:56.527810062Z",
+    "done": true,
+    "done_reason": "stop",
+    "total_duration": 192235067720,
+    "load_duration": 79298051,
+    "prompt_eval_count": 145048,
+    "prompt_eval_duration": 190764909000,
+    "eval_count": 10,
+    "eval_duration": 1310160000,
+    "decode_tokens_per_second": 7.6326555535201805
+  },
+  "long-decode-256k.response.json": {
+    "model": "qwen3.8-flash-next-iq4xs-256k",
+    "created_at": "2026-09-27T23:43:24.941359361Z",
+    "done": true,
+    "done_reason": "length",
+    "total_duration": 36343019031,
+    "load_duration": 78518616,
+    "prompt_eval_count": 145110,
+    "prompt_eval_duration": 859478000,
+    "eval_count": 1024,
+    "eval_duration": 35219540000,
+    "decode_tokens_per_second": 29.074769290002084
+  }
+}

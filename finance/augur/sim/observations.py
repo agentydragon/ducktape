@@ -7,7 +7,8 @@ from pydantic import Field
 
 from finance.augur.sim.actions import ClaimId
 from finance.augur.sim.books import AccountRef, Record, TaxLiabilityState
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, JurisdictionId, LotId, PortfolioId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, LotId, PortfolioId
+from finance.augur.sim.income import InterestCharacter
 from finance.augur.sim.results import Receipt
 
 
@@ -45,7 +46,7 @@ class HeldBond(Record):
 
     bond_id: BondId
     account_id: AccountId
-    issuer_jurisdiction_id: JurisdictionId | None
+    character: InterestCharacter
     face_value: int
     purchase_price: int
     coupon: Annotated[FixedCoupon | IndexedCoupon, Field(discriminator="kind")]
@@ -85,7 +86,7 @@ class TaxRecords(Record):
 
     income: tuple[tuple[str, int], ...] = Field(
         description=(
-            "This tax year's income per declared income source (`ordinary`, `interest:<issuer>`), in declaration "
+            "This tax year's income per declared income source (`ordinary`, `interest:<character>`), in declaration "
             "order; ordinary income is net of the deductions already taken from it."
         )
     )

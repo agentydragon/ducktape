@@ -10,13 +10,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitRepositorySpec, GitRepositorySpecRef
 
 from cluster.cdk8s.flux import NAMESPACE
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux/sources"
 
@@ -25,7 +24,9 @@ def _source(chart: Chart, name: str, *, url: str, tag: str, description: str | N
     return GitRepository(
         chart,
         name,
-        metadata=metadata(name, NAMESPACE, annotations={"description": description} if description else None),
+        metadata=ApiObjectMetadata(
+            name=name, namespace=NAMESPACE, annotations={"description": description} if description else None
+        ),
         spec=GitRepositorySpec(interval="1h", url=url, ref=GitRepositorySpecRef(tag=tag)),
     )
 
@@ -53,7 +54,7 @@ def chart(app: App) -> Chart:
     GitRepository(
         chart,
         "sshpiper-source",
-        metadata=metadata("sshpiper-source", NAMESPACE),
+        metadata=ApiObjectMetadata(name="sshpiper-source", namespace=NAMESPACE),
         spec=GitRepositorySpec(
             interval="1h",
             url="https://github.com/tg123/sshpiper.git",

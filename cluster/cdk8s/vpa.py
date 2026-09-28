@@ -3,17 +3,12 @@ goldilocks directory's release also uses)."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "vpa"
 NAMESPACE = "kube-system"
@@ -40,7 +35,7 @@ def chart(app: App) -> Chart:
     repository = HelmRepository(
         chart,
         "repository",
-        metadata=metadata(_REPOSITORY_NAME, _REPOSITORY_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_REPOSITORY_NAME, namespace=_REPOSITORY_NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://charts.fairwinds.com/stable"),
     )
     helm_release(
@@ -67,13 +62,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def vpa(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno: Kustomization, metrics_server: Kustomization
-) -> Kustomization:
+def vpa(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart, NAME, artifact, timeout="5m", depends_on=flux_kustomization_depends_on_many(kyverno, metrics_server)
+        chart, NAME, directory, timeout="5m", depends_on=flux_kustomization_depends_on_many(kyverno)
     )

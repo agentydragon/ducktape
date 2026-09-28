@@ -5,14 +5,11 @@ Google Calendar MCP action groups.
 
 from __future__ import annotations
 
-from cdk8s import App, Chart, Duration
+from cdk8s import ApiObjectMetadata, App, Chart, Duration
 from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute, ServiceAccount
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecRefreshPolicy,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
-    ExternalSecretSpecTargetTemplate,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
@@ -22,7 +19,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from agentplane.action_service.sandbox.actions import SandboxAction
-from cluster.cdk8s import cilium, external_creds
+from cluster.cdk8s import cilium, external_creds, node_scheduling
 from cluster.cdk8s.agentplane import actions, command_sandbox, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.chart import environment_chart
@@ -38,17 +35,12 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule
-from cluster.cdk8s.providers.external_secrets.external_secret import (
-    DataFrom,
-    ExternalSecret,
-    SecretStoreRef,
-    remote_data,
-)
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
 
 _NAMESPACE = "agentplane-staging"
@@ -306,7 +298,7 @@ ENV = Environment(
         hostname=_HOSTNAME,
         oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane-staging/",
         reach_incluster_authentik=True,
-        runner_zone="hil-ovh",
+        runner_zone=node_scheduling.HIL_OVH_ZONE,
         oidc_session_secret_name=_OIDC_SESSION_SECRET,
     ),
     actions=ActionsProps(
@@ -365,19 +357,24 @@ def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
     command_sandbox.CommandSandbox(chart, "command-sandbox", ENV)
     reader = ServiceAccount(
-        chart, "external-creds-reader", metadata=metadata("external-creds-reader", _NAMESPACE), automount_token=False
+        chart,
+        "external-creds-reader",
+        metadata=ApiObjectMetadata(name="external-creds-reader", namespace=_NAMESPACE),
+        automount_token=False,
     )
     ExternalSecret(
         chart,
         "tana-pat-external-secret",
-        name=_TANA_MCP_BEARER_SECRET,
-        namespace=_NAMESPACE,
-        refresh="1h",
-        store=external_creds.STORE,
+        metadata=ApiObjectMetadata(
+            name=_TANA_MCP_BEARER_SECRET,
+            namespace=_NAMESPACE,
+            annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
+        ),
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data(_TANA_MCP_BEARER_SECRET, "token")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
     )
     for backend, target, source in (
         ("ssh-mcp", _SSH_MCP_BEARER_SECRET, BEARER_SECRET_NAME),
@@ -404,10 +401,9 @@ def chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         "github-mcp-client-external-secret",
-        name=_GITHUB_MCP_CLIENT_SECRET,
-        namespace=_NAMESPACE,
-        refresh="1h",
-        store=SecretStoreRef.cluster(
+        metadata=ApiObjectMetadata(name=_GITHUB_MCP_CLIENT_SECRET, namespace=_NAMESPACE),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster(
             single_secret_store(
                 chart,
                 "agentplane-staging-github-mcp-client",
@@ -438,24 +434,18 @@ def _add_session_secret(scope: Chart) -> None:
     Rotating this value invalidates existing browser sessions, but does not touch the
     Authentik OAuth client credentials or the Agentplane testing environment.
     """
-    Password(
-        scope,
-        "session-password-generator",
-        metadata=metadata(_OIDC_SESSION_SECRET, _NAMESPACE),
-        spec=PasswordSpec(length=64, digits=16, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         scope,
         "session-external-secret",
         name=_OIDC_SESSION_SECRET,
         namespace=_NAMESPACE,
-        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[DataFrom.from_password_generator(_OIDC_SESSION_SECRET)],
+        key="session-secret",
+        length=64,
+        digits=16,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"session-secret": "{{ .password }}"}),
         immutable=True,
-        annotations={"description": "ESO-generated Agentplane staging session-signing key."},
+        description="ESO-generated Agentplane staging session-signing key.",
     )
 
 
@@ -465,12 +455,10 @@ def agentplane_staging(
     health_checks: list[KustomizationSpecHealthChecks],
     agentplane_crds: Kustomization,
     agent_sandbox_controller: Kustomization,
-    cert_manager_environment: Kustomization,
     cert_manager_trust: Kustomization,
     claude_rbac: Kustomization,
     cnpg: Kustomization,
-    external_creds: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -498,13 +486,6 @@ def agentplane_staging(
         ],
         decryption=sops_decryption(ENV.extra_resources),
         depends_on=flux_kustomization_depends_on_many(
-            agentplane_crds,
-            agent_sandbox_controller,
-            cert_manager_environment,
-            cert_manager_trust,
-            claude_rbac,
-            cnpg,
-            external_creds,
-            external_secrets_config,
+            agentplane_crds, agent_sandbox_controller, cert_manager_trust, claude_rbac, cnpg, external_secrets_operator
         ),
     )

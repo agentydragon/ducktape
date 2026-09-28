@@ -1276,7 +1276,17 @@ routes.push(
   [
     "GET",
     /^\/models$/,
-    () => ({ HARNESS_CLAUDE: ["harness-claude-model", "next-model"], HARNESS_CODEX: ["harness-codex-model"] }),
+    () => ({
+      models: [
+        { model: "harness-claude-model", display_name: "Harness Claude Model" },
+        { model: "next-model", display_name: "Next Model" },
+        { model: "harness-codex-model", display_name: "Harness Codex Model" },
+      ],
+      harnesses: {
+        HARNESS_CLAUDE: ["harness-claude-model", "next-model"],
+        HARNESS_CODEX: ["harness-codex-model"],
+      },
+    }),
   ],
   [
     "GET",
@@ -1749,6 +1759,18 @@ if (scenario.openDebug) {
     openDebug.observe(document, { childList: true, subtree: true });
   });
   openMenu.observe(document, { childList: true, subtree: true });
+}
+
+if (scenario.openMoreMenu) {
+  // Left open, unlike scenario.openDebug's use of the same trigger: this scene's point is the
+  // menu's own contents, not a page it navigates to.
+  const openMoreMenu = new MutationObserver(() => {
+    const trigger = document.querySelector('button[aria-label="More"]');
+    if (!(trigger instanceof HTMLButtonElement)) return;
+    openMoreMenu.disconnect();
+    trigger.click();
+  });
+  openMoreMenu.observe(document, { childList: true, subtree: true });
 }
 
 /** Opens the folded tool-call run, whose steps mount only once it is open. */

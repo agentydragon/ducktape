@@ -1,6 +1,6 @@
 # Private-equity valuation and issuance models
 
-This describes existing conventions in <../model/private_equity_risk.py>, not
+This describes existing conventions in <../x/models/private_equity_risk.py>, not
 validated cap-table economics or a recommendation of a deployment preset.
 The [calibration contract](calibration.md) owns market resolution and reporting.
 
@@ -37,7 +37,7 @@ of these latent marks establishes a particular holder's liquidity or waterfall.
 
 ## Existing fit and controls
 
-<../fit/bayes_mint_streams.py> and <../fit/fit_mint_streams_report.py> already
+<../x/models/bayes_mint_streams.py> and <../x/models/fit_mint_streams_report.py> already
 implement the annotated-primary-round fit/report path. Round dates/cash are
 observed inputs. The fit uses fixed unit step-up and fixed drift-shape priors,
 NUTS for its remaining latent-path/issuance parameters, and a Gamma-Poisson event
@@ -48,6 +48,13 @@ That Poisson-rate fit and the runtime's direct monthly Bernoulli probability are
 different conventions. Their reconciliation, non-unit step-up economics,
 posterior propagation and predictive adequacy belong to deferred PE research,
 not a claim that the old plan has certified a complete model.
+
+A headline company valuation is not a realizable holder price: sale rights,
+discounts and eligibility need a stated owner and provenance. Conditioning company
+events on a macro path specifies a joint model without validating the assumed
+dependence. A reference-class fit accounts for failed, unresolved and censored
+companies before its result transfers to one issuer; fitting a handful of current
+quotes does not establish event timing or no-liquidity tails.
 
 Adjacent sampler and fitter tests pin configuration rejection, opening anchors,
 round/mint behavior and synthetic fitting controls. The preset-shaped central

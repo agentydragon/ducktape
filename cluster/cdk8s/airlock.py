@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngress,
@@ -19,25 +19,21 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPorts,
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTargetCreationPolicy,
-    ExternalSecretSpecTargetTemplate,
-)
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.env_helpers import secret_env_var
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     ClusterDataFrom,
     ClusterExternalSecret,
-    DataFrom,
-    ExternalSecret,
+    ClusterSecretStoreRef,
 )
 
 NAME = "airlock"
@@ -63,9 +59,7 @@ def _deployment(chart: Chart) -> None:
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=NAME, namespace=NAME, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAME, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -127,21 +121,15 @@ def _deployment(chart: Chart) -> None:
 def _session_secret(chart: Chart) -> None:
     """Airlock's session-signing key is app-local. A key rotation invalidates existing browser
     sessions but does not need to update Authentik or another credential store."""
-    generator = Password(
-        chart,
-        "session-secret-generator",
-        metadata=metadata(_SESSION_SECRET, NAME),
-        spec=PasswordSpec(allow_repeat=True, digits=16, length=64, no_upper=False, symbols=0),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         chart,
         "session-secret",
         name=_SESSION_SECRET,
         namespace=NAME,
-        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[DataFrom.from_password_generator(generator.name)],
+        key="session-secret",
+        length=64,
+        digits=16,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
-        template=ExternalSecretSpecTargetTemplate(data={"session-secret": "{{ .password }}"}, type="Opaque"),
         immutable=True,
     )
 
@@ -151,10 +139,10 @@ def _mirror(chart: Chart, name: str, namespaces: list[str]) -> None:
     ClusterExternalSecret(
         chart,
         name,
-        name=name,
+        metadata=ApiObjectMetadata(name=name),
         namespaces=namespaces,
-        store_name="kubernetes-airlock-secret-store",
-        refresh="1m",
+        secret_store_ref=ClusterSecretStoreRef.cluster("kubernetes-airlock-secret-store"),
+        refresh_interval="1m",
         data_from=[ClusterDataFrom.from_extract(name)],
     )
 
@@ -177,27 +165,22 @@ def _ingress_from(entity: CiliumNetworkPolicySpecIngressFromEntities) -> CiliumN
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAME,
-            labels={
-                "name": NAME,
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-            annotations={
-                # controlledValues has to be spelled out here: default-vpa-requests-only
-                # only adds the annotation when it is absent, so declaring any policy of
-                # your own opts the namespace out of the default entirely.
-                "goldilocks.fairwinds.com/vpa-resource-policy": (
-                    '{ "containerPolicies": [ { "containerName": "*", "controlledValues":'
-                    ' "RequestsOnly", "minAllowed": { "cpu": "100m", "memory": "128Mi" } } ] }\n'
-                )
-            },
-        ),
+        name=NAME,
+        vpa=Vpa.AUTO,
+        agent_readable=AgentReadable.LOGS,
+        labels={"name": NAME},
+        annotations={
+            # controlledValues has to be spelled out here: default-vpa-requests-only
+            # only adds the annotation when it is absent, so declaring any policy of
+            # your own opts the namespace out of the default entirely.
+            "goldilocks.fairwinds.com/vpa-resource-policy": (
+                '{ "containerPolicies": [ { "containerName": "*", "controlledValues":'
+                ' "RequestsOnly", "minAllowed": { "cpu": "100m", "memory": "128Mi" } } ] }\n'
+            )
+        },
     )
     _session_secret(chart)
     _deployment(chart)
@@ -236,7 +219,7 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "httproute",
-        metadata=metadata(NAME, NAME),
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAME),
         hostnames=["airlock.allegedly.works"],
         backend=NAME,
         port=_PORT,
@@ -248,8 +231,8 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "ciliumnetworkpolicy",
-        metadata=metadata("airlock-ingress", NAME),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name="airlock-ingress", namespace=NAME),
+        endpoint_selector=_LABELS,
         ingress=[
             _ingress_from(CiliumNetworkPolicySpecIngressFromEntities.INGRESS),
             # Kubelet liveness/readiness probes originate from the node host.

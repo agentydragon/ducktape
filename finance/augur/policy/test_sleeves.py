@@ -1,6 +1,6 @@
 """Exact budgets and scoped proposals, settled by the real action executor."""
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from itertools import product
 
 import pytest
@@ -10,10 +10,10 @@ from finance.augur.policy import sleeves
 from finance.augur.sim.actions import Consume, DecisionActions, Sell, Transfer
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot, PreparedSeries
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Finished, RejectedAction
-from finance.augur.sim.scenario import ORDINARY_INCOME
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 
@@ -60,19 +60,28 @@ PRICES = tuple(
     PreparedSeries(series_id=f"security:{asset}", snapshots=3, values=(3, 3, 3)) for asset in (FIRST, SECOND)
 )
 # Same economic holdings on different valid grids: tenths in the portfolio, whole units outside.
-POOLS = tuple(
-    PreparedHoldingPool(agent_id=OWNER, account_id=account, asset_id=asset, quantity_scale=scale)
-    for account, asset, scale in ((PORTFOLIO, FIRST, 10), (PORTFOLIO, SECOND, 10), (OUTSIDE, FIRST, 1))
-)
+POOLS = ((PORTFOLIO, FIRST, 10), (PORTFOLIO, SECOND, 10), (OUTSIDE, FIRST, 1))
+
+
+@dataclass(frozen=True, kw_only=True)
+class Lot:
+    """One of the owner's opening lots."""
+
+    lot_id: LotId
+    account_id: AccountId
+    asset_id: AssetId
+    purchase_month: int
+    quantity_scale: int
+    units: int
+    basis: int
 
 
 @pytest.fixture
-def lots() -> tuple[PreparedLot, ...]:
+def lots() -> tuple[Lot, ...]:
     """0.4 and 0.3 of FIRST and one SECOND in the portfolio, one FIRST outside, each bought at USD 0.03 a unit."""
     return tuple(
-        PreparedLot(
+        Lot(
             lot_id=LotId(lot_id),
-            agent_id=OWNER,
             account_id=account,
             asset_id=asset,
             purchase_month=month,
@@ -89,23 +98,30 @@ def lots() -> tuple[PreparedLot, ...]:
     )
 
 
-def session(lots: tuple[PreparedLot, ...]) -> ActionSession:
+def session(lots: tuple[Lot, ...]) -> ActionSession:
     """The owner's USD 0.07 and `lots` over two months, spending into the world's account."""
     world = World(MarketPath(PRICES, 0, rollout_count=1), horizon_months=2, income_sources=(ORDINARY_INCOME,))
     for agent_id, balance in ((OWNER, 7), (AgentId("test-world"), 0)):
         world.declare_account(
-            PreparedAccount(
-                account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")), opening_balance=balance
-            )
+            account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")), opening_balance=balance
         )
-    for pool in POOLS:
-        world.declare_pool(pool)
+    for account, asset, scale in POOLS:
+        world.declare_pool(agent_id=OWNER, account_id=account, asset_id=asset, quantity_scale=scale)
     for lot in lots:
-        world.hold(lot)
+        world.hold_lot(
+            lot_id=lot.lot_id,
+            agent_id=OWNER,
+            account_id=lot.account_id,
+            asset_id=lot.asset_id,
+            purchase_month=lot.purchase_month,
+            quantity_scale=lot.quantity_scale,
+            units=lot.units,
+            basis=lot.basis,
+        )
     return ActionSession({0: world}, OWNER)
 
 
-def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(lots: tuple[PreparedLot, ...]) -> None:
+def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(lots: tuple[Lot, ...]) -> None:
     live = session(lots)
     try:
         batch = live.start()
@@ -162,9 +178,7 @@ def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(lots: tuple[Pr
     assert ending[LotId("test-second")].units_remaining == 10
 
 
-def test_grouped_symbol_withdrawal_keeps_account_order_and_each_lots_quantity_grid(
-    lots: tuple[PreparedLot, ...],
-) -> None:
+def test_grouped_symbol_withdrawal_keeps_account_order_and_each_lots_quantity_grid(lots: tuple[Lot, ...]) -> None:
     live = session(lots)
     try:
         batch = live.start()
@@ -194,7 +208,7 @@ def test_grouped_symbol_withdrawal_keeps_account_order_and_each_lots_quantity_gr
 
 
 @pytest.mark.parametrize("dust", [False, True])
-def test_zero_target_full_exit_reentry_and_reserved_cash(lots: tuple[PreparedLot, ...], dust: bool) -> None:
+def test_zero_target_full_exit_reentry_and_reserved_cash(lots: tuple[Lot, ...], dust: bool) -> None:
     if dust:
         opening_lots = tuple(lot for lot in lots if lot.lot_id != "test-newer")
         lots = (replace(opening_lots[0], units=1), *opening_lots[1:])
@@ -232,7 +246,7 @@ def test_zero_target_full_exit_reentry_and_reserved_cash(lots: tuple[PreparedLot
 
 
 @pytest.mark.parametrize("unheld", [False, True])
-def test_deposit_reserves_cash_and_never_buys_zero_target(lots: tuple[PreparedLot, ...], unheld: bool) -> None:
+def test_deposit_reserves_cash_and_never_buys_zero_target(lots: tuple[Lot, ...], unheld: bool) -> None:
     if unheld:
         lots = tuple(lot for lot in lots if lot.asset_id != SECOND)
     live = session(lots)
@@ -270,7 +284,7 @@ def test_deposit_reserves_cash_and_never_buys_zero_target(lots: tuple[PreparedLo
         live.close()
 
 
-def test_selected_pools_keep_their_own_economic_unit_scale(lots: tuple[PreparedLot, ...]) -> None:
+def test_selected_pools_keep_their_own_economic_unit_scale(lots: tuple[Lot, ...]) -> None:
     live = session(lots)
     try:
         batch = live.start()

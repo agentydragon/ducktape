@@ -5,7 +5,7 @@ i.e. emit a diverse cloud of trajectories *in augur's native shape* whose margin
 after one max-ent reweight to the market prices, snap to those prices without the effective
 sample size collapsing?
 
-augur's native trajectory (augur/model/state_space.py): a DENSE MONTHLY level path per factor,
+augur's native trajectory (augur/x/models/state_space.py): a DENSE MONTHLY level path per factor,
 shape (rollout, horizon_months+1, factors). Factors are augur wire-ids: `inflation` (CPI index),
 `sp500`, `crypto:BTC`, `home_value:<loc>`, `rent:<loc>`, plus private-equity issuer marks. So the
 LLM emits dense monthly paths over exactly those series (no annual knots, no post-hoc

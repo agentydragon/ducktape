@@ -5,7 +5,10 @@ routes and policies passed in here.
 
 from __future__ import annotations
 
+from cluster.cdk8s.agentplane.model_display_names import display_name
+
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
+_THREAD_PRESET_HAKU_CLAUDE = "haku-claude"
 # The EgressPolicy objects egress creates in every environment, named here
 # because the presets bind them.
 BASIC_POLICY = "basic"
@@ -22,6 +25,7 @@ ACTIVITYWATCH_READ_POLICY = "activitywatch-read"
 AIQUOTA_READ_POLICY = "aiquota-read"
 HAKU_MAILBOX_POLICY = "haku-mailbox"
 COINBASE_POLICY = "coinbase"
+BUILDBUDDY_POLICY = "buildbuddy"
 
 
 def settings(
@@ -31,9 +35,17 @@ def settings(
     harness_codex: list[str],
     thread_preset_codex_model: str,
     action_policy_sets: list[str] | None = None,
+    haku_preset_model: str | None = None,
 ) -> dict:
+    # A model both harnesses accept (e.g. a local Ollama route) names its display name once,
+    # regardless of how many harness lists reference it. dict.fromkeys dedupes while keeping
+    # each model's first-seen order.
+    all_models = dict.fromkeys((*harness_claude, *harness_codex))
     return {
-        "models": {"HARNESS_CLAUDE": harness_claude, "HARNESS_CODEX": harness_codex},
+        "models": {
+            "models": [{"model": model, "display_name": display_name(model)} for model in all_models],
+            "harnesses": {"HARNESS_CLAUDE": harness_claude, "HARNESS_CODEX": harness_codex},
+        },
         # Rendered into the image-owned agent-instruction template; deployments may use
         # different service names.
         "agent_egress_api_url": f"http://agentplane-egress.{namespace}.svc.cluster.local",
@@ -52,7 +64,33 @@ def settings(
                     "Work as a public-repository coding agent. Keep private cluster data "
                     "out of the workspace and outputs."
                 ),
-            }
+            },
+            **(
+                {
+                    _THREAD_PRESET_HAKU_CLAUDE: {
+                        "title": "Haku",
+                        "harness": "HARNESS_CLAUDE",
+                        "model": haku_preset_model,
+                        "cwd": "/state/workspaces/{session_id}",
+                        "reasoning_effort": "medium",
+                        # Mirrors haku.agent.yaml's `system` prose (the same pointer the cloud and
+                        # self-hosted managed agents both carry): who reads what, and where the
+                        # real instructions live -- deliberately not duplicated here, so this
+                        # preset cannot drift from Haku's own run procedure.
+                        "instructions": (
+                            "You are Haku, the operator's tireless background executive "
+                            "assistant. Your haku-state checkout -- your memory, your method, "
+                            "and your only write surface -- is at haku-state, with git auth "
+                            "already in place. It also holds who you are: read AGENTS.md, "
+                            "SOUL.md and MEMORY.md at its root, then your run procedure at "
+                            "memory/procedures/run.md. Read those, then execute the run "
+                            "procedure end to end. Commit and push haku-state as you go."
+                        ),
+                    }
+                }
+                if haku_preset_model is not None
+                else {}
+            ),
         },
         "sandbox_presets": {
             "public-coder": {
@@ -73,7 +111,63 @@ def settings(
                     "  printf '%s\\n' 'public-coder workspace initialized' > \"$marker\"\n"
                     "fi\n"
                 ),
-            }
+            },
+            **(
+                {
+                    "haku": {
+                        "title": "Haku",
+                        "template": "agentplane-runner",
+                        # At least claude-ai's own reach (actions_staging_policies.py's
+                        # EgressBinding for haku-agent binds the same superset at the
+                        # ServiceAccount level); listed again here because a preset's
+                        # `policies` are what a *launch* is granted, independent of which
+                        # caller/ServiceAccount stamps it.
+                        "policies": [
+                            BASIC_POLICY,
+                            KUBERNETES_POLICY,
+                            FORGEJO_HAKU_POLICY,
+                            PACKAGES_POLICY,
+                            GOOGLE_READONLY_POLICY,
+                            GROCY_SF_READONLY_POLICY,
+                            HOME_ASSISTANT_READONLY_POLICY,
+                            ACTIVITYWATCH_READ_POLICY,
+                            AIQUOTA_READ_POLICY,
+                            HAKU_MAILBOX_POLICY,
+                            COINBASE_POLICY,
+                            GITHUB_CLONE_POLICY,
+                            GITHUB_AGENTYDRAGON_AGENT_POLICY,
+                            GITHUB_ACTIONS_LOGS_POLICY,
+                        ],
+                        "thread_preset": _THREAD_PRESET_HAKU_CLAUDE,
+                        # Shallow clone of haku-state over the in-cluster Forgejo, the way
+                        # haku-sandbox-setup.sh clones it for Haku's own sandboxes
+                        # (cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh): --depth 1
+                        # because the box only needs the HEAD checkout, not full history. The
+                        # URL's userinfo carries the literal placeholder string as the password
+                        # half; git turns that into a Basic Authorization header, and the
+                        # `forgejo-haku` EgressPolicy's credentialRef substitutes it for the
+                        # `haku` Forgejo account's real password on the way out
+                        # (egress_staging_credentials.py) -- the placeholder itself is inert, so
+                        # it is safe to embed literally here. ducktape is cloned too, read-only
+                        # reference the same way Haku's own sandboxes carry it.
+                        "bootstrap": (
+                            "marker=/state/workspaces/.agentplane-haku-ready\n"
+                            "mkdir -p /state/workspaces\n"
+                            'if [ ! -f "$marker" ]; then\n'
+                            "  git clone --depth 1 --branch main --single-branch "
+                            "http://haku:agentplane-credential-forgejo-haku@"
+                            "forgejo-http.forgejo.svc.cluster.local:3000/haku/haku-state.git "
+                            "/state/workspaces/haku-state\n"
+                            "  git clone --depth 1 --branch devel --single-branch "
+                            "https://github.com/agentydragon/ducktape.git /state/workspaces/ducktape\n"
+                            "  printf '%s\\n' 'haku workspace initialized' > \"$marker\"\n"
+                            "fi\n"
+                        ),
+                    }
+                }
+                if haku_preset_model is not None
+                else {}
+            ),
         },
         # Granted to every sandbox before whatever the operator picks: without the model
         # endpoint a sandbox has no agent, so it is not a choice (see this namespace's

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
     GitRepository,
     GitRepositorySpec,
@@ -35,7 +35,6 @@ from flux_imageupdateautomation_crds.io.fluxcd.toolkit.image import (
 
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "gaffer-private"
 NAMESPACE = "flux-system"
@@ -48,9 +47,9 @@ def chart(app: App) -> Chart:
     source = GitRepository(
         chart,
         "source",
-        metadata=metadata(
-            NAME,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=NAME,
+            namespace=NAMESPACE,
             annotations={
                 "description": "Private companion monorepo. Reconciled from main branch via the ducktape-automation "
                 "GitHub App (also used to push image-pin commits back here)."
@@ -67,9 +66,9 @@ def chart(app: App) -> Chart:
     ImageUpdateAutomation(
         chart,
         "automation",
-        metadata=metadata(
-            "gaffer-images",
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name="gaffer-images",
+            namespace=NAMESPACE,
             annotations={
                 "description": "Sibling of `all-images` for the gaffer-private GitRepository. Watches ImagePolicies "
                 "whose marker comments target gaffer-private's manifests and commits image-tag bumps back to "

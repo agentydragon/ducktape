@@ -17,13 +17,14 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.valkey import valkey_instance
 
@@ -35,7 +36,6 @@ _HTTP_PORT = 8765
 _METRICS_PORT = 9090
 # The base's placeholder; each household's kustomization.yaml patches in its own Secret.
 _OIDC_SECRET = "grocy-mcp-oidc"
-_CONTROL_PLANE = "node-role.kubernetes.io/control-plane"
 
 
 def _secret_env(name: str, key: str) -> k8s.EnvVar:
@@ -59,8 +59,7 @@ def base_chart(app: App) -> Chart:
                     "FastMCP server generating Grocy tools from Grocy's OpenAPI spec. Per-request token"
                     " exchange swaps the caller's Authentik JWT for a Grocy-proxy-scoped JWT before calling"
                     " Grocy."
-                ),
-                "reloader.stakater.com/auto": "true",
+                )
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -73,25 +72,12 @@ def base_chart(app: App) -> Chart:
                     # The OAuth state Valkey instances use local-path-ovh and are pinned to
                     # hil-ovh. Keep the MCP client in the same site: valkey-glide's default
                     # 250 ms request timeout is too small for the current cross-site path.
-                    node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     # Stateless (config only, no PVC). Allow control-plane nodes as overflow
                     # capacity, but prefer workers to keep ordinary application I/O away from
                     # etcd disks.
-                    tolerations=[k8s.Toleration(key=_CONTROL_PLANE, operator="Exists", effect="NoSchedule")],
-                    affinity=k8s.Affinity(
-                        node_affinity=k8s.NodeAffinity(
-                            preferred_during_scheduling_ignored_during_execution=[
-                                k8s.PreferredSchedulingTerm(
-                                    weight=100,
-                                    preference=k8s.NodeSelectorTerm(
-                                        match_expressions=[
-                                            k8s.NodeSelectorRequirement(key=_CONTROL_PLANE, operator="DoesNotExist")
-                                        ]
-                                    ),
-                                )
-                            ]
-                        )
-                    ),
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
+                    affinity=node_scheduling.PREFER_WORKERS,
                     containers=[
                         k8s.Container(
                             name="server",
@@ -167,7 +153,7 @@ def base_chart(app: App) -> Chart:
         chart,
         "servicemonitor",
         metadata=ApiObjectMetadata(name=_NAME),
-        selector=_LABELS,
+        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
         endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
     return chart
@@ -182,7 +168,7 @@ def household_chart(app: App, *, household: str, display_name: str) -> Chart:
     https_route(
         chart,
         "httproute",
-        metadata=metadata(f"grocy-mcp-{household}-server", namespace),
+        metadata=ApiObjectMetadata(name=f"grocy-mcp-{household}-server", namespace=namespace),
         hostnames=[f"grocy-mcp-{household}.allegedly.works"],
         backend=_NAME,
         port=_HTTP_PORT,

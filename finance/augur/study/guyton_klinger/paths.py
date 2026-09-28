@@ -25,45 +25,31 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.compiler.tax import PreparedTaxProfile, compile_profile
-from finance.augur.sim.external_series import ExternalSeriesContext
-from finance.augur.sim.fixed_point import (
-    currency_amount_to_quanta,
-    quantity_to_quanta,
-    rate_to_ppb,
-    round_currency_amount,
-)
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
+from finance.augur.sim.fixed_point import quantity_to_quanta, rate_to_ppb, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
-from finance.augur.sim.jurisdictions import JurisdictionLevel
-from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedDistribution,
-    PreparedDistributionSlice,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedSeries,
-)
-from finance.augur.sim.runtime import load_jurisdictions_for
-from finance.augur.sim.scenario import (
+from finance.augur.sim.income import (
     ORDINARY_INCOME,
-    FilingStatus,
     InterestIncome,
     QualifiedDividendIncome,
-    TaxProfile,
     TransferIncomeCategory,
+    Treasury,
 )
+from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import Currency
+from finance.augur.sim.prepared import PreparedSeries
+from finance.augur.sim.runtime import load_jurisdictions_for
+from finance.augur.sim.tax import PreparedTaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw, FixedNominalLaw, TaxIndexation
+from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
 from finance.augur.sim.world import World
 from finance.augur.study.guyton_klinger.panel import PRICED, AnnualPanel, Sleeve
 
 MONTHS_PER_YEAR = 12
 # Every sleeve's unit is priced at one dollar in each window's January. Fine enough that
 # proxy rounding stays far below any reported digit: micro-dollar money, nano-unit quantities.
-QUANTUM = Decimal("0.000001")
+CURRENCY = Currency(code="USD", quantum=Decimal("0.000001"))
 QUANTITY_SCALE = 10**9
 
 RETIREE = AgentId("retiree")
@@ -90,8 +76,8 @@ class TaxLaw(StrEnum):
 
 
 PAYOUT_INCOME: dict[Sleeve, TransferIncomeCategory] = {
-    Sleeve.CASH: InterestIncome(issuer_jurisdiction_id=FEDERAL),
-    Sleeve.BONDS: InterestIncome(issuer_jurisdiction_id=FEDERAL),
+    Sleeve.CASH: InterestIncome(character=Treasury()),
+    Sleeve.BONDS: InterestIncome(character=Treasury()),
     Sleeve.EQUITY: QualifiedDividendIncome(),
 }
 """Treasury bills and bonds pay interest the federal government issued: federally taxable,
@@ -195,7 +181,7 @@ def annual_windows(
             ExternalSeriesContext.from_level_blocks(blocks, rollout_count=len(offsets), horizon_months=horizon),
             rollout_count=len(offsets),
             horizon_months=horizon,
-            currency_quantum=QUANTUM,
+            currency=CURRENCY,
         ),
     )
 
@@ -214,7 +200,7 @@ def _federal_ca_taxes(panel: AnnualPanel, start_years: Sequence[int], tax_law: T
         payment_account_id=TAX_RESERVE,
         tax_authority_account_id=CHECKING,
     )
-    profile = compile_profile(taxpayer, load_jurisdictions_for([taxpayer]), quantum=QUANTUM)
+    profile = compile_profile(taxpayer, load_jurisdictions_for([taxpayer]), currency=CURRENCY)
     if tax_law is TaxLaw.FIXED_NOMINAL:
         return FederalCaTaxes(profile=profile, laws=(FixedNominalLaw(),) * len(start_years))
     law_year = one(
@@ -230,22 +216,16 @@ def _federal_ca_taxes(panel: AnnualPanel, start_years: Sequence[int], tax_law: T
 
 
 def _declare_taxes(world: World, taxes: FederalCaTaxes, rollout_id: int) -> None:
-    """The window's tax authority, with sleeve payouts characterized by issuer."""
-    world.declare_account(
-        PreparedAccount(account=AccountRef(agent_id=TAX_AUTHORITY, account_id=CHECKING), opening_balance=0)
-    )
+    """The window's tax authority, with sleeve payouts characterized by tax character."""
+    world.declare_account(account=AccountRef(agent_id=TAX_AUTHORITY, account_id=CHECKING), opening_balance=0)
     world.track(TaxAuthority(taxes.profile, indexation=taxes.laws[rollout_id]))
     for sleeve in Sleeve:
         world.declare_distribution(
-            PreparedDistribution(
-                agent_id=RETIREE,
-                holding_account_id=BROKERAGE,
-                asset_id=AssetId(sleeve),
-                to_account_id=INCOME[sleeve],
-                tax_character=(
-                    PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), income_category=PAYOUT_INCOME[sleeve]),
-                ),
-            )
+            agent_id=RETIREE,
+            holding_account_id=BROKERAGE,
+            asset_id=AssetId(sleeve),
+            to_account_id=INCOME[sleeve],
+            tax_character={PAYOUT_INCOME[sleeve]: rate_to_ppb(1)},
         )
 
 
@@ -265,41 +245,31 @@ def compose_world(windows: AnnualWindows, rollout_id: int, *, wealth: Decimal, w
         MarketPath(windows.series, rollout_id, rollout_count=len(windows.start_years)),
         horizon_months=windows.horizon_months,
         income_sources=(ORDINARY_INCOME, *dict.fromkeys(PAYOUT_INCOME.values())) if taxed else (),
-        jurisdictions=(
-            PreparedJurisdiction(jurisdiction_id=FEDERAL, level=JurisdictionLevel.FEDERAL),
-            PreparedJurisdiction(jurisdiction_id=CALIFORNIA, level=JurisdictionLevel.STATE),
-        )
-        if taxed
-        else (),
     )
     retiree_accounts = [CHECKING, *([TAX_RESERVE, *INCOME.values()] if taxed else [])]
     for account in (
         *(AccountRef(agent_id=RETIREE, account_id=account_id) for account_id in retiree_accounts),
         AccountRef(agent_id=WORLD, account_id=CHECKING),
     ):
-        world.declare_account(PreparedAccount(account=account, opening_balance=0))
+        world.declare_account(account=account, opening_balance=0)
     for sleeve in Sleeve:
         world.declare_pool(
-            PreparedHoldingPool(
-                agent_id=RETIREE, account_id=BROKERAGE, asset_id=AssetId(sleeve), quantity_scale=QUANTITY_SCALE
-            )
+            agent_id=RETIREE, account_id=BROKERAGE, asset_id=AssetId(sleeve), quantity_scale=QUANTITY_SCALE
         )
     if taxes is not None:
         _declare_taxes(world, taxes, rollout_id)
     for sleeve in Sleeve:
         if not weights[sleeve]:
             continue
-        value = round_currency_amount(wealth * weights[sleeve] / total, quantum=QUANTUM)
-        world.hold(
-            PreparedLot(
-                lot_id=LotId(f"{sleeve}_opening"),
-                agent_id=RETIREE,
-                account_id=BROKERAGE,
-                asset_id=AssetId(sleeve),
-                purchase_month=-1,
-                quantity_scale=QUANTITY_SCALE,
-                units=int(quantity_to_quanta(value, scale=QUANTITY_SCALE)),
-                basis=int(currency_amount_to_quanta(value, quantum=QUANTUM)),
-            )
+        value = round_currency_amount(wealth * weights[sleeve] / total, quantum=CURRENCY.quantum)
+        world.hold_lot(
+            lot_id=LotId(f"{sleeve}_opening"),
+            agent_id=RETIREE,
+            account_id=BROKERAGE,
+            asset_id=AssetId(sleeve),
+            purchase_month=-1,
+            quantity_scale=QUANTITY_SCALE,
+            units=quantity_to_quanta(value, scale=QUANTITY_SCALE),
+            basis=CURRENCY.quanta(value),
         )
     return world
