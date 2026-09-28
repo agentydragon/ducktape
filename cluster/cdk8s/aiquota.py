@@ -37,7 +37,6 @@ from cdk8s_plus_34 import (
     ServicePort,
     Volume,
     VolumeMount,
-    k8s,
 )
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -54,7 +53,6 @@ from cluster.cdk8s import pod_policy, public_coder_proxy
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE
 from cluster.cdk8s.cli_proxy_api import cli_proxy_api as cli_proxy_api_app  # aiquota()'s parameter is its Kustomization
 from cluster.cdk8s.clickhouse import client
-from cluster.cdk8s.env_helpers import secret_env_value
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -69,6 +67,8 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.secret_ref import SecretKey, SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.settings_contract import checked_value, env_name, settings_file
 
 NAME = "aiquota"
@@ -112,7 +112,13 @@ _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _HOSTNAME = "aiquota.allegedly.works"
 _PORT = 8080
 _LABELS = {"app.kubernetes.io/name": NAME}
+SERVICE = ServiceRef(
+    name=_API_NAME, port=Port(name="http", number=_PORT), pods=Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items()))
+)
 _BEARER_KEY = "bearer-token"
+_BEARER = SecretRef(namespace=NAMESPACE, name=BEARER_SECRET_NAME).key(_BEARER_KEY)
+_CLICKHOUSE = SecretRef(namespace=NAMESPACE, name="clickhouse-aiquota-credentials")
+_OIDC = SecretRef(namespace=NAMESPACE, name="aiquota-oidc")
 
 
 @dataclass(frozen=True)
@@ -125,13 +131,9 @@ class BearerMirror:
     description: str
 
     @property
-    def secret_name(self) -> str:
-        return f"{BEARER_SECRET_NAME}-{self.consumer}"
-
-    @property
-    def secret_key_selector(self) -> k8s.SecretKeySelector:
-        """What a consumer's env reference names."""
-        return k8s.SecretKeySelector(name=self.secret_name, key=_BEARER_KEY)
+    def secret_key(self) -> SecretKey:
+        """The reflected copy in `namespace`, which a consumer there reads."""
+        return SecretRef(namespace=self.namespace, name=f"{BEARER_SECRET_NAME}-{self.consumer}").key(_BEARER_KEY)
 
 
 # In the destination namespace only the trusted egress proxy consumes this Secret; the OpenClaw
@@ -179,8 +181,7 @@ class Aiquota(Construct):
             "httproute",
             metadata=ApiObjectMetadata(name=_API_NAME, namespace=NAMESPACE),
             hostnames=[_HOSTNAME],
-            backend=_API_NAME,
-            port=_PORT,
+            backend=SERVICE,
             hsts=False,
             listener=None,
         )
@@ -190,7 +191,7 @@ class Aiquota(Construct):
         ExternalSecret(
             self,
             f"bearer-{mirror.consumer}",
-            metadata=ApiObjectMetadata(name=mirror.secret_name, namespace=NAMESPACE),
+            metadata=ApiObjectMetadata(name=mirror.secret_key.secret.name, namespace=NAMESPACE),
             refresh_interval="1h",
             secret_store_ref=SecretStoreRef.cluster("kubernetes-cli-proxy-api-secret-store"),
             data=[remote_data(BEARER_SECRET_NAME, _BEARER_KEY)],
@@ -210,9 +211,7 @@ class Aiquota(Construct):
         )
 
     def _add_deployment(self) -> Deployment:
-        clickhouse_credentials = Secret.from_secret_name(
-            self, "clickhouse-credentials-ref", "clickhouse-aiquota-credentials"
-        )
+        clickhouse_credentials = Secret.from_secret_name(self, "clickhouse-credentials-ref", _CLICKHOUSE.name)
         deployment = Deployment(
             self,
             "deployment",
@@ -247,21 +246,24 @@ class Aiquota(Construct):
         )
         deployment.select(LabelSelector.of(labels=_LABELS))
 
-        bearer = Secret.from_secret_name(self, "bearer-ref", BEARER_SECRET_NAME)
-        cli_proxy_api = Secret.from_secret_name(self, "cli-proxy-api-management-ref", "cli-proxy-api-management")
-        oidc = Secret.from_secret_name(self, "oidc-ref", "aiquota-oidc")
         deployment.add_container(
             name=_API_NAME,
             image=f"{_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
             ports=[ContainerPort(name="http", number=_PORT, protocol=Protocol.TCP)],
             env_variables={
-                env_name(Settings, "api_bearer_token"): secret_env_value(bearer, _BEARER_KEY),
-                env_name(Settings, "cli_proxy_api_key"): secret_env_value(cli_proxy_api, "management-password"),
+                env_name(Settings, "api_bearer_token"): _BEARER.env_value(self, "bearer-ref"),
+                env_name(Settings, "cli_proxy_api_key"): cli_proxy_api_app.MANAGEMENT_PASSWORD.env_value(
+                    self, "cli-proxy-api-management-ref"
+                ),
                 env_name(Settings, "clickhouse_url"): EnvValue.from_value(f"http://{client.HOST}:{client.HTTP_PORT}"),
                 env_name(Settings, "clickhouse_database"): EnvValue.from_value("aiquota"),
-                env_name(Settings, "clickhouse_username"): secret_env_value(clickhouse_credentials, "username"),
-                env_name(Settings, "clickhouse_password"): secret_env_value(clickhouse_credentials, "password"),
+                env_name(Settings, "clickhouse_username"): _CLICKHOUSE.key("username").env_value(
+                    self, "clickhouse-username-ref"
+                ),
+                env_name(Settings, "clickhouse_password"): _CLICKHOUSE.key("password").env_value(
+                    self, "clickhouse-password-ref"
+                ),
                 env_name(Settings, "poll_interval_seconds"): EnvValue.from_value(
                     str(checked_value(Settings, "poll_interval_seconds", 300))
                 ),
@@ -275,9 +277,13 @@ class Aiquota(Construct):
                 env_name(Settings, "oauth_issuer"): EnvValue.from_value(
                     "https://auth.allegedly.works/application/o/aiquota/"
                 ),
-                env_name(Settings, "oauth_client_id"): secret_env_value(oidc, "client_id"),
-                env_name(Settings, "oauth_client_secret"): secret_env_value(oidc, "client_secret"),
-                env_name(Settings, "oauth_session_secret"): secret_env_value(oidc, "session_secret"),
+                env_name(Settings, "oauth_client_id"): _OIDC.key("client_id").env_value(self, "oidc-client-id-ref"),
+                env_name(Settings, "oauth_client_secret"): _OIDC.key("client_secret").env_value(
+                    self, "oidc-client-secret-ref"
+                ),
+                env_name(Settings, "oauth_session_secret"): _OIDC.key("session_secret").env_value(
+                    self, "oidc-session-secret-ref"
+                ),
             },
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(25), limit=Cpu.millis(250)),

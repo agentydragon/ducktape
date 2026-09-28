@@ -12,11 +12,9 @@ from __future__ import annotations
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s import cilium
 
 NAME = "hubble-ui"
-OUTPUT_DIR = f"{GENERATED_ROOT}/hubble-ui"
 _PORT = 8081
 
 
@@ -44,12 +42,8 @@ def chart(app: App) -> Chart:
             ingress=[
                 _from("authentik", {"app.kubernetes.io/component": "server", "app.kubernetes.io/name": "authentik"}),
                 # Gatus: health check probes
-                _from("gatus", {"app.kubernetes.io/name": "gatus"}),
+                _from(cilium.PROBER.namespace, cilium.PROBER.selector),
             ],
         ),
     )
     return chart
-
-
-def hubble_ui(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    return flux_kustomization(chart, NAME, directory, retry_interval=None, wait=None, timeout="5m")

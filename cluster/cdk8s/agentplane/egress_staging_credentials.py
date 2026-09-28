@@ -387,7 +387,7 @@ def _aiquota_read(scope: Construct, *, namespace: str) -> None:
             "`aiquota-read`'s rule presents it only on GETs under /v1/."
         ),
         source=Source.secret_ref(
-            name=AGENTPLANE_STAGING_BEARER.secret_name, key=AGENTPLANE_STAGING_BEARER.secret_key_selector.key
+            name=AGENTPLANE_STAGING_BEARER.secret_key.secret.name, key=AGENTPLANE_STAGING_BEARER.secret_key.key
         ),
         targets=[
             EgressCredentialSpecTargets(

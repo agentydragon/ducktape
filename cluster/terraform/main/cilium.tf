@@ -4,7 +4,7 @@
 # and install it via helm CLI after the k8s API is reachable.
 
 locals {
-  cilium_version      = "1.19.6"
+  cilium_version      = "1.19.8"
   gateway_api_version = "v1.5.1"
 }
 

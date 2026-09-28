@@ -9,10 +9,11 @@ The Secrets live outside the operator's namespace so the operator consumes them 
 from __future__ import annotations
 
 from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.seaweedfs import s3
 
 NAMESPACE = "seaweedfs-credentials"
@@ -24,14 +25,14 @@ _CHART = "external-credentials"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _CHART, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={"name": NAMESPACE},
-            annotations={"description": "Externally managed SeaweedFS S3 credential source Secrets."},
-        ),
+        name=NAMESPACE,
+        vpa=Vpa.RECOMMEND,
+        agent_readable=None,
+        labels={"name": NAMESPACE},
+        annotations={"description": "Externally managed SeaweedFS S3 credential source Secrets."},
     )
     for secret in (CLAUDE_READER_SECRET, DRIVEFS_ARTIFACTS_SECRET):
         s3.secret_grant(chart, secret=secret, namespace=NAMESPACE)

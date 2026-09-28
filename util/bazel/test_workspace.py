@@ -179,14 +179,18 @@ def test_query_filters_bbr_log_lines(tmp_path: Path) -> None:
     ]
 
 
-def test_query_raises_on_failure(tmp_path: Path) -> None:
+def test_query_raises_on_failure_with_stderr_in_the_traceback(tmp_path: Path) -> None:
     mock_result = MagicMock()
     mock_result.stdout = ""
-    mock_result.stderr = "error"
-    mock_result.returncode = 1
+    mock_result.stderr = "ERROR: no such package 'missing'"
+    mock_result.returncode = 7
     workspace = BazelWorkspace(root=tmp_path, backend=BazelBackend.LOCAL)
-    with patch("util.bazel.workspace.subprocess.run", return_value=mock_result), pytest.raises(CalledProcessError):
+    with (
+        patch("util.bazel.workspace.subprocess.run", return_value=mock_result),
+        pytest.raises(CalledProcessError) as excinfo,
+    ):
         workspace.query("//...")
+    assert excinfo.value.__notes__ == ["ERROR: no such package 'missing'"]
 
 
 if __name__ == "__main__":

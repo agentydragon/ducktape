@@ -14,9 +14,10 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "vm-images-publisher"
@@ -205,24 +206,23 @@ def _cron_job(scope: Construct) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAME,
-            labels={
-                "name": NAME,
-                # The Job needs hostPath /dev/kvm + privileged for nix's `kvm` system feature
-                # (qemu-efi image builder). Same constraint as the smoke Job under
-                # x/kubevirt_nixos_bootstrap/.
-                "pod-security.kubernetes.io/enforce": "privileged",
-                "pod-security.kubernetes.io/audit": "privileged",
-                "pod-security.kubernetes.io/warn": "privileged",
-                # Events are included in namespace-diagnostics-reader and are safe for the
-                # public-coder diagnostics surface.
-                "rbac.ducktape.io/agent-readable-metadata": "true",
-            },
-        ),
+        name=NAME,
+        vpa=Vpa.RECOMMEND,
+        # Events are included in namespace-diagnostics-reader and are safe for the
+        # public-coder diagnostics surface.
+        agent_readable=AgentReadable.METADATA,
+        labels={
+            "name": NAME,
+            # The Job needs hostPath /dev/kvm + privileged for nix's `kvm` system feature
+            # (qemu-efi image builder). Same constraint as the smoke Job under
+            # x/kubevirt_nixos_bootstrap/.
+            "pod-security.kubernetes.io/enforce": "privileged",
+            "pod-security.kubernetes.io/audit": "privileged",
+            "pod-security.kubernetes.io/warn": "privileged",
+        },
     )
     _storage(chart)
     _cron_job(chart)

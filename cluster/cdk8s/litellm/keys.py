@@ -33,6 +33,7 @@ from cluster.cdk8s.model_rosters import (
     exposed_name,
     ollama_chat_variant,
 )
+from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/keys-tf"
 
@@ -164,7 +165,9 @@ def keys_chart(app: App) -> Chart:
             # The narrow SOPS age private key (litellm-clients-sops-age-key.sops.yaml
             # beside this CR) that decrypts the module's pinned client-key files for
             # its `sops_file` data sources -- single-purpose, not the broad cluster key.
-            terraform.secret_env("SOPS_AGE_KEY", "litellm-clients-sops-age-key", "key")
+            terraform.secret_env(
+                "SOPS_AGE_KEY", SecretRef(namespace=terraform.NAMESPACE, name="litellm-clients-sops-age-key").key("key")
+            )
         ],
     )
     return chart

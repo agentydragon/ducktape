@@ -11,3 +11,4 @@ metadata:
   labels:
     goldilocks.fairwinds.com/enabled: "false"
   name: seaweedfs
+spec: {}

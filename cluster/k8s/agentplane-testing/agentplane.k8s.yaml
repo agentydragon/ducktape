@@ -48,112 +48,6 @@ spec:
         memory: 8Gi
       type: Pod
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: agentplane-app-config
-  namespace: agentplane-testing
-data:
-  config.yaml: |
-    models:
-      models:
-        - model: anthropic-api/ant-messages/claude-haiku-4-5-20251001
-          display_name: Haiku 4.5
-        - model: antigravity/ant-messages/gemini-3.1-flash-lite
-          display_name: Gemini 3.1 Flash Lite
-        - model: antigravity/ant-messages/gemini-3.5-flash-lite
-          display_name: Gemini 3.5 Flash Lite
-        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-          display_name: Qwen3.8 Flash Next IQ4_XS (128K)
-        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          display_name: Qwen3.8 Flash Next IQ4_XS (256K)
-        - model: ollama/oai-chat/gpt-oss-20b-128k
-          display_name: GPT-OSS 20B (128K)
-        - model: ollama/oai-chat/gpt-oss-20b-256k
-          display_name: GPT-OSS 20B (256K)
-        - model: ollama/oai-chat/gpt-oss-20b-512k
-          display_name: GPT-OSS 20B (512K)
-        - model: ollama/oai-chat/gpt-oss-20b-1m
-          display_name: GPT-OSS 20B (1M)
-        - model: ollama/oai-chat/gpt-oss-120b-128k
-          display_name: GPT-OSS 120B (128K)
-        - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
-          display_name: Gemma 4 31B (128K)
-        - model: llama-cpp/oai-chat/qwen3.8-27b-q8
-          display_name: Qwen3.8 27B Q8 (llama.cpp)
-        - model: llama-cpp/oai-chat/qwen3.8-flash-next-q4
-          display_name: Qwen3.8 Flash Next Q4 (llama.cpp)
-        - model: chatgpt/oai-responses/gpt-6-luna
-          display_name: GPT-6 Luna
-      harnesses:
-        HARNESS_CLAUDE:
-          - anthropic-api/ant-messages/claude-haiku-4-5-20251001
-          - antigravity/ant-messages/gemini-3.1-flash-lite
-          - antigravity/ant-messages/gemini-3.5-flash-lite
-          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/oai-chat/gpt-oss-20b-256k
-          - ollama/oai-chat/gpt-oss-20b-512k
-          - ollama/oai-chat/gpt-oss-20b-1m
-          - ollama/oai-chat/gpt-oss-120b-128k
-          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
-          - llama-cpp/oai-chat/qwen3.8-27b-q8
-          - llama-cpp/oai-chat/qwen3.8-flash-next-q4
-        HARNESS_CODEX:
-          - chatgpt/oai-responses/gpt-6-luna
-          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/oai-chat/gpt-oss-20b-256k
-          - ollama/oai-chat/gpt-oss-20b-512k
-          - ollama/oai-chat/gpt-oss-20b-1m
-          - ollama/oai-chat/gpt-oss-120b-128k
-          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
-          - llama-cpp/oai-chat/qwen3.8-27b-q8
-          - llama-cpp/oai-chat/qwen3.8-flash-next-q4
-    agent_egress_api_url: http://agentplane-egress.agentplane-testing.svc.cluster.local
-    agent_actions_service_url: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
-    thread_presets:
-      public-coder-codex:
-        title: Public coder / Codex
-        harness: HARNESS_CODEX
-        model: chatgpt/oai-responses/gpt-6-luna
-        cwd: /state/workspaces/{session_id}
-        reasoning_effort: medium
-        instructions: Work as a public-repository coding agent. Keep private cluster data out of the workspace and outputs.
-    sandbox_presets:
-      public-coder:
-        title: Public coder
-        template: agentplane-runner
-        policies:
-          - basic
-          - github-agentydragon-agent
-          - github-clone
-          - github-actions-logs
-        thread_preset: public-coder-codex
-        bootstrap: |
-          marker=/state/workspaces/.agentplane-public-coder-ready
-          mkdir -p /state/workspaces
-          if [ ! -f "$marker" ]; then
-            printf '%s\n' 'public-coder workspace initialized' > "$marker"
-          fi
-    default_policies:
-      - basic
-    egress_admin_url: http://agentplane-egress-admin.agentplane-testing.svc:8081
-    action_federation:
-      mode: direct
-      service_url: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
-      login_jwks_uri: https://agentplane-dex-testing.allegedly.works/dex/keys
-      login_token_profile: dex
-      target:
-        issuer: https://agentplane-dex-testing.allegedly.works/dex
-        audience: agentplane-testing
-        jwks_uri: https://agentplane-dex-testing.allegedly.works/dex/keys
-        token_profile: dex
-      scope: openid
-immutable: false
----
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
@@ -650,10 +544,9 @@ spec:
             readOnlyRootFilesystem: false
             runAsNonRoot: true
           volumeMounts:
-            - mountPath: /etc/agentplane-llm-ingress/settings.yaml
+            - mountPath: /etc/agentplane-llm-ingress
               name: configmap-agentplane-llm-ingress-settings
               readOnly: true
-              subPath: settings.yaml
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -949,7 +842,7 @@ spec:
                   key: uri
                   name: postgres-egress
             - name: AGENTPLANE_EGRESS_CONFIG_FILE
-              value: /etc/agentplane-egress/settings.yaml
+              value: /etc/agentplane-egress/settings/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-egress:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
@@ -1002,10 +895,9 @@ spec:
               readOnly: true
             - mountPath: /var/lib/agentplane-egress
               name: confdir
-            - mountPath: /etc/agentplane-egress/settings.yaml
+            - mountPath: /etc/agentplane-egress/settings
               name: configmap-agentplane-egress-settings
               readOnly: true
-              subPath: settings.yaml
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -1596,6 +1488,104 @@ subjects:
     name: agentplane-app
     namespace: agentplane-testing
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-app-config
+  namespace: agentplane-testing
+data:
+  config.yaml: |
+    models:
+      models:
+        - model: anthropic-api/ant-messages/claude-haiku-4-5-20251001
+          display_name: Haiku 4.5
+        - model: antigravity/ant-messages/gemini-3.1-flash-lite
+          display_name: Gemini 3.1 Flash Lite
+        - model: antigravity/ant-messages/gemini-3.5-flash-lite
+          display_name: Gemini 3.5 Flash Lite
+        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          display_name: Qwen3.8 Flash Next IQ4_XS (128K)
+        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          display_name: Qwen3.8 Flash Next IQ4_XS (256K)
+        - model: ollama/oai-chat/gpt-oss-20b-128k
+          display_name: GPT-OSS 20B (128K)
+        - model: ollama/oai-chat/gpt-oss-20b-256k
+          display_name: GPT-OSS 20B (256K)
+        - model: ollama/oai-chat/gpt-oss-20b-512k
+          display_name: GPT-OSS 20B (512K)
+        - model: ollama/oai-chat/gpt-oss-20b-1m
+          display_name: GPT-OSS 20B (1M)
+        - model: ollama/oai-chat/gpt-oss-120b-128k
+          display_name: GPT-OSS 120B (128K)
+        - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
+          display_name: Gemma 4 31B (128K)
+        - model: chatgpt/oai-responses/gpt-6-luna
+          display_name: GPT-6 Luna
+      harnesses:
+        HARNESS_CLAUDE:
+          - anthropic-api/ant-messages/claude-haiku-4-5-20251001
+          - antigravity/ant-messages/gemini-3.1-flash-lite
+          - antigravity/ant-messages/gemini-3.5-flash-lite
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          - ollama/oai-chat/gpt-oss-20b-128k
+          - ollama/oai-chat/gpt-oss-20b-256k
+          - ollama/oai-chat/gpt-oss-20b-512k
+          - ollama/oai-chat/gpt-oss-20b-1m
+          - ollama/oai-chat/gpt-oss-120b-128k
+          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+        HARNESS_CODEX:
+          - chatgpt/oai-responses/gpt-6-luna
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          - ollama/oai-chat/gpt-oss-20b-128k
+          - ollama/oai-chat/gpt-oss-20b-256k
+          - ollama/oai-chat/gpt-oss-20b-512k
+          - ollama/oai-chat/gpt-oss-20b-1m
+          - ollama/oai-chat/gpt-oss-120b-128k
+          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+    agent_egress_api_url: http://agentplane-egress.agentplane-testing.svc.cluster.local
+    agent_actions_service_url: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
+    thread_presets:
+      public-coder-codex:
+        title: Public coder / Codex
+        harness: HARNESS_CODEX
+        model: chatgpt/oai-responses/gpt-6-luna
+        cwd: /state/workspaces/{session_id}
+        reasoning_effort: medium
+        instructions: Work as a public-repository coding agent. Keep private cluster data out of the workspace and outputs.
+    sandbox_presets:
+      public-coder:
+        title: Public coder
+        template: agentplane-runner
+        policies:
+          - basic
+          - github-agentydragon-agent
+          - github-clone
+          - github-actions-logs
+        thread_preset: public-coder-codex
+        bootstrap: |
+          marker=/state/workspaces/.agentplane-public-coder-ready
+          mkdir -p /state/workspaces
+          if [ ! -f "$marker" ]; then
+            printf '%s\n' 'public-coder workspace initialized' > "$marker"
+          fi
+    default_policies:
+      - basic
+    egress_admin_url: http://agentplane-egress-admin.agentplane-testing.svc:8081
+    action_federation:
+      mode: direct
+      service_url: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
+      login_jwks_uri: https://agentplane-dex-testing.allegedly.works/dex/keys
+      login_token_profile: dex
+      target:
+        issuer: https://agentplane-dex-testing.allegedly.works/dex
+        audience: agentplane-testing
+        jwks_uri: https://agentplane-dex-testing.allegedly.works/dex/keys
+        token_profile: dex
+      scope: openid
+immutable: false
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -1631,8 +1621,6 @@ spec:
             - --host=0.0.0.0
             - --port=8080
           env:
-            - name: AGENTPLANE_CONFIG_FILE
-              value: /etc/agentplane/config.yaml
             - name: AGENTPLANE_DB_USER
               valueFrom:
                 secretKeyRef:
@@ -1683,6 +1671,8 @@ spec:
                   name: agentplane-oidc
             - name: AGENTPLANE_TOKEN_SUBJECTS
               value: '["system:serviceaccount:agentplane-testing:agentplane-agent"]'
+            - name: AGENTPLANE_CONFIG_FILE
+              value: /etc/agentplane/config.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-app:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
@@ -1730,8 +1720,6 @@ spec:
         - name: forgejo-images-creds
       initContainers:
         - env:
-            - name: AGENTPLANE_CONFIG_FILE
-              value: /etc/agentplane/config.yaml
             - name: AGENTPLANE_DB_USER
               valueFrom:
                 secretKeyRef:
@@ -2490,8 +2478,6 @@ spec:
                   name: postgres-actions
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
               value: postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)
-            - name: AGENTPLANE_ACTIONS_CONFIG_FILE
-              value: /etc/agentplane-actions/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:unset
           imagePullPolicy: Always
           name: migrate
@@ -3508,6 +3494,8 @@ kind: Namespace
 metadata:
   annotations:
     description: Outbound credentials readable only by the agentplane-testing egress proxy.
+  labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
   name: agentplane-testing-egress-credentials
 spec: {}
 ---
