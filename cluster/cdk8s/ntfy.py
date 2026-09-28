@@ -31,18 +31,6 @@ from cdk8s_plus_34 import (
     ServicePort,
 )
 from constructs import Construct
-from external_secret_store_crds.io.external_secrets import (
-    ClusterSecretStore,
-    ClusterSecretStoreSpec,
-    ClusterSecretStoreSpecConditions,
-    ClusterSecretStoreSpecProvider,
-    ClusterSecretStoreSpecProviderKubernetes,
-    ClusterSecretStoreSpecProviderKubernetesAuth,
-    ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount,
-    ClusterSecretStoreSpecProviderKubernetesServer,
-    ClusterSecretStoreSpecProviderKubernetesServerCaProvider,
-    ClusterSecretStoreSpecProviderKubernetesServerCaProviderType,
-)
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecRefreshPolicy,
     ExternalSecretSpecTargetCreationPolicy,
@@ -53,6 +41,7 @@ from external_secrets_crds.io.external_secrets import (
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import cnpg, fleet_rules, node_scheduling, pod_policy
+from cluster.cdk8s.external_secrets.kubernetes_store import ESO_SERVICE_ACCOUNT, cluster_secret_store
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -80,34 +69,16 @@ def _secret_env(scope: Construct, id: str, *, name: str, key: str) -> EnvValue:
 
 def _secret_store(scope: Construct) -> None:
     """Keep the shared credential source store owned by the ntfy package."""
-    ClusterSecretStore(
+    cluster_secret_store(
         scope,
         "secret-store",
         metadata=ApiObjectMetadata(
             name=SECRET_STORE,
             annotations={"description": "Scoped ESO access to ntfy credentials for ntfy, Flux, and Alertmanager."},
         ),
-        spec=ClusterSecretStoreSpec(
-            conditions=[ClusterSecretStoreSpecConditions(namespaces=[NAMESPACE, "flux-system", "monitoring"])],
-            provider=ClusterSecretStoreSpecProvider(
-                kubernetes=ClusterSecretStoreSpecProviderKubernetes(
-                    auth=ClusterSecretStoreSpecProviderKubernetesAuth(
-                        service_account=ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(
-                            name="external-secrets", namespace="external-secrets-system"
-                        )
-                    ),
-                    remote_namespace=NAMESPACE,
-                    server=ClusterSecretStoreSpecProviderKubernetesServer(
-                        ca_provider=ClusterSecretStoreSpecProviderKubernetesServerCaProvider(
-                            type=ClusterSecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
-                            name="kube-root-ca.crt",
-                            key="ca.crt",
-                            namespace="default",
-                        )
-                    ),
-                )
-            ),
-        ),
+        namespaces=[NAMESPACE, "flux-system", "monitoring"],
+        remote_namespace=NAMESPACE,
+        service_account=ESO_SERVICE_ACCOUNT,
     )
 
 

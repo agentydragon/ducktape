@@ -84,3 +84,15 @@ py_library(
         "@pypi//constructs",
     ],
 )
+
+py_library(
+    name = "secret_store",
+    srcs = ["secret_store.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":clustersecretstore",
+        ":secretstore",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
