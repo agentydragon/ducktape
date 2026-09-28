@@ -2088,7 +2088,7 @@
     },
     {
       "track": "ready now",
-      "step": "`PrivateBucket` (C3) in each consumer's own unit, with its Secret name unchanged and its S3Identity in the tenant. Migrate consumers per area, then delete `_ClusterGrant`, `Bucket.grant` and the duplicate `SecretKeyFields`. The four `seaweedfs-*-bucket` units retire here too; their Buckets and S3Credentials move by `cluster/AGENTS.md` § Migrating stateful Flux Kustomizations, never by delete and recreate, because a deleted `Retain` S3Credentials leaves its Secret without an owner and a recreated one then fails with `SecretOwnershipConflict`.",
+      "step": "`PrivateBucket` (C3) in each consumer's own unit, with its Secret name unchanged and its S3Identity in the tenant. Migrate consumers per area; each consumer's hand-listed `seaweedfs.s3.cluster_grant(kinds=...)` call goes into the composite, which builds its grant itself. The four `seaweedfs-*-bucket` units retire here too; their Buckets and S3Credentials move by `cluster/AGENTS.md` § Migrating stateful Flux Kustomizations, never by delete and recreate, because a deleted `Retain` S3Credentials leaves its Secret without an owner and a recreated one then fails with `SecretOwnershipConflict`.",
       "gate": "After step 5 and step 7's reference modules.",
       "scope": "About 10 S3 consumers.",
       "risk": "Medium. Grants are renamed, which Flux handles by applying the new one before pruning the old; no credential Secret is renamed, so no key is re-minted, and the consumers do not restart."

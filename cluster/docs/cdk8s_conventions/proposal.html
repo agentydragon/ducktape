@@ -10801,12 +10801,12 @@ CONFIG = {
             <div class="rich">
               <p>
                 <code>PrivateBucket</code> (C3) in each consumer&#39;s own unit, with its Secret name unchanged and its
-                S3Identity in the tenant. Migrate consumers per area, then delete <code>_ClusterGrant</code>,
-                <code>Bucket.grant</code> and the duplicate <code>SecretKeyFields</code>. The four
-                <code>seaweedfs-*-bucket</code> units retire here too; their Buckets and S3Credentials move by
-                <code>cluster/AGENTS.md</code> § Migrating stateful Flux Kustomizations, never by delete and recreate,
-                because a deleted <code>Retain</code> S3Credentials leaves its Secret without an owner and a recreated
-                one then fails with <code>SecretOwnershipConflict</code>.
+                S3Identity in the tenant. Migrate consumers per area; each consumer&#39;s hand-listed
+                <code>seaweedfs.s3.cluster_grant(kinds=...)</code> call goes into the composite, which builds its grant
+                itself. The four <code>seaweedfs-*-bucket</code> units retire here too; their Buckets and S3Credentials
+                move by <code>cluster/AGENTS.md</code> § Migrating stateful Flux Kustomizations, never by delete and
+                recreate, because a deleted <code>Retain</code> S3Credentials leaves its Secret without an owner and a
+                recreated one then fails with <code>SecretOwnershipConflict</code>.
               </p>
             </div>
           </div>
