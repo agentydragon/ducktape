@@ -27,6 +27,7 @@ spec:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
               weight: 100
+      automountServiceAccountToken: false
       containers:
         - env:
             - name: LOG_LEVEL

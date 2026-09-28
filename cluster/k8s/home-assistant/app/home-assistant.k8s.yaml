@@ -103,6 +103,7 @@ spec:
       labels:
         app.kubernetes.io/name: home-assistant
     spec:
+      automountServiceAccountToken: false
       containers:
         - env:
             - name: TZ
@@ -235,6 +236,7 @@ spec:
       labels:
         app.kubernetes.io/name: home-assistant-onboarding
     spec:
+      automountServiceAccountToken: false
       containers:
         - command:
             - /homeassistant/provisioner/onboarding/onboard_bin

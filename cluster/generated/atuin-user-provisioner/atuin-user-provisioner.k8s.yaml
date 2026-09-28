@@ -87,6 +87,7 @@ spec:
       labels:
         app: atuin-user-provisioner
     spec:
+      automountServiceAccountToken: false
       containers:
         - command:
             - sh
