@@ -209,8 +209,7 @@ def _deployment(scope: Construct) -> None:
         "deployment",
         metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
-            # Temporary exclusive HDD registry handoff to setup-gpt-oss-v8.
-            replicas=0,
+            replicas=0 if _PAUSED_FOR_HOST_EXPERIMENTS else 1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             selector=k8s.LabelSelector(match_labels=_LABELS),
             template=k8s.PodTemplateSpec(
@@ -333,7 +332,6 @@ def _setup_job(scope: Construct) -> None:
             name="setup-gpt-oss-v8", namespace=_NAMESPACE, annotations={"reloader.stakater.com/auto": "false"}
         ),
         spec=k8s.JobSpec(
-            ttl_seconds_after_finished=86400,
             template=k8s.PodTemplateSpec(
                 spec=k8s.PodSpec(
                     restart_policy="OnFailure",
@@ -401,7 +399,7 @@ def _setup_job(scope: Construct) -> None:
                         )
                     ],
                 )
-            ),
+            )
         ),
     )
 

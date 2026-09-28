@@ -32,9 +32,16 @@ the read-only mount. The short-lived setup Job therefore runs its own loopback-o
 Ollama API as a native sidecar, with the same HDD registry and a writable mount of
 only the IQ4 directory. It requests no GPUs and performs no inference. Once setup
 finishes Kubernetes stops that sidecar; the serving Deployment stays read-only.
-Small manifests
-and other models stay on HDD. Ollama has one model root; this is filesystem-managed
-placement, not a native per-model storage tier setting.
+Small manifests and other models stay on HDD. Ollama has one model root; this is
+filesystem-managed placement, not a native per-model storage tier setting.
+
+The `lvm-proxmox-hdd` CSI rejects simultaneous mounts of the writable
+`llm-models` registry PVC by the serving Pod and registration Job with
+`verifyMount: device already mounted`. Pause the serving Deployment through
+GitOps, wait for its Pod to terminate and the versioned Job to complete, then
+restore one serving replica. This restriction is on the HDD registry PVC, not
+the static SSD model PV. The completed Job has no TTL: Flux retains it until
+an explicit Job version bump and cannot recreate the same registration daily.
 
 `OLLAMA_NOPRUNE=true` prevents startup garbage collection from unlinking the external
 blobs before registration. Unused blobs therefore require deliberate cleanup; do not
