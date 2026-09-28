@@ -1597,6 +1597,17 @@ function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean
   return `Last observed Sandbox state: ${sandbox.state}. Showing retained Thread history; controls are disabled.`;
 }
 
+function harnessLabel(harness: ThreadView["harness"]): string {
+  switch (harness) {
+    case "HARNESS_CLAUDE":
+      return "Claude";
+    case "HARNESS_CODEX":
+      return "Codex";
+    default:
+      return "Unknown harness";
+  }
+}
+
 export function ProjectedSession({ threadId }: { threadId: string }): JSX.Element {
   const sync = useThreadSync();
   const [thread, setThread] = useState<ThreadView | null>(null);
@@ -1617,7 +1628,7 @@ export function ProjectedSession({ threadId }: { threadId: string }): JSX.Elemen
           </Box>
           {thread && (
             <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-              {thread.sandbox}
+              {thread.sandbox} · {harnessLabel(thread.harness)}
             </Text>
           )}
         </Group>

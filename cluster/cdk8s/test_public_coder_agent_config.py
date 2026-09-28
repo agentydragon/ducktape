@@ -77,7 +77,7 @@ def proxy_objects() -> list[dict[str, Any]]:
             app,
             app_namespace=public_coder_agent_config.NAMESPACE,
             app_labels=public_coder_agent_config.LABELS,
-            aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key_selector,
+            aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key,
         )
     )
 

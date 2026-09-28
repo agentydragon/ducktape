@@ -273,7 +273,7 @@ def generate_manifests(root: Path) -> None:
         root,
         app_namespace=public_coder_agent_config.NAMESPACE,
         app_labels=public_coder_agent_config.LABELS,
-        aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key_selector,
+        aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key,
     )
     public_coder_sshpiper.write_manifests(
         root, app_namespace=public_coder_agent_config.NAMESPACE, app_labels=public_coder_agent_config.LABELS

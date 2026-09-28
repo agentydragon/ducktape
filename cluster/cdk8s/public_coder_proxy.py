@@ -43,7 +43,7 @@ from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
-from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 
 NAME = "public-coder-agent-proxy"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/proxy"
@@ -248,7 +248,7 @@ def _config_map(scope: Construct) -> k8s.KubeConfigMap:
     )
 
 
-def _container(aiquota_bearer: k8s.SecretKeySelector) -> k8s.Container:
+def _container(aiquota_bearer: SecretKey) -> k8s.Container:
     return k8s.Container(
         name="iron-proxy",
         # Bootstrap on upstream 0.49.0. Once CI publishes the commit-pinned Forgejo image, Flux
@@ -275,7 +275,7 @@ def _container(aiquota_bearer: k8s.SecretKeySelector) -> k8s.Container:
             # The same bearer used by aiquota-api. It is reflected here solely for iron-proxy to
             # substitute into the agent's placeholder on the two read endpoints; the OpenClaw
             # workload never receives it.
-            k8s.EnvVar(name=_AIQUOTA_BEARER_ENV, value_from=k8s.EnvVarSource(secret_key_ref=aiquota_bearer)),
+            aiquota_bearer.env_var(_AIQUOTA_BEARER_ENV),
             # The Brave Search API key is consumed only by iron-proxy. The OpenClaw Pod gets a
             # non-secret placeholder that is swapped only for Brave's X-Subscription-Token header
             # on its API host. Synced into this namespace from the external-creds source at
@@ -306,7 +306,7 @@ def _container(aiquota_bearer: k8s.SecretKeySelector) -> k8s.Container:
     )
 
 
-def _deployment(scope: Construct, config_map: k8s.KubeConfigMap, aiquota_bearer: k8s.SecretKeySelector) -> None:
+def _deployment(scope: Construct, config_map: k8s.KubeConfigMap, aiquota_bearer: SecretKey) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
@@ -443,7 +443,7 @@ def _egress_policy(scope: Construct) -> None:
     )
 
 
-def chart(app: App, *, app_namespace: str, app_labels: dict[str, str], aiquota_bearer: k8s.SecretKeySelector) -> Chart:
+def chart(app: App, *, app_namespace: str, app_labels: dict[str, str], aiquota_bearer: SecretKey) -> Chart:
     """`app_namespace` and `app_labels` are the OpenClaw Agent pod's: public_coder_agent_config
     exports them, and imports this module for the proxy's address. `aiquota_bearer` is the
     mirror aiquota writes into this namespace."""
@@ -457,9 +457,7 @@ def chart(app: App, *, app_namespace: str, app_labels: dict[str, str], aiquota_b
     return chart
 
 
-def write_manifests(
-    root: Path, *, app_namespace: str, app_labels: dict[str, str], aiquota_bearer: k8s.SecretKeySelector
-) -> None:
+def write_manifests(root: Path, *, app_namespace: str, app_labels: dict[str, str], aiquota_bearer: SecretKey) -> None:
     write_charts(
         root,
         OUTPUT_DIR,
