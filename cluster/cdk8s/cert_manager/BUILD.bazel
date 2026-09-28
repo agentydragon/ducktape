@@ -80,6 +80,7 @@ py_library(
     srcs = ["trust.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":app",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
