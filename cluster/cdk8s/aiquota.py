@@ -37,7 +37,6 @@ from cdk8s_plus_34 import (
     ServicePort,
     Volume,
     VolumeMount,
-    k8s,
 )
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -69,6 +68,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.settings_contract import checked_value, env_name, settings_file
 
@@ -129,13 +129,9 @@ class BearerMirror:
     description: str
 
     @property
-    def secret_name(self) -> str:
-        return f"{BEARER_SECRET_NAME}-{self.consumer}"
-
-    @property
-    def secret_key_selector(self) -> k8s.SecretKeySelector:
-        """What a consumer's env reference names."""
-        return k8s.SecretKeySelector(name=self.secret_name, key=_BEARER_KEY)
+    def secret_key(self) -> SecretKey:
+        """The reflected copy in `namespace`, which a consumer there reads."""
+        return SecretRef(namespace=self.namespace, name=f"{BEARER_SECRET_NAME}-{self.consumer}").key(_BEARER_KEY)
 
 
 # In the destination namespace only the trusted egress proxy consumes this Secret; the OpenClaw
@@ -193,7 +189,7 @@ class Aiquota(Construct):
         ExternalSecret(
             self,
             f"bearer-{mirror.consumer}",
-            metadata=ApiObjectMetadata(name=mirror.secret_name, namespace=NAMESPACE),
+            metadata=ApiObjectMetadata(name=mirror.secret_key.secret.name, namespace=NAMESPACE),
             refresh_interval="1h",
             secret_store_ref=SecretStoreRef.cluster("kubernetes-cli-proxy-api-secret-store"),
             data=[remote_data(BEARER_SECRET_NAME, _BEARER_KEY)],

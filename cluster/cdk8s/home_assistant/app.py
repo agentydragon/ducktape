@@ -47,6 +47,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import HostNetworkServiceRef, Pods, Port
 
 # Aliased: each provisioner names its model `Settings`, in a module named `settings`.
@@ -67,7 +68,8 @@ SERVICE = HostNetworkServiceRef(
     name=_NAME, port=Port(name="http", number=8123), pods=Pods(namespace=_NAMESPACE, labels=tuple(_LABELS.items()))
 )
 _CONFIG_CLAIM = "home-assistant-config"
-_METRICS_TOKEN = "home-assistant-metrics-token"
+# `password` is the ESO Password generator's own field, which `_metrics_token` copies verbatim.
+_METRICS_TOKEN = SecretRef(namespace=_NAMESPACE, name="home-assistant-metrics-token").key("password")
 _BACKUP = "home-assistant-config-restic"
 _BACKUP_LABELS = {"app.kubernetes.io/name": _BACKUP}
 _STORAGE_CLASS = "local-path-home-ssd"
@@ -270,14 +272,7 @@ def _deployment(scope: Construct) -> None:
                         k8s.Container(
                             name="caddy",
                             image="caddy:2.11.4-alpine",
-                            env=[
-                                k8s.EnvVar(
-                                    name="METRICS_TOKEN",
-                                    value_from=k8s.EnvVarSource(
-                                        secret_key_ref=k8s.SecretKeySelector(name=_METRICS_TOKEN, key="password")
-                                    ),
-                                )
-                            ],
+                            env=[_METRICS_TOKEN.env_var("METRICS_TOKEN")],
                             ports=[k8s.ContainerPort(name="http", container_port=8123)],
                             readiness_probe=k8s.Probe(
                                 http_get=k8s.HttpGetAction(port=k8s.IntOrString.from_string("http"), path="/"),
@@ -520,8 +515,8 @@ def _metrics_token(scope: Construct) -> None:
     mint_bearer_secret(
         scope,
         "metrics-token",
-        name=_METRICS_TOKEN,
-        namespace=_NAMESPACE,
+        name=_METRICS_TOKEN.secret.name,
+        namespace=_METRICS_TOKEN.secret.namespace,
         key=None,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
     )
@@ -535,7 +530,7 @@ def _monitoring(scope: Construct) -> None:
         selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
         endpoints=[
             Endpoint.bearer_authorization(
-                port="http", path="/api/prometheus", secret_name=_METRICS_TOKEN, key="password"
+                port="http", path="/api/prometheus", secret_name=_METRICS_TOKEN.secret.name, key=_METRICS_TOKEN.key
             )
         ],
     )
