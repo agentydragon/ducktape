@@ -21,11 +21,12 @@ from cnpg_database_crds.io.cnpg.postgresql import (
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from agentplane.indexing.main import Settings
-from cluster.cdk8s import cnpg, forgejo_images
+from cluster.cdk8s import cnpg, forgejo_images, namespaces, node_scheduling
 from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from util.settings_contract import env_name
 
 NAME = "agentplane-index"
@@ -80,7 +81,7 @@ def _database(chart: Chart) -> None:
         "database-cluster",
         name=_DB_CLUSTER,
         namespace=NAME,
-        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh-ssd",
         size="20Gi",
         initdb=ClusterSpecBootstrapInitdb(database="ducktape", owner=_DB_OWNER),
@@ -197,18 +198,14 @@ def _worker(
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAME,
-            labels={
-                "name": NAME,
-                "goldilocks.fairwinds.com/enabled": "false",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-            annotations={"description": "Single-repository semantic indexes for ducktape and haku-state."},
-        ),
+        name=NAME,
+        vpa=Vpa.DISABLED,
+        agent_readable=AgentReadable.LOGS,
+        labels={"name": NAME},
+        annotations={"description": "Single-repository semantic indexes for ducktape and haku-state."},
     )
     _read_token(chart)
     forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
@@ -222,10 +219,9 @@ def chart(app: App) -> Chart:
         # gitignore syntax. Specimens duplicate code indexed at its real path; the .gz
         # reference blobs are not text and would only cost the clone read.
         env=(k8s.EnvVar(name=env_name(Settings, "ignore"), value="props/specimens/\n*.gz\n"),),
-        # CLEANUP(added 2026-09-26): paused so its continuous /v1/embeddings traffic to
-        # ollama.ollama stops evicting the much larger qwen3.8-flash-next-q4 chat model
-        # mid-load during agentplane/debug/agentplane_ollama_live_smoke_2026_09_24.md's
-        # smoke testing. Remove once that test run is done and restore replicas=1.
+        # CLEANUP(added 2026-09-27): pause both workers while Ollama model setup and API
+        # smoke tests run. Their continuous /v1/embeddings traffic evicts the loaded chat
+        # model; restore replicas=1 for both workers when indexing resumes.
         replicas=0,
     )
     _worker(
@@ -238,5 +234,6 @@ def chart(app: App) -> Chart:
             secret_env_var(env_name(Settings, "git_username"), "haku-forgejo-git", "username"),
             secret_env_var(env_name(Settings, "git_password"), "haku-forgejo-git", "password"),
         ),
+        replicas=0,
     )
     return chart

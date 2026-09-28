@@ -159,9 +159,9 @@ def interrupt_active_turn(process: NativeProcess, *, thread_id: str, with_queued
 MAX_RETRIES = 2
 
 
-def config(*, endpoint: str) -> dict[str, Any]:
+def config(*, endpoint: str, model_context_window: int | None = None) -> dict[str, Any]:
     """Native app-server configuration; a direct setup, not a Haku adapter."""
-    return {
+    result: dict[str, Any] = {
         # The environment supplies OPENAI_API_KEY; the provider keeps the Responses endpoint explicit.
         "model_provider": "agentplane",
         "model_providers": {
@@ -197,6 +197,12 @@ def config(*, endpoint: str) -> dict[str, Any]:
             "unbounded_connection_retries": False,
         },
     }
+    if model_context_window is not None:
+        if model_context_window <= 0:
+            raise ValueError("model_context_window must be positive")
+        result["model_context_window"] = model_context_window
+        # Keep Codex's default auto-compaction threshold: it derives 90% from this resolved window.
+    return result
 
 
 def _toml_literal(value: object) -> str:
@@ -216,8 +222,14 @@ def _overrides(config: dict[str, Any], prefix: str = "") -> list[str]:
     return result
 
 
-def command(binary: str, *, endpoint: str) -> list[str]:
-    return [binary, *_overrides(config(endpoint=endpoint)), "app-server", "--listen", "stdio://"]
+def command(binary: str, *, endpoint: str, model_context_window: int | None = None) -> list[str]:
+    return [
+        binary,
+        *_overrides(config(endpoint=endpoint, model_context_window=model_context_window)),
+        "app-server",
+        "--listen",
+        "stdio://",
+    ]
 
 
 def environment(*, endpoint: str, token: str, codex_home: str) -> dict[str, str]:

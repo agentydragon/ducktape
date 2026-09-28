@@ -57,6 +57,12 @@ filegroup(
 )
 
 filegroup(
+    name = "qwen38_chat_template",
+    srcs = ["ollama/qwen38-chat-template.jinja"],
+    visibility = ["//cluster/cdk8s/ollama:__pkg__"],
+)
+
+filegroup(
     name = "cluster_all_files",
     srcs = glob(
         ["**"],

@@ -35,6 +35,10 @@ spec:
   vars:
     - name: model_allowlists
       value:
+        agentplane_staging_oai_models:
+          - chatgpt/oai-responses/gpt-6-astra
+          - chatgpt/oai-responses/gpt-6-sol
+          - chatgpt/oai-responses/gpt-6-luna
         antigravity_client_models:
           - antigravity/ant-messages/claude-opus-4-6-thinking
           - antigravity/ant-messages/claude-sonnet-4-6
@@ -80,6 +84,10 @@ spec:
           - mistral/oai-chat/mistral-vibe-cli-with-tools
           - mistral/oai-chat/voxtral-small-2507
           - mistral/oai-chat/voxtral-small-latest
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
           - ollama/oai-chat/gpt-oss-20b-128k
           - ollama/olm-chat/gpt-oss-20b-128k
           - ollama/oai-chat/gpt-oss-20b-256k
@@ -127,6 +135,10 @@ spec:
           - chatgpt/oai-responses/gpt-5.6-terra
           - chatgpt/oai-responses/gpt-5.6-luna
         ollama_chat_client_models:
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
           - ollama/oai-chat/gpt-oss-20b-128k
           - ollama/olm-chat/gpt-oss-20b-128k
           - ollama/oai-chat/gpt-oss-20b-256k

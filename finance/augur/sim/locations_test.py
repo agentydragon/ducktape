@@ -1,4 +1,4 @@
-"""Tests for the Location model and YAML fixture data."""
+"""Tests for the LocationConfig model and YAML fixture data."""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ import pytest_bazel
 import yaml
 
 from finance.augur.model.series import LocationId
-from finance.augur.sim.locations import Location
+from finance.augur.sim.locations import LocationConfig
 
 _DATA_DIR = Path(__file__).parent / "data" / "locations"
 
 
-def _load_location(location_id: LocationId) -> Location:
+def _load_location(location_id: LocationId) -> LocationConfig:
     path = _DATA_DIR / f"{location_id}.yaml"
-    return Location.model_validate(yaml.safe_load(path.read_text()))
+    return LocationConfig.model_validate(yaml.safe_load(path.read_text()))
 
 
 def test_load_san_francisco() -> None:

@@ -8,20 +8,19 @@ here names `cluster.local/local-path-provisioner`.
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "local-path-provisioner"
 NAMESPACE = "local-path-storage"
 OUTPUT_DIR = f"{GENERATED_ROOT}/local-path-provisioner"
 _PROVISIONER = "cluster.local/local-path-provisioner"
-_ZONE = "topology.kubernetes.io/zone"
 _REGION = "topology.kubernetes.io/region"
 _TIER = "storage.allegedly.works/tier"
 _OVH_SSD = "local-path-ovh-ssd"
@@ -55,7 +54,7 @@ def _storage_class(scope: Construct, name: str, *, reclaim_policy: str, topology
 
 
 def _storage_classes(scope: Construct) -> None:
-    ovh_hdd = {_ZONE: "hil-ovh", _TIER: "hdd"}
+    ovh_hdd = {**node_scheduling.HIL_OVH_NODE_SELECTOR, _TIER: "hdd"}
     # DEPRECATED alias, re-pinned to the same media as local-path-ovh-hdd (KS-5 7200rpm HDD).
     # New OVH PVCs should target local-path-ovh-{hdd,ssd} explicitly; this stays only for the
     # ~40 existing bound PVCs referencing it. Adding the tier key means a re-provisioned PVC
@@ -80,7 +79,9 @@ def _storage_classes(scope: Construct) -> None:
     # OVH ssd node is schedulable, else it stays Pending (loud) instead of silently landing
     # on HDD. Reserved for fsync/latency-critical data (Forgejo git, forgejo-db,
     # seaweedfs-filer-db). See cluster/docs/plans/ovh_storage_tiering.md.
-    _storage_class(scope, _OVH_SSD, reclaim_policy="Delete", topology={_ZONE: "hil-ovh", _TIER: "ssd"})
+    _storage_class(
+        scope, _OVH_SSD, reclaim_policy="Delete", topology={**node_scheduling.HIL_OVH_NODE_SELECTOR, _TIER: "ssd"}
+    )
     _storage_class(scope, "local-path-proxmox", reclaim_policy="Delete", topology={_REGION: "proxmox"})
     # Home automation is intentionally hardware- and LAN-pinned: integrations use the
     # OptiPlex's Bluetooth radio and the home multicast domain. VolSync copies this
@@ -103,17 +104,11 @@ def chart(app: App) -> Chart:
             },
         ),
     )
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name=NAME, namespace="flux-system"),
-        spec=HelmRepositorySpec(interval="24h", url="https://charts.containeroo.ch"),
-    )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=helm_repository(chart, NAME, "flux-system", url="https://charts.containeroo.ch"),
         chart=NAME,
         version="0.0.38",
         interval="30m",

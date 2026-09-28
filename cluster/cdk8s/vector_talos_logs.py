@@ -12,9 +12,11 @@ import tomli_w
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import ConfigMapArgs, Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import loki
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "vector-talos-logs"
 NAMESPACE = "vector-talos-logs"
@@ -62,22 +64,21 @@ CONFIG_MAP = ConfigMapArgs(
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                # Fixed-resource DaemonSet -- opt out of Goldilocks/VPA recommendations.
-                "goldilocks.fairwinds.com/enabled": "false",
-                # The receiver joins the host network so it can bind only host loopback;
-                # baseline forbids hostNetwork. This is an operator-only namespace: Flux is its
-                # sole writer, while the Vector container itself remains unprivileged.
-                "pod-security.kubernetes.io/enforce": "privileged",
-                "pod-security.kubernetes.io/audit": "privileged",
-                "pod-security.kubernetes.io/warn": "privileged",
-            },
-        ),
+        name=NAMESPACE,
+        # Fixed-resource DaemonSet -- opt out of Goldilocks/VPA recommendations.
+        vpa=Vpa.DISABLED,
+        agent_readable=None,
+        labels={
+            # The receiver joins the host network so it can bind only host loopback;
+            # baseline forbids hostNetwork. This is an operator-only namespace: Flux is its
+            # sole writer, while the Vector container itself remains unprivileged.
+            "pod-security.kubernetes.io/enforce": "privileged",
+            "pod-security.kubernetes.io/audit": "privileged",
+            "pod-security.kubernetes.io/warn": "privileged",
+        },
     )
     k8s.KubeDaemonSet(
         chart,

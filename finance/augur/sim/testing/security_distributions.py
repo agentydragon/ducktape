@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from decimal import Decimal
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import JurisdictionId
-from finance.augur.sim.income import InterestIncome, QualifiedDividendIncome
-from finance.augur.sim.prepared import PreparedDistributionSlice
+from finance.augur.sim.income import (
+    InterestIncome,
+    Municipal,
+    QualifiedDividendIncome,
+    Taxable,
+    TransferIncomeCategory,
+    Treasury,
+)
 
 HORIZON = 13
 SYMBOL = SecuritySymbol("bnd")
@@ -31,29 +38,18 @@ def payout_quanta(per_unit: Decimal) -> int:
 
 MONTHLY_PAYOUT_QUANTA = payout_quanta(PER_UNIT)
 
-TREASURY = (
-    PreparedDistributionSlice(
-        fraction_ppb=MONEY_FACTOR_SCALE,
-        income_category=InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us")),
-    ),
-)
-CALIFORNIA_MUNI = (
-    PreparedDistributionSlice(
-        fraction_ppb=MONEY_FACTOR_SCALE,
-        income_category=InterestIncome(issuer_jurisdiction_id=JurisdictionId("california")),
-    ),
-)
-CORPORATE = (PreparedDistributionSlice(fraction_ppb=MONEY_FACTOR_SCALE, income_category=InterestIncome()),)
+# Each fund's split of a payout by income category, in parts per billion.
+TREASURY: Mapping[TransferIncomeCategory, int] = {InterestIncome(character=Treasury()): MONEY_FACTOR_SCALE}
+CALIFORNIA_MUNI: Mapping[TransferIncomeCategory, int] = {
+    InterestIncome(character=Municipal(state=JurisdictionId("california"))): MONEY_FACTOR_SCALE
+}
+TAXABLE: Mapping[TransferIncomeCategory, int] = {InterestIncome(character=Taxable()): MONEY_FACTOR_SCALE}
 # An aggregate fund: part Treasury, part corporate. The case a single tag cannot express.
-AGGREGATE = (
-    PreparedDistributionSlice(
-        fraction_ppb=400_000_000, income_category=InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us"))
-    ),
-    PreparedDistributionSlice(fraction_ppb=600_000_000, income_category=InterestIncome()),
-)
+AGGREGATE: Mapping[TransferIncomeCategory, int] = {
+    InterestIncome(character=Treasury()): 400_000_000,
+    InterestIncome(character=Taxable()): 600_000_000,
+}
 TREASURY_SHARE, CORPORATE_SHARE = Decimal("0.4"), Decimal("0.6")
-QUALIFIED_DIVIDENDS = (
-    PreparedDistributionSlice(fraction_ppb=MONEY_FACTOR_SCALE, income_category=QualifiedDividendIncome()),
-)
+QUALIFIED_DIVIDENDS: Mapping[TransferIncomeCategory, int] = {QualifiedDividendIncome(): MONEY_FACTOR_SCALE}
 # Snapshot `m` opens month `m`, so month 11 has months 0..10 behind it: eleven payouts.
 YEAR_END, PAYOUTS_BY_YEAR_END = 11, 11

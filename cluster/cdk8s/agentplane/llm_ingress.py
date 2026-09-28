@@ -9,6 +9,7 @@ from cdk8s_plus_34 import (
     ConfigMap,
     ContainerPort,
     ContainerResources,
+    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
     Deployment,
@@ -27,11 +28,10 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.llm_ingress.main import CONFIG_FILE_ENV, Settings
-from cluster.cdk8s import cilium, container_security, node_scheduling
+from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
@@ -144,15 +144,15 @@ class LlmIngress(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            security_context=container_security.WRITABLE_ROOT,
+            # Writable: its root filesystem writes are unaudited.
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
 
         settings_volume = Volume.from_config_map(self, "settings-volume", settings_cm)
         deployment.containers[0].mount(_SETTINGS_PATH, settings_volume, sub_path="settings.yaml", read_only=True)
 
-        node_scheduling.attract_to_zone(deployment)
-        node_scheduling.tolerate_control_plane_taint(deployment)
-        apply_pod_spec_patches(deployment)
+        pod_policy.place(deployment, node_scheduling.HIL_OVH, tolerate_control_plane=True)
+        pod_policy.harden(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:

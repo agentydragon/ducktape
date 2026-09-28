@@ -21,12 +21,19 @@ from finance.augur.sim.actions import DecisionActions, PayClaim
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferIncomeCategory, income_source_sort_key
+from finance.augur.sim.income import (
+    ORDINARY_INCOME,
+    InterestIncome,
+    Municipal,
+    TransferIncomeCategory,
+    Treasury,
+    income_source_sort_key,
+)
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedAccount, PreparedJurisdiction, PreparedTransfer
 from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -42,10 +49,10 @@ FILED_IN = (JurisdictionId("federal_us"), JurisdictionId("california"))
 
 # 31 USC 3124 bars a state from taxing interest on federal obligations, so this source is
 # federally taxable and exempt in California — the split the ledger has to keep. An in-state
-# muni is exempt at both levels: IRC 103 federally, own-issue in California.
-TREASURY = InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us"))
-MUNI = InterestIncome(issuer_jurisdiction_id=JurisdictionId("california"))
-TREASURY_SOURCE = "interest:federal_us"
+# muni is exempt at both levels: IRC 103 federally, and California exempts its own munis.
+TREASURY = InterestIncome(character=Treasury())
+MUNI = InterestIncome(character=Municipal(state=JurisdictionId("california")))
+TREASURY_SOURCE = "interest:treasury"
 ORDINARY_SOURCE = "ordinary"
 
 # Through December of the first year, so the year-end assessment has fired.
@@ -75,8 +82,8 @@ class Payment:
     month: int = WAGE_MONTH
 
 
-def _account(agent_id: AgentId, balance: Decimal) -> PreparedAccount:
-    return PreparedAccount(
+def _account(world: World, agent_id: AgentId, balance: Decimal) -> None:
+    world.declare_account(
         account=AccountRef(agent_id=agent_id, account_id=CHECKING),
         opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
     )
@@ -93,16 +100,13 @@ def compose(payments: tuple[Payment, ...]) -> World:
         income_sources=tuple(
             sorted({ORDINARY_INCOME, *(payment.source for payment in payments)}, key=income_source_sort_key)
         ),
-        jurisdictions=tuple(
-            PreparedJurisdiction(jurisdiction_id=id_, level=jurisdictions[id_].level) for id_ in sorted(jurisdictions)
-        ),
     )
     for agent_id, balance in (
         *((recipient, OPENING_CASH) for recipient in recipients),
         (PAYER, sum((payment.amount for payment in payments), Decimal(0))),
         (IRS, Decimal(0)),
     ):
-        world.declare_account(_account(agent_id, balance))
+        _account(world, agent_id, balance)
     for recipient in recipients:
         world.track(
             TaxAuthority(
@@ -116,15 +120,13 @@ def compose(payments: tuple[Payment, ...]) -> World:
         )
     for index, payment in enumerate(payments):
         world.declare_flow(
-            PreparedTransfer(
-                month=payment.month,
-                cause_id=f"payment-{index}",
-                from_account=AccountRef(agent_id=PAYER, account_id=CHECKING),
-                to_account=AccountRef(agent_id=payment.to_agent_id, account_id=CHECKING),
-                amount=int(currency_amount_to_quanta(payment.amount, quantum=QUANTUM)),
-                income_category=payment.source,
-                deduction_category=None,
-            )
+            schedule=Once(month=payment.month),
+            cause_id=f"payment-{index}",
+            from_account=AccountRef(agent_id=PAYER, account_id=CHECKING),
+            to_account=AccountRef(agent_id=payment.to_agent_id, account_id=CHECKING),
+            amount=int(currency_amount_to_quanta(payment.amount, quantum=QUANTUM)),
+            income_category=payment.source,
+            deduction_category=None,
         )
     return world
 
@@ -251,9 +253,9 @@ def test_treasury_interest_is_federally_taxed_and_state_exempt() -> None:
 
 
 def test_in_state_muni_interest_is_exempt_everywhere() -> None:
-    """IRC 103 excludes it federally; California exempts its own issue. "In-state" is not
-    stored anywhere — it is `issuer == california`, decided by the jurisdiction reading
-    the row rather than by the instrument."""
+    """IRC 103 excludes it federally; California exempts its own munis. "In-state" is not
+    stored anywhere — it is California's rule for `Municipal(state=california)`, decided by
+    the jurisdiction reading the row rather than by the instrument."""
 
     tax = _tax_by_jurisdiction(run(Payment(AgentId("alice"), MUNI, ALICE_WAGES)))
 

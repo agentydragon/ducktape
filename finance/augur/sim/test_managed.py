@@ -10,33 +10,31 @@ from finance.augur.sim.actions import Withdraw
 from finance.augur.sim.books import EXTERNAL_BOUNDARY
 from finance.augur.sim.holdings import gain_account
 from finance.augur.sim.ids import AccountId, AssetId, JurisdictionId, PortfolioId
-from finance.augur.sim.income import InterestIncome
-from finance.augur.sim.managed import ComponentEffects, IncomeCredit, ManagedPortfolios, basis_account
+from finance.augur.sim.income import InterestIncome, Municipal, Taxable
+from finance.augur.sim.managed import ComponentEffects, IncomeCredit, ManagedPortfolios, Portfolio, basis_account
+from finance.augur.sim.market_path import Series
 from finance.augur.sim.money import MIN_COUNT
 from finance.augur.sim.observations import TlhPortfolioObservation
-from finance.augur.sim.prepared import PreparedSeries, PreparedTlhPortfolio
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, INCOME_SOURCES, accounting, world_on
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
-PRICES = PreparedSeries(series_id="security:test_fund", snapshots=3, values=(100, 110, 120) * 2)
+PRICES = Series(series_id="security:test_fund", snapshots=3, values=(100, 110, 120) * 2)
+
+
+# No modeled harvest: the portfolio's value moves only with the index and its own actions.
+QUIET = TlhAssumptions(
+    peak_annual_yield=0, floor_annual_yield=0, maturity_decay_exponent=1, drawdown_sensitivity=0, short_term_fraction=1
+)
 
 
 @pytest.fixture
-def spec() -> PreparedTlhPortfolio:
-    return PreparedTlhPortfolio(
+def spec() -> Portfolio:
+    return Portfolio(
         portfolio_id=PortfolioId("managed"),
         owner_agent_id=HOUSEHOLD,
         account_id=AccountId("custody"),
         asset_id=AssetId("test_fund"),
-        initial_cohorts=(TlhOpeningCohort(value=100, cost_basis=80, purchase_month_index=-1),),
-        assumptions=TlhAssumptions(
-            peak_annual_yield=0,
-            floor_annual_yield=0,
-            maturity_decay_exponent=1,
-            drawdown_sensitivity=0,
-            short_term_fraction=1,
-        ),
     )
 
 
@@ -53,15 +51,22 @@ def opening() -> TlhPortfolioObservation:
     )
 
 
-def composed(spec: PreparedTlhPortfolio, rollout_id: int) -> World:
-    """The portfolio held on one of the two price paths."""
+def composed(spec: Portfolio, rollout_id: int) -> World:
+    """The portfolio, one cohort worth 100 on a basis of 80, held on one of the two price paths."""
     world = world_on((PRICES,), horizon_months=2, rollout_id=rollout_id, rollout_count=2)
-    world.declare_portfolio(spec)
+    world.declare_portfolio(
+        portfolio_id=spec.portfolio_id,
+        owner_agent_id=spec.owner_agent_id,
+        account_id=spec.account_id,
+        asset_id=spec.asset_id,
+        initial_cohorts=(TlhOpeningCohort(value=100, cost_basis=80, purchase_month_index=-1),),
+        assumptions=QUIET,
+    )
     return world
 
 
 @pytest.fixture
-def world(spec: PreparedTlhPortfolio) -> World:
+def world(spec: Portfolio) -> World:
     return composed(spec, 0)
 
 
@@ -134,7 +139,10 @@ def test_invalid_effects_and_overflow_leave_every_financial_book_unchanged(
             0,
             (
                 IncomeCredit(
-                    InterestIncome(issuer_jurisdiction_id=JurisdictionId("undeclared") if case == 6 else None), amount
+                    InterestIncome(
+                        character=Municipal(state=JurisdictionId("test_undeclared")) if case == 6 else Taxable()
+                    ),
+                    amount,
                 ),
             ),
         )
@@ -151,7 +159,9 @@ def test_invalid_effects_and_overflow_leave_every_financial_book_unchanged(
 def test_distribution_cash_uses_interest_source_not_capital_gain_journal_account(
     world: World, opening: TlhPortfolioObservation
 ) -> None:
-    effects = ComponentEffects(opening, AccountId("checking"), 5, 0, 0, (IncomeCredit(InterestIncome(), 5),))
+    effects = ComponentEffects(
+        opening, AccountId("checking"), 5, 0, 0, (IncomeCredit(InterestIncome(character=Taxable()), 5),)
+    )
     world.managed_portfolios().settle(world.accounting, 0, HOUSEHOLD, "distribution", effects, operation="distribution")
     assert world.accounting.ledger.balance(CASH) == 105
     assert world.accounting.ledger.balance(gain_account(HOUSEHOLD)) == 0
@@ -164,10 +174,10 @@ def test_distribution_cash_uses_interest_source_not_capital_gain_journal_account
 
 
 def test_withdrawal_receipt_does_not_recalculate_component_rounded_value(
-    spec: PreparedTlhPortfolio, opening: TlhPortfolioObservation
+    spec: Portfolio, opening: TlhPortfolioObservation
 ) -> None:
     books = accounting()
-    managed = ManagedPortfolios(INCOME_SOURCES, ())
+    managed = ManagedPortfolios(INCOME_SOURCES)
     managed.open(books, spec, opening.model_copy(update={"value": 2, "reported_tax_basis": 2}))
     effects = ComponentEffects(
         opening.model_copy(update={"value": 0, "reported_tax_basis": 0}), AccountId("checking"), 1, 0, -1
@@ -187,7 +197,7 @@ def test_withdrawal_receipt_does_not_recalculate_component_rounded_value(
 
 
 def test_component_marks_keep_explicit_stop_marks_and_independent_books(
-    spec: PreparedTlhPortfolio, opening: TlhPortfolioObservation
+    spec: Portfolio, opening: TlhPortfolioObservation
 ) -> None:
     stopped, live = composed(spec, 1), composed(spec, 0)
     stopped.prepare_month(0, {}, {})
@@ -218,10 +228,10 @@ def test_component_marks_keep_explicit_stop_marks_and_independent_books(
 
 @pytest.mark.parametrize("case", ["duplicate", "mismatch"])
 def test_opening_a_component_requires_one_matching_observation_per_declared_portfolio(
-    spec: PreparedTlhPortfolio, opening: TlhPortfolioObservation, case: str
+    spec: Portfolio, opening: TlhPortfolioObservation, case: str
 ) -> None:
     books = accounting()
-    managed = ManagedPortfolios(INCOME_SOURCES, ())
+    managed = ManagedPortfolios(INCOME_SOURCES)
     if case == "duplicate":
         managed.open(books, spec, opening)
         with pytest.raises(ValueError, match="already open"):
@@ -233,7 +243,7 @@ def test_opening_a_component_requires_one_matching_observation_per_declared_port
     assert books.ledger.trial_balance() == 0
 
 
-def test_world_rejects_an_unselected_rollout(spec: PreparedTlhPortfolio) -> None:
+def test_world_rejects_an_unselected_rollout(spec: Portfolio) -> None:
     with pytest.raises(ValueError, match="rollout selection"):
         composed(spec, 2)
 

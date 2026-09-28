@@ -60,7 +60,7 @@ def close(year: Year) -> dict[JurisdictionId, TaxAccrual]:
     book.gain(FILER, _quanta(year.long_term), long_term=True)
     return {
         row.jurisdiction_id: row
-        for row in TaxAuthority(profile, indexation=FixedNominalLaw()).assessments(book, YEAR_END, [], ())
+        for row in TaxAuthority(profile, indexation=FixedNominalLaw()).assessments(book, YEAR_END, [])
     }
 
 

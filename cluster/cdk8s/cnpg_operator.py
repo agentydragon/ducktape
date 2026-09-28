@@ -6,8 +6,7 @@ Namespace, the shared HelmRepository and both HelmReleases, which install their 
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s import App, Chart
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallCrds,
@@ -16,11 +15,12 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeCrds,
     HelmReleaseSpecUpgradeRemediation,
 )
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 
 NAME = "cnpg"
 NAMESPACE = "cnpg-system"
@@ -36,30 +36,14 @@ _BARMAN_CLOUD = "plugin-barman-cloud"
 # on a control-plane node.
 _CRITICAL_VALUES: dict[str, object] = {
     "priorityClassName": "system-cluster-critical",
-    "tolerations": [{"key": "node-role.kubernetes.io/control-plane", "effect": "NoSchedule", "operator": "Exists"}],
+    "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
 }
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
-        chart,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "initial",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
-    )
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name=NAME, namespace="flux-system"),
-        spec=HelmRepositorySpec(interval="24h", url="https://cloudnative-pg.github.io/charts"),
-    )
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.INITIAL, agent_readable=AgentReadable.LOGS)
+    repository = helm_repository(chart, NAME, "flux-system", url="https://cloudnative-pg.github.io/charts")
     helm_release(
         chart,
         NAME,

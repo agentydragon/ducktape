@@ -20,18 +20,11 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_sc
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedSeries,
-    PreparedTransfer,
-)
 from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction, Rollout
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -50,6 +43,7 @@ WAGES = Decimal(30_000)
 QUIET, TAXED = 0, 1
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
+VTI_SCALE = quantity_scale_for_asset(VTI)
 QUANTUM = Decimal("0.01")
 FEDERAL = JurisdictionId("federal_us")
 
@@ -58,10 +52,11 @@ FEDERAL = JurisdictionId("federal_us")
 class Situation:
     """The compiled paths, the one VTI lot Alice opens holding, and the month-zero wages she is paid."""
 
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     rollout_count: int
     horizon_months: int
-    lot: PreparedLot
+    lot_units: int
+    lot_basis: int
     wages: Decimal
 
 
@@ -72,21 +67,12 @@ def _situation(prices: np.ndarray, *, quantity: Decimal | int, cost_basis: Decim
     paths = ExternalSeriesContext.from_level_blocks(
         [(VTI, prices)], rollout_count=rollout_count, horizon_months=horizon
     )
-    scale = quantity_scale_for_asset(VTI)
     return Situation(
         series=compile_series(paths, rollout_count=rollout_count, horizon_months=horizon, currency=USD),
         rollout_count=rollout_count,
         horizon_months=horizon,
-        lot=PreparedLot(
-            lot_id=LotId("alice-vti"),
-            agent_id=ALICE,
-            account_id=AccountId("checking"),
-            asset_id=AssetId(VTI.symbol),
-            purchase_month=-24,
-            quantity_scale=scale,
-            units=quantity_to_quanta(quantity, scale=scale),
-            basis=int(currency_amount_to_quanta(cost_basis, quantum=QUANTUM)),
-        ),
+        lot_units=quantity_to_quanta(quantity, scale=VTI_SCALE),
+        lot_basis=int(currency_amount_to_quanta(cost_basis, quantum=QUANTUM)),
         wages=wages,
     )
 
@@ -98,44 +84,43 @@ def _compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=FEDERAL, level=federal.level),),
     )
     openings = [(ALICE, Decimal(0)), (IRS, Decimal(0))]
     if case.wages:
         openings.append((AgentId("employer"), case.wages))
     for agent_id, opening in openings:
         world.declare_account(
-            PreparedAccount(
-                account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")),
-                opening_balance=int(currency_amount_to_quanta(opening, quantum=QUANTUM)),
-            )
+            account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")),
+            opening_balance=int(currency_amount_to_quanta(opening, quantum=QUANTUM)),
         )
     profile = TaxProfile(
         agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS, prior_year_tax=Decimal(0)
     )
     world.track(TaxAuthority(compile_profile(profile, {FEDERAL: federal}, currency=USD), indexation=FixedNominalLaw()))
     world.declare_pool(
-        PreparedHoldingPool(
-            agent_id=ALICE,
-            account_id=AccountId("checking"),
-            asset_id=AssetId(VTI.symbol),
-            quantity_scale=case.lot.quantity_scale,
-        )
+        agent_id=ALICE, account_id=AccountId("checking"), asset_id=AssetId(VTI.symbol), quantity_scale=VTI_SCALE
     )
-    world.hold(case.lot)
+    world.hold_lot(
+        lot_id=LotId("alice-vti"),
+        agent_id=ALICE,
+        account_id=AccountId("checking"),
+        asset_id=AssetId(VTI.symbol),
+        purchase_month=-24,
+        quantity_scale=VTI_SCALE,
+        units=case.lot_units,
+        basis=case.lot_basis,
+    )
     if case.wages:
         # Wages are the one cashflow an action cannot express: a bare actor transfer may not
         # declare tax character, so the payroll run is the scheduled table the world carries.
         world.declare_flow(
-            PreparedTransfer(
-                month=0,
-                cause_id="wages",
-                from_account=AccountRef(agent_id=AgentId("employer"), account_id=AccountId("checking")),
-                to_account=AccountRef(agent_id=ALICE, account_id=AccountId("checking")),
-                amount=int(currency_amount_to_quanta(case.wages, quantum=QUANTUM)),
-                income_category=ORDINARY_INCOME,
-                deduction_category=None,
-            )
+            schedule=Once(month=0),
+            cause_id="wages",
+            from_account=AccountRef(agent_id=AgentId("employer"), account_id=AccountId("checking")),
+            to_account=AccountRef(agent_id=ALICE, account_id=AccountId("checking")),
+            amount=int(currency_amount_to_quanta(case.wages, quantum=QUANTUM)),
+            income_category=ORDINARY_INCOME,
+            deduction_category=None,
         )
     return world
 

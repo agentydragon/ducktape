@@ -1,6 +1,6 @@
 # Execution input and ownership
 
-A caller builds the typed `sim.prepared` records a composed world declares;
+A caller declares its facts on a composed world as keyword arguments of typed values;
 `sim.external_series`, `sim.private_equity_series` and `sim.tax_profile` turn materialized
 paths and jurisdiction rules into theirs. Preparation does not fetch evidence, fit models, or reinterpret tax law. Each
 declaration refuses the financial inputs it cannot execute where it is declared.

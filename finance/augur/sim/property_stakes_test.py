@@ -30,23 +30,21 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
+from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedJurisdiction,
-    PreparedLocation,
-    PreparedRecurringTransfer,
-    _CapitalImprovement,
-    _MortgageFinancing,
-    _PrimaryResidence,
-    _PropertyPurchase,
-    _PropertySale,
-    _PropertyTax,
-    _RentedFraction,
+from finance.augur.sim.property import (
+    CapitalImprovement,
+    Housing,
+    MortgageFinancing,
+    PrimaryResidence,
+    RentedFraction,
+    ScheduledPurchase,
+    ScheduledSale,
 )
-from finance.augur.sim.property import Housing
+from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -86,31 +84,28 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
-def location(location_id: LocationId, display_name: str, *, annual_rate: Decimal | int) -> PreparedLocation:
-    return PreparedLocation(
-        location_id=location_id,
-        display_name=display_name,
-        jurisdiction_ids=(),
-        annual_property_tax_rate_ppb=rate_to_ppb(annual_rate),
-        annual_special_assessment=0,
+def location(location_id: LocationId, *, annual_rate: Decimal | int) -> Location:
+    return Location(
+        location_id=location_id, annual_property_tax_rate_ppb=rate_to_ppb(annual_rate), annual_special_assessment=0
     )
 
 
-LOCATIONS = (location(LOCATION_ID, "Loc", annual_rate=0),)
+LOCATIONS = (location(LOCATION_ID, annual_rate=0),)
 MULTI_PROPERTY_LOCATIONS = (
-    location(HOME_LOCATION_ID, "Primary Home", annual_rate=Decimal("0.012")),
-    location(RENTAL_LOCATION_ID, "Rental", annual_rate=Decimal("0.024")),
+    location(HOME_LOCATION_ID, annual_rate=Decimal("0.012")),
+    location(RENTAL_LOCATION_ID, annual_rate=Decimal("0.024")),
 )
 
 
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return AccountRef(agent_id=agent_id, account_id=CHECKING), money(balance)
 
 
 def financing(
     liability_id: LiabilityId, lender: AgentId, *, principal: int, annual_rate: Decimal | int
-) -> _MortgageFinancing:
-    return _MortgageFinancing(
+) -> MortgageFinancing:
+    return MortgageFinancing(
         liability_id=liability_id,
         lender_agent_id=lender,
         lender_account_id=CHECKING,
@@ -131,9 +126,9 @@ def purchase(
     down: int,
     closing: int = 0,
     rented_fraction: Decimal | int = 0,
-    mortgage: _MortgageFinancing | None = None,
-) -> _PropertyPurchase:
-    return _PropertyPurchase(
+    mortgage: MortgageFinancing | None = None,
+) -> ScheduledPurchase:
+    return ScheduledPurchase(
         month=month,
         cause_id=cause_id,
         property_id=property_id,
@@ -151,9 +146,9 @@ def purchase(
     )
 
 
-def property_tax(property_id: PropertyId, collector: AgentId) -> _PropertyTax:
+def property_tax(property_id: PropertyId, collector: AgentId) -> PropertyTaxPolicy:
     """No rate of its own, so the authority charges the rate of the location the property sits in."""
-    return _PropertyTax(
+    return PropertyTaxPolicy(
         property_id=property_id,
         owner_agent_id=ALICE,
         from_account_id=CHECKING,
@@ -166,17 +161,25 @@ def property_tax(property_id: PropertyId, collector: AgentId) -> _PropertyTax:
 
 
 @dataclass(frozen=True)
+class Rent:
+    """The tenant's monthly rent to Alice, in dollars, from month 0 through `end_month`."""
+
+    amount: Decimal | int
+    end_month: int
+
+
+@dataclass(frozen=True)
 class Situation:
     """What Alice owns, what happens to it, and the market each property is valued in."""
 
     horizon_months: int
-    accounts: tuple[PreparedAccount, ...]
+    accounts: tuple[tuple[AccountRef, int], ...]
     housing: Housing
     rollout_count: int = 1
-    locations: tuple[PreparedLocation, ...] = LOCATIONS
-    tax_policies: tuple[_PropertyTax, ...] = ()
+    locations: tuple[Location, ...] = LOCATIONS
+    tax_policies: tuple[PropertyTaxPolicy, ...] = ()
     jurisdiction_ids: tuple[JurisdictionId, ...] = ()
-    recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
+    rent: Rent | None = None
     home_values: Mapping[str, Sequence[float]] = field(default_factory=dict)
 
 
@@ -202,12 +205,9 @@ def compose(case: Situation, rollout_id: int) -> World:
         MarketPath(series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=tuple(
-            PreparedJurisdiction(jurisdiction_id=id_, level=rules.level) for id_, rules in jurisdictions.items()
-        ),
     )
-    for opening in case.accounts:
-        world.declare_account(opening)
+    for opened, balance in case.accounts:
+        world.declare_account(account=opened, opening_balance=balance)
     if case.jurisdiction_ids:
         world.track(
             TaxAuthority(
@@ -225,8 +225,16 @@ def compose(case: Situation, rollout_id: int) -> World:
             )
         )
     world.declare_housing(case.housing, case.tax_policies, case.locations)
-    for flow in case.recurring_transfers:
-        world.declare_flow(flow)
+    if case.rent is not None:
+        world.declare_flow(
+            schedule=Recurring(start_month=0, end_month=case.rent.end_month),
+            cause_id="rental-income:rental",
+            from_account=AccountRef(agent_id=TENANT, account_id=CHECKING),
+            to_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
+            amount=money(case.rent.amount),
+            income_category=ORDINARY_INCOME,
+            deduction_category=None,
+        )
     return world
 
 
@@ -345,18 +353,7 @@ def home_and_rental_case() -> Situation:
         ),
         locations=MULTI_PROPERTY_LOCATIONS,
         jurisdiction_ids=(FEDERAL, CALIFORNIA),
-        recurring_transfers=(
-            PreparedRecurringTransfer(
-                start_month=0,
-                end_month=RENTAL_SALE_MONTH - 1,
-                cause_id="rental-income:rental",
-                from_account=AccountRef(agent_id=TENANT, account_id=CHECKING),
-                to_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
-                amount=money(MONTHLY_RENT),
-                income_category=ORDINARY_INCOME,
-                deduction_category=None,
-            ),
-        ),
+        rent=Rent(MONTHLY_RENT, end_month=RENTAL_SALE_MONTH - 1),
         housing=Housing(
             purchases=(
                 purchase(
@@ -381,20 +378,20 @@ def home_and_rental_case() -> Situation:
                 ),
             ),
             sales=(
-                _PropertySale(
+                ScheduledSale(
                     month=RENTAL_SALE_MONTH,
                     property_id=PropertyId("rental"),
                     closing_cost_ppb=rate_to_ppb(Decimal("0.06")),
                 ),
             ),
-            initial_residences=(_PrimaryResidence(agent_id=ALICE, property_id=PropertyId("home")),),
+            initial_residences=(PrimaryResidence(agent_id=ALICE, property_id=PropertyId("home")),),
             rented_fraction_events=(
-                _RentedFraction(
+                RentedFraction(
                     month=12, property_id=PropertyId("rental"), rented_fraction_ppb=rate_to_ppb(Decimal("0.5"))
                 ),
             ),
             capital_improvements=(
-                _CapitalImprovement(
+                CapitalImprovement(
                     month=12, property_id=PropertyId("rental"), amount=money(RENTAL_CAPEX), description="new roof"
                 ),
             ),
@@ -468,9 +465,15 @@ def test_a_lifecycle_event_lands_on_the_property_it_names(lifecycle: Rollout) ->
     assert lifecycle.trace.events.set_rented_fraction_events.to_dicts() == [
         {"rollout_id": 0, "month_index": 12, "property_id": "rental", "rented_fraction": 0.5}
     ]
-    assert lifecycle.trace.events.capital_improvement_events.select(
-        "rollout_id", "month_index", "property_id", "amount_quanta"
-    ).to_dicts() == [{"rollout_id": 0, "month_index": 12, "property_id": "rental", "amount_quanta": 3_000_000}]
+    assert lifecycle.trace.events.capital_improvement_events.to_dicts() == [
+        {
+            "rollout_id": 0,
+            "month_index": 12,
+            "property_id": "rental",
+            "amount_quanta": 3_000_000,
+            "description": "new roof",
+        }
+    ]
 
 
 def test_the_rental_sale_carries_its_own_basis_and_not_the_home_s_exclusion(lifecycle: Rollout) -> None:

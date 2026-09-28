@@ -20,23 +20,14 @@ from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import (
+    InterestExemptions,
     Jurisdiction,
-    JurisdictionLevel,
     StatutoryAmount,
     StatutoryIndexation,
     TaxBracket,
 )
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedObligation,
-    PreparedSeries,
-    PreparedTransfer,
-)
 from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
@@ -62,31 +53,22 @@ RETIREE = AgentId("retiree")
 WORLD = AgentId("world")
 
 
-def _series(paths: ExternalSeriesContext, *, rollout_count: int, horizon_months: int) -> tuple[PreparedSeries, ...]:
+def _series(paths: ExternalSeriesContext, *, rollout_count: int, horizon_months: int) -> tuple[Series, ...]:
     return compile_series(paths, rollout_count=rollout_count, horizon_months=horizon_months, currency=USD)
 
 
 def _books(
-    series: tuple[PreparedSeries, ...],
-    rollout_id: int,
-    *,
-    rollout_count: int,
-    horizon_months: int,
-    retiree_cash: int,
-    jurisdictions: tuple[PreparedJurisdiction, ...] = (),
+    series: tuple[Series, ...], rollout_id: int, *, rollout_count: int, horizon_months: int, retiree_cash: int
 ) -> World:
     """A retiree with `retiree_cash` quanta in checking and a counterparty; nothing else declared."""
     world = World(
         MarketPath(series, rollout_id, rollout_count=rollout_count),
         horizon_months=horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=jurisdictions,
     )
     for name, balance in ((RETIREE, retiree_cash), (WORLD, 0)):
         world.declare_account(
-            PreparedAccount(
-                account=AccountRef(agent_id=name, account_id=AccountId("checking")), opening_balance=balance
-            )
+            account=AccountRef(agent_id=name, account_id=AccountId("checking")), opening_balance=balance
         )
     return world
 
@@ -194,29 +176,25 @@ def test_post_cashflow_review_and_ordered_claim_prefix_are_explicit() -> None:
         world = _books(series, rollout_id, rollout_count=1, horizon_months=1, retiree_cash=10_000)
         # Arrives when the month opens, before the review, so the request counts it.
         world.declare_flow(
-            PreparedTransfer(
-                month=0,
-                cause_id="current-income",
-                from_account=AccountRef(agent_id=WORLD, account_id=AccountId("checking")),
-                to_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
-                amount=10_000,
-                income_category=None,
-                deduction_category=None,
-            )
+            schedule=Once(month=0),
+            cause_id="current-income",
+            from_account=AccountRef(agent_id=WORLD, account_id=AccountId("checking")),
+            to_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
+            amount=10_000,
+            income_category=None,
+            deduction_category=None,
         )
         world.track(
             Biller(
-                PreparedObligation(
-                    schedule=Once(month=0),
-                    obligation_id="due-bill",
-                    obligation_type=ObligationType.OUTSIDE_RENT,
-                    from_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
-                    to_account=AccountRef(agent_id=WORLD, account_id=AccountId("checking")),
-                    amount_due=3_000,
-                    property_id=None,
-                    deduction_category=None,
-                    deductible_fraction_ppb=rate_to_ppb(1),
-                )
+                schedule=Once(month=0),
+                obligation_id="due-bill",
+                obligation_type=ObligationType.OUTSIDE_RENT,
+                from_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
+                to_account=AccountRef(agent_id=WORLD, account_id=AccountId("checking")),
+                amount_due=3_000,
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=rate_to_ppb(1),
             )
         )
         return world
@@ -264,7 +242,7 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
     stock = SecurityKey(symbol=SecuritySymbol("synthetic-tax-stock"))
     rules = Jurisdiction(
         jurisdiction_id=JurisdictionId("synthetic-flat-tax"),
-        level=JurisdictionLevel.FEDERAL,
+        exempt_interest=InterestExemptions(treasury=False, municipal=set()),
         ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
         ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
         standard_deduction={FilingStatus.SINGLE: Decimal(0)},
@@ -300,34 +278,20 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
     scale = quantity_scale_for_asset(stock)
 
     def compose(rollout_id: int) -> World:
-        world = _books(
-            series,
-            rollout_id,
-            rollout_count=1,
-            horizon_months=13,
-            retiree_cash=0,
-            jurisdictions=(PreparedJurisdiction(jurisdiction_id=rules.jurisdiction_id, level=rules.level),),
-        )
+        world = _books(series, rollout_id, rollout_count=1, horizon_months=13, retiree_cash=0)
         world.track(TaxAuthority(profile, indexation=FixedNominalLaw()))
         world.declare_pool(
-            PreparedHoldingPool(
-                agent_id=RETIREE,
-                account_id=AccountId("brokerage"),
-                asset_id=AssetId(stock.symbol),
-                quantity_scale=scale,
-            )
+            agent_id=RETIREE, account_id=AccountId("brokerage"), asset_id=AssetId(stock.symbol), quantity_scale=scale
         )
-        world.hold(
-            PreparedLot(
-                lot_id=LotId("tax-lot"),
-                agent_id=RETIREE,
-                account_id=AccountId("brokerage"),
-                asset_id=AssetId(stock.symbol),
-                purchase_month=-24,
-                quantity_scale=scale,
-                units=quantity_to_quanta(10, scale=scale),
-                basis=40_000,
-            )
+        world.hold_lot(
+            lot_id=LotId("tax-lot"),
+            agent_id=RETIREE,
+            account_id=AccountId("brokerage"),
+            asset_id=AssetId(stock.symbol),
+            purchase_month=-24,
+            quantity_scale=scale,
+            units=quantity_to_quanta(10, scale=scale),
+            basis=40_000,
         )
         return world
 

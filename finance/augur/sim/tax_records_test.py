@@ -10,9 +10,10 @@ from finance.augur.sim.agent import EconomicAgent
 from finance.augur.sim.books import TaxLiabilityState
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
+from finance.augur.sim.market_path import Series
 from finance.augur.sim.observations import Observation, TaxRecords
-from finance.augur.sim.prepared import PreparedHoldingPool, PreparedLot, PreparedRecurringTransfer, PreparedSeries
 from finance.augur.sim.results import Executed
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.testing.accounting import (
     CASH,
     EXOGENOUS,
@@ -31,9 +32,9 @@ PRICE = 100_000
 HOUSEHOLD_WAGE, OTHER_WAGE = 50_000, 7_000
 
 
-def lot(id_: LotId, agent: AgentId, *, basis: int, purchase_month: int) -> PreparedLot:
+def lot(world: World, id_: LotId, agent: AgentId, *, basis: int, purchase_month: int) -> None:
     """One unit of stock, worth `PRICE` on the flat path."""
-    return PreparedLot(
+    world.hold_lot(
         lot_id=id_,
         agent_id=agent,
         account_id=AccountId("checking"),
@@ -55,10 +56,9 @@ def sale(agent: AgentId, lot_id: LotId) -> Sell:
     )
 
 
-def wage(payee: AgentId, amount: int) -> PreparedRecurringTransfer:
-    return PreparedRecurringTransfer(
-        start_month=0,
-        end_month=None,
+def wage(world: World, payee: AgentId, amount: int) -> None:
+    world.declare_flow(
+        schedule=Recurring(start_month=0, end_month=None),
         cause_id=f"wage-{payee}",
         from_account=EXOGENOUS,
         to_account=CASH if payee == HOUSEHOLD else RECIPIENT,
@@ -92,22 +92,20 @@ class _Recorder(EconomicAgent):
 def run(sales: Mapping[int, Sell], *, taxed: bool = True, other_trades: bool = True) -> tuple[World, list[Observation]]:
     """Both actors are flat-10% taxpayers with wages; the other may also sell a short-term winner in month 0."""
     world = world_on(
-        (PreparedSeries(series_id="security:stock", snapshots=HORIZON + 1, values=(PRICE,) * (HORIZON + 1)),),
+        (Series(series_id="security:stock", snapshots=HORIZON + 1, values=(PRICE,) * (HORIZON + 1)),),
         horizon_months=HORIZON,
         accounts=opening({EXOGENOUS: 10_000_000}),
         taxpayers=(taxpayer(HOUSEHOLD), taxpayer(OTHER)) if taxed else (),
     )
     for agent in (HOUSEHOLD, OTHER):
         world.declare_pool(
-            PreparedHoldingPool(
-                agent_id=agent, account_id=AccountId("checking"), asset_id=AssetId("stock"), quantity_scale=10
-            )
+            agent_id=agent, account_id=AccountId("checking"), asset_id=AssetId("stock"), quantity_scale=10
         )
-    world.hold(lot(LotId("loser"), HOUSEHOLD, basis=1_000_000, purchase_month=-24))
-    world.hold(lot(LotId("winner"), OTHER, basis=0, purchase_month=-2))
-    world.declare_flow(wage(HOUSEHOLD, HOUSEHOLD_WAGE))
+    lot(world, LotId("loser"), HOUSEHOLD, basis=1_000_000, purchase_month=-24)
+    lot(world, LotId("winner"), OTHER, basis=0, purchase_month=-2)
+    wage(world, HOUSEHOLD, HOUSEHOLD_WAGE)
     if other_trades:
-        world.declare_flow(wage(OTHER, OTHER_WAGE))
+        wage(world, OTHER, OTHER_WAGE)
     recorder = _Recorder(sales)
     world.track(recorder)
     world.start()
@@ -134,7 +132,7 @@ def seen() -> list[Observation]:
 def test_the_years_income_accumulates_from_the_months_already_opened(seen: list[Observation]) -> None:
     # Wages move when the month opens, before its mail is posted.
     assert [records(o).income for o in seen[:12]] == [
-        (("ordinary", HOUSEHOLD_WAGE * (month + 1)), ("interest:corporate", 0)) for month in range(12)
+        (("ordinary", HOUSEHOLD_WAGE * (month + 1)), ("interest:taxable", 0)) for month in range(12)
     ]
 
 
@@ -164,7 +162,7 @@ def test_the_close_resets_the_year_and_posts_the_assessment_until_the_true_up_se
         first_month.capital_loss_carryforward,
         first_month.liabilities,
     ) == (
-        (("ordinary", HOUSEHOLD_WAGE), ("interest:corporate", 0)),
+        (("ordinary", HOUSEHOLD_WAGE), ("interest:taxable", 0)),
         0,
         0,
         600_000,

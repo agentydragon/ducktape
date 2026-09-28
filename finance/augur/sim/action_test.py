@@ -15,7 +15,6 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedAccount, PreparedObligation, PreparedTransfer
 from finance.augur.sim.results import Executed, Finished, RejectedAction, Rollout, UnpaidClaims
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
@@ -41,31 +40,27 @@ def compose(rollout_id: int, *, obligation_id: str = "one-cent-bill") -> World:
         MarketPath((), rollout_id, rollout_count=ROLLOUT_COUNT), horizon_months=4, income_sources=(ORDINARY_INCOME,)
     )
     for account, balance in ((ALICE, Decimal("0.05")), (WORLD, Decimal(0))):
-        world.declare_account(PreparedAccount(account=account, opening_balance=quanta(balance)))
+        world.declare_account(account=account, opening_balance=quanta(balance))
     world.declare_flow(
-        PreparedTransfer(
-            month=0,
-            cause_id="opening-contribution",
-            from_account=WORLD,
-            to_account=ALICE,
-            amount=quanta(Decimal("0.02")),
-            income_category=None,
-            deduction_category=None,
-        )
+        schedule=Once(month=0),
+        cause_id="opening-contribution",
+        from_account=WORLD,
+        to_account=ALICE,
+        amount=quanta(Decimal("0.02")),
+        income_category=None,
+        deduction_category=None,
     )
     world.track(
         Biller(
-            PreparedObligation(
-                schedule=Once(month=0),
-                obligation_id=obligation_id,
-                obligation_type=ObligationType.OUTSIDE_RENT,
-                from_account=ALICE,
-                to_account=WORLD,
-                amount_due=quanta(Decimal("0.01")),
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=1_000_000_000,
-            )
+            schedule=Once(month=0),
+            obligation_id=obligation_id,
+            obligation_type=ObligationType.OUTSIDE_RENT,
+            from_account=ALICE,
+            to_account=WORLD,
+            amount_due=quanta(Decimal("0.01")),
+            property_id=None,
+            deduction_category=None,
+            deductible_fraction_ppb=1_000_000_000,
         )
     )
     return world

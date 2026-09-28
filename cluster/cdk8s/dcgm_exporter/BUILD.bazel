@@ -21,6 +21,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "@pypi//cdk8s",

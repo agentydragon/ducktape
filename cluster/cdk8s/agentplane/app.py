@@ -37,6 +37,7 @@ from cdk8s_plus_34 import (
     ConfigMap,
     ContainerPort,
     ContainerResources,
+    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
     Deployment,
@@ -62,7 +63,7 @@ from constructs import Construct
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from agentplane.app.main import CONFIG_FILE_ENV, Settings
 from agentplane.app.oidc import OIDCSettings
-from cluster.cdk8s import cilium, container_security, node_scheduling
+from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import actions, database, egress, electric, llm_ingress, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
@@ -70,7 +71,7 @@ from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_bu
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
+from cluster.cdk8s.model_rosters import OLLAMA_CHAT_MODELS, ApiShape, Provider, exposed_name, ollama_chat_variant
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -91,6 +92,22 @@ _CONFIG_DIR = "/etc/agentplane"
 # SandboxTemplate's own VolumeClaimTemplate -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
 _STATE_DIR = "/state"
+_QWEN_IQ4XS = "qwen3.8-flash-next-iq4xs"
+
+
+def _runner_model_context_windows() -> dict[str, int]:
+    """Context verified for the Agentplane Qwen IQ4_XS routes, on both client wires.
+
+    Route ids and limits come from the LiteLLM model roster; keep this scoped to the Qwen routes
+    rather than assuming every Ollama model has the same window.
+    """
+    return {
+        exposed_name(Provider.OLLAMA, shape, ollama_chat_variant(model, context)): context
+        for model, _, contexts in OLLAMA_CHAT_MODELS
+        if model == _QWEN_IQ4XS
+        for context in contexts
+        for shape in (ApiShape.OAI_CHAT, ApiShape.OLM_CHAT)
+    }
 
 
 class App(Construct):
@@ -296,7 +313,8 @@ class App(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            security_context=container_security.WRITABLE_ROOT,
+            # Writable: its root filesystem writes are unaudited.
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         config = ConfigMap.from_config_map_name(self, "app-config-ref", "agentplane-app-config")
         volume = Volume.from_config_map(self, "config-volume", config)
@@ -304,8 +322,8 @@ class App(Construct):
 
         # With the database (cnpg_conventions R5). Unlike llm-ingress/egress, the app
         # carries no control-plane toleration.
-        node_scheduling.attract_to_zone(deployment)
-        apply_pod_spec_patches(deployment)
+        pod_policy.place(deployment, node_scheduling.HIL_OVH)
+        pod_policy.harden(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
@@ -425,6 +443,12 @@ class App(Construct):
             security_context=sandbox_pod.workload_security_context(),
             env=[
                 SandboxTemplateSpecPodTemplateSpecContainersEnv(name="LITELLM_URL", value=litellm_url),
+                # Optional runner-only config. Older runner images ignore this environment
+                # variable; the updated runner applies it when a model is listed.
+                SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                    name="AGENTPLANE_MODEL_CONTEXT_WINDOWS",
+                    value=json.dumps(_runner_model_context_windows(), sort_keys=True, separators=(",", ":")),
+                ),
                 # On the container and not just on the harness children the runner spawns.
                 *sandbox_pod.egress_env(),
                 # Neither a workload token nor a LiteLLM key: the placeholder the

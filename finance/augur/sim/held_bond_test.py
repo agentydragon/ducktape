@@ -10,13 +10,14 @@ import pytest_bazel
 from finance.augur.sim.actions import Action, Consume, DecisionActions, PayClaim
 from finance.augur.sim.books import AccountRef, BondState, Book
 from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId
+from finance.augur.sim.income import InterestCharacter, Taxable
 from finance.augur.sim.observations import Decision, FixedCoupon, IndexedCoupon
 from finance.augur.sim.results import BondSeries, Finished, Paid, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.bonds import (
-    CORPORATE,
     MUNI,
     QUANTUM,
+    TAXABLE,
     TREASURY,
     Situation,
     bond_case,
@@ -92,7 +93,7 @@ def test_owned_terms_coupon_before_spending_and_maturity_removal() -> None:
             assert observation.public_positions == ()
             if observation.month < 2:
                 [bond] = observation.held_bonds
-                assert (bond.bond_id, bond.account_id, bond.issuer_jurisdiction_id) == ("alice-bond", "checking", None)
+                assert (bond.bond_id, bond.account_id, bond.character) == ("alice-bond", "checking", Taxable())
                 assert (bond.face_value, bond.purchase_price, bond.principal) == (10_000, 10_000, 10_000)
                 coupon = bond.coupon
                 assert isinstance(coupon, FixedCoupon)
@@ -183,12 +184,10 @@ def pay_claims(batch: list[Decision]) -> list[DecisionActions]:
 
 
 @pytest.mark.parametrize(
-    ("issuer", "federal", "state"), [(TREASURY, True, False), (MUNI, False, False), (CORPORATE, True, True)]
+    ("character", "federal", "state"), [(TREASURY, True, False), (MUNI, False, False), (TAXABLE, True, True)]
 )
-def test_existing_issuer_exemptions_survive_actor_capture(
-    issuer: JurisdictionId | None, federal: bool, state: bool
-) -> None:
-    [result] = execute(bond_case(issuer=issuer), pay_claims)
+def test_interest_exemptions_survive_actor_capture(character: InterestCharacter, federal: bool, state: bool) -> None:
+    [result] = execute(bond_case(character=character), pay_claims)
     assert result.stop is None
     taxes = {row.jurisdiction_id: row.total_tax for row in result.summary.tax_accruals}
     assert (taxes[JurisdictionId("federal_us")] > 0) == federal

@@ -30,18 +30,9 @@ from finance.augur.sim.fixed_point import (
     rate_to_ppb,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedDistribution,
-    PreparedDistributionSlice,
-    PreparedHoldingPool,
-    PreparedLot,
-    PreparedObligation,
-    PreparedSeries,
-)
 from finance.augur.sim.results import Finished, Rollout, Stop, UnpaidClaim
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
@@ -67,7 +58,7 @@ INITIAL_UNIT_PRICE = Decimal(100)
 class Situation:
     """What every path of a spending cell shares; `compose` declares it onto one World per path."""
 
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     rollout_count: int
     horizon_months: int
     annual_spending: int  # currency quanta, claimed at months 12, 24, ... inside the horizon; zero claims nothing
@@ -109,52 +100,42 @@ def compose(case: Situation, rollout_id: int) -> World:
     world = World(
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
-        income_sources=(ORDINARY_INCOME, InterestIncome(issuer_jurisdiction_id=None)),
+        income_sources=(ORDINARY_INCOME, InterestIncome(character=Taxable())),
     )
     for agent_id in (HOUSEHOLD, WORLD):
-        world.declare_account(
-            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
-        )
+        world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
     scale = quantity_scale_for_asset(SecurityKey(symbol=STRATEGY))
-    world.declare_pool(
-        PreparedHoldingPool(agent_id=HOUSEHOLD, account_id=BROKERAGE, asset_id=AssetId(STRATEGY), quantity_scale=scale)
-    )
-    world.hold(
-        PreparedLot(
-            lot_id=LotId("example_initial_strategy"),
-            agent_id=HOUSEHOLD,
-            account_id=BROKERAGE,
-            asset_id=AssetId(STRATEGY),
-            purchase_month=-1,
-            quantity_scale=scale,
-            units=quantity_to_quanta(INITIAL_WEALTH / INITIAL_UNIT_PRICE, scale=scale),
-            basis=int(currency_amount_to_quanta(INITIAL_WEALTH, quantum=QUANTUM)),
-        )
+    world.declare_pool(agent_id=HOUSEHOLD, account_id=BROKERAGE, asset_id=AssetId(STRATEGY), quantity_scale=scale)
+    world.hold_lot(
+        lot_id=LotId("example_initial_strategy"),
+        agent_id=HOUSEHOLD,
+        account_id=BROKERAGE,
+        asset_id=AssetId(STRATEGY),
+        purchase_month=-1,
+        quantity_scale=scale,
+        units=quantity_to_quanta(INITIAL_WEALTH / INITIAL_UNIT_PRICE, scale=scale),
+        basis=int(currency_amount_to_quanta(INITIAL_WEALTH, quantum=QUANTUM)),
     )
     world.declare_distribution(
-        PreparedDistribution(
-            agent_id=HOUSEHOLD,
-            holding_account_id=BROKERAGE,
-            asset_id=AssetId(STRATEGY),
-            to_account_id=CHECKING,
-            tax_character=(PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1), income_category=InterestIncome()),),
-        )
+        agent_id=HOUSEHOLD,
+        holding_account_id=BROKERAGE,
+        asset_id=AssetId(STRATEGY),
+        to_account_id=CHECKING,
+        tax_character={InterestIncome(character=Taxable()): rate_to_ppb(1)},
     )
     if case.annual_spending > 0:
         for month in range(12, case.horizon_months, 12):
             world.track(
                 Biller(
-                    PreparedObligation(
-                        schedule=Once(month=month),
-                        obligation_id=f"annual_spending_{month}",
-                        obligation_type=ObligationType.CASH_SPEND,
-                        from_account=AccountRef(agent_id=HOUSEHOLD, account_id=CHECKING),
-                        to_account=AccountRef(agent_id=WORLD, account_id=CHECKING),
-                        amount_due=case.annual_spending,
-                        property_id=None,
-                        deduction_category=None,
-                        deductible_fraction_ppb=rate_to_ppb(1),
-                    )
+                    schedule=Once(month=month),
+                    obligation_id=f"annual_spending_{month}",
+                    obligation_type=ObligationType.CASH_SPEND,
+                    from_account=AccountRef(agent_id=HOUSEHOLD, account_id=CHECKING),
+                    to_account=AccountRef(agent_id=WORLD, account_id=CHECKING),
+                    amount_due=case.annual_spending,
+                    property_id=None,
+                    deduction_category=None,
+                    deductible_fraction_ppb=rate_to_ppb(1),
                 )
             )
     return world

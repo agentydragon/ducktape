@@ -15,16 +15,16 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
-from finance.augur.sim.income import OrdinaryIncome
+from finance.augur.sim.income import Municipal, OrdinaryIncome, Taxable, Treasury
 from finance.augur.sim.jurisdictions import (
     Jurisdiction,
-    JurisdictionLevel,
     StatutoryAmount,
     StatutoryIndexation,
     TaxBracket,
     load_jurisdiction,
 )
 from finance.augur.sim.money import USD, Currency
+from finance.augur.sim.tax import taxes_interest_from
 from finance.augur.sim.tax_profile import TaxProfile, compile_income_sources, compile_profile
 
 FEDERAL_US = JurisdictionId("federal_us")
@@ -94,7 +94,7 @@ def test_a_single_jurisdiction_may_cap_the_offset_at_anything() -> None:
     )
 
 
-def test_profile_order_routes_and_jurisdiction_specific_rules_survive_preparation() -> None:
+def test_profile_order_routes_and_jurisdiction_specific_rules_survive_compilation() -> None:
     jurisdictions = {name: load_jurisdiction(name) for name in (FEDERAL_US, JurisdictionId("california"))}
     alice, bob = (
         compile_profile(profile, jurisdictions, currency=USD)
@@ -120,17 +120,22 @@ def test_profile_order_routes_and_jurisdiction_specific_rules_survive_preparatio
     assert bob.prior_year_tax == 12_345
     assert alice.section_121_exclusion == bob.section_121_exclusion == 25_000_000
     california, federal = alice.jurisdictions
-    assert california.exempt_interest_from_levels == (JurisdictionLevel.FEDERAL,)
-    assert california.exempts_own_issue
-    assert federal.exempt_interest_from_levels == (JurisdictionLevel.STATE,)
-    assert not federal.exempts_own_issue
+    # 31 USC 3124 and California's exemption of its own munis; IRC 103 federally exempts every state's.
+    characters = (
+        Treasury(),
+        Municipal(state=JurisdictionId("california")),
+        Municipal(state=JurisdictionId("test_state")),
+        Taxable(),
+    )
+    assert [taxes_interest_from(california, character) for character in characters] == [False, False, True, True]
+    assert [taxes_interest_from(federal, character) for character in characters] == [True, False, False, True]
     assert california.section_1250_rate_ppb == 0
     assert federal.section_1250_rate_ppb == 250_000_000
     assert california.long_term_capital_gain_brackets == ()
     assert [bracket.rate_ppb for bracket in federal.long_term_capital_gain_brackets] == [0, 150_000_000, 200_000_000]
 
 
-def test_prepared_thresholds_and_rates_convert_exactly() -> None:
+def test_compiled_thresholds_and_rates_convert_exactly() -> None:
     jurisdiction = load_jurisdiction(FEDERAL_US).model_copy(
         update={
             "ordinary_income_brackets": {
@@ -152,7 +157,7 @@ def test_prepared_thresholds_and_rates_convert_exactly() -> None:
     assert rule.standard_deduction == 101
     assert rule.max_capital_loss_ordinary_offset == 60_000
     assert profile.section_121_exclusion == 5_000_000
-    # Prepared schedules own the resolved values, not references to mutable source tables.
+    # Compiled schedules own the resolved values, not references to mutable source tables.
     jurisdiction.ordinary_income_brackets["single"][0].upper = Decimal("99.95")
     assert first.upper == 201
 
@@ -174,7 +179,7 @@ def test_largest_finite_threshold_is_not_an_open_bracket_sentinel() -> None:
 
 
 def test_nothing_named_still_declares_ordinary_income() -> None:
-    assert compile_income_sources(flows=(), bonds=(), distributions=()) == (OrdinaryIncome(),)
+    assert compile_income_sources(()) == (OrdinaryIncome(),)
 
 
 if __name__ == "__main__":

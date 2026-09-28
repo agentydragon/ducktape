@@ -6,16 +6,24 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.ids import AgentId, JurisdictionId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, QualifiedDividendIncome
-from finance.augur.sim.jurisdictions import JurisdictionLevel
+from finance.augur.sim.income import (
+    ORDINARY_INCOME,
+    InterestCharacter,
+    InterestIncome,
+    Municipal,
+    QualifiedDividendIncome,
+    Taxable,
+    Treasury,
+)
+from finance.augur.sim.jurisdictions import InterestExemptions
 from finance.augur.sim.money import MAX_COUNT
 from finance.augur.sim.tax import (
     IncomeLedger,
     NettedGains,
-    PreparedTaxBracket,
-    PreparedTaxRules,
-    PreparedThresholdTax,
+    TaxBracket,
     TaxFacts,
+    TaxRules,
+    ThresholdTax,
     apply_brackets,
     assess,
     is_investment_income,
@@ -25,21 +33,20 @@ from finance.augur.sim.tax import (
 )
 
 # 3.8% over a $200,000 MAGI threshold, in quanta of $0.01.
-NIIT = PreparedThresholdTax(rate_ppb=38_000_000, threshold=20_000_000)
+NIIT = ThresholdTax(rate_ppb=38_000_000, threshold=20_000_000)
 
 
 @pytest.fixture
-def federal() -> PreparedTaxRules:
-    return PreparedTaxRules(
+def federal() -> TaxRules:
+    return TaxRules(
         jurisdiction_id=JurisdictionId("test_federal"),
-        exempt_interest_from_levels=(JurisdictionLevel.STATE,),
-        exempts_own_issue=False,
+        exempt_interest=InterestExemptions(treasury=False, municipal="all"),
         ordinary_brackets=(
-            PreparedTaxBracket(1_160_000, 100_000_000),
-            PreparedTaxBracket(4_715_000, 120_000_000),
-            PreparedTaxBracket(None, 220_000_000),
+            TaxBracket(1_160_000, 100_000_000),
+            TaxBracket(4_715_000, 120_000_000),
+            TaxBracket(None, 220_000_000),
         ),
-        long_term_capital_gain_brackets=(PreparedTaxBracket(4_702_500, 0), PreparedTaxBracket(None, 150_000_000)),
+        long_term_capital_gain_brackets=(TaxBracket(4_702_500, 0), TaxBracket(None, 150_000_000)),
         standard_deduction=1_460_000,
         max_capital_loss_ordinary_offset=300_000,
         section_1250_rate_ppb=250_000_000,
@@ -48,26 +55,26 @@ def federal() -> PreparedTaxRules:
     )
 
 
-def test_bracket_tax_rounds_aggregate_once(federal: PreparedTaxRules) -> None:
+def test_bracket_tax_rounds_aggregate_once(federal: TaxRules) -> None:
     assert apply_brackets(2_000_000, federal.ordinary_brackets) == 216_800
     # Two individually sub-half-quantum slices form one taxable quantum together.
-    assert apply_brackets(2, (PreparedTaxBracket(1, 400_000_000), PreparedTaxBracket(None, 400_000_000))) == 1
+    assert apply_brackets(2, (TaxBracket(1, 400_000_000), TaxBracket(None, 400_000_000))) == 1
 
 
-def test_preferential_gain_stacks_above_ordinary_income(federal: PreparedTaxRules) -> None:
+def test_preferential_gain_stacks_above_ordinary_income(federal: TaxRules) -> None:
     assessment = assess(TaxFacts(taxable_ordinary_income=5_000_000, long_term_gain=2_000_000), federal)
     assert assessment.ordinary_taxable == 3_540_000
     assert assessment.capital_gain_tax == 125_625
 
 
-def test_section_1250_uses_incremental_brackets_below_the_rate_cap(federal: PreparedTaxRules) -> None:
+def test_section_1250_uses_incremental_brackets_below_the_rate_cap(federal: TaxRules) -> None:
     assessment = assess(TaxFacts(section_1250_recapture=1_454_545), federal)
     assert assessment.ordinary_taxable == 0
     assert assessment.section_1250_tax == 151_345
     assert assessment.capital_gain_tax == 151_345
 
 
-def test_losses_cross_net_and_carry_forward(federal: PreparedTaxRules) -> None:
+def test_losses_cross_net_and_carry_forward(federal: TaxRules) -> None:
     assert net_capital_gains(-1_000_000, 200_000, 0, 300_000) == NettedGains(0, 0, 300_000, 500_000)
     assessment = assess(
         TaxFacts(taxable_ordinary_income=1_000_000, short_term_gain=-1_000_000, long_term_gain=200_000), federal
@@ -83,12 +90,12 @@ def test_capital_gain_netting_reports_overflow() -> None:
         net_capital_gains(MAX_COUNT, MAX_COUNT, 0, 300_000)
 
 
-def test_rejects_negative_rule_amounts(federal: PreparedTaxRules) -> None:
+def test_rejects_negative_rule_amounts(federal: TaxRules) -> None:
     with pytest.raises(ValueError, match="standard_deduction must be nonnegative"):
         validate_rules(replace(federal, standard_deduction=-1))
 
 
-def test_unused_standard_deduction_shelters_preferential_gain(federal: PreparedTaxRules) -> None:
+def test_unused_standard_deduction_shelters_preferential_gain(federal: TaxRules) -> None:
     assessment = assess(TaxFacts(taxable_ordinary_income=460_000, long_term_gain=6_000_000), federal)
     assert assessment.ordinary_taxable == 0
     assert assessment.long_term_capital_gain_taxable == 5_000_000
@@ -100,8 +107,8 @@ def test_carryforward_offsets_short_before_long() -> None:
     assert net_capital_gains(100, 200, 350, 30) == NettedGains(0, 0, 30, 20)
 
 
-def test_income_retains_exempt_sources_and_resets_only_one_taxpayer(federal: PreparedTaxRules) -> None:
-    state_coupon = InterestIncome(issuer_jurisdiction_id=JurisdictionId("test_state"))
+def test_income_retains_exempt_sources_and_resets_only_one_taxpayer(federal: TaxRules) -> None:
+    state_coupon = InterestIncome(character=Municipal(state=JurisdictionId("test_state")))
     income = IncomeLedger([ORDINARY_INCOME, state_coupon])
     income.enroll(AgentId("test_household"))
     income.enroll(AgentId("test_other"))
@@ -111,13 +118,32 @@ def test_income_retains_exempt_sources_and_resets_only_one_taxpayer(federal: Pre
     income.deduct_from_ordinary(AgentId("test_household"), 40)
     assert income.ordinary(AgentId("test_household")) == 60
     assert income.by_source[AgentId("test_household"), state_coupon] == 20
-    assert not taxes_interest_from(federal, JurisdictionId("test_state"), JurisdictionLevel.STATE)
-    assert taxes_interest_from(federal, None, None)
-    assert taxes_interest_from(federal, JurisdictionId("test_unknown"), None)
     income.reset(AgentId("test_household"))
     assert income.ordinary(AgentId("test_household")) == 0
     assert income.by_source[AgentId("test_household"), state_coupon] == 0
     assert income.ordinary(AgentId("test_other")) == 500
+
+
+EVERY_MUNI = InterestExemptions(treasury=False, municipal="all")
+TREASURIES_AND_HOME_MUNIS = InterestExemptions(treasury=True, municipal={JurisdictionId("test_home")})
+
+
+@pytest.mark.parametrize(
+    ("exemptions", "character", "taxed"),
+    [
+        (EVERY_MUNI, Treasury(), True),
+        (EVERY_MUNI, Municipal(state=JurisdictionId("test_away")), False),
+        (EVERY_MUNI, Taxable(), True),
+        (TREASURIES_AND_HOME_MUNIS, Treasury(), False),
+        (TREASURIES_AND_HOME_MUNIS, Municipal(state=JurisdictionId("test_home")), False),
+        (TREASURIES_AND_HOME_MUNIS, Municipal(state=JurisdictionId("test_away")), True),
+        (TREASURIES_AND_HOME_MUNIS, Taxable(), True),
+    ],
+)
+def test_a_jurisdiction_taxes_every_interest_character_it_does_not_exempt(
+    federal: TaxRules, exemptions: InterestExemptions, character: InterestCharacter, taxed: bool
+) -> None:
+    assert taxes_interest_from(replace(federal, exempt_interest=exemptions), character) == taxed
 
 
 def test_untaxed_recipients_do_not_acquire_income_rows() -> None:
@@ -153,13 +179,13 @@ def test_untaxed_recipients_do_not_acquire_income_rows() -> None:
     ],
 )
 def test_niit_is_the_rate_on_the_lesser_of_nii_and_the_magi_excess(
-    federal: PreparedTaxRules, facts: TaxFacts, niit: int
+    federal: TaxRules, facts: TaxFacts, niit: int
 ) -> None:
     assert assess(facts, replace(federal, net_investment_income_tax=NIIT)).net_investment_income_tax == niit
     assert assess(facts, federal).net_investment_income_tax == 0
 
 
-def test_niit_is_a_separate_component_of_the_total(federal: PreparedTaxRules) -> None:
+def test_niit_is_a_separate_component_of_the_total(federal: TaxRules) -> None:
     """Taxable 220,000 - 14,600 = 205,400 at 10/12/22%: 1160 + 4266 + 34815 = 40241; plus $760 NIIT."""
     assessment = assess(
         TaxFacts(taxable_ordinary_income=22_000_000, investment_income=3_000_000),
@@ -170,7 +196,7 @@ def test_niit_is_a_separate_component_of_the_total(federal: PreparedTaxRules) ->
 
 
 def test_interest_and_qualified_dividends_are_investment_income() -> None:
-    assert is_investment_income(InterestIncome(issuer_jurisdiction_id=JurisdictionId("test_state")))
+    assert is_investment_income(InterestIncome(character=Municipal(state=JurisdictionId("test_state"))))
     assert is_investment_income(QualifiedDividendIncome())
     assert not is_investment_income(ORDINARY_INCOME)
 
@@ -187,18 +213,17 @@ def test_interest_and_qualified_dividends_are_investment_income() -> None:
     ],
 )
 def test_state_surtax_on_taxable_income_above_a_million(facts: TaxFacts, surtax: int, total: int) -> None:
-    rules = PreparedTaxRules(
+    rules = TaxRules(
         jurisdiction_id=JurisdictionId("test_state"),
-        exempt_interest_from_levels=(JurisdictionLevel.FEDERAL,),
-        exempts_own_issue=True,
-        ordinary_brackets=(PreparedTaxBracket(None, 100_000_000),),
+        exempt_interest=InterestExemptions(treasury=True, municipal={JurisdictionId("test_state")}),
+        ordinary_brackets=(TaxBracket(None, 100_000_000),),
         long_term_capital_gain_brackets=(),
         standard_deduction=536_300,
         max_capital_loss_ordinary_offset=300_000,
         section_1250_rate_ppb=0,
         law_year=2024,
         indexed=frozenset(),
-        taxable_income_surtax=PreparedThresholdTax(rate_ppb=10_000_000, threshold=100_000_000),
+        taxable_income_surtax=ThresholdTax(rate_ppb=10_000_000, threshold=100_000_000),
     )
     assessment = assess(facts, rules)
     assert assessment.taxable_income_surtax == surtax

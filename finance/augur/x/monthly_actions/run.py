@@ -22,22 +22,14 @@ from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import (
+    InterestExemptions,
     Jurisdiction,
-    JurisdictionLevel,
     StatutoryAmount,
     StatutoryIndexation,
     TaxBracket,
 )
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedObligation,
-    PreparedSeries,
-)
 from finance.augur.sim.results import Finished
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
@@ -53,7 +45,7 @@ TAX_AUTHORITY = AgentId("example-tax")
 STOCK = SecurityKey(symbol=SecuritySymbol("example-stock"))
 _FLAT_TAX = Jurisdiction(
     jurisdiction_id=JurisdictionId("example-flat-tax"),
-    level=JurisdictionLevel.FEDERAL,
+    exempt_interest=InterestExemptions(treasury=False, municipal=set()),
     ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
     ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
     standard_deduction={FilingStatus.SINGLE: Decimal(0)},
@@ -75,7 +67,7 @@ _FLAT_TAX = Jurisdiction(
 class Situation:
     """What every path shares; `compose` declares it onto one World per path."""
 
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     rollout_count: int
     horizon_months: int
     cash_only_start: bool
@@ -109,14 +101,11 @@ def compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=_FLAT_TAX.jurisdiction_id, level=_FLAT_TAX.level),),
     )
     for name in (HOUSEHOLD, CREDITOR, TAX_AUTHORITY):
         world.declare_account(
-            PreparedAccount(
-                account=AccountRef(agent_id=name, account_id=AccountId("checking")),
-                opening_balance=USD.quanta(200 if case.cash_only_start and name == HOUSEHOLD else 0),
-            )
+            account=AccountRef(agent_id=name, account_id=AccountId("checking")),
+            opening_balance=USD.quanta(200 if case.cash_only_start and name == HOUSEHOLD else 0),
         )
     profile = TaxProfile(
         agent_id=HOUSEHOLD,
@@ -131,39 +120,33 @@ def compose(case: Situation, rollout_id: int) -> World:
     )
     scale = quantity_scale_for_asset(STOCK)
     world.declare_pool(
-        PreparedHoldingPool(
-            agent_id=HOUSEHOLD,
-            account_id=AccountId("brokerage") if case.cash_only_start else AccountId("checking"),
-            asset_id=AssetId(STOCK.symbol),
-            quantity_scale=scale,
-        )
+        agent_id=HOUSEHOLD,
+        account_id=AccountId("brokerage") if case.cash_only_start else AccountId("checking"),
+        asset_id=AssetId(STOCK.symbol),
+        quantity_scale=scale,
     )
     if not case.cash_only_start:
-        world.hold(
-            PreparedLot(
-                lot_id=LotId("example-lot"),
-                agent_id=HOUSEHOLD,
-                account_id=AccountId("checking"),
-                asset_id=AssetId(STOCK.symbol),
-                purchase_month=-24,
-                quantity_scale=scale,
-                units=quantity_to_quanta(2, scale=scale),
-                basis=USD.quanta(80),
-            )
+        world.hold_lot(
+            lot_id=LotId("example-lot"),
+            agent_id=HOUSEHOLD,
+            account_id=AccountId("checking"),
+            asset_id=AssetId(STOCK.symbol),
+            purchase_month=-24,
+            quantity_scale=scale,
+            units=quantity_to_quanta(2, scale=scale),
+            basis=USD.quanta(80),
         )
     world.track(
         Biller(
-            PreparedObligation(
-                schedule=Once(month=1 if case.cash_only_start else 0),
-                obligation_id="example-bill",
-                obligation_type=ObligationType.OUTSIDE_RENT,
-                from_account=AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("checking")),
-                to_account=AccountRef(agent_id=CREDITOR, account_id=AccountId("checking")),
-                amount_due=USD.quanta(150),
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=1_000_000_000,
-            )
+            schedule=Once(month=1 if case.cash_only_start else 0),
+            obligation_id="example-bill",
+            obligation_type=ObligationType.OUTSIDE_RENT,
+            from_account=AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("checking")),
+            to_account=AccountRef(agent_id=CREDITOR, account_id=AccountId("checking")),
+            amount_due=USD.quanta(150),
+            property_id=None,
+            deduction_category=None,
+            deductible_fraction_ppb=1_000_000_000,
         )
     )
     return world

@@ -7,22 +7,12 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
-from finance.augur.sim.distributions import distribution_income_categories
+from finance.augur.sim import tax
 from finance.augur.sim.fixed_point import rate_to_ppb
-from finance.augur.sim.held_bonds import bond_income_categories
 from finance.augur.sim.ids import CHECKING, AccountId, AgentId, JurisdictionId
-from finance.augur.sim.income import InterestIncome, OrdinaryIncome, TransferIncomeCategory, income_source_sort_key
-from finance.augur.sim.jurisdictions import (
-    Jurisdiction,
-    StatutoryAmount,
-    StatutoryIndexation,
-    TaxBracket,
-    ThresholdTax,
-    load_jurisdiction,
-)
+from finance.augur.sim.income import OrdinaryIncome, TransferIncomeCategory, income_source_sort_key
+from finance.augur.sim.jurisdictions import Jurisdiction, StatutoryAmount, StatutoryIndexation, TaxBracket, ThresholdTax
 from finance.augur.sim.money import Currency, NonNegativeCurrencyAmount
-from finance.augur.sim.prepared import PreparedBond, PreparedDistribution, PreparedFlow
-from finance.augur.sim.tax import PreparedTaxBracket, PreparedTaxProfile, PreparedTaxRules, PreparedThresholdTax
 
 
 class FilingStatus(StrEnum):
@@ -80,25 +70,10 @@ def section_121_exclusion_for(filing_status: FilingStatus) -> Decimal:
     return _SECTION_121_EXCLUSION_BY_FILING_STATUS[filing_status]
 
 
-def compile_income_sources(
-    *, flows: Iterable[PreparedFlow], bonds: Iterable[PreparedBond], distributions: Iterable[PreparedDistribution]
-) -> tuple[TransferIncomeCategory, ...]:
-    """Ordinary income plus every category cashflows, held bonds or fund distributions name, in reporting order."""
+def compile_income_sources(named: Iterable[TransferIncomeCategory]) -> tuple[TransferIncomeCategory, ...]:
+    """Ordinary income plus every category the cashflows, held bonds or fund distributions name, in reporting order."""
 
-    sources = sorted(
-        {
-            OrdinaryIncome(),
-            *(item.income_category for item in flows if item.income_category is not None),
-            *bond_income_categories(bonds),
-            *distribution_income_categories(distributions),
-        },
-        key=income_source_sort_key,
-    )
-    # Every named issuer must resolve, including issuers found only on cashflows.
-    for source in sources:
-        if isinstance(source, InterestIncome) and source.issuer_jurisdiction_id is not None:
-            load_jurisdiction(source.issuer_jurisdiction_id)
-    return tuple(sources)
+    return tuple(sorted({OrdinaryIncome(), *named}, key=income_source_sort_key))
 
 
 def _agreed_capital_loss_offset_cap(
@@ -121,9 +96,9 @@ def _agreed_capital_loss_offset_cap(
     return currency.quanta(next(iter(caps.values()))[0])
 
 
-def _brackets(brackets: Sequence[TaxBracket], *, currency: Currency) -> tuple[PreparedTaxBracket, ...]:
+def _brackets(brackets: Sequence[TaxBracket], *, currency: Currency) -> tuple[tax.TaxBracket, ...]:
     return tuple(
-        PreparedTaxBracket(
+        tax.TaxBracket(
             upper=None if bracket.upper == "Infinity" else currency.quanta(bracket.upper),
             rate_ppb=rate_to_ppb(bracket.rate),
         )
@@ -132,26 +107,27 @@ def _brackets(brackets: Sequence[TaxBracket], *, currency: Currency) -> tuple[Pr
 
 
 def _threshold_tax(
-    tax: ThresholdTax | None, filing_status: FilingStatus, *, currency: Currency
-) -> PreparedThresholdTax | None:
-    if tax is None:
+    statutory: ThresholdTax | None, filing_status: FilingStatus, *, currency: Currency
+) -> tax.ThresholdTax | None:
+    if statutory is None:
         return None
-    return PreparedThresholdTax(rate_ppb=rate_to_ppb(tax.rate), threshold=currency.quanta(tax.threshold[filing_status]))
+    return tax.ThresholdTax(
+        rate_ppb=rate_to_ppb(statutory.rate), threshold=currency.quanta(statutory.threshold[filing_status])
+    )
 
 
 def compile_profile(
     profile: TaxProfile, jurisdictions: Mapping[JurisdictionId, Jurisdiction], *, currency: Currency
-) -> PreparedTaxProfile:
+) -> tax.TaxProfile:
     """One taxpayer's routing and quantized rules, as a composed world enrolls them."""
     offset_cap = _agreed_capital_loss_offset_cap(profile, jurisdictions, currency=currency)
     rules = []
     for jurisdiction_id in profile.jurisdiction_ids:
         jurisdiction = jurisdictions[jurisdiction_id]
         rules.append(
-            PreparedTaxRules(
+            tax.TaxRules(
                 jurisdiction_id=jurisdiction_id,
-                exempt_interest_from_levels=tuple(sorted(jurisdiction.exempt_interest_from_levels)),
-                exempts_own_issue=jurisdiction.exempts_own_issue,
+                exempt_interest=jurisdiction.exempt_interest,
                 ordinary_brackets=_brackets(
                     jurisdiction.ordinary_income_brackets[profile.filing_status], currency=currency
                 ),
@@ -179,7 +155,7 @@ def compile_profile(
                 ),
             )
         )
-    return PreparedTaxProfile(
+    return tax.TaxProfile(
         agent_id=profile.agent_id,
         tax_authority_agent_id=profile.tax_authority_agent_id,
         payment_account_id=profile.payment_account_id,

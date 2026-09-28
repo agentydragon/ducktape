@@ -1,14 +1,15 @@
-"""trust-manager: its Namespace, HelmRepository and HelmRelease.
+"""trust-manager: its Namespace and HelmRelease, from cert-manager's jetstack HelmRepository.
 
 `values` is an untyped dict: Helm values carry no schema for `cdk8s_import` to ingest.
 """
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.cert_manager.app import JETSTACK_SOURCE_REF
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -21,17 +22,11 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/cert-manager/trust"
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     k8s.KubeNamespace(chart, "namespace", metadata=k8s.ObjectMeta(name=NAMESPACE))
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name="cert-manager", namespace=NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://charts.jetstack.io"),
-    )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=JETSTACK_SOURCE_REF,
         chart="trust-manager",
         version="0.25.*",
         interval="30m",
@@ -41,9 +36,7 @@ def chart(app: App) -> Chart:
             # Backs a failurePolicy: Fail webhook on Bundle, so its absence rejects writes
             # rather than degrading. Same treatment as the other blocking-webhook backends.
             "priorityClassName": "system-cluster-critical",
-            "tolerations": [
-                {"key": "node-role.kubernetes.io/control-plane", "effect": "NoSchedule", "operator": "Exists"}
-            ],
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
         },
     )
     return chart

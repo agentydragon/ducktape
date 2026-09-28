@@ -21,29 +21,17 @@ from finance.augur.sim.books import AccountRef, Book, SecurityLotState
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, currency_amount_to_quanta, quantity_scale_for_asset
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable
 from finance.augur.sim.jurisdictions import (
+    InterestExemptions,
     Jurisdiction,
-    JurisdictionLevel,
     StatutoryAmount,
     StatutoryIndexation,
     TaxBracket,
 )
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
 from finance.augur.sim.money import MAX_COUNT, USD
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedDistribution,
-    PreparedDistributionSlice,
-    PreparedHoldingPool,
-    PreparedIndexedAmount,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedObligation,
-    PreparedSeries,
-    PreparedTransfer,
-)
-from finance.augur.sim.schedule import Once, Recurring
+from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
@@ -61,7 +49,7 @@ BROKERAGE = AccountId("brokerage")
 SYNTHETIC = JurisdictionId("synthetic")
 TAX = Jurisdiction(
     jurisdiction_id=SYNTHETIC,
-    level=JurisdictionLevel.FEDERAL,
+    exempt_interest=InterestExemptions(treasury=False, municipal=set()),
     ordinary_income_brackets={"single": [TaxBracket(upper="Infinity", rate=Decimal("0.2"))]},
     ltcg_brackets={"single": [TaxBracket(upper="Infinity", rate=Decimal("0.1"))]},
     standard_deduction={"single": Decimal(0)},
@@ -87,54 +75,53 @@ def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=account_id)
 
 
-def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=ref(agent_id, account_id), opening_balance=money(balance))
+def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return ref(agent_id, account_id), money(balance)
 
 
-def flat(asset: SecurityKey, price: Decimal | int, *, snapshots: int) -> PreparedSeries:
-    return PreparedSeries(series_id=f"security:{asset.symbol}", snapshots=snapshots, values=(money(price),) * snapshots)
+def flat(asset: SecurityKey, price: Decimal | int, *, snapshots: int) -> Series:
+    return Series(series_id=f"security:{asset.symbol}", snapshots=snapshots, values=(money(price),) * snapshots)
 
 
-def distribution_rate(asset: SecurityKey, amount: Decimal | int, *, snapshots: int) -> PreparedSeries:
+def distribution_rate(asset: SecurityKey, amount: Decimal | int, *, snapshots: int) -> Series:
     """A per-unit payout, in the prepared rate units: money quanta on the money-factor grid."""
-    return PreparedSeries(
+    return Series(
         series_id=f"security_distribution:{asset.symbol}",
         snapshots=snapshots,
         values=(money(amount) * MONEY_FACTOR_SCALE,) * snapshots,
     )
 
 
-def pool(asset: SecurityKey) -> PreparedHoldingPool:
-    return PreparedHoldingPool(
-        agent_id=ALICE, account_id=BROKERAGE, asset_id=AssetId(asset.symbol), quantity_scale=SCALE
-    )
+@dataclass(frozen=True)
+class OpeningLot:
+    """Alice's whole shares of `asset` in brokerage, bought two years before the path starts."""
+
+    asset: SecurityKey
+    shares: int
+    basis: Decimal | int
 
 
-def lot(asset: SecurityKey, *, units: float, basis: Decimal | int, purchase_month: int = -24) -> PreparedLot:
-    return PreparedLot(
-        lot_id=LotId(f"opening-{asset.symbol}"),
-        agent_id=ALICE,
-        account_id=BROKERAGE,
-        asset_id=AssetId(asset.symbol),
-        purchase_month=purchase_month,
-        quantity_scale=SCALE,
-        units=int(units * SCALE),
-        basis=money(basis),
-    )
+@dataclass(frozen=True)
+class Spending:
+    """A cash-spend bill Alice owes the world."""
+
+    obligation_id: str
+    schedule: Schedule
+    amount_due: Amount
 
 
-def claim(month: int, amount: Decimal | int, identifier: str = "spending") -> PreparedObligation:
-    return PreparedObligation(
-        schedule=Once(month=month),
-        obligation_id=identifier,
-        obligation_type="cash_spend",
-        from_account=ref(ALICE),
-        to_account=ref(WORLD),
-        amount_due=money(amount),
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=1_000_000_000,
-    )
+def claim(month: int, amount: Decimal | int, identifier: str = "spending") -> Spending:
+    return Spending(identifier, Once(month=month), money(amount))
+
+
+@dataclass(frozen=True)
+class Contribution:
+    """A one-off payment from the world into Alice's checking, in dollars."""
+
+    cause_id: str
+    month: int
+    amount: Decimal | int
 
 
 def allocation(*assets: SecurityKey, purchases: bool, zero_exit: bool) -> partial[CashBandHousehold]:
@@ -162,15 +149,17 @@ class Situation:
     """The books, counterparties and funding household every path declares."""
 
     horizon_months: int
-    series: tuple[PreparedSeries, ...]
-    accounts: tuple[PreparedAccount, ...]
+    series: tuple[Series, ...]
+    accounts: tuple[tuple[AccountRef, int], ...]
     # A fresh household per path: it keeps the path's CPI history and purchase identities.
     funding: partial[CashBandHousehold]
-    pools: tuple[PreparedHoldingPool, ...] = ()
-    lots: tuple[PreparedLot, ...] = ()
-    distributions: tuple[PreparedDistribution, ...] = ()
-    claims: tuple[PreparedObligation, ...] = ()
-    transfers: tuple[PreparedTransfer, ...] = ()
+    # The securities Alice's brokerage holds a pool of, whether or not she holds any yet.
+    pools: tuple[SecurityKey, ...] = ()
+    lots: tuple[OpeningLot, ...] = ()
+    # The securities whose payouts land in Alice's checking as interest.
+    distributions: tuple[SecurityKey, ...] = ()
+    claims: tuple[Spending, ...] = ()
+    transfers: tuple[Contribution, ...] = ()
     sales: Mapping[int, tuple[Sell, ...]] = field(default_factory=dict)
     interest_sources: tuple[InterestIncome, ...] = ()
     taxed: bool = True
@@ -182,10 +171,9 @@ def compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME, *case.interest_sources),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=SYNTHETIC, level=TAX.level),) if case.taxed else (),
     )
-    for opening in case.accounts:
-        world.declare_account(opening)
+    for opened, balance in case.accounts:
+        world.declare_account(account=opened, opening_balance=balance)
     if case.taxed:
         world.track(
             TaxAuthority(
@@ -197,16 +185,51 @@ def compose(case: Situation, rollout_id: int) -> World:
                 indexation=FixedNominalLaw(),
             )
         )
-    for holding_pool in case.pools:
-        world.declare_pool(holding_pool)
-    for holding in case.lots:
-        world.hold(holding)
-    for distribution in case.distributions:
-        world.declare_distribution(distribution)
-    for flow in case.transfers:
-        world.declare_flow(flow)
-    for obligation in case.claims:
-        world.track(Biller(obligation))
+    for asset in case.pools:
+        world.declare_pool(agent_id=ALICE, account_id=BROKERAGE, asset_id=AssetId(asset.symbol), quantity_scale=SCALE)
+    for held in case.lots:
+        world.hold_lot(
+            lot_id=LotId(f"opening-{held.asset.symbol}"),
+            agent_id=ALICE,
+            account_id=BROKERAGE,
+            asset_id=AssetId(held.asset.symbol),
+            purchase_month=-24,
+            quantity_scale=SCALE,
+            units=held.shares * SCALE,
+            basis=money(held.basis),
+        )
+    for asset in case.distributions:
+        world.declare_distribution(
+            agent_id=ALICE,
+            holding_account_id=BROKERAGE,
+            asset_id=AssetId(asset.symbol),
+            to_account_id=CHECKING,
+            tax_character={InterestIncome(character=Taxable()): 1_000_000_000},
+        )
+    for contribution in case.transfers:
+        world.declare_flow(
+            schedule=Once(month=contribution.month),
+            cause_id=contribution.cause_id,
+            from_account=ref(WORLD),
+            to_account=ref(ALICE),
+            amount=money(contribution.amount),
+            income_category=None,
+            deduction_category=None,
+        )
+    for bill in case.claims:
+        world.track(
+            Biller(
+                schedule=bill.schedule,
+                obligation_id=bill.obligation_id,
+                obligation_type="cash_spend",
+                from_account=ref(ALICE),
+                to_account=ref(WORLD),
+                amount_due=bill.amount_due,
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=1_000_000_000,
+            )
+        )
     world.track(Scripted(case.funding(), case.sales))
     return world
 
@@ -253,22 +276,10 @@ def base(*, purchases: bool = False, zero_exit: bool = False, single: bool = Fal
         series=tuple(flat(asset, 10, snapshots=14) for asset in assets),
         accounts=(account(ALICE, balance=100), account(WORLD, balance=100)),
         funding=allocation(*assets, purchases=purchases, zero_exit=zero_exit),
-        pools=tuple(pool(asset) for asset in assets),
-        lots=tuple(lot(asset, units=100 // len(assets), basis=500 // len(assets)) for asset in assets),
+        pools=assets,
+        lots=tuple(OpeningLot(asset, shares=100 // len(assets), basis=500 // len(assets)) for asset in assets),
         claims=(claim(0, 500), claim(12, 50)),
-        transfers=()
-        if zero_exit
-        else (
-            PreparedTransfer(
-                month=12,
-                cause_id="contribution",
-                from_account=ref(WORLD),
-                to_account=ref(ALICE),
-                amount=money(100),
-                income_category=None,
-                deduction_category=None,
-            ),
-        ),
+        transfers=() if zero_exit else (Contribution("contribution", month=12, amount=100),),
     )
 
 
@@ -328,22 +339,16 @@ def test_indexed_monthly_claims_keep_sales_and_next_year_tax_events() -> None:
     [output] = run(
         replace(
             case,
-            series=(*case.series, PreparedSeries(series_id="inflation", snapshots=14, values=(1,) * 12 + (2,) * 2)),
+            series=(*case.series, Series(series_id="inflation", snapshots=14, values=(1,) * 12 + (2,) * 2)),
             accounts=(account(ALICE), account(WORLD)),
             transfers=(),
             claims=(
-                PreparedObligation(
-                    schedule=Recurring(start_month=0, end_month=None),
-                    obligation_id="indexed",
-                    obligation_type="cash_spend",
-                    from_account=ref(ALICE),
-                    to_account=ref(WORLD),
-                    amount_due=PreparedIndexedAmount(
+                Spending(
+                    "indexed",
+                    Recurring(start_month=0, end_month=None),
+                    IndexedAmount(
                         base_amount=money(10), series_id="inflation", base_month_index=0, adjustment_period_months=1
                     ),
-                    property_id=None,
-                    deduction_category=None,
-                    deductible_fraction_ppb=1_000_000_000,
                 ),
             ),
         )
@@ -367,18 +372,8 @@ def test_empty_buyable_pool_pays_coupon_only_after_first_purchase() -> None:
             transfers=(),
             claims=(),
             taxed=False,
-            distributions=(
-                PreparedDistribution(
-                    agent_id=ALICE,
-                    holding_account_id=BROKERAGE,
-                    asset_id=AssetId(STOCK.symbol),
-                    to_account_id=CHECKING,
-                    tax_character=(
-                        PreparedDistributionSlice(fraction_ppb=1_000_000_000, income_category=InterestIncome()),
-                    ),
-                ),
-            ),
-            interest_sources=(InterestIncome(issuer_jurisdiction_id=None),),
+            distributions=(STOCK,),
+            interest_sources=(InterestIncome(character=Taxable()),),
         )
     )
     first = lots(output, 1)
@@ -394,7 +389,7 @@ def test_fifo_across_two_purchase_dates_preserves_basis_and_tax_character() -> N
         replace(
             case,
             series=(
-                PreparedSeries(
+                Series(
                     series_id=f"security:{STOCK.symbol}",
                     snapshots=14,
                     values=(money(100), money(150)) + (money(200),) * 12,
@@ -403,17 +398,7 @@ def test_fifo_across_two_purchase_dates_preserves_basis_and_tax_character() -> N
             accounts=(account(ALICE, balance=200), account(WORLD, balance=300), account(ALICE, AccountId("proceeds"))),
             lots=(),
             claims=(),
-            transfers=(
-                PreparedTransfer(
-                    month=1,
-                    cause_id="later",
-                    from_account=ref(WORLD),
-                    to_account=ref(ALICE),
-                    amount=money(300),
-                    income_category=None,
-                    deduction_category=None,
-                ),
-            ),
+            transfers=(Contribution("later", month=1, amount=300),),
             sales={
                 12: (
                     Sell(
@@ -446,11 +431,11 @@ def indexed_bounds() -> Situation:
         horizon_months=6,
         rollout_count=2,
         series=(
-            PreparedSeries(series_id=f"security:{STOCK.symbol}", snapshots=7, values=(1,) * 14),
-            PreparedSeries(series_id="inflation", snapshots=7, values=(2, 3, 5, 7, 11, 13, 19, 4, 1, 2, 99, 6, 88, 40)),
+            Series(series_id=f"security:{STOCK.symbol}", snapshots=7, values=(1,) * 14),
+            Series(series_id="inflation", snapshots=7, values=(2, 3, 5, 7, 11, 13, 19, 4, 1, 2, 99, 6, 88, 40)),
         ),
         accounts=(account(ALICE), account(WORLD)),
-        lots=(lot(STOCK, units=100, basis=1),),
+        lots=(OpeningLot(STOCK, shares=100, basis=1),),
         claims=(),
         transfers=(),
         taxed=False,
@@ -480,7 +465,7 @@ def test_indexed_bound_overflow_remains_an_error_not_a_financial_stop() -> None:
     world = compose(
         replace(
             case,
-            accounts=(PreparedAccount(account=ref(ALICE), opening_balance=MAX_COUNT), account(WORLD)),
+            accounts=((ref(ALICE), MAX_COUNT), account(WORLD)),
             lots=(),
             funding=partial(case.funding, floor=index, ceiling=index),
         ),

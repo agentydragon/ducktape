@@ -19,9 +19,8 @@ from finance.augur.sim.events import TlhOperation
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, PortfolioId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import Currency
-from finance.augur.sim.prepared import PreparedAccount, PreparedJurisdiction, PreparedSeries, PreparedTlhPortfolio
 from finance.augur.sim.results import Finished
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -42,18 +41,13 @@ FEDERAL = load_jurisdiction(FEDERAL_US)
 def compose(price: int) -> World:
     """The owner's $10 and a managed cohort of 100 index units bought for $100 two years ago, at `price` throughout."""
     world = World(
-        MarketPath(
-            (PreparedSeries(series_id=f"security:{ASSET}", snapshots=2, values=(price, price)),), 0, rollout_count=1
-        ),
+        MarketPath((Series(series_id=f"security:{ASSET}", snapshots=2, values=(price, price)),), 0, rollout_count=1),
         horizon_months=1,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=FEDERAL_US, level=FEDERAL.level),),
     )
     for agent_id, balance in ((OWNER, 10), (AgentId("irs"), 0)):
         world.declare_account(
-            PreparedAccount(
-                account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")), opening_balance=balance
-            )
+            account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")), opening_balance=balance
         )
     world.track(
         TaxAuthority(
@@ -66,20 +60,18 @@ def compose(price: int) -> World:
         )
     )
     world.declare_portfolio(
-        PreparedTlhPortfolio(
-            portfolio_id=PortfolioId("managed"),
-            owner_agent_id=OWNER,
-            account_id=AccountId("checking"),
-            asset_id=ASSET,
-            initial_cohorts=(TlhOpeningCohort(value=100 * price, cost_basis=100, purchase_month_index=-24),),
-            assumptions=TlhAssumptions(
-                peak_annual_yield=0.12,
-                floor_annual_yield=0,
-                maturity_decay_exponent=1,
-                drawdown_sensitivity=0,
-                short_term_fraction=1,
-            ),
-        )
+        portfolio_id=PortfolioId("managed"),
+        owner_agent_id=OWNER,
+        account_id=AccountId("checking"),
+        asset_id=ASSET,
+        initial_cohorts=(TlhOpeningCohort(value=100 * price, cost_basis=100, purchase_month_index=-24),),
+        assumptions=TlhAssumptions(
+            peak_annual_yield=0.12,
+            floor_annual_yield=0,
+            maturity_decay_exponent=1,
+            drawdown_sensitivity=0,
+            short_term_fraction=1,
+        ),
     )
     return world
 

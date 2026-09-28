@@ -12,10 +12,11 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 
 NAME = "loki-read-proxy"
@@ -164,9 +165,7 @@ def _deployment(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
-    k8s.KubeNamespace(
-        chart, "namespace", metadata=k8s.ObjectMeta(name=NAME, labels={"goldilocks.fairwinds.com/enabled": "false"})
-    )
+    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.DISABLED, agent_readable=None)
     _deployment(chart)
     k8s.KubeService(
         chart,

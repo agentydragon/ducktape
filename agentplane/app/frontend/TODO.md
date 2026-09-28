@@ -13,20 +13,12 @@ build time.
 
 ## Thread view UX
 
-- **Chronological-debug link renders full width**: `ChronologicalDebugLink` (`chronological_debug.tsx`) is a compact
-  Mantine `Button`, but the evidence page view in `projected_session.tsx` places it inside a `Stack`, whose default
-  `align="stretch"` stretches every child to the container's width -- the button ends up as a full-width bar
-  instead of a small pill.
-- **Mobile topbar's only content is an inert hamburger**: `.agentplane-mobile-topbar` (`app.tsx`, `shell.css`) shows
-  below 560px width and holds only the `IconMenu2` button that opens the sidebar -- nothing else fills that bar's
-  width. Consider moving `ThreadTitle` (`thread_title.tsx`) into it on mobile, since `ProjectedSession` currently
-  renders its own title/id row inline in the thread page rather than sharing the shell's topbar.
 - **Per-message evidence icon is always-on visual noise**: `EvidenceToggle` (`projected_session.tsx`, the
   magnifying-glass `IconZoomCode` button) renders unconditionally at every one of its 7 call sites, one per
   message/entity, whether or not a reader is looking at that row. Consider a per-message overflow affordance
   instead -- e.g. a vertical-dots button, shown only on hover (desktop) or tap (mobile), holding this and other
-  message-level debug actions. This would be its own menu, separate from the composer's thread-level one below
-  (`Menu` + `IconDotsVertical`, "Debug history" / "Shut down harness" / thread id) -- a per-message menu and a
+  message-level debug actions. This would be its own menu, separate from the thread's topbar menu (`topbar.tsx`'s
+  `TopbarActions`, holding "Debug history" / "Shut down harness" / thread id) -- a per-message menu and a
   per-thread menu, not one merged control, even though both would share the dots-icon pattern.
 - **A pending sent message shows in its own box below the thread, not inline as a message**: a `submitInput`
   command still `outcome: "pending"` renders in the "Pending commands" region (`projected_session.tsx`'s
@@ -73,21 +65,6 @@ build time.
   by their text and a light shade of grey instead, reserving actual color for when it's semantically meaningful
   (as the prominent-lifecycle `Alert color="red"` at ~line 376 and the failed-tool-call `Badge color="red"` at
   ~line 444 already do).
-- **Markdown code fences in agent prose aren't syntax highlighted**: `Markdown` (`markdown.tsx`) allows `pre`/`code`
-  through its sanitizer but never runs them through `highlight()` (`syntax_highlight.tsx`), unlike tool call
-  Arguments/Output (`LazyBody ... format="code"`), which get `.agentplane-hljs` highlighting. Worth extending
-  `Markdown` to highlight fenced code blocks by their declared language, and once it does, telling agents about it
-  through the session's standing instructions (`SessionSpec.instructions`, sent via `RunnerClient.attach` per
-  `agentplane/runner/test_instructions.py`) or whichever preset default supplies them -- so they know fenced code
-  renders highlighted and are encouraged to tag the language.
-- **Composer's More menu might read better as a top-right icon, without its own color**: the `Menu` +
-  `IconDotsVertical` `ActionIcon` (`projected_session.tsx` ~line 1422, `variant="light"` -- which takes a color
-  from Mantine's default primary) currently sits at the bottom, next to the composer. One idea: move it to the
-  top right, beside `ThreadTitle` (`projected_session.tsx` ~line 1550, which today renders alone with no header
-  row to share), and drop the color so it reads as a plain utility control. This is the thread-level menu; the
-  per-message overflow affordance above is a separate, per-row menu, not something to merge into this one -- but
-  the two sharing the same dots icon in one view might still want a visual distinction of their own (position
-  alone may be enough: one per row, one at the top).
 
 ## Approval-arrival attention, and merging the pending/history Action pages
 

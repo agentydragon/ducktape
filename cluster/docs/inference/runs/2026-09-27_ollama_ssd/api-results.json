@@ -1,0 +1,290 @@
+[
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k"
+    },
+    "shape": "openai-chat",
+    "scenario": "text",
+    "status": "ok",
+    "elapsed_seconds": 1.265,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k"
+    },
+    "shape": "openai-chat",
+    "scenario": "tool",
+    "status": "ok",
+    "elapsed_seconds": 2.978,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k"
+    },
+    "shape": "openai-responses",
+    "scenario": "text",
+    "status": "ok",
+    "elapsed_seconds": 0.714,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k"
+    },
+    "shape": "openai-responses",
+    "scenario": "tool",
+    "status": "ok",
+    "elapsed_seconds": 1.428,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k"
+    },
+    "shape": "anthropic-messages",
+    "scenario": "text",
+    "status": "ok",
+    "elapsed_seconds": 0.772,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k"
+    },
+    "shape": "anthropic-messages",
+    "scenario": "tool",
+    "status": "ok",
+    "elapsed_seconds": 1.45,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k"
+    },
+    "shape": "openai-chat",
+    "scenario": "text",
+    "status": "ok",
+    "elapsed_seconds": 0.739,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k"
+    },
+    "shape": "openai-chat",
+    "scenario": "tool",
+    "status": "ok",
+    "elapsed_seconds": 1.441,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k"
+    },
+    "shape": "openai-responses",
+    "scenario": "text",
+    "status": "ok",
+    "elapsed_seconds": 0.734,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k"
+    },
+    "shape": "openai-responses",
+    "scenario": "tool",
+    "status": "ok",
+    "elapsed_seconds": 1.56,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k"
+    },
+    "shape": "anthropic-messages",
+    "scenario": "text",
+    "status": "ok",
+    "elapsed_seconds": 0.759,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k"
+    },
+    "shape": "anthropic-messages",
+    "scenario": "tool",
+    "status": "ok",
+    "elapsed_seconds": 1.432,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k"
+    },
+    "shape": "openai-chat",
+    "scenario": "text",
+    "status": "ok",
+    "elapsed_seconds": 4.278,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k"
+    },
+    "shape": "openai-chat",
+    "scenario": "tool",
+    "status": "ok",
+    "elapsed_seconds": 3.664,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k"
+    },
+    "shape": "openai-responses",
+    "scenario": "text",
+    "status": "ok",
+    "elapsed_seconds": 0.84,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k"
+    },
+    "shape": "openai-responses",
+    "scenario": "tool",
+    "status": "ok",
+    "elapsed_seconds": 1.413,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k"
+    },
+    "shape": "anthropic-messages",
+    "scenario": "text",
+    "status": "ok",
+    "elapsed_seconds": 0.832,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k"
+    },
+    "shape": "anthropic-messages",
+    "scenario": "tool",
+    "status": "ok",
+    "elapsed_seconds": 1.501,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k"
+    },
+    "shape": "openai-chat",
+    "scenario": "text",
+    "status": "ok",
+    "elapsed_seconds": 0.833,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k"
+    },
+    "shape": "openai-chat",
+    "scenario": "tool",
+    "status": "ok",
+    "elapsed_seconds": 1.448,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k"
+    },
+    "shape": "openai-responses",
+    "scenario": "text",
+    "status": "ok",
+    "elapsed_seconds": 0.823,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k"
+    },
+    "shape": "openai-responses",
+    "scenario": "tool",
+    "status": "ok",
+    "elapsed_seconds": 1.482,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k"
+    },
+    "shape": "anthropic-messages",
+    "scenario": "text",
+    "status": "ok",
+    "elapsed_seconds": 0.833,
+    "detail": ""
+  },
+  {
+    "model": {
+      "backend": "ollama",
+      "mode": "chat",
+      "name": "ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k"
+    },
+    "shape": "anthropic-messages",
+    "scenario": "tool",
+    "status": "ok",
+    "elapsed_seconds": 1.458,
+    "detail": ""
+  }
+]

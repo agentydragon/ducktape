@@ -28,7 +28,6 @@ class MarketPaths:
     cpi_level: np.ndarray
     equity_total_return_index: np.ndarray | None
     corporate_yields: Mapping[YieldCurve, np.ndarray]
-    model_id: str
     provenance: Mapping[str, object]
 
     def __post_init__(self) -> None:

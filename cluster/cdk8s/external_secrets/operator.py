@@ -11,20 +11,15 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_issuer_crds.io.cert_manager import Issuer, IssuerSpec, IssuerSpecSelfSigned
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "external-secrets"
 NAMESPACE = "external-secrets-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/external-secrets/operator"
-_CONTROL_PLANE_TOLERATION = {
-    "key": "node-role.kubernetes.io/control-plane",
-    "effect": "NoSchedule",
-    "operator": "Exists",
-}
 
 
 def _values(webhook_issuer: str) -> dict[str, object]:
@@ -63,7 +58,7 @@ def _values(webhook_issuer: str) -> dict[str, object]:
         # consider a control-plane node at all. Deliberately no nodeSelector or
         # affinity: steady-state ESO is small and I/O-light, so this widens the
         # candidate set rather than pinning it.
-        "tolerations": [_CONTROL_PLANE_TOLERATION],
+        "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
         "serviceMonitor": {"enabled": True, "namespace": "monitoring"},
         # Service account used by the Kubernetes-provider ClusterSecretStores to read
         # secrets across namespaces.
@@ -74,7 +69,7 @@ def _values(webhook_issuer: str) -> dict[str, object]:
             "create": True,
             "port": 9443,
             "priorityClassName": "system-cluster-critical",
-            "tolerations": [_CONTROL_PLANE_TOLERATION],
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
             "certManager": {
                 "enabled": True,
                 "cert": {"issuerRef": {"group": "cert-manager.io", "kind": "Issuer", "name": webhook_issuer}},
@@ -93,17 +88,11 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name="external-secrets-selfsigned-issuer", namespace=NAMESPACE),
         spec=IssuerSpec(self_signed=IssuerSpecSelfSigned()),
     )
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://charts.external-secrets.io"),
-    )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=helm_repository(chart, NAME, NAMESPACE, url="https://charts.external-secrets.io"),
         chart="external-secrets",
         version="2.10.0",
         interval="15m",

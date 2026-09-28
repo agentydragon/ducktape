@@ -70,7 +70,7 @@ class IndependentModel(LevelSeriesGroups[ScalarSeriesSpec]):
         # The inherited role groups carry only level series. This provider does not
         # synthesize the typed PE protocol bundle.
         frames = sample_independent_levels(self, request)
-        return SampledExogenousBundle(levels=frames, model_id=self.label)
+        return SampledExogenousBundle(levels=frames)
 
     def predictive(self, historical: HistoricalSeries, t: int, *, horizon: int = 1) -> dist.Distribution | None:
         """Joint predictive over the cumulative `horizon`-step log-return at origin t, for the

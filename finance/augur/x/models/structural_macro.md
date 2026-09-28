@@ -345,7 +345,7 @@ how much they move an allocation answer.
    but it means dividend TIMING and its tax treatment are absent until the path is split into
    price return plus a qualified-dividend payout.
 10. **No real yield, so a ladder cannot roll.** A ladder held from scenario start IS
-    representable — a `PreparedBond` with a `PreparedIndexedCoupon` needs only the CPI path,
+    representable — a bond held with an `IndexedCoupon` coupon needs only the CPI path,
     which this model emits, and it carries no duration risk because it is never marked. What is
     missing is buying a rung MID-HORIZON, which requires the real yield prevailing in that month,
     and this model emits no yield of any kind (it emits prices and distributions; see gap 8 for

@@ -33,6 +33,7 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.kyverno import proxy_injection
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, AgentReadable, Vpa
 from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy, Validate, match_resources
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/policies"
@@ -323,7 +324,7 @@ def default_vpa_requests_only_chart(app: App) -> Chart:
                         kinds=["Namespace"],
                         operations=[_CREATE, _UPDATE],
                         selector=ClusterPolicySpecRulesMatchAnyResourcesSelector(
-                            match_labels={"goldilocks.fairwinds.com/vpa-update-mode": "auto"}
+                            match_labels={VPA_UPDATE_MODE_LABEL: Vpa.AUTO}
                         ),
                     )
                 ),
@@ -577,7 +578,7 @@ def generate_agent_diagnostics_readers_chart(app: App) -> Chart:
         {"kind": "ServiceAccount", "name": "claude-ai", "namespace": "agentplane-staging"},
     ]
 
-    def namespaces_labeled(label: str) -> ClusterPolicySpecRulesMatchAny:
+    def namespaces_labeled(label: AgentReadable) -> ClusterPolicySpecRulesMatchAny:
         return ClusterPolicySpecRulesMatchAny(
             resources=ClusterPolicySpecRulesMatchAnyResources(
                 kinds=["Namespace"],
@@ -600,8 +601,6 @@ def generate_agent_diagnostics_readers_chart(app: App) -> Chart:
             },
         )
 
-    metadata_label = "rbac.ducktape.io/agent-readable-metadata"
-    logs_label = "rbac.ducktape.io/agent-readable-logs"
     ClusterPolicy(
         chart,
         "policy",
@@ -625,13 +624,13 @@ def generate_agent_diagnostics_readers_chart(app: App) -> Chart:
             ClusterPolicySpecRules(
                 name="generate-agent-readable-metadata",
                 match=ClusterPolicySpecRulesMatch(
-                    any=[namespaces_labeled(metadata_label), namespaces_labeled(logs_label)]
+                    any=[namespaces_labeled(AgentReadable.METADATA), namespaces_labeled(AgentReadable.LOGS)]
                 ),
                 generate=role_binding("agent-readable-metadata", "agent-readable-namespace-metadata"),
             ),
             ClusterPolicySpecRules(
                 name="generate-agent-readable-logs",
-                match=ClusterPolicySpecRulesMatch(any=[namespaces_labeled(logs_label)]),
+                match=ClusterPolicySpecRulesMatch(any=[namespaces_labeled(AgentReadable.LOGS)]),
                 generate=role_binding("agent-readable-logs", "agent-readable-namespace-logs"),
             ),
         ],
@@ -748,7 +747,7 @@ def cleanup_controller_workloads_chart(app: App) -> Chart:
 
 
 def cleanup_controller_sandboxes_chart(app: App) -> Chart:
-    """Consumer: the workspace-janitor CleanupPolicy (agents/agent-sandbox/workspaces/)."""
+    """Consumers: the janitors reaping `janitor.SANDBOX_KINDS`."""
     chart = _chart(app, "clusterrole-cleanup-controller-sandboxes")
     k8s.KubeClusterRole(
         chart,

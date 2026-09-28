@@ -89,29 +89,21 @@ data:
           display_name: Gemini 3.1 Flash Lite
         - model: antigravity/ant-messages/gemini-3.5-flash-lite
           display_name: Gemini 3.5 Flash Lite
+        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          display_name: Qwen3.8 Flash Next IQ4_XS (128K)
+        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          display_name: Qwen3.8 Flash Next IQ4_XS (256K)
         - model: ollama/oai-chat/gpt-oss-20b-128k
-          display_name: GPT-OSS 20B (128K)
-        - model: ollama/olm-chat/gpt-oss-20b-128k
           display_name: GPT-OSS 20B (128K)
         - model: ollama/oai-chat/gpt-oss-20b-256k
           display_name: GPT-OSS 20B (256K)
-        - model: ollama/olm-chat/gpt-oss-20b-256k
-          display_name: GPT-OSS 20B (256K)
         - model: ollama/oai-chat/gpt-oss-20b-512k
-          display_name: GPT-OSS 20B (512K)
-        - model: ollama/olm-chat/gpt-oss-20b-512k
           display_name: GPT-OSS 20B (512K)
         - model: ollama/oai-chat/gpt-oss-20b-1m
           display_name: GPT-OSS 20B (1M)
-        - model: ollama/olm-chat/gpt-oss-20b-1m
-          display_name: GPT-OSS 20B (1M)
         - model: ollama/oai-chat/gpt-oss-120b-128k
           display_name: GPT-OSS 120B (128K)
-        - model: ollama/olm-chat/gpt-oss-120b-128k
-          display_name: GPT-OSS 120B (128K)
         - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
-          display_name: Gemma 4 31B (128K)
-        - model: ollama/olm-chat/gemma4-31b-it-q8_0-128k
           display_name: Gemma 4 31B (128K)
         - model: chatgpt/oai-responses/gpt-6-astra
           display_name: GPT-6 Astra
@@ -119,16 +111,6 @@ data:
           display_name: GPT-6 Sol
         - model: chatgpt/oai-responses/gpt-6-luna
           display_name: GPT-6 Luna
-        - model: chatgpt/oai-responses/gpt-5.4
-          display_name: GPT-5.4
-        - model: chatgpt/oai-responses/gpt-5.5
-          display_name: GPT-5.5
-        - model: chatgpt/oai-responses/gpt-5.6-sol
-          display_name: GPT-5.6 Sol
-        - model: chatgpt/oai-responses/gpt-5.6-terra
-          display_name: GPT-5.6 Terra
-        - model: chatgpt/oai-responses/gpt-5.6-luna
-          display_name: GPT-5.6 Luna
       harnesses:
         HARNESS_CLAUDE:
           - anthropic-max20/ant-messages/claude-opus-5
@@ -147,39 +129,26 @@ data:
           - antigravity/ant-messages/gpt-oss-120b-medium
           - antigravity/ant-messages/gemini-3.1-flash-lite
           - antigravity/ant-messages/gemini-3.5-flash-lite
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
           - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/olm-chat/gpt-oss-20b-128k
           - ollama/oai-chat/gpt-oss-20b-256k
-          - ollama/olm-chat/gpt-oss-20b-256k
           - ollama/oai-chat/gpt-oss-20b-512k
-          - ollama/olm-chat/gpt-oss-20b-512k
           - ollama/oai-chat/gpt-oss-20b-1m
-          - ollama/olm-chat/gpt-oss-20b-1m
           - ollama/oai-chat/gpt-oss-120b-128k
-          - ollama/olm-chat/gpt-oss-120b-128k
           - ollama/oai-chat/gemma4-31b-it-q8_0-128k
-          - ollama/olm-chat/gemma4-31b-it-q8_0-128k
         HARNESS_CODEX:
           - chatgpt/oai-responses/gpt-6-astra
           - chatgpt/oai-responses/gpt-6-sol
           - chatgpt/oai-responses/gpt-6-luna
-          - chatgpt/oai-responses/gpt-5.4
-          - chatgpt/oai-responses/gpt-5.5
-          - chatgpt/oai-responses/gpt-5.6-sol
-          - chatgpt/oai-responses/gpt-5.6-terra
-          - chatgpt/oai-responses/gpt-5.6-luna
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
           - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/olm-chat/gpt-oss-20b-128k
           - ollama/oai-chat/gpt-oss-20b-256k
-          - ollama/olm-chat/gpt-oss-20b-256k
           - ollama/oai-chat/gpt-oss-20b-512k
-          - ollama/olm-chat/gpt-oss-20b-512k
           - ollama/oai-chat/gpt-oss-20b-1m
-          - ollama/olm-chat/gpt-oss-20b-1m
           - ollama/oai-chat/gpt-oss-120b-128k
-          - ollama/olm-chat/gpt-oss-120b-128k
           - ollama/oai-chat/gemma4-31b-it-q8_0-128k
-          - ollama/olm-chat/gemma4-31b-it-q8_0-128k
     agent_egress_api_url: http://agentplane-egress.agentplane-staging.svc.cluster.local
     agent_actions_service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
     thread_presets:
@@ -190,6 +159,13 @@ data:
         cwd: /state/workspaces/{session_id}
         reasoning_effort: medium
         instructions: Work as a public-repository coding agent. Keep private cluster data out of the workspace and outputs.
+      haku-claude:
+        title: Haku
+        harness: HARNESS_CLAUDE
+        model: anthropic-max20/ant-messages/claude-sonnet-5
+        cwd: /state/workspaces/{session_id}
+        reasoning_effort: medium
+        instructions: "You are Haku, the operator's tireless background executive assistant. Your haku-state checkout -- your memory, your method, and your only write surface -- is at haku-state, with git auth already in place. It also holds who you are: read AGENTS.md, SOUL.md and MEMORY.md at its root, then your run procedure at memory/procedures/run.md. Read those, then execute the run procedure end to end. Commit and push haku-state as you go."
     sandbox_presets:
       public-coder:
         title: Public coder
@@ -210,6 +186,33 @@ data:
           mkdir -p /state/workspaces
           if [ ! -f "$marker" ]; then
             printf '%s\n' 'public-coder workspace initialized' > "$marker"
+          fi
+      haku:
+        title: Haku
+        template: agentplane-runner
+        policies:
+          - basic
+          - kubernetes
+          - forgejo-haku
+          - packages
+          - google-readonly
+          - grocy-sf-readonly
+          - home-assistant-readonly
+          - activitywatch-read
+          - aiquota-read
+          - haku-mailbox
+          - coinbase
+          - github-clone
+          - github-agentydragon-agent
+          - github-actions-logs
+        thread_preset: haku-claude
+        bootstrap: |
+          marker=/state/workspaces/.agentplane-haku-ready
+          mkdir -p /state/workspaces
+          if [ ! -f "$marker" ]; then
+            git clone --depth 1 --branch main --single-branch http://haku:agentplane-credential-forgejo-haku@forgejo-http.forgejo.svc.cluster.local:3000/haku/haku-state.git /state/workspaces/haku-state
+            git clone --depth 1 --branch devel --single-branch https://github.com/agentydragon/ducktape.git /state/workspaces/ducktape
+            printf '%s\n' 'haku workspace initialized' > "$marker"
           fi
     default_policies:
       - basic
@@ -2181,6 +2184,8 @@ spec:
           env:
             - name: LITELLM_URL
               value: http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080
+            - name: AGENTPLANE_MODEL_CONTEXT_WINDOWS
+              value: '{"ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k":262144,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k":262144}'
             - name: HTTP_PROXY
               value: http://127.0.0.1:3128
             - name: HTTPS_PROXY
@@ -3804,6 +3809,17 @@ metadata:
   namespace: agentplane-staging
 automountServiceAccountToken: false
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: "The principal for the 'haku' sandbox preset: agents that clone haku-state and work from it, the way Haku itself does."
+  labels:
+    agentplane.allegedly.works/use-action-service: "true"
+  name: haku-agent
+  namespace: agentplane-staging
+automountServiceAccountToken: false
+---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
 metadata:
@@ -4078,6 +4094,10 @@ subjects:
     kind: ServiceAccount
     name: claude-ai
     namespace: agentplane-staging
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: haku-agent
+    namespace: agentplane-staging
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
@@ -4149,6 +4169,36 @@ spec:
   subjects:
     - namespace: agentplane-staging
       name: claude-ai
+  policies:
+    - basic
+    - kubernetes
+    - forgejo-haku
+    - packages
+    - google-readonly
+    - grocy-sf-readonly
+    - home-assistant-readonly
+    - activitywatch-read
+    - aiquota-read
+    - haku-mailbox
+    - coinbase
+    - agentplane-testing
+    - github-downloads
+    - github-clone
+    - github-agentydragon-agent
+    - github-actions-logs
+    - buildbuddy
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressBinding
+metadata:
+  annotations:
+    description: What sandboxes running as the haku-agent ServiceAccount may reach.
+  name: haku-agent
+  namespace: agentplane-staging
+spec:
+  subjects:
+    - namespace: agentplane-staging
+      name: haku-agent
   policies:
     - basic
     - kubernetes
@@ -4354,6 +4404,27 @@ spec:
     - tana-reads
     - grocy-sf-reads
     - ssh-reads
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicyBinding
+metadata:
+  annotations:
+    description: Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF reads and sandbox use for the haku-agent ServiceAccount.
+  name: haku-agent-reads
+  namespace: agentplane-staging
+spec:
+  subject:
+    namespace: agentplane-staging
+    name: haku-agent
+  policySets:
+    - github-reads
+    - github-identity-reads
+    - sandbox-self
+    - home-assistant-reads
+    - gmail-reads
+    - google-calendar-reads
+    - tana-reads
+    - grocy-sf-reads
 ---
 apiVersion: v1
 kind: Namespace
@@ -5041,3 +5112,51 @@ spec:
         - /jmap/**
       credentialRef:
         name: haku-mailbox
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: buildbuddy-api-key
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: buildbuddy-api-key
+        property: api-key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: buildbuddy-api-key
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: buildbuddy
+  namespace: agentplane-staging
+spec:
+  description: "The shared BuildBuddy API key (cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml), the same one CI's BUILDBUDDY_API_KEY carries, copied into this namespace by ESO. BuildBuddy uses this one key for its JSON-over-HTTP API and its gRPC services alike, presented as the literal value of the `x-buildbuddy-api-key` header/metadata entry -- this is a local-Bazel-client credential only: `bb remote`'s hosted runner copies the same value into the Bazel command it executes, which this proxy cannot see or protect (agentplane/docs/buildbuddy_remote_auth.md)."
+  source:
+    secretRef:
+      name: buildbuddy-api-key
+      key: api-key
+  targets:
+    - header: x-buildbuddy-api-key
+      method: wholeValue
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: buildbuddy
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - app.buildbuddy.io
+        - remote.buildbuddy.io
+      credentialRef:
+        name: buildbuddy

@@ -8,9 +8,11 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "kubectl-passthrough-mcp"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agents/kubectl-passthrough-mcp/app"
@@ -102,9 +104,7 @@ def _deployment(chart: Chart) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
-        chart, "namespace", metadata=k8s.ObjectMeta(name=NAME, labels={"goldilocks.fairwinds.com/enabled": "false"})
-    )
+    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.DISABLED, agent_readable=None)
     k8s.KubeServiceAccount(
         chart,
         "serviceaccount",

@@ -9,14 +9,13 @@ from cdk8s import Size
 from cdk8s_plus_34 import (
     ContainerProps,
     ContainerResources,
+    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
     EnvValue,
     ImagePullPolicy,
     MemoryResources,
 )
-
-from cluster.cdk8s import container_security
 
 
 def migrate_init_container(image: str, *, env_variables: dict[str, EnvValue]) -> ContainerProps:
@@ -29,5 +28,6 @@ def migrate_init_container(image: str, *, env_variables: dict[str, EnvValue]) ->
             cpu=CpuResources(request=Cpu.millis(25)),
             memory=MemoryResources(request=Size.mebibytes(64), limit=Size.mebibytes(256)),
         ),
-        security_context=container_security.WRITABLE_ROOT,
+        # Writable: its root filesystem writes are unaudited.
+        security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
     )

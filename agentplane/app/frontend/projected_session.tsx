@@ -74,8 +74,9 @@ import { StaleNotice, useStreamStatus, type StreamStatus } from "./stream_status
 import { HighlightedText, JsonView } from "./json_view";
 import { Markdown } from "./markdown";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
-import { ChronologicalDebugLink, ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
+import { ChronologicalDebugIcon, ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
+import { TopbarActions, TopbarTitle } from "./topbar";
 import "./projected_session.css";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
@@ -220,7 +221,16 @@ function EvidenceFrames(props: { threadId: string; entity: ThreadEntity; observa
   const { entity } = props;
   const id = `${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:frames:${props.observationCursor}`;
   return (
-    <RetainedDisclosure id={id} summary={`Observation ${props.observationCursor} raw frames`}>
+    <RetainedDisclosure
+      id={id}
+      summary={
+        // A `<span>`, not a `Group`'s default `<div>`: `<summary>` only allows phrasing content.
+        <Group component="span" justify="space-between" wrap="nowrap" gap="xs">
+          <span>Observation {props.observationCursor} raw frames</span>
+          <ChronologicalDebugIcon observationCursor={props.observationCursor} />
+        </Group>
+      }
+    >
       <EvidenceFramesPage key={id} {...props} />
     </RetainedDisclosure>
   );
@@ -276,11 +286,11 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
               observationCursor={observation.observation_cursor}
             />
           ) : (
-            <Text size="xs" key={observation.observation_cursor}>
-              Observation {observation.observation_cursor} has no native frame
-            </Text>
+            <Group key={observation.observation_cursor} justify="space-between" wrap="nowrap" gap="xs">
+              <Text size="xs">Observation {observation.observation_cursor} has no native frame</Text>
+              <ChronologicalDebugIcon observationCursor={observation.observation_cursor} />
+            </Group>
           )}
-          <ChronologicalDebugLink observationCursor={observation.observation_cursor} />
         </Stack>
       ))}
       {page?.next_after_cursor && (
@@ -1417,11 +1427,10 @@ function ProjectedSessionBody({
               }
             />
           </Group>
-          <Group gap="xs" wrap="nowrap">
-            {/* Opens upward: the composer sits at the bottom of the viewport. */}
-            <Menu position="top-end" withArrow shadow="md">
+          <TopbarActions>
+            <Menu position="bottom-end" withArrow shadow="md">
               <Menu.Target>
-                <ActionIcon size="lg" variant="light" aria-label="More">
+                <ActionIcon size="sm" variant="subtle" color="gray" aria-label="More">
                   <IconDotsVertical size={16} />
                 </ActionIcon>
               </Menu.Target>
@@ -1449,6 +1458,8 @@ function ProjectedSessionBody({
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
+          </TopbarActions>
+          <Group gap="xs" wrap="nowrap">
             <ActionIcon
               size="lg"
               variant="light"
@@ -1548,8 +1559,17 @@ export function ProjectedSession({ threadId }: { threadId: string }): JSX.Elemen
   }, [threadId]);
   return (
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
+      <TopbarTitle>
+        <Stack gap={0} style={{ minWidth: 0 }}>
+          <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
+          {thread && (
+            <Text size="xs" c="dimmed" truncate>
+              {thread.sandbox}
+            </Text>
+          )}
+        </Stack>
+      </TopbarTitle>
       <Stack style={{ flex: 1, minHeight: 0 }}>
-        <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
         {/* The controls wait on this stream's word that the sandbox runs, so one down past a blip, or
             whose watch has stalled, disables them as surely as a stopped sandbox. The sidebar's
             connection indicator says the first; this says the second. */}
@@ -1558,11 +1578,6 @@ export function ProjectedSession({ threadId }: { threadId: string }): JSX.Elemen
         {error && (
           <Text role="alert" c="red">
             {error}
-          </Text>
-        )}
-        {thread && (
-          <Text size="xs" c="dimmed">
-            {thread.sandbox}
           </Text>
         )}
         {thread?.archived && (

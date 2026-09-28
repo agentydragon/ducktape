@@ -52,23 +52,11 @@ from finance.augur.sim.fixed_point import (
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.locations import Location
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLocation,
-    PreparedLot,
-    PreparedObligation,
-    PreparedSeries,
-    _CapitalImprovement,
-    _MortgageFinancing,
-    _PropertyPurchase,
-    _PropertySale,
-    _TenderPolicy,
-)
-from finance.augur.sim.property import Housing
+from finance.augur.sim.private_equity import TenderPolicy
+from finance.augur.sim.property import CapitalImprovement, Housing, MortgageFinancing, ScheduledPurchase, ScheduledSale
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
@@ -104,12 +92,8 @@ TENDER_PROCEEDS_QUANTA = TENDER_UNITS * int(TENDER_MARK) * QUANTA_PER_UNIT
 
 PROPERTY_HORIZON, PROPERTY_SALE_MONTH, CAPEX_MONTH = 36, 24, 12
 PROPERTY_LOCATION_ID = LocationId("loc")
-PROPERTY_LOCATION = PreparedLocation(
-    location_id=PROPERTY_LOCATION_ID,
-    display_name="Loc",
-    jurisdiction_ids=(FEDERAL,),
-    annual_property_tax_rate_ppb=0,
-    annual_special_assessment=0,
+PROPERTY_LOCATION = Location(
+    location_id=PROPERTY_LOCATION_ID, annual_property_tax_rate_ppb=0, annual_special_assessment=0
 )
 
 
@@ -117,15 +101,15 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
+def account(world: World, agent_id: AgentId, balance: Decimal | int = 0) -> None:
+    world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
 
 
 def ref(agent_id: AgentId) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
-def path(key: LevelSeriesKey, levels: Sequence[Decimal], *, horizon_months: int) -> tuple[PreparedSeries, ...]:
+def path(key: LevelSeriesKey, levels: Sequence[Decimal], *, horizon_months: int) -> tuple[Series, ...]:
     """One exogenous level series on the single rollout every case here runs."""
 
     return compile_series(
@@ -140,8 +124,12 @@ def path(key: LevelSeriesKey, levels: Sequence[Decimal], *, horizon_months: int)
     )
 
 
-def vti_lot(lot_id: LotId, *, quantity: Decimal | int, cost_basis: Decimal | int, purchase_month: int) -> PreparedLot:
-    return PreparedLot(
+def hold_vti(
+    world: World, lot_id: LotId, *, quantity: Decimal | int, cost_basis: Decimal | int, purchase_month: int
+) -> None:
+    """Alice's VTI pool in checking, holding one lot."""
+    world.declare_pool(agent_id=ALICE, account_id=CHECKING, asset_id=AssetId(VTI.symbol), quantity_scale=VTI_SCALE)
+    world.hold_lot(
         lot_id=lot_id,
         agent_id=ALICE,
         account_id=CHECKING,
@@ -151,13 +139,6 @@ def vti_lot(lot_id: LotId, *, quantity: Decimal | int, cost_basis: Decimal | int
         units=quantity_to_quanta(quantity, scale=VTI_SCALE),
         basis=money(cost_basis),
     )
-
-
-def hold_vti(world: World, lot: PreparedLot) -> None:
-    world.declare_pool(
-        PreparedHoldingPool(agent_id=ALICE, account_id=CHECKING, asset_id=AssetId(VTI.symbol), quantity_scale=VTI_SCALE)
-    )
-    world.hold(lot)
 
 
 def run(world: World, *, funded_by: SecurityKey | None = None, script: Mapping[int, Sequence[Action]] = {}) -> Rollout:
@@ -224,8 +205,8 @@ def security_sale_world() -> World:
         horizon_months=6,
         income_sources=(ORDINARY_INCOME,),
     )
-    world.declare_account(account(ALICE, Decimal(1_000_000)))
-    hold_vti(world, vti_lot(LotId("bought"), quantity=SALE_UNITS, cost_basis=SALE_UNITS * 100, purchase_month=0))
+    account(world, ALICE, Decimal(1_000_000))
+    hold_vti(world, LotId("bought"), quantity=SALE_UNITS, cost_basis=SALE_UNITS * 100, purchase_month=0)
     return world
 
 
@@ -237,22 +218,20 @@ def target_allocation_world() -> World:
         horizon_months=3,
         income_sources=(ORDINARY_INCOME,),
     )
-    world.declare_account(account(ALICE, Decimal(1_000)))
-    world.declare_account(account(AgentId("landlord")))
-    hold_vti(world, vti_lot(LotId("alice-vti"), quantity=200, cost_basis=10_000, purchase_month=-1))
+    account(world, ALICE, Decimal(1_000))
+    account(world, AgentId("landlord"))
+    hold_vti(world, LotId("alice-vti"), quantity=200, cost_basis=10_000, purchase_month=-1)
     world.track(
         Biller(
-            PreparedObligation(
-                schedule=Recurring(start_month=RENT_MONTH, end_month=None),
-                obligation_id="alice-rent",
-                obligation_type="rent",
-                from_account=ref(ALICE),
-                to_account=ref(AgentId("landlord")),
-                amount_due=money(RENT),
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=rate_to_ppb(1),
-            )
+            schedule=Recurring(start_month=RENT_MONTH, end_month=None),
+            obligation_id="alice-rent",
+            obligation_type="rent",
+            from_account=ref(ALICE),
+            to_account=ref(AgentId("landlord")),
+            amount_due=money(RENT),
+            property_id=None,
+            deduction_category=None,
+            deductible_fraction_ppb=rate_to_ppb(1),
         )
     )
     return world
@@ -293,24 +272,20 @@ def private_equity_tender_world() -> World:
         horizon_months=TENDER_HORIZON,
         income_sources=(ORDINARY_INCOME,),
     )
-    world.declare_account(account(ALICE, Decimal(100_000)))
-    world.declare_pool(
-        PreparedHoldingPool(agent_id=ALICE, account_id=CHECKING, asset_id=ACME_ASSET_ID, quantity_scale=ACME_SCALE)
-    )
-    world.hold(
-        PreparedLot(
-            lot_id=LotId("acme-lot"),
-            agent_id=ALICE,
-            account_id=CHECKING,
-            asset_id=ACME_ASSET_ID,
-            purchase_month=-36,
-            quantity_scale=ACME_SCALE,
-            units=quantity_to_quanta(TENDER_UNITS, scale=ACME_SCALE),
-            basis=money(Decimal(TENDER_UNITS) * 10),
-        )
+    account(world, ALICE, Decimal(100_000))
+    world.declare_pool(agent_id=ALICE, account_id=CHECKING, asset_id=ACME_ASSET_ID, quantity_scale=ACME_SCALE)
+    world.hold_lot(
+        lot_id=LotId("acme-lot"),
+        agent_id=ALICE,
+        account_id=CHECKING,
+        asset_id=ACME_ASSET_ID,
+        purchase_month=-36,
+        quantity_scale=ACME_SCALE,
+        units=quantity_to_quanta(TENDER_UNITS, scale=ACME_SCALE),
+        basis=money(Decimal(TENDER_UNITS) * 10),
     )
     world.declare_tender_policy(
-        _TenderPolicy(owner_agent_id=ALICE, proceeds_account_id=CHECKING, liquid_net_worth_floor=money(500_000))
+        TenderPolicy(owner_agent_id=ALICE, proceeds_account_id=CHECKING, liquid_net_worth_floor=money(500_000))
     )
     return world
 
@@ -335,7 +310,6 @@ def property_sale_world() -> World:
         ),
         horizon_months=PROPERTY_HORIZON,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=FEDERAL, level=jurisdictions[FEDERAL].level),),
     )
     for agent_id, balance in (
         (ALICE, Decimal(1_000_000)),
@@ -343,7 +317,7 @@ def property_sale_world() -> World:
         (AgentId("bank"), 0),
         (AgentId("irs"), 0),
     ):
-        world.declare_account(account(agent_id, balance))
+        account(world, agent_id, balance)
     world.track(
         TaxAuthority(
             compile_profile(
@@ -357,7 +331,7 @@ def property_sale_world() -> World:
     world.declare_housing(
         Housing(
             purchases=(
-                _PropertyPurchase(
+                ScheduledPurchase(
                     month=0,
                     cause_id="buy-house",
                     property_id=PropertyId("house"),
@@ -371,7 +345,7 @@ def property_sale_world() -> World:
                     buyer_closing_cost=0,
                     rented_fraction_ppb=0,
                     land_value_fraction_ppb=rate_to_ppb(Decimal("0.2")),
-                    mortgage=_MortgageFinancing(
+                    mortgage=MortgageFinancing(
                         liability_id=LiabilityId("house-mortgage"),
                         lender_agent_id=AgentId("bank"),
                         lender_account_id=CHECKING,
@@ -382,14 +356,14 @@ def property_sale_world() -> World:
                 ),
             ),
             sales=(
-                _PropertySale(
+                ScheduledSale(
                     month=PROPERTY_SALE_MONTH,
                     property_id=PropertyId("house"),
                     closing_cost_ppb=rate_to_ppb(Decimal("0.06")),
                 ),
             ),
             capital_improvements=(
-                _CapitalImprovement(
+                CapitalImprovement(
                     month=CAPEX_MONTH, property_id=PropertyId("house"), amount=money(30_000), description="roof"
                 ),
             ),

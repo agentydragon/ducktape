@@ -6,7 +6,7 @@ Hand-written beside the generated output: `grafana-admin-password.sops.yaml`.
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart, JsonPatch
+from cdk8s import App, Chart, JsonPatch
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -17,10 +17,10 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeRemediation,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "monitoring-stack"
@@ -320,27 +320,12 @@ def _values() -> dict[str, object]:
                     }
                 },
                 # Chart auto-generates podAntiAffinity when replicas > 1
-                "nodeSelector": {"topology.kubernetes.io/zone": "hil-ovh"},
+                "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
                 # The replica with its local PVC on a control plane must survive the
                 # default taint until monitoring-state migration. Prefer workers for
                 # any placement not constrained by that PVC.
-                "tolerations": [
-                    {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
-                ],
-                "affinity": {
-                    "nodeAffinity": {
-                        "preferredDuringSchedulingIgnoredDuringExecution": [
-                            {
-                                "weight": 100,
-                                "preference": {
-                                    "matchExpressions": [
-                                        {"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}
-                                    ]
-                                },
-                            }
-                        ]
-                    }
-                },
+                "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
+                "affinity": node_scheduling.PREFER_WORKERS,
                 "resources": {
                     "requests": {"cpu": "10m", "memory": "64Mi"},
                     "limits": {"cpu": "100m", "memory": "128Mi"},
@@ -476,17 +461,17 @@ def chart(app: App) -> Chart:
         ),
         type="kubernetes.io/service-account-token",
     )
-    repository = HelmRepository(
-        chart,
-        "helm-repository",
-        metadata=ApiObjectMetadata(name=_HELM_REPOSITORY, namespace="flux-system"),
-        spec=HelmRepositorySpec(interval="12h", url="https://prometheus-community.github.io/helm-charts"),
-    )
     release = helm_release(
         chart,
         "kube-prometheus-stack",
         _NAMESPACE,
-        repository=repository,
+        repository=helm_repository(
+            chart,
+            _HELM_REPOSITORY,
+            "flux-system",
+            url="https://prometheus-community.github.io/helm-charts",
+            interval="12h",
+        ),
         chart="kube-prometheus-stack",
         version="91.3.0",
         interval="30m",

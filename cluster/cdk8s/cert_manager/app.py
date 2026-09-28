@@ -8,23 +8,22 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository, helm_repository_source_ref
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
 NAME = "cert-manager"
 NAMESPACE = "cert-manager"
 OUTPUT_DIR = f"{GENERATED_ROOT}/cert-manager/app"
-_CONTROL_PLANE_TOLERATION = {
-    "key": "node-role.kubernetes.io/control-plane",
-    "effect": "NoSchedule",
-    "operator": "Exists",
-}
+_REPOSITORY_NAME = "jetstack"
+_REPOSITORY_NAMESPACE = "flux-system"
+# trust-manager installs from this repository too, from its own chart.
+JETSTACK_SOURCE_REF = helm_repository_source_ref(_REPOSITORY_NAME, _REPOSITORY_NAMESPACE)
 
 
 def _values() -> dict[str, object]:
@@ -44,7 +43,7 @@ def _values() -> dict[str, object]:
         # in the admission path belong on the always-on control-plane bare metal, as
         # kyverno and external-secrets already are. Widened, not pinned — no nodeSelector
         # or affinity, so every worker stays a candidate.
-        "tolerations": [_CONTROL_PLANE_TOLERATION],
+        "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
         "crds": {"enabled": True},
         # Default ClusterIssuer for Ingress resources without explicit annotation.
         "ingressShim": {"defaultIssuerName": LETSENCRYPT_ISSUER, "defaultIssuerKind": "ClusterIssuer"},
@@ -64,7 +63,7 @@ def _values() -> dict[str, object]:
         "prometheus": {"enabled": True, "servicemonitor": {"enabled": False}},
         "resources": {"limits": {"cpu": "100m", "memory": "128Mi"}, "requests": {"cpu": "10m", "memory": "32Mi"}},
         "webhook": {
-            "tolerations": [_CONTROL_PLANE_TOLERATION],
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
             # Additional DNS names for the webhook certificate.
             "extraArgs": [
                 "--dynamic-serving-dns-names=cert-manager-webhook,cert-manager-webhook.cert-manager,"
@@ -73,7 +72,7 @@ def _values() -> dict[str, object]:
             "resources": {"limits": {"cpu": "100m", "memory": "128Mi"}, "requests": {"cpu": "10m", "memory": "32Mi"}},
         },
         "cainjector": {
-            "tolerations": [_CONTROL_PLANE_TOLERATION],
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
             "resources": {
                 "limits": {
                     "cpu": "100m",
@@ -107,17 +106,11 @@ def chart(app: App) -> Chart:
         "namespace",
         metadata=k8s.ObjectMeta(name=NAMESPACE, labels={"rbac.ducktape.io/agent-readable-logs": "true"}),
     )
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name="jetstack", namespace="flux-system"),
-        spec=HelmRepositorySpec(interval="24h", url="https://charts.jetstack.io"),
-    )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=helm_repository(chart, _REPOSITORY_NAME, _REPOSITORY_NAMESPACE, url="https://charts.jetstack.io"),
         chart="cert-manager",
         version="v1.21.2",
         interval="30m",

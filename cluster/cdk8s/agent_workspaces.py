@@ -33,28 +33,12 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecVolumeClaimTemplatesSpecResources,
     SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests,
 )
-from agent_sandbox_sandboxwarmpool_crds.io.x_k8s.agents.extensions import (
-    SandboxWarmPool,
-    SandboxWarmPoolSpec,
-    SandboxWarmPoolSpecSandboxTemplateRef,
-    SandboxWarmPoolSpecUpdateStrategy,
-    SandboxWarmPoolSpecUpdateStrategyType,
-)
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from kyverno_cleanuppolicy_crds.io.kyverno import (
-    CleanupPolicy,
-    CleanupPolicySpec,
-    CleanupPolicySpecConditions,
-    CleanupPolicySpecConditionsAll,
-    CleanupPolicySpecConditionsAllOperator,
-    CleanupPolicySpecMatch,
-    CleanupPolicySpecMatchAny,
-    CleanupPolicySpecMatchAnyResources,
-)
 
-from cluster.cdk8s import forgejo_images
+from cluster.cdk8s import agent_sandbox, forgejo_images
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.kyverno.janitor import SANDBOX_KINDS, janitor
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 
@@ -211,50 +195,9 @@ def chart(app: App) -> Chart:
         ),
     )
     forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
-    codex_template = _codex_template(chart)
     # One pre-warmed codex-lane workspace.
-    SandboxWarmPool(
-        chart,
-        "codex-warm-pool",
-        metadata=ApiObjectMetadata(name="codex", namespace=NAMESPACE),
-        spec=SandboxWarmPoolSpec(
-            replicas=1,
-            update_strategy=SandboxWarmPoolSpecUpdateStrategy(type=SandboxWarmPoolSpecUpdateStrategyType.RECREATE),
-            sandbox_template_ref=SandboxWarmPoolSpecSandboxTemplateRef(name=codex_template.name),
-        ),
-    )
-    # Workspaces are ephemeral by contract (same 7-day rule as claude-sandbox's sandbox-janitor):
-    # a Sandbox whose owner forgot shutdownTime (default shutdownPolicy is Retain) would otherwise
-    # pin quota forever. Reaping happens at the CR level, not the pod level -- the controller
-    # recreates a Sandbox's pod, so a pod-level janitor would just cause churn, not cleanup.
-    # Warm-pool sandboxes reaped at 7d are recreated by their pool; that periodic refresh is
-    # harmless. Delete RBAC: kyverno/policies/clusterrole-cleanup-controller-sandboxes.yaml.
-    CleanupPolicy(
-        chart,
-        "janitor",
-        metadata=ApiObjectMetadata(name="workspace-janitor", namespace=NAMESPACE),
-        spec=CleanupPolicySpec(
-            schedule="40 * * * *",
-            match=CleanupPolicySpecMatch(
-                any=[
-                    CleanupPolicySpecMatchAny(
-                        resources=CleanupPolicySpecMatchAnyResources(
-                            kinds=["agents.x-k8s.io/v1beta1/Sandbox", "extensions.agents.x-k8s.io/v1beta1/SandboxClaim"]
-                        )
-                    )
-                ]
-            ),
-            conditions=CleanupPolicySpecConditions(
-                all=[
-                    CleanupPolicySpecConditionsAll(
-                        key="{{ time_since('', '{{ target.metadata.creationTimestamp }}', '') }}",
-                        operator=CleanupPolicySpecConditionsAllOperator.GREATER_THAN,
-                        value="168h",
-                    )
-                ]
-            ),
-        ),
-    )
+    agent_sandbox.warm_pool(chart, "codex-warm-pool", template=_codex_template(chart))
+    janitor(chart, "janitor", name="workspace-janitor", namespace=NAMESPACE, schedule="40 * * * *", kinds=SANDBOX_KINDS)
     return chart
 
 

@@ -14,7 +14,7 @@ from decimal import Decimal
 
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
-from finance.augur.sim.prepared import PreparedSeries
+from finance.augur.sim.market_path import Series
 
 QUANTUM = Decimal("0.01")
 
@@ -52,7 +52,7 @@ def issuer_protocol(
     liquidity_blocked: Code = 0,
     forced_recovery_usd: Money = Decimal(0),
     company_valuation_usd: Money = Decimal(0),
-) -> tuple[PreparedSeries, ...]:
+) -> tuple[Series, ...]:
     """The issuer's ten channels; every default is "nothing in the way"."""
 
     snapshots = horizon_months + 1
@@ -69,7 +69,7 @@ def issuer_protocol(
         "company_valuation": _money(company_valuation_usd, snapshots),
     }
     return tuple(
-        PreparedSeries(series_id=f"private_equity_{channel}:{issuer_id}", snapshots=snapshots, values=values)
+        Series(series_id=f"private_equity_{channel}:{issuer_id}", snapshots=snapshots, values=values)
         for channel, values in channels.items()
     )
 

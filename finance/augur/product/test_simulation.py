@@ -28,18 +28,10 @@ from finance.augur.sim.external_series import ExternalSeriesContext, compile_ser
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
+from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLocation,
-    PreparedLot,
-    _PropertyPurchase,
-    _PropertySale,
-)
-from finance.augur.sim.property import Housing
+from finance.augur.sim.property import Housing, ScheduledPurchase, ScheduledSale
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -88,22 +80,13 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
     """
 
     scale = quantity_scale_for_asset(VTI)
-    lot = PreparedLot(
-        lot_id=LotId("alice-vti"),
-        agent_id=AGENT,
-        account_id=CHECKING,
-        asset_id=AssetId(VTI.symbol),
-        purchase_month=-24,  # comfortably long-term
-        quantity_scale=scale,
-        units=quantity_to_quanta(UNITS, scale=scale),
-        basis=USD.quanta(UNITS * LOT_BASIS),
-    )
+    lot_id, asset_id, units = LotId("alice-vti"), AssetId(VTI.symbol), quantity_to_quanta(UNITS, scale=scale)
     sale = Sell(
         cause_id="sell-vti",
         agent_id=AGENT,
         proceeds_account_id=CHECKING,
-        asset_id=lot.asset_id,
-        lots=(LotSale(account_id=CHECKING, lot_id=lot.lot_id, units=lot.units),),
+        asset_id=asset_id,
+        lots=(LotSale(account_id=CHECKING, lot_id=lot_id, units=units),),
     )
     profile = TaxProfile(agent_id=AGENT, jurisdiction_ids=[JurisdictionId("federal_us")], tax_authority_agent_id=IRS)
     jurisdictions = load_jurisdictions_for([profile])
@@ -123,20 +106,21 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
             MarketPath(series, rollout_id, rollout_count=rollout_count),
             horizon_months=HORIZON_MONTHS,
             income_sources=(ORDINARY_INCOME,),
-            jurisdictions=tuple(
-                PreparedJurisdiction(jurisdiction_id=jurisdiction_id, level=jurisdiction.level)
-                for jurisdiction_id, jurisdiction in jurisdictions.items()
-            ),
         )
         for agent_id in (AGENT, IRS):
-            world.declare_account(
-                PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
-            )
+            world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
         world.track(TaxAuthority(compile_profile(profile, jurisdictions, currency=USD), indexation=FixedNominalLaw()))
-        world.declare_pool(
-            PreparedHoldingPool(agent_id=AGENT, account_id=CHECKING, asset_id=lot.asset_id, quantity_scale=scale)
+        world.declare_pool(agent_id=AGENT, account_id=CHECKING, asset_id=asset_id, quantity_scale=scale)
+        world.hold_lot(
+            lot_id=lot_id,
+            agent_id=AGENT,
+            account_id=CHECKING,
+            asset_id=asset_id,
+            purchase_month=-24,  # comfortably long-term
+            quantity_scale=scale,
+            units=units,
+            basis=USD.quanta(UNITS * LOT_BASIS),
         )
-        world.hold(lot)
         world.track(Scripted(ClaimPayer(AgentId(AGENT)), {SALE_MONTH: (sale,)}))
         return world
 
@@ -152,7 +136,7 @@ def a_property_bought_and_sold(closing_cost_pct: Decimal = Decimal(0)) -> Worlds
     observable exactly when the level is fractional.
     """
 
-    purchase = _PropertyPurchase(
+    purchase = ScheduledPurchase(
         month=0,
         cause_id="buy-house",
         property_id=PropertyId("house"),
@@ -178,13 +162,7 @@ def a_property_bought_and_sold(closing_cost_pct: Decimal = Decimal(0)) -> Worlds
         horizon_months=HORIZON_MONTHS,
         currency=USD,
     )
-    location = PreparedLocation(
-        location_id=LOCATION,
-        display_name="Acceptance Town",
-        jurisdiction_ids=(),
-        annual_property_tax_rate_ppb=0,
-        annual_special_assessment=0,
-    )
+    location = Location(location_id=LOCATION, annual_property_tax_rate_ppb=0, annual_special_assessment=0)
 
     def compose() -> World:
         # Untaxed on purpose: what the gain is assessed at is the statute suites' business, and
@@ -194,16 +172,14 @@ def a_property_bought_and_sold(closing_cost_pct: Decimal = Decimal(0)) -> Worlds
         )
         for agent_id in (AGENT, SELLER):
             world.declare_account(
-                PreparedAccount(
-                    account=AccountRef(agent_id=agent_id, account_id=CHECKING),
-                    opening_balance=USD.quanta(Decimal(1_000_000)),
-                )
+                account=AccountRef(agent_id=agent_id, account_id=CHECKING),
+                opening_balance=USD.quanta(Decimal(1_000_000)),
             )
         world.declare_housing(
             Housing(
                 purchases=(purchase,),
                 sales=(
-                    _PropertySale(
+                    ScheduledSale(
                         month=PROPERTY_SALE_MONTH,
                         property_id=PropertyId("house"),
                         closing_cost_ppb=rate_to_ppb(closing_cost_pct / 100),

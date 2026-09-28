@@ -19,7 +19,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from agentplane.action_service.sandbox.actions import SandboxAction
-from cluster.cdk8s import cilium, external_creds
+from cluster.cdk8s import cilium, external_creds, node_scheduling
 from cluster.cdk8s.agentplane import actions, command_sandbox, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.chart import environment_chart
@@ -298,7 +298,7 @@ ENV = Environment(
         hostname=_HOSTNAME,
         oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane-staging/",
         reach_incluster_authentik=True,
-        runner_zone="hil-ovh",
+        runner_zone=node_scheduling.HIL_OVH_ZONE,
         oidc_session_secret_name=_OIDC_SESSION_SECRET,
     ),
     actions=ActionsProps(

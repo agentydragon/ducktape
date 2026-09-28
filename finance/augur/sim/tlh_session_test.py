@@ -1,5 +1,6 @@
 """The real session posts opaque component effects without owning its model state."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -12,19 +13,11 @@ from finance.augur.sim.actions import Action, Contribute, DecisionActions, Liqui
 from finance.augur.sim.books import AccountRef, Book, TlhPortfolioState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, PortfolioId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable, TransferIncomeCategory, Treasury
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import Currency
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedDistribution,
-    PreparedDistributionSlice,
-    PreparedJurisdiction,
-    PreparedSeries,
-    PreparedTlhPortfolio,
-)
 from finance.augur.sim.results import Executed, Finished, InvalidRequest, Rejected, RejectedAction
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -68,7 +61,8 @@ class Situation:
     rollouts: int = 1
     harvest: bool = True
     prices: tuple[int, ...] | None = None
-    distributions: tuple[PreparedDistribution, ...] = ()
+    # How the index's payouts into the owner's checking split by income, in ppb; `None` declares no distribution.
+    payout_split: Mapping[TransferIncomeCategory, int] | None = None
     interest_sources: tuple[InterestIncome, ...] = ()
     distribution_rates: tuple[Decimal, ...] = ()
     taxed: bool = True
@@ -78,17 +72,13 @@ class Situation:
     def snapshots(self) -> int:
         return self.horizon + 1
 
-    def series(self) -> tuple[PreparedSeries, ...]:
+    def series(self) -> tuple[Series, ...]:
         prices = self.prices if self.prices is not None else (1,) * self.snapshots
-        rows = [
-            PreparedSeries(
-                series_id=f"security:{ASSET.symbol}", snapshots=self.snapshots, values=prices * self.rollouts
-            )
-        ]
+        rows = [Series(series_id=f"security:{ASSET.symbol}", snapshots=self.snapshots, values=prices * self.rollouts)]
         if self.distribution_rates:
             # Per-unit payouts in prepared rate units: money quanta on the money-factor grid.
             rows.append(
-                PreparedSeries(
+                Series(
                     series_id=f"security_distribution:{ASSET.symbol}",
                     snapshots=self.snapshots,
                     values=tuple(int(rate * MONEY_FACTOR_SCALE) for rate in self.distribution_rates) * self.rollouts,
@@ -106,12 +96,9 @@ def compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series(), rollout_id, rollout_count=case.rollouts),
         horizon_months=case.horizon,
         income_sources=(ORDINARY_INCOME, *case.interest_sources),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=FEDERAL, level=load_jurisdiction(FEDERAL).level),)
-        if case.taxed
-        else (),
     )
     for agent_id, balance in ((OWNER, case.cash), (OTHER if case.bystander else IRS, 0)):
-        world.declare_account(PreparedAccount(account=ref(agent_id), opening_balance=balance))
+        world.declare_account(account=ref(agent_id), opening_balance=balance)
     if case.taxed:
         world.track(
             TaxAuthority(
@@ -124,17 +111,21 @@ def compose(case: Situation, rollout_id: int) -> World:
             )
         )
     world.declare_portfolio(
-        PreparedTlhPortfolio(
-            portfolio_id=MANAGED,
-            owner_agent_id=OWNER,
-            account_id=CHECKING,
-            asset_id=AssetId(ASSET.symbol),
-            initial_cohorts=(COHORT,),
-            assumptions=assumptions(harvest=case.harvest),
-        )
+        portfolio_id=MANAGED,
+        owner_agent_id=OWNER,
+        account_id=CHECKING,
+        asset_id=AssetId(ASSET.symbol),
+        initial_cohorts=(COHORT,),
+        assumptions=assumptions(harvest=case.harvest),
     )
-    for distribution in case.distributions:
-        world.declare_distribution(distribution)
+    if case.payout_split is not None:
+        world.declare_distribution(
+            agent_id=OWNER,
+            holding_account_id=CHECKING,
+            asset_id=AssetId(ASSET.symbol),
+            to_account_id=CHECKING,
+            tax_character=case.payout_split,
+        )
     return world
 
 
@@ -356,26 +347,16 @@ def test_closing_marks_and_product_projection_do_not_advance_the_model_early(cap
     assert metrics.base_series[1][:, 0].tolist() == [100, 100 if reject else 200]
 
 
-def test_managed_subquantum_distribution_keeps_cash_and_issuer_character() -> None:
+def test_managed_subquantum_distribution_keeps_cash_and_interest_character() -> None:
     case = Situation(
         horizon=1,
         harvest=False,
         distribution_rates=(Decimal("0.015"), Decimal(0)),
-        distributions=(
-            PreparedDistribution(
-                agent_id=OWNER,
-                holding_account_id=CHECKING,
-                asset_id=AssetId(ASSET.symbol),
-                to_account_id=CHECKING,
-                tax_character=(
-                    PreparedDistributionSlice(
-                        fraction_ppb=500_000_000, income_category=InterestIncome(issuer_jurisdiction_id=FEDERAL)
-                    ),
-                    PreparedDistributionSlice(fraction_ppb=500_000_000, income_category=InterestIncome()),
-                ),
-            ),
-        ),
-        interest_sources=(InterestIncome(issuer_jurisdiction_id=FEDERAL), InterestIncome(issuer_jurisdiction_id=None)),
+        payout_split={
+            InterestIncome(character=Treasury()): 500_000_000,
+            InterestIncome(character=Taxable()): 500_000_000,
+        },
+        interest_sources=(InterestIncome(character=Treasury()), InterestIncome(character=Taxable())),
     )
     live = session(case)
     try:
@@ -390,14 +371,14 @@ def test_managed_subquantum_distribution_keeps_cash_and_issuer_character() -> No
     assert rollout.trace is not None
     assert rollout.trace.distributions is not None
     assert [(row.income_source, row.units, row.amount) for row in rollout.trace.distributions] == [
-        ("interest:federal_us", None, 1),
-        ("interest:corporate", None, 1),
+        ("interest:treasury", None, 1),
+        ("interest:taxable", None, 1),
     ]
     assert portfolios(rollout.summary.ending_book)[0].value == 100
     assert {(row.income_source, row.income) for row in rollout.summary.ending_book.income} == {
         ("ordinary", 0),  # The income ledger retains every declared source, including zero buckets.
-        ("interest:federal_us", 1),
-        ("interest:corporate", 1),
+        ("interest:treasury", 1),
+        ("interest:taxable", 1),
     }
 
 

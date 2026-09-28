@@ -1,9 +1,9 @@
 # cdk8s adoption: remaining work
 
-Review baseline: `origin/devel` at `90125370b0` (2026-09-27). This is a source
+Review baseline: `origin/devel` at `f84301e72c` (2026-09-28). This is a source
 audit, not a fresh synthesis, CI result, or live-cluster health report.
 
-The central chart contains 181 Flux Kustomizations. The broad resource conversion,
+The central chart contains 171 Flux Kustomizations. The broad resource conversion,
 ArtifactGenerator wiring, two output roots, and removal of redundant single-file
 Kustomize wrappers are implemented. They are no longer migration waves.
 
@@ -24,9 +24,20 @@ not approve a new abstraction, resource owner, authorization grant, or deploymen
 Each CRD family's `cdk8s_import` bindings and generic constructors live in
 `cluster/cdk8s/providers/<name>/`, in the shape
 [the builder-authoring skill](../skills/cdk8s_builders/SKILL.md) states. Kinds still
-built raw at several call sites, each its own call: Flux `HelmRepository` (about 31
-sites) and `GitRepository` (8), then `CiliumClusterwideNetworkPolicy`, `CleanupPolicy`,
-`SandboxWarmPool`, Terraform and `VirtualMachine` (2 or 3 each).
+built raw at more than one call site, counted on devel 9904055a45:
+
+- Flux `GitRepository` (8).
+- Flux `ImageRepository`, `ImagePolicy` and `ImageUpdateAutomation` (2 each).
+- Flux `Receiver` (2), and `Alert` and `Provider` (2 each, both in `flux_webhook/chart.py`).
+- Flux `HelmRelease`: `seaweedfs_csi/driver.py` builds one raw beside `helm.helm_release`.
+- External Secrets `ClusterSecretStore` (4), `SecretStore` (3) and the `Password`
+  generator (2).
+- Gateway API `HTTPRoute` (4) and `Gateway` (2).
+- CNPG `Database` (3).
+- trust-manager `Bundle` (3).
+- Terraform (2).
+- Agentplane `EgressBinding` (2, one module).
+- SeaweedFS `ResourceReferenceGrant` (2, both in `seaweedfs/s3.py`).
 
 Done: no ducktape-specific module builds a CRD's generated dataclasses raw at more than
 one call site, with no rendered-output diff from `//cluster/cdk8s:test_generate_manifests`.
@@ -103,8 +114,8 @@ would require several compensating patches. Treat these as targeted improvements
 - `seaweedfs/s3.py`: use generated structs for grant/access patch values; keep the
   useful Bucket/Identity API and assess its chart-local grant mutation separately.
 - Keep the shared typed pod-seccomp patch while the pinned API requires it. Review
-  Kyverno's schema-gap patches and Helm's explicit-null patch against their actual
-  schemas; do not erase them merely to reduce a count.
+  Helm's explicit-null patch against its actual schema; do not erase it merely to reduce
+  a count.
 
 Done per slice: fewer separately authored facts or untyped values, no loss of expressible
 Kubernetes fields, and a reviewed rendered diff.

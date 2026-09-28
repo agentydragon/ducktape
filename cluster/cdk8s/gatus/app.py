@@ -21,14 +21,14 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategy,
     HelmReleaseSpecUpgradeStrategyName,
 )
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import cilium, cnpg
+from cluster.cdk8s import cilium, cnpg, namespaces, node_scheduling
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
@@ -37,24 +37,12 @@ _NAME = "gatus"
 _NAMESPACE = "gatus"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _DB_NAME = "gatus-db"
-_ZONE = "hil-ovh"
 _HELM_REPOSITORY = "twin"
 _PORT = 8080
 
 
 def _namespace(scope: Construct) -> None:
-    k8s.KubeNamespace(
-        scope,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
-    )
+    namespaces.namespace(scope, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
 
 
 def _database(scope: Construct) -> None:
@@ -63,7 +51,7 @@ def _database(scope: Construct) -> None:
         "database",
         name=_DB_NAME,
         namespace=_NAMESPACE,
-        node_selector={"topology.kubernetes.io/zone": _ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh",
         size="1Gi",
         # CNPG auto-generates credentials in secret gatus-db-app
@@ -72,12 +60,7 @@ def _database(scope: Construct) -> None:
 
 
 def _helm_release(scope: Construct) -> None:
-    repository = HelmRepository(
-        scope,
-        "helm-repository",
-        metadata=ApiObjectMetadata(name=_HELM_REPOSITORY, namespace=_NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://twin.github.io/helm-charts"),
-    )
+    repository = helm_repository(scope, _HELM_REPOSITORY, _NAMESPACE, url="https://twin.github.io/helm-charts")
     # Empty ConfigMap required by the gatus Helm chart. The chart hardcodes
     # envFrom.configMapRef with the release name but skips creating it when
     # externalConfigMap is set (chart bug).
@@ -110,28 +93,12 @@ def _helm_release(scope: Construct) -> None:
             # The ServiceMonitor is its own object below, to avoid blocking
             # Gatus deploys on monitoring-stack readiness.
             "serviceMonitor": {"enabled": False},
-            "nodeSelector": {"topology.kubernetes.io/zone": _ZONE},
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             # Gatus is stateless at the pod level (state moved to gatus-db above). Allow
             # control-plane nodes as overflow capacity, while the affinity below keeps
             # ordinary placement on workers.
-            "tolerations": [
-                {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
-            ],
-            # Prefer ordinary workers when this workload tolerates control planes.
-            "affinity": {
-                "nodeAffinity": {
-                    "preferredDuringSchedulingIgnoredDuringExecution": [
-                        {
-                            "weight": 100,
-                            "preference": {
-                                "matchExpressions": [
-                                    {"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}
-                                ]
-                            },
-                        }
-                    ]
-                }
-            },
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
+            "affinity": node_scheduling.PREFER_WORKERS,
             "resources": {"requests": {"cpu": "20m", "memory": "64Mi"}, "limits": {"cpu": "200m", "memory": "128Mi"}},
         },
     )

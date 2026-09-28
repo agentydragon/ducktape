@@ -3,14 +3,15 @@ the operator's OIDC identity it logs in as."""
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade, HelmReleaseSpecUpgradeRemediation
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "headlamp"
 NAMESPACE = "headlamp"
@@ -40,25 +41,12 @@ installOptions:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
-        chart,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={"goldilocks.fairwinds.com/enabled": "true", "goldilocks.fairwinds.com/vpa-update-mode": "auto"},
-        ),
-    )
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://kubernetes-sigs.github.io/headlamp/"),
-    )
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=None)
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=helm_repository(chart, NAME, NAMESPACE, url="https://kubernetes-sigs.github.io/headlamp/"),
         chart=NAME,
         # 0.45.0 ships the Prometheus details-view plugin, enabled by default.
         version="0.45.0",
@@ -84,9 +72,7 @@ def chart(app: App) -> Chart:
             },
             "ingress": {"enabled": False},
             "nodeSelector": {"topology.kubernetes.io/region": "hil"},
-            "tolerations": [
-                {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
-            ],
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
             "resources": {"requests": {"cpu": "50m", "memory": "128Mi"}, "limits": {"cpu": "500m", "memory": "256Mi"}},
             "pluginsManager": {"enabled": True, "version": "0.1.1", "configContent": _PLUGINS_CONFIG},
         },

@@ -28,7 +28,8 @@ from finance.augur.api.schemas import ApiModel
 from finance.augur.api.wire import ActorRole, ProductInputDefaults
 from finance.augur.model.series import LocationId, SecuritySymbol
 from finance.augur.product.wire import MAX_HORIZON_MONTHS
-from finance.augur.sim.ids import AgentId, JurisdictionId, PropertyId
+from finance.augur.sim.ids import AgentId, PropertyId
+from finance.augur.sim.income import InterestCharacter
 from finance.augur.x.models.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
 from finance.augur.x.models.state_space import StateSpaceProviderConfig
 from finance.augur.x.models.trained_private_equity import TrainedPrivateEquityProviderConfig
@@ -112,17 +113,10 @@ class DistributionTaxShareConfig(ApiModel):
     exempt at the state level. The fractions come from the fund's own annual disclosure.
     """
 
-    # TODO: let a share declare qualified-dividend or ordinary character. The sim's
-    # `PreparedDistributionSlice` takes any income category; this config reaches it only as interest.
+    # TODO: let a share declare qualified-dividend or ordinary character. The sim's distribution
+    # tax character takes any income category; this config reaches it only as interest.
     fraction: float = Field(gt=0.0, le=1.0)
-    issuer_jurisdiction_id: JurisdictionId | None = Field(
-        default=None,
-        description=(
-            "The taxing authority that issued the underlying debt — `federal_us` for the "
-            "Treasury slice, `california` for CA munis. `None` means a non-governmental issuer, "
-            "which no jurisdiction exempts."
-        ),
-    )
+    character: InterestCharacter
 
 
 class SecurityDistributionConfig(ApiModel):

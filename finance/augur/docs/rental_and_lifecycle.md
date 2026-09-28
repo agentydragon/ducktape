@@ -55,7 +55,7 @@ cashflows in the sale month.
 `sim/mortgage.py` owns mortgage terms, the fixed installment, servicing eligibility
 and year-to-date paid-interest totals. Outstanding principal is read from the
 canonical liability ledger, not copied into another mutable loan balance.
-Native accounting accepts immutable installment and year-end interest facts;
+Accounting accepts immutable installment and year-end interest facts;
 captured mortgage records are read-only statements, not a second servicing model.
 Only settled payments update paid-interest totals. Year-end tax assessment consumes
 those facts before Python resets them; paying off a loan does not erase that year's
@@ -67,21 +67,20 @@ ledger principal before that month's servicing, so the sold property creates no
 later mortgage installment. This timing does not provide a household purchase
 action.
 
-The sim's prepared housing records (`Housing` in `sim/property.py`) separate property use
+The sim's housing records (`Housing` in `sim/property.py`) separate property use
 from property ownership:
 
-- `_PropertyPurchase.rented_fraction_ppb` is the initial rented share.
-- `_PrimaryResidence` is agent-scoped, one initial main home per agent.
-- `_PrimaryResidenceEvent` assigns or clears an agent's main home over time.
-- `_RentedFraction`, `_CapitalImprovement` and `_PropertySale` handle rented-fraction
+- `ScheduledPurchase.rented_fraction_ppb` is the initial rented share.
+- `PrimaryResidence` is agent-scoped, one initial main home per agent.
+- `PrimaryResidenceEvent` assigns or clears an agent's main home over time.
+- `RentedFraction`, `CapitalImprovement` and `ScheduledSale` handle rented-fraction
   changes, improvements, and sales.
-- `PreparedPropertyCashflow` and
-  `PreparedRecurringPropertyCashflow` model property-linked rent,
+- `World.declare_flow` with a `property_id` models property-linked rent,
   management, and leasing cashflows. The engine gates them by property
   ownership lifecycle, then decodes fired rows into the generic transfer event
   frame without adding `property_id` to transfer events.
 
-Native property state retains mutable `rented_fraction` and building basis.
+Property state retains mutable `rented_fraction` and building basis.
 Within each configured month, primary-residence events fire first, then property
 lifecycle events, then generic transfers, property purchases, property cashflows,
 asset sales, obligations, owner-occupied-month accrual, depreciation, and tax
@@ -108,8 +107,8 @@ Section 121 qualifying-use months accrue only when all are true:
 - the property is not fully rented.
 
 On sale, the engine looks back 60 months and applies the profile's Section 121 cap when
-there are at least 24 qualifying months. Only single-filer $250k is wired today; adding
-other filing statuses is intentionally loud in the tax compiler.
+there are at least 24 qualifying months. Only single-filer $250k is wired today;
+other filing statuses raise in `sim/tax_profile.py`.
 
 Property sale computes market value from the property's `home_value:<location_id>`
 series, pays off attached mortgage principal, computes realized gain, separates Section

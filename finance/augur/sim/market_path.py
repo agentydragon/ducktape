@@ -3,10 +3,32 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from finance.augur.sim.actor import Statement
 from finance.augur.sim.money import mul_div
-from finance.augur.sim.prepared import PreparedAmount, PreparedFixedAmount, PreparedSeries
+
+
+@dataclass(frozen=True, kw_only=True)
+class Series:
+    """One supplied integer path population in original rollout order."""
+
+    series_id: str
+    snapshots: int
+    values: tuple[int, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class IndexedAmount:
+    """`base_amount` at `base_month_index`, reset to the series' level every `adjustment_period_months`."""
+
+    base_amount: int
+    series_id: str
+    base_month_index: int
+    adjustment_period_months: int
+
+
+type Amount = int | IndexedAmount
 
 
 class MarketStatement(Statement):
@@ -18,12 +40,12 @@ class MarketStatement(Statement):
 class MarketPath:
     """One rollout's view of the supplied series populations."""
 
-    def __init__(self, series: Iterable[PreparedSeries], rollout_id: int, *, rollout_count: int) -> None:
+    def __init__(self, series: Iterable[Series], rollout_id: int, *, rollout_count: int) -> None:
         if not 0 <= rollout_id < rollout_count:
             raise ValueError("invalid rollout selection")
         self.rollout_id = rollout_id
         self.rollout_count = rollout_count
-        self.series: dict[str, PreparedSeries] = {}
+        self.series: dict[str, Series] = {}
         for row in series:
             if row.series_id in self.series:
                 raise ValueError(f"duplicate series {row.series_id!r}")
@@ -55,11 +77,9 @@ class MarketPath:
             cpi=(self.value("inflation", month), self.value("inflation", 0)) if "inflation" in self.series else None,
         )
 
-    def amount(self, amount: PreparedAmount, month: int) -> int:
+    def amount(self, amount: Amount, month: int) -> int:
         if isinstance(amount, int):
             return amount
-        if isinstance(amount, PreparedFixedAmount):
-            return amount.amount
         elapsed = month - amount.base_month_index
         if elapsed < 0:
             raise ValueError("indexed payment precedes its base month")

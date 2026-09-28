@@ -22,6 +22,17 @@ cdk8s_import(
 )
 
 py_library(
+    name = "cleanup_policy",
+    srcs = ["cleanup_policy.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":cleanuppolicy",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "cluster_policy",
     srcs = ["cluster_policy.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],

@@ -48,9 +48,9 @@ live Secret existence or service readiness.
 ## Lightweight settings imports
 
 Agentplane constructs import Settings from `agentplane/{app,egress,llm_ingress,
-action_service}/main.py`; aiquota imports `aiquota/api.py`. Move schema definitions
-and their required submodels into application-owned modules, updating all callers.
-Use the same approach for Airlock/rotators when converting their config.
+action_service,indexing}/main.py`; aiquota imports `aiquota/api.py`. Move schema
+definitions and their required submodels into application-owned modules, updating all
+callers. Use the same approach for Airlock/rotators when converting their config.
 
 Done: synthesis imports the deployment contract without importing service runtimes.
 Measure before changing Bazel test sizes; removing an import is not timing evidence.
@@ -93,10 +93,6 @@ retiring this real cross-artifact test. Keep the image/runtime package independe
 `cluster/`.
 
 ## Extract only when another caller needs it
-
-The Agentplane sandbox egress fence combines sidecar, token volume, CA mount, routing
-environment and policy labels. Extract their composition when a second exec-target
-template needs it; do not build a generic workload framework for the existing caller.
 
 A second Haku deployment may justify Environment props. Namespace-default charts may
 help a purely namespaced component, but splitting mixed-scope charts solely to omit

@@ -89,7 +89,7 @@ Model with constructs, deploy with one props object per environment.
   `fqdn_fence`, ...) for this cluster's own facts, `providers/cilium/network_policy.py`'s
   `EgressRule`/`IngressRule` for the generic shapes; `gateway.https_route`,
   `probes.http_probe`, `agentplane/migrate_container.py`,
-  `node_scheduling.py`, `pod_spec_patches.py`, `api_resource.custom_resource`.
+  `node_scheduling.py`, `pod_policy.py`, `api_resource.custom_resource`.
   Parameterize the variation the call sites have (SNI list, listener, timeout), not
   variation nobody uses.
 - **A value that feeds two artifacts lives once.** The web-push hosts feed both the
@@ -280,9 +280,10 @@ and lands in its own PR with the violations fixed. Exceptions are explicit param
   container-level is typed.
 - `cdk8s_plus_34` defaults: `automount_token=False` on a ServiceAccount and
   `automount_service_account_token=False` on a workload, both to set for a TokenReview
-  caller; `readOnlyRootFilesystem`/`runAsNonRoot` hardened
-  (`container_security.py` opts out where unaudited);
-  `allowPrivilegeEscalation: false` and `privileged: false` always emitted; the
+  caller; `readOnlyRootFilesystem`/`runAsNonRoot` hardened (a container whose writes
+  are unaudited states `read_only_root_filesystem=False`);
+  `allowPrivilegeEscalation: false` and `privileged: false` always emitted, capabilities
+  never (`pod_policy.harden` drops ALL where unset); the
   Deployment selector is `cdk8s.io/metadata.addr`, not `app.kubernetes.io/name`
   (`select=False` plus `deployment.select(LabelSelector.of(labels=...))` keeps a
   hand-written selector, which is immutable on the live Deployment;
@@ -334,12 +335,11 @@ typed alternative exists. Three tiers, in order:
 3. **CRD type** (own `apiVersion` group, e.g. `external-secrets.io`,
    `monitoring.coreos.com`): generate real bindings via `cdk8s_import`
    (`devinfra/js/cdk8s_import.bzl`;
-   `//cluster/cdk8s/crd_bindings/{flux,prometheus_operator,gateway_api,cilium}` and
-   `//cluster/cdk8s/providers/{external_secrets,keda,cnpg}` are the examples) — this is the same
-   generator tier 2 already ran for you on the core API, just pointed at the CRD's own
-   schema instead. `providers/<name>/` is the target layout for every provider
-   (`cluster/cdk8s/PLAN.md` item A): the `cdk8s_import` declarations colocated with that
-   CRD's generic, cluster-topology-free wrapper functions, once it has one.
+   `//cluster/cdk8s/providers/{flux,prometheus_operator,gateway_api,cilium,external_secrets,keda,cnpg}`
+   are the examples) — this is the same generator tier 2 already ran for you on the core
+   API, just pointed at the CRD's own schema instead. `providers/<name>/` is the layout
+   for every provider: the `cdk8s_import` declarations colocated with that CRD's generic,
+   cluster-topology-free wrapper functions, once it has one.
 
    `providers/<name>/` holds only what the CRD schema itself defines — real typed
    fields and their real variant shapes. It never holds a ducktape namespace, secret

@@ -7,6 +7,7 @@ import textwrap
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.atuin.server import DB_APP_SECRET, NAMESPACE
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -113,7 +114,7 @@ def chart(app: App) -> Chart:
                 metadata=k8s.ObjectMeta(labels={"app": NAME}),
                 spec=k8s.PodSpec(
                     restart_policy="OnFailure",
-                    node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     containers=[
                         k8s.Container(
                             name="provisioner",

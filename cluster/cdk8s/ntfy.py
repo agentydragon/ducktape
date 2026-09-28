@@ -52,11 +52,10 @@ from external_secrets_crds.io.external_secrets import (
 )
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import cnpg, fleet_rules, node_scheduling
+from cluster.cdk8s import cnpg, fleet_rules, node_scheduling, pod_policy
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -186,7 +185,7 @@ def _database(scope: Construct) -> None:
         "database",
         name=_DATABASE_CLUSTER,
         namespace=NAMESPACE,
-        node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh-hdd",
         size="2Gi",
         initdb=cnpg.same_owner_initdb(NAME),
@@ -271,7 +270,7 @@ class Ntfy(Construct):
                 read_only_root_filesystem=True,
             ),
         )
-        apply_pod_spec_patches(deployment)
+        pod_policy.harden(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:

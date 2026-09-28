@@ -15,7 +15,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeCrds,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
     RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution,
     RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
@@ -24,8 +23,9 @@ from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
     RedisReplicationSpecTolerations,
 )
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.redis_operator.replication import RedisReplication
 
@@ -45,17 +45,13 @@ def chart(app: App) -> Chart:
             name=NAMESPACE, annotations={"description": "Redis operator for managing Valkey instances"}
         ),
     )
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name="ot-helm", namespace="flux-system"),
-        spec=HelmRepositorySpec(interval="24h", url="https://ot-container-kit.github.io/helm-charts"),
-    )
     helm_release(
         chart,
         _RELEASE,
         NAMESPACE,
-        repository=repository,
+        repository=helm_repository(
+            chart, "ot-helm", "flux-system", url="https://ot-container-kit.github.io/helm-charts"
+        ),
         chart=_RELEASE,
         version="0.26.1",
         interval="30m",
@@ -106,7 +102,7 @@ def valkey_instance(
         tolerations=tolerations,
         node_affinity_match=[
             RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                key="topology.kubernetes.io/zone", operator="In", values=["hil-ovh"]
+                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.HIL_OVH_ZONE]
             )
         ],
         # Prefer ordinary workers, for an instance that tolerates control planes.
@@ -116,7 +112,7 @@ def valkey_instance(
                 preference=RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference(
                     match_expressions=[
                         RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions(
-                            key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
+                            key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="DoesNotExist"
                         )
                     ]
                 ),

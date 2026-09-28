@@ -13,12 +13,12 @@ model as actors: markets, prices, rates and inflation. They sample their traject
 those paths are then piped into the `World` as a `MarketPath`. The effect runs one way only:
 actors never affect the exogenous paths.
 
-Callers build the records defined in <prepared.py> directly, converting exact decimals
+Callers declare month-0 facts on a world as keyword arguments, converting exact decimals
 through a `Currency` (<money.py>) and the helpers in <fixed_point.py>, which are exact or
 raise; preparation does not fetch market evidence, fit a model or load tax law
-independently. Prepared records own exact monetary terms,
-quantized market paths and variable-length resolved tax rules; a world declares them
-directly and keeps no authoring objects.
+independently. Declared values own exact monetary terms, quantized market paths and
+variable-length resolved tax rules; a world keeps no authoring objects. A caller that
+declares one situation onto many worlds keeps its own records of it.
 
 `sim/` owns declarations, execution, and common books/results. Preparation does not depend on the executor.
 `model/` holds historical replay, market paths and instrument pricing; `fit/` shared
@@ -32,7 +32,7 @@ or HTTP modules.
 ```text
 supplied paths (+ rules)
     -> World(MarketPath(series, rollout_id, ...), horizon_months=...)
-    -> world.declare_account / declare_pool / hold / declare_portfolio / declare_distribution  # Prepared* records
+    -> world.declare_account / declare_pool / hold_lot / hold_bond / declare_portfolio / declare_distribution  # keyword arguments
     -> world.declare_housing / declare_flow / declare_deduction / declare_tender_policy
     -> world.track(agent | mortgage | biller | tax_authority); world.start()
     -> world.step()  # open: statements and dues to the agent; MonthOpened -> ordered actions; close
@@ -149,7 +149,7 @@ comparing stopped books with completed horizons.
 
 ## The app
 
-`ProductService` prepares each request once into a `Situation` of prepared declarations
+`ProductService` prepares each request once into a `Situation` of declarations
 (<../product/scenarios.py>, over the portfolio <../product/holdings.py> checked at startup), samples the series it reads, and composes one world per
 path with the app household (<../policy/cash_band_household.py>) tracked on it;
 <../product/simulation.py> steps each to the horizon. The household proposes its funding
@@ -165,8 +165,8 @@ every experiment.
 ## Rejected designs
 
 - **A scenario object.** One configuration value meant to represent every use case,
-  compiled into declarations, made every use case fit one schema. Callers build the
-  `Prepared*` facts they need and declare them.
+  compiled into declarations, made every use case fit one schema. Callers declare the
+  facts they need.
 - **A facade that runs the rollout loop.** Augur is building blocks: the caller owns
   the loop and uses `World`'s operations inside it, as a PyTorch user writes their own
   training loop. A strategy particular to one study is caller code, not something core

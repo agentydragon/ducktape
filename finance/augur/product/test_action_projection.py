@@ -23,12 +23,12 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.events import EventLog
 from finance.augur.sim.ids import AccountId, AgentId, BondId
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.prepared import PreparedAccount, PreparedBond
 from finance.augur.sim.results import Finished, PaymentRejection, PaymentRequestError, Rejected, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.bonds import (
     CPI_DOUBLING,
     HORIZON,
+    DatedBond,
     Situation,
     bond_case,
     checking,
@@ -88,9 +88,9 @@ def _detail(rollouts: list[Rollout], column: int, *, horizon_months: int = EXAMP
 
 
 def _bonds(
-    *bonds: PreparedBond,
+    *bonds: DatedBond,
     horizon_months: int,
-    accounts: tuple[PreparedAccount, ...] = checking(
+    accounts: tuple[tuple[AccountRef, int], ...] = checking(
         (HOUSEHOLD, Decimal(0)), (AgentId("example-creditor"), Decimal(0))
     ),
     cpi: list[list[float]] | None = None,
@@ -397,7 +397,7 @@ def test_bond_principal_totals_named_accounts_without_another_actors_holdings() 
         horizon_months=1,
         accounts=(
             *checking((HOUSEHOLD, Decimal(0)), (AgentId("example-creditor"), Decimal(0))),
-            PreparedAccount(account=AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("savings")), opening_balance=0),
+            (AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("savings")), 0),
         ),
     )
     rollouts = _run(worlds, [0], "summary", _hold)

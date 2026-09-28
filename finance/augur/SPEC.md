@@ -24,10 +24,9 @@ instrument or that its forecasts are adequate for a particular decision. Fitted
 market models are experimental (`x/models/`); core supplies historical replay and
 the market-path and instrument-pricing infrastructure.
 
-A caller builds its declarations, rules and supplied paths as `Prepared*` records
-(`sim/prepared.py`) of exact integer money, resolved tax rules and integer paths, and
-declares them on a `World` (`declare_*`, `hold`, `track`). There is no scenario
-object or compile step between the two. Execution does not reread the caller's
+A caller declares its month-0 facts on a `World` (`declare_*`, `hold_lot`, `hold_bond`,
+`track`) as keyword arguments of exact integer money, alongside resolved tax rules and
+integer paths. There is no scenario object or compile step between the two. Execution does not reread the caller's
 inputs or load evidence/tax configuration. Missing or non-finite required paths reject;
 they are not synthesized as zero observations. Ordinary public-security and
 home-value prices are positive. Prices used exclusively by reduced-form TLH
@@ -193,7 +192,11 @@ statute indexes following the modeled CPI, as the composition declares, and esti
 tax and the true-up are paid on schedule without penalties: explicit assumptions, not
 forecasts. A distribution declared as qualified dividends is
 taxed at the federal long-term capital-gain rates and as ordinary income in California;
-the declaration is trusted without a holding-period test. The code does not yet cover
+the declaration is trusted without a holding-period test. Interest has one of three tax
+characters: Treasury, municipal (naming the state whose obligation it is) or taxable. Each
+jurisdiction's rules list the characters it exempts: federally every state's municipal
+interest, in California Treasury and California municipal interest. A fund's declared split
+of its payout across these characters is trusted the same way. The code does not yet cover
 this scope: NIIT's net investment income leaves out net rental income and the investment
 deductions IRS Form 8960 allows; the bundled tables are 2024 law; a taxpayer starts with no
 year-to-date income, gains or payments; the SALT cap has no income phase-out; estimated payments are equal quarters of one

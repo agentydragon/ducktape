@@ -1,28 +1,53 @@
 """The authority a taxpayer's profile names: estimated instalments, the year's assessment at its close, a true-up."""
 
 from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Literal
 
 from finance.augur.sim.accounting import Accounting, TaxLiabilityStatement
 from finance.augur.sim.actor import Actor, MonthOpened
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting, TaxAccrual, TaxLiabilityState
 from finance.augur.sim.claims import Demand, TaxPayment, TaxTrueUp
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
-from finance.augur.sim.ids import AccountId, JurisdictionId
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId
 from finance.augur.sim.income import OrdinaryIncome, QualifiedDividendIncome
 from finance.augur.sim.market_path import MarketStatement
 from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
 from finance.augur.sim.mortgage import Mortgage
-from finance.augur.sim.prepared import PreparedJurisdiction, _MortgageInterestDeduction, _SaltDeduction
-from finance.augur.sim.tax import (
-    PreparedTaxProfile,
-    PreparedTaxRules,
-    TaxFacts,
-    assess,
-    is_investment_income,
-    taxes_interest_from,
-)
+from finance.augur.sim.tax import TaxFacts, TaxProfile, TaxRules, assess, is_investment_income, taxes_interest_from
 from finance.augur.sim.tax_indexation import CpiIndexedLaw, FixedNominalLaw, TaxIndexation, rules_for_year
 from finance.augur.sim.tax_year import TaxBook
+
+
+@dataclass(frozen=True, kw_only=True)
+class MortgageInterestDeduction:
+    liability_id: LiabilityId
+    owner_agent_id: AgentId
+    debt_class: Literal["acquisition", "home_equity"]
+    per_jurisdiction_principal_cap: dict[JurisdictionId, int]
+
+
+@dataclass(frozen=True, kw_only=True)
+class SaltCap:
+    effective_year_index: int
+    cap: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class SaltDeduction:
+    """Federal SALT itemized deduction (Schedule A) for one enrolled taxpayer.
+
+    Each of the profile's jurisdictions other than `federal_jurisdiction_id` contributes the
+    income tax it accrued this calendar year, alongside property tax paid; the total is capped
+    by the latest `cap_schedule` entry in effect (year index 0-based from the horizon's start;
+    an empty schedule is uncapped) and stacks with mortgage interest. Not modeled: the AGI
+    phase-out of the cap, the sales-tax election, and deducting prior-year true-ups in the year
+    they are paid.
+    """
+
+    profile_id: AgentId
+    federal_jurisdiction_id: JurisdictionId
+    cap_schedule: tuple[SaltCap, ...]
 
 
 class Assessment(Demand):
@@ -39,28 +64,28 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement | MarketStatement, 
     Under `CpiIndexedLaw` a year's rules are set by its January `MarketStatement`.
     """
 
-    def __init__(self, profile: PreparedTaxProfile, *, indexation: TaxIndexation) -> None:
+    def __init__(self, profile: TaxProfile, *, indexation: TaxIndexation) -> None:
         if isinstance(indexation, CpiIndexedLaw):
             indexation.check(profile.jurisdictions)
         self.profile = profile
         self.indexation = indexation
         # The open tax year and its indexed rules, under `CpiIndexedLaw`.
-        self.indexed_year: tuple[int, tuple[PreparedTaxRules, ...]] | None = None
+        self.indexed_year: tuple[int, tuple[TaxRules, ...]] | None = None
         self.liabilities: TaxLiabilityStatement | None = None
-        self.salt_policies: tuple[_SaltDeduction, ...] = ()
-        self.mortgage_interest_policies: tuple[_MortgageInterestDeduction, ...] = ()
+        self.salt_policies: tuple[SaltDeduction, ...] = ()
+        self.mortgage_interest_policies: tuple[MortgageInterestDeduction, ...] = ()
 
-    def declare_deduction(self, policy: _MortgageInterestDeduction | _SaltDeduction) -> None:
+    def declare_deduction(self, policy: MortgageInterestDeduction | SaltDeduction) -> None:
         """An itemized deduction this authority's taxpayer claims when its tax year closes."""
-        claimant = policy.owner_agent_id if isinstance(policy, _MortgageInterestDeduction) else policy.profile_id
+        claimant = policy.owner_agent_id if isinstance(policy, MortgageInterestDeduction) else policy.profile_id
         if claimant != self.profile.agent_id:
             raise ValueError(f"a deduction claimed by {claimant!r} is not {self.profile.agent_id!r}'s to assess")
-        if isinstance(policy, _MortgageInterestDeduction):
+        if isinstance(policy, MortgageInterestDeduction):
             self.mortgage_interest_policies = (*self.mortgage_interest_policies, policy)
         else:
             self.salt_policies = (*self.salt_policies, policy)
 
-    def rules(self, tax_year: int) -> tuple[PreparedTaxRules, ...]:
+    def rules(self, tax_year: int) -> tuple[TaxRules, ...]:
         """The profile's jurisdiction rules as they stand in `tax_year`."""
         if isinstance(self.indexation, FixedNominalLaw):
             return self.profile.jurisdictions
@@ -141,18 +166,12 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement | MarketStatement, 
             )
         return assessments
 
-    def assessments(
-        self, book: TaxBook, month: int, mortgages: Sequence[Mortgage], jurisdictions: Sequence[PreparedJurisdiction]
-    ) -> list[TaxAccrual]:
-        """Quote the year's close, one row per profile jurisdiction, without mutating the book.
-
-        `jurisdictions` is the world's vocabulary, which says whose interest a rule exempts.
-        """
+    def assessments(self, book: TaxBook, month: int, mortgages: Sequence[Mortgage]) -> list[TaxAccrual]:
+        """Quote the year's close, one row per profile jurisdiction, without mutating the book."""
         profile = self.profile
         agent = profile.agent_id
         income = book.income.copy()
         year = book.years[agent]
-        levels = {jurisdiction.jurisdiction_id: jurisdiction.level for jurisdiction in jurisdictions}
         for deduction in (year.depreciation_deduction, year.rental_interest_deduction):
             income.deduct_from_ordinary(agent, deduction)
         annual = []
@@ -165,11 +184,7 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement | MarketStatement, 
                     continue
                 if not (
                     isinstance(source, OrdinaryIncome | QualifiedDividendIncome)
-                    or taxes_interest_from(
-                        rules,
-                        source.issuer_jurisdiction_id,
-                        levels.get(source.issuer_jurisdiction_id) if source.issuer_jurisdiction_id else None,
-                    )
+                    or taxes_interest_from(rules, source.character)
                 ):
                     continue
                 if isinstance(source, QualifiedDividendIncome):
@@ -250,20 +265,14 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement | MarketStatement, 
             for rules, facts, assessment in annual
         ]
 
-    def close_month(
-        self,
-        accounting: Accounting,
-        month: int,
-        mortgages: Sequence[Mortgage],
-        jurisdictions: Sequence[PreparedJurisdiction],
-    ) -> None:
+    def close_month(self, accounting: Accounting, month: int, mortgages: Sequence[Mortgage]) -> None:
         """At the tax year's last month, post the assessment as expense against liability and reset the year.
 
         `mortgages` are the contracts whose interest paid this year the deductions read.
         """
         if month % 12 != 11:
             return
-        rows = self.assessments(accounting.tax, month, mortgages, jurisdictions)
+        rows = self.assessments(accounting.tax, month, mortgages)
         # One group, so a bad jurisdiction does not commit the jurisdictions assessed before it.
         accounting.apply_entries(
             [
@@ -304,7 +313,7 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement | MarketStatement, 
 
 
 def mortgage_interest_deduction(
-    policies: Sequence[_MortgageInterestDeduction], mortgages: Sequence[Mortgage], jurisdiction: JurisdictionId
+    policies: Sequence[MortgageInterestDeduction], mortgages: Sequence[Mortgage], jurisdiction: JurisdictionId
 ) -> int:
     """The owner-occupied share of the interest paid this year on each claimed loan, capped per jurisdiction."""
     numerator = 0

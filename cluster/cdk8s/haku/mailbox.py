@@ -19,11 +19,12 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
 
-from cluster.cdk8s import cilium, cnpg, forgejo_images, gateway
+from cluster.cdk8s import cilium, cnpg, forgejo_images, gateway, namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions
 from cluster.cdk8s.haku import namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import (
@@ -109,7 +110,7 @@ def _add_store(chart: Chart) -> None:
         "db",
         name="haku-mailbox-db",
         namespace=NAMESPACE,
-        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh",
         size="10Gi",
         # CNPG auto-generates credentials in secret haku-mailbox-db-app.
@@ -142,7 +143,7 @@ def _add_deployment(chart: Chart) -> None:
                     # OVH-only resilience: inbound mail must not depend on Proxmox, and the CNPG
                     # store is pinned to hil-ovh -- co-locate with it (same pin as other
                     # OVH-pinned apps, e.g. paperless).
-                    node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     security_context=k8s.PodSecurityContext(
                         run_as_non_root=True, run_as_user=1000, run_as_group=1000, fs_group=1000
                     ),
@@ -291,11 +292,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
                     # on every public OVH node while the control-plane taint is rolled out. The
                     # backend Deployment is movable; this DaemonSet is the explicit control-plane
                     # exception until the public-node roster is redesigned.
-                    tolerations=[
-                        k8s.Toleration(
-                            key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                        )
-                    ],
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     containers=[
                         k8s.Container(
                             name="nginx",
@@ -402,22 +399,20 @@ def chart(app: App) -> Chart:
     # haku-egress-proxy egress fence: Haku must not be able to patch the server, edit the
     # whitelist, read the admin/TLS secrets, or touch the CNPG store. Haku is a mail *user* only,
     # authenticated via its Authentik-issued bearer. See cluster/k8s/haku/mailbox/README.md.
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "name": NAMESPACE,
-                # The per-public-node SMTP ingress must bind hostPort 25. Pod Security's baseline
-                # profile forbids every hostPort, so this trusted, operator-only namespace needs
-                # privileged admission even though its workloads retain restrictive container
-                # security contexts and Cilium policies.
-                "pod-security.kubernetes.io/enforce": "privileged",
-            },
-        ),
+        name=NAMESPACE,
+        vpa=Vpa.AUTO,
+        agent_readable=None,
+        labels={
+            "name": NAMESPACE,
+            # The per-public-node SMTP ingress must bind hostPort 25. Pod Security's baseline
+            # profile forbids every hostPort, so this trusted, operator-only namespace needs
+            # privileged admission even though its workloads retain restrictive container
+            # security contexts and Cilium policies.
+            "pod-security.kubernetes.io/enforce": "privileged",
+        },
     )
     _add_store(chart)
     forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)

@@ -3,18 +3,17 @@ and the background controller's extra RoleBinding read access."""
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "kyverno"
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/app"
 _FLUX_NAMESPACE = "flux-system"
-_CONTROL_PLANE = "node-role.kubernetes.io/control-plane"
 
 
 def _values() -> dict[str, object]:
@@ -33,8 +32,8 @@ def _values() -> dict[str, object]:
             # admission controller is the acute one: its webhook gates API writes, so
             # losing it is a cluster-wide outage rather than degraded reporting.
             "priorityClassName": "system-cluster-critical",
-            "nodeSelector": {_CONTROL_PLANE: ""},
-            "tolerations": [{"key": _CONTROL_PLANE, "operator": "Exists", "effect": "NoSchedule"}],
+            "nodeSelector": {node_scheduling.CONTROL_PLANE_TAINT_KEY: ""},
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
             # Soft anti-affinity: prefer spreading replicas across control-plane nodes.
             # Replaces topologySpreadConstraints whose labelSelector didn't match
             # (pods have instance=kyverno-kyverno, not instance=kyverno), causing
@@ -124,17 +123,11 @@ def _values() -> dict[str, object]:
 def chart(app: App) -> Chart:
     chart = Chart(app, "kyverno", disable_resource_name_hashes=True)
     namespace = k8s.KubeNamespace(chart, "namespace", metadata=k8s.ObjectMeta(name=NAME))
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name=NAME, namespace=_FLUX_NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://kyverno.github.io/kyverno/"),
-    )
     helm_release(
         chart,
         NAME,
         _FLUX_NAMESPACE,
-        repository=repository,
+        repository=helm_repository(chart, NAME, _FLUX_NAMESPACE, url="https://kyverno.github.io/kyverno/"),
         chart="kyverno",
         # MODULE.bazel pins the kyverno.io CRD bindings to this chart's appVersion.
         version="3.9.1",

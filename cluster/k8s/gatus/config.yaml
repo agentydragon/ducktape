@@ -82,6 +82,8 @@ endpoints:
       - "[STATUS] == 200"
 
   - name: LiteLLM inference
+    # This periodic request evicts the locally serving Qwen model from Ollama.
+    enabled: false
     group: ai
     url: http://litellm.litellm.svc.cluster.local:4000/v1/chat/completions
     method: POST

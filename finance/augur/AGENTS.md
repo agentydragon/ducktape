@@ -13,7 +13,8 @@ adding parallel read-model tables over the captured long-form polars frames.
 
 ## Conventions
 
-- **One way to declare a world:** `declare_*`, `hold` and `track` on a `World`, driven by
+- **One way to declare a world:** `declare_*`, `hold_lot`, `hold_bond` and `track` on a
+  `World`, taking keyword arguments rather than argument-bundle records, driven by
   `start()`/`step()` or `ActionSession` (README § Using Augur). Do not add a second
   declaration path beside it.
 - **Exogenous paths come first and flow one way.** Exogenous models sample market paths;

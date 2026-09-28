@@ -20,16 +20,9 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_sc
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedSeries,
-)
 from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -47,13 +40,26 @@ VTI_ASSET = AssetId(VTI.symbol)
 
 
 @dataclass(frozen=True)
+class Lot:
+    """One of Alice's opening lots."""
+
+    lot_id: LotId
+    account_id: AccountId
+    asset_id: AssetId
+    purchase_month: int
+    quantity_scale: int
+    units: int
+    basis: int
+
+
+@dataclass(frozen=True)
 class Situation:
     """What every path shares: the compiled paths, the lots each world opens holding, and who files tax."""
 
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     rollout_count: int
     horizon_months: int
-    lots: tuple[PreparedLot, ...]
+    lots: tuple[Lot, ...]
     tax_profiles: tuple[TaxProfile, ...]
 
 
@@ -65,11 +71,10 @@ def _lot(
     *,
     asset: SecurityKey = VTI,
     account: AccountId = CHECKING,
-) -> PreparedLot:
+) -> Lot:
     scale = quantity_scale_for_asset(asset)
-    return PreparedLot(
+    return Lot(
         lot_id=lot_id,
-        agent_id=ALICE,
         account_id=account,
         asset_id=AssetId(asset.symbol),
         purchase_month=purchase_month,
@@ -90,7 +95,7 @@ def _taxed(*jurisdiction_ids: JurisdictionId) -> TaxProfile:
 
 
 def _situation(
-    lots: Sequence[PreparedLot],
+    lots: Sequence[Lot],
     prices: Mapping[SecurityKey, Sequence[Decimal]],
     *,
     rollouts: int = 1,
@@ -126,26 +131,28 @@ def _compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=tuple(
-            PreparedJurisdiction(jurisdiction_id=jurisdiction_id, level=jurisdiction.level)
-            for jurisdiction_id, jurisdiction in sorted(jurisdictions.items())
-        ),
     )
     for agent_id in (ALICE, *(("irs",) if case.tax_profiles else ())):
         world.declare_account(
-            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")), opening_balance=0)
+            account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")), opening_balance=0
         )
     for profile in case.tax_profiles:
         world.track(TaxAuthority(compile_profile(profile, jurisdictions, currency=USD), indexation=FixedNominalLaw()))
-    for pool in {
-        (lot.account_id, lot.asset_id): PreparedHoldingPool(
-            agent_id=ALICE, account_id=lot.account_id, asset_id=lot.asset_id, quantity_scale=lot.quantity_scale
-        )
-        for lot in case.lots
-    }.values():
-        world.declare_pool(pool)
+    for (account_id, asset_id), quantity_scale in {
+        (lot.account_id, lot.asset_id): lot.quantity_scale for lot in case.lots
+    }.items():
+        world.declare_pool(agent_id=ALICE, account_id=account_id, asset_id=asset_id, quantity_scale=quantity_scale)
     for lot in case.lots:
-        world.hold(lot)
+        world.hold_lot(
+            lot_id=lot.lot_id,
+            agent_id=ALICE,
+            account_id=lot.account_id,
+            asset_id=lot.asset_id,
+            purchase_month=lot.purchase_month,
+            quantity_scale=lot.quantity_scale,
+            units=lot.units,
+            basis=lot.basis,
+        )
     return world
 
 
