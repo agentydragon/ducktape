@@ -30,6 +30,7 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.rollouts import tax_by_jurisdiction
 from finance.augur.sim.testing.security_distributions import (
     AGGREGATE,
     CALIFORNIA_MUNI,
@@ -182,13 +183,6 @@ def _cash_by_month(result: Rollout) -> dict[int, int]:
     return {month: after - before for month, (before, after) in enumerate(pairwise(cash.values))}
 
 
-def _tax_by_jurisdiction(result: Rollout) -> dict[str, int]:
-    taxes: dict[str, int] = {}
-    for accrual in result.summary.tax_accruals:
-        taxes[accrual.jurisdiction_id] = taxes.get(accrual.jurisdiction_id, 0) + accrual.total_tax
-    return taxes
-
-
 def test_the_payout_is_units_times_dollars_per_unit_every_month() -> None:
     """Monthly, unlike a semiannual coupon, and sized off units held rather than a rate on
     market value — which is why nothing in an engine needs the price to compute it."""
@@ -252,14 +246,14 @@ def test_a_holding_with_no_declared_distribution_pays_nothing() -> None:
 
 
 def test_a_treasury_funds_distribution_is_federally_taxed_and_california_exempt() -> None:
-    tax = _tax_by_jurisdiction(_run(compose(tax_character=TREASURY)))
+    tax = tax_by_jurisdiction(_run(compose(tax_character=TREASURY)))
 
     assert tax["federal_us"] > 0
     assert tax["california"] == 0
 
 
 def test_an_in_state_muni_funds_distribution_is_exempt_everywhere() -> None:
-    tax = _tax_by_jurisdiction(_run(compose(tax_character=CALIFORNIA_MUNI)))
+    tax = tax_by_jurisdiction(_run(compose(tax_character=CALIFORNIA_MUNI)))
 
     assert tax["federal_us"] == 0
     assert tax["california"] == 0
@@ -270,9 +264,9 @@ def test_a_mixed_fund_is_exempt_only_on_its_treasury_slice() -> None:
     not the Treasury 40%, so a mixed fund owes strictly between the all-Treasury and
     all-taxable cases — a number neither single tag can produce."""
 
-    mixed = _tax_by_jurisdiction(_run(compose(tax_character=AGGREGATE)))
-    treasury = _tax_by_jurisdiction(_run(compose(tax_character=TREASURY)))
-    taxable = _tax_by_jurisdiction(_run(compose(tax_character=TAXABLE)))
+    mixed = tax_by_jurisdiction(_run(compose(tax_character=AGGREGATE)))
+    treasury = tax_by_jurisdiction(_run(compose(tax_character=TREASURY)))
+    taxable = tax_by_jurisdiction(_run(compose(tax_character=TAXABLE)))
 
     assert treasury["california"] < mixed["california"] < taxable["california"]
     # Federal taxes both slices, so the split changes nothing there.
@@ -306,11 +300,11 @@ def test_qualified_dividends_take_federal_preferential_rates_and_california_ordi
     the 0% long-term band, where the same payout as corporate interest owes 940.00 at 10%.
     California: 24,000 - 5,363 = 18,637 at 1% to 10,412 and 2% above: 104.12 + 164.50."""
 
-    assert _tax_by_jurisdiction(_run(compose(tax_character=QUALIFIED_DIVIDENDS))) == {
+    assert tax_by_jurisdiction(_run(compose(tax_character=QUALIFIED_DIVIDENDS))) == {
         "federal_us": 0,
         "california": 26_862,
     }
-    assert _tax_by_jurisdiction(_run(compose(tax_character=TAXABLE)))["federal_us"] == 94_000
+    assert tax_by_jurisdiction(_run(compose(tax_character=TAXABLE)))["federal_us"] == 94_000
 
 
 def test_qualified_dividends_are_their_own_row_in_the_holders_tax_records() -> None:

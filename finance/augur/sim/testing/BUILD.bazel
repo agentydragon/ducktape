@@ -127,6 +127,17 @@ py_library(
 )
 
 py_library(
+    name = "rollouts",
+    srcs = ["rollouts.py"],
+    deps = [
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:results",
+        "@pypi//more_itertools",
+    ],
+)
+
+py_library(
     name = "session",
     srcs = ["session.py"],
     deps = [

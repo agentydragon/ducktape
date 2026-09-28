@@ -41,7 +41,7 @@ from finance.augur.policy.cash_band_household import CashBandHousehold, Security
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import Action, LotSale, Sell
 from finance.augur.sim.bills import Biller
-from finance.augur.sim.books import AccountRef, Book
+from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
@@ -66,6 +66,7 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.issuer_protocol import at_month, issuer_protocol
+from finance.augur.sim.testing.rollouts import book
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import each, finish
@@ -139,12 +140,6 @@ def run(world: World, *, funded_by: SecurityKey | None = None, script: Mapping[i
     [rollout] = finish(ActionSession({0: world}, ALICE), each(household.decide)).rollouts
     assert rollout.stop is None
     return rollout
-
-
-def book(rollout: Rollout, month: int) -> Book:
-    assert rollout.trace is not None
-    [snapshot] = [snapshot for snapshot in rollout.trace.books if snapshot.month == month]
-    return snapshot
 
 
 def crossed_the_boundary(rollout: Rollout, declared: frozenset[AccountRef], *, month: int) -> int:
