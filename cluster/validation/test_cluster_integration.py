@@ -219,9 +219,9 @@ def test_goldilocks_namespace_labels(cluster: ParsedCluster) -> None:
     assert not errors, "\n".join(errors)
 
 
-def test_goldilocks_explicit_decision(cluster: ParsedCluster) -> None:
-    """Namespaces with workloads label their goldilocks decision."""
-    errors = check_goldilocks_explicit_decision(cluster)
+def test_goldilocks_explicit_decision(cluster: ParsedCluster, repo_root: Path) -> None:
+    """Every generated Namespace labels its goldilocks decision."""
+    errors = check_goldilocks_explicit_decision(cluster, repo_root)
     assert not errors, "\n".join(errors)
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.k8s import (
     CiliumPolicyResource,
@@ -98,7 +99,6 @@ def check_goldilocks_namespace_labels(cluster: ParsedCluster) -> list[str]:
     return errors
 
 
-_WORKLOAD_KINDS = {"Deployment", "StatefulSet", "DaemonSet"}
 _GOLDILOCKS_ENABLED_LABEL = "goldilocks.fairwinds.com/enabled"
 _VPA_UPDATE_MODE_LABEL = "goldilocks.fairwinds.com/vpa-update-mode"
 
@@ -147,33 +147,28 @@ def check_forgejo_image_namespace_reflection(cluster: ParsedCluster) -> list[str
     return errors
 
 
-def check_goldilocks_explicit_decision(cluster: ParsedCluster) -> list[str]:
-    """Every namespace with workloads labels its Goldilocks decision: an update mode or the enabled label."""
-    errors = []
-    resources = [resource for _, resource in _rendered_or_source_resources(cluster)]
+def _generated(path: Path) -> bool:
+    """Generator output (`cluster/AGENTS.md` § Generated manifests): every file under
+    `GENERATED_ROOT`, every `*.k8s.yaml` under `HAND_WRITTEN_ROOT`."""
+    return path.is_relative_to(GENERATED_ROOT) or (
+        path.is_relative_to(HAND_WRITTEN_ROOT) and path.name.endswith(".k8s.yaml")
+    )
 
-    workload_namespaces: set[str] = set()
-    for resource in resources:
-        if resource.kind in _WORKLOAD_KINDS and resource.namespace:
-            workload_namespaces.add(resource.namespace)
 
-    namespace_goldilocks: dict[str, str | None] = {}
-    for resource in resources:
-        if resource.kind == "Namespace":
-            labels = resource.metadata.labels
-            label = labels.get(_VPA_UPDATE_MODE_LABEL) or labels.get(_GOLDILOCKS_ENABLED_LABEL)
-            if label is not None or resource.name not in namespace_goldilocks:
-                namespace_goldilocks[resource.name] = label
-
-    for ns in sorted(workload_namespaces):
-        if ns not in namespace_goldilocks:
-            continue
-        if namespace_goldilocks[ns] is None:
-            errors.append(
-                f"Namespace '{ns}' has workloads but labels no Goldilocks decision "
-                f"({_VPA_UPDATE_MODE_LABEL}, or {_GOLDILOCKS_ENABLED_LABEL})"
-            )
-    return errors
+def check_goldilocks_explicit_decision(cluster: ParsedCluster, repo_root: Path) -> list[str]:
+    """Every Namespace the generator writes labels its Goldilocks decision: an update mode, or
+    `enabled: "false"`. Goldilocks runs on by default, so a Namespace saying neither gets Off-mode
+    VPAs nobody chose."""
+    return [
+        f"{path.relative_to(repo_root)}: Namespace '{resource.name}' labels no Goldilocks decision "
+        f'({_VPA_UPDATE_MODE_LABEL}, or {_GOLDILOCKS_ENABLED_LABEL}: "false")'
+        for path, resources in cluster.source_resources.items()
+        if _generated(path.relative_to(repo_root))
+        for resource in resources
+        if resource.kind == "Namespace"
+        and _VPA_UPDATE_MODE_LABEL not in resource.metadata.labels
+        and resource.metadata.labels.get(_GOLDILOCKS_ENABLED_LABEL) != "false"
+    ]
 
 
 def check_sops_decryption_blocks(cluster: ParsedCluster, repo_root: Path) -> list[str]:
