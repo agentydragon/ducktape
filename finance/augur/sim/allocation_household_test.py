@@ -29,9 +29,8 @@ from finance.augur.sim.jurisdictions import (
     StatutoryIndexation,
     TaxBracket,
 )
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
 from finance.augur.sim.money import MAX_COUNT, USD
-from finance.augur.sim.prepared import PreparedAmount, PreparedIndexedAmount, PreparedSeries
 from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -81,13 +80,13 @@ def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decima
     return ref(agent_id, account_id), money(balance)
 
 
-def flat(asset: SecurityKey, price: Decimal | int, *, snapshots: int) -> PreparedSeries:
-    return PreparedSeries(series_id=f"security:{asset.symbol}", snapshots=snapshots, values=(money(price),) * snapshots)
+def flat(asset: SecurityKey, price: Decimal | int, *, snapshots: int) -> Series:
+    return Series(series_id=f"security:{asset.symbol}", snapshots=snapshots, values=(money(price),) * snapshots)
 
 
-def distribution_rate(asset: SecurityKey, amount: Decimal | int, *, snapshots: int) -> PreparedSeries:
+def distribution_rate(asset: SecurityKey, amount: Decimal | int, *, snapshots: int) -> Series:
     """A per-unit payout, in the prepared rate units: money quanta on the money-factor grid."""
-    return PreparedSeries(
+    return Series(
         series_id=f"security_distribution:{asset.symbol}",
         snapshots=snapshots,
         values=(money(amount) * MONEY_FACTOR_SCALE,) * snapshots,
@@ -109,7 +108,7 @@ class Spending:
 
     obligation_id: str
     schedule: Schedule
-    amount_due: PreparedAmount
+    amount_due: Amount
 
 
 def claim(month: int, amount: Decimal | int, identifier: str = "spending") -> Spending:
@@ -150,7 +149,7 @@ class Situation:
     """The books, counterparties and funding household every path declares."""
 
     horizon_months: int
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     accounts: tuple[tuple[AccountRef, int], ...]
     # A fresh household per path: it keeps the path's CPI history and purchase identities.
     funding: partial[CashBandHousehold]
@@ -340,14 +339,14 @@ def test_indexed_monthly_claims_keep_sales_and_next_year_tax_events() -> None:
     [output] = run(
         replace(
             case,
-            series=(*case.series, PreparedSeries(series_id="inflation", snapshots=14, values=(1,) * 12 + (2,) * 2)),
+            series=(*case.series, Series(series_id="inflation", snapshots=14, values=(1,) * 12 + (2,) * 2)),
             accounts=(account(ALICE), account(WORLD)),
             transfers=(),
             claims=(
                 Spending(
                     "indexed",
                     Recurring(start_month=0, end_month=None),
-                    PreparedIndexedAmount(
+                    IndexedAmount(
                         base_amount=money(10), series_id="inflation", base_month_index=0, adjustment_period_months=1
                     ),
                 ),
@@ -390,7 +389,7 @@ def test_fifo_across_two_purchase_dates_preserves_basis_and_tax_character() -> N
         replace(
             case,
             series=(
-                PreparedSeries(
+                Series(
                     series_id=f"security:{STOCK.symbol}",
                     snapshots=14,
                     values=(money(100), money(150)) + (money(200),) * 12,
@@ -432,8 +431,8 @@ def indexed_bounds() -> Situation:
         horizon_months=6,
         rollout_count=2,
         series=(
-            PreparedSeries(series_id=f"security:{STOCK.symbol}", snapshots=7, values=(1,) * 14),
-            PreparedSeries(series_id="inflation", snapshots=7, values=(2, 3, 5, 7, 11, 13, 19, 4, 1, 2, 99, 6, 88, 40)),
+            Series(series_id=f"security:{STOCK.symbol}", snapshots=7, values=(1,) * 14),
+            Series(series_id="inflation", snapshots=7, values=(2, 3, 5, 7, 11, 13, 19, 4, 1, 2, 99, 6, 88, 40)),
         ),
         accounts=(account(ALICE), account(WORLD)),
         lots=(OpeningLot(STOCK, shares=100, basis=1),),

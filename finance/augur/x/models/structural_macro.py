@@ -348,7 +348,6 @@ class StructuralMacroModel:
             if config.equity is not None
             else None,
             corporate_yields={},
-            model_id=self.label,
             provenance=provenance,
         )
 

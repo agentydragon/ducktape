@@ -14,11 +14,12 @@ from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
+from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
+from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedLocation, _MortgageFinancing, _PropertyPurchase, _PropertyTax
-from finance.augur.sim.property import Housing
+from finance.augur.sim.property import Housing, MortgageFinancing, ScheduledPurchase
+from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
@@ -27,18 +28,14 @@ QUANTUM = Decimal("0.01")
 ALICE, SELLER, BANK = AgentId("alice"), AgentId("seller"), AgentId("bank")
 CHECKING = AccountId("checking")
 
-SAN_FRANCISCO = PreparedLocation(
+SAN_FRANCISCO = Location(
     location_id=LocationId("san_francisco"),
-    display_name="San Francisco, CA",
-    jurisdiction_ids=(JurisdictionId("federal_us"), JurisdictionId("california")),
     annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.01180")),
     annual_special_assessment=0,
 )
 # Mare Island (Vallejo) carries flat-USD CFD special assessments on top of the ad-valorem rate.
-VALLEJO_MARE_ISLAND = PreparedLocation(
+VALLEJO_MARE_ISLAND = Location(
     location_id=LocationId("vallejo_mare_island"),
-    display_name="Vallejo, CA — Mare Island",
-    jurisdiction_ids=(JurisdictionId("federal_us"), JurisdictionId("california")),
     annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.0115")),
     annual_special_assessment=int(currency_amount_to_quanta(Decimal(2300), quantum=QUANTUM)),
 )
@@ -71,9 +68,9 @@ def purchase(
     price: int,
     down: int,
     closing: int = 0,
-    mortgage: _MortgageFinancing | None = None,
-) -> _PropertyPurchase:
-    return _PropertyPurchase(
+    mortgage: MortgageFinancing | None = None,
+) -> ScheduledPurchase:
+    return ScheduledPurchase(
         month=0,
         cause_id=cause_id,
         property_id=property_id,
@@ -93,8 +90,8 @@ def purchase(
 
 def financing(
     liability_id: LiabilityId, *, principal: int, annual_rate: Decimal | int, term_months: int
-) -> _MortgageFinancing:
-    return _MortgageFinancing(
+) -> MortgageFinancing:
+    return MortgageFinancing(
         liability_id=liability_id,
         lender_agent_id=BANK,
         lender_account_id=CHECKING,
@@ -104,8 +101,10 @@ def financing(
     )
 
 
-def property_tax(property_id: PropertyId, collector: AgentId, *, annual_rate: Decimal | int | None) -> _PropertyTax:
-    return _PropertyTax(
+def property_tax(
+    property_id: PropertyId, collector: AgentId, *, annual_rate: Decimal | int | None
+) -> PropertyTaxPolicy:
+    return PropertyTaxPolicy(
         property_id=property_id,
         owner_agent_id=ALICE,
         from_account_id=CHECKING,
@@ -123,9 +122,9 @@ class Situation:
 
     horizon_months: int
     accounts: tuple[tuple[AccountRef, int], ...]
-    purchases: tuple[_PropertyPurchase, ...]
-    tax_policies: tuple[_PropertyTax, ...] = ()
-    locations: tuple[PreparedLocation, ...] = (SAN_FRANCISCO,)
+    purchases: tuple[ScheduledPurchase, ...]
+    tax_policies: tuple[PropertyTaxPolicy, ...] = ()
+    locations: tuple[Location, ...] = (SAN_FRANCISCO,)
 
 
 def compose(case: Situation) -> World:

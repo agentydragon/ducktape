@@ -223,23 +223,23 @@ each Action retains immutable submitting Connection/grant/revision/issuer/client
 Production admission and dispatch use the same Connection authority. Sandbox bearers still use
 live workload validation and egress substitution; OAuth does not grant an operator bearer bypass.
 
-| Tool                         | Use                                                                                                                                                                    |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_actions`               | Compact `{group, name, available}` entries; optional group filter, `limit` (default 30, max 100), keyset `after`/`next_after`.                                         |
-| `get_action_policy`          | The effective policy of a `target`: `"self"` (default) or a named Sandbox or ServiceAccount; its bindings, the sets that resolved, the three lists (`policy_view.py`). |
-| `get_action`                 | One definition by group/name. `include_fields` on either catalog read accepts only `input_schema` and `description`; omitted/empty excludes both.                      |
-| `request_action`             | The request envelope under `request`, validated as on HTTP; a used key is refused. Answers like `get_action_result`, or `respond_with: receipt`.                       |
-| `get_action_request`         | One own-caller receipt by exactly one of `request_id` or `idempotency_key`; the key lookup recovers a submission whose response was lost.                              |
-| `get_action_result`          | The outcome as the tool that ran answered, named and waited on like `get_action_request`; see below.                                                                   |
-| `cancel_action_request`      | Own-caller pre-claim cancellation by request ID, without a version; returns canonical outcome and receipt.                                                             |
-| `list_action_request_events` | One own-caller event page; `after_sequence`, `limit`, optional `next_after_sequence`.                                                                                  |
+| Tool                         | Use                                                                                                                                                                               |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_actions`               | Compact `{group, name, available}` entries; optional group filter, `limit` (default 30, max 100), keyset `after`/`next_after`.                                                    |
+| `get_action_policy`          | The effective policy of a `target`: `"self"` (default) or a named Sandbox or ServiceAccount; its bindings, the sets that resolved, and the auto-approval list (`policy_view.py`). |
+| `get_action`                 | One definition by group/name. `include_fields` on either catalog read accepts only `input_schema` and `description`; omitted/empty excludes both.                                 |
+| `request_action`             | The request envelope under `request`, validated as on HTTP; a used key is refused. Answers like `get_action_result`, or `respond_with: receipt`.                                  |
+| `get_action_request`         | One own-caller receipt by exactly one of `request_id` or `idempotency_key`; the key lookup recovers a submission whose response was lost.                                         |
+| `get_action_result`          | The outcome as the tool that ran answered, named and waited on like `get_action_request`; see below.                                                                              |
+| `cancel_action_request`      | Own-caller pre-claim cancellation by request ID, without a version; returns canonical outcome and receipt.                                                                        |
+| `list_action_request_events` | One own-caller event page; `after_sequence`, `limit`, optional `next_after_sequence`.                                                                                             |
 
 Every tool that returns a wide model takes `include_fields` as a **pure allowlist over every
 top-level field of that model** (top-level only, never a dotted path into a nested one), defaulting
 to a curated compact list rather than `None`, so the default is visible directly in the tool's own
 schema instead of living only in prose: the catalog reads (`get_action`/`list_actions`) default to
 neither `input_schema` nor `description`; `get_action_policy` defaults to `subject`/`synced`/
-`bindings`, widened by naming `auto_approve_if`/`auto_deny_if`/`auto_deny_unless`; and
+`bindings`, widened by naming `auto_approve_if`; and
 `get_action_request`/`cancel_action_request`, and `request_action` under `respond_with: receipt`,
 default to `id`/`state`/`version`/
 `created_at`/`updated_at` on the receipt -- `state` alone already distinguishes
@@ -401,9 +401,9 @@ unexpired valid bindings and the valid sets they name, nothing before sync) and
 from the workload principal, `ServiceAccountCaller` from the grant) and those bindings; the
 provider's allow carries `PolicyEvidence`, persisted on the Decision (migration
 `0014_action_policies`) and projected as `DecisionView.policy_evidence`, whose `matched.repository`
-names the repository a GitHub kind resolved and whether the public lookup confirmed it. Deny lists
-are parsed and reported but decide nothing yet. Dispatch is unchanged: it re-checks caller
-authority, never policy.
+names the repository a GitHub kind resolved and whether the public lookup confirmed it. A set has
+no deny form: `autoApproveIf` is the only list, and what it does not match waits for a human. Dispatch
+is unchanged: it re-checks caller authority, never policy.
 
 `policy_view` projects that same `resolve_bindings` for readers: `GET /v1/action-policy` answers
 the authenticated caller (the ServiceAccount its Pod runs as, on the workload route) and the

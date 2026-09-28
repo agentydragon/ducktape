@@ -28,10 +28,10 @@ from finance.augur.sim.external_series import ExternalSeriesContext, compile_ser
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
+from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedLocation, _PropertyPurchase, _PropertySale
-from finance.augur.sim.property import Housing
+from finance.augur.sim.property import Housing, ScheduledPurchase, ScheduledSale
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -136,7 +136,7 @@ def a_property_bought_and_sold(closing_cost_pct: Decimal = Decimal(0)) -> Worlds
     observable exactly when the level is fractional.
     """
 
-    purchase = _PropertyPurchase(
+    purchase = ScheduledPurchase(
         month=0,
         cause_id="buy-house",
         property_id=PropertyId("house"),
@@ -162,13 +162,7 @@ def a_property_bought_and_sold(closing_cost_pct: Decimal = Decimal(0)) -> Worlds
         horizon_months=HORIZON_MONTHS,
         currency=USD,
     )
-    location = PreparedLocation(
-        location_id=LOCATION,
-        display_name="Acceptance Town",
-        jurisdiction_ids=(),
-        annual_property_tax_rate_ppb=0,
-        annual_special_assessment=0,
-    )
+    location = Location(location_id=LOCATION, annual_property_tax_rate_ppb=0, annual_special_assessment=0)
 
     def compose() -> World:
         # Untaxed on purpose: what the gain is assessed at is the statute suites' business, and
@@ -185,7 +179,7 @@ def a_property_bought_and_sold(closing_cost_pct: Decimal = Decimal(0)) -> Worlds
             Housing(
                 purchases=(purchase,),
                 sales=(
-                    _PropertySale(
+                    ScheduledSale(
                         month=PROPERTY_SALE_MONTH,
                         property_id=PropertyId("house"),
                         closing_cost_ppb=rate_to_ppb(closing_cost_pct / 100),

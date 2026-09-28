@@ -16,7 +16,6 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:valkey",
         "//cluster/cdk8s/providers/flux:helmrelease",
-        "//cluster/cdk8s/providers/flux:helmrepository",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",

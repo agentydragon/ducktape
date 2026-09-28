@@ -24,9 +24,9 @@ from finance.augur.sim.income import (
     income_source_sort_key,
 )
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedFixedAmount, PreparedIndexedCoupon, PreparedSeries
+from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
@@ -62,7 +62,7 @@ class DatedBond:
     account_id: AccountId
     character: InterestCharacter
     face_value: int
-    coupon: PreparedFixedAmount | PreparedIndexedCoupon
+    coupon: FixedCoupon | IndexedCoupon
     coupon_period_months: int
     purchase_month_index: int
     maturity_month_index: int
@@ -90,9 +90,9 @@ def dated(
         account_id=account_id,
         character=character,
         face_value=face_quanta,
-        coupon=PreparedIndexedCoupon(annual_rate_ppb=rate_ppb)
+        coupon=IndexedCoupon(annual_rate_ppb=rate_ppb)
         if indexed
-        else PreparedFixedAmount(
+        else FixedCoupon(
             amount=coupon_amount_quanta(
                 face_quanta=face_quanta, annual_coupon_rate_ppb=rate_ppb, coupon_period_months=period
             )
@@ -103,7 +103,7 @@ def dated(
     )
 
 
-def cpi_series(paths: Sequence[Sequence[float]]) -> tuple[PreparedSeries, ...]:
+def cpi_series(paths: Sequence[Sequence[float]]) -> tuple[Series, ...]:
     """One CPI level path per rollout, as the world reads it."""
     levels = np.asarray(paths, dtype=np.float64)
     rollouts, snapshots = levels.shape
@@ -136,7 +136,7 @@ class Situation:
     accounts: tuple[tuple[AccountRef, int], ...]
     bonds: tuple[DatedBond, ...]
     horizon_months: int
-    series: tuple[PreparedSeries, ...] = ()
+    series: tuple[Series, ...] = ()
     rollout_count: int = 1
     # Filed in the shipped federal and California law, paying `irs`.
     taxpayers: tuple[AgentId, ...] = ()

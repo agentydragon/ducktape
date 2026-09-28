@@ -34,9 +34,8 @@ from finance.augur.sim.income import (
     TransferIncomeCategory,
 )
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
@@ -177,7 +176,7 @@ def compose(case: Situation, indexation: TaxIndexation) -> World:
     )
     if isinstance(indexation, CpiIndexedLaw):
         cpi = (100,) * (horizon + 1) if case.cpi is None else case.cpi
-        series = (*series, PreparedSeries(series_id="inflation", snapshots=horizon + 1, values=cpi))
+        series = (*series, Series(series_id="inflation", snapshots=horizon + 1, values=cpi))
     jurisdictions = {id_: load_jurisdiction(id_) for id_ in case.jurisdiction_ids}
     world = World(
         MarketPath(series, 0, rollout_count=1),

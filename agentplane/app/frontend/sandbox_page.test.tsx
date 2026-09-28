@@ -194,3 +194,29 @@ it("hides an archived thread's session by default, reveals it via Show archived,
     ["POST", "/threads/test-thread-1/unarchive"],
   ]);
 });
+
+it("disables archiving a thread while its harness is running", async () => {
+  live.snapshot.threads = [thread({ id: "test-thread-1", session_id: "existing-session" })];
+  await render(async () =>
+    Response.json([
+      {
+        sessionId: "existing-session",
+        spec: {},
+        lastCursor: "0",
+        harnessState: "HARNESS_STATE_RUNNING",
+      },
+    ])
+  );
+  const menuButton = [...container.querySelectorAll("button")].find(
+    (node) => node.getAttribute("aria-label") === "More actions for existing-session"
+  );
+  if (!menuButton) throw new Error("Missing per-session actions menu");
+  await act(async () => menuButton.click());
+  const archiveItem = menuItem("Stop harness before archiving");
+  expect(archiveItem).toBeInstanceOf(HTMLButtonElement);
+  expect((archiveItem as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => archiveItem.click());
+  expect(
+    fetchMock.mock.calls.some(([request]) => new URL((request as Request).url).pathname.endsWith("/archive"))
+  ).toBe(false);
+});

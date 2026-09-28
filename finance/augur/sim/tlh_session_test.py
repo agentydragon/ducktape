@@ -15,10 +15,9 @@ from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, PortfolioId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable, TransferIncomeCategory, Treasury
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import Currency
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Executed, Finished, InvalidRequest, Rejected, RejectedAction
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -73,17 +72,13 @@ class Situation:
     def snapshots(self) -> int:
         return self.horizon + 1
 
-    def series(self) -> tuple[PreparedSeries, ...]:
+    def series(self) -> tuple[Series, ...]:
         prices = self.prices if self.prices is not None else (1,) * self.snapshots
-        rows = [
-            PreparedSeries(
-                series_id=f"security:{ASSET.symbol}", snapshots=self.snapshots, values=prices * self.rollouts
-            )
-        ]
+        rows = [Series(series_id=f"security:{ASSET.symbol}", snapshots=self.snapshots, values=prices * self.rollouts)]
         if self.distribution_rates:
             # Per-unit payouts in prepared rate units: money quanta on the money-factor grid.
             rows.append(
-                PreparedSeries(
+                Series(
                     series_id=f"security_distribution:{ASSET.symbol}",
                     snapshots=self.snapshots,
                     values=tuple(int(rate * MONEY_FACTOR_SCALE) for rate in self.distribution_rates) * self.rollouts,

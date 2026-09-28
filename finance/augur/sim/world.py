@@ -49,26 +49,17 @@ from finance.augur.sim.income import (
     TransferIncomeCategory,
     income_source_wire_id,
 )
+from finance.augur.sim.locations import Location
 from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios, Portfolio, TlhStatement
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath
 from finance.augur.sim.money import checked_count, is_quantity_scale, position_value
 from finance.augur.sim.mortgage import InstallmentPaid, Mortgage, MortgagePayment, ServicingStatement
-from finance.augur.sim.prepared import (
-    PreparedAmount,
-    PreparedFixedAmount,
-    PreparedIndexedAmount,
-    PreparedIndexedCoupon,
-    PreparedLocation,
-    _MortgageInterestDeduction,
-    _PropertyPurchase,
-    _PropertyTax,
-    _SaltDeduction,
-    _TenderPolicy,
-)
-from finance.augur.sim.property import Housing, Properties, mortgage_terms
-from finance.augur.sim.property_tax import PropertyTaxAuthority, PropertyTaxBill
+from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
+from finance.augur.sim.private_equity import TenderPolicy
+from finance.augur.sim.property import Housing, Properties, ScheduledPurchase, mortgage_terms
+from finance.augur.sim.property_tax import PropertyTaxAuthority, PropertyTaxBill, PropertyTaxPolicy
 from finance.augur.sim.schedule import Once, Recurring, Schedule, is_due
-from finance.augur.sim.tax_authority import Assessment, TaxAuthority
+from finance.augur.sim.tax_authority import Assessment, MortgageInterestDeduction, SaltDeduction, TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw
 from finance.augur.sim.tlh import (
     ModeledRealizations,
@@ -91,7 +82,7 @@ class _Cashflow:
     cause_id: str
     from_account: AccountRef
     to_account: AccountRef
-    amount: PreparedAmount
+    amount: Amount
     income_category: TransferIncomeCategory | None
     deduction_category: TransferDeductionCategory | None
     schedule: Schedule
@@ -260,7 +251,7 @@ class World:
         character: InterestCharacter,
         face_value: int,
         purchase_price: int,
-        coupon: PreparedFixedAmount | PreparedIndexedCoupon,
+        coupon: FixedCoupon | IndexedCoupon,
         coupon_period_months: int,
         purchase_month_index: int,
         maturity_month_index: int,
@@ -311,7 +302,7 @@ class World:
         if InterestIncome(character=bond.character) not in self.income_sources:
             raise ValueError(f"bond {bond.bond_id!r} has undeclared income source")
         term = bond.maturity_month_index - bond.purchase_month_index
-        coupon = bond.coupon.amount if isinstance(bond.coupon, PreparedFixedAmount) else bond.coupon.annual_rate_ppb
+        coupon = bond.coupon.amount if isinstance(bond.coupon, FixedCoupon) else bond.coupon.annual_rate_ppb
         if (
             bond.face_value <= 0
             or bond.purchase_price != bond.face_value
@@ -321,7 +312,7 @@ class World:
             or term % bond.coupon_period_months
         ):
             raise ValueError(f"invalid bond terms for {bond.bond_id!r}")
-        if isinstance(bond.coupon, PreparedIndexedCoupon):
+        if isinstance(bond.coupon, IndexedCoupon):
             if "inflation" not in self.market.series:
                 raise ValueError(f"missing inflation series for indexed bond {bond.bond_id!r}")
             if max(0, bond.purchase_month_index) > self.horizon_months or any(
@@ -329,7 +320,7 @@ class World:
             ):
                 raise ValueError(f"invalid bond inflation path for {bond.bond_id!r}")
 
-    def declare_tender_policy(self, policy: _TenderPolicy) -> None:
+    def declare_tender_policy(self, policy: TenderPolicy) -> None:
         """How an owner answers its issuers' sale opportunities and where compulsory proceeds land."""
         self._composing()
         if (
@@ -451,11 +442,11 @@ class World:
             raise ValueError("no managed portfolio is declared")
         return self.managed
 
-    def _purchases(self) -> tuple[_PropertyPurchase, ...]:
+    def _purchases(self) -> tuple[ScheduledPurchase, ...]:
         return () if self.properties is None else self.properties.housing.purchases
 
     def declare_housing(
-        self, housing: Housing, tax_policies: Sequence[_PropertyTax] = (), locations: Sequence[PreparedLocation] = ()
+        self, housing: Housing, tax_policies: Sequence[PropertyTaxPolicy] = (), locations: Sequence[Location] = ()
     ) -> None:
         """Properties bought on a scripted schedule (month zero for one held from the start), their scripted
         lifecycle, and the authorities that tax them. Declared once per world."""
@@ -542,7 +533,7 @@ class World:
         cause_id: str,
         from_account: AccountRef,
         to_account: AccountRef,
-        amount: PreparedAmount,
+        amount: Amount,
         income_category: TransferIncomeCategory | None,
         deduction_category: TransferDeductionCategory | None,
         schedule: Schedule,
@@ -576,10 +567,10 @@ class World:
             ),
         )
 
-    def declare_deduction(self, policy: _MortgageInterestDeduction | _SaltDeduction) -> None:
+    def declare_deduction(self, policy: MortgageInterestDeduction | SaltDeduction) -> None:
         """An itemized deduction an enrolled taxpayer claims when its tax year closes."""
         self._composing()
-        if isinstance(policy, _MortgageInterestDeduction):
+        if isinstance(policy, MortgageInterestDeduction):
             label, claimant = "mortgage interest deduction", policy.owner_agent_id
         else:
             label, claimant = "SALT deduction", policy.profile_id
@@ -601,9 +592,9 @@ class World:
         end = self.horizon_months if schedule.end_month is None else min(schedule.end_month + 1, self.horizon_months)
         return range(max(schedule.start_month, 0), end)
 
-    def _check_amount(self, label: str, amount: PreparedAmount, months: range) -> None:
+    def _check_amount(self, label: str, amount: Amount, months: range) -> None:
         """An indexed amount due in `months` reads its series at its base month, which none precedes."""
-        if not isinstance(amount, PreparedIndexedAmount) or not months:
+        if not isinstance(amount, IndexedAmount) or not months:
             return
         if months[0] < amount.base_month_index:
             raise ValueError(

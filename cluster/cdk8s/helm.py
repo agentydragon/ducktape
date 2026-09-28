@@ -1,4 +1,5 @@
-"""Builds the Flux `HelmRelease` custom resources the generators install charts with."""
+"""Builds the Flux `HelmRepository` and `HelmRelease` custom resources the generators install
+charts with."""
 
 from __future__ import annotations
 
@@ -20,10 +21,42 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgrade,
     HelmReleaseSpecValuesFrom,
 )
-from flux_source.io.fluxcd.toolkit.source import HelmRepository
+from flux_source.io.fluxcd.toolkit.source import HelmRepositorySpecType
+
+from cluster.cdk8s.providers.flux.helm_repository import HelmRepository
 
 # Uninstall and retry a failed install three times before the release stalls.
 RETRY_FAILED_INSTALL = HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3))
+
+
+def oci_helm_repository(scope: Construct, name: str, namespace: str, *, url: str) -> HelmRepository:
+    """Add and return a Flux OCI `HelmRepository` serving the charts at the `oci://` `url`. It has no
+    `interval`: source-controller never polls an OCI repository; each HelmChart pulls on its own."""
+    if not url.startswith("oci://"):
+        raise ValueError(f"An OCI HelmRepository needs an oci:// URL: {url=}")
+    return HelmRepository(
+        scope,
+        f"helm-repository-{name}",
+        metadata=ApiObjectMetadata(name=name, namespace=namespace),
+        url=url,
+        type=HelmRepositorySpecType.OCI,
+    )
+
+
+def https_helm_repository(
+    scope: Construct, name: str, namespace: str, *, url: str, interval: str = "24h"
+) -> HelmRepository:
+    """Add and return a Flux `HelmRepository` of the default type, serving the chart index at the
+    `https://` `url`, which source-controller re-fetches every `interval`. Our policy: 24h."""
+    if not url.startswith("https://"):
+        raise ValueError(f"A default-type HelmRepository needs an https:// URL here: {url=}")
+    return HelmRepository(
+        scope,
+        f"helm-repository-{name}",
+        metadata=ApiObjectMetadata(name=name, namespace=namespace),
+        url=url,
+        interval=interval,
+    )
 
 
 def helm_repository_source_ref(name: str, namespace: str) -> HelmReleaseSpecChartSpecSourceRef:

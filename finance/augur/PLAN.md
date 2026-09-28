@@ -43,6 +43,49 @@ Every change is checked against an independent calculation, never a copy of the 
   Form 8960 instructions, and the California estimated-payment, Schedule CA and Form 540
   instructions.
 
+### Property taxes (San Francisco and Vallejo)
+
+Goal: Augur computes a homeowner's and a landlord's property-related taxes correctly in San
+Francisco, mainland Vallejo and Mare Island. Today `sim/property_tax.py` bills purchase price
+× one flat rate plus one flat assessment, in monthly twelfths, fixed for the whole horizon,
+and a sale pays one flat `closing_cost_ppb`. The old `augur/core` engine (deleted 2026-05-20)
+had Proposition 13 growth, inflation-indexed special assessments and a local transfer tax;
+none came back. Each item names its location facts and is checked against a hand calculation
+per location over a purchase, hold, rent-out and sale horizon.
+
+- **ASSESS:** assessed value is its own state. It resets to the purchase price on change of
+  ownership, grows each lien date by the California CPI change capped at 2%, and grows by
+  capital improvements (new construction) at their cost. The ad-valorem bill is the 1% base
+  plus the location's voter-approved debt rate for that fiscal year, on assessed value less
+  the homeowners' exemption for a primary residence.
+- **SUPPLEMENTAL:** the purchase-year supplemental assessment and bill for the difference
+  between the new and prior assessed value, prorated over the rest of the fiscal year.
+- **DECLINE** (after ASSESS): a Proposition 8 decline-in-value reduction when the home-value
+  path falls below the factored base, recovering toward that base as the market recovers.
+- **INSTALLMENTS** (after MIDYEAR): the secured bill for a July–June fiscal year is paid in
+  its two installments on their due dates, not in monthly twelfths.
+- **PARCEL:** each flat per-parcel charge is its own line with its own escalation rule and
+  end date: San Francisco's parcel taxes and Mare Island's three CFD special taxes (CFD
+  2002-1, 2005-1A and 2005-1B) from the district's rate-and-method document, including any
+  sunset within the horizon.
+- **DEDUCT** (after PARCEL): SALT and the rental schedule take the right parts. Only
+  ad-valorem tax is an itemizable real-property tax; flat per-parcel service charges are not
+  (today `TaxAuthority` itemizes the whole bill, special assessment included). On a rented
+  share, service charges are deductible expenses and local-benefit assessments are added to
+  basis, for federal and California.
+- **TRANSFER:** a sale pays the transfer taxes where the property is: San Francisco's tiered
+  real property transfer tax on the whole price at its bracket's rate, Solano County's
+  documentary transfer tax, and any Vallejo city transfer tax. Seller-paid by default and
+  reducing the amount realized; a buyer-paid share is added to basis. `closing_cost_ppb`
+  splits into commissions, escrow/title and these taxes. Joins **Housing basis** above.
+- **LOCATION** (with the first of the above to land): the simulator's `Location` carries
+  these typed rules (debt rate by fiscal year, parcel charges, transfer-tax schedule) in
+  place of one rate and one assessment.
+- Pin cases to the San Francisco Assessor-Recorder and Treasurer-Tax Collector (secured rate,
+  transfer-tax table), the Solano County Auditor-Controller's rate book, the City of Vallejo's
+  CFD reports, the California Board of Equalization's inflation factor, and IRS Publications
+  530 and 527.
+
 ### Calendar
 
 - **MIDYEAR:** a world starts at a named year and month. Tax-year boundaries, payment months
@@ -65,6 +108,27 @@ Every change is checked against an independent calculation, never a copy of the 
   becomes a policy, not the instrument's illiquidity. Then a native-position version of
   <x/bond_policies/README.md>'s supplied-curve control.
 - **Trading costs:** a proportional cost per trade, readable in the trace (#5486, held #8143).
+- **Fund expense ratios:** a fund's annual expense ratio accrues as a drag on its value,
+  readable in the trace; model them before comparing products whose costs differ materially.
+
+### App funding path
+
+- **Reinvestment:** the app's household never reinvests (`reinvest=None` in
+  `product/scenarios.py::_funding_household`), so the app never buys or contributes, and the
+  zero-mark contribution refusal (`TlhPortfolioObservation.accepts_contributions`) is reached
+  only from `policy/test_cash_band_household{,_world}.py`. Turning it on is a
+  `FundingPolicy.reinvest_surplus` flag, off by default, passed through as
+  `Reinvest(rebalance_tolerance_ppb=None)`, with a funding-form checkbox, a
+  `SCENARIO_SET_VERSION` bump and "nothing buys" dropped from `FundingPolicy`'s docstring. It
+  still lacks:
+  - A purchase in the timeline: `Holdings.buy` records no acquisition, so a `Buy` moves the
+    cash and holding-value series but renders nothing. Needs an acquisition record captured
+    into an `EventLog` frame, a purchase event in `product/wire.py` and
+    `ROLLOUT_EVENT_KIND_ORDER`, and its frontend rendering.
+  - A purchase pool per sleeve: purchases land in `source_account_ids[0]`, and
+    `CashBandHousehold.check` refuses a sleeve without a declared pool there, while the app
+    declares pools only from lots (`product/holdings.py::holding_pools`). Declare an empty pool
+    for each targeted security in that account, or choose a per-sleeve purchase account.
 
 ### Experiments (caller code in `study/` and `x/`)
 

@@ -8,7 +8,7 @@ from finance.augur.sim.actions import ClaimId
 from finance.augur.sim.books import AccountRef, Record
 from finance.augur.sim.ids import AgentId
 from finance.augur.sim.mortgage import InstallmentDue, MortgagePayment
-from finance.augur.sim.tax import PreparedTaxProfile
+from finance.augur.sim.tax import TaxProfile
 
 
 class ObligationType(StrEnum):
@@ -36,12 +36,12 @@ class OrdinaryDeduction:
 
 @dataclass(frozen=True)
 class TaxPayment:
-    profile: PreparedTaxProfile
+    profile: TaxProfile
 
 
 @dataclass(frozen=True)
 class TaxTrueUp:
-    profile: PreparedTaxProfile
+    profile: TaxProfile
     year_end_month: int
 
 

@@ -71,7 +71,6 @@ class TrainedPrivateEquityProviderConfig(FrozenModel):
 
 
 class TrainedPrivateEquityModel(FrozenModel):
-    label: str = "trained_private_equity"
     artifact: TrainedPrivateEquityModelArtifact
 
     @classmethod
@@ -112,7 +111,6 @@ class TrainedPrivateEquityModel(FrozenModel):
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,
             ),
-            model_id=self.label,
             provenance={
                 "private_equity_model_schema_version": self.artifact.schema_version,
                 "private_equity_issuers": (issuer,),

@@ -7,7 +7,7 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import Demand, OrdinaryDeduction
 from finance.augur.sim.ids import PropertyId
 from finance.augur.sim.income import TransferDeductionCategory
-from finance.augur.sim.prepared import PreparedAmount
+from finance.augur.sim.market_path import Amount
 from finance.augur.sim.property import PropertyStatement
 from finance.augur.sim.schedule import Schedule, is_due
 
@@ -15,7 +15,7 @@ from finance.augur.sim.schedule import Schedule, is_due
 class Bill(Demand):
     """Priced by the ledger when registered, so an indexed amount follows its series."""
 
-    amount: PreparedAmount
+    amount: Amount
     deduction: OrdinaryDeduction | None
 
 
@@ -31,7 +31,7 @@ class Biller(Actor[MonthOpened | PropertyStatement, Bill]):
     obligation_type: str
     from_account: AccountRef
     to_account: AccountRef
-    amount_due: PreparedAmount
+    amount_due: Amount
     property_id: PropertyId | None
     deduction_category: TransferDeductionCategory | None
     deductible_fraction_ppb: int

@@ -94,7 +94,7 @@ def test_a_single_jurisdiction_may_cap_the_offset_at_anything() -> None:
     )
 
 
-def test_profile_order_routes_and_jurisdiction_specific_rules_survive_preparation() -> None:
+def test_profile_order_routes_and_jurisdiction_specific_rules_survive_compilation() -> None:
     jurisdictions = {name: load_jurisdiction(name) for name in (FEDERAL_US, JurisdictionId("california"))}
     alice, bob = (
         compile_profile(profile, jurisdictions, currency=USD)
@@ -135,7 +135,7 @@ def test_profile_order_routes_and_jurisdiction_specific_rules_survive_preparatio
     assert [bracket.rate_ppb for bracket in federal.long_term_capital_gain_brackets] == [0, 150_000_000, 200_000_000]
 
 
-def test_prepared_thresholds_and_rates_convert_exactly() -> None:
+def test_compiled_thresholds_and_rates_convert_exactly() -> None:
     jurisdiction = load_jurisdiction(FEDERAL_US).model_copy(
         update={
             "ordinary_income_brackets": {
@@ -157,7 +157,7 @@ def test_prepared_thresholds_and_rates_convert_exactly() -> None:
     assert rule.standard_deduction == 101
     assert rule.max_capital_loss_ordinary_offset == 60_000
     assert profile.section_121_exclusion == 5_000_000
-    # Prepared schedules own the resolved values, not references to mutable source tables.
+    # Compiled schedules own the resolved values, not references to mutable source tables.
     jurisdiction.ordinary_income_brackets["single"][0].upper = Decimal("99.95")
     assert first.upper == 201
 

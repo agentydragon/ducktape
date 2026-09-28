@@ -29,22 +29,15 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
+from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedLocation,
-    _MortgageFinancing,
-    _MortgageInterestDeduction,
-    _PropertyPurchase,
-    _PropertyTax,
-    _SaltCap,
-    _SaltDeduction,
-)
-from finance.augur.sim.property import Housing
+from finance.augur.sim.property import Housing, MortgageFinancing, ScheduledPurchase
+from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_authority import MortgageInterestDeduction, SaltCap, SaltDeduction, TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
 from finance.augur.sim.world import World
@@ -87,17 +80,13 @@ def usd(row: dict[str, Any], field: str) -> float:
     return int(row[field]) / 100
 
 
-SAN_FRANCISCO = PreparedLocation(
-    location_id=LOCATION_ID,
-    display_name="San Francisco, CA",
-    jurisdiction_ids=(FEDERAL, CALIFORNIA),
-    annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.01180")),
-    annual_special_assessment=0,
+SAN_FRANCISCO = Location(
+    location_id=LOCATION_ID, annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.01180")), annual_special_assessment=0
 )
 
 DEFAULT_SALT_SCHEDULE = (
-    _SaltCap(effective_year_index=0, cap=money(int(OBBBA_CAP))),
-    _SaltCap(effective_year_index=TCJA_CAP_YEAR, cap=money(int(TCJA_CAP))),
+    SaltCap(effective_year_index=0, cap=money(int(OBBBA_CAP))),
+    SaltCap(effective_year_index=TCJA_CAP_YEAR, cap=money(int(TCJA_CAP))),
 )
 
 
@@ -108,8 +97,8 @@ def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, 
 
 def deducts(
     liability_id: LiabilityId, *, debt_class: Literal["acquisition", "home_equity"] = "acquisition"
-) -> _MortgageInterestDeduction:
-    return _MortgageInterestDeduction(
+) -> MortgageInterestDeduction:
+    return MortgageInterestDeduction(
         liability_id=liability_id,
         owner_agent_id=ALICE,
         debt_class=debt_class,
@@ -117,8 +106,8 @@ def deducts(
     )
 
 
-def salt(*, cap_schedule: tuple[_SaltCap, ...] = DEFAULT_SALT_SCHEDULE) -> _SaltDeduction:
-    return _SaltDeduction(profile_id=ALICE, federal_jurisdiction_id=FEDERAL, cap_schedule=cap_schedule)
+def salt(*, cap_schedule: tuple[SaltCap, ...] = DEFAULT_SALT_SCHEDULE) -> SaltDeduction:
+    return SaltDeduction(profile_id=ALICE, federal_jurisdiction_id=FEDERAL, cap_schedule=cap_schedule)
 
 
 def financed_purchase(
@@ -130,8 +119,8 @@ def financed_purchase(
     liability_id: LiabilityId,
     annual_rate: Decimal | int,
     term_months: int,
-) -> _PropertyPurchase:
-    return _PropertyPurchase(
+) -> ScheduledPurchase:
+    return ScheduledPurchase(
         month=0,
         cause_id=cause_id,
         property_id=property_id,
@@ -145,7 +134,7 @@ def financed_purchase(
         buyer_closing_cost=0,
         rented_fraction_ppb=0,
         land_value_fraction_ppb=rate_to_ppb(Decimal("0.20")),
-        mortgage=_MortgageFinancing(
+        mortgage=MortgageFinancing(
             liability_id=liability_id,
             lender_agent_id=BANK,
             lender_account_id=CHECKING,
@@ -171,17 +160,17 @@ class Situation:
     term_months: int = 360
     annual_w2_income: int = 200_000
     horizon_months: int = 13
-    mortgage_interest_policies: tuple[_MortgageInterestDeduction, ...] = ()
-    salt_policies: tuple[_SaltDeduction, ...] = ()
-    extra_purchases: tuple[_PropertyPurchase, ...] = ()
+    mortgage_interest_policies: tuple[MortgageInterestDeduction, ...] = ()
+    salt_policies: tuple[SaltDeduction, ...] = ()
+    extra_purchases: tuple[ScheduledPurchase, ...] = ()
 
 
 def standard_home(
     *,
     annual_w2_income: int = 200_000,
     horizon_months: int = 13,
-    mortgage_interest_policies: tuple[_MortgageInterestDeduction, ...] = (),
-    salt_policies: tuple[_SaltDeduction, ...] = (),
+    mortgage_interest_policies: tuple[MortgageInterestDeduction, ...] = (),
+    salt_policies: tuple[SaltDeduction, ...] = (),
 ) -> Situation:
     """The $900k home on a $720k mortgage: first-year interest clears both standard deductions
     and the principal sits under the federal cap, so nothing but the policy under test binds."""
@@ -196,7 +185,7 @@ def standard_home(
     )
 
 
-def small_home(*, mortgage_interest_policies: tuple[_MortgageInterestDeduction, ...] = ()) -> Situation:
+def small_home(*, mortgage_interest_policies: tuple[MortgageInterestDeduction, ...] = ()) -> Situation:
     """An $80k mortgage at 5%: first-year interest lands well under the federal standard deduction."""
     return Situation(
         purchase_price=200_000,
@@ -255,7 +244,7 @@ def compose(case: Situation) -> World:
             )
         ),
         (
-            _PropertyTax(
+            PropertyTaxPolicy(
                 property_id=PropertyId("sf_home"),
                 owner_agent_id=ALICE,
                 from_account_id=CHECKING,
@@ -609,7 +598,7 @@ def test_an_authored_schedule_overrides_the_default() -> None:
     rollout = run(
         standard_home(
             mortgage_interest_policies=(deducts(MORTGAGE_ID),),
-            salt_policies=(salt(cap_schedule=(_SaltCap(effective_year_index=0, cap=money(5000)),)),),
+            salt_policies=(salt(cap_schedule=(SaltCap(effective_year_index=0, cap=money(5000)),)),),
         )
     )
 

@@ -26,9 +26,8 @@ from finance.augur.sim.jurisdictions import (
     StatutoryIndexation,
     TaxBracket,
 )
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
@@ -54,12 +53,12 @@ RETIREE = AgentId("retiree")
 WORLD = AgentId("world")
 
 
-def _series(paths: ExternalSeriesContext, *, rollout_count: int, horizon_months: int) -> tuple[PreparedSeries, ...]:
+def _series(paths: ExternalSeriesContext, *, rollout_count: int, horizon_months: int) -> tuple[Series, ...]:
     return compile_series(paths, rollout_count=rollout_count, horizon_months=horizon_months, currency=USD)
 
 
 def _books(
-    series: tuple[PreparedSeries, ...], rollout_id: int, *, rollout_count: int, horizon_months: int, retiree_cash: int
+    series: tuple[Series, ...], rollout_id: int, *, rollout_count: int, horizon_months: int, retiree_cash: int
 ) -> World:
     """A retiree with `retiree_cash` quanta in checking and a counterparty; nothing else declared."""
     world = World(

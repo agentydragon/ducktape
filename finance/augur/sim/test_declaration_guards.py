@@ -37,25 +37,21 @@ from finance.augur.sim.income import (
     TransferIncomeCategory,
     Treasury,
 )
-from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import (
-    PreparedAmount,
-    PreparedFixedAmount,
-    PreparedIndexedAmount,
-    PreparedIndexedCoupon,
-    PreparedLocation,
-    PreparedSeries,
-    _MortgageFinancing,
-    _MortgageInterestDeduction,
-    _PrimaryResidence,
-    _PrimaryResidenceEvent,
-    _PropertyPurchase,
-    _PropertySale,
-    _PropertyTax,
-    _RentedFraction,
+from finance.augur.sim.locations import Location
+from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
+from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
+from finance.augur.sim.property import (
+    Housing,
+    MortgageFinancing,
+    PrimaryResidence,
+    PrimaryResidenceEvent,
+    RentedFraction,
+    ScheduledPurchase,
+    ScheduledSale,
 )
-from finance.augur.sim.property import Housing
+from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.schedule import Once, Recurring, Schedule
+from finance.augur.sim.tax_authority import MortgageInterestDeduction
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
@@ -67,13 +63,7 @@ STOCK = AssetId("test-stock")
 LOT = LotId("test-lot")
 SCALE = 1000
 HORIZON = 2
-LOCATION = PreparedLocation(
-    location_id=LocationId("test-market"),
-    display_name="Test market",
-    jurisdiction_ids=(),
-    annual_property_tax_rate_ppb=0,
-    annual_special_assessment=0,
-)
+LOCATION = Location(location_id=LocationId("test-market"), annual_property_tax_rate_ppb=0, annual_special_assessment=0)
 TAXABLE = Taxable()
 # A payout that is all taxable interest.
 WHOLLY_INTEREST: Mapping[TransferIncomeCategory, int] = {InterestIncome(character=TAXABLE): 1_000_000_000}
@@ -86,15 +76,15 @@ def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=account_id)
 
 
-def prices(*values: int) -> PreparedSeries:
-    return PreparedSeries(series_id=f"security:{STOCK}", snapshots=len(values), values=values)
+def prices(*values: int) -> Series:
+    return Series(series_id=f"security:{STOCK}", snapshots=len(values), values=values)
 
 
-def payouts(*values: int) -> PreparedSeries:
-    return PreparedSeries(series_id=f"security_distribution:{STOCK}", snapshots=len(values), values=values)
+def payouts(*values: int) -> Series:
+    return Series(series_id=f"security_distribution:{STOCK}", snapshots=len(values), values=values)
 
 
-def composed(*series: PreparedSeries, horizon_months: int = HORIZON) -> World:
+def composed(*series: Series, horizon_months: int = HORIZON) -> World:
     """The holder's cash and brokerage accounts and one counterparty, on a path carrying `series`."""
     world = World(
         MarketPath(series, 0, rollout_count=1),
@@ -153,7 +143,7 @@ def test_a_public_pool_needs_its_price_series_on_the_path() -> None:
 def test_a_path_admits_only_dense_series_named_once() -> None:
     with pytest.raises(ValueError, match="duplicate series"):
         MarketPath((prices(100, 100, 100), prices(1, 1, 1)), 0, rollout_count=1)
-    short = PreparedSeries(series_id=f"security:{STOCK}", snapshots=3, values=(100, 100, 100, 100, 100))
+    short = Series(series_id=f"security:{STOCK}", snapshots=3, values=(100, 100, 100, 100, 100))
     with pytest.raises(ValueError, match="invalid shape"):
         MarketPath((short,), 0, rollout_count=2)
     with pytest.raises(ValueError, match="invalid rollout selection"):
@@ -193,7 +183,7 @@ def test_a_pool_holds_one_opening_lot_per_purchase_month() -> None:
 
 
 # A par bond paying a fixed semiannual coupon over two whole periods.
-COUPON = PreparedFixedAmount(amount=3)
+COUPON = FixedCoupon(amount=3)
 
 
 def bond(
@@ -202,7 +192,7 @@ def bond(
     account_id: AccountId = CHECKING,
     character: InterestCharacter = TAXABLE,
     purchase_price: int = 100,
-    coupon: PreparedFixedAmount | PreparedIndexedCoupon = COUPON,
+    coupon: FixedCoupon | IndexedCoupon = COUPON,
     coupon_period_months: int = 6,
     maturity_month_index: int = 6,
 ) -> None:
@@ -224,10 +214,10 @@ def bond(
     ("invalid", "match"),
     [
         (partial(bond, purchase_price=99), "invalid bond terms"),
-        (partial(bond, coupon=PreparedFixedAmount(amount=-1)), "invalid bond terms"),
+        (partial(bond, coupon=FixedCoupon(amount=-1)), "invalid bond terms"),
         (partial(bond, coupon_period_months=5), "invalid bond terms"),
         (partial(bond, maturity_month_index=-6), "invalid bond terms"),
-        (partial(bond, coupon=PreparedIndexedCoupon(annual_rate_ppb=50_000_000)), "inflation"),
+        (partial(bond, coupon=IndexedCoupon(annual_rate_ppb=50_000_000)), "inflation"),
         (partial(bond, character=Municipal(state=JurisdictionId("test-state"))), "undeclared income source"),
         (partial(bond, account_id=AccountId("test-undeclared")), "unknown account"),
     ],
@@ -247,7 +237,7 @@ def test_a_dated_bond_is_bought_at_par_over_whole_coupon_periods(invalid: Callab
         invalid(composed())
 
 
-PURCHASE = _PropertyPurchase(
+PURCHASE = ScheduledPurchase(
     month=0,
     cause_id="test-purchase",
     property_id=PropertyId("test-home"),
@@ -263,7 +253,7 @@ PURCHASE = _PropertyPurchase(
     land_value_fraction_ppb=200_000_000,
     mortgage=None,
 )
-LOAN = _MortgageFinancing(
+LOAN = MortgageFinancing(
     liability_id=LiabilityId("test-loan"),
     lender_agent_id=COUNTERPARTY,
     lender_account_id=CHECKING,
@@ -273,7 +263,7 @@ LOAN = _MortgageFinancing(
 )
 
 
-def housed(purchase: _PropertyPurchase, *locations: PreparedLocation) -> None:
+def housed(purchase: ScheduledPurchase, *locations: Location) -> None:
     composed().declare_housing(Housing(purchases=(purchase,)), (), locations)
 
 
@@ -307,7 +297,7 @@ def distribution(
     )
 
 
-def holding_stock(*, payout: PreparedSeries) -> World:
+def holding_stock(*, payout: Series) -> World:
     world = composed(prices(100, 100, 100), payout)
     pool(world)
     lot(world)
@@ -355,12 +345,12 @@ def test_a_zero_mark_is_valid_only_where_the_asset_is_held_exclusively_through_a
         pool(composed(prices(0, 0, 0)))
 
 
-def cpi(*levels: int) -> PreparedSeries:
-    return PreparedSeries(series_id="inflation", snapshots=len(levels), values=levels)
+def cpi(*levels: int) -> Series:
+    return Series(series_id="inflation", snapshots=len(levels), values=levels)
 
 
-def indexed(*, series_id: str = "inflation", base_month_index: int = 0) -> PreparedIndexedAmount:
-    return PreparedIndexedAmount(
+def indexed(*, series_id: str = "inflation", base_month_index: int = 0) -> IndexedAmount:
+    return IndexedAmount(
         base_amount=1, series_id=series_id, base_month_index=base_month_index, adjustment_period_months=1
     )
 
@@ -373,7 +363,7 @@ def flow(
     world: World,
     *,
     from_account: AccountRef = PAYER,
-    amount: PreparedAmount = 1,
+    amount: Amount = 1,
     income_category: TransferIncomeCategory | None = None,
     schedule: Schedule = MONTH_ZERO,
     property_id: PropertyId | None = None,
@@ -428,8 +418,8 @@ def test_an_indexed_amount_needs_a_nonzero_base_level() -> None:
         flow(composed(cpi(0, 1, 1)), amount=indexed())
 
 
-def rented(month: int, property_id: PropertyId = PURCHASE.property_id) -> _RentedFraction:
-    return _RentedFraction(month=month, property_id=property_id, rented_fraction_ppb=500_000_000)
+def rented(month: int, property_id: PropertyId = PURCHASE.property_id) -> RentedFraction:
+    return RentedFraction(month=month, property_id=property_id, rented_fraction_ppb=500_000_000)
 
 
 @pytest.mark.parametrize(
@@ -445,14 +435,14 @@ def rented(month: int, property_id: PropertyId = PURCHASE.property_id) -> _Rente
         (
             Housing(
                 purchases=(PURCHASE,),
-                sales=(_PropertySale(month=1, property_id=PURCHASE.property_id, closing_cost_ppb=0),) * 2,
+                sales=(ScheduledSale(month=1, property_id=PURCHASE.property_id, closing_cost_ppb=0),) * 2,
             ),
             "multiple sales",
         ),
         (
             Housing(
                 purchases=(PURCHASE,),
-                sales=(_PropertySale(month=1, property_id=PURCHASE.property_id, closing_cost_ppb=0),),
+                sales=(ScheduledSale(month=1, property_id=PURCHASE.property_id, closing_cost_ppb=0),),
                 rented_fraction_events=(rented(1),),
             ),
             "frozen after sale",
@@ -460,37 +450,35 @@ def rented(month: int, property_id: PropertyId = PURCHASE.property_id) -> _Rente
         (
             Housing(
                 purchases=(PURCHASE,),
-                initial_residences=(_PrimaryResidence(agent_id=COUNTERPARTY, property_id=PURCHASE.property_id),),
+                initial_residences=(PrimaryResidence(agent_id=COUNTERPARTY, property_id=PURCHASE.property_id),),
             ),
             "did not buy it",
         ),
         (
             Housing(
                 purchases=(PURCHASE,),
-                initial_residences=(_PrimaryResidence(agent_id=HOLDER, property_id=PURCHASE.property_id),) * 2,
+                initial_residences=(PrimaryResidence(agent_id=HOLDER, property_id=PURCHASE.property_id),) * 2,
             ),
             "multiple initial primary residences",
         ),
         (
             Housing(
                 purchases=(PURCHASE,),
-                residence_events=(_PrimaryResidenceEvent(month=HORIZON, agent_id=HOLDER, property_id=None),),
+                residence_events=(PrimaryResidenceEvent(month=HORIZON, agent_id=HOLDER, property_id=None),),
             ),
             "outside the horizon",
         ),
         (
             Housing(
                 purchases=(PURCHASE,),
-                residence_events=(_PrimaryResidenceEvent(month=1, agent_id=HOLDER, property_id=None),) * 2,
+                residence_events=(PrimaryResidenceEvent(month=1, agent_id=HOLDER, property_id=None),) * 2,
             ),
             "multiple primary residence events",
         ),
         (
             Housing(
                 purchases=(PURCHASE,),
-                residence_events=(
-                    _PrimaryResidenceEvent(month=1, agent_id=AgentId("test-stranger"), property_id=None),
-                ),
+                residence_events=(PrimaryResidenceEvent(month=1, agent_id=AgentId("test-stranger"), property_id=None),),
             ),
             "unknown agent",
         ),
@@ -516,7 +504,7 @@ def test_housing_is_bought_inside_the_horizon_and_its_lifecycle_follows_the_purc
         Housing(
             purchases=(PURCHASE,),
             rented_fraction_events=(rented(1),),
-            initial_residences=(_PrimaryResidence(agent_id=HOLDER, property_id=PURCHASE.property_id),),
+            initial_residences=(PrimaryResidence(agent_id=HOLDER, property_id=PURCHASE.property_id),),
         ),
         (),
         (LOCATION,),
@@ -525,7 +513,7 @@ def test_housing_is_bought_inside_the_horizon_and_its_lifecycle_follows_the_purc
         composed().declare_housing(housing, (), (LOCATION,))
 
 
-PROPERTY_TAX = _PropertyTax(
+PROPERTY_TAX = PropertyTaxPolicy(
     property_id=PURCHASE.property_id,
     owner_agent_id=HOLDER,
     from_account_id=CHECKING,
@@ -547,7 +535,9 @@ PROPERTY_TAX = _PropertyTax(
     ],
     ids=["unbought", "not-the-buyer", "ends-before-it-starts", "overlapping"],
 )
-def test_one_property_tax_policy_at_a_time_is_owed_by_the_buyer(policies: tuple[_PropertyTax, ...], match: str) -> None:
+def test_one_property_tax_policy_at_a_time_is_owed_by_the_buyer(
+    policies: tuple[PropertyTaxPolicy, ...], match: str
+) -> None:
     composed().declare_housing(Housing(purchases=(PURCHASE,)), (PROPERTY_TAX,), (LOCATION,))
     with pytest.raises(ValueError, match=match):
         composed().declare_housing(Housing(purchases=(PURCHASE,)), policies, (LOCATION,))
@@ -556,7 +546,7 @@ def test_one_property_tax_policy_at_a_time_is_owed_by_the_buyer(policies: tuple[
 def test_a_deduction_is_claimed_by_an_enrolled_taxpayer() -> None:
     with pytest.raises(ValueError, match="names no taxpayer"):
         composed().declare_deduction(
-            _MortgageInterestDeduction(
+            MortgageInterestDeduction(
                 liability_id=LOAN.liability_id,
                 owner_agent_id=HOLDER,
                 debt_class="acquisition",
@@ -565,7 +555,7 @@ def test_a_deduction_is_claimed_by_an_enrolled_taxpayer() -> None:
         )
 
 
-def bill(*, amount_due: PreparedAmount = 1, schedule: Schedule = MONTH_ZERO) -> Biller:
+def bill(*, amount_due: Amount = 1, schedule: Schedule = MONTH_ZERO) -> Biller:
     return Biller(
         obligation_id="test-bill",
         obligation_type="cash_spend",
@@ -673,9 +663,9 @@ QUIET = {
 }
 
 
-def issuer_paths(**overrides: tuple[int, ...]) -> tuple[PreparedSeries, ...]:
+def issuer_paths(**overrides: tuple[int, ...]) -> tuple[Series, ...]:
     return tuple(
-        PreparedSeries(
+        Series(
             series_id=f"private_equity_{channel}:{ISSUER}",
             snapshots=HORIZON + 1,
             values=overrides.get(channel, (level,) * (HORIZON + 1)),
@@ -684,7 +674,7 @@ def issuer_paths(**overrides: tuple[int, ...]) -> tuple[PreparedSeries, ...]:
     )
 
 
-def holding_private(*series: PreparedSeries) -> None:
+def holding_private(*series: Series) -> None:
     world = composed(*series)
     asset_id = AssetId(f"private_equity:{ISSUER}")
     pool(world, asset_id=asset_id, quantity_scale=1)

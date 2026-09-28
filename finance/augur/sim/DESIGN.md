@@ -16,7 +16,7 @@ actors never affect the exogenous paths.
 Callers declare month-0 facts on a world as keyword arguments, converting exact decimals
 through a `Currency` (<money.py>) and the helpers in <fixed_point.py>, which are exact or
 raise; preparation does not fetch market evidence, fit a model or load tax law
-independently. Prepared values own exact monetary terms, quantized market paths and
+independently. Declared values own exact monetary terms, quantized market paths and
 variable-length resolved tax rules; a world keeps no authoring objects. A caller that
 declares one situation onto many worlds keeps its own records of it.
 
@@ -149,7 +149,7 @@ comparing stopped books with completed horizons.
 
 ## The app
 
-`ProductService` prepares each request once into a `Situation` of prepared declarations
+`ProductService` prepares each request once into a `Situation` of declarations
 (<../product/scenarios.py>, over the portfolio <../product/holdings.py> checked at startup), samples the series it reads, and composes one world per
 path with the app household (<../policy/cash_band_household.py>) tracked on it;
 <../product/simulation.py> steps each to the horizon. The household proposes its funding
