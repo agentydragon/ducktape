@@ -22,10 +22,6 @@ class EntityKind(StrEnum):
     COMMAND = "command"
 
 
-# Kinds positioned in the thread and paged by cursor; view state and command rows sync whole.
-SEGMENT_KINDS = (EntityKind.ITEM, EntityKind.CONFIRMED_INPUT, EntityKind.LIFECYCLE)
-
-
 class ThreadPayloadReference(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

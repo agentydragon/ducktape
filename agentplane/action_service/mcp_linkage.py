@@ -40,7 +40,6 @@ logger = logging.getLogger(__name__)
 _REFRESH_SKEW = timedelta(minutes=1)
 _REFRESH_SWEEP_INTERVAL = timedelta(seconds=30)
 _REFRESH_CLAIM_TTL = timedelta(seconds=30)
-_REFRESH_CLAIM_WAIT = timedelta(milliseconds=100)
 _REFRESH_RETRY_BASE = timedelta(seconds=30)
 _REFRESH_RETRY_MAX = timedelta(minutes=15)
 _REFRESH_ADVISORY_LOCK = 0x4147504D43524546
