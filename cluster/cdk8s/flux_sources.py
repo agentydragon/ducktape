@@ -8,6 +8,7 @@ a node in the generated Flux chart.
 
 from __future__ import annotations
 
+import textwrap
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
@@ -65,7 +66,16 @@ def chart(app: App) -> Chart:
         # Keep only the CRD. In particular, plugin/kubernetes/sample.yaml is an example
         # Pipe, not a production route to apply. Flux generates a kustomization.yaml for
         # this plain-YAML path.
-        ignore="/*\n!/plugin\n/plugin/*\n!/plugin/kubernetes\n/plugin/kubernetes/*\n!/plugin/kubernetes/crd.yaml\n",
+        ignore=textwrap.dedent(
+            """\
+            /*
+            !/plugin
+            /plugin/*
+            !/plugin/kubernetes
+            /plugin/kubernetes/*
+            !/plugin/kubernetes/crd.yaml
+            """
+        ),
     )
     return chart
 

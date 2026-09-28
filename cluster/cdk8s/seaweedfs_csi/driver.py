@@ -4,6 +4,8 @@ from, its StorageClasses, and the directory's Flux Kustomization.
 
 from __future__ import annotations
 
+import textwrap
+
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
@@ -220,7 +222,12 @@ def chart(app: App) -> Chart:
         interval="24h",
         url="https://github.com/seaweedfs/seaweedfs-csi-driver",
         ref=GitRepositorySpecRef(tag="v1.4.31"),
-        ignore="/*\n!/deploy/helm/seaweedfs-csi-driver\n",
+        ignore=textwrap.dedent(
+            """\
+            /*
+            !/deploy/helm/seaweedfs-csi-driver
+            """
+        ),
     )
     HelmRelease(
         chart,
