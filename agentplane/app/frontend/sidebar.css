@@ -96,7 +96,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--mantine-font-size-xs);
+  line-height: var(--mantine-line-height-xs);
   font-weight: 700;
   color: var(--mantine-color-dimmed);
   padding: 10px 8px 4px;
@@ -146,7 +147,8 @@
   gap: 8px;
   padding: 7px 8px;
   border-radius: 7px;
-  font-size: 13px;
+  font-size: var(--mantine-font-size-sm);
+  line-height: var(--mantine-line-height-sm);
   color: var(--mantine-color-text);
   cursor: pointer;
   border: none;

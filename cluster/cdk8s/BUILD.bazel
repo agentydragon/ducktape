@@ -293,6 +293,7 @@ py_library(
         ":config_format",
         ":env_helpers",
         ":external_creds",
+        ":forgejo_images",
         ":generation",
         ":manifest_roots",
         ":model_rosters",

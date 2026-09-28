@@ -83,6 +83,7 @@ IMAGES = (
     "props-backend",
     "props-llm-proxy",
     "props-registry-proxy",
+    "public-coder-agent",
     "public-coder-devbox",
     "rtl-tcp",
     "ssh-mcp",

@@ -1616,10 +1616,6 @@ spec:
   dependsOn:
     - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: claude-rbac
-      namespace: ducktape-flux
-    - name: haku-rbac
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/alloy-otlp-bearer
   prune: true
@@ -1702,8 +1698,6 @@ spec:
   deletionPolicy: Orphan
   dependsOn:
     - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: claude-rbac
       namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
@@ -3791,8 +3785,6 @@ spec:
       namespace: ducktape-flux
     - name: cert-manager-trust
       namespace: ducktape-flux
-    - name: claude-rbac
-      namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux
     - name: external-secrets-operator
@@ -4065,8 +4057,6 @@ spec:
     - name: agent-sandbox-controller
       namespace: ducktape-flux
     - name: cert-manager-trust
-      namespace: ducktape-flux
-    - name: claude-rbac
       namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux

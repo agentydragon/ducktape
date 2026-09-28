@@ -13,7 +13,6 @@ def ollama(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_operator: Kustomization,
-    claude_rbac: Kustomization,
     kyverno: Kustomization,
 ) -> Kustomization:
     name = "ollama"
@@ -35,7 +34,6 @@ def ollama(
         depends_on=flux_kustomization_depends_on_many(
             # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
             external_secrets_operator,
-            claude_rbac,
             # Kyverno's failurePolicy: Fail webhooks admit the Deployment, HTTPRoute and Namespace.
             kyverno,
         ),
