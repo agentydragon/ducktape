@@ -45,6 +45,16 @@ the GGUF. The proposed change derives a separate copy of the small metadata shar
 rendering later system/developer messages at their original positions. Original
 shards and weight tensor bytes must remain unchanged.
 
+The derived SSD artifact was produced with the Bazel patcher in
+[invocation eb49ef25](https://app.buildbuddy.io/invocation/eb49ef25-dd52-4cfd-a8da-28f0620a4db3).
+Both original and derived first shards are 10,946,624 bytes; the GGUF header reports
+zero tensors and 67 metadata entries. Original SHA256 remains
+`5ce89370720f8bf90890f439361282104c1aa1482d4013bb9a50923e758e71a4`;
+derived SHA256 is
+`8681e217aad3be934fd9542709bf44123c4b569cb7906c01a2a383ac79c7c05f`.
+It lives in `agentplane-midturn/` under the existing IQ4 SSD directory. Creation
+alone does not establish that the running Ollama model uses this template.
+
 The capture files are local and private; full prompts and tool schemas are not
 committed. The capture tool's zero exit status means capture completed, not that
 the model task passed.
@@ -62,6 +72,24 @@ applies `model_context_window`. With no separate explicit compaction limit, its
 [model protocol](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/protocol/src/openai_models.rs#L484-L506)
 derives the automatic-compaction limit as 90% of that resolved window. Therefore
 the runner should set the window and retain Codex's native compaction policy.
+Its [provider capability selection](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/model-provider/src/provider.rs#L372-L388)
+does not enable remote compaction for our custom `Agentplane LiteLLM` provider;
+the turn loop uses local compaction through normal inference requests, without
+requiring a `/responses/compact` endpoint.
+
+The context configuration merged in [PR #8263](https://github.com/agentydragon/ducktape/pull/8263).
+Its released wheel is `agentplane-runner-42b857721ffb`; the live SandboxTemplates
+received the mapping before the new runner image finished publishing. The
+[template registration change](https://github.com/agentydragon/ducktape/pull/8266)
+also merged with required CI green.
+
+The first registration rollout exposed a separate lifecycle problem. At
+2026-09-28 00:54:31 UTC, Reloader reacted to `gpt-oss-scripts` and reported updating
+both `setup-gpt-oss-v6` and the newly created `setup-gpt-oss-v7`. Their pods were
+deleted. More than six minutes later, v7 still had no pods and no completed or
+failed count. Ollama itself recovered to 2/2 Ready, but its Qwen manifest digests
+remained unchanged. The follow-up excludes this explicitly versioned Job from
+Reloader and advances its version for a clean registration attempt.
 
 Repository fixture pins and runner-image package versions differ: the inspected
 fixture pins are Claude 2.1.252 and Codex 0.152.0; the locked Nix image evaluates
