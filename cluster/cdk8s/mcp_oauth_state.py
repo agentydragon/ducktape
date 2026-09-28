@@ -181,7 +181,9 @@ def _db_chart(app: App) -> Chart:
         Database(
             chart,
             f"database-{store.id}",
-            metadata=ApiObjectMetadata(name=store.database, namespace=NAMESPACE),
+            # CNPG's Database CR metadata.name is a Kubernetes DNS name; the
+            # PostgreSQL database name in spec may still contain underscores.
+            metadata=ApiObjectMetadata(name=f"mcp-oauth-{store.id}-database", namespace=NAMESPACE),
             cluster=DatabaseSpecCluster(name=CLUSTER_NAME),
             name=store.database,
             owner=store.role,

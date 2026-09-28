@@ -223,7 +223,6 @@ from cluster.cdk8s.seaweedfs import (
     cluster as seaweedfs_cluster,
     drivefs_artifacts_bucket as seaweedfs_drivefs_artifacts_bucket,
     external_credentials as seaweedfs_external_credentials,
-    filer_db as seaweedfs_filer_db,
     flux_kustomizations as seaweedfs_flux_kustomizations,
     loom_gym_bucket as seaweedfs_loom_gym_bucket,
     monitoring as seaweedfs_monitoring,
@@ -232,7 +231,6 @@ from cluster.cdk8s.seaweedfs import (
     pr_visuals_bucket as seaweedfs_pr_visuals_bucket,
     public_s3 as seaweedfs_public_s3,
     registry_cache_bucket as seaweedfs_registry_cache_bucket,
-    s3_config as seaweedfs_s3_config,
 )
 from cluster.cdk8s.seaweedfs_csi import driver as seaweedfs_csi_driver
 from cluster.cdk8s.snapshot_controller import flux_kustomizations as snapshot_controller_flux_kustomizations
@@ -395,10 +393,6 @@ def generate_manifests(root: Path) -> None:
     parked_flux_kustomizations.buildbuddy_executor(flux_chart)
     gecko_namespace_artifact = artifact("gecko-namespace", f"{HAND_WRITTEN_ROOT}/parked/gecko/namespace")
     gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart, gecko_namespace_artifact)
-    seaweedfs_namespace_artifact = artifact("seaweedfs-namespace", seaweedfs_namespace.OUTPUT_DIR)
-    seaweedfs_namespace_kustomization = seaweedfs_namespace.seaweedfs_namespace(
-        flux_chart, write_directory(root, seaweedfs_namespace_artifact, seaweedfs_namespace.chart)
-    )
     reflector_artifact = artifact("reflector", reflector.OUTPUT_DIR)
     reflector.reflector(flux_chart, write_directory(root, reflector_artifact, reflector.chart))
     snapshot_controller_crds_kustomization = snapshot_controller_flux_kustomizations.snapshot_controller_crds(
@@ -519,8 +513,7 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_operator_artifact = artifact("seaweedfs-operator", seaweedfs_operator_release.OUTPUT_DIR)
     seaweedfs_operator_kustomization = seaweedfs_operator_release.seaweedfs_operator(
         flux_chart,
-        write_directory(root, seaweedfs_operator_artifact, seaweedfs_operator_release.chart),
-        seaweedfs_namespace_kustomization,
+        write_directory(root, seaweedfs_operator_artifact, seaweedfs_namespace.chart, seaweedfs_operator_release.chart),
     )
     snapshot_controller_flux_kustomizations.snapshot_controller(flux_chart)
     haku_forgejo_tea_artifact = artifact(haku_forgejo_tea.NAME, haku_forgejo_tea.OUTPUT_DIR)
@@ -645,19 +638,6 @@ def generate_manifests(root: Path) -> None:
         cert_manager_trust_kustomization,
         external_secrets_operator_kustomization,
     )
-    seaweedfs_filer_db_artifact = artifact("seaweedfs-filer-db", seaweedfs_filer_db.OUTPUT_DIR)
-    seaweedfs_filer_db.seaweedfs_filer_db(
-        flux_chart,
-        # The SOPS sibling (the filer DB app credentials) turns on Flux decryption.
-        write_directory(
-            root,
-            seaweedfs_filer_db_artifact,
-            seaweedfs_filer_db.chart,
-            siblings=["seaweedfs-filer-db-ssd-creds.sops.yaml"],
-        ),
-        seaweedfs_namespace_kustomization,
-        cnpg_kustomization,
-    )
     tofu_state_db_artifact = artifact("tofu-state-db", tofu_state_db.OUTPUT_DIR)
     tofu_state_db.tofu_state_db(flux_chart, tofu_state_db_artifact, cnpg_kustomization)
     mcp_oauth_state_artifact = artifact("mcp-oauth-state", mcp_oauth_state.OUTPUT_DIR)
@@ -668,15 +648,6 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
         kyverno_kustomization,
-    )
-    seaweedfs_secrets_artifact = artifact("seaweedfs-secrets", seaweedfs_s3_config.OUTPUT_DIR)
-    seaweedfs_s3_config.seaweedfs_secrets(
-        flux_chart,
-        write_directory(
-            root, seaweedfs_secrets_artifact, seaweedfs_s3_config.chart, siblings=seaweedfs_s3_config.IDENTITY_FILES
-        ),
-        seaweedfs_namespace_kustomization,
-        external_secrets_operator_kustomization,
     )
     website_artifact = artifact("website", website.OUTPUT_DIR)
     website.website(flux_chart, write_directory(root, website_artifact, website.chart), kyverno_kustomization)
@@ -768,7 +739,11 @@ def generate_manifests(root: Path) -> None:
     )
     seaweedfs_cluster_artifact = artifact("seaweedfs-cluster", seaweedfs_cluster.OUTPUT_DIR)
     seaweedfs_flux_kustomizations.seaweedfs_cluster(
-        flux_chart, seaweedfs_cluster_artifact, seaweedfs_operator_kustomization
+        flux_chart,
+        seaweedfs_cluster_artifact,
+        seaweedfs_operator_kustomization,
+        cnpg_kustomization,
+        external_secrets_operator_kustomization,
     )
     atuin_user_provisioner_artifact = artifact("atuin-user-provisioner", atuin_user_provisioner.OUTPUT_DIR)
     atuin_user_provisioner.atuin_user_provisioner(
@@ -1419,10 +1394,7 @@ def generate_manifests(root: Path) -> None:
             local_path_provisioner_artifact,
             reflector_artifact,
             seaweedfs_cluster_artifact,
-            seaweedfs_filer_db_artifact,
-            seaweedfs_namespace_artifact,
             seaweedfs_operator_artifact,
-            seaweedfs_secrets_artifact,
             tofu_controller_artifact,
             tofu_state_db_artifact,
             mcp_oauth_state_artifact,

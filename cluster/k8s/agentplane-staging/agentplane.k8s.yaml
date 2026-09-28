@@ -1208,14 +1208,6 @@ spec:
       clusterInternal: true
       credentialRef:
         name: agentplane-workload
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: kubernetes
-  namespace: agentplane-staging
-spec:
-  rules:
     - hosts:
         - kubernetes.default.svc.cluster.local
       clusterInternal: true
@@ -1649,7 +1641,6 @@ data:
         template: agentplane-runner
         policies:
           - basic
-          - kubernetes
           - forgejo-haku
           - packages
           - google-readonly
@@ -2437,6 +2428,9 @@ data:
       allowed_push_hosts:
         - fcm.googleapis.com
         - updates.push.services.mozilla.com
+    mcp_client_metadata:
+      url: https://agentplane-actions-staging.allegedly.works/oauth/client-metadata.json
+      client_name: Agentplane staging
     mcp_servers:
       github:
         server_id: github
@@ -2452,7 +2446,7 @@ data:
       grocy_sf:
         server_id: grocy_sf
         server_url: https://grocy-mcp-sf.allegedly.works/mcp
-        client_id: cb57e244-c13c-4eac-a299-e052698b774e
+        use_shared_cimd: true
         redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
     action_groups:
       github:
@@ -2897,6 +2891,9 @@ spec:
         - path:
             type: Exact
             value: /auth/callback
+        - path:
+            type: Exact
+            value: /oauth/client-metadata.json
       timeouts:
         backendRequest: 3600s
         request: 3600s
@@ -4131,7 +4128,6 @@ spec:
       name: claude-ai
   policies:
     - basic
-    - kubernetes
     - forgejo-haku
     - packages
     - google-readonly
@@ -4161,7 +4157,6 @@ spec:
       name: haku-agent
   policies:
     - basic
-    - kubernetes
     - forgejo-haku
     - packages
     - google-readonly
@@ -4548,7 +4543,13 @@ spec:
   rules:
     - hosts:
         - forgejo-http.forgejo.svc.cluster.local
+        - forgejo-http.forgejo.svc
+        - forgejo-http.forgejo
       clusterInternal: true
+      credentialRef:
+        name: forgejo-haku
+    - hosts:
+        - git.allegedly.works
       credentialRef:
         name: forgejo-haku
 ---

@@ -1,33 +1,35 @@
 # Cilium agent fatals on kernel ≥ 7.2-rc1: `bpf_set_retval` feature probe
 
-**Date**: 2026-07-16. **Status**: reopened for `rugged` 2026-09-16 — the host moved
-to the 7.2 _series_ (`linuxPackages_7_2`) ahead of the Cilium fix, in
-<../../../nix/nixos/hosts/rugged/ipu7-camera.nix>, where the current bounds and the
-resulting known breakage are recorded. `rugged` will not run cilium-agent, and so
-will not function as a k8s cluster node, until a released Cilium version contains
-the FnSetRetval probe fix; accepted, since `rugged` is a roaming, often-offline
-node (see `cluster/README.md` § Node Types), not a stable cluster member.
-Previously resolved for `rugged` 2026-09-05 by pinning the 7.1 _series_
-(`linuxPackages_7_1`) instead, avoiding the ceiling entirely. The upstream Cilium
-stable-branch fixes are merged but not yet in a released version as of
-2026-09-13; the bump and subsequent Linux 7.2 validation are tracked in
+**Date**: 2026-07-16. **Status: Resolved 2026-09-28.** Cilium 1.19.8 is
+deployed, and `cilium-agent` is Ready on `rugged` running Linux 7.2.7. The upstream
+Cilium connectivity-check manifest reported all 14 deployments Available with
+workloads on `rugged` and a Talos peer. After `rugged` woke, Cilium health confirmed
+host and endpoint ICMP/HTTP reachability; cluster health was 9/10 because `iguana`
+remains offline. The Cilium-derived kernel ceiling below 7.2 is retired.
+`ipu7-camera.nix` now uses `linuxPackages_latest`; in the current flake lock, that
+alias resolves to the exact Linux 7.2.7 derivation that passed validation. The
+hardware minimums remain 6.17 for IPU7 and 7.1.8 for the Xe/TTM fix.
+
+This record keeps the dated incident chronology and the temporary kernel mitigation
+for future reference. The release, rollout, and Linux 7.2 validation were tracked in
 [ducktape#6825](https://github.com/agentydragon/ducktape/issues/6825).
 
-**A floating alias is not a pin.** The 2026-08-26 remediation set
-`linuxPackages_latest`, correct at the time because the alias then resolved to
-7.1.8. A flake update moved it to 7.2, and the next rebuild put `rugged` back on
-the broken kernel — `cilium-agent` crash-looped, taking the node's CNI and its
-DaemonSets with it. What this host needs is a floor (≥ 6.17, IPU7 camera) and a
-ceiling (< 7.2, this bug); an alias encodes neither and tracks whatever upstream
-ships. A series attribute encodes both and cannot cross the ceiling.
+**Historical chronology.** The 2026-08-26 remediation first used
+`linuxPackages_latest`, which then resolved to 7.1.8. A flake update moved the alias
+to 7.2 and the next rebuild exposed the Cilium crash. A 7.1-series pin resolved the
+immediate failure on 2026-09-05. PR #7078 then deliberately moved `rugged` to the 7.2
+series on 2026-09-16 before the Cilium fix shipped, accepting temporary CNI loss on
+this roaming node.
 
-The upstream `cilium/ebpf` probe fix is now merged in the stable branches but is
-not in the latest released `v1.19.7`: the `v1.19` backport is
-[Cilium PR #48376](https://github.com/cilium/cilium/pull/48376), and it changes
-`HAVE_SET_RETVAL` detection to use `bpf_core_enum_value_exists()`. Cilium
-1.19.6 was observed fatalling on kernel 7.2.0 on 2026-09-04. The kernel ceiling
-and release bump remain tracked in
-[ducktape#6825](https://github.com/agentydragon/ducktape/issues/6825).
+At that time, the kernel needed a floor (≥ 6.17 for IPU7) and a temporary Cilium
+ceiling (< 7.2). Cilium 1.19.8 removes that ceiling; the hardware minimums remain,
+and the repo now follows the locked `linuxPackages_latest` alias.
+
+As of 2026-09-13, the stable Cilium backport was merged but not yet in the latest
+release (v1.19.7). The v1.19 backport is [Cilium PR #48376](https://github.com/cilium/cilium/pull/48376);
+it changes `HAVE_SET_RETVAL` detection to use `bpf_core_enum_value_exists()`. Cilium
+1.19.6 was observed fatalling on kernel 7.2.0 on 2026-09-04. The fix later shipped
+in v1.19.8 and was selected in [ducktape PR #8382](https://github.com/agentydragon/ducktape/pull/8382).
 
 ## Symptom
 
@@ -83,31 +85,21 @@ no-fit reschedule loop (Multi-Attach volume errors, containerd
 descheduler `nodeFit` (#3276), stuck-Job GC (#3279). Unrelated same-window noise:
 `forgejo-images-creds` truncation (#3280), kyverno haku-state audit spam (#3282).
 
-## Fix paths
+## Resolution and historical kernel mitigations
 
-1. **Upstream Cilium** (real fix, merged but not released in the current pin):
-   the stable backport changes `HAVE_SET_RETVAL` detection to use
-   `bpf_core_enum_value_exists()`; see
-   [Cilium PR #48376](https://github.com/cilium/cilium/pull/48376). Once a
-   release contains it, bump Cilium and remove the local kernel ceiling only
-   after validating Linux 7.2; see
-   [ducktape#6825](https://github.com/agentydragon/ducktape/issues/6825).
-2. **Kernel list heads-up** (time-sensitive, optional): 7.2 is at rc2;
-   `bpf@vger.kernel.org` should know the hardening bricks startup of every
-   released Cilium ("breaks userspace" datapoint) while there is still time
-   before final.
-3. **Local remediation for `rugged`** — constrained by the deliberate
-   `linuxPackages_testing` pin for the Xe/TTM swap-storm A/B test
-   (<../../../nix/nixos/hosts/rugged/default.nix>, needs `ba7fd1634228`):
-   - **A (preferred)**: `boot.kernelPatches` revert of `b1f7f67b74c2` on the
-     testing kernel. Keeps the Xe experiment bit-exact; the dropped hardening is
-     irrelevant on a personal laptop node. Remove once a Cilium release ships the
-     fixed prober.
-   - **B (applied)**: a released kernel carrying `ba7fd1634228`. Cilium-compatible,
-     but changes the Xe experiment's baseline. Name the **series**
-     (`linuxPackages_7_1`), never `linuxPackages_latest`: the alias satisfied this
-     when it resolved to 7.1.8 and then floated to 7.2, which is how the bug
-     returned on 2026-09-04.
+Cilium 1.19.8 contains the v1.19 FnSetRetval probe fix from
+[Cilium PR #48376](https://github.com/cilium/cilium/pull/48376). Ducktape PR #8382
+updated the chart; after rollout, the connectivity-check suite passed on Linux 7.2.7
+on `rugged`. No Cilium-specific kernel workaround remains.
+
+The following local options record decisions made before the upstream fix shipped:
+
+- **Kernel patch revert considered**: revert `b1f7f67b74c2` in the testing kernel.
+  This would preserve the Xe experiment baseline, but was not used as the final fix.
+- **7.1 series pin applied**: `linuxPackages_7_1` carried the Xe/TTM fix while
+  avoiding the Cilium failure. PR #7078 later moved the host to `linuxPackages_7_2`
+  ahead of the Cilium release; the 1.19.8 rollout and Linux 7.2.7 validation resolved
+  the resulting incompatibility.
 
 ## References
 

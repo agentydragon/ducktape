@@ -91,12 +91,28 @@ export function pruneCommandErrors(errors: Map<string, string>, commandIds: Read
  * output as code (highlighted when it is JSON), and the operator's own input verbatim, as typed. */
 type BodyFormat = "markdown" | "code" | "text";
 
-function Body({ reference, format }: { reference: PayloadRef | null; format: BodyFormat }): JSX.Element {
+function Body({
+  reference,
+  format,
+  streaming = false,
+}: {
+  reference: PayloadRef | null;
+  format: BodyFormat;
+  streaming?: boolean;
+}): JSX.Element {
   if (!reference) return <Text c="dimmed">Body not observed</Text>;
-  return <PayloadText reference={reference} format={format} />;
+  return <PayloadText reference={reference} format={format} streaming={streaming} />;
 }
 
-function PayloadText({ reference, format }: { reference: PayloadRef; format: BodyFormat }): JSX.Element {
+function PayloadText({
+  reference,
+  format,
+  streaming,
+}: {
+  reference: PayloadRef;
+  format: BodyFormat;
+  streaming: boolean;
+}): JSX.Element {
   const { body, error, retry } = useThreadSync().usePayload(reference);
   return (
     <>
@@ -108,16 +124,24 @@ function PayloadText({ reference, format }: { reference: PayloadRef; format: Bod
       {body === null ? (
         <Text c="dimmed">Loading complete revision…</Text>
       ) : (
-        <FormattedBody body={body} format={format} />
+        <FormattedBody body={body} format={format} streaming={streaming} />
       )}
     </>
   );
 }
 
-function FormattedBody({ body, format }: { body: string; format: BodyFormat }): JSX.Element {
+function FormattedBody({
+  body,
+  format,
+  streaming,
+}: {
+  body: string;
+  format: BodyFormat;
+  streaming: boolean;
+}): JSX.Element {
   switch (format) {
     case "markdown":
-      return <Markdown source={body} />;
+      return <Markdown source={body} streaming={streaming} />;
     case "code":
       return <HighlightedText text={body} />;
     case "text":
@@ -428,9 +452,14 @@ export function EntityCard({
   if (!("kind" in entity.state)) return <></>;
   const tool = entity.state.kind === ItemKind.TOOL_CALL;
   const reasoning = entity.state.kind === ItemKind.REASONING;
+  const streamingText =
+    entity.state.kind === ItemKind.ASSISTANT_TEXT &&
+    entity.state.completion === null &&
+    entity.state.recovery === null &&
+    live;
   const body = (
     <>
-      {tool || entity.state.completion === null || entity.state.recovery !== null ? (
+      {tool || (entity.state.completion === null && !streamingText) || entity.state.recovery !== null ? (
         <Group justify="space-between" mb="xs" wrap="nowrap">
           <Group gap="xs">
             {tool && <Badge variant="light">{entity.state.tool_name || "tool"}</Badge>}
@@ -460,7 +489,7 @@ export function EntityCard({
           <Text c="dimmed">Reasoning</Text>
         )
       ) : (
-        entity.textRef && <Body reference={entity.textRef} format="markdown" />
+        entity.textRef && <Body reference={entity.textRef} format="markdown" streaming={streamingText} />
       )}
       {entity.argumentsRef && <LazyBody label="Arguments" reference={entity.argumentsRef} format="code" />}
       {entity.outputRef && (
@@ -1220,10 +1249,15 @@ function VirtualizedHistory({
           previousScrollTop.current = element.scrollTop;
           return;
         }
-        if (!restoringScroll() && element.scrollHeight - element.scrollTop - element.clientHeight < 24) {
+        const movedUp = element.scrollTop < previousScrollTop.current;
+        const movedDown = element.scrollTop > previousScrollTop.current;
+        const nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 24;
+        if (movedUp) {
+          atBottom.current = false;
+        } else if (!restoringScroll() && nearBottom && (atBottom.current || movedDown)) {
           atBottom.current = true;
           cancelRestoration();
-        } else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
+        }
         previousScrollTop.current = element.scrollTop;
         if (restoringAnchor.current !== null) return;
         if (!captureNextScroll.current && !pointerScrolling.current && touchY.current === null) return;

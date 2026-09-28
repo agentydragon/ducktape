@@ -5,6 +5,8 @@ objects (staging's policy sets, testing's MCP fixtures) come from `Environment.e
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ContainerPort,
@@ -321,13 +323,20 @@ class Actions(Construct):
     def _add_http_route(self) -> None:
         # The Actions service owns OAuth and bearer verification; no browser forward-auth
         # hop. Keep REST/operator endpoints off this public origin.
+        client_metadata_paths = []
+        client_metadata = self.env.actions.settings.mcp_client_metadata
+        if client_metadata is not None:
+            metadata_url = urlsplit(client_metadata.url)
+            if metadata_url.hostname != self.env.actions.hostname or metadata_url.port is not None:
+                raise ValueError("mcp_client_metadata.url must use this Action Service's HTTPS hostname")
+            client_metadata_paths.append(metadata_url.path)
         https_route(
             self,
             "httproute",
             metadata=ApiObjectMetadata(name=f"{_NAME}-mcp", namespace=self.env.namespace),
             hostnames=[self.env.actions.hostname],
             backend=service(self.env.namespace),
-            paths=_MCP_PATHS,
+            paths=(*_MCP_PATHS, *sorted(set(client_metadata_paths))),
             timeout="3600s",
         )
 

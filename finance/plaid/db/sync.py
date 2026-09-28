@@ -23,6 +23,17 @@ from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
 
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink
+from finance.plaid.db.models import (
+    AccountsGetResponse,
+    InvestmentsHoldingsGetResponse,
+    InvestmentsTransactionsGetResponse,
+    ItemGetResponse,
+    LiabilitiesGetResponse,
+    PlaidApiResponse,
+    PlaidInvestmentTransaction,
+    PlaidTransaction,
+    TransactionsGetResponse,
+)
 from finance.plaid.db.products import Product
 from finance.plaid.db.secret_store import SecretStore
 
@@ -143,18 +154,25 @@ async def _sync_link_inner(
     captured_at = datetime.now(UTC)
 
     item = await _call(
-        api, storage, run_id, "item/get", api.item_get, ItemGetRequest(access_token=access_token), link.item_id
+        api,
+        storage,
+        run_id,
+        "item/get",
+        api.item_get,
+        ItemGetRequest(access_token=access_token),
+        link.item_id,
+        response_model=ItemGetResponse,
     )
-    item_payload = item.get("item", {})
+    item_payload = item.item
     await storage.upsert_link(
         item_id=link.item_id,
         access_token_secret=link.access_token_secret,
         products_requested=link.products_requested,
         transaction_days_requested=link.transaction_days_requested,
-        products_authorized=item_payload.get("products") or link.products_authorized,
-        products_billed=item_payload.get("billed_products") or link.products_billed,
-        institution_id=item_payload.get("institution_id") or link.institution_id,
-        institution_name=item_payload.get("institution_name") or link.institution_name,
+        products_authorized=item_payload.products or link.products_authorized,
+        products_billed=item_payload.billed_products or link.products_billed,
+        institution_id=item_payload.institution_id or link.institution_id,
+        institution_name=item_payload.institution_name or link.institution_name,
         label=link.label,
         status="active",
     )
@@ -167,9 +185,10 @@ async def _sync_link_inner(
         api.accounts_get,
         AccountsGetRequest(access_token=access_token),
         link.item_id,
+        response_model=AccountsGetResponse,
     )
     await storage.apply_accounts(
-        item_id=link.item_id, accounts=accounts_payload.get("accounts") or [], captured_at=captured_at
+        item_id=link.item_id, accounts=accounts_payload.accounts or [], captured_at=captured_at
     )
 
     if Product.TRANSACTIONS.value in link.products_requested:
@@ -190,6 +209,7 @@ async def _sync_link_inner(
                 api.investments_holdings_get,
                 InvestmentsHoldingsGetRequest(access_token=access_token),
                 link.item_id,
+                response_model=InvestmentsHoldingsGetResponse,
             )
         except PlaidApiException as exc:
             if _plaid_error_code(exc) != "NO_INVESTMENT_ACCOUNTS":
@@ -202,8 +222,8 @@ async def _sync_link_inner(
         else:
             await storage.apply_holdings(
                 item_id=link.item_id,
-                securities=holdings.get("securities") or [],
-                holdings=holdings.get("holdings") or [],
+                securities=holdings.securities or [],
+                holdings=holdings.holdings or [],
                 captured_at=captured_at,
             )
             end = captured_at.date()
@@ -223,6 +243,7 @@ async def _sync_link_inner(
                 api.liabilities_get,
                 LiabilitiesGetRequest(access_token=access_token),
                 link.item_id,
+                response_model=LiabilitiesGetResponse,
             )
         except PlaidApiException as exc:
             if _plaid_error_code(exc) != "NO_LIABILITY_ACCOUNTS":
@@ -232,16 +253,16 @@ async def _sync_link_inner(
             logger.warning("liabilities/get: item %s has no liability accounts; skipping", link.item_id)
         else:
             await storage.append_liability_snapshots(
-                item_id=link.item_id, liabilities=liabilities.get("liabilities") or {}, captured_at=captured_at
+                item_id=link.item_id, liabilities=liabilities.liabilities or {}, captured_at=captured_at
             )
 
 
 async def _fetch_transactions(
     api: PlaidApiLike, storage: PlaidLinkStorage, run_id: UUID, access_token: str, item_id: str, start: date, end: date
-) -> list[dict[str, Any]]:
+) -> list[PlaidTransaction]:
     offset = 0
     count = 500
-    out: list[dict[str, Any]] = []
+    out: list[PlaidTransaction] = []
     total = None
     while total is None or offset < total:
         payload = await _call(
@@ -257,9 +278,10 @@ async def _fetch_transactions(
                 options=TransactionsGetRequestOptions(offset=offset, count=count),
             ),
             item_id,
+            response_model=TransactionsGetResponse,
         )
-        total = payload["total_transactions"]
-        page = payload.get("transactions") or []
+        total = payload.total_transactions
+        page = payload.transactions or []
         out.extend(page)
         offset += len(page)
         if not page:
@@ -269,10 +291,10 @@ async def _fetch_transactions(
 
 async def _fetch_investment_transactions(
     api: PlaidApiLike, storage: PlaidLinkStorage, run_id: UUID, access_token: str, item_id: str, start: date, end: date
-) -> list[dict[str, Any]]:
+) -> list[PlaidInvestmentTransaction]:
     offset = 0
     count = 500
-    out: list[dict[str, Any]] = []
+    out: list[PlaidInvestmentTransaction] = []
     total = None
     while total is None or offset < total:
         payload = await _call(
@@ -288,9 +310,10 @@ async def _fetch_investment_transactions(
                 options=InvestmentsTransactionsGetRequestOptions(offset=offset, count=count),
             ),
             item_id,
+            response_model=InvestmentsTransactionsGetResponse,
         )
-        total = payload["total_investment_transactions"]
-        page = payload.get("investment_transactions") or []
+        total = payload.total_investment_transactions
+        page = payload.investment_transactions or []
         out.extend(page)
         offset += len(page)
         if not page:
@@ -298,7 +321,7 @@ async def _fetch_investment_transactions(
     return out
 
 
-async def _call[PlaidRequestT: PlaidRequestLike](
+async def _call[PlaidRequestT: PlaidRequestLike, ResponseT: PlaidApiResponse](
     api: PlaidApiLike,
     storage: PlaidLinkStorage,
     run_id: UUID,
@@ -306,12 +329,16 @@ async def _call[PlaidRequestT: PlaidRequestLike](
     call: Callable[[PlaidRequestT], object],
     request: PlaidRequestT,
     item_id: str,
-) -> dict[str, Any]:
+    *,
+    response_model: type[ResponseT],
+) -> ResponseT:
     started = time.monotonic()
     request_json = _request_json(request)
     try:
         response = await asyncio.to_thread(call, request)
-        response_json = cast(dict[str, Any], api.api_client.sanitize_for_serialization(response))
+        serialized = api.api_client.sanitize_for_serialization(response)
+        typed_response = response_model.model_validate(serialized)
+        response_json = typed_response.model_dump(mode="json", exclude_unset=True)
     except Exception as exc:
         await storage.record_api_event(
             ApiEvent(
@@ -331,14 +358,14 @@ async def _call[PlaidRequestT: PlaidRequestLike](
             sync_run_id=run_id,
             endpoint=endpoint,
             item_id=item_id,
-            request_id=_extract_request_id(response_json),
+            request_id=_extract_request_id(typed_response),
             status="ok",
             duration_ms=int((time.monotonic() - started) * 1000),
             request_json=redact_payload(request_json),
             response_json=redact_payload(response_json),
         )
     )
-    return response_json
+    return typed_response
 
 
 def _request_json(request: PlaidRequestLike) -> dict[str, Any]:
@@ -359,5 +386,5 @@ def _plaid_error_code(exc: Exception) -> str | None:
     return str(exc.status) if exc.status is not None else None
 
 
-def _extract_request_id(response: dict[str, Any]) -> str | None:
-    return response.get("request_id") or response.get("requestId")
+def _extract_request_id(response: PlaidApiResponse) -> str | None:
+    return response.request_id

@@ -106,24 +106,9 @@ spec:
       name: seaweedfs-cluster
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/seaweedfs/db/**"
-          to: "@artifact/cluster/k8s/seaweedfs/db/"
-      name: seaweedfs-filer-db
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/seaweedfs/namespace/**"
-          to: "@artifact/cluster/generated/seaweedfs/namespace/"
-      name: seaweedfs-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/seaweedfs/operator/**"
           to: "@artifact/cluster/generated/seaweedfs/operator/"
       name: seaweedfs-operator
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/seaweedfs/secrets/**"
-          to: "@artifact/cluster/k8s/seaweedfs/secrets/"
-      name: seaweedfs-secrets
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/tofu-controller/**"

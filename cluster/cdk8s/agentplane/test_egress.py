@@ -1,4 +1,5 @@
-"""The workload EgressPolicy grants agents the Actions API's agent-facing surface only."""
+"""What the namespace's egress grants a sandbox: the Actions API's agent-facing surface only, and
+the Kubernetes access every sandbox gets rather than the ones that opted in."""
 
 from __future__ import annotations
 
@@ -7,6 +8,7 @@ from typing import Any
 
 import pytest
 import pytest_bazel
+import yaml
 from more_itertools import one
 
 from agentplane.egress import sidecar
@@ -23,12 +25,18 @@ from cluster.cdk8s.agentplane.app_settings import (
     HOME_ASSISTANT_READONLY_POLICY,
 )
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
+from cluster.cdk8s.agentplane.egress import KUBERNETES_AUDIENCE, KUBERNETES_CREDENTIAL, KUBERNETES_HOST
 from util.settings_contract import env_name
 
 # What a workload token may reach on the Actions service: the MCP endpoint, its schema and
 # the action-group/request API. The operator API (/v1/operator/*) and the OAuth endpoints
 # (/register, /token, ...) stay off this policy.
 _AGENT_FACING_PREFIXES = ("/mcp", "/openapi.json", "/v1/action-")
+
+
+def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
+    """The one object of `kind` named `name`, which every test here asserts exists."""
+    return one(doc for doc in docs if doc["kind"] == kind and doc["metadata"]["name"] == name)
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
@@ -43,6 +51,46 @@ def test_workload_policy_grants_only_the_agent_facing_actions_api(
     rule = one(rule for rule in policy["spec"]["rules"] if one(rule["hosts"]).startswith("agentplane-actions."))
     assert rule["paths"], "a rule without paths admits every path on the host"
     assert all(path.startswith(_AGENT_FACING_PREFIXES) for path in rule["paths"])
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    """Every agent talks to the API server, so the rule admitting it is in `basic`.
+
+    `basic` is the policy every launch is granted before the caller picks anything
+    (`default_policies` and `launch_policies`, agentplane/app/egress.py), which is what makes
+    Kubernetes access a property of a sandbox rather than a choice one. It was its own policy
+    while every SandboxTemplate already mounted the kubeconfig naming this credential
+    (sandbox_pod.py): a box whose preset or caller did not name it held a working-looking config
+    whose requests the proxy refused for want of a rule, a transport failure dressed up as an
+    authorization answer.
+
+    What makes it legitimate as an unconditional grant is what gets substituted. A default is the
+    one grant a caller cannot decline, so it may only ever substitute the sandbox's own identity;
+    this credential is that Pod's ServiceAccount projected for the API server's audience, and a
+    `secretRef` source here would hand an operator's credential to every sandbox in the namespace.
+    What a box may then do is the RBAC bound to its account, the only axis this narrows -- which
+    is why the rule names neither methods nor paths.
+    """
+    docs = agentplane_manifests[namespace]
+    basic = _by_name(docs, "EgressPolicy", BASIC_POLICY)
+    api_server = one(rule for rule in basic["spec"]["rules"] if KUBERNETES_HOST in rule["hosts"])
+    assert api_server.get("credentialRef") == {"name": KUBERNETES_CREDENTIAL}, api_server
+    # Narrowing by verb or path would be a second, weaker copy of RBAC; RBAC decides.
+    assert "methods" not in api_server, api_server
+    assert "paths" not in api_server, api_server
+
+    credential = _by_name(docs, "EgressCredential", KUBERNETES_CREDENTIAL)
+    source = credential["spec"]["source"]
+    assert "secretRef" not in source, "a default may substitute a sandbox's own credential, never an operator's"
+    assert source["projectedWorkloadToken"]["audience"] == KUBERNETES_AUDIENCE, source
+
+    # And `basic` reaches a sandbox that picks nothing, which is the whole claim.
+    app_config = _by_name(docs, "ConfigMap", "agentplane-app-config")
+    defaults: list[str] = yaml.safe_load(app_config["data"]["config.yaml"])["default_policies"]
+    assert BASIC_POLICY in defaults, defaults
 
 
 def test_testing_github_policy_has_its_credential_and_no_real_account_credentials(

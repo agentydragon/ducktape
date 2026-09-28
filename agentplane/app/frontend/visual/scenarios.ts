@@ -67,6 +67,8 @@ export interface Scenario extends ScenarioOptions {
   /** One assistant message containing a fenced code block, to exercise Markdown's syntax
    * highlighting of a registered language (`markdown.tsx`'s `Renderer.code` override). */
   markdownCodeFence?: boolean;
+  /** Interleave completed assistant text, folded tool/reasoning runs, and streaming assistant text. */
+  streamingInterleaved?: boolean;
   /** A reasoning step with no neighboring tool call, so `historyRows` never folds it into a run and
    * `EntityCard` renders it directly -- the standalone case, distinct from `openReasoning`'s
    * reasoning-nested-inside-a-run-card one. */
@@ -700,6 +702,16 @@ export const SCENARIOS: Record<string, Scenario> = {
     outputName: "session-states",
     readySelectors: ['[data-thread-anchor="16"]'],
     captureViewport: true,
+  },
+  session_streaming_interleaved: {
+    // Match the screenshot's 572px thread pane using the production shell container: the default
+    // sidebar is 240px, so an 812px viewport leaves the thread pane at 572px.
+    element: ".agentplane-shell-main-content",
+    route: SESSION_STATES_ROUTE,
+    viewport: { width: 812, height: 900 },
+    outputName: "session-streaming-interleaved",
+    streamingInterleaved: true,
+    readySelectors: ['.agentplane-streaming-cursor[aria-label="Streaming"]'],
   },
   session_resume: {
     element: "#app",

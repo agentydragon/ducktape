@@ -7,6 +7,8 @@ import { highlight, isRegisteredLanguage } from "./syntax_highlight";
 
 import "./markdown.css";
 
+export const STREAMING_CURSOR = "|";
+
 const HTML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 const escapeHtml = (text: string): string => text.replace(/[&<>"']/g, (char) => HTML_ESCAPES[char]);
 
@@ -70,11 +72,49 @@ const ALLOWED_TAGS = [
  * HTML can contain block-level tags (headings, lists, `pre`, `table`) that a `Text`'s default `<p>`
  * can't legally contain.
  */
-export function Markdown({ source }: { source: string }): JSX.Element {
+function appendStreamingCursor(html: string): string {
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  const cursor = document.createElement("span");
+  cursor.className = "agentplane-streaming-cursor";
+  cursor.setAttribute("role", "img");
+  cursor.setAttribute("aria-label", "Streaming");
+  cursor.setAttribute("data-character", STREAMING_CURSOR);
+
+  // Marked leaves whitespace between its top-level blocks. Skip whitespace-only nodes so the
+  // cursor becomes part of the last rendered text block (paragraph, list item, code, etc.).
+  const lastContentChild = (parent: ParentNode): ChildNode | null =>
+    [...parent.childNodes]
+      .reverse()
+      .find((node) => node.nodeType !== Node.TEXT_NODE || Boolean(node.textContent?.trim())) ?? null;
+  let last = lastContentChild(template.content);
+  while (last instanceof Element) {
+    const child = lastContentChild(last);
+    if (!child) break;
+    last = child;
+  }
+
+  if (last?.nodeType === Node.TEXT_NODE) {
+    const parent = last.parentNode;
+    const text = last.textContent ?? "";
+    const trailingWhitespace = text.match(/\s+$/)?.[0] ?? "";
+    if (parent && trailingWhitespace) {
+      last.textContent = text.slice(0, -trailingWhitespace.length);
+      const whitespace = document.createTextNode(trailingWhitespace);
+      parent.insertBefore(cursor, last.nextSibling);
+      parent.insertBefore(whitespace, cursor.nextSibling);
+    } else parent?.insertBefore(cursor, last.nextSibling);
+  } else if (last instanceof Element && !["BR", "HR"].includes(last.tagName)) last.append(cursor);
+  else if (last?.parentNode) last.parentNode.insertBefore(cursor, last.nextSibling);
+  else template.content.append(cursor);
+  return template.innerHTML;
+}
+
+export function Markdown({ source, streaming = false }: { source: string; streaming?: boolean }): JSX.Element {
   const html = useMemo(() => {
     const rendered = marked.parse(source);
     if (typeof rendered !== "string") throw new Error("asynchronous Markdown rendering is not supported");
-    return DOMPurify.sanitize(rendered, {
+    const sanitized = DOMPurify.sanitize(rendered, {
       ALLOWED_TAGS,
       // `class` is here for the highlighter's `hljs-*` spans (see the `code` renderer above);
       // DOMPurify's allowlist isn't per-tag, so raw HTML in the source could also carry a `class`
@@ -83,6 +123,7 @@ export function Markdown({ source }: { source: string }): JSX.Element {
       ALLOWED_ATTR: ["align", "class", "href", "title"],
       ALLOW_DATA_ATTR: false,
     });
-  }, [source]);
+    return streaming ? appendStreamingCursor(sanitized) : sanitized;
+  }, [source, streaming]);
   return <Text component="div" className="agentplane-markdown" dangerouslySetInnerHTML={{ __html: html }} />;
 }

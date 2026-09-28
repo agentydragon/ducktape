@@ -27,7 +27,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
 )
-from cluster.cdk8s.agentplane.egress import FORGEJO_HOST, HOME_ASSISTANT_HOST
+from cluster.cdk8s.agentplane.egress import FORGEJO_HOST, FORGEJO_HOST_ALIASES, FORGEJO_PUBLIC_HOST, HOME_ASSISTANT_HOST
 from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_READER,
     EXTERNAL_CREDS_STORE,
@@ -117,12 +117,19 @@ def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, c
             # list here would narrow the request without narrowing the authority behind it --
             # the same reason the Kubernetes rule carries none. What it does admit is the whole
             # Forgejo surface: git smart-HTTP (clone, fetch and push), the REST API, and the
-            # web UI.
+            # web UI. That holds under every name below: the host list decides which spellings
+            # reach the Service, not what haku's password may do there.
             EgressPolicySpecRules(
-                hosts=[FORGEJO_HOST],
+                hosts=[FORGEJO_HOST, *FORGEJO_HOST_ALIASES],
                 cluster_internal=True,
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-haku"),
-            )
+            ),
+            # The public name is a rule of its own so it stays off `cluster_internal`: it
+            # resolves to public addresses, and were it ever to resolve into the cluster the
+            # proxy's refusal of private addresses should still stop haku's password going there.
+            EgressPolicySpecRules(
+                hosts=[FORGEJO_PUBLIC_HOST], credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-haku")
+            ),
         ],
     )
 

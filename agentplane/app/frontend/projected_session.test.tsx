@@ -12,6 +12,7 @@ import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../pr
 import { command, getThread, models, resumeThread, type ThreadView } from "./client";
 import { historyRows, rowKey } from "./history_rows";
 import { LocalCommands } from "./local_commands";
+import { STREAMING_CURSOR } from "./markdown";
 import { EntityCard, HistoryRowView, ProjectedSession, pruneCommandErrors } from "./projected_session";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "./stream_status";
@@ -755,6 +756,22 @@ it("marks an unfinished run as streaming in the live turn, and as incomplete onc
   expect(retained.querySelector('summary [role="img"]')?.getAttribute("aria-label")).toBe("Incomplete");
 });
 
+it("puts a live assistant-text cursor inline after its Markdown body", async () => {
+  const body = "The answer is still being written.";
+  const [row] = await renderHistory(
+    [testItem(1, ItemKind.ASSISTANT_TEXT, { completion: null }, { textRef: reference("streaming-reply", "text") })],
+    true,
+    { "streaming-reply:text": body }
+  );
+  const cursor = row.querySelector<HTMLElement>(".agentplane-streaming-cursor");
+
+  expect(cursor?.getAttribute("aria-label")).toBe("Streaming");
+  expect(cursor?.getAttribute("data-character")).toBe(STREAMING_CURSOR);
+  expect(cursor?.closest(".agentplane-markdown")).not.toBeNull();
+  expect(cursor?.parentElement?.textContent?.trimEnd()).toBe(body);
+  expect(row.querySelector(".mantine-Badge-root")).toBeNull();
+});
+
 it("shows a lone reasoning step as its own reasoning block, and assistant text without a role label", async () => {
   const [reasoning, answer] = await renderHistory(
     [
@@ -772,6 +789,26 @@ it("shows a lone reasoning step as its own reasoning block, and assistant text w
 const PROSE = "Run **every** test\n- first";
 
 describe("recovery presentation", () => {
+  it.each([RecoveryDisposition.RETAINED, RecoveryDisposition.REVISED, RecoveryDisposition.UNKNOWN])(
+    "does not revive an interrupted reply's streaming cursor for recovery %s",
+    async (recovery) => {
+      const [row] = await renderHistory(
+        [
+          testItem(
+            1,
+            ItemKind.ASSISTANT_TEXT,
+            { completion: null, recovery },
+            { textRef: reference("recovered-reply", "text") }
+          ),
+        ],
+        true,
+        { "recovered-reply:text": "Interrupted reply" }
+      );
+      expect(row.querySelector(".agentplane-streaming-cursor")).toBeNull();
+      expect(row.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
+    }
+  );
+
   it.each([null, "text"])("labels retained text with completion %s", async (completion) => {
     const container = await renderCard(
       testItem(

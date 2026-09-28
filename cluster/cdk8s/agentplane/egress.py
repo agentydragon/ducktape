@@ -59,7 +59,6 @@ from cluster.cdk8s.agentplane.app_settings import (
     GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
-    KUBERNETES_POLICY,
     PACKAGES_POLICY,
 )
 from cluster.cdk8s.agentplane.egress_credentials import GITHUB_PAT_SECRET
@@ -99,10 +98,16 @@ KUBERNETES_AUDIENCE = "https://localhost:7445"
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 # The credential substituted there, whose placeholder a sandbox's kubeconfig carries (sandbox_pod.py).
 KUBERNETES_CREDENTIAL = "kubernetes-workload"
-# The in-cluster Forgejo, not `git.allegedly.works`: the public name would hairpin out through
-# the Gateway and back for a Service one hop away. Plain HTTP on 3000, so the proxy reads the
-# request without bumping TLS.
+# The in-cluster Forgejo, plain HTTP on 3000, so the proxy reads the request without bumping TLS.
+# It is the name to prefer: the public name below would hairpin out through the Gateway and back
+# for a Service one hop away.
 FORGEJO_HOST = "forgejo-http.forgejo.svc.cluster.local"
+# The same Service under the shorter names its search path resolves (haku-egress-proxy's clients
+# still spell it `forgejo-http.forgejo`). The proxy matches a request's host on the exact string,
+# so a spelling left out is refused `no-rule` although it dials the same address.
+FORGEJO_HOST_ALIASES = ("forgejo-http.forgejo.svc", "forgejo-http.forgejo")
+# Forgejo by its public name: HTTPS through the Gateway, resolving to public addresses.
+FORGEJO_PUBLIC_HOST = "git.allegedly.works"
 FORGEJO_PORT = 3000
 # Home Assistant's in-cluster Service, plain HTTP. The proxy matches requests on this exact string.
 HOME_ASSISTANT_HOST = home_assistant.SERVICE.fqdn
@@ -204,23 +209,23 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 paths=["/openapi.json", "/v1/rules"],
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="agentplane-workload"),
             ),
-        ],
-    )
-    EgressPolicy(
-        scope,
-        "egresspolicy-kubernetes",
-        metadata=ApiObjectMetadata(name=KUBERNETES_POLICY, namespace=namespace),
-        rules=[
-            # No method or path list: what a sandbox may read or write is the API server's
-            # answer for its own ServiceAccount, and narrowing verbs here would be a second,
-            # weaker copy of RBAC that drifts from it. Upgrade verbs (exec, attach,
-            # port-forward) negotiate SPDY or WebSocket through an intercepting proxy and are
-            # not known to work; ordinary requests and watches are what this admits in practice.
+            # The API server, inside `basic` rather than behind a policy a launch opts into: every
+            # agent talks to Kubernetes, so what decides it is RBAC and not whether a preset or a
+            # caller happened to name a policy. Every SandboxTemplate already mounts the kubeconfig
+            # naming this credential (sandbox_pod.py), so a box without this rule held a config
+            # whose requests the proxy refused for want of a rule -- a transport gap that read as
+            # an authorization answer and could not be narrowed into one.
+            #
+            # No method or path list: what a sandbox may read or write is the API server's answer
+            # for its own ServiceAccount, and narrowing verbs here would be a second, weaker copy
+            # of RBAC that drifts from it. Upgrade verbs (exec, attach, port-forward) negotiate
+            # SPDY or WebSocket through an intercepting proxy and are not known to work; ordinary
+            # requests and watches are what this admits in practice.
             EgressPolicySpecRules(
                 hosts=[KUBERNETES_HOST],
                 cluster_internal=True,
                 credential_ref=EgressPolicySpecRulesCredentialRef(name=KUBERNETES_CREDENTIAL),
-            )
+            ),
         ],
     )
     EgressPolicy(

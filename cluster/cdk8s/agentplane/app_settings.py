@@ -30,7 +30,6 @@ GITHUB_CLONE_POLICY = "github-clone"
 GITHUB_ACTIONS_LOGS_POLICY = "github-actions-logs"
 FORGEJO_HAKU_POLICY = "forgejo-haku"
 PACKAGES_POLICY = "packages"
-KUBERNETES_POLICY = "kubernetes"
 GOOGLE_READONLY_POLICY = "google-readonly"
 GROCY_SF_READONLY_POLICY = "grocy-sf-readonly"
 HOME_ASSISTANT_READONLY_POLICY = "home-assistant-readonly"
@@ -138,7 +137,6 @@ def settings(
                         # caller/ServiceAccount stamps it.
                         policies=[
                             BASIC_POLICY,
-                            KUBERNETES_POLICY,
                             FORGEJO_HAKU_POLICY,
                             PACKAGES_POLICY,
                             GOOGLE_READONLY_POLICY,
