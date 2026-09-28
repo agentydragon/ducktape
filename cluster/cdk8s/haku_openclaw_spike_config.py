@@ -416,26 +416,7 @@ def _deployment(scope: Construct) -> None:
     )
 
 
-def _state_claims(scope: Construct) -> None:
-    k8s.KubePersistentVolumeClaim(
-        scope,
-        "state",
-        metadata=k8s.ObjectMeta(
-            name="haku-openclaw-spike-state",
-            namespace=_NAMESPACE,
-            annotations={
-                "description": (
-                    "Persistent OpenClaw home, agent workspace, memory, and Claude Code session "
-                    "transcripts for the isolated Haku spike."
-                )
-            },
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="local-path-ovh-hdd",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("30Gi")}),
-        ),
-    )
+def _state_claim(scope: Construct) -> None:
     k8s.KubePersistentVolumeClaim(
         scope,
         "state-v2",
@@ -599,7 +580,7 @@ def app_chart(app: App) -> Chart:
     workload = Chart(app, _NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(workload, "forgejo-images-creds", namespace=_NAMESPACE)
     _gateway_password(workload)
-    _state_claims(workload)
+    _state_claim(workload)
     _deployment(workload)
     _service(workload)
     _network_policies(workload)
