@@ -1384,7 +1384,6 @@ def generate_manifests(root: Path) -> None:
             haku_console_artifact,
             haku_charts.console_chart,
             siblings=haku_charts.EXTRA_RESOURCES,
-            namespace=haku_charts.NAMESPACE,
             components=["./image-pins"],
             config_map_generator=haku_charts.CONFIG_MAP_GENERATOR,
         ),
