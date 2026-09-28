@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import io
 import zipfile
-from dataclasses import replace
 from datetime import date, timedelta
 from itertools import pairwise
 from pathlib import Path
@@ -426,17 +425,6 @@ def test_a_span_the_record_does_not_reach_is_rejected() -> None:
 
     with pytest.raises(ValueError, match="falls in"):
         _history(600).restricted_to(start=date(2500, 1, 1), end=None)
-
-
-def test_the_digest_names_the_record_not_just_its_span() -> None:
-    """An evidence refresh can revise a past month without moving the span; the digest is what
-    tells the two records apart."""
-
-    history = _history(120)
-    revised = replace(history, cpi_level=np.where(np.arange(120) == 60, 1.001, 1.0) * history.cpi_level)
-
-    assert _history(120).identity_digest() == history.identity_digest()
-    assert revised.identity_digest() != history.identity_digest()
 
 
 def test_a_record_span_that_ends_before_it_starts_is_rejected() -> None:

@@ -12,7 +12,7 @@ month after the opening is one record month's rates and index growth, so the sup
 record's: a path can recombine its worst episodes but never exceed its worst month. At a block
 seam every rate moves between two historical levels within a month, and bond funds price that
 move. A rollout depends only on its seed, not on the batch or the horizon, and provenance names
-the record by digest with its span, the mean block length and the seeds.
+the record's span, the mean block length and the seeds.
 
 ## Use
 

@@ -228,7 +228,6 @@ def test_the_provenance_names_the_record_the_mean_and_the_seeds() -> None:
     model = StationaryBootstrapModel(history=record, mean_block_months=36.0)
     provenance = model.sample_market(ExogenousSamplingRequest(horizon_months=12, rollout_seeds=(7, 8))).provenance
 
-    assert provenance["record_digest"] == record.identity_digest()
     assert (provenance["record_start"], provenance["record_end"]) == ("1900-01-01", "1909-12-01")
     assert provenance["mean_block_months"] == 36.0
     assert provenance["rollout_seeds"] == (7, 8)

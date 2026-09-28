@@ -120,7 +120,6 @@ py_library(
         ":exogenous",
         ":market_paths",
         ":product_paths",
-        ":provenance",
         ":schemas",
         "//finance/evidence:loading",
         "//finance/evidence:sources",

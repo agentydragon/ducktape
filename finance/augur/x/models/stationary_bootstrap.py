@@ -133,7 +133,6 @@ class StationaryBootstrapModel:
             },
             provenance={
                 "exogenous_provider_label": self.label,
-                "record_digest": record.identity_digest(),
                 "record_start": record.months[0].isoformat(),
                 "record_end": record.months[-1].isoformat(),
                 "mean_block_months": self.mean_block_months,
