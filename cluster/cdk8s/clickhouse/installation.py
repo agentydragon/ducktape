@@ -73,7 +73,6 @@ _KEEPER = ServiceRef(
         labels=(("app.kubernetes.io/name", _KEEPER_NAME), ("app.kubernetes.io/instance", _KEEPER_NAME)),
     ),
 )
-_ADMIN_CREDENTIALS = "clickhouse-admin-credentials"  # admin-credentials.sops.yaml
 _METRICS = Port(name="metrics", number=9363)
 _INTERSERVER_PORT = 9009
 _CLICKHOUSE_UID = 101  # the images' `clickhouse` user
@@ -117,7 +116,7 @@ def _claim_spec(storage: str) -> dict[str, object]:
 def _users() -> dict[str, object]:
     return {
         "default/networks/ip": ["127.0.0.1/32", "::1/128"],
-        "admin/password": _password(_ADMIN_CREDENTIALS),
+        "admin/password": _password(client.ADMIN_CREDENTIALS.name),
         "admin/networks/ip": _ANY_ADDRESS,
         "admin/profile": "default",
         "admin/quota": "default",
@@ -295,7 +294,7 @@ def clickhouse_chart(app: App) -> Chart:
                         secret=ClickHouseInstallationSpecConfigurationClustersSecret(
                             value_from=ClickHouseInstallationSpecConfigurationClustersSecretValueFrom(
                                 secret_key_ref=ClickHouseInstallationSpecConfigurationClustersSecretValueFromSecretKeyRef(
-                                    name=_ADMIN_CREDENTIALS, key="cluster-secret"
+                                    name=client.ADMIN_CREDENTIALS.name, key="cluster-secret"
                                 )
                             )
                         ),

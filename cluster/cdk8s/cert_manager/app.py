@@ -35,7 +35,9 @@ def _component(component: str) -> Pods:
 
 
 # The chart's metrics Services. A ServiceMonitor endpoint names the Service port, not the targetPort.
-_CONTROLLER_METRICS = ServiceRef(name=NAME, port=Port(name="http-metrics", number=9402), pods=_component("controller"))
+_CONTROLLER_METRICS = ServiceRef(
+    name=NAME, port=Port(name="tcp-prometheus-servicemonitor", number=9402), pods=_component("controller")
+)
 _WEBHOOK_METRICS = ServiceRef(
     name=f"{NAME}-webhook", port=Port(name="metrics", number=9402), pods=_component("webhook")
 )

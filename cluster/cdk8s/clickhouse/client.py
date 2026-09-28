@@ -23,14 +23,13 @@ from cdk8s_plus_34 import (
     EnvValue,
     IConfigMap,
     ImagePullPolicy,
-    ISecret,
     MemoryResources,
-    SecretValue,
     Volume,
     VolumeMount,
 )
 from constructs import Construct
 
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "clickhouse"  # the ClickHouseInstallation and the Service clients connect through
@@ -48,12 +47,9 @@ _READY_REPLICAS = Pods(
 )
 HTTP = ServiceRef(name=NAME, port=Port(name="http", number=8123), pods=_READY_REPLICAS)
 NATIVE = ServiceRef(name=NAME, port=Port(name="native", number=9000), pods=_READY_REPLICAS)
-# CLEANUP(added 2026-09-28): remove once nothing outside this module reads HOST or HTTP_PORT
-#   (aiquota.py, public_coder_proxy.py and test_public_coder_agent_config.py do today).
-HOST = HTTP.fqdn
-HTTP_PORT = HTTP.port.number
 SCHEMA_FILE = "schema.sql"  # the key of every schema ConfigMap, and the hand-written file it is generated from
 PASSWORD_KEY = "password"  # the key of every user's credentials Secret
+ADMIN_CREDENTIALS = SecretRef(namespace=NAMESPACE, name="clickhouse-admin-credentials")  # admin-credentials.sops.yaml
 # public-coder's read-only account. Its credentials Secret (public-coder-credentials.sops.yaml) is
 # reflected, under the same name, into the namespace of the proxy that presents it.
 PUBLIC_CODER_USER = "public_coder_analytics"
@@ -66,8 +62,10 @@ _SCHEMA_DIR = "/schema"
 _TMP_DIR = "/tmp"
 
 
-def queries_file_container(scope: Construct, name: str, *, schema: IConfigMap, credentials: ISecret) -> ContainerProps:
-    """Runs `schema`'s `SCHEMA_FILE` key as the user in `credentials` (`username`/`password` keys)."""
+def queries_file_container(
+    scope: Construct, name: str, *, schema: IConfigMap, credentials: SecretRef
+) -> ContainerProps:
+    """Runs `schema`'s `SCHEMA_FILE` key as the user in `credentials` (`username`/`PASSWORD_KEY` keys)."""
     return ContainerProps(
         name=name,
         image=IMAGE,
@@ -82,8 +80,8 @@ def queries_file_container(scope: Construct, name: str, *, schema: IConfigMap, c
             f"--queries-file={_SCHEMA_DIR}/{SCHEMA_FILE}",
         ],
         env_variables={
-            "CLICKHOUSE_USER": EnvValue.from_secret_value(SecretValue(secret=credentials, key="username")),
-            "CLICKHOUSE_PASSWORD": EnvValue.from_secret_value(SecretValue(secret=credentials, key="password")),
+            "CLICKHOUSE_USER": credentials.key("username").env_value(scope, f"{name}-username-ref"),
+            "CLICKHOUSE_PASSWORD": credentials.key(PASSWORD_KEY).env_value(scope, f"{name}-password-ref"),
             # clickhouse-client writes its history under $HOME; the root filesystem is read-only.
             "HOME": EnvValue.from_value(_TMP_DIR),
         },

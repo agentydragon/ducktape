@@ -204,7 +204,7 @@ def _substitutions() -> list[dict]:
             # curl/clickhouse-client normally without ever receiving this dedicated account
             # password.
             "replace": {"proxy_value": CLICKHOUSE_PASSWORD_PLACEHOLDER, "match_headers": ["Authorization"]},
-            "rules": [{"host": client.HOST}],
+            "rules": [{"host": client.HTTP.fqdn}],
         },
         {
             "source": {"type": "env", "var": _AIQUOTA_BEARER_ENV},
@@ -431,7 +431,7 @@ def _egress_policy(scope: Construct) -> None:
             # The agent's normalized analytics reads leave the app through this Iron proxy, then
             # use the private ClickHouse HTTP ClusterIP service. Do not grant this egress to the
             # app Pod itself.
-            EgressRule.to_endpoints(_endpoint(client.NAMESPACE, client.LABELS), client.HTTP_PORT),
+            EgressRule.to_endpoints(_endpoint(client.NAMESPACE, client.LABELS), client.HTTP.pod_port),
             # The confined configuration, for restoration: TCP 443 by toFQDNs to the GitHub hosts
             # (clone, push to forks, and open pull requests via the REST API) github.com,
             # api.github.com, codeload.github.com, objects.githubusercontent.com,
