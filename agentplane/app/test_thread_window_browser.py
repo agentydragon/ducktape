@@ -177,12 +177,15 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     assert abs(await restored.evaluate("row => row.getBoundingClientRect().top") - anchor["top"]) <= 2
     await expect(composer).to_have_value("Draft retained while the thread grows")
 
-    # One scope read and one shape since the reload: the window moved by loading more into it, one
-    # further page for the one time the reader reached its top -- on top of the eager initial load.
+    # One scope read and one shape since the reload: the window moved by loading more into it, at
+    # least one further page for the one time the reader reached its top -- on top of the eager
+    # initial load. Not pinned to exactly eager + 1: loadOlderAtTop keeps asking for another page
+    # while scrollTop is within a full screen of the top, so a taller viewport can settle one page
+    # further before the buffer clears that (viewport-height-relative) threshold.
     urls = [request.url for request in requests]
     assert len([url for url in urls if "/sync/scope" in url]) == 1
     assert len(_handles(urls)) == 1
-    assert len([request for request in requests if _older_page(request)]) == eager + 1
+    assert len([request for request in requests if _older_page(request)]) >= eager + 1
     await page.screenshot(path=undeclared_outputs_dir() / "thread-window-retained-reader.png")
 
 
@@ -333,7 +336,11 @@ async def test_repeated_pagination_through_wildly_uneven_row_heights_keeps_the_r
     await page.add_init_script("localStorage.setItem('agentplane:debugScroll', '1')")
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
-    latest = _append_uneven_items(thread_browser, "uneven-item", range(210))
+    # Generously larger than 6 cycles' worth of pages: loadOlderAtTop keeps fetching older pages
+    # until a full screen is buffered above the reader, so a taller viewport settles further into
+    # the backlog per cycle. Too small a backlog runs out mid-loop -- the last cycle's wheel then
+    # has nothing left to scroll into, so it never fires the scrollend this test waits on.
+    latest = _append_uneven_items(thread_browser, "uneven-item", range(600))
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
     await page.reload()
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
