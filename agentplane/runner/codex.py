@@ -22,7 +22,6 @@ from agentplane.native.codex import facade, scenarios, wire
 from agentplane.protocol import event_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.config import CodexLaunch
-from agentplane.runner.rendering_note import with_rendering_note
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -94,7 +93,7 @@ class CodexAdapter(HarnessAdapter):
                 model=record.model,
                 effort=record.reasoning_effort,
                 persist=True,
-                instructions=with_rendering_note(record.instructions),
+                instructions=record.instructions,
             )
             method = "thread/start"
         if response.response.error is not None:

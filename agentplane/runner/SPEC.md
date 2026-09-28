@@ -41,11 +41,6 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   orders that hold for every turn of it. They reach the model appended to the harness's own system
   prompt, so each harness keeps its coding-agent policy; empty is a session without any. They are
   fixed for the session's life, because a `spec` supplied on re-attach must equal the stored one.
-- Ahead of `spec.instructions` (present or empty), every session also carries a fixed rendering
-  note (`agentplane/runner/rendering_note.py`): the operator UI renders responses as GitHub-Flavored
-  Markdown, with fenced code blocks syntax-highlighted for a fixed set of languages. It reaches the
-  model by the same per-harness route as `spec.instructions`, is not part of `spec.instructions`
-  itself, and is not something a client can set or omit.
 - The deployment may supply `AGENTPLANE_MODEL_CONTEXT_WINDOWS` as a JSON map from model ids to
   positive token counts. A listed route sets Claude's `CLAUDE_CODE_MAX_CONTEXT_TOKENS` or Codex's
   `model_context_window` when its harness starts, including a resume. Codex derives its default
@@ -175,9 +170,7 @@ harness's outcome. Tool names and argument shapes are the harness's own.
 
 Both harnesses put the session's instructions in front of the model on every turn, a resumed
 conversation included, but by different routes, and the difference decides what a client could ever
-do with a changed value. "Instructions" below means the rendering note plus `spec.instructions`
-combined into the one value each harness actually takes; the rendering note travels the same route
-and is subject to the same resume behavior, even though a client cannot set or change it.
+do with a changed value.
 
 - **Claude Code** takes them as `appendSystemPrompt` in the `initialize` control request, which the
   runner sends at _every_ harness start. The text lands in the system prompt block after the
