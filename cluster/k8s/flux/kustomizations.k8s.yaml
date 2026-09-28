@@ -835,6 +835,7 @@ metadata:
   name: forgejo-cache
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: valkey
       namespace: ducktape-flux
