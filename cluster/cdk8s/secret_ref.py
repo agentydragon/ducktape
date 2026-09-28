@@ -26,13 +26,18 @@ class SecretKey:
     secret: SecretRef
     key: str
 
-    def value_from(self) -> k8s.EnvVarSource:
-        """Also what a Helm env map takes: typed k8s structs render wire-shaped inside `any` values."""
-        return k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=self.secret.name, key=self.key))
+    def value_from(self, *, optional: bool = False) -> k8s.EnvVarSource:
+        """Also what a Helm env map takes: typed k8s structs render wire-shaped inside `any` values.
+        `optional` lets the Pod start without the Secret or key."""
+        return k8s.EnvVarSource(
+            secret_key_ref=k8s.SecretKeySelector(
+                name=self.secret.name, key=self.key, optional=True if optional else None
+            )
+        )
 
-    def env_var(self, name: str) -> k8s.EnvVar:
+    def env_var(self, name: str, *, optional: bool = False) -> k8s.EnvVar:
         """Tier-2 raw `k8s.EnvVar`, for a module building `k8s.Container`/`k8s.PodSpec` directly."""
-        return k8s.EnvVar(name=name, value_from=self.value_from())
+        return k8s.EnvVar(name=name, value_from=self.value_from(optional=optional))
 
     def env_value(self, scope: Construct, id: str) -> EnvValue:
         """Tier-1 `EnvValue`, for `add_container(env_variables={...})`; `id` names the Secret

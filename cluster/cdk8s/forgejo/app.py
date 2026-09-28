@@ -40,13 +40,14 @@ from cluster.cdk8s.helm import helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/app"
 _NAME = "forgejo"
 _NAMESPACE = "forgejo"
-_S3_CREDENTIALS_SECRET = "forgejo-s3-credentials"
-_METRICS_TOKEN = "forgejo-metrics-token"
+_S3_CREDENTIALS = SecretRef(namespace=_NAMESPACE, name="forgejo-s3-credentials")
+_METRICS_TOKEN = SecretRef(namespace=_NAMESPACE, name="forgejo-metrics-token").key("token")
 _GIT_CLAIM = "forgejo-git-rwx-ssd"
 _RELEASE_LABELS = {"app.kubernetes.io/name": _NAME, "app.kubernetes.io/instance": _NAME}
 # The chart's HTTP Service.
@@ -101,7 +102,7 @@ def _object_storage(scope: Construct) -> None:
     bucket.grant_read_write(identity)
     identity.credentials(
         namespace=_NAMESPACE,
-        secret=_S3_CREDENTIALS_SECRET,
+        secret=_S3_CREDENTIALS.name,
         key_fields=s3.SecretKeyFields(access_key="accessKey", secret_key="secretKey"),
         description="Forgejo's SeaweedFS S3 credentials.",
     )
@@ -113,16 +114,12 @@ def _metrics_token(scope: Construct) -> None:
     mint_bearer_secret(
         scope,
         "metrics-token",
-        name=_METRICS_TOKEN,
-        namespace=_NAMESPACE,
-        key="token",
+        name=_METRICS_TOKEN.secret.name,
+        namespace=_METRICS_TOKEN.secret.namespace,
+        key=_METRICS_TOKEN.key,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
-
-
-def _secret_env(name: str, secret: str, key: str) -> dict[str, object]:
-    return {"name": name, "valueFrom": {"secretKeyRef": {"name": secret, "key": key}}}
 
 
 def _values() -> dict[str, object]:
@@ -254,9 +251,9 @@ def _values() -> dict[str, object]:
             # SeaweedFS S3 credentials from the operator-owned Secret in the Forgejo
             # namespace. FORGEJO__ is the chart's env -> app.ini prefix.
             "additionalConfigFromEnvs": [
-                _secret_env("FORGEJO__metrics__TOKEN", _METRICS_TOKEN, "token"),
-                _secret_env("FORGEJO__storage__MINIO_ACCESS_KEY_ID", _S3_CREDENTIALS_SECRET, "accessKey"),
-                _secret_env("FORGEJO__storage__MINIO_SECRET_ACCESS_KEY", _S3_CREDENTIALS_SECRET, "secretKey"),
+                _METRICS_TOKEN.env_var("FORGEJO__metrics__TOKEN"),
+                _S3_CREDENTIALS.key("accessKey").env_var("FORGEJO__storage__MINIO_ACCESS_KEY_ID"),
+                _S3_CREDENTIALS.key("secretKey").env_var("FORGEJO__storage__MINIO_SECRET_ACCESS_KEY"),
             ],
         },
         # Trust cluster CA bundle (includes Let's Encrypt staging CA)
@@ -438,7 +435,9 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         # Helm release name; robust regardless of the chart's app name label.
         selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/instance": _NAME}),
-        endpoints=[Endpoint.bearer_token_secret(port="http", secret_name=_METRICS_TOKEN, key="token")],
+        endpoints=[
+            Endpoint.bearer_token_secret(port="http", secret_name=_METRICS_TOKEN.secret.name, key=_METRICS_TOKEN.key)
+        ],
     )
     _metrics_token(chart)
     _ssh_listener(chart)

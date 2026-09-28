@@ -723,6 +723,7 @@ py_library(
         ":forgejo_images",
         ":generation",
         ":manifest_roots",
+        ":secret_ref",
         "//cluster/cdk8s/cert_manager:interception_ca",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -983,6 +984,7 @@ py_library(
     deps = [
         ":ducktape_flux",
         ":flux",
+        ":secret_ref",
         "//cluster/cdk8s/providers/tofu_controller:terraform",
         "//cluster/cdk8s/providers/tofu_controller:tofu_controller_terraform",
         "@pypi//cdk8s",
@@ -1148,6 +1150,7 @@ py_library(
         ":node_scheduling",
         ":pod_policy",
         ":probes",
+        ":secret_ref",
         ":service_ref",
         "//cluster/cdk8s/external_secrets:kubernetes_store",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
