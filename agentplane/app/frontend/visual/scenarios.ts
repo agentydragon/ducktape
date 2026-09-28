@@ -65,6 +65,10 @@ export interface Scenario extends ScenarioOptions {
   /** One assistant message containing a fenced code block, to exercise Markdown's syntax
    * highlighting of a registered language (`markdown.tsx`'s `Renderer.code` override). */
   markdownCodeFence?: boolean;
+  /** A reasoning step with no neighboring tool call, so `historyRows` never folds it into a run and
+   * `EntityCard` renders it directly -- the standalone case, distinct from `openReasoning`'s
+   * reasoning-nested-inside-a-run-card one. */
+  standaloneReasoning?: boolean;
   pendingCommands?: "mixed" | "controls" | "outcomes";
   /** Answer a command POST as the app does when a runner misses its admission deadline. Without
    * this it stays unanswered, like one queued behind the browser's connection limit. */
@@ -545,6 +549,28 @@ export const SCENARIOS: Record<string, Scenario> = {
     outputName: "session-markdown-code-fence",
     markdownCodeFence: true,
     readySelectors: [".agentplane-hljs"],
+  },
+  // A standalone reasoning step (no neighboring tool call, so it's never folded into a run) at
+  // rest: collapsed, it should read as one plain dimmed line, no card chrome around it -- like a
+  // collapsed run, unlike the always-boxed tool call beside it in session_reasoning above.
+  session_standalone_reasoning: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 700 },
+    outputName: "session-standalone-reasoning",
+    standaloneReasoning: true,
+    readySelectors: ['[data-thread-anchor="20"]'],
+  },
+  // The same standalone reasoning step, opened: now it gets the card chrome (padding, border) the
+  // collapsed row above deliberately lacks.
+  session_standalone_reasoning_open: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 700 },
+    outputName: "session-standalone-reasoning-open",
+    standaloneReasoning: true,
+    openReasoning: true,
+    readySelectors: ['[data-thread-anchor="20"] details[open] .agentplane-markdown'],
   },
   // JSON arguments highlighted, and a non-JSON output in the same code block, uninterpreted. The
   // history follows its bottom, so the viewports are tall enough to keep the tool call, and the

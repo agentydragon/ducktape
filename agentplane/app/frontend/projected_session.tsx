@@ -132,8 +132,12 @@ function VerbatimText({ text }: { text: string }): JSX.Element {
   );
 }
 
+function payloadDisclosureId(reference: PayloadRef): string {
+  return `${reference.projection_epoch}:${reference.owner_id}:${reference.field}`;
+}
+
 function LazyBody({ label, ...body }: { label: string; reference: PayloadRef; format: BodyFormat }): JSX.Element {
-  const id = `${body.reference.projection_epoch}:${body.reference.owner_id}:${body.reference.field}`;
+  const id = payloadDisclosureId(body.reference);
   return (
     <RetainedDisclosure id={id} summary={label}>
       <Body {...body} />
@@ -350,6 +354,10 @@ export function EntityCard({
   entity: ThreadEntity;
   live: boolean;
 }): JSX.Element {
+  // Computed unconditionally (hooks can't follow the entity-kind branches below): null, and so
+  // always closed, for anything but a reasoning step with a body to disclose.
+  const reasoningTextRef = "kind" in entity.state && entity.state.kind === ItemKind.REASONING ? entity.textRef : null;
+  const [reasoningOpen] = useRetainedDisclosure(reasoningTextRef && payloadDisclosureId(reasoningTextRef));
   if (entity.entityKind === "confirmed_input") {
     return (
       <Group justify="flex-end" align="flex-start" gap="xs" wrap="nowrap">
@@ -424,15 +432,17 @@ export function EntityCard({
     </>
   );
   // Assistant text carries no role label and no card: it reads as the reply by position, across
-  // from the user's right-aligned bubble. A tool call is boxed and labelled by its tool, reasoning
-  // by its disclosure.
-  if (tool || reasoning) {
+  // from the user's right-aligned bubble. A tool call is boxed unconditionally, labelled by its
+  // tool; a standalone reasoning step is boxed only once its own disclosure opens, like a
+  // collapsed run -- collapsed, it is already just the one "Reasoning" line.
+  if (tool) {
     return (
       <Paper p="sm" withBorder style={{ position: "relative" }}>
         {body}
       </Paper>
     );
   }
+  if (reasoning) return <CollapsibleCard open={reasoningOpen}>{body}</CollapsibleCard>;
   return <Box style={{ position: "relative" }}>{body}</Box>;
 }
 
@@ -457,10 +467,19 @@ function ItemStatus({ items, live }: { items: ThreadEntity[]; live: boolean }): 
   );
 }
 
-/** A run of tool calls and reasoning steps, folded behind its summary until opened. */
-/** The collapsible shell a run or a lifecycle group shares: collapsed, it shows nothing but
- * `summary`, so the full card padding and border its opened entities warrant would only pad out
+/** The collapsible shell a run, a lifecycle group, or a standalone reasoning step shares: collapsed,
+ * it shows nothing but its one line -- a run/group's `summary`, or reasoning's own "Reasoning"
+ * disclosure -- so the full card padding and border its opened content warrants would only pad out
  * that one line. */
+function CollapsibleCard({ open, children }: { open: boolean; children: ReactNode }): JSX.Element {
+  return (
+    <Paper p={open ? "sm" : "xs"} withBorder={open} style={{ position: "relative" }}>
+      {children}
+    </Paper>
+  );
+}
+
+/** A run of tool calls and reasoning steps, folded behind its summary until opened. */
 function CollapsibleRows({
   id,
   summary,
@@ -476,7 +495,7 @@ function CollapsibleRows({
 }): JSX.Element {
   const [open] = useRetainedDisclosure(id);
   return (
-    <Paper p={open ? "sm" : "xs"} withBorder={open}>
+    <CollapsibleCard open={open}>
       <RetainedDisclosure id={id} summary={summary}>
         <Stack gap="xs" mt="xs">
           {entities.map((entity) => (
@@ -484,7 +503,7 @@ function CollapsibleRows({
           ))}
         </Stack>
       </RetainedDisclosure>
-    </Paper>
+    </CollapsibleCard>
   );
 }
 
