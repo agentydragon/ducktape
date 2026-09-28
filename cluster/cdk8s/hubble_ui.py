@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -52,4 +53,12 @@ def chart(app: App) -> Chart:
 
 
 def hubble_ui(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    return flux_kustomization(chart, NAME, directory, retry_interval=None, wait=None, timeout="5m")
+    return flux_kustomization(
+        chart,
+        NAME,
+        directory,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        retry_interval=None,
+        wait=None,
+        timeout="5m",
+    )

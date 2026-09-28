@@ -1145,6 +1145,7 @@ py_library(
         ":artifact_generators",
         ":flux",
         ":manifest_roots",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
