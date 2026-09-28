@@ -136,6 +136,11 @@ spec:
       name: tofu-state-db
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/k8s/mcp-oauth-state/**"
+          to: "@artifact/cluster/k8s/mcp-oauth-state/"
+      name: mcp-oauth-state
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/valkey/**"
           to: "@artifact/cluster/generated/valkey/"
       name: valkey

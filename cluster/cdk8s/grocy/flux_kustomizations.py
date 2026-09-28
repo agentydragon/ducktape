@@ -13,7 +13,7 @@ def grocy_sf(
     artifact: ArtifactGeneratorSpecArtifacts,
     volsync: Kustomization,
     external_secrets_operator: Kustomization,
-    valkey: Kustomization,
+    mcp_oauth_state: Kustomization,
     monitoring_crds: Kustomization,
     kyverno: Kustomization,
 ) -> Kustomization:
@@ -26,7 +26,7 @@ def grocy_sf(
         depends_on=flux_kustomization_depends_on_many(
             volsync,
             external_secrets_operator,
-            valkey,
+            mcp_oauth_state,
             # the ServiceMonitor/PodMonitor CRD
             monitoring_crds,
             # Kyverno's failurePolicy: Fail webhooks admit the Deployments, Job, Namespace and HTTPRoute.
@@ -54,7 +54,7 @@ def grocy_vallejo(
     artifact: ArtifactGeneratorSpecArtifacts,
     volsync: Kustomization,
     external_secrets_operator: Kustomization,
-    valkey: Kustomization,
+    mcp_oauth_state: Kustomization,
     monitoring_crds: Kustomization,
     kyverno: Kustomization,
 ) -> Kustomization:
@@ -67,7 +67,7 @@ def grocy_vallejo(
         depends_on=flux_kustomization_depends_on_many(
             volsync,
             external_secrets_operator,
-            valkey,
+            mcp_oauth_state,
             # the ServiceMonitor/PodMonitor CRD
             monitoring_crds,
             # Kyverno's failurePolicy: Fail webhooks admit the Deployments, Job, Namespace and HTTPRoute.

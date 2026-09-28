@@ -46,6 +46,7 @@ from cluster.cdk8s import (
     kubectl_passthrough_mcp,
     local_path_provisioner,
     loki_read_proxy,
+    mcp_oauth_state,
     metrics_server,
     mitmproxy,
     node_feature_discovery,
@@ -290,6 +291,7 @@ def generate_manifests(root: Path) -> None:
     agents_namespaces.write_manifests(root)
     tofu_state_namespace.write_manifests(root)
     tofu_state_db.write_manifests(root)
+    mcp_oauth_state.write_manifests(root)
     authentik_namespace.write_manifests(root)
     authentik_db.write_manifests(root)
     authentik_app.write_manifests(root)
@@ -658,6 +660,15 @@ def generate_manifests(root: Path) -> None:
     )
     tofu_state_db_artifact = artifact("tofu-state-db", tofu_state_db.OUTPUT_DIR)
     tofu_state_db.tofu_state_db(flux_chart, tofu_state_db_artifact, cnpg_kustomization)
+    mcp_oauth_state_artifact = artifact("mcp-oauth-state", mcp_oauth_state.OUTPUT_DIR)
+    mcp_oauth_state_kustomization = mcp_oauth_state.mcp_oauth_state_db(
+        flux_chart,
+        mcp_oauth_state_artifact,
+        cnpg_kustomization,
+        external_secrets_operator_kustomization,
+        monitoring_crds_kustomization,
+        kyverno_kustomization,
+    )
     seaweedfs_secrets_artifact = artifact("seaweedfs-secrets", seaweedfs_s3_config.OUTPUT_DIR)
     seaweedfs_s3_config.seaweedfs_secrets(
         flux_chart,
@@ -1069,7 +1080,7 @@ def generate_manifests(root: Path) -> None:
         plaid_mcp_artifact,
         cnpg_kustomization,
         external_secrets_operator_kustomization,
-        valkey_kustomization,
+        mcp_oauth_state_kustomization,
         monitoring_crds_kustomization,
     )
     tana_mcp_artifact = artifact("tana-mcp", tana_mcp.OUTPUT_DIR)
@@ -1077,7 +1088,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         tana_mcp_artifact,
         external_secrets_operator_kustomization,
-        valkey_kustomization,
+        mcp_oauth_state_kustomization,
         monitoring_crds_kustomization,
     )
     cli_proxy_api_artifact = artifact("cli-proxy-api", cli_proxy_api.OUTPUT_DIR)
@@ -1140,7 +1151,7 @@ def generate_manifests(root: Path) -> None:
         grocy_sf_artifact,
         volsync_kustomization,
         external_secrets_operator_kustomization,
-        valkey_kustomization,
+        mcp_oauth_state_kustomization,
         monitoring_crds_kustomization,
         kyverno_kustomization,
     )
@@ -1155,7 +1166,7 @@ def generate_manifests(root: Path) -> None:
         grocy_vallejo_artifact,
         volsync_kustomization,
         external_secrets_operator_kustomization,
-        valkey_kustomization,
+        mcp_oauth_state_kustomization,
         monitoring_crds_kustomization,
         kyverno_kustomization,
     )
@@ -1414,6 +1425,7 @@ def generate_manifests(root: Path) -> None:
             seaweedfs_secrets_artifact,
             tofu_controller_artifact,
             tofu_state_db_artifact,
+            mcp_oauth_state_artifact,
             valkey_artifact,
             kyverno_policies_artifact,
             agentplane_crds_artifact,

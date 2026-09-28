@@ -1305,6 +1305,39 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  annotations:
+    description: Shared OVH-HA CNPG cluster and per-MCP databases for OAuth client state.
+  name: mcp-oauth-state-db
+  namespace: ducktape-flux
+spec:
+  deletionPolicy: Orphan
+  dependsOn:
+    - name: cnpg
+      namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: kyverno
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: postgresql.cnpg.io/v1
+      current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation
+      kind: Database
+  interval: 10m
+  path: ./cluster/k8s/mcp-oauth-state
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: mcp-oauth-state
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: seaweedfs-secrets
   namespace: ducktape-flux
 spec:
@@ -2808,7 +2841,7 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: valkey
+    - name: mcp-oauth-state-db
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -2836,7 +2869,7 @@ spec:
   dependsOn:
     - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: valkey
+    - name: mcp-oauth-state-db
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -2989,7 +3022,7 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: valkey
+    - name: mcp-oauth-state-db
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -3017,7 +3050,7 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: valkey
+    - name: mcp-oauth-state-db
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
