@@ -227,7 +227,6 @@ from cluster.cdk8s.seaweedfs import (
     namespace as seaweedfs_namespace,
     operator_release as seaweedfs_operator_release,
     pr_visuals_bucket as seaweedfs_pr_visuals_bucket,
-    public_coder_agent_backups_bucket as seaweedfs_public_coder_agent_backups_bucket,
     public_s3 as seaweedfs_public_s3,
     registry_cache_bucket as seaweedfs_registry_cache_bucket,
     s3_config as seaweedfs_s3_config,
@@ -894,18 +893,6 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, seaweedfs_pr_visuals_bucket_artifact, seaweedfs_pr_visuals_bucket.chart),
         seaweedfs_operator_kustomization,
     )
-    seaweedfs_public_coder_agent_backups_bucket_artifact = artifact(
-        "seaweedfs-public-coder-agent-backups-bucket", seaweedfs_public_coder_agent_backups_bucket.OUTPUT_DIR
-    )
-    seaweedfs_public_coder_agent_backups_bucket.seaweedfs_public_coder_agent_backups_bucket(
-        flux_chart,
-        write_directory(
-            root,
-            seaweedfs_public_coder_agent_backups_bucket_artifact,
-            seaweedfs_public_coder_agent_backups_bucket.chart,
-        ),
-        seaweedfs_operator_kustomization,
-    )
     seaweedfs_registry_cache_bucket_artifact = artifact(
         "seaweedfs-registry-cache-bucket", seaweedfs_registry_cache_bucket.OUTPUT_DIR
     )
@@ -1559,7 +1546,6 @@ def generate_manifests(root: Path) -> None:
             seaweedfs_forgejo_bucket_artifact,
             seaweedfs_loom_gym_bucket_artifact,
             seaweedfs_pr_visuals_bucket_artifact,
-            seaweedfs_public_coder_agent_backups_bucket_artifact,
             seaweedfs_registry_cache_bucket_artifact,
             ssh_mcp_artifact,
             study_casino_artifact,

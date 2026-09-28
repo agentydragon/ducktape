@@ -1562,7 +1562,6 @@ py_library(
         "//cluster/cdk8s/seaweedfs:namespace",
         "//cluster/cdk8s/seaweedfs:operator_release",
         "//cluster/cdk8s/seaweedfs:pr_visuals_bucket",
-        "//cluster/cdk8s/seaweedfs:public_coder_agent_backups_bucket",
         "//cluster/cdk8s/seaweedfs:public_s3",
         "//cluster/cdk8s/seaweedfs:registry_cache_bucket",
         "//cluster/cdk8s/seaweedfs:s3_config",

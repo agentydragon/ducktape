@@ -31,12 +31,26 @@ spec:
       kind: Bucket
       namespace: public-coder-agent
     - group: seaweed.seaweedfs.com
+      kind: S3Identity
+      namespace: public-coder-agent
+    - group: seaweed.seaweedfs.com
       kind: S3Credentials
       namespace: public-coder-agent
   to:
     - group: seaweed.seaweedfs.com
       kind: Seaweed
       name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: public-coder-agent-backups
+  namespace: public-coder-agent
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials

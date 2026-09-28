@@ -738,11 +738,6 @@ spec:
       name: seaweedfs-pr-visuals-bucket
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/seaweedfs/public-coder-agent-backups-bucket/**"
-          to: "@artifact/cluster/generated/seaweedfs/public-coder-agent-backups-bucket/"
-      name: seaweedfs-public-coder-agent-backups-bucket
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/seaweedfs/registry-cache-bucket/**"
           to: "@artifact/cluster/generated/seaweedfs/registry-cache-bucket/"
       name: seaweedfs-registry-cache-bucket

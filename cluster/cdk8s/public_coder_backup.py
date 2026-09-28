@@ -35,8 +35,7 @@ def _bucket(scope: Construct) -> None:
         adopt_existing=True,
         description="Public Coder's tenant-local SeaweedFS backup bucket.",
     )
-    # Declared by the seaweedfs-public-coder-agent-backups-bucket Kustomization.
-    identity = s3.IdentityRef(scope, "identity", name=_BUCKET_NAME)
+    identity = s3.Identity(scope, "identity", name=_BUCKET_NAME, namespace=_NAMESPACE)
     bucket.grant_read_write(identity)
     identity.credentials(
         namespace=_NAMESPACE,
