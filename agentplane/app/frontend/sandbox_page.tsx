@@ -450,7 +450,14 @@ export function SandboxPage({
                               {thread.archived ? (
                                 <Menu.Item onClick={() => void threadAct(thread.id, "unarchive")}>Unarchive</Menu.Item>
                               ) : (
-                                <Menu.Item onClick={() => void threadAct(thread.id, "archive")}>Archive</Menu.Item>
+                                <Menu.Item
+                                  disabled={session.harnessState === HarnessState.RUNNING}
+                                  onClick={() => void threadAct(thread.id, "archive")}
+                                >
+                                  {session.harnessState === HarnessState.RUNNING
+                                    ? "Stop harness before archiving"
+                                    : "Archive"}
+                                </Menu.Item>
                               )}
                             </Menu.Dropdown>
                           </Menu>

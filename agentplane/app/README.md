@@ -247,7 +247,8 @@ The retained snapshot stays navigable during an outage, with separate warnings f
 connection, stale Kubernetes watch, and disconnected database listener. A Thread's running dot
 requires fresh sources, a running Sandbox, and its last observed harness state; a stale persisted
 RUNNING state alone does not make a suspended or deleted Sandbox look live. These are operational
-snapshots, not replacements for a Thread's runner Event prefix.
+snapshots, not replacements for a Thread's runner Event prefix. Archiving checks the runner's live
+session state and refuses while that Thread's harness is running; stop the harness first.
 
 ## Shutdown
 

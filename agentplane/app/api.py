@@ -691,7 +691,26 @@ async def rename_thread(store: Store, thread_id: UUID, body: ThreadRename) -> Th
 
 
 @threads.post("/{thread_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
-async def archive_thread(store: Store, thread_id: UUID) -> Response:
+async def archive_thread(
+    store: Store, bridge: runner_bridge.Bridge, inventory: Inventory, thread_id: UUID
+) -> Response:
+    thread = await store.get_thread(thread_id)
+    if thread is None:
+        raise ThreadNotFoundError(thread_id)
+    try:
+        sandbox = await inventory.get(thread.sandbox)
+    except SandboxNotFoundError:
+        # A deleted Sandbox has no running harness to keep visible.
+        pass
+    else:
+        if sandbox.state == "running":
+            sessions = await bridge.list_sessions(thread.sandbox)
+            if any(
+                session.session_id == thread.session_id
+                and session.harness_state == runner_bridge.protocol_pb2.HARNESS_STATE_RUNNING
+                for session in sessions
+            ):
+                raise HTTPException(status.HTTP_409_CONFLICT, "stop the harness before archiving this thread")
     await store.archive(thread_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
