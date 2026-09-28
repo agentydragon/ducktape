@@ -23,15 +23,16 @@ Proposed execution order for the Thread correctness/UI track:
   deployed Claude/Codex acceptance (`THREAD_DEPLOYED_ACCEPTANCE`), including the current
   model-path availability failure (`EGRESS_IDENTITY_AVAILABILITY`). Keep one runner-owned
   command queue; no app outbox or combined-start expansion in this batch.
-- **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`) and bounded
-  browser state for the deployed thread sync (`THREAD_LAZY_HISTORY`). Compact activity mocks
-  (`THREAD_ACTIVITY_MOCKS`), Sandbox continuation (`THREAD_SUSPEND_RESUME`), and native
+- **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`). Compact activity
+  mocks (`THREAD_ACTIVITY_MOCKS`), Sandbox continuation (`THREAD_SUSPEND_RESUME`), and native
   resume/recovery remain on the board but are excluded from this dispatch batch.
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
-- **Low priority:** adopting harness-native subagents as Threads (`NATIVE_SUBAGENT_THREADS`)
-  and optional app-wide/per-Thread raw-evidence retention controls (`THREAD_EVIDENCE_RETENTION`).
-  The first view-sync implementation keeps the archive lossless.
+- **Low priority / deferred:** bounded browser cache state (`THREAD_LAZY_HISTORY`, desire D6),
+  adopting harness-native subagents as Threads (`NATIVE_SUBAGENT_THREADS`), and optional
+  app-wide/per-Thread raw-evidence retention controls (`THREAD_EVIDENCE_RETENTION`). The current
+  view sync lazily loads long content and retains loaded rows/bodies until the Thread closes; it
+  keeps the archive lossless.
 
 The independent Action Service track still has console policy parity (`CONSOLE_POLICIES`) and Haku
 MCP/tool-approval retirement (`MCP_CONSOLE_INTERNAL`, `MCPAGG`, `RETIRE_TOOLS`). Transcript
@@ -92,7 +93,7 @@ flowchart TB
     SANDBOX_VM_ISOLATION["Deferred investigation<br/>selectable container or VM Sandbox implementation<br/>contain agent resource exhaustion"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
-    THREAD_LAZY_HISTORY["P1 bounded browser state<br/>evict Thread history outside the reading window<br/>the reader keeps its place"]:::future
+    THREAD_LAZY_HISTORY["Deferred desire D6<br/>bound browser cache after loading<br/>long content remains on demand"]:::future
     THREAD_EVIDENCE_RETENTION["Low-priority design<br/>optional app-wide / per-Thread raw retention<br/>lossless storage remains the default contract"]:::future
     THREAD_SUBMIT_500["Reported bug<br/>message submission and Retry return 500<br/>Awaiting saved confirmation persists"]:::active
     THREAD_DEPLOYED_ACCEPTANCE["P0 remaining acceptance<br/>deployed commands/events cutover<br/>real Claude and Codex via devbox"]:::active
@@ -924,6 +925,9 @@ Do not merely enable the composer against a dead session, create a replacement T
 or treat a fresh harness without the original context as a successful resume. Missing
 recovery state must be explicit. This does not introduce offline command admission or
 automatic replay of unsettled predecessor commands (`THREAD_SUCCESSOR_DELIVERY`).
+For this first implementation, the acceptance scope starts from an idle harness after a
+completed turn. Recovery of an in-flight turn, including tool calls aborted by harness
+shutdown, is deferred for a later design and implementation pass.
 
 Add integration and deployed acceptance for both Claude and Codex: create at least two
 Threads in one fixture Sandbox, complete a turn in each, suspend until the old Pod is
@@ -932,8 +936,7 @@ and retained context with exact mocked-LLM request assertions; deployed acceptan
 observe new input confirmation and a completed reply, not just a Ready Pod. Verify
 monotonic replay without duplicate history and no cross-Thread routing/context mix-up.
 Add focused frontend coverage that the original page and a reloaded page both recover
-from the ended attachment and can send successfully. Cover in-flight suspension
-separately with explicit pending-command outcomes. Use owned test fixtures, not the
+from the ended attachment and can send successfully. Use owned test fixtures, not the
 operator's affected Thread. Archive-before-deletion work does not gate this regression.
 
 ### `SANDBOX_VM_ISOLATION` — selectable VM-backed Sandbox isolation
@@ -962,6 +965,14 @@ truthful failure reporting, and recovery without invented or duplicated command 
 This investigation does not block current container correctness work.
 
 ### `THREAD_EVENT_CONTINUITY` — one runner-owned Thread Event log through harness resume
+
+**Deferred identity decision:** decide whether the app's `thread_id` and the runner's persistent
+`session_id` should share one stable identity. Carrying two IDs for one conversation across UI,
+HTTP, and resume paths can suggest that resuming creates a new session. A shared identity could make
+the conversation identity consistent end to end; separate IDs may still be right for the app's
+product identity versus the runner's storage/recovery ownership. Record the choice and its rationale
+in the identity cutover. This decision does not change the immediate rule: shutdown/resume reopens
+the same runner session under the same Thread.
 
 **Identity/storage cutover:** implement
 [one high-water mark per Event log](../docs/thread_layering.md#one-event-high-water-mark-per-log-across-harness-sessions):
@@ -1119,15 +1130,14 @@ Verify the relay-retention change from [#7035](https://github.com/agentydragon/d
 on its deployed image before removing this task; its gated service-consumer test
 demonstrates the cancellation mechanism, not the original staging attempt's packet order.
 
-### `THREAD_LAZY_HISTORY` — bounded history in a long-open tab
+### `THREAD_LAZY_HISTORY` — deferred browser-cache bound (D6)
 
-The thread store evicts nothing: a tab keeps every row and body it has loaded until the thread
-closes, which fails **P10** of the [thread sync requirements](../docs/thread_sync_requirements.md).
-Evict rows and bodies outside the reading window while the reader keeps its place, and hold the
-tail and the reading window independently so that moving between them loads none of the history in
-between ([§ Retained browser state](../docs/thread_view_sync.md#retained-browser-state)). The
-eviction rule and its done-when are in the [thread sync plan](thread_sync/README.md), with the rest
-of the open Electric work.
+The thread store retains every row and body it has loaded until the Thread closes. Long content is
+loaded on demand, and the owner accepts this cache growth for the current product slice; bounded
+browser state is not an acceptance gate. If resource pressure justifies revisiting D6, evict rows
+and bodies outside the reading window while preserving the reader's place. The proposed design and
+future evidence are in [Thread view synchronization](../docs/thread_view_sync.md#accepted-browser-cache-state-d6)
+and the [Thread sync plan](thread_sync/README.md).
 
 ### `THREAD_EVIDENCE_RETENTION` — optional raw capture
 

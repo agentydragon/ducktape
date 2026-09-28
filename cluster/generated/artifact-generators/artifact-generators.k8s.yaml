@@ -106,24 +106,9 @@ spec:
       name: seaweedfs-cluster
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/seaweedfs/db/**"
-          to: "@artifact/cluster/k8s/seaweedfs/db/"
-      name: seaweedfs-filer-db
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/seaweedfs/namespace/**"
-          to: "@artifact/cluster/generated/seaweedfs/namespace/"
-      name: seaweedfs-namespace
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/seaweedfs/operator/**"
           to: "@artifact/cluster/generated/seaweedfs/operator/"
       name: seaweedfs-operator
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/seaweedfs/secrets/**"
-          to: "@artifact/cluster/k8s/seaweedfs/secrets/"
-      name: seaweedfs-secrets
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/tofu-controller/**"
@@ -134,6 +119,11 @@ spec:
         - from: "@repo/cluster/k8s/tofu-state/**"
           to: "@artifact/cluster/k8s/tofu-state/"
       name: tofu-state-db
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/k8s/mcp-oauth-state/**"
+          to: "@artifact/cluster/k8s/mcp-oauth-state/"
+      name: mcp-oauth-state
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/valkey/**"
@@ -258,11 +248,19 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/grocy/sf/app/**"
           to: "@artifact/cluster/k8s/grocy/sf/app/"
+        - from: "@repo/cluster/k8s/grocy/sf/mcp/**"
+          to: "@artifact/cluster/k8s/grocy/sf/mcp/"
+        - from: "@repo/cluster/k8s/grocy/mcp-base/**"
+          to: "@artifact/cluster/k8s/grocy/mcp-base/"
       name: grocy-sf
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/grocy/vallejo/app/**"
           to: "@artifact/cluster/k8s/grocy/vallejo/app/"
+        - from: "@repo/cluster/k8s/grocy/vallejo/mcp/**"
+          to: "@artifact/cluster/k8s/grocy/vallejo/mcp/"
+        - from: "@repo/cluster/k8s/grocy/mcp-base/**"
+          to: "@artifact/cluster/k8s/grocy/mcp-base/"
       name: grocy-vallejo
       originRevision: "@repo"
     - copy:
@@ -470,11 +468,6 @@ spec:
       name: budget-namespace
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/forgejo/cache/**"
-          to: "@artifact/cluster/generated/forgejo/cache/"
-      name: forgejo-cache
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/gatus/**"
           to: "@artifact/cluster/k8s/gatus/"
       name: gatus
@@ -505,25 +498,11 @@ spec:
       name: google-mcp
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/grocy/sf/mcp/**"
-          to: "@artifact/cluster/k8s/grocy/sf/mcp/"
-        - from: "@repo/cluster/k8s/grocy/mcp-base/**"
-          to: "@artifact/cluster/k8s/grocy/mcp-base/"
-      name: grocy-mcp-sf
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/grocy/sf/user-perms/**"
           to: "@artifact/cluster/k8s/grocy/sf/user-perms/"
         - from: "@repo/cluster/k8s/grocy/user-perms-base/**"
           to: "@artifact/cluster/k8s/grocy/user-perms-base/"
       name: grocy-sf-user-perms
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/grocy/vallejo/mcp/**"
-          to: "@artifact/cluster/k8s/grocy/vallejo/mcp/"
-        - from: "@repo/cluster/k8s/grocy/mcp-base/**"
-          to: "@artifact/cluster/k8s/grocy/mcp-base/"
-      name: grocy-mcp-vallejo
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/grocy/vallejo/user-perms/**"

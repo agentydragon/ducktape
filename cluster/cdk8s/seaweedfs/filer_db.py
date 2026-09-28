@@ -21,15 +21,11 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecResourcesLimits,
     ClusterSpecResourcesRequests,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import cnpg, node_scheduling
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.seaweedfs import namespace
 
 NAME = "seaweedfs-filer-db-ssd"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/db"
 # The application role's credentials, which the filer authenticates with too. The -creds
 # name deliberately avoids CNPG's reserved <cluster>-app: CNPG auto-generates a bogus one
 # (default user "app") for this cluster.
@@ -85,15 +81,3 @@ def chart(app: App) -> Chart:
         ),
     )
     return chart
-
-
-def seaweedfs_filer_db(chart: Chart, directory: RenderedDirectory, cnpg: Kustomization) -> Kustomization:
-    name = "seaweedfs-filer-db"
-    return flux_kustomization(
-        chart,
-        name,
-        directory,
-        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(cnpg),
-    )

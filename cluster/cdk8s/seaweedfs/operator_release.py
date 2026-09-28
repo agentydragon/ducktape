@@ -1,4 +1,5 @@
-"""The SeaweedFS operator's Helm release, and the chart repository it installs from.
+"""The SeaweedFS operator's Helm release, and the chart repository it installs from. Its unit
+also carries the `seaweedfs` Namespace (`namespace.py`).
 
 The chart version is also the version of the CRDs the typed bindings are generated from
 (`seaweed_*_crd` in MODULE.bazel); keep them in step.

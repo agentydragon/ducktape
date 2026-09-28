@@ -128,7 +128,7 @@ def plaid_mcp(
     artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
-    valkey: Kustomization,
+    mcp_oauth_state: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     name = "plaid-mcp"
@@ -141,7 +141,7 @@ def plaid_mcp(
         depends_on=flux_kustomization_depends_on_many(
             cnpg,
             external_secrets_operator,
-            valkey,
+            mcp_oauth_state,
             # ServiceMonitor
             monitoring_crds,
         ),
@@ -215,7 +215,7 @@ def tana_mcp(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_operator: Kustomization,
-    valkey: Kustomization,
+    mcp_oauth_state: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     name = "tana-mcp"
@@ -227,7 +227,7 @@ def tana_mcp(
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_operator,
-            valkey,
+            mcp_oauth_state,
             # ServiceMonitor + PrometheusRule
             monitoring_crds,
         ),

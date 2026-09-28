@@ -3,8 +3,9 @@
 by the household's kustomization, and `grocy-<household>.k8s.yaml` (Namespace, config PVC,
 and the VolSync backup, migration and verification objects around it).
 
-Hand-written beside the generated output: each household's `app/kustomization.yaml`, whose
-patch moves the Deployment onto the hil-ovh zone.
+Hand-written beside the generated output: each household's `app/kustomization.yaml`, the
+household's Flux Kustomization directory, which also includes its MCP server (`../mcp`,
+cluster/cdk8s/grocy/mcp.py) and whose patch moves the Deployment onto the hil-ovh zone.
 """
 
 from __future__ import annotations

@@ -41,3 +41,8 @@ patches:
                       secretKeyRef:
                         name: grocy-mcp-oidc-vallejo
                         key: grocy_proxy_client_id
+                  - name: GROCY_MCP_PERSISTENCE__URL
+                    valueFrom:
+                      secretKeyRef:
+                        name: mcp-oauth-db-credentials
+                        key: uri

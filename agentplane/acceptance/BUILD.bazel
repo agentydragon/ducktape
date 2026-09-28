@@ -132,6 +132,41 @@ py_test(
     ],
 )
 
+# Live end-to-end resume: two Threads, one per harness, share a fixture Sandbox so a single Pod
+# replacement exercises both native stores. This uses real model turns and waits for the old Pod to
+# disappear before resuming the same Sandbox.
+py_test(
+    name = "test_suspend_resume",
+    timeout = "eternal",
+    srcs = ["test_suspend_resume.py"],
+    env_inherit = [
+        "AGENTPLANE_ACCEPTANCE_NAMESPACE",
+        "AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT",
+        "AGENTPLANE_ACCEPTANCE_TOKEN",
+        "AGENTPLANE_ACCEPTANCE_URL",
+        "HOME",
+        "KUBECONFIG",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":agent",
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app:client",
+        "//agentplane/app:inventory",
+        "//agentplane/app:presets",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)
+
 py_test(
     name = "test_ollama_routes",
     timeout = "eternal",

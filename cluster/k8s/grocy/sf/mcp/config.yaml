@@ -6,6 +6,4 @@ auth:
   oidc_issuer: https://auth.allegedly.works/application/o/grocy-mcp-sf/
   public_base_url: https://grocy-mcp-sf.allegedly.works
 persistence:
-  kind: valkey
-  host: grocy-sf-valkey-ovh-master.grocy-sf.svc.cluster.local
-  db: 0
+  kind: postgres
