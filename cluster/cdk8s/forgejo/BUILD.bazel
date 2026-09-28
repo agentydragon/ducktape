@@ -46,11 +46,10 @@ py_library(
     srcs = ["cache.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:valkey",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/redis_operator:redisreplication",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
