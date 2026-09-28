@@ -34,9 +34,9 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
-    ConfigMap,
     ContainerPort,
     ContainerResources,
+    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
     Deployment,
@@ -54,7 +54,6 @@ from cdk8s_plus_34 import (
     Service,
     ServiceAccount,
     ServicePort,
-    Volume,
 )
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
@@ -62,7 +61,7 @@ from constructs import Construct
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from agentplane.app.main import CONFIG_FILE_ENV, Settings
 from agentplane.app.oidc import OIDCSettings
-from cluster.cdk8s import cilium, container_security, node_scheduling
+from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import actions, database, egress, electric, llm_ingress, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
@@ -70,11 +69,12 @@ from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_bu
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
+from cluster.cdk8s.model_rosters import OLLAMA_CHAT_MODELS, ApiShape, Provider, exposed_name, ollama_chat_variant
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name
 
@@ -87,15 +87,39 @@ CONTAINER_PORT = 8080
 _RUNNER_PORT = 7000
 _LABELS = {"app.kubernetes.io/name": NAME}
 _RUNNER_LABELS = {"app.kubernetes.io/name": "agentplane-runner"}
-_CONFIG_DIR = "/etc/agentplane"
 # Shared by the runner's --state-dir flag, its container volumeMount, and the
 # SandboxTemplate's own VolumeClaimTemplate -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
 _STATE_DIR = "/state"
+_QWEN_IQ4XS = "qwen3.8-flash-next-iq4xs"
+
+
+def service(namespace: str) -> ServiceRef:
+    """The app's Service in one environment's namespace."""
+    return ServiceRef(
+        name=NAME,
+        port=Port(name="http", number=CONTAINER_PORT),
+        pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())),
+    )
+
+
+def _runner_model_context_windows() -> dict[str, int]:
+    """Context verified for the Agentplane Qwen IQ4_XS routes, on both client wires.
+
+    Route ids and limits come from the LiteLLM model roster; keep this scoped to the Qwen routes
+    rather than assuming every Ollama model has the same window.
+    """
+    return {
+        exposed_name(Provider.OLLAMA, shape, ollama_chat_variant(model, context)): context
+        for model, _, contexts in OLLAMA_CHAT_MODELS
+        if model == _QWEN_IQ4XS
+        for context in contexts
+        for shape in (ApiShape.OAI_CHAT, ApiShape.OLM_CHAT)
+    }
 
 
 class App(Construct):
-    """ServiceAccounts, RBAC, Deployment (+ migrate initContainer), Service,
+    """ServiceAccounts, RBAC, the config ConfigMap, Deployment (+ migrate initContainer), Service,
     HTTPRoute, NetworkPolicy, optional PodDisruptionBudget, and the runner
     SandboxTemplate.
     """
@@ -107,7 +131,15 @@ class App(Construct):
         forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=env.namespace)
         app_service_account = self._add_service_accounts()
         self._add_rbac(app_service_account)
-        deployment = self._add_deployment(app_service_account)
+        config = SettingsFile(
+            self,
+            "config",
+            metadata=ApiObjectMetadata(name="agentplane-app-config", namespace=env.namespace),
+            model=Settings,
+            content=env.app_config.to_config_file(),
+            path="/etc/agentplane/config.yaml",
+        )
+        deployment = self._add_deployment(app_service_account, config)
         self._add_service(deployment)
         self._add_http_route()
         self._add_network_policy()
@@ -120,16 +152,22 @@ class App(Construct):
         # The identity an agent presents to the app's own API; no Pod runs as it, so no
         # mounted token.
         ServiceAccount(
-            self, "serviceaccount-agent", metadata=metadata("agentplane-agent", namespace), automount_token=False
+            self,
+            "serviceaccount-agent",
+            metadata=ApiObjectMetadata(name="agentplane-agent", namespace=namespace),
+            automount_token=False,
         )
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the app
         # mounts its own token to call TokenReview as itself.
         app_service_account = ServiceAccount(
-            self, "serviceaccount-app", metadata=metadata(NAME, namespace), automount_token=True
+            self, "serviceaccount-app", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), automount_token=True
         )
         # The runner Pods' identity, with no RBAC of its own.
         ServiceAccount(
-            self, "serviceaccount-runner", metadata=metadata("agentplane-runner", namespace), automount_token=False
+            self,
+            "serviceaccount-runner",
+            metadata=ApiObjectMetadata(name="agentplane-runner", namespace=namespace),
+            automount_token=False,
         )
         return app_service_account
 
@@ -147,7 +185,7 @@ class App(Construct):
         Role(
             self,
             "role",
-            metadata=metadata(NAME, namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             rules=[
                 # GET /sandboxes/templates lists them; a get-only Role 403'd the route (#7023).
                 RolePolicyRule(
@@ -187,7 +225,10 @@ class App(Construct):
             ],
         )
         RoleBinding(
-            self, "rolebinding", metadata=metadata(NAME, namespace), role=Role.from_role_name(self, "role-ref", NAME)
+            self,
+            "rolebinding",
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            role=Role.from_role_name(self, "role-ref", NAME),
         ).add_subjects(app_service_account)
 
     def _container_env(self) -> dict[str, EnvValue]:
@@ -201,7 +242,6 @@ class App(Construct):
         )
         token_subjects = json.dumps([f"system:serviceaccount:{namespace}:agentplane-agent"])
         return {
-            CONFIG_FILE_ENV: EnvValue.from_value(f"{_CONFIG_DIR}/config.yaml"),
             "AGENTPLANE_DB_USER": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="username")),
             "AGENTPLANE_DB_PASSWORD": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="password")),
             "AGENTPLANE_DB_HOST": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="host")),
@@ -228,7 +268,7 @@ class App(Construct):
             env_name(Settings, "token_subjects"): EnvValue.from_value(token_subjects),
         }
 
-    def _add_deployment(self, app_service_account: ServiceAccount) -> Deployment:
+    def _add_deployment(self, app_service_account: ServiceAccount, config: SettingsFile) -> Deployment:
         namespace = self.env.namespace
         env = self._container_env()
         oidc_secret_reload = "agentplane-oidc"
@@ -237,15 +277,15 @@ class App(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                NAME,
-                namespace,
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=namespace,
                 labels=_LABELS,
                 annotations={
                     # A re-minted client secret otherwise leaves the pod on the old
                     # one, and every login 401s.
                     "secret.reloader.stakater.com/reload": oidc_secret_reload,
-                    "configmap.reloader.stakater.com/reload": "agentplane-app-config",
+                    "configmap.reloader.stakater.com/reload": config.config_map.name,
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
@@ -288,23 +328,22 @@ class App(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            security_context=container_security.WRITABLE_ROOT,
+            # Writable: its root filesystem writes are unaudited.
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
-        config = ConfigMap.from_config_map_name(self, "app-config-ref", "agentplane-app-config")
-        volume = Volume.from_config_map(self, "config-volume", config)
-        deployment.containers[0].mount(_CONFIG_DIR, volume, read_only=True)
+        config.mount_into(deployment.containers[0], env=CONFIG_FILE_ENV)
 
         # With the database (cnpg_conventions R5). Unlike llm-ingress/egress, the app
         # carries no control-plane toleration.
-        node_scheduling.attract_to_zone(deployment)
-        apply_pod_spec_patches(deployment)
+        pod_policy.place(deployment, node_scheduling.HIL_OVH)
+        pod_policy.harden(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
         Service(
             self,
             "service",
-            metadata=metadata(NAME, self.env.namespace, labels=_LABELS),
+            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace, labels=_LABELS),
             selector=deployment,
             ports=[ServicePort(name="http", port=CONTAINER_PORT, target_port=CONTAINER_PORT, protocol=Protocol.TCP)],
         )
@@ -314,10 +353,9 @@ class App(Construct):
         https_route(
             self,
             "httproute",
-            metadata=metadata(namespace, namespace),
+            metadata=ApiObjectMetadata(name=namespace, namespace=namespace),
             hostnames=[self.env.app.hostname],
-            backend=NAME,
-            port=CONTAINER_PORT,
+            backend=service(namespace),
             # A session stream stays attached for as long as the tab is open.
             timeout="3600s",
         )
@@ -338,8 +376,8 @@ class App(Construct):
         NetworkPolicy(
             self,
             "networkpolicy-runner",
-            metadata=metadata("agentplane-runner", namespace),
-            selector=_RUNNER_LABELS,
+            metadata=ApiObjectMetadata(name="agentplane-runner", namespace=namespace),
+            endpoint_selector=_RUNNER_LABELS,
             ingress=[IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": namespace}, ports=[_RUNNER_PORT])],
             egress=[
                 dns_egress,
@@ -352,8 +390,8 @@ class App(Construct):
         NetworkPolicy(
             self,
             "networkpolicy-app",
-            metadata=metadata(NAME, namespace),
-            selector=_LABELS,
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            endpoint_selector=_LABELS,
             ingress=[IngressRule.from_gateway(CONTAINER_PORT)],
             egress=[
                 dns_egress,
@@ -417,6 +455,12 @@ class App(Construct):
             security_context=sandbox_pod.workload_security_context(),
             env=[
                 SandboxTemplateSpecPodTemplateSpecContainersEnv(name="LITELLM_URL", value=litellm_url),
+                # Optional runner-only config. Older runner images ignore this environment
+                # variable; the updated runner applies it when a model is listed.
+                SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                    name="AGENTPLANE_MODEL_CONTEXT_WINDOWS",
+                    value=json.dumps(_runner_model_context_windows(), sort_keys=True, separators=(",", ":")),
+                ),
                 # On the container and not just on the harness children the runner spawns.
                 *sandbox_pod.egress_env(),
                 # Neither a workload token nor a LiteLLM key: the placeholder the
@@ -454,15 +498,17 @@ class App(Construct):
         SandboxTemplate(
             self,
             "sandboxtemplate",
-            name="agentplane-runner",
-            namespace=namespace,
-            # What the sandbox Actions tell an agent choosing among the templates they offer.
-            annotations={
-                DESCRIPTION_ANNOTATION: (
-                    "The shared runner image, built to host an agent harness: the sandbox tools (git, "
-                    "curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
-                )
-            },
+            metadata=ApiObjectMetadata(
+                name="agentplane-runner",
+                namespace=namespace,
+                # What the sandbox Actions tell an agent choosing among the templates they offer.
+                annotations={
+                    DESCRIPTION_ANNOTATION: (
+                        "The shared runner image, built to host an agent harness: the sandbox tools (git, "
+                        "curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
+                    )
+                },
+            ),
             # The CiliumNetworkPolicy next to this construct is the runner's fence.
             network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
             volume_claim_templates_policy=SandboxTemplateSpecVolumeClaimTemplatesPolicy.OVERRIDES,

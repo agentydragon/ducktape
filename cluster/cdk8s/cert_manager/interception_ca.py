@@ -15,8 +15,6 @@ from cdk8s import ApiObjectMetadata
 from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef, CertificateSpecSecretTemplate
 from constructs import Construct
 from trust_manager_crds.io.cert_manager.trust import (
-    Bundle,
-    BundleSpec,
     BundleSpecSources,
     BundleSpecSourcesSecret,
     BundleSpecTarget,
@@ -27,21 +25,13 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetNamespaceSelectorMatchExpressions,
 )
 
-from cluster.cdk8s.providers.cert_manager.certificate import LONG_LIVED_CA, Certificate, CertificatePrivateKey
+from cluster.cdk8s.cert_manager.cluster_ca import LONG_LIVED_CA, ROOT_CA_SECRET
+from cluster.cdk8s.providers.cert_manager.bundle import Bundle
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
+from cluster.cdk8s.reflector import mirror_annotations
 
 _ROOT_CA_ISSUER = "cluster-ca-bootstrap"
-_CLUSTER_ROOT_CA_SECRET = "cluster-root-ca-secret"
 BUNDLE_KEY = "ca-certificates.crt"
-
-
-def _reflector_annotations(namespaces: Sequence[str]) -> dict[str, str]:
-    value = ",".join(namespaces)
-    return {
-        "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-        "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": value,
-        "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-        "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": value,
-    }
 
 
 def interception_root_ca(
@@ -65,39 +55,36 @@ def interception_root_ca(
     Certificate(
         scope,
         "certificate",
-        name=name,
-        namespace=namespace,
+        metadata=ApiObjectMetadata(name=name, namespace=namespace),
         is_ca=True,
         common_name=name,
         secret_name=secret_name,
         **LONG_LIVED_CA,
         private_key=CertificatePrivateKey.ecdsa_p256(),
         # trust-manager reads Bundle sources from its own namespace.
-        secret_template=CertificateSpecSecretTemplate(annotations=_reflector_annotations(reflection_namespaces)),
+        secret_template=CertificateSpecSecretTemplate(annotations=mirror_annotations(reflection_namespaces)),
         issuer_ref=CertificateSpecIssuerRef(name=_ROOT_CA_ISSUER, kind="ClusterIssuer"),
     )
     Bundle(
         scope,
         "trust-bundle",
         metadata=ApiObjectMetadata(name=bundle_name),
-        spec=BundleSpec(
-            sources=[
-                BundleSpecSources(use_default_c_as=True),
-                BundleSpecSources(secret=BundleSpecSourcesSecret(name=_CLUSTER_ROOT_CA_SECRET, key="ca.crt")),
-                BundleSpecSources(secret=BundleSpecSourcesSecret(name=secret_name, key="tls.crt")),
-            ],
-            target=BundleSpecTarget(
-                config_map=BundleSpecTargetConfigMap(
-                    key=BUNDLE_KEY, metadata=BundleSpecTargetConfigMapMetadata(annotations={"description": description})
-                ),
-                additional_formats=additional_formats,
-                namespace_selector=BundleSpecTargetNamespaceSelector(
-                    match_expressions=[
-                        BundleSpecTargetNamespaceSelectorMatchExpressions(
-                            key="kubernetes.io/metadata.name", operator="In", values=list(target_namespaces)
-                        )
-                    ]
-                ),
+        sources=[
+            BundleSpecSources(use_default_c_as=True),
+            BundleSpecSources(secret=BundleSpecSourcesSecret(name=ROOT_CA_SECRET, key="ca.crt")),
+            BundleSpecSources(secret=BundleSpecSourcesSecret(name=secret_name, key="tls.crt")),
+        ],
+        target=BundleSpecTarget(
+            config_map=BundleSpecTargetConfigMap(
+                key=BUNDLE_KEY, metadata=BundleSpecTargetConfigMapMetadata(annotations={"description": description})
+            ),
+            additional_formats=additional_formats,
+            namespace_selector=BundleSpecTargetNamespaceSelector(
+                match_expressions=[
+                    BundleSpecTargetNamespaceSelectorMatchExpressions(
+                        key="kubernetes.io/metadata.name", operator="In", values=list(target_namespaces)
+                    )
+                ]
             ),
         ),
     )

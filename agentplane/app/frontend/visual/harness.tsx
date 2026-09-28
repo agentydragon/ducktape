@@ -7,7 +7,7 @@
 import "./network";
 import "@mantine/core/styles.css";
 
-import { create, toJson } from "@bufbuild/protobuf";
+import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import { createRoot } from "react-dom/client";
 
 import App from "../app";
@@ -277,15 +277,6 @@ const ACTION_POLICY: ActionPolicyView = {
       },
     },
   ],
-  auto_deny_if: [
-    {
-      binding: "demo-a1b2-push-afternoon",
-      policy_set: "harness-push",
-      index: 0,
-      policy: { type: "exact_actions", actions: { kubernetes: ["pods_delete", "resources_delete"] } },
-    },
-  ],
-  auto_deny_unless: [],
 };
 
 const DECISIONS: Decision[] = [
@@ -892,14 +883,15 @@ function command(
   id: string,
   operation: string,
   outcome: "pending" | "effected" | "failed" | "noop",
-  reason: string | null = null
+  reason: string | null = null,
+  text: string | null = null
 ): Record<string, unknown> {
   return entity(
     "command",
     id,
     cursor,
     { operation, outcome, outcome_cursor: outcome === "pending" ? null : String(cursor), outcome_reason: reason },
-    { pending: outcome === "pending" }
+    { pending: outcome === "pending", input_ref: text === null ? null : payload(cursor, id, "command_input", text) }
   );
 }
 
@@ -1033,6 +1025,15 @@ function interleavedRows(threadId: string): Record<string, unknown>[] {
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
+function endedAttachmentRows(threadId: string): Record<string, unknown>[] {
+  return interleavedRows(threadId).map((row) => {
+    if (row.entity_kind !== "view_state") return row;
+    const state = row.state as Record<string, unknown>;
+    const operational = state.operational as Record<string, unknown>;
+    return { ...row, state: { ...state, operational: { ...operational, status: "ended" } } };
+  });
+}
+
 function statesRows(threadId: string): Record<string, unknown>[] {
   const rows = [
     viewState(23, "t2"),
@@ -1070,13 +1071,93 @@ function statesRows(threadId: string): Record<string, unknown>[] {
       scenario.pendingCommands === "outcomes" ? "noop" : "pending",
       "Target turn already ended"
     ),
+    // Admitted and still pending, so it renders inline as a pending message bubble rather than in
+    // the pending-commands box below -- see projected_session.tsx's pendingSentMessage.
+    command(26, "queued-submit", "submit_input", "pending", null, "Continue past the failing test once it lands."),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
+/** Three mundane observations that collapse into one comma-joined row, then a prominent one
+ * (harness lost) that stands alone, then one final mundane one -- lone, so it groups with nothing. */
+function lifecycleGroupRows(threadId: string): Record<string, unknown>[] {
+  const event = (value: MessageInitShape<typeof EventSchema>["observation"]): Record<string, unknown> =>
+    toJson(EventSchema, create(EventSchema, { observation: value })) as Record<string, unknown>;
+  const rows = [
+    viewState(50, null),
+    lifecycle(10, "turn_started", event({ case: "turnStarted", value: { turnId: "turn-visual" } }), threadId),
+    lifecycle(20, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+    lifecycle(
+      30,
+      "turn_completed",
+      event({ case: "turnCompleted", value: { turnId: "turn-visual", status: TurnStatus.COMPLETED } }),
+      threadId
+    ),
+    lifecycle(40, "harness_lost", event({ case: "harnessLost", value: {} }), threadId),
+    lifecycle(50, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
+/** One user turn answered with a fenced Python code block, so Markdown's syntax highlighting of a
+ * registered language renders the way tool-call Arguments/Output already do. */
+function codeFenceRows(threadId: string): Record<string, unknown>[] {
+  const rows = [
+    viewState(20, null),
+    entity(
+      "confirmed_input",
+      "user-1",
+      4,
+      { harness_message_id: "user-1", origin_command_ids: ["input-1"] },
+      {
+        thread_id: threadId,
+        turn_id: "turn-visual",
+        input_ref: payload(4, "user-1", "confirmed_input", "Add type hints to the greet function."),
+      }
+    ),
+    item(
+      20,
+      "m-code",
+      ItemKind.ASSISTANT_TEXT,
+      'Done. The signature now declares its types explicitly:\n\n```python\ndef greet(name: str) -> str:\n    return f"Hello, {name}!"\n```\n',
+      { threadId }
+    ),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
+/** A reasoning step with no neighboring tool call, so `historyRows` never folds it into a run and
+ * `EntityCard` renders it directly -- the standalone case, distinct from `standardRows`'s reasoning
+ * step, which sits right after a tool call and so is always part of a run. */
+function standaloneReasoningRows(threadId: string): Record<string, unknown>[] {
+  const rows = [
+    viewState(24, null),
+    entity(
+      "confirmed_input",
+      "user-1",
+      4,
+      { harness_message_id: "user-1", origin_command_ids: ["input-1"] },
+      {
+        thread_id: threadId,
+        turn_id: "turn-visual",
+        input_ref: payload(4, "user-1", "confirmed_input", "What should we try next?"),
+      }
+    ),
+    item(20, "r-solo", ItemKind.REASONING, "Weighing whether to add a retry or fix the root cause first.", {
+      threadId,
+    }),
+    item(24, "m-1", ItemKind.ASSISTANT_TEXT, "Let's fix the root cause.", { threadId }),
   ];
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
 function threadEntityRows(threadId: string): Record<string, unknown>[] {
+  if (scenario.endedAttachment) return endedAttachmentRows(threadId);
   if (scenario.failedTurn) return failedRows(threadId, scenario.failedTurn === "after-content");
   if (scenario.interleavedEvents) return interleavedRows(threadId);
+  if (scenario.lifecycleGroup) return lifecycleGroupRows(threadId);
+  if (scenario.markdownCodeFence) return codeFenceRows(threadId);
+  if (scenario.standaloneReasoning) return standaloneReasoningRows(threadId);
   if (threadId === THREADS[2].id || scenario.pendingCommands) return statesRows(threadId);
   return standardRows(threadId);
 }
@@ -1254,7 +1335,17 @@ routes.push(
   [
     "GET",
     /^\/models$/,
-    () => ({ HARNESS_CLAUDE: ["harness-claude-model", "next-model"], HARNESS_CODEX: ["harness-codex-model"] }),
+    () => ({
+      models: [
+        { model: "harness-claude-model", display_name: "Harness Claude Model" },
+        { model: "next-model", display_name: "Next Model" },
+        { model: "harness-codex-model", display_name: "Harness Codex Model" },
+      ],
+      harnesses: {
+        HARNESS_CLAUDE: ["harness-claude-model", "next-model"],
+        HARNESS_CODEX: ["harness-codex-model"],
+      },
+    }),
   ],
   [
     "GET",
@@ -1700,24 +1791,45 @@ if (scenario.openConnectionStatus) {
 }
 
 if (scenario.openDebug) {
-  const openDebug = new MutationObserver(() => {
-    const button = [...document.querySelectorAll("button")].find(
-      (candidate) => candidate.textContent === "Debug history"
-    );
-    if (!(button instanceof HTMLButtonElement)) return;
-    openDebug.disconnect();
-    button.click();
-    if (scenario.openDebug !== "stderr") return;
-    const expandStderr = new MutationObserver(() => {
-      const row = document.querySelector<HTMLDetailsElement>('[data-debug-observation="31"]');
-      if (!row) return;
-      expandStderr.disconnect();
-      row.open = true;
-      row.dispatchEvent(new Event("toggle", { bubbles: true }));
+  // "Debug history" now lives in the composer's overflow menu: open that first, since Mantine
+  // does not mount a closed Menu's dropdown items at all.
+  const openMenu = new MutationObserver(() => {
+    const trigger = document.querySelector('button[aria-label="More"]');
+    if (!(trigger instanceof HTMLButtonElement)) return;
+    openMenu.disconnect();
+    trigger.click();
+    const openDebug = new MutationObserver(() => {
+      const item = [...document.querySelectorAll('[role="menuitem"]')].find(
+        (candidate) => candidate.textContent === "Debug history"
+      );
+      if (!(item instanceof HTMLElement)) return;
+      openDebug.disconnect();
+      item.click();
+      if (scenario.openDebug !== "stderr") return;
+      const expandStderr = new MutationObserver(() => {
+        const row = document.querySelector<HTMLDetailsElement>('[data-debug-observation="31"]');
+        if (!row) return;
+        expandStderr.disconnect();
+        row.open = true;
+        row.dispatchEvent(new Event("toggle", { bubbles: true }));
+      });
+      expandStderr.observe(document, { childList: true, subtree: true });
     });
-    expandStderr.observe(document, { childList: true, subtree: true });
+    openDebug.observe(document, { childList: true, subtree: true });
   });
-  openDebug.observe(document, { childList: true, subtree: true });
+  openMenu.observe(document, { childList: true, subtree: true });
+}
+
+if (scenario.openMoreMenu) {
+  // Left open, unlike scenario.openDebug's use of the same trigger: this scene's point is the
+  // menu's own contents, not a page it navigates to.
+  const openMoreMenu = new MutationObserver(() => {
+    const trigger = document.querySelector('button[aria-label="More"]');
+    if (!(trigger instanceof HTMLButtonElement)) return;
+    openMoreMenu.disconnect();
+    trigger.click();
+  });
+  openMoreMenu.observe(document, { childList: true, subtree: true });
 }
 
 /** Opens the folded tool-call run, whose steps mount only once it is open. */
@@ -1825,7 +1937,7 @@ if (scenario.openMobileSidebar) {
   // The drawer has no route of its own; open it the way an operator would, by tapping the
   // phone-width hamburger.
   const openMobileSidebar = new MutationObserver(() => {
-    const button = document.querySelector('button[aria-label="Open navigation"]');
+    const button = document.querySelector('button[aria-label="Toggle navigation"]');
     if (!button) return;
     openMobileSidebar.disconnect();
     (button as HTMLButtonElement).click();

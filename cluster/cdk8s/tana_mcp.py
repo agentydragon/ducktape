@@ -13,23 +13,26 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart, Size
-from cdk8s_plus_34 import Cpu, k8s
+from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import external_creds
+from cluster.cdk8s import external_creds, namespaces, node_scheduling
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.mcp_oauth_state import CONSUMER_SECRET, TANA, add_consumer_credentials
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
-from cluster.cdk8s.valkey import valkey_instance
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/tana-mcp"
 _NAMESPACE = "tana-mcp"
@@ -39,23 +42,23 @@ _FACADE = "tana-mcp-facade"
 _FACADE_LABELS = {"app.kubernetes.io/name": _FACADE}
 _RESIGNER = "tana-firebase-resigner"
 _RESIGNER_CONFIG = "tana-firebase-resigner-config"
-_REFRESH_TOKEN_SECRET = "tana-firebase-refresh-token"
-_PAT_SECRET = "tana-agentydragon-gmail-com-account-pat"
-_FACADE_OIDC_SECRET = "tana-mcp-facade-oidc"
-_VALKEY = "mcp-valkey-ovh"
+# The Secret the resigner rewrites: its Role and its config both read this one reference.
+_REFRESH_TOKEN = SecretRef(namespace=_NAMESPACE, name="tana-firebase-refresh-token").key("refresh_token")
+# The ESO copy of the external-creds Secret of the same name.
+_PAT = SecretRef(namespace=_NAMESPACE, name="tana-agentydragon-gmail-com-account-pat").key("token")
+_FACADE_OIDC = SecretRef(namespace=_NAMESPACE, name="tana-mcp-facade-oidc")
 _TANA_PORT = 8262
 _PROXY_PORT = 8263
 _NOVNC_PORT = 6080
 _FACADE_PORT = 8765
 _METRICS_PORT = 9090
+_FACADE_HTTP = ServiceRef(
+    name=_FACADE,
+    port=Port(name="http", number=_FACADE_PORT),
+    pods=Pods(namespace=_NAMESPACE, labels=tuple(_FACADE_LABELS.items())),
+)
 # Tana only serves /health on loopback inside the container.
 _TANA_HEALTH = f"http://127.0.0.1:{_TANA_PORT}/health"
-
-
-def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
-    )
 
 
 def _tana_health_check() -> k8s.ExecAction:
@@ -70,9 +73,7 @@ def _tana_deployment(chart: Chart) -> None:
     k8s.KubeDeployment(
         chart,
         "tana-deployment",
-        metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -81,7 +82,7 @@ def _tana_deployment(chart: Chart) -> None:
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
-                    node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     service_account_name=_RESIGNER,
                     containers=[
                         # Tana Desktop running under Xvfb with noVNC for graphical admin access
@@ -146,7 +147,7 @@ def _tana_deployment(chart: Chart) -> None:
                             # accepts it (POST /mcp initialize -> 200), so a renderer that
                             # drifts off the matching account drives a re-sign instead of
                             # silently leaving the facade serving zero tools.
-                            env=[_secret_env("PAT", _PAT_SECRET, "token")],
+                            env=[_PAT.env_var("PAT")],
                             resources=k8s.ResourceRequirements(
                                 requests={
                                     "cpu": k8s.Quantity.from_string("10m"),
@@ -186,9 +187,9 @@ def _resigner(chart: Chart) -> None:
             # Tana web bundle's REACT_APP_FIREBASE_API_KEY for project tagr-prod. This
             # Firebase web API key is a public identifier, not a secret.
             "API_KEY": "AIzaSyA9LtJM6Ga9VAwCfj9w_mNORdOaq2yLshQ",
-            "SECRET_NAMESPACE": _NAMESPACE,
-            "SECRET_NAME": _REFRESH_TOKEN_SECRET,
-            "SECRET_KEY": "refresh_token",
+            "SECRET_NAMESPACE": _REFRESH_TOKEN.secret.namespace,
+            "SECRET_NAME": _REFRESH_TOKEN.secret.name,
+            "SECRET_KEY": _REFRESH_TOKEN.key,
             "FETCH_CUSTOM_TOKEN_URL": "https://app.tana.inc/functions/fetchCustomToken",
             "TANA_HEALTH_URL": _TANA_HEALTH,
             "TANA_MCP_URL": f"http://127.0.0.1:{_TANA_PORT}/mcp",
@@ -208,7 +209,10 @@ def _resigner(chart: Chart) -> None:
         metadata=k8s.ObjectMeta(name=_RESIGNER, namespace=_NAMESPACE),
         rules=[
             k8s.PolicyRule(
-                api_groups=[""], resources=["secrets"], resource_names=[_REFRESH_TOKEN_SECRET], verbs=["get", "patch"]
+                api_groups=[""],
+                resources=["secrets"],
+                resource_names=[_REFRESH_TOKEN.secret.name],
+                verbs=["get", "patch"],
             )
         ],
     )
@@ -232,10 +236,7 @@ def _facade(chart: Chart) -> None:
             "MCP_FACADE_FACADE_NAME": "Tana MCP Facade",
             "MCP_FACADE_UPSTREAM__KIND": "http",
             "MCP_FACADE_UPSTREAM__URL": f"http://{_NAME}.{_NAMESPACE}.svc.cluster.local:{_PROXY_PORT}/mcp",
-            "MCP_FACADE_PERSISTENCE__KIND": "valkey",
-            # The RedisReplication's primary Service.
-            "MCP_FACADE_PERSISTENCE__HOST": f"{_VALKEY}-master.{_NAMESPACE}.svc.cluster.local",
-            "MCP_FACADE_PERSISTENCE__DB": "0",
+            "MCP_FACADE_PERSISTENCE__KIND": "postgres",
             # Let Uvicorn's existing access log report the original client when requests
             # arrive through trusted in-cluster Gateway/Envoy paths.
             "FORWARDED_ALLOW_IPS": "10.42.0.0/16,10.244.0.0/16,127.0.0.1",
@@ -260,7 +261,6 @@ def _facade(chart: Chart) -> None:
                     " Access is enforced by Authentik group membership; the server injects a static downstream"
                     " PAT."
                 ),
-                "reloader.stakater.com/auto": "true",
                 # CPU: VPA manages requests only — no CPU limit so cold-start bursts aren't
                 # throttled. fastmcp takes ~6 CPU-seconds to import; at a 60m limit that's
                 # 100s wall time even on an idle node (cgroups CFS is a hard rate limiter
@@ -296,11 +296,12 @@ def _facade(chart: Chart) -> None:
                                 k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name="tana-mcp-facade-config"))
                             ],
                             env=[
-                                _secret_env("MCP_FACADE_AUTH__OIDC_CLIENT_ID", _FACADE_OIDC_SECRET, "client_id"),
-                                _secret_env(
-                                    "MCP_FACADE_AUTH__OIDC_CLIENT_SECRET", _FACADE_OIDC_SECRET, "client_secret"
-                                ),
-                                _secret_env("MCP_FACADE_UPSTREAM__BEARER_TOKEN", _PAT_SECRET, "token"),
+                                _FACADE_OIDC.key("client_id").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_ID"),
+                                _FACADE_OIDC.key("client_secret").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_SECRET"),
+                                _PAT.env_var("MCP_FACADE_UPSTREAM__BEARER_TOKEN"),
+                                SecretRef(namespace=_NAMESPACE, name=CONSUMER_SECRET)
+                                .key("uri")
+                                .env_var("MCP_FACADE_PERSISTENCE__URL"),
                             ],
                             resources=k8s.ResourceRequirements(
                                 requests={
@@ -337,10 +338,9 @@ def _facade(chart: Chart) -> None:
     https_route(
         chart,
         "facade-httproute",
-        metadata=metadata(_FACADE, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
         hostnames=["tana-mcp-facade.allegedly.works"],
-        backend=_FACADE,
-        port=_FACADE_PORT,
+        backend=_FACADE_HTTP,
         timeout="60s",
         hsts=False,
         listener=None,
@@ -371,14 +371,14 @@ def _facade(chart: Chart) -> None:
     ServiceMonitor(
         chart,
         "facade-servicemonitor",
-        metadata=metadata(_FACADE, _NAMESPACE),
-        selector=_FACADE_LABELS,
+        metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
+        selector=ServiceMonitorSpecSelector(match_labels=_FACADE_LABELS),
         endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
     PrometheusRule(
         chart,
         "facade-prometheusrule",
-        metadata=metadata(_FACADE, _NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
         groups=[
             group(
                 _FACADE,
@@ -429,18 +429,8 @@ def _facade(chart: Chart) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
-        chart,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
-    )
+    namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
+    add_consumer_credentials(chart, TANA)
     k8s.KubeServiceAccount(
         chart,
         "external-creds-reader",
@@ -454,14 +444,16 @@ def chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         "tana-pat",
-        name=_PAT_SECRET,
-        namespace=_NAMESPACE,
-        refresh="1h",
-        store=external_creds.STORE,
-        data=[remote_data(_PAT_SECRET, "token")],
+        metadata=ApiObjectMetadata(
+            name=_PAT.secret.name,
+            namespace=_PAT.secret.namespace,
+            annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
+        ),
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
+        data=[remote_data(_PAT.secret.name, _PAT.key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
     )
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)
     _resigner(chart)
@@ -487,18 +479,6 @@ def chart(app: App) -> Chart:
         ),
     )
     _facade(chart)
-    valkey_instance(
-        chart,
-        name=_VALKEY,
-        namespace=_NAMESPACE,
-        description="Replacement OVH Valkey for Tana MCP facade OAuth state",
-        memory_request=Size.mebibytes(64),
-        cpu_limit=Cpu.millis(200),
-        memory_limit=Size.mebibytes(128),
-        max_memory_percent_of_limit=None,
-        storage_class="local-path-ovh",
-        storage_size=Size.gibibytes(1),
-    )
     return chart
 
 

@@ -8,21 +8,15 @@ output. The SOPS-encrypted Secret beside the output stays hand-written.
 
 from __future__ import annotations
 
-from pathlib import Path
+from cdk8s import ApiObjectMetadata, App, Chart
 
-from cdk8s import App, Chart
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
-
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.providers.external_secrets.external_secret import ClusterExternalSecret, cluster_remote_data
+from cluster.cdk8s.providers.external_secrets.external_secret import (
+    ClusterExternalSecret,
+    ClusterSecretStoreRef,
+    cluster_remote_data,
+)
 
 NAME = "alloy-otlp-bearer"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/alloy-otlp-bearer"
@@ -33,45 +27,28 @@ def chart(app: App) -> Chart:
     ClusterExternalSecret(
         chart,
         NAME,
-        name=NAME,
+        metadata=ApiObjectMetadata(name=NAME),
         # Least privilege: only namespaces whose sessions run the OTLP forwarder.
         namespaces=["claude-sandbox", "haku-sandbox"],
-        store_name="kubernetes-flux-system-secret-store",
-        refresh="1m",
+        secret_store_ref=ClusterSecretStoreRef.cluster("kubernetes-flux-system-secret-store"),
+        refresh_interval="1m",
         data=[cluster_remote_data(NAME, "token")],
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.sops.yaml", f"{NAME}.k8s.yaml"]),
-    )
-
-
 def alloy_otlp_bearer(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
-    claude_rbac: Kustomization,
-    haku_rbac: Kustomization,
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         retry_interval=None,
         wait=None,
         depends_on=flux_kustomization_depends_on_many(
-            # ClusterSecretStore + CRDs
-            external_secrets_config,
-            # claude-sandbox namespace
-            claude_rbac,
-            # haku-sandbox namespace
-            haku_rbac,
+            # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
+            external_secrets_operator
         ),
         timeout="2m",
-        decryption=SOPS_DECRYPTION,
     )

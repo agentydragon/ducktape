@@ -228,6 +228,9 @@ repos:
         entry: ducktape-pytest-main-check
         language: system
         pass_filenames: true
+        # Every invocation queries the whole repo's py_test srcs; parallel filename batches would
+        # repeat those queries as concurrent Bazel clients against one cold output base.
+        require_serial: true
         always_run: true
         stages: [pre-commit]
 
@@ -284,7 +287,6 @@ repos:
             cluster/k8s/authentik/app/blueprints/.*|
             # Application config files, not K8s manifests
             cluster/k8s/gatus/config\.yaml|
-            cluster/k8s/evidence/market-roster\.yaml|
             cluster/k8s/agents/airlock/config\.yaml|
             cluster/k8s/grocy/sf/mcp/config\.yaml|
             cluster/k8s/grocy/vallejo/mcp/config\.yaml|

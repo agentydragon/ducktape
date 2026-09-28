@@ -10,8 +10,6 @@ on other nodes -- so consumers pin their pods to region=proxmox to avoid failed 
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
@@ -19,14 +17,12 @@ from external_snapshotter_volumesnapshotclass_crds.io.k8s.storage.snapshot impor
     VolumeSnapshotClass,
     VolumeSnapshotClassDeletionPolicy,
 )
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s import namespaces
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 
 NAME = "openebs-lvm"
 NAMESPACE = "openebs"
@@ -65,35 +61,35 @@ def _storage_classes(scope: Construct) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                "pod-security.kubernetes.io/enforce": "privileged",
-                "pod-security.kubernetes.io/audit": "privileged",
-                "pod-security.kubernetes.io/warn": "privileged",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
-    )
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=metadata(RELEASE, "flux-system"),
-        spec=HelmRepositorySpec(interval="24h", url="https://openebs.github.io/lvm-localpv"),
+        name=NAMESPACE,
+        vpa=Vpa.RECOMMEND,
+        agent_readable=AgentReadable.LOGS,
+        labels={
+            "pod-security.kubernetes.io/enforce": "privileged",
+            "pod-security.kubernetes.io/audit": "privileged",
+            "pod-security.kubernetes.io/warn": "privileged",
+        },
     )
     helm_release(
         chart,
         RELEASE,
         NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(chart, RELEASE, "flux-system", url="https://openebs.github.io/lvm-localpv"),
         chart="lvm-localpv",
         version="1.10.1",
         interval="30m",
         install=RETRY_FAILED_INSTALL,
-        values={"lvmNode": {"nodeSelector": _PROXMOX}, "lvmController": {"nodeSelector": _PROXMOX}},
+        values={
+            "lvmNode": {"nodeSelector": _PROXMOX},
+            "lvmController": {"nodeSelector": _PROXMOX},
+            # snapshot-controller-crds, which this unit depends on, owns the VolumeSnapshot CRDs.
+            # Helm refuses to install over a resource it does not own, so the chart's own
+            # copies of those CRDs would fail the release.
+            "crds": {"csi": {"volumeSnapshots": {"enabled": False}}},
+        },
     )
     _storage_classes(chart)
     VolumeSnapshotClass(
@@ -108,9 +104,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def openebs_lvm(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    return flux_kustomization(chart, NAME, artifact, timeout="5m")
+def openebs_lvm(chart: Chart, directory: RenderedDirectory, snapshot_controller_crds: Kustomization) -> Kustomization:
+    return flux_kustomization(
+        chart, NAME, directory, timeout="5m", depends_on=[flux_kustomization_depends_on(snapshot_controller_crds)]
+    )

@@ -7,28 +7,30 @@ py_library(
     srcs = ["app.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":config",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/providers/flux:helmrepository",
+        "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
     ],
 )
 
 py_library(
     name = "cluster_ca",
     srcs = ["cluster_ca.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":config",
         "//cluster/cdk8s/providers/cert_manager:bundle",
+        "//cluster/cdk8s/providers/cert_manager:cert_manager_bundle",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
         "//cluster/cdk8s/providers/cert_manager:certificate",
         "//cluster/cdk8s/providers/cert_manager:cluster_issuer",
+        "//cluster/cdk8s/providers/cert_manager:clusterissuer",
         "@pypi//cdk8s",
     ],
 )
@@ -36,7 +38,7 @@ py_library(
 py_library(
     name = "config",
     srcs = ["config.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s/providers/cert_manager:cluster_issuer",
         "//cluster/cdk8s/providers/cert_manager:clusterissuer",
@@ -50,7 +52,10 @@ py_library(
     srcs = ["interception_ca.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":cluster_ca",
+        "//cluster/cdk8s:reflector",
         "//cluster/cdk8s/providers/cert_manager:bundle",
+        "//cluster/cdk8s/providers/cert_manager:cert_manager_bundle",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
         "//cluster/cdk8s/providers/cert_manager:certificate",
         "@pypi//cdk8s",
@@ -63,30 +68,11 @@ py_library(
     srcs = ["environment.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        ":cluster_ca",
-        ":config",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-    ],
-)
-
-py_library(
-    name = "issuer_config",
-    srcs = ["issuer_config.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = [
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
-        "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -97,14 +83,12 @@ py_library(
     srcs = ["trust.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":app",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/providers/flux:helmrepository",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
+        "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s:node_scheduling",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
     ],
 )

@@ -7,48 +7,43 @@ image tag here is a placeholder the Component overrides.
 
 from __future__ import annotations
 
-from pathlib import Path
+import textwrap
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from cnpg_database_crds.io.cnpg.postgresql import (
-    Database,
-    DatabaseSpec,
     DatabaseSpecCluster,
     DatabaseSpecDatabaseReclaimPolicy,
     DatabaseSpecExtensions,
     DatabaseSpecExtensionsEnsure,
 )
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTargetCreationPolicy,
-    ExternalSecretSpecTargetTemplate,
-)
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from agentplane.indexing.main import Settings
-from cluster.cdk8s import cnpg, forgejo_images
-from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s import cnpg, forgejo_images, namespaces, node_scheduling
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
+from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.providers.cnpg.database import Database
+from cluster.cdk8s.secret_ref import SecretRef
 from util.settings_contract import env_name
 
 NAME = "agentplane-index"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agentplane-index"
 _DB_CLUSTER = f"{NAME}-db"
 # CNPG owns this Secret (username/password).
-_DB_APP_SECRET = f"{_DB_CLUSTER}-app"
+_DB_APP = SecretRef(namespace=NAME, name=f"{_DB_CLUSTER}-app")
 _DB_OWNER = "indexer"
-_READ_TOKEN = f"{NAME}-read-token"
+_READ_TOKEN = SecretRef(namespace=NAME, name=f"{NAME}-read-token").key("token")
+_HAKU_FORGEJO_GIT = SecretRef(namespace=NAME, name="haku-forgejo-git")
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-index:unset"
 # The worker listens on its Settings default; nothing passes `--port`.
 _PORT = Settings.model_fields["port"].default
 _REPOSITORY_MOUNT = "/var/lib/agentplane-index"
 # The workers' shared settings, rendered by the kustomization.yaml's configMapGenerator.
-_CONFIG_MAP = ConfigMapArgs(
+CONFIG_MAP = ConfigMapArgs(
     name=f"{NAME}-config",
     namespace=NAME,
     literals=[
@@ -71,28 +66,14 @@ _CONFIG_MAP = ConfigMapArgs(
 )
 
 
-def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
-    )
-
-
 def _read_token(chart: Chart) -> None:
-    Password(
-        chart,
-        "read-token-generator",
-        metadata=metadata(_READ_TOKEN, NAME),
-        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         chart,
         "read-token",
-        name=_READ_TOKEN,
-        namespace=NAME,
-        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[DataFrom.from_password_generator(_READ_TOKEN)],
+        name=_READ_TOKEN.secret.name,
+        namespace=_READ_TOKEN.secret.namespace,
+        key=_READ_TOKEN.key,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"token": "{{ .password }}"}),
     )
 
 
@@ -102,7 +83,7 @@ def _database(chart: Chart) -> None:
         "database-cluster",
         name=_DB_CLUSTER,
         namespace=NAME,
-        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh-ssd",
         size="20Gi",
         initdb=ClusterSpecBootstrapInitdb(database="ducktape", owner=_DB_OWNER),
@@ -125,14 +106,12 @@ def _worker(
     Database(
         chart,
         f"{instance}-database",
-        metadata=metadata(f"{NAME}-{instance}", NAME),
-        spec=DatabaseSpec(
-            cluster=DatabaseSpecCluster(name=_DB_CLUSTER),
-            name=database,
-            owner=_DB_OWNER,
-            database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
-            extensions=[DatabaseSpecExtensions(name="vector", ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
-        ),
+        metadata=ApiObjectMetadata(name=f"{NAME}-{instance}", namespace=NAME),
+        cluster=DatabaseSpecCluster(name=_DB_CLUSTER),
+        name=database,
+        owner=_DB_OWNER,
+        database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
+        extensions=[DatabaseSpecExtensions(name="vector", ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
     )
 
     labels = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/instance": instance}
@@ -140,7 +119,7 @@ def _worker(
     k8s.KubeDeployment(
         chart,
         f"{instance}-deployment",
-        metadata=k8s.ObjectMeta(name=instance, namespace=NAME, annotations={"reloader.stakater.com/auto": "true"}),
+        metadata=k8s.ObjectMeta(name=instance, namespace=NAME),
         spec=k8s.DeploymentSpec(
             replicas=replicas,
             selector=k8s.LabelSelector(match_labels=labels),
@@ -165,10 +144,10 @@ def _worker(
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                             ),
-                            env_from=[k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=_CONFIG_MAP.name))],
+                            env_from=[k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=CONFIG_MAP.name))],
                             env=[
-                                _secret_env("DB_USERNAME", _DB_APP_SECRET, "username"),
-                                _secret_env("DB_PASSWORD", _DB_APP_SECRET, "password"),
+                                _DB_APP.key("username").env_var("DB_USERNAME"),
+                                _DB_APP.key("password").env_var("DB_PASSWORD"),
                                 k8s.EnvVar(
                                     name=env_name(Settings, "database_url"),
                                     value=(
@@ -179,7 +158,7 @@ def _worker(
                                 k8s.EnvVar(name=env_name(Settings, "repository_url"), value=url),
                                 k8s.EnvVar(name=env_name(Settings, "branch"), value=branch),
                                 *env,
-                                _secret_env(env_name(Settings, "read_token"), _READ_TOKEN, "token"),
+                                _READ_TOKEN.env_var(env_name(Settings, "read_token")),
                             ],
                             ports=[k8s.ContainerPort(name="http", container_port=_PORT)],
                             volume_mounts=[k8s.VolumeMount(name="repository", mount_path=_REPOSITORY_MOUNT)],
@@ -219,18 +198,14 @@ def _worker(
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAME,
-            labels={
-                "name": NAME,
-                "goldilocks.fairwinds.com/enabled": "false",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-            annotations={"description": "Single-repository semantic indexes for ducktape and haku-state."},
-        ),
+        name=NAME,
+        vpa=Vpa.DISABLED,
+        agent_readable=AgentReadable.LOGS,
+        labels={"name": NAME},
+        annotations={"description": "Single-repository semantic indexes for ducktape and haku-state."},
     )
     _read_token(chart)
     forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
@@ -243,11 +218,20 @@ def chart(app: App) -> Chart:
         branch="devel",
         # gitignore syntax. Specimens duplicate code indexed at its real path; the .gz
         # reference blobs are not text and would only cost the clone read.
-        env=(k8s.EnvVar(name=env_name(Settings, "ignore"), value="props/specimens/\n*.gz\n"),),
-        # CLEANUP(added 2026-09-26): paused so its continuous /v1/embeddings traffic to
-        # ollama.ollama stops evicting the much larger qwen3.8-flash-next-q4 chat model
-        # mid-load during agentplane/debug/agentplane_ollama_live_smoke_2026_09_24.md's
-        # smoke testing. Remove once that test run is done and restore replicas=1.
+        env=(
+            k8s.EnvVar(
+                name=env_name(Settings, "ignore"),
+                value=textwrap.dedent(
+                    """\
+                    props/specimens/
+                    *.gz
+                    """
+                ),
+            ),
+        ),
+        # CLEANUP(added 2026-09-27): pause both workers while Ollama model setup and API
+        # smoke tests run. Their continuous /v1/embeddings traffic evicts the loaded chat
+        # model; restore replicas=1 for both workers when indexing resumes.
         replicas=0,
     )
     _worker(
@@ -257,18 +241,9 @@ def chart(app: App) -> Chart:
         url="http://forgejo-http.forgejo:3000/haku/haku-state.git",
         branch="main",
         env=(
-            _secret_env(env_name(Settings, "git_username"), "haku-forgejo-git", "username"),
-            _secret_env(env_name(Settings, "git_password"), "haku-forgejo-git", "password"),
+            _HAKU_FORGEJO_GIT.key("username").env_var(env_name(Settings, "git_username")),
+            _HAKU_FORGEJO_GIT.key("password").env_var(env_name(Settings, "git_password")),
         ),
+        replicas=0,
     )
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(
-            resources=[f"{NAME}.k8s.yaml"], components=["./image-pins"], config_map_generator=[_CONFIG_MAP]
-        ),
-    )

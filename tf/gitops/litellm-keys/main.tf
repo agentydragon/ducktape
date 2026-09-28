@@ -84,8 +84,9 @@ resource "kubernetes_secret" "cheap_experiments" {
 }
 
 resource "litellm_key" "agentplane_staging" {
-  key_alias       = "agentplane-staging"
-  models          = concat(var.model_allowlists.oai_lane_models, var.model_allowlists.claude_client_models, var.model_allowlists.antigravity_client_models, var.model_allowlists.ollama_chat_client_models)
+  key_alias = "agentplane-staging"
+  # Staging Codex and key access both use the GPT-6 subscription routes.
+  models          = concat(var.model_allowlists.gpt6_oai_lane_models, var.model_allowlists.claude_client_models, var.model_allowlists.antigravity_client_models, var.model_allowlists.ollama_chat_client_models)
   max_budget      = 50
   budget_duration = "30d"
   metadata = {
@@ -123,7 +124,7 @@ resource "kubernetes_secret" "agentplane_staging" {
 
 resource "litellm_key" "codex_pod" {
   key_alias       = "codex-pod"
-  models          = var.model_allowlists.oai_lane_models
+  models          = var.model_allowlists.gpt6_oai_lane_models
   max_budget      = 50
   budget_duration = "30d"
   metadata = {
@@ -136,7 +137,7 @@ resource "kubernetes_secret" "codex_pod" {
     name      = "litellm-key-codex-pod"
     namespace = "litellm"
     annotations = {
-      description                                                     = "LiteLLM virtual key for the codex-pod agent (chatgpt/oai-responses/* models only); reflected into codex-pod as LITELLM_API_KEY"
+      description                                                     = "LiteLLM virtual key for the codex-pod agent (chatgpt/oai-responses/gpt-6-* models only); reflected into codex-pod as LITELLM_API_KEY"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "codex-pod"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
@@ -161,7 +162,7 @@ resource "kubernetes_secret" "codex_pod" {
 
 resource "litellm_key" "public_coder_agent" {
   key_alias = "public-coder-agent"
-  # Codex subscription models on both wire surfaces, the Gemini chat lineup,
+  # GPT-6 Codex subscription models on both wire surfaces, the Gemini chat lineup,
   # the full Antigravity lineup, plus embeddings. Both subscription wire surfaces
   # remain allowlisted because this shared key serves Responses-lane
   # OpenClaw/Console consumers and clients that still use the Anthropic Messages lane.
@@ -171,7 +172,7 @@ resource "litellm_key" "public_coder_agent" {
   # Gemini reaches Google through LiteLLM's own in-cluster GEMINI_API_KEY, so
   # this key never carries that credential either; Antigravity reaches CLIProxyAPI's
   # OAuth session the same way the Codex lanes do.
-  models = concat(var.model_allowlists.codex_client_models, var.model_allowlists.oai_lane_models, var.model_allowlists.gemini_client_models, var.model_allowlists.antigravity_client_models, var.model_allowlists.embedding_client_models)
+  models = concat(var.model_allowlists.gpt6_codex_client_models, var.model_allowlists.gpt6_oai_lane_models, var.model_allowlists.gemini_client_models, var.model_allowlists.antigravity_client_models, var.model_allowlists.embedding_client_models)
   metadata = {
     consumer = "public-coder-agent"
   }
@@ -182,7 +183,7 @@ resource "kubernetes_secret" "public_coder_agent" {
     name      = "litellm-key-public-coder-agent"
     namespace = "litellm"
     annotations = {
-      description                                                     = "LiteLLM virtual key for public-coder-agent OpenClaw and least-credential runner-proxy-mediated Haku Console Codex shells (chatgpt/oai-responses/* models); subscription models through CLIProxyAPI, Gemini chat models, plus embeddings"
+      description                                                     = "LiteLLM virtual key for public-coder-agent OpenClaw and least-credential runner-proxy-mediated Haku Console Codex shells (GPT-6 Codex routes); Gemini chat models, plus embeddings"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "public-coder-agent,haku-console"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
@@ -263,12 +264,10 @@ resource "litellm_key" "claude_subscription_clients" {
 }
 
 # ============================================================================
-# codex-clients — scoped key for laptop + agent-box + codex-pod codex-claude
+# codex-clients — scoped key for laptop + agent-box codex-claude
 # ============================================================================
 # Same Pattern-B pinned key. The chatgpt/ant-messages/* upstream reaches CLIProxyAPI with the in-cluster
-# cli-proxy client key (ESO-mirrored into litellm), so this key never carries it. codex-pod
-# receives the value via the reflected kubernetes_secret below (CODEX_LITELLM_KEY), NOT
-# sops — the image has no sops-nix.
+# cli-proxy client key (ESO-mirrored into litellm), so this key never carries it.
 
 data "sops_file" "codex_clients_key" {
   source_file = "${path.module}/litellm-codex-clients-key.yaml"
@@ -292,17 +291,26 @@ resource "litellm_key" "codex_clients" {
   models    = var.model_allowlists.codex_client_models
   team_id   = litellm_team.codex_clients.id
   metadata = {
-    consumer = "laptop-codex-claude, agent-box-codex, codex-pod"
+    consumer = "laptop-codex-claude, agent-box-codex"
+  }
+}
+
+# Codex pod's Messages-surface key, restricted to the same GPT-6 roster as its Responses key.
+resource "litellm_key" "codex_pod_messages" {
+  key_alias = "codex-pod-messages"
+  models    = var.model_allowlists.gpt6_codex_client_models
+  metadata = {
+    consumer = "codex-pod codex-claude"
   }
 }
 
 # Reflected into codex-pod so the baked codex-claude wrapper reads CODEX_LITELLM_KEY.
-resource "kubernetes_secret" "codex_clients_key" {
+resource "kubernetes_secret" "codex_pod_messages_key" {
   metadata {
-    name      = "litellm-codex-clients-key"
+    name      = "litellm-codex-pod-messages-key"
     namespace = "litellm"
     annotations = {
-      description                                                     = "LiteLLM virtual key for codex-claude consumers (chatgpt/ant-messages/* models only); reflected into codex-pod as CODEX_LITELLM_KEY"
+      description                                                     = "GPT-6-only LiteLLM Messages key for codex-pod; reflected as CODEX_LITELLM_KEY"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "codex-pod"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
@@ -311,7 +319,7 @@ resource "kubernetes_secret" "codex_clients_key" {
   }
 
   data = {
-    CODEX_LITELLM_KEY = litellm_key.codex_clients.key
+    CODEX_LITELLM_KEY = litellm_key.codex_pod_messages.key
   }
 }
 
@@ -392,10 +400,10 @@ resource "litellm_key" "antigravity_clients" {
 # Disposable agent workspaces (cluster/k8s/agents/agent-sandbox/): operator-
 # codex workspace lane: the codex CLI's baked LiteLLM provider
 # (cluster/k8s/agents/agent-sandbox/workspace-image/codex-config.toml) uses
-# the `chatgpt/oai-responses/*` Codex-account models, same allowlist as codex-pod.
+# the GPT-6 `chatgpt/oai-responses/*` Codex-account models, same allowlist as codex-pod.
 resource "litellm_key" "agent_workspaces_codex" {
   key_alias = "agent-workspaces-codex"
-  models    = var.model_allowlists.oai_lane_models
+  models    = var.model_allowlists.gpt6_oai_lane_models
   metadata = {
     consumer = "agent-workspaces codex-lane sandboxes"
   }
@@ -408,7 +416,7 @@ resource "kubernetes_secret" "agent_workspaces_codex_key" {
     name      = "litellm-key-agent-workspaces-codex"
     namespace = "litellm"
     annotations = {
-      description                                                     = "LiteLLM virtual key for the codex workspace lane (chatgpt/oai-responses/* models only); reflected into agent-workspaces for the codex SandboxTemplate"
+      description                                                     = "LiteLLM virtual key for the codex workspace lane (chatgpt/oai-responses/gpt-6-* models only); reflected into agent-workspaces for the codex SandboxTemplate"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "agent-workspaces"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"

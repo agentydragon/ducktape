@@ -1,9 +1,14 @@
-# One real task with natural compaction after the downloads
+# One real task with natural compaction
 
 September 26, 2026. The user approved replacing the initial uncompacted Mini-SWE
 queue, then directed us to observe compaction during a real eval task rather than
 build a synthetic prerequisite. The initial queue source is retained in commit
-83f4894913; this revision runs Terminus-2. No model-quality result is claimed yet.
+83f4894913; this revision runs Terminus-2. The first Q4 attempt
+[passed with two compactions](../2026-09-26_qwen38_q4_terminus_result/README.md).
+Q5 and IQ4 downloads finished at 04:48 Pacific; the serial IQ4 comparison started
+at 12:10 and [passed the verifier at its eight-hour deadline](../2026-09-26_qwen38_iq4_terminus_result/README.md),
+with three compactions and an agent timeout. The protocol below records how those
+runs were launched.
 Ollama pause PR [8070](https://github.com/agentydragon/ducktape/pull/8070) is merged;
 live replicas were verified zero. No reboot or NixOS activation is involved.
 
@@ -149,4 +154,6 @@ was processing 2,403 tokens. This verifies a real agent/tool roundtrip, not comp
 of the task or compaction. At that check there were zero compaction events.
 Host MemAvailable was about 56 GiB, desktop GPU free memory about 8 GiB, second GPU
 about 2 GiB. Concurrent download hashing/SSD traffic makes these early latency numbers
-unsuitable for a controlled runtime comparison. The original task remains in progress.
+unsuitable for a controlled runtime comparison. This was an early snapshot; the
+[completed result](../2026-09-26_qwen38_q4_terminus_result/README.md) supersedes its
+pending status and records full-run metrics and the post-result wrapper failure.

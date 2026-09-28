@@ -44,5 +44,5 @@ kubectl get secret -n claude-sandbox claude-forgejo-tea -o jsonpath='{.data.conf
 chmod 600 ~/.config/tea/config.yml
 tea whoami
 ```
-In-cluster URL: `http://forgejo-http.forgejo:3000`. The account holds read-only collaborations on private data repos: `thrive-scrape/thrive-scrape` (weekly Thrive Market catalog scrapes: per-page raw API responses + `products.json`), `augur-evidence/augur-evidence` (daily FRED/Yahoo/Zillow evidence scrapes), `cpap-data/cpap-data` (nightly CPAP EDF archive), and `budget-ledger/ledger` (generated budget Beancount ledger). History via `git log`.
+In-cluster URL: `http://forgejo-http.forgejo:3000`. The account holds read-only collaborations on private data repos: `thrive-scrape/thrive-scrape` (weekly Thrive Market catalog scrapes: per-page raw API responses + `products.json`), `augur-evidence/augur-evidence` (FRED/Yahoo/Zillow evidence scrapes, not refreshed while the scraper is parked), `cpap-data/cpap-data` (nightly CPAP EDF archive), and `budget-ledger/ledger` (generated budget Beancount ledger). History via `git log`.
 EOF

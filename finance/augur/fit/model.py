@@ -31,7 +31,7 @@ from finance.augur.model.path_models.scenarios import HistoricalSeries
 class Fittable(Protocol):
     """A model that can be fitted offline from a `HistoricalSeries`.
 
-    Consumed by the trainer in `augur/fit/main.py`. The metric battery
+    Consumed by the trainer in `augur/x/models/train.py`. The metric battery
     additionally requires `Scorable`; rolling-origin scoring refits the
     model at each origin, so it requires `Fittable & Scorable`.
     """

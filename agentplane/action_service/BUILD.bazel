@@ -18,6 +18,10 @@ py_library(
 py_library(
     name = "catalog",
     srcs = ["catalog.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         "//agentplane/action_service/sandbox:binding",
         "@pypi//mcp",
@@ -47,6 +51,10 @@ py_library(
 py_library(
     name = "mcp_linkage",
     srcs = ["mcp_linkage.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         ":catalog",
         ":db",
@@ -548,6 +556,10 @@ py_test(
 py_library(
     name = "operator_oidc",
     srcs = ["operator_oidc.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         ":models",
         "//mcp_infra:oidc_principal",

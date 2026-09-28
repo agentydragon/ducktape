@@ -5,8 +5,8 @@ import pytest_bazel
 
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.ids import AccountId, AssetId, LotId
-from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedHoldingPool, PreparedLot, PreparedSeries, _TenderPolicy
+from finance.augur.sim.market_path import MarketPath, Series
+from finance.augur.sim.private_equity import TenderPolicy
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, opening
 from finance.augur.sim.world import World
 
@@ -30,7 +30,7 @@ def recovered(total: int, positions: tuple[tuple[int, int], ...], *, earlier_sal
         "company_valuation": 0,
     }
     series = tuple(
-        PreparedSeries(
+        Series(
             series_id=f"private_equity_{channel}:test_issuer",
             snapshots=horizon + 1,
             values=(
@@ -44,32 +44,28 @@ def recovered(total: int, positions: tuple[tuple[int, int], ...], *, earlier_sal
         for channel, value in channels.items()
     )
     world = World(MarketPath(series, 0, rollout_count=1), horizon_months=horizon)
-    for account in opening({}):
-        world.declare_account(account)
+    for account, balance in opening({}).items():
+        world.declare_account(account=account, opening_balance=balance)
     for index, (_, scale) in enumerate(positions):
         world.declare_pool(
-            PreparedHoldingPool(
-                agent_id=HOUSEHOLD,
-                account_id=AccountId(f"holding-{index}"),
-                asset_id=AssetId("private_equity:test_issuer"),
-                quantity_scale=scale,
-            )
+            agent_id=HOUSEHOLD,
+            account_id=AccountId(f"holding-{index}"),
+            asset_id=AssetId("private_equity:test_issuer"),
+            quantity_scale=scale,
         )
     for index, (units, scale) in reversed(list(enumerate(positions))):
-        world.hold(
-            PreparedLot(
-                lot_id=LotId(f"recovery-{index}"),
-                agent_id=HOUSEHOLD,
-                account_id=AccountId(f"holding-{index}"),
-                asset_id=AssetId("private_equity:test_issuer"),
-                purchase_month=-24 + index,
-                quantity_scale=scale,
-                units=units,
-                basis=3 + index,
-            )
+        world.hold_lot(
+            lot_id=LotId(f"recovery-{index}"),
+            agent_id=HOUSEHOLD,
+            account_id=AccountId(f"holding-{index}"),
+            asset_id=AssetId("private_equity:test_issuer"),
+            purchase_month=-24 + index,
+            quantity_scale=scale,
+            units=units,
+            basis=3 + index,
         )
     world.declare_tender_policy(
-        _TenderPolicy(owner_agent_id=HOUSEHOLD, proceeds_account_id=AccountId("checking"), liquid_net_worth_floor=0)
+        TenderPolicy(owner_agent_id=HOUSEHOLD, proceeds_account_id=AccountId("checking"), liquid_net_worth_floor=0)
     )
     return world
 

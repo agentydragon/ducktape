@@ -11,9 +11,8 @@ files beside the generated output.
 from __future__ import annotations
 
 import textwrap
-from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngress,
@@ -28,23 +27,17 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cilium
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
+from cluster.cdk8s import cilium, namespaces, node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cli-proxy-api"
 NAME = "cli-proxy-api"
@@ -52,10 +45,15 @@ NAMESPACE = "cli-proxy-api"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/cli-proxy-api:unset"
 PORT = 8317
+SERVICE = ServiceRef(
+    name=NAME, port=Port(name="http", number=PORT), pods=Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items()))
+)
 _CONFIG_SECRET = "cli-proxy-api-config"
 _DATA_CLAIM = "cli-proxy-api-data"
-_ADMIN_OIDC_SECRET = "cli-proxy-api-admin-oidc"
-_KEY_FILES = ("client-key.sops.yaml", "management-key.sops.yaml")
+_ADMIN_OIDC = SecretRef(namespace=NAMESPACE, name="cli-proxy-api-admin-oidc")
+# The SOPS-managed management key; aiquota reads it too.
+MANAGEMENT_PASSWORD = SecretRef(namespace=NAMESPACE, name="cli-proxy-api-management").key("management-password")
+KEY_FILES = ("client-key.sops.yaml", "management-key.sops.yaml")
 
 _CONFIG = textwrap.dedent(
     """\
@@ -78,18 +76,7 @@ _CONFIG = textwrap.dedent(
 
 
 def _namespace(scope: Construct) -> None:
-    k8s.KubeNamespace(
-        scope,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
-    )
+    namespaces.namespace(scope, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
 
 
 def _data_claim(scope: Construct) -> None:
@@ -113,28 +100,24 @@ def _config(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "config",
-        name=_CONFIG_SECRET,
-        namespace=NAMESPACE,
-        refresh="1h",
-        store=SecretStoreRef.cluster("kubernetes-cli-proxy-api-secret-store"),
+        metadata=ApiObjectMetadata(
+            name=_CONFIG_SECRET,
+            namespace=NAMESPACE,
+            annotations={
+                "description": (
+                    "CLIProxyAPI config.yaml rendered from the client-key Secret. Retry an upstream stream up "
+                    "to three times only before its first response byte reaches the caller. Remote management "
+                    "uses native Authentik OIDC for browsers and a management key for AIQuota."
+                )
+            },
+        ),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster("kubernetes-cli-proxy-api-secret-store"),
         data=[remote_data("cli-proxy-api-client-key", "client-key", secret_key="client_key")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         template=ExternalSecretSpecTargetTemplate(
             engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2, data={"config.yaml": _CONFIG}
         ),
-        annotations={
-            "description": (
-                "CLIProxyAPI config.yaml rendered from the client-key Secret. Retry an upstream stream up "
-                "to three times only before its first response byte reaches the caller. Remote management "
-                "uses native Authentik OIDC for browsers and a management key for AIQuota."
-            )
-        },
-    )
-
-
-def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
     )
 
 
@@ -143,9 +126,7 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=NAME, namespace=NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -167,11 +148,7 @@ def _deployment(scope: Construct) -> None:
                     # PVC, it can't tolerate that churn — each eviction breaks the auto-refresh worker's
                     # session. Allow the zone's otherwise-idle control-plane nodes as real overflow
                     # capacity instead of only ever bouncing between the two contended workers.
-                    tolerations=[
-                        k8s.Toleration(
-                            key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                        )
-                    ],
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     init_containers=[
                         k8s.Container(
                             name="init-auth-dir",
@@ -186,9 +163,9 @@ def _deployment(scope: Construct) -> None:
                             image=_IMAGE,
                             args=["-config", "/config/config.yaml"],
                             env=[
-                                _secret_env("MANAGEMENT_PASSWORD", "cli-proxy-api-management", "management-password"),
+                                MANAGEMENT_PASSWORD.env_var("MANAGEMENT_PASSWORD"),
                                 *(
-                                    _secret_env(key, _ADMIN_OIDC_SECRET, key)
+                                    _ADMIN_OIDC.key(key).env_var(key)
                                     for key in (
                                         "MANAGEMENT_OIDC_ISSUER",
                                         "MANAGEMENT_OIDC_CLIENT_ID",
@@ -249,10 +226,9 @@ def _routes(scope: Construct) -> None:
     https_route(
         scope,
         "route",
-        metadata=metadata(NAME, NAMESPACE),
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         hostnames=["cli-proxy-api.allegedly.works"],
-        backend=NAME,
-        port=PORT,
+        backend=SERVICE,
         path_prefix="/v1",
         timeout="600s",
         hsts=False,
@@ -261,10 +237,9 @@ def _routes(scope: Construct) -> None:
     https_route(
         scope,
         "admin-route",
-        metadata=metadata("cli-proxy-api-admin", NAMESPACE),
+        metadata=ApiObjectMetadata(name="cli-proxy-api-admin", namespace=NAMESPACE),
         hostnames=["cli-proxy-api-admin.allegedly.works"],
-        backend=NAME,
-        port=PORT,
+        backend=SERVICE,
         hsts=False,
         listener=None,
     )
@@ -275,8 +250,8 @@ def _network_policy(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "network-policy",
-        metadata=metadata("cli-proxy-api-ingress", NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name="cli-proxy-api-ingress", namespace=NAMESPACE),
+        endpoint_selector=_LABELS,
         ingress=[
             # cilium-envoy hostNetwork traffic carries reserved:ingress identity. Preserves the
             # existing cli-proxy-api.allegedly.works /v1 HTTPRoute, which routes straight to this
@@ -317,32 +292,19 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml", *_KEY_FILES], components=["./image-pins"]),
-    )
-
-
 def cli_proxy_api(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
-    gateway: Kustomization,
-    cert_manager_environment: Kustomization,
-    sso_providers_tf: Kustomization,
-    forgejo_images: Kustomization,
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
     name = "cli-proxy-api"
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         retry_interval=None,
         timeout="5m",
-        decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config, gateway, cert_manager_environment, sso_providers_tf, forgejo_images
+            external_secrets_operator,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment, HTTPRoute and Namespace.
+            kyverno,
         ),
     )

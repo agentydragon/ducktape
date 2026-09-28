@@ -7,16 +7,18 @@ from typing import Literal
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.actions import Action, Consume, DecisionActions, PayClaim
+from finance.augur.policy.funding import ClaimPayer
+from finance.augur.sim.actions import Action, Consume, DecisionActions
 from finance.augur.sim.books import AccountRef, BondState, Book
 from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId
+from finance.augur.sim.income import InterestCharacter, Taxable
 from finance.augur.sim.observations import Decision, FixedCoupon, IndexedCoupon
-from finance.augur.sim.results import BondSeries, Finished, Paid, RejectedAction, Rollout
+from finance.augur.sim.results import BondSeries, Paid, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.bonds import (
-    CORPORATE,
     MUNI,
     QUANTUM,
+    TAXABLE,
     TREASURY,
     Situation,
     bond_case,
@@ -25,6 +27,7 @@ from finance.augur.sim.testing.bonds import (
     cpi_series,
     dated,
 )
+from finance.augur.sim.testing.session import each, finish
 
 
 def execute(
@@ -33,14 +36,9 @@ def execute(
     capture: Literal["summary", "dense", "forensic"] = "summary",
     ids: list[int] | None = None,
 ) -> list[Rollout]:
-    session = ActionSession({id_: compose(case, id_) for id_ in ids or [0]}, AgentId("alice"), capture=capture)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(policy(batch))
-        return batch.rollouts
-    finally:
-        session.close()
+    return finish(
+        ActionSession({id_: compose(case, id_) for id_ in ids or [0]}, AgentId("alice"), capture=capture), policy
+    ).rollouts
 
 
 def held_bonds(book: Book) -> list[BondState]:
@@ -56,7 +54,7 @@ def held_case(*, indexed: bool = False, future_cpi: float = 2.0, rollout_count: 
                 BondId(f"{agent}-bond"),
                 agent_id=agent,
                 face=Decimal(100),
-                annual_rate=0.12,
+                annual_rate=Decimal("0.12"),
                 period=1,
                 purchase=-1,
                 maturity=2,
@@ -92,7 +90,7 @@ def test_owned_terms_coupon_before_spending_and_maturity_removal() -> None:
             assert observation.public_positions == ()
             if observation.month < 2:
                 [bond] = observation.held_bonds
-                assert (bond.bond_id, bond.account_id, bond.issuer_jurisdiction_id) == ("alice-bond", "checking", None)
+                assert (bond.bond_id, bond.account_id, bond.character) == ("alice-bond", "checking", Taxable())
                 assert (bond.face_value, bond.purchase_price, bond.principal) == (10_000, 10_000, 10_000)
                 coupon = bond.coupon
                 assert isinstance(coupon, FixedCoupon)
@@ -162,33 +160,14 @@ def test_indexed_principal_stopped_marks_and_replay_exclude_unobserved_cpi() -> 
     assert len(stopped.summary.last_receipts) == 1
 
 
-def pay_claims(batch: list[Decision]) -> list[DecisionActions]:
-    return [
-        DecisionActions(
-            row.rollout_id,
-            row.observation.month,
-            [
-                PayClaim(
-                    request_id=index,
-                    cause_id=claim.cause_id,
-                    claim=claim,
-                    from_account=claim.from_account,
-                    amount=claim.amount_due,
-                )
-                for index, claim in enumerate(row.observation.claims)
-            ],
-        )
-        for row in batch
-    ]
+pay_claims = each(ClaimPayer(AgentId("alice")).decide)
 
 
 @pytest.mark.parametrize(
-    ("issuer", "federal", "state"), [(TREASURY, True, False), (MUNI, False, False), (CORPORATE, True, True)]
+    ("character", "federal", "state"), [(TREASURY, True, False), (MUNI, False, False), (TAXABLE, True, True)]
 )
-def test_existing_issuer_exemptions_survive_actor_capture(
-    issuer: JurisdictionId | None, federal: bool, state: bool
-) -> None:
-    [result] = execute(bond_case(issuer=issuer), pay_claims)
+def test_interest_exemptions_survive_actor_capture(character: InterestCharacter, federal: bool, state: bool) -> None:
+    [result] = execute(bond_case(character=character), pay_claims)
     assert result.stop is None
     taxes = {row.jurisdiction_id: row.total_tax for row in result.summary.tax_accruals}
     assert (taxes[JurisdictionId("federal_us")] > 0) == federal
@@ -199,9 +178,14 @@ def test_existing_issuer_exemptions_survive_actor_capture(
 
 @pytest.mark.parametrize(
     ("face", "rate", "period", "coupon"),
-    [(600, 0.01, 1, 1), (180, 0.033333333, 1, 0), (1_250_627, 0.037, 5, 19_280), (600, 0.0, 1, 0)],
+    [
+        (600, Decimal("0.01"), 1, 1),
+        (180, Decimal("0.033333333"), 1, 0),
+        (1_250_627, Decimal("0.037"), 5, 19_280),
+        (600, 0, 1, 0),
+    ],
 )
-def test_fixed_coupon_rounds_once_and_funds_spending(face: int, rate: float, period: int, coupon: int) -> None:
+def test_fixed_coupon_rounds_once_and_funds_spending(face: int, rate: Decimal | int, period: int, coupon: int) -> None:
     case = Situation(
         accounts=checking((AgentId("alice"), Decimal(0)), (AgentId("world"), Decimal(0))),
         bonds=(

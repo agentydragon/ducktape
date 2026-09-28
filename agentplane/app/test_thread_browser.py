@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
+from typing import cast
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -18,6 +19,7 @@ import pytest_bazel
 from google.protobuf import json_format
 from playwright.async_api import (
     APIResponse,
+    Locator,
     Page,
     Request,
     Route,
@@ -196,7 +198,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
                 "Sandbox no longer exists. Showing archived Thread history; controls are disabled.", exact=True
             )
         ).to_be_visible()
-        await expect(page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")).to_be_disabled()
+        await expect(page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")).to_be_disabled()
         await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_disabled()
         await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
         await expect(page.get_by_role("img", name="Streaming", exact=True)).to_have_count(0)
@@ -229,7 +231,7 @@ async def test_switching_threads_starts_at_each_threads_tail(
         source.attached.session_id = f"test-navigation-session-{number}"
         source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
         source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="test-navigation-turn")))
-        for index in range(80):
+        for index in range(130):
             item_id = f"test-navigation-item-{index}"
             source.append(
                 event_pb2.Event(
@@ -255,21 +257,23 @@ async def test_switching_threads_starts_at_each_threads_tail(
         http2_proxy(app.url, certificate) as ingress,
     ):
         await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
-        await expect(page.locator('[data-thread-anchor="161"]')).to_be_visible()
-        await expect(page.get_by_text("Thread 0 message 79", exact=True)).to_be_visible()
+        await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible()
         await page.get_by_role("region", name="Thread history", exact=True).hover()
+        # The eager initial load holds message 40 (well up from the tail) but not the thread's start;
+        # scrolling all the way up lands at the top of what's already loaded -- mounting message 40 --
+        # and, being within a screen of that top, triggers the fetch for the page before it.
         async with page.expect_request(
             lambda request: request.method == "POST" and "entity_index < $1" in (request.post_data or "")
         ):
             await page.mouse.wheel(0, -10_000)
+        await expect(page.get_by_text("Thread 0 message 40", exact=True)).to_be_visible()
         for number in (1, 0):
             async with page.expect_request(f"**/threads/{threads[number]}/sync/scope"):
                 await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()
             await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value(
                 f"Test navigation thread {number}"
             )
-            await expect(page.locator('[data-thread-anchor="161"]')).to_be_visible()
-            await expect(page.get_by_text(f"Thread {number} message 79", exact=True)).to_be_visible()
+            await expect(page.get_by_text(f"Thread {number} message 129", exact=True)).to_be_visible()
         await page.screenshot(path=undeclared_outputs_dir() / "thread-navigation.png")
 
 
@@ -281,7 +285,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
     thread_browser.opened.replay.set()
     await expect_projected_cursor(page, source.entries[-1].cursor)
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
-    draft = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    draft = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
     await draft.fill("Draft survives projection replacement")
     previous = await page.request.get(f"{thread_browser.ingress.url}/threads/{thread}/sync/scope")
     assert previous.ok
@@ -541,10 +545,10 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
     )
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix and debug ready", exact=True)).to_be_visible()
-    draft = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    draft = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
     await draft.fill("Draft survives debug inspection")
     assert not any("/observations" in url for url in requests)
-    await page.get_by_role("button", name="Debug history", exact=True).click()
+    await open_debug_history(page)
     dialog = page.get_by_role("dialog", name="Chronological debug")
     observations = dialog.locator("[data-debug-observation]")
     await expect(observations).to_have_count(30)
@@ -603,7 +607,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
 
     await page.route("**/observations?*", hold_debug_response)
     try:
-        await page.get_by_role("button", name="Debug history", exact=True).click()
+        await open_debug_history(page)
         async with asyncio.timeout(10):
             await response_ready.wait()
         async with page.expect_event("requestfailed", predicate=lambda request: "/observations" in request.url):
@@ -746,30 +750,14 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
     await history.hover()
     # The app adopts the reader's position at the gesture's scrollend. Rows entering the window can
     # still load and be re-measured after it, and the scroll correction for a re-measure lands a
-    # frame after its commit. Sample that same position once two consecutive frames agree.
+    # frame after its commit; capture_reading_anchor samples once two consecutive frames agree.
     gesture = await history.evaluate_handle(
         "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
     )
     await page.mouse.wheel(0, -600)
     async with asyncio.timeout(30):
         await gesture.evaluate("gesture => gesture.ended")
-        reading_anchor = await history.evaluate(
-            """area => new Promise(resolve => {
-                const sample = () => {
-                    const top = area.getBoundingClientRect().top;
-                    const item = [...area.querySelectorAll('[data-thread-anchor]')].find(
-                        item => item.getBoundingClientRect().bottom > top
-                    );
-                    return {cursor: item.dataset.threadAnchor, offset: item.getBoundingClientRect().top - top};
-                };
-                const settle = previous => requestAnimationFrame(() => {
-                    const current = sample();
-                    if (current.cursor === previous.cursor && current.offset === previous.offset) resolve(current);
-                    else settle(current);
-                });
-                requestAnimationFrame(() => settle(sample()));
-            })"""
-        )
+        reading_anchor = await capture_reading_anchor(history)
     await gesture.dispose()
     updated = source.append(
         event_pb2.Event(
@@ -830,6 +818,100 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
     await page.set_viewport_size({"width": 412 if phone else 1280, "height": 900})
     await expect_history_bottom(page)
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-resumed.png")
+
+
+async def test_small_upward_scroll_stays_detached_when_tail_streams(thread_browser: ThreadBrowser) -> None:
+    """A deliberate upward move smaller than the bottom slack must still disengage following."""
+    page, source = thread_browser.page, thread_browser.source
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    for number in range(18):
+        item_id = f"slow-scroll-item-{number}"
+        source.append(
+            event_pb2.Event(
+                item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+            )
+        )
+        latest = source.append(
+            event_pb2.Event(
+                item_completed=event_pb2.ItemCompleted(
+                    item_id=item_id, text=f"Earlier message {number}. " + "A retained paragraph. " * 8
+                )
+            )
+        )
+    await expect_projected_cursor(page, latest.cursor)
+    source.append(
+        event_pb2.Event(
+            item_started=event_pb2.ItemStarted(item_id="slow-scroll-tail", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+        )
+    )
+    tail = source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="slow-scroll-tail", text="Tail seed")))
+    await expect_projected_cursor(page, tail.cursor)
+
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    await expect_history_bottom(page)
+    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    initial_scroll_top = await history.evaluate("area => area.scrollTop")
+    await history.hover()
+    await page.mouse.wheel(0, -8)
+    await page.wait_for_function(
+        """initial => {
+            const area = document.querySelector('[aria-label="Thread history"]');
+            const gap = area.scrollHeight - area.scrollTop - area.clientHeight;
+            return area.scrollTop < initial && gap > 0 && gap < 24;
+        }""",
+        arg=initial_scroll_top,
+    )
+
+    tail_markdown = history.locator(".agentplane-markdown").last
+    previous_height = await tail_markdown.evaluate("message => message.getBoundingClientRect().height")
+    updated = source.append(
+        event_pb2.Event(
+            text_delta=event_pb2.TextDelta(
+                item_id="slow-scroll-tail", text="\n\nSmall-scroll stream update\n\n" + "Streaming continuation. " * 240
+            )
+        )
+    )
+    await expect_projected_cursor(page, updated.cursor)
+    await expect(page.get_by_text("Small-scroll stream update", exact=True)).to_have_count(1)
+    await page.wait_for_function(
+        """previous => {
+            const messages = document.querySelectorAll('[aria-label="Thread history"] .agentplane-markdown');
+            return messages.length > 0 && messages[messages.length - 1].getBoundingClientRect().height > previous + 24;
+        }""",
+        arg=previous_height,
+    )
+    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+
+    bottom_gap = await history.evaluate("area => area.scrollHeight - area.scrollTop - area.clientHeight")
+    assert bottom_gap > 24, f"streaming growth pulled the reader back to the bottom (gap={bottom_gap:.1f}px)"
+
+
+async def capture_reading_anchor(area: Locator) -> dict[str, str | float]:
+    """The first row whose bottom is below the viewport top, and its position -- the reader's
+    place, sampled once two consecutive frames agree so a pending re-measure right after a
+    just-ended gesture cannot register as a false position."""
+    return cast(
+        "dict[str, str | float]",
+        await area.evaluate(
+            """area => new Promise(resolve => {
+            const sample = () => {
+                const top = area.getBoundingClientRect().top;
+                const row = [...area.querySelectorAll('[data-thread-anchor]')].find(
+                    candidate => candidate.getBoundingClientRect().bottom > top
+                );
+                const rowTop = row.getBoundingClientRect().top;
+                return { cursor: row.dataset.threadAnchor, top: rowTop, offset: rowTop - top };
+            };
+            const settle = previous => requestAnimationFrame(() => {
+                const current = sample();
+                if (current.cursor === previous.cursor && current.top === previous.top) resolve(current);
+                else settle(current);
+            });
+            requestAnimationFrame(() => settle(sample()));
+        })"""
+        ),
+    )
 
 
 async def expect_reading_anchor(page: Page, anchor: dict[str, str | float]) -> None:
@@ -899,7 +981,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     if raw:
         await expand_item_evidence(page)
-    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
     await composer.fill("Test input confirmed before a model error")
     await composer.press("Enter")
     async with asyncio.timeout(15):
@@ -1024,7 +1106,7 @@ async def test_settled_command_reason_survives_leaving_the_tail_and_reload(
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     submitted = "Test input whose outcome must remain visible"
-    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
     await composer.fill(submitted)
     await composer.press("Enter")
     async with asyncio.timeout(15):
@@ -1069,7 +1151,7 @@ async def test_browser_sends_a_command_and_renders_only_the_confirmed_input(thre
     page, source = thread_browser.page, thread_browser.source
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
-    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
     await composer.fill("Test input from the real browser")
     await composer.press("Enter")
     async with asyncio.timeout(15):
@@ -1103,7 +1185,7 @@ async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(t
         await route.abort()
 
     await page.route("**/threads/*/commands", lose_request, times=1)
-    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
     await composer.fill("Test input retained across an unsent request")
     await composer.press("Enter")
     async with asyncio.timeout(15):
@@ -1123,17 +1205,23 @@ async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(t
     assert json_format.Parse(redelivery.post_data, command_pb2.Command()) == command
     async with asyncio.timeout(15):
         assert await source.commands.get() == command
-    await expect(page.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
-    await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
+    await expect_pending_message_bubble(page, command.submit_input.text)
     await expect(page.get_by_text("Saved locally · awaiting admission", exact=True)).to_have_count(0)
     await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
-    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
     admissions = [
         entry.event.command_admitted.command
         for entry in await thread_browser.event_logs.events(thread.id, limit=100)
         if entry.event.HasField("command_admitted")
     ]
     assert admissions == [command]
+
+
+async def expect_pending_message_bubble(page: Page, text: str) -> None:
+    """A submitInput command the server has admitted and is still working on renders inline as the
+    same bubble a confirmed message gets, marked pending (italic) until the harness effects it."""
+    bubble = page.locator(".agentplane-user-bubble")
+    await expect(bubble.locator(".agentplane-verbatim")).to_have_text(text)
+    await expect(bubble).to_have_css("font-style", "italic")
 
 
 async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_browser: ThreadBrowser) -> None:
@@ -1158,7 +1246,7 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
 
     await page.route("**/threads/*/commands", hold_reply, times=1)
     try:
-        composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+        composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
         await composer.fill("Test input saved without its HTTP reply")
         await composer.press("Enter")
         async with asyncio.timeout(15):
@@ -1169,18 +1257,15 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
         assert admission.event.command_admitted.command == command
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
         assert admission in await thread_browser.event_logs.events(thread.id, limit=100)
-        await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
-        await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+        await expect_pending_message_bubble(page, command.submit_input.text)
 
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
             drop_reply.set()
-        await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
+        await expect_pending_message_bubble(page, command.submit_input.text)
         await expect(page.get_by_text("Saved locally · awaiting admission", exact=True)).to_have_count(0)
         await page.reload()
-        await expect(page.get_by_text(command.submit_input.text, exact=True)).to_have_count(1)
-        await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
+        await expect_pending_message_bubble(page, command.submit_input.text)
         await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
-        await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
     finally:
         drop_reply.set()
         if reply_started.is_set():
@@ -1191,6 +1276,12 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
 
 async def expand_item_evidence(page: Page) -> None:
     await page.locator('[data-thread-anchor="3"]').get_by_role("button", name="Evidence", exact=True).click()
+
+
+async def open_debug_history(page: Page) -> None:
+    """Debug history lives in the composer's overflow menu, not a standalone button."""
+    await page.get_by_role("button", name="More", exact=True).click()
+    await page.get_by_role("menuitem", name="Debug history", exact=True).click()
 
 
 @pytest.mark.parametrize("replay_after", [4])
@@ -1208,7 +1299,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
 
     await page.route("**/threads/*/commands", lose_committed_reply, times=1)
     try:
-        composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+        composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
         await composer.fill("Test input whose admission neither browser channel observed")
         await composer.press("Enter")
         async with asyncio.timeout(15):
@@ -1281,7 +1372,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
     async with asyncio.timeout(15):
         assert (await app.replay_held()).cursor >= 5
 
-    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
     await composer.fill("Test input admitted ahead of the browser prefix")
     async with page.expect_response(lambda response: response.url.endswith("/commands")) as replied:
         await composer.press("Enter")
@@ -1305,7 +1396,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
     await expect(
         page.get_by_text("Test retained prefix and preceding delta A and preceding delta B", exact=True)
     ).to_have_count(1)
-    await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+    await expect_pending_message_bubble(page, command.submit_input.text)
     source.append(
         event_pb2.Event(
             harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
@@ -1345,7 +1436,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
 
     await page.route("**/threads/*/commands", lose_committed_reply, times=1)
     try:
-        composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+        composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
         await composer.fill("Test input pending across Electric reconnect")
         await composer.press("Enter")
         async with asyncio.timeout(15):
@@ -1382,7 +1473,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         await expect(
             page.get_by_text("Test retained prefix and disconnected delta A and disconnected delta B", exact=True)
         ).to_have_count(1)
-        await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+        await expect_pending_message_bubble(page, command.submit_input.text)
         source.append(
             event_pb2.Event(
                 harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
@@ -1414,14 +1505,13 @@ async def test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_wind
     page, source = thread_browser.page, thread_browser.source
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
-    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
     await composer.fill("Command retained across terminal shape error")
     await composer.press("Enter")
     async with asyncio.timeout(15):
         command = await source.commands.get()
     pending = page.get_by_role("region", name="Pending commands")
-    await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
-    await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+    await expect_pending_message_bubble(page, command.submit_input.text)
 
     async def terminal_shape_error(route: Route) -> None:
         await route.fulfill(status=400, content_type="text/plain", body="shape rejected")
@@ -1435,12 +1525,12 @@ async def test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_wind
         stopped = page.get_by_role("alert").filter(has_text="Thread synchronization stopped:")
         await expect(stopped).to_be_visible()
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
-        await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
+        await expect_pending_message_bubble(page, command.submit_input.text)
 
         async with page.expect_response(lambda response: "/sync/scope" in response.url and response.status == 200):
             await stopped.get_by_role("button", name="Refresh thread", exact=True).click()
         await expect(page.get_by_text("Thread synchronization stopped:", exact=False)).to_have_count(0)
-        await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+        await expect_pending_message_bubble(page, command.submit_input.text)
         source.append(
             event_pb2.Event(
                 harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
@@ -1501,9 +1591,9 @@ async def test_ahead_snapshot_is_not_a_thread_or_effective_model(thread_browser:
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     await expect(page.get_by_role("status")).to_have_count(0)
-    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_have_value("test-model-before")
+    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_have_value("Test Model Before")
     await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_enabled()
-    await expect(page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")).to_be_enabled()
+    await expect(page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")).to_be_enabled()
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_enabled()
     assert await thread_browser.event_logs.events(thread.id, limit=100) == thread_browser.source.entries
 
@@ -1535,7 +1625,7 @@ async def test_rejected_source_suffix_stops_browser_without_replacing_verified_h
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
     await expect(page.get_by_text("INVALID SUFFIX", exact=False)).to_have_count(0)
     await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_disabled()
-    await expect(page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")).to_be_disabled()
+    await expect(page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")).to_be_disabled()
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries[:4]
@@ -1547,7 +1637,7 @@ async def test_unknown_projection_failure_keeps_verified_history_and_stops_brows
     page, source, store = thread_browser.page, thread_browser.source, thread_browser.store
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
-    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
     draft = "Retained draft while projection failure is reported"
     await composer.fill(draft)
 

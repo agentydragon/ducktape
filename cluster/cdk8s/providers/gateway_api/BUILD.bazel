@@ -34,7 +34,11 @@ py_library(
     name = "http_route",
     srcs = ["http_route.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [":httproute"],
+    deps = [
+        ":httproute",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
 )
 
 py_library(
@@ -42,4 +46,15 @@ py_library(
     srcs = ["listener.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [":gateway"],
+)
+
+py_library(
+    name = "gateway_api_gateway",
+    srcs = ["gateway.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":gateway",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
 )

@@ -1,4 +1,4 @@
-import { Group, Text, TextInput } from "@mantine/core";
+import { TextInput } from "@mantine/core";
 import { type JSX, useState } from "react";
 
 import { displayableError, renameThread, type ThreadView } from "./client";
@@ -40,30 +40,21 @@ export function ThreadTitle({
   }
 
   return (
-    // The title and its stable id; on a phone the pair takes a row of its own.
-    <Group gap="xs" className="agentplane-thread-name">
-      <TextInput
-        aria-label="Thread name"
-        disabled={thread === null}
-        variant="unstyled"
-        size="xl"
-        value={shown}
-        placeholder={threadId}
-        maxLength={200}
-        classNames={{ input: "agentplane-thread-name-input" }}
-        style={{ flex: "1 1 12rem", minWidth: 0 }}
-        onChange={(event) => setDraft(event.currentTarget.value)}
-        onBlur={() => void commit()}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") event.currentTarget.blur();
-          if (event.key === "Escape") setDraft(null);
-        }}
-      />
-      {thread?.name && (
-        <Text size="sm" c="dimmed" style={{ overflowWrap: "anywhere", maxWidth: "100%" }}>
-          {threadId}
-        </Text>
-      )}
-    </Group>
+    <TextInput
+      aria-label="Thread name"
+      disabled={thread === null}
+      variant="unstyled"
+      size="sm"
+      value={shown}
+      placeholder={threadId}
+      maxLength={200}
+      classNames={{ input: "agentplane-thread-name-input" }}
+      onChange={(event) => setDraft(event.currentTarget.value)}
+      onBlur={() => void commit()}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Escape") setDraft(null);
+      }}
+    />
   );
 }

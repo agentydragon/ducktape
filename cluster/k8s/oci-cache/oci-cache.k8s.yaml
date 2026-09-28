@@ -2,17 +2,16 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
-    goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: auto
     rbac.ducktape.io/agent-readable-logs: "true"
   name: oci-cache
+spec: {}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
     description: Zot OCI pull-through cache. On-demand mirror for docker.io, ghcr.io, quay.io, registry.k8s.io and gcr.io addressed by path prefix (/docker-hub, /ghcr, /quay, /k8s, /gcr). Durable content in the SeaweedFS registry-cache bucket (S3); dedupe index in the oci-cache-valkey RedisReplication. No PVC — the only local state is ephemeral upload staging on emptyDir, so the pod reschedules freely. The in-cluster Service is intentionally unauthenticated for Docker registry-mirror compatibility; the public endpoint is authenticated by the nginx sidecar.
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: zot
   name: zot

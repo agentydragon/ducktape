@@ -11,7 +11,7 @@ from agentplane.app.agent_runtime.ingestion import Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.api import create_app
+from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -76,7 +76,10 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         inventory,
         bridge,
         store,
-        {harness: ["test-model"] for harness in Harness},
+        ModelCatalog(
+            models=[ModelOption(model="test-model", display_name="Test Model")],
+            harnesses={harness: ["test-model"] for harness in Harness},
+        ),
         egress,
         decisions,
         live_index,

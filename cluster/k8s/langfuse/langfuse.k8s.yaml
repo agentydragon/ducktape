@@ -2,9 +2,9 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
-    goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: auto
   name: langfuse
+spec: {}
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
@@ -79,6 +79,9 @@ spec:
       kind: Bucket
       namespace: langfuse
     - group: seaweed.seaweedfs.com
+      kind: S3Identity
+      namespace: langfuse
+    - group: seaweed.seaweedfs.com
       kind: S3Credentials
       namespace: langfuse
   to:
@@ -90,11 +93,12 @@ apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
   name: langfuse
-  namespace: seaweedfs
+  namespace: langfuse
 spec:
   reclaimPolicy: Retain
   seaweedRef:
     name: seaweedfs
+    namespace: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials

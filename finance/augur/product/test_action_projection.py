@@ -1,7 +1,7 @@
 """One executed session supplies the product's wealth, payment, sale and tax views.
 
 Stipulated $100/$50 share prices, $40 basis and synthetic 10% LTCG tax come from
-the runnable monthly-actions example; these are accounting controls, not forecasts.
+the shared funded-bill situation; these are accounting controls, not forecasts.
 """
 
 from collections.abc import Callable
@@ -23,12 +23,12 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.events import EventLog
 from finance.augur.sim.ids import AccountId, AgentId, BondId
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.prepared import PreparedAccount, PreparedBond
-from finance.augur.sim.results import Finished, PaymentRejection, PaymentRequestError, Rejected, Rollout
+from finance.augur.sim.results import PaymentRejection, PaymentRequestError, Rejected, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.bonds import (
     CPI_DOUBLING,
     HORIZON,
+    DatedBond,
     Situation,
     bond_case,
     checking,
@@ -36,11 +36,11 @@ from finance.augur.sim.testing.bonds import (
     cpi_series,
     dated,
 )
-from finance.augur.sim.world import World
-from finance.augur.x.monthly_actions.policy import decide
 
 # Aliased: the bond situations' `compose` holds the plain name.
-from finance.augur.x.monthly_actions.run import HOUSEHOLD, STOCK, compose as example_world, situation
+from finance.augur.sim.testing.funded_bill import HOUSEHOLD, STOCK, compose as example_world, sell_then_pay, situation
+from finance.augur.sim.testing.session import finish
+from finance.augur.sim.world import World
 
 type Compose = Callable[[int], World]
 EXAMPLE_HORIZON = 13
@@ -50,18 +50,11 @@ def _run(
     worlds: Compose,
     ids: list[int],
     capture: Literal["summary", "dense", "forensic"],
-    policy: Callable[[list[Decision]], list[DecisionActions]] = decide,
+    policy: Callable[[list[Decision]], list[DecisionActions]] = sell_then_pay,
     *,
     actor_id: AgentId = HOUSEHOLD,
 ) -> list[Rollout]:
-    session = ActionSession({id_: worlds(id_) for id_ in ids}, actor_id, capture=capture)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(policy(batch))
-        return batch.rollouts
-    finally:
-        session.close()
+    return finish(ActionSession({id_: worlds(id_) for id_ in ids}, actor_id, capture=capture), policy).rollouts
 
 
 def _metrics(
@@ -89,9 +82,9 @@ def _detail(rollouts: list[Rollout], column: int, *, horizon_months: int = EXAMP
 
 
 def _bonds(
-    *bonds: PreparedBond,
+    *bonds: DatedBond,
     horizon_months: int,
-    accounts: tuple[PreparedAccount, ...] = checking(
+    accounts: tuple[tuple[AccountRef, int], ...] = checking(
         (HOUSEHOLD, Decimal(0)), (AgentId("example-creditor"), Decimal(0))
     ),
     cpi: list[list[float]] | None = None,
@@ -178,7 +171,7 @@ def test_compact_population_and_selected_detail_share_observed_support(
 
 def test_attempted_consumption_gap_does_not_duplicate_claims_or_invent_future_demand(example: Compose) -> None:
     def consume_after_bills(batch: list[Decision]) -> list[DecisionActions]:
-        responses = decide(batch)
+        responses = sell_then_pay(batch)
         return [
             DecisionActions(
                 response.rollout_id,
@@ -398,7 +391,7 @@ def test_bond_principal_totals_named_accounts_without_another_actors_holdings() 
         horizon_months=1,
         accounts=(
             *checking((HOUSEHOLD, Decimal(0)), (AgentId("example-creditor"), Decimal(0))),
-            PreparedAccount(account=AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("savings")), opening_balance=0),
+            (AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("savings")), 0),
         ),
     )
     rollouts = _run(worlds, [0], "summary", _hold)

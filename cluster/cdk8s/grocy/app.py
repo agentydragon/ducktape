@@ -3,15 +3,17 @@
 by the household's kustomization, and `grocy-<household>.k8s.yaml` (Namespace, config PVC,
 and the VolSync backup, migration and verification objects around it).
 
-Hand-written beside the generated output: each household's `app/kustomization.yaml`, whose
-patch moves the Deployment onto the hil-ovh zone.
+Hand-written beside the generated output: each household's `app/kustomization.yaml`, the
+household's Flux Kustomization directory, which also includes its MCP server (`../mcp`,
+cluster/cdk8s/grocy/mcp.py) and whose patch moves the Deployment onto the hil-ovh zone.
 """
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from volsync_replicationdestination_crds.backube.volsync import (
     ReplicationDestinationSpecRsyncTls,
@@ -38,20 +40,29 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
+from cluster.cdk8s import cilium, namespaces, node_scheduling
+from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.volsync.replication_destination import ReplicationDestination
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAME = "grocy"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _IMAGE = "lscr.io/linuxserver/grocy:v4.6.0-ls318"
 _CONFIG_CLAIM = "grocy-config-ovh"
 _BACKUP = "grocy-config-ovh-backup"
-_ZONE = "hil-ovh"
-_ZONE_KEY = "topology.kubernetes.io/zone"
-_HTTP_PORT = 80
+_HTTP = Port(name="http", number=80)
+# The households; grocy/mcp.py renders one MCP server per entry too.
+HOUSEHOLDS = (("sf", "SF"), ("vallejo", "Vallejo"))
+_BACKUP_SCHEDULE = "23 */6 * * *"
+
+
+def service(household: str) -> ServiceRef:
+    """The Service base_chart renders, as the household overlay places it."""
+    return ServiceRef(name=_NAME, port=_HTTP, pods=Pods(namespace=f"grocy-{household}", labels=tuple(_LABELS.items())))
 
 
 def _from_namespace_pod(namespace: str, pod_labels: dict[str, str]) -> k8s.NetworkPolicyIngressRule:
@@ -62,18 +73,18 @@ def _from_namespace_pod(namespace: str, pod_labels: dict[str, str]) -> k8s.Netwo
                 pod_selector=k8s.LabelSelector(match_labels=pod_labels),
             )
         ],
-        ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_HTTP_PORT), protocol="TCP")],
+        ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_HTTP.number), protocol="TCP")],
     )
 
 
 def base_chart(app: App) -> Chart:
     """The objects every household runs; the household overlay supplies the namespace."""
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    login_probe = k8s.HttpGetAction(path="/login", port=k8s.IntOrString.from_number(_HTTP_PORT))
+    login_probe = k8s.HttpGetAction(path="/login", port=k8s.IntOrString.from_number(_HTTP.number))
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(name=_NAME, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}),
+        metadata=k8s.ObjectMeta(name=_NAME, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -86,7 +97,7 @@ def base_chart(app: App) -> Chart:
                         k8s.Container(
                             name=_NAME,
                             image=_IMAGE,
-                            ports=[k8s.ContainerPort(container_port=_HTTP_PORT, name="http")],
+                            ports=[_HTTP.k8s_container_port()],
                             env=[
                                 k8s.EnvVar(name="PUID", value="1000"),
                                 k8s.EnvVar(name="PGID", value="1000"),
@@ -145,15 +156,7 @@ def base_chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=_NAME),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name="http", port=_HTTP_PORT, target_port=k8s.IntOrString.from_number(_HTTP_PORT), protocol="TCP"
-                )
-            ],
-            type="ClusterIP",
-        ),
+        spec=k8s.ServiceSpec(selector=_LABELS, ports=[_HTTP.k8s_service_port()], type="ClusterIP"),
     )
     k8s.KubeConfigMap(
         chart,
@@ -184,11 +187,9 @@ def base_chart(app: App) -> Chart:
             pod_selector=k8s.LabelSelector(match_labels=_LABELS),
             policy_types=["Ingress"],
             ingress=[
-                _from_namespace_pod(
-                    "authentik", {"app.kubernetes.io/component": "server", "app.kubernetes.io/name": "authentik"}
-                ),
+                _from_namespace_pod(authentik.SERVER.pods.namespace, authentik.SERVER.pods.selector),
                 # Gatus: health check probes
-                _from_namespace_pod("gatus", {"app.kubernetes.io/name": "gatus"}),
+                _from_namespace_pod(cilium.PROBER.namespace, cilium.PROBER.selector),
             ],
         ),
     )
@@ -224,7 +225,7 @@ def _destination_mover_zone_affinity() -> ReplicationDestinationSpecRsyncTlsMove
                     ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
                         match_expressions=[
                             ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                key=_ZONE_KEY, operator="In", values=[_ZONE]
+                                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.HIL_OVH_ZONE]
                             )
                         ]
                     )
@@ -242,7 +243,7 @@ def _source_mover_zone_affinity() -> ReplicationSourceSpecRsyncTlsMoverAffinity:
                     ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
                         match_expressions=[
                             ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                key=_ZONE_KEY, operator="In", values=[_ZONE]
+                                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.HIL_OVH_ZONE]
                             )
                         ]
                     )
@@ -252,21 +253,10 @@ def _source_mover_zone_affinity() -> ReplicationSourceSpecRsyncTlsMoverAffinity:
     )
 
 
-def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
-    namespace = f"grocy-{household}"
+def household_chart(app: App, *, household: str) -> Chart:
+    namespace = service(household).pods.namespace
     chart = Chart(app, namespace, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
-        chart,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=namespace,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
-    )
+    namespaces.namespace(chart, "namespace", name=namespace, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
     k8s.KubePersistentVolumeClaim(
         chart,
         "config-claim",
@@ -286,7 +276,7 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
             template=k8s.PodTemplateSpec(
                 spec=k8s.PodSpec(
                     restart_policy="Never",
-                    node_selector={_ZONE_KEY: _ZONE},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     containers=[
                         k8s.Container(
@@ -314,7 +304,7 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
     ReplicationDestination(
         chart,
         "migration",
-        metadata=metadata("grocy-config-ovh-migration", namespace),
+        metadata=ApiObjectMetadata(name="grocy-config-ovh-migration", namespace=namespace),
         trigger=ReplicationDestinationSpecTrigger(manual="prep-20260520"),
         rsync_tls=ReplicationDestinationSpecRsyncTls(
             destination_pvc=_CONFIG_CLAIM,
@@ -345,7 +335,7 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
     ReplicationDestination(
         chart,
         "backup-destination",
-        metadata=metadata(_BACKUP, namespace),
+        metadata=ApiObjectMetadata(name=_BACKUP, namespace=namespace),
         rsync_tls=ReplicationDestinationSpecRsyncTls(
             destination_pvc=_BACKUP,
             copy_method=ReplicationDestinationSpecRsyncTlsCopyMethod.DIRECT,
@@ -357,9 +347,9 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
     ReplicationSource(
         chart,
         "backup-source",
-        metadata=metadata(_BACKUP, namespace),
+        metadata=ApiObjectMetadata(name=_BACKUP, namespace=namespace),
         source_pvc=_CONFIG_CLAIM,
-        trigger=ReplicationSourceSpecTrigger(schedule=backup_schedule),
+        trigger=ReplicationSourceSpecTrigger(schedule=_BACKUP_SCHEDULE),
         mover=ReplicationSourceSpecRsyncTls(
             copy_method=ReplicationSourceSpecRsyncTlsCopyMethod.DIRECT,
             key_secret=f"volsync-rsync-tls-{_BACKUP}",
@@ -373,15 +363,10 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(
-        root,
-        f"{HAND_WRITTEN_ROOT}/grocy/sf/app",
-        base_chart,
-        lambda app: household_chart(app, household="sf", backup_schedule="23 */6 * * *"),
-    )
-    write_charts(
-        root,
-        f"{HAND_WRITTEN_ROOT}/grocy/vallejo/app",
-        base_chart,
-        lambda app: household_chart(app, household="vallejo", backup_schedule="29 */6 * * *"),
-    )
+    for household, _display in HOUSEHOLDS:
+        write_charts(
+            root,
+            f"{HAND_WRITTEN_ROOT}/grocy/{household}/app",
+            base_chart,
+            partial(household_chart, household=household),
+        )

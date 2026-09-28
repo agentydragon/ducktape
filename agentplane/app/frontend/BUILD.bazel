@@ -170,6 +170,7 @@ ts_library(
         ":client",
         ":json_view",
         ":stream_status",
+        ":topbar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -743,6 +744,7 @@ ts_library(
         ":live",
         ":raw_switch",
         ":stream_status",
+        ":topbar",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -788,12 +790,29 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":markdown_css",
+        ":syntax_highlight",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/dompurify",
         "//:node_modules/@types/react",
         "//:node_modules/dompurify",
         "//:node_modules/marked",
         "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "markdown_test",
+    testonly = True,
+    srcs = ["markdown.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":markdown",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
     ],
 )
 
@@ -981,12 +1000,16 @@ ts_library(
 
 ts_library(
     name = "chronological_debug",
-    srcs = ["chronological_debug.tsx"],
+    srcs = [
+        "chronological_debug.tsx",
+        "tabler_icons.d.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
         ":json_view",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -1004,6 +1027,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":thread_sync",
+        "//:node_modules/@bufbuild/protobuf",
         "//agentplane/protocol:event_pb",
     ],
 )
@@ -1016,6 +1040,8 @@ ts_library(
     deps = [
         ":history_rows",
         ":thread_entity_fixture",
+        ":thread_sync",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
         "//agentplane/protocol:event_pb",
     ],
@@ -1054,6 +1080,7 @@ ts_library(
         ":stream_status",
         ":thread_sync",
         ":thread_title",
+        ":topbar",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -1062,6 +1089,18 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/protocol:command_pb",
         "//agentplane/protocol:event_pb",
+    ],
+)
+
+ts_library(
+    name = "topbar",
+    srcs = ["topbar.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
     ],
 )
 
@@ -1119,6 +1158,7 @@ ts_library(
         ":stream_status",
         ":thread_entity_fixture",
         ":thread_sync",
+        ":topbar",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -1171,6 +1211,7 @@ ts_library(
         ":sidebar",
         ":thread_store",
         ":thread_sync",
+        ":topbar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
@@ -1256,6 +1297,7 @@ vitest_bin.vitest_test(
         ":launch_presets_test",
         ":live_stream_test",
         ":local_commands_test",
+        ":markdown_test",
         ":mcp_servers_test",
         ":projected_session_test",
         ":push_test",

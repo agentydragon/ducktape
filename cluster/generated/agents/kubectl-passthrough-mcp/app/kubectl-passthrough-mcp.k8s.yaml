@@ -4,6 +4,7 @@ metadata:
   labels:
     goldilocks.fairwinds.com/enabled: "false"
   name: kubectl-passthrough-mcp
+spec: {}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -35,7 +36,6 @@ kind: Deployment
 metadata:
   annotations:
     description: containers/kubernetes-mcp-server in OAuth passthrough mode. Caller's Authentik JWT is forwarded directly to kube-apiserver; server itself is unprivileged.
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: kubectl-passthrough-mcp
   name: kubectl-passthrough-mcp

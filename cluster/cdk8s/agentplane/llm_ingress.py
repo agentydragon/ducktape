@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
-    ConfigMap,
     ContainerPort,
     ContainerResources,
+    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
     Deployment,
@@ -22,28 +22,24 @@ from cdk8s_plus_34 import (
     Service,
     ServiceAccount,
     ServicePort,
-    Volume,
 )
 from constructs import Construct
 
 from agentplane.llm_ingress.main import CONFIG_FILE_ENV, Settings
-from cluster.cdk8s import cilium, container_security, node_scheduling
+from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import cli_args, env_name, settings_file
+from util.settings_contract import cli_args, env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "agentplane-llm-ingress"
 _IMAGE_NAME = "git.allegedly.works/ducktape-ci/agentplane-llm-ingress"
 CONTAINER_PORT = 8080
 _LABELS = {"app.kubernetes.io/name": _NAME}
-_SETTINGS_PATH = "/etc/agentplane-llm-ingress/settings.yaml"
 # The Sandbox runner's workload token audience: minted once by the runner
 # (app.py's projected ServiceAccountToken), verified unchanged by the
 # central egress proxy, then forwarded and verified again here -- every hop must accept
@@ -63,7 +59,10 @@ class LlmIngress(Construct):
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the ingress
         # calls TokenReview as itself, so it needs its own mounted token.
         service_account = ServiceAccount(
-            self, "serviceaccount", metadata=metadata(_NAME, env.namespace), automount_token=True
+            self,
+            "serviceaccount",
+            metadata=ApiObjectMetadata(name=_NAME, namespace=env.namespace),
+            automount_token=True,
         )
         # TokenReview proves the Pod-bound workload bearer presented by the central
         # egress proxy. It grants none of that Pod's authority to the ingress.
@@ -74,30 +73,29 @@ class LlmIngress(Construct):
             service_account_name=_NAME,
             namespace=env.namespace,
         )
-        settings_cm = self._add_settings_configmap()
-        deployment = self._add_deployment(service_account, settings_cm)
+        # Settings this deployment supplies as YAML rather than flags, so a list is a list.
+        settings = SettingsFile(
+            self,
+            "settings",
+            metadata=ApiObjectMetadata(name=f"{_NAME}-settings", namespace=env.namespace),
+            model=Settings,
+            content={
+                "allowed_service_account_namespaces": [env.namespace],
+                "log_llm_requests": env.llm_ingress.log_llm_requests,
+            },
+            path="/etc/agentplane-llm-ingress/settings.yaml",
+        )
+        deployment = self._add_deployment(service_account, settings)
         self._add_service(deployment)
         self._add_network_policy()
 
-    def _add_settings_configmap(self) -> ConfigMap:
-        return ConfigMap(
-            self,
-            "settings",
-            metadata=metadata(f"{_NAME}-settings", self.env.namespace),
-            data={
-                "settings.yaml": yaml_config(
-                    settings_file(Settings, {"allowed_service_account_namespaces": [self.env.namespace]})
-                )
-            },
-        )
-
-    def _add_deployment(self, service_account: ServiceAccount, settings_cm: ConfigMap) -> Deployment:
+    def _add_deployment(self, service_account: ServiceAccount, settings: SettingsFile) -> Deployment:
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                _NAME,
-                self.env.namespace,
+            metadata=ApiObjectMetadata(
+                name=_NAME,
+                namespace=self.env.namespace,
                 labels=_LABELS,
                 annotations={"secret.reloader.stakater.com/reload": self.env.llm_ingress.litellm_key_secret_name},
             ),
@@ -131,9 +129,7 @@ class LlmIngress(Construct):
                         ),
                         key="api-key",
                     )
-                ),
-                # Settings this deployment supplies as YAML rather than flags, so a list is a list.
-                CONFIG_FILE_ENV: EnvValue.from_value(_SETTINGS_PATH),
+                )
             },
             ports=[ContainerPort(name="http", number=CONTAINER_PORT, protocol=Protocol.TCP)],
             readiness=http_probe("/healthz", port=CONTAINER_PORT, initial_delay_seconds=3, period_seconds=10),
@@ -142,22 +138,21 @@ class LlmIngress(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            security_context=container_security.WRITABLE_ROOT,
+            # Writable: its root filesystem writes are unaudited.
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
 
-        settings_volume = Volume.from_config_map(self, "settings-volume", settings_cm)
-        deployment.containers[0].mount(_SETTINGS_PATH, settings_volume, sub_path="settings.yaml", read_only=True)
+        settings.mount_into(deployment.containers[0], env=CONFIG_FILE_ENV)
 
-        node_scheduling.attract_to_zone(deployment)
-        node_scheduling.tolerate_control_plane_taint(deployment)
-        apply_pod_spec_patches(deployment)
+        pod_policy.place(deployment, node_scheduling.HIL_OVH, tolerate_control_plane=True)
+        pod_policy.harden(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
         Service(
             self,
             "service",
-            metadata=metadata(_NAME, self.env.namespace),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=self.env.namespace),
             selector=deployment,
             ports=[ServicePort(name="http", port=CONTAINER_PORT, target_port=CONTAINER_PORT, protocol=Protocol.TCP)],
         )
@@ -169,8 +164,8 @@ class LlmIngress(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=metadata(_NAME, self.env.namespace),
-            selector=_LABELS,
+            metadata=ApiObjectMetadata(name=_NAME, namespace=self.env.namespace),
+            endpoint_selector=_LABELS,
             ingress=[
                 IngressRule.from_endpoints(
                     cilium.endpoint_labels(self.env.namespace, "agentplane-egress"), ports=[CONTAINER_PORT]

@@ -188,12 +188,10 @@ def product_row(world: World, actor: AgentId) -> tuple[int, int, int, int, int, 
     )
     private = sum(
         position_value(
-            world.market.value(f"private_equity_mark:{issuer}", mark), lot.units_remaining, lot.spec.quantity_scale
+            world.market.value(f"private_equity_mark:{issuer}", mark), lot.units_remaining, lot.quantity_scale
         )
         for lot in world.holdings.lots
-        if lot.spec.agent_id == actor
-        and lot.units_remaining
-        and (issuer := private_issuer(lot.spec.asset_id)) is not None
+        if lot.agent_id == actor and lot.units_remaining and (issuer := private_issuer(lot.asset_id)) is not None
     )
     properties = world.properties
     property_value = (
@@ -205,7 +203,7 @@ def product_row(world: World, actor: AgentId) -> tuple[int, int, int, int, int, 
             if purchase.buyer_agent_id == actor
             and purchase.property_id in properties.properties
             and properties.properties[purchase.property_id].state.active
-            and f"home_value:{purchase.location_id}" in world.market.series
+            and f"home_value:{purchase.market}" in world.market.series
         )
     )
     debt = sum(loan.principal for loan in world.mortgage_snapshots() if loan.agent_id == actor)

@@ -9,8 +9,6 @@ plain dicts.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from kyverno_clusterpolicy_crds.io.kyverno import (
@@ -31,12 +29,11 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesValidateCelExpressions,
     ClusterPolicySpecValidationFailureAction,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.kyverno import proxy_injection
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, AgentReadable, Vpa
 from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy, Validate, match_resources
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/policies"
@@ -146,7 +143,7 @@ def require_gitops_chart(app: App) -> Chart:
                         "Resource: {{request.object.kind}}/{{request.object.metadata.name}} "
                         "User: {{request.userInfo.username}}"
                     )
-                ).to_spec(),
+                ),
             )
         ],
     )
@@ -327,7 +324,7 @@ def default_vpa_requests_only_chart(app: App) -> Chart:
                         kinds=["Namespace"],
                         operations=[_CREATE, _UPDATE],
                         selector=ClusterPolicySpecRulesMatchAnyResourcesSelector(
-                            match_labels={"goldilocks.fairwinds.com/vpa-update-mode": "auto"}
+                            match_labels={VPA_UPDATE_MODE_LABEL: Vpa.AUTO}
                         ),
                     )
                 ),
@@ -421,7 +418,7 @@ def restrict_agent_kustomization_patch_chart(app: App) -> Chart:
                             message="Only the reconcile.fluxcd.io/requestedAt annotation may be changed.",
                         ),
                     ],
-                ).to_spec(),
+                ),
             )
         ],
     )
@@ -483,7 +480,7 @@ def restrict_agent_gateway_routes_chart(app: App) -> Chart:
                         "`authentik` namespace) instead. "
                         "Resource: {{request.object.kind}}/{{request.object.metadata.name}}"
                     )
-                ).to_spec(),
+                ),
             )
         ],
     )
@@ -560,7 +557,7 @@ def require_secret_store_conditions_chart(app: App) -> Chart:
                             }
                         ]
                     },
-                ).to_spec(),
+                ),
             )
         ],
     )
@@ -581,7 +578,7 @@ def generate_agent_diagnostics_readers_chart(app: App) -> Chart:
         {"kind": "ServiceAccount", "name": "claude-ai", "namespace": "agentplane-staging"},
     ]
 
-    def namespaces_labeled(label: str) -> ClusterPolicySpecRulesMatchAny:
+    def namespaces_labeled(label: AgentReadable) -> ClusterPolicySpecRulesMatchAny:
         return ClusterPolicySpecRulesMatchAny(
             resources=ClusterPolicySpecRulesMatchAnyResources(
                 kinds=["Namespace"],
@@ -604,8 +601,6 @@ def generate_agent_diagnostics_readers_chart(app: App) -> Chart:
             },
         )
 
-    metadata_label = "rbac.ducktape.io/agent-readable-metadata"
-    logs_label = "rbac.ducktape.io/agent-readable-logs"
     ClusterPolicy(
         chart,
         "policy",
@@ -629,13 +624,13 @@ def generate_agent_diagnostics_readers_chart(app: App) -> Chart:
             ClusterPolicySpecRules(
                 name="generate-agent-readable-metadata",
                 match=ClusterPolicySpecRulesMatch(
-                    any=[namespaces_labeled(metadata_label), namespaces_labeled(logs_label)]
+                    any=[namespaces_labeled(AgentReadable.METADATA), namespaces_labeled(AgentReadable.LOGS)]
                 ),
                 generate=role_binding("agent-readable-metadata", "agent-readable-namespace-metadata"),
             ),
             ClusterPolicySpecRules(
                 name="generate-agent-readable-logs",
-                match=ClusterPolicySpecRulesMatch(any=[namespaces_labeled(logs_label)]),
+                match=ClusterPolicySpecRulesMatch(any=[namespaces_labeled(AgentReadable.LOGS)]),
                 generate=role_binding("agent-readable-logs", "agent-readable-namespace-logs"),
             ),
         ],
@@ -752,7 +747,7 @@ def cleanup_controller_workloads_chart(app: App) -> Chart:
 
 
 def cleanup_controller_sandboxes_chart(app: App) -> Chart:
-    """Consumer: the workspace-janitor CleanupPolicy (agents/agent-sandbox/workspaces/)."""
+    """Consumers: the janitors reaping `janitor.SANDBOX_KINDS`."""
     chart = _chart(app, "clusterrole-cleanup-controller-sandboxes")
     k8s.KubeClusterRole(
         chart,
@@ -768,7 +763,7 @@ def cleanup_controller_sandboxes_chart(app: App) -> Chart:
     return chart
 
 
-_CHARTS = (
+CHARTS = (
     require_gitops_chart,
     default_revision_history_limit_chart,
     default_disable_service_links_chart,
@@ -786,19 +781,11 @@ _CHARTS = (
 )
 
 
-def write_manifests(root: Path) -> None:
-    (root / OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(root / OUTPUT_DIR))
-    resources = [f"{build(app).node.id}.k8s.yaml" for build in _CHARTS]
-    app.synth()
-    write_yaml(root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=resources))
-
-
-def kyverno_policies(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno: Kustomization) -> Kustomization:
+def kyverno_policies(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         "kyverno-policies",
-        artifact,
+        directory,
         depends_on=[
             # Policies require Kyverno CRDs to be installed
             flux_kustomization_depends_on(kyverno)

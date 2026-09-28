@@ -2,7 +2,7 @@
 
 import pytest_bazel
 
-from finance.augur.sim.scenario import ORDINARY_INCOME
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.testing.accounting import HOUSEHOLD, accounting
 
 

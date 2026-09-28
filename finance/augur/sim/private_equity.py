@@ -8,11 +8,18 @@ from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Sell
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, quantity_for_value
 from finance.augur.sim.holdings import Holdings, private_issuer
-from finance.augur.sim.ids import AgentId, AssetId
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.ids import AccountId, AgentId, AssetId
+from finance.augur.sim.market_path import Amount, MarketPath
 from finance.augur.sim.money import checked_count, mul_div, mul_div_wide, position_value
 from finance.augur.sim.observations import TlhPortfolioObservation
-from finance.augur.sim.prepared import _TenderPolicy
+
+
+@dataclass(frozen=True, kw_only=True)
+class TenderPolicy:
+    owner_agent_id: AgentId
+    proceeds_account_id: AccountId
+    liquid_net_worth_floor: Amount
+
 
 # The issuer protocol's per-issuer series on a path, `private_equity_<channel>:<issuer>`, with the
 # closed range of each channel's integer values.
@@ -95,14 +102,14 @@ def liquid_net_worth(
         if account.agent_id == actor:
             total = checked_count(total + accounting.ledger.balance(account), "money addition")
     for lot in holdings.lots:
-        if lot.spec.agent_id != actor or private_issuer(lot.spec.asset_id) is not None or lot.units_remaining <= 0:
+        if lot.agent_id != actor or private_issuer(lot.asset_id) is not None or lot.units_remaining <= 0:
             continue
-        series = f"security:{lot.spec.asset_id}"
+        series = f"security:{lot.asset_id}"
         # The configured PE floor omits an unmarked public holding; it does not price bonds or property.
         if series not in market.series:
             continue
         total = checked_count(
-            total + position_value(market.value(series, month), lot.units_remaining, lot.spec.quantity_scale),
+            total + position_value(market.value(series, month), lot.units_remaining, lot.quantity_scale),
             "money addition",
         )
     for mark in marks:
@@ -112,7 +119,7 @@ def liquid_net_worth(
 
 
 class PrivateEquity:
-    def __init__(self, tender_policies: list[_TenderPolicy]) -> None:
+    def __init__(self, tender_policies: list[TenderPolicy]) -> None:
         self.tender_policies = tender_policies
         # This month's protocol outcomes, cleared by `begin_month`.
         self.events: list[ProtocolEvent] = []
@@ -130,14 +137,14 @@ class PrivateEquity:
         marks: Sequence[TlhPortfolioObservation],
         month: int,
     ) -> None:
-        issuers = sorted({issuer for lot in holdings.lots if (issuer := private_issuer(lot.spec.asset_id)) is not None})
+        issuers = sorted({issuer for lot in holdings.lots if (issuer := private_issuer(lot.asset_id)) is not None})
         for issuer in issuers:
             asset = AssetId(f"private_equity:{issuer}")
             candidates = sorted(
-                (index for index, lot in enumerate(holdings.lots) if lot.spec.asset_id == asset),
-                key=lambda index: (holdings.lots[index].spec.purchase_month, holdings.lots[index].spec.lot_id),
+                (index for index, lot in enumerate(holdings.lots) if lot.asset_id == asset),
+                key=lambda index: (holdings.lots[index].purchase_month, holdings.lots[index].lot_id),
             )
-            first = holdings.lots[candidates[0]].spec
+            first = holdings.lots[candidates[0]]
             actor, scale = first.agent_id, first.quantity_scale
             mark = market.value(f"private_equity_mark:{issuer}", month)
             regime = PrivateEquityRegimeCode(market.value(f"private_equity_regime:{issuer}", month))

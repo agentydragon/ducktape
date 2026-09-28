@@ -1,4 +1,4 @@
-"""Manual live smoke of every Ollama chat route through both deployed harnesses."""
+"""Manual live smoke of the offered Ollama routes through both deployed harnesses."""
 
 from __future__ import annotations
 
@@ -16,19 +16,15 @@ from agentplane.app.inventory import SandboxView
 from agentplane.app.presets import Harness
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
-from cluster.cdk8s.model_rosters import OLLAMA_CHAT_MODELS, ApiShape, Provider, exposed_name, ollama_chat_variant
+from cluster.cdk8s.agentplane.app_settings import OLLAMA_MODELS
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 
 Sandboxes = Callable[..., Awaitable[SandboxView]]
-_128K = 128 * 1024
-VARIANTS = [(model, context) for model, _ollama_model, contexts in OLLAMA_CHAT_MODELS for context in contexts]
-VARIANTS.sort(key=lambda variant: variant[1] != _128K)
 CASES = [
-    (harness, exposed_name(Provider.OLLAMA, wire, ollama_chat_variant(model, context)))
-    for model, context in VARIANTS
-    for wire in (ApiShape.OAI_CHAT, ApiShape.OLM_CHAT)
+    (harness, route)
+    for route in sorted(OLLAMA_MODELS, key=lambda route: not route.endswith("-128k"))
     for harness in (protocol_pb2.HARNESS_CLAUDE, protocol_pb2.HARNESS_CODEX)
 ]
 
@@ -50,7 +46,7 @@ async def test_ollama_tool_call(client: Client, sandbox: Sandboxes, harness: pro
     case_id = _id((harness, route))
     evidence: dict[str, object] = {"case": case_id, "route": route, "status": "started"}
     try:
-        offered = (await client.models())[Harness(protocol_pb2.Harness.Name(harness))]
+        offered = (await client.models()).harnesses[Harness(protocol_pb2.Harness.Name(harness))]
         assert route in offered, f"route absent from offered models for {case_id}"
         view = await sandbox("accept-ollama-smoke")
         evidence["sandbox"] = view.name
@@ -65,6 +61,20 @@ async def test_ollama_tool_call(client: Client, sandbox: Sandboxes, harness: pro
         evidence["tool_outputs"] = [output[:300] for output in turn.tool_outputs]
         evidence["answer"] = turn.answer[:300]
         native = [json.loads(line) for line in turn.native]
+        codex_windows = [
+            frame["params"]["tokenUsage"]["modelContextWindow"]
+            for frame in native
+            if frame.get("method") == "thread/tokenUsage/updated"
+        ]
+        claude_windows = [
+            usage["contextWindow"]
+            for frame in native
+            if frame.get("type") == "result"
+            for usage in frame.get("modelUsage", {}).values()
+        ]
+        evidence["context_windows"] = sorted(
+            {value for value in (*codex_windows, *claude_windows) if isinstance(value, int)}
+        )
         evidence["native_methods"] = sorted(
             {frame["method"] for frame in native if isinstance(frame.get("method"), str)}
         )

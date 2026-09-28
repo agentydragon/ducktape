@@ -12,9 +12,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from fractions import Fraction
 
-from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxRules, PreparedThresholdTax
 from finance.augur.sim.jurisdictions import StatutoryAmount
 from finance.augur.sim.money import scaled
+from finance.augur.sim.tax import TaxBracket, TaxRules, ThresholdTax
 
 
 @dataclass(frozen=True)
@@ -24,7 +24,7 @@ class FixedNominalLaw:
 
 @dataclass(frozen=True, kw_only=True)
 class CpiIndexedLaw:
-    """Indexed amounts follow CPI from the law year; fixed amounts stay nominal.
+    """Indexed amounts follow CPI from the law year, deflating before it; fixed amounts stay nominal.
 
     Month 0 is January of `start_year`. `law_year_to_start` is CPI(start_year) / CPI(law year),
     which the caller reads from its own CPI history; the world's modeled `inflation` series carries
@@ -38,14 +38,12 @@ class CpiIndexedLaw:
         if self.law_year_to_start <= 0:
             raise ValueError(f"a CPI ratio must be positive, not {self.law_year_to_start}")
 
-    def check(self, rules: Sequence[PreparedTaxRules]) -> None:
-        """Reject rules this start cannot index: several law years, a later law year, or an anchor its own year contradicts."""
+    def check(self, rules: Sequence[TaxRules]) -> None:
+        """Reject rules this start cannot index: several law years, or an anchor its own year contradicts."""
         law_years = {row.law_year for row in rules}
         if len(law_years) > 1:
             raise ValueError(f"one CPI anchor cannot index tables of several law years {sorted(law_years)}")
         for law_year in law_years:
-            if self.start_year < law_year:
-                raise ValueError(f"{self.start_year=} precedes the tables' law year {law_year}")
             if self.start_year == law_year and self.law_year_to_start != 1:
                 raise ValueError(
                     f"starting in the law year {law_year}, CPI(start)/CPI(law) is 1, not {self.law_year_to_start}"
@@ -60,19 +58,19 @@ class CpiIndexedLaw:
 type TaxIndexation = FixedNominalLaw | CpiIndexedLaw
 
 
-def rules_for_year(rules: PreparedTaxRules, index: Fraction) -> PreparedTaxRules:
+def rules_for_year(rules: TaxRules, index: Fraction) -> TaxRules:
     """`rules` with every amount statute indexes scaled by `index`, rounded to the quantum; the rest unchanged."""
 
     def amount(value: int, kind: StatutoryAmount) -> int:
         return scaled(value, index, f"indexed {kind}") if kind in rules.indexed else value
 
-    def brackets(schedule: Sequence[PreparedTaxBracket], kind: StatutoryAmount) -> tuple[PreparedTaxBracket, ...]:
+    def brackets(schedule: Sequence[TaxBracket], kind: StatutoryAmount) -> tuple[TaxBracket, ...]:
         return tuple(
             replace(bracket, upper=None if bracket.upper is None else amount(bracket.upper, kind))
             for bracket in schedule
         )
 
-    def threshold(tax: PreparedThresholdTax | None, kind: StatutoryAmount) -> PreparedThresholdTax | None:
+    def threshold(tax: ThresholdTax | None, kind: StatutoryAmount) -> ThresholdTax | None:
         return None if tax is None else replace(tax, threshold=amount(tax.threshold, kind))
 
     return replace(

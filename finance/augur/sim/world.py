@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
+from dataclasses import dataclass
 from typing import Literal
 
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode
@@ -36,51 +37,61 @@ from finance.augur.sim.books import (
     TaxPaymentOutcome,
     TlhPortfolioState,
 )
-from finance.augur.sim.compiler.income_sources import income_source_wire_id
-from finance.augur.sim.distributions import Distributions
+from finance.augur.sim.distributions import Distribution, Distributions
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
-from finance.augur.sim.held_bonds import BondStatement, HeldBonds
-from finance.augur.sim.holdings import Holdings, private_issuer
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, PortfolioId, PropertyId
-from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios, TlhStatement
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.held_bonds import Bond, BondStatement, HeldBonds
+from finance.augur.sim.holdings import Holdings, Lot, Pool, private_issuer
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, LiabilityId, LotId, PortfolioId, PropertyId
+from finance.augur.sim.income import (
+    InterestCharacter,
+    InterestIncome,
+    TransferDeductionCategory,
+    TransferIncomeCategory,
+    income_source_wire_id,
+)
+from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios, Portfolio, TlhStatement
+from finance.augur.sim.market_path import INFLATION, Amount, IndexedAmount, MarketPath
 from finance.augur.sim.money import checked_count, is_quantity_scale, position_value
 from finance.augur.sim.mortgage import InstallmentPaid, Mortgage, MortgagePayment, ServicingStatement
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedAmount,
-    PreparedBond,
-    PreparedDistribution,
-    PreparedFixedAmount,
-    PreparedHoldingPool,
-    PreparedIndexedAmount,
-    PreparedIndexedCoupon,
-    PreparedJurisdiction,
-    PreparedLocation,
-    PreparedLot,
-    PreparedObligation,
-    PreparedPropertyCashflow,
-    PreparedRecurringObligation,
-    PreparedRecurringPropertyCashflow,
-    PreparedRecurringTransfer,
-    PreparedTlhPortfolio,
-    PreparedTransfer,
-    _MortgageInterestDeduction,
-    _PropertyPurchase,
-    _PropertyTax,
-    _SaltDeduction,
-    _TenderPolicy,
+from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
+from finance.augur.sim.private_equity import TenderPolicy
+from finance.augur.sim.property import Housing, Properties, ScheduledPurchase, mortgage_terms
+from finance.augur.sim.property_tax import (
+    PropertyTaxAuthority,
+    PropertyTaxBill,
+    PropertyTaxPolicy,
+    calendar_year,
+    fiscal_year,
 )
-from finance.augur.sim.property import Housing, Properties, mortgage_terms
-from finance.augur.sim.property_tax import PropertyTaxAuthority, PropertyTaxBill
-from finance.augur.sim.scenario import InterestIncome, TransferIncomeCategory
-from finance.augur.sim.tax_authority import Assessment, TaxAuthority
+from finance.augur.sim.schedule import Once, Recurring, Schedule, is_due
+from finance.augur.sim.tax_authority import Assessment, MortgageInterestDeduction, SaltDeduction, TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw
-from finance.augur.sim.tlh import ModeledRealizations, TlhMarketUpdate, TlhOpening, TlhPortfolio
+from finance.augur.sim.tlh import (
+    ModeledRealizations,
+    TlhAssumptions,
+    TlhMarketUpdate,
+    TlhOpening,
+    TlhOpeningCohort,
+    TlhPortfolio,
+)
 
 type Capture = Literal["summary", "dense", "forensic"]
 
 _NO_REALIZATIONS = ModeledRealizations()
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Cashflow:
+    """A declared standing cashflow; one naming a property moves only while that property is held."""
+
+    cause_id: str
+    from_account: AccountRef
+    to_account: AccountRef
+    amount: Amount
+    income_category: TransferIncomeCategory | None
+    deduction_category: TransferDeductionCategory | None
+    schedule: Schedule
+    property_id: PropertyId | None
 
 
 class World:
@@ -97,17 +108,12 @@ class World:
     """
 
     def __init__(
-        self,
-        market: MarketPath,
-        *,
-        horizon_months: int,
-        income_sources: Sequence[TransferIncomeCategory] = (),
-        jurisdictions: Sequence[PreparedJurisdiction] = (),
+        self, market: MarketPath, *, horizon_months: int, income_sources: Sequence[TransferIncomeCategory] = ()
     ) -> None:
         """An empty world on one market path; declare books and track actors before `start`.
 
-        `income_sources` and `jurisdictions` are the tax vocabulary every taxpayer shares;
-        an untaxed composition leaves both empty.
+        `income_sources` is the tax vocabulary every taxpayer shares; an untaxed composition
+        leaves it empty.
         """
         if horizon_months <= 0:
             raise ValueError("horizon must be positive")
@@ -121,10 +127,9 @@ class World:
         self.rollout_id = market.rollout_id
         self.horizon_months = horizon_months
         self.agents: list[EconomicAgent] = []
-        self.specs: dict[PortfolioId, PreparedTlhPortfolio] = {}
+        self.specs: dict[PortfolioId, Portfolio] = {}
         self.portfolios: dict[PortfolioId, TlhPortfolio] = {}
         self.income_sources = tuple(income_sources)
-        self.jurisdictions = tuple(jurisdictions)
         self.accounting = Accounting(income_sources)
         self.holdings = Holdings()
         # Domains nothing declared, tracked or attached are absent, not empty.
@@ -134,10 +139,7 @@ class World:
         self.distributions: Distributions | None = None
         self.private_equity: private_equity.PrivateEquity | None = None
         # Standing cashflows, moved when their month opens; see `declare_flow`.
-        self._scheduled_transfers: tuple[PreparedTransfer, ...] = ()
-        self._recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
-        self._scheduled_property_cashflows: tuple[PreparedPropertyCashflow, ...] = ()
-        self._recurring_property_cashflows: tuple[PreparedRecurringPropertyCashflow, ...] = ()
+        self._cashflows: tuple[_Cashflow, ...] = ()
         self.claims = claims.Claims(0, [])
         # Counterparties, in the order their demands are registered.
         self.billers: list[Biller] = []
@@ -162,11 +164,11 @@ class World:
         if self.started:
             raise ValueError("declare and track components before starting the world")
 
-    def declare_account(self, account: PreparedAccount) -> None:
+    def declare_account(self, *, account: AccountRef, opening_balance: int) -> None:
         self._composing()
-        self.accounting.declare(account)
+        self.accounting.declare(account=account, opening_balance=opening_balance)
 
-    def declare_pool(self, pool: PreparedHoldingPool) -> None:
+    def declare_pool(self, *, agent_id: AgentId, account_id: AccountId, asset_id: AssetId, quantity_scale: int) -> None:
         """A place the owner may hold a security; a public one is priceable at every snapshot.
 
         A pool whose quote is zero would value the position at nothing rather than admit the
@@ -174,53 +176,109 @@ class World:
         exclusively through a manager may carry a zero mark.
         """
         self._composing()
-        if not is_quantity_scale(pool.quantity_scale):
+        if not is_quantity_scale(quantity_scale):
             raise ValueError("invalid holding pool quantity scale")
-        slot = (pool.agent_id, pool.account_id, pool.asset_id)
+        slot = (agent_id, account_id, asset_id)
         if any((declared.agent_id, declared.account_id, declared.asset_id) == slot for declared in self.holdings.pools):
             raise ValueError("duplicate holding pool declaration")
         if slot in self.holdings.managed:
             raise ValueError(f"TLH pool {slot!r} must have exactly one component owner and no ordinary holdings")
-        if private_issuer(pool.asset_id) is None:
-            if f"security:{pool.asset_id}" not in self.market.series:
-                raise ValueError(f"missing public security series for {pool.asset_id!r}")
-            self.market.require_prices(f"security:{pool.asset_id}")
-        self.holdings.declare_pool(self.accounting, pool)
+        if private_issuer(asset_id) is None:
+            if f"security:{asset_id}" not in self.market.series:
+                raise ValueError(f"missing public security series for {asset_id!r}")
+            self.market.require_prices(f"security:{asset_id}")
+        self.holdings.declare_pool(
+            self.accounting,
+            Pool(agent_id=agent_id, account_id=account_id, asset_id=asset_id, quantity_scale=quantity_scale),
+        )
 
-    def hold(self, holding: PreparedLot | PreparedBond) -> None:
-        """A lot or dated bond held at month zero."""
+    def hold_lot(
+        self,
+        *,
+        lot_id: LotId,
+        agent_id: AgentId,
+        account_id: AccountId,
+        asset_id: AssetId,
+        purchase_month: int,
+        quantity_scale: int,
+        units: int,
+        basis: int,
+    ) -> None:
+        """A lot held at month zero, in a declared pool."""
         self._composing()
-        if isinstance(holding, PreparedLot):
-            pool = next(
-                (
-                    pool
-                    for pool in self.holdings.pools
-                    if (pool.agent_id, pool.account_id, pool.asset_id)
-                    == (holding.agent_id, holding.account_id, holding.asset_id)
-                ),
-                None,
-            )
-            if pool is None:
-                raise ValueError(f"lot {holding.lot_id!r} references no declared holding pool")
-            if pool.quantity_scale != holding.quantity_scale:
-                raise ValueError(f"lot {holding.lot_id!r} has a mixed quantity scale")
-            bought = (holding.agent_id, holding.account_id, holding.asset_id, holding.purchase_month)
-            for held in self.holdings.lots:
-                if (held.spec.agent_id, held.spec.account_id, held.spec.asset_id, held.spec.purchase_month) == bought:
-                    raise ValueError(
-                        f"lots {held.spec.lot_id!r} and {holding.lot_id!r} share {holding.purchase_month=} in one "
-                        "pool; FIFO sells oldest first, so their order would rest on lot ids alone"
-                    )
-            if (issuer := private_issuer(holding.asset_id)) is not None:
-                self._check_issuer(issuer)
-                if self.private_equity is None:
-                    self.private_equity = private_equity.PrivateEquity([])
-            self.holdings.hold(self.accounting, holding)
-            return
-        self._check_bond(holding)
+        pool = next(
+            (
+                pool
+                for pool in self.holdings.pools
+                if (pool.agent_id, pool.account_id, pool.asset_id) == (agent_id, account_id, asset_id)
+            ),
+            None,
+        )
+        if pool is None:
+            raise ValueError(f"lot {lot_id!r} references no declared holding pool")
+        if pool.quantity_scale != quantity_scale:
+            raise ValueError(f"lot {lot_id!r} has a mixed quantity scale")
+        for held in self.holdings.lots:
+            if (held.agent_id, held.account_id, held.asset_id, held.purchase_month) == (
+                agent_id,
+                account_id,
+                asset_id,
+                purchase_month,
+            ):
+                raise ValueError(
+                    f"lots {held.lot_id!r} and {lot_id!r} share {purchase_month=} in one "
+                    "pool; FIFO sells oldest first, so their order would rest on lot ids alone"
+                )
+        if (issuer := private_issuer(asset_id)) is not None:
+            self._check_issuer(issuer)
+            if self.private_equity is None:
+                self.private_equity = private_equity.PrivateEquity([])
+        self.holdings.hold(
+            self.accounting,
+            Lot(
+                lot_id=lot_id,
+                agent_id=agent_id,
+                account_id=account_id,
+                asset_id=asset_id,
+                purchase_month=purchase_month,
+                quantity_scale=quantity_scale,
+                units_remaining=units,
+                basis_remaining=basis,
+            ),
+        )
+
+    def hold_bond(
+        self,
+        *,
+        bond_id: BondId,
+        agent_id: AgentId,
+        account_id: AccountId,
+        character: InterestCharacter,
+        face_value: int,
+        purchase_price: int,
+        coupon: FixedCoupon | IndexedCoupon,
+        coupon_period_months: int,
+        purchase_month_index: int,
+        maturity_month_index: int,
+    ) -> None:
+        """A dated bond held at month zero."""
+        self._composing()
+        bond = Bond(
+            bond_id=bond_id,
+            agent_id=agent_id,
+            account_id=account_id,
+            character=character,
+            face_value=face_value,
+            purchase_price=purchase_price,
+            coupon=coupon,
+            coupon_period_months=coupon_period_months,
+            purchase_month_index=purchase_month_index,
+            maturity_month_index=maturity_month_index,
+        )
+        self._check_bond(bond)
         if self.bonds is None:
             self.bonds = HeldBonds((), self.market)
-        self.bonds.hold(holding)
+        self.bonds.hold(bond)
 
     def _check_issuer(self, issuer: IssuerId) -> None:
         """Every protocol channel on the path and in its range, a tender exactly where an opportunity is."""
@@ -241,16 +299,15 @@ class World:
         ):
             raise ValueError(f"issuer {issuer!r} has a tender event and a sale opportunity in different months")
 
-    def _check_bond(self, bond: PreparedBond) -> None:
-        """Bought at par, a nonnegative coupon on whole periods, and indexed only on an index the path carries."""
+    def _check_bond(self, bond: Bond) -> None:
+        """Bought at par, a nonnegative coupon on whole periods, indexed only on an index the path carries, and
+        paying interest of a declared character."""
         if AccountRef(agent_id=bond.agent_id, account_id=bond.account_id) not in self.accounting.declared:
             raise ValueError(f"bond {bond.bond_id!r} references an unknown account")
-        if bond.issuer_jurisdiction_id is not None and bond.issuer_jurisdiction_id not in {
-            item.jurisdiction_id for item in self.jurisdictions
-        }:
-            raise ValueError(f"bond {bond.bond_id!r} has unknown issuer")
+        if InterestIncome(character=bond.character) not in self.income_sources:
+            raise ValueError(f"bond {bond.bond_id!r} has undeclared income source")
         term = bond.maturity_month_index - bond.purchase_month_index
-        coupon = bond.coupon.amount if isinstance(bond.coupon, PreparedFixedAmount) else bond.coupon.annual_rate_ppb
+        coupon = bond.coupon.amount if isinstance(bond.coupon, FixedCoupon) else bond.coupon.annual_rate_ppb
         if (
             bond.face_value <= 0
             or bond.purchase_price != bond.face_value
@@ -260,15 +317,15 @@ class World:
             or term % bond.coupon_period_months
         ):
             raise ValueError(f"invalid bond terms for {bond.bond_id!r}")
-        if isinstance(bond.coupon, PreparedIndexedCoupon):
-            if "inflation" not in self.market.series:
+        if isinstance(bond.coupon, IndexedCoupon):
+            if INFLATION not in self.market.series:
                 raise ValueError(f"missing inflation series for indexed bond {bond.bond_id!r}")
             if max(0, bond.purchase_month_index) > self.horizon_months or any(
-                value <= 0 for value in self.market.path("inflation")
+                value <= 0 for value in self.market.path(INFLATION)
             ):
                 raise ValueError(f"invalid bond inflation path for {bond.bond_id!r}")
 
-    def declare_tender_policy(self, policy: _TenderPolicy) -> None:
+    def declare_tender_policy(self, policy: TenderPolicy) -> None:
         """How an owner answers its issuers' sale opportunities and where compulsory proceeds land."""
         self._composing()
         if (
@@ -280,21 +337,31 @@ class World:
             self.private_equity = private_equity.PrivateEquity([])
         self.private_equity.tender_policies.append(policy)
 
-    def declare_distribution(self, spec: PreparedDistribution) -> None:
+    def declare_distribution(
+        self,
+        *,
+        agent_id: AgentId,
+        holding_account_id: AccountId,
+        asset_id: AssetId,
+        to_account_id: AccountId,
+        tax_character: Mapping[TransferIncomeCategory, int],
+    ) -> None:
         """A security's periodic payout to its holder, on the path's distribution series.
 
         The payout goes to whoever holds the security, so the owner needs a declared pool or a
         managed portfolio for it — a cash account is not a place a security is held.
+        `tax_character` splits each payout by income category, in parts per billion of the
+        whole, paid slice by slice in its order.
         """
         self._composing()
-        if f"security_distribution:{spec.asset_id}" not in self.market.series:
-            raise ValueError(f"missing distribution series for {spec.asset_id!r}")
-        for month, rate in enumerate(self.market.path(f"security_distribution:{spec.asset_id}")):
+        if f"security_distribution:{asset_id}" not in self.market.series:
+            raise ValueError(f"missing distribution series for {asset_id!r}")
+        for month, rate in enumerate(self.market.path(f"security_distribution:{asset_id}")):
             if rate < 0:
-                raise ValueError(f"series for {spec.asset_id!r} has a negative security distribution at month {month}")
-        if AccountRef(agent_id=spec.agent_id, account_id=spec.to_account_id) not in self.accounting.declared:
+                raise ValueError(f"series for {asset_id!r} has a negative security distribution at month {month}")
+        if AccountRef(agent_id=agent_id, account_id=to_account_id) not in self.accounting.declared:
             raise ValueError("distribution references an unknown account")
-        holding = (spec.agent_id, spec.holding_account_id, spec.asset_id)
+        holding = (agent_id, holding_account_id, asset_id)
         if self.distributions is not None and holding in {
             (declared.agent_id, declared.holding_account_id, declared.asset_id) for declared in self.distributions.specs
         }:
@@ -306,60 +373,73 @@ class World:
         ):
             raise ValueError(f"distribution references no lots for {':'.join(holding)}")
         if (
-            not spec.tax_character
-            or any(not 0 <= part.fraction_ppb <= MONEY_FACTOR_SCALE for part in spec.tax_character)
-            or sum(part.fraction_ppb for part in spec.tax_character) != MONEY_FACTOR_SCALE
+            not tax_character
+            or any(not 0 <= fraction_ppb <= MONEY_FACTOR_SCALE for fraction_ppb in tax_character.values())
+            or sum(tax_character.values()) != MONEY_FACTOR_SCALE
         ):
             raise ValueError("invalid distribution tax character split")
-        for part in spec.tax_character:
-            source = part.income_category
-            if (
-                isinstance(source, InterestIncome)
-                and source.issuer_jurisdiction_id is not None
-                and source.issuer_jurisdiction_id not in {item.jurisdiction_id for item in self.jurisdictions}
-            ):
-                raise ValueError("distribution has unknown issuer")
-            if source not in self.income_sources:
-                raise ValueError("distribution has undeclared income source")
+        if any(source not in self.income_sources for source in tax_character):
+            raise ValueError("distribution has undeclared income source")
         if self.distributions is None:
             self.distributions = Distributions(
                 (), {(spec.owner_agent_id, spec.account_id, spec.asset_id) for spec in self.specs.values()}
             )
-        self.distributions.specs = (*self.distributions.specs, spec)
+        self.distributions.specs = (
+            *self.distributions.specs,
+            Distribution(
+                agent_id=agent_id,
+                holding_account_id=holding_account_id,
+                asset_id=asset_id,
+                to_account_id=to_account_id,
+                tax_character=dict(tax_character),
+            ),
+        )
 
-    def declare_portfolio(self, spec: PreparedTlhPortfolio) -> None:
+    def declare_portfolio(
+        self,
+        *,
+        portfolio_id: PortfolioId,
+        owner_agent_id: AgentId,
+        account_id: AccountId,
+        asset_id: AssetId,
+        initial_cohorts: Sequence[TlhOpeningCohort],
+        assumptions: TlhAssumptions,
+    ) -> None:
         """A managed TLH portfolio held at month zero, marked at the path's opening price."""
         self._composing()
-        if spec.portfolio_id in self.specs:
-            raise ValueError(f"duplicate TLH portfolio {spec.portfolio_id!r}")
-        if not any(account.agent_id == spec.owner_agent_id for account in self.accounting.declared):
-            raise ValueError(f"TLH portfolio {spec.portfolio_id!r} has an unknown owner")
-        slot = (spec.owner_agent_id, spec.account_id, spec.asset_id)
+        if portfolio_id in self.specs:
+            raise ValueError(f"duplicate TLH portfolio {portfolio_id!r}")
+        if not any(account.agent_id == owner_agent_id for account in self.accounting.declared):
+            raise ValueError(f"TLH portfolio {portfolio_id!r} has an unknown owner")
+        slot = (owner_agent_id, account_id, asset_id)
         # The manager settles the slot's distributions, so an ordinary lot beside it would silently earn none.
         if slot in self.holdings.managed or any(
             (pool.agent_id, pool.account_id, pool.asset_id) == slot for pool in self.holdings.pools
         ):
             raise ValueError(f"TLH pool {slot!r} must have exactly one component owner and no ordinary holdings")
-        if f"security:{spec.asset_id}" not in self.market.series:
-            raise ValueError(f"missing security series for TLH portfolio {spec.portfolio_id!r}")
+        if f"security:{asset_id}" not in self.market.series:
+            raise ValueError(f"missing security series for TLH portfolio {portfolio_id!r}")
         # A managed index may be marked at zero (see `declare_pool`), never below it.
-        for month, price in enumerate(self.market.path(f"security:{spec.asset_id}")):
+        for month, price in enumerate(self.market.path(f"security:{asset_id}")):
             if price < 0:
                 raise ValueError(
-                    f"TLH portfolio {spec.portfolio_id!r}: index price must be nonnegative, got {price} at month {month}"
+                    f"TLH portfolio {portfolio_id!r}: index price must be nonnegative, got {price} at month {month}"
                 )
+        spec = Portfolio(
+            portfolio_id=portfolio_id, owner_agent_id=owner_agent_id, account_id=account_id, asset_id=asset_id
+        )
         portfolio = TlhPortfolio(
-            spec.assumptions,
-            TlhOpening(month=-1, price=self.market.value(f"security:{spec.asset_id}", 0), cohorts=spec.initial_cohorts),
+            assumptions,
+            TlhOpening(month=-1, price=self.market.value(f"security:{asset_id}", 0), cohorts=tuple(initial_cohorts)),
         )
         if self.managed is None:
-            self.managed = ManagedPortfolios(self.income_sources, self.jurisdictions)
+            self.managed = ManagedPortfolios(self.income_sources)
         self.managed.open(self.accounting, spec, self.statement(spec, portfolio, 0))
         self.holdings.reserve(*slot)
         if self.distributions is not None:
             self.distributions.managed_slots.add(slot)
-        self.specs[spec.portfolio_id] = spec
-        self.portfolios[spec.portfolio_id] = portfolio
+        self.specs[portfolio_id] = spec
+        self.portfolios[portfolio_id] = portfolio
 
     def managed_portfolios(self) -> ManagedPortfolios:
         """The managed-portfolio component, for a caller settling into one; raises when none is declared."""
@@ -367,12 +447,10 @@ class World:
             raise ValueError("no managed portfolio is declared")
         return self.managed
 
-    def _purchases(self) -> tuple[_PropertyPurchase, ...]:
+    def _purchases(self) -> tuple[ScheduledPurchase, ...]:
         return () if self.properties is None else self.properties.housing.purchases
 
-    def declare_housing(
-        self, housing: Housing, tax_policies: Sequence[_PropertyTax] = (), locations: Sequence[PreparedLocation] = ()
-    ) -> None:
+    def declare_housing(self, housing: Housing, tax_policies: Sequence[PropertyTaxPolicy] = ()) -> None:
         """Properties bought on a scripted schedule (month zero for one held from the start), their scripted
         lifecycle, and the authorities that tax them. Declared once per world."""
         self._composing()
@@ -380,7 +458,6 @@ class World:
             raise ValueError("housing is already declared")
         housing.check(self.horizon_months)
         purchases = {purchase.property_id: purchase for purchase in housing.purchases}
-        located = {location.location_id: location for location in locations}
         for liability_id in self.mortgages:
             if any(
                 purchase.mortgage is not None and purchase.mortgage.liability_id == liability_id
@@ -393,12 +470,6 @@ class World:
             if not any(account.agent_id == agent_id for account in self.accounting.declared):
                 raise ValueError(f"primary residence names unknown agent {agent_id!r}")
         for purchase in housing.purchases:
-            if purchase.location_id not in located:
-                known = ", ".join(repr(id_) for id_ in sorted(located)) or "<none>"
-                raise ValueError(
-                    f"scheduled property purchase {purchase.cause_id!r} references unknown location_id "
-                    f"{purchase.location_id!r}; known location ids: {known}"
-                )
             for account in (
                 AccountRef(agent_id=purchase.buyer_agent_id, account_id=purchase.buyer_account_id),
                 AccountRef(agent_id=purchase.seller_agent_id, account_id=purchase.seller_account_id),
@@ -418,12 +489,12 @@ class World:
         for sale in housing.sales:
             if sale.property_id not in purchases:
                 raise ValueError(f"sale references unknown property {sale.property_id!r}")
-            # A sale prices the property off its location's path; nothing else reads that series.
-            series_id = f"home_value:{purchases[sale.property_id].location_id}"
+            # A sale prices the property off its market's path; nothing else reads that series.
+            series_id = f"home_value:{purchases[sale.property_id].market}"
             if series_id not in self.market.series:
                 raise ValueError(f'missing series "{series_id}"')
-        # A held property is marked off its location's path wherever the path carries one.
-        for series_id in {f"home_value:{purchase.location_id}" for purchase in housing.purchases}:
+        # A held property is marked off its market's path wherever the path carries one.
+        for series_id in {f"home_value:{purchase.market}" for purchase in housing.purchases}:
             if series_id in self.market.series:
                 self.market.require_prices(series_id)
         taxed: dict[tuple[PropertyId, int], int] = {}
@@ -444,45 +515,94 @@ class World:
                         f"overlapping property tax policies for {policy.property_id!r} at month {month}: "
                         f"indexes {previous} and {index}"
                     )
+            self._check_situs(policy, owned)
+        # Whoever charges a transfer tax the owner owes is the parcel's authority.
+        transfers = [
+            (purchase.property_id, purchase.month, purchase.buyer_transfer_tax_share_ppb)
+            for purchase in housing.purchases
+        ] + [
+            (sale.property_id, sale.month, MONEY_FACTOR_SCALE - sale.buyer_transfer_tax_share_ppb)
+            for sale in housing.sales
+        ]
+        for property_id, month, share in transfers:
+            if not 0 <= share <= MONEY_FACTOR_SCALE:
+                raise ValueError(f"a transfer tax share for {property_id!r} is outside [0, 1]")
+            if share and purchases[property_id].parcel.situs.transfer_taxes and taxed.get((property_id, month)) is None:
+                raise ValueError(
+                    f"{property_id!r} owes transfer tax at month {month}, which no property tax policy charges"
+                )
         self.properties = Properties(housing, self.accounting)
         self.property_tax_authorities = [
-            PropertyTaxAuthority(
-                policy, purchases[policy.property_id], located[purchases[policy.property_id].location_id]
-            )
-            for policy in tax_policies
+            PropertyTaxAuthority(policy, purchases[policy.property_id]) for policy in tax_policies
         ]
 
-    def declare_flow(self, flow: PreparedTransfer | PreparedRecurringTransfer) -> None:
+    def _check_situs(self, policy: PropertyTaxPolicy, purchase: ScheduledPurchase) -> None:
+        """The situs publishes a debt rate for the parcel's first billed fiscal year, and a lien date
+        with no published inflation factor finds the modeled CPI it is measured by."""
+        law = purchase.parcel.situs
+        law.debt_rate(fiscal_year(policy, purchase.month + 1))
+        prior = purchase.parcel.prior_assessed_value
+        if prior is not None and not 0 <= prior <= purchase.purchase_price:
+            raise ValueError(
+                f"{policy.property_id!r} is bought below its prior assessed value, whose supplemental refund "
+                "is not modeled"
+            )
+        latest = max(law.inflation_factors, default=None)
+        simulated = [
+            month
+            for month in range(12 * (purchase.month // 12 + 1), self.horizon_months, 12)
+            if latest is None or calendar_year(policy, month) > latest
+        ]
+        if simulated and INFLATION not in self.market.series:
+            raise ValueError(
+                f"property tax on {policy.property_id!r} factors simulated lien dates from month {simulated[0]}, "
+                "which needs a modeled inflation path"
+            )
+
+    def declare_flow(
+        self,
+        *,
+        cause_id: str,
+        from_account: AccountRef,
+        to_account: AccountRef,
+        amount: Amount,
+        income_category: TransferIncomeCategory | None,
+        deduction_category: TransferDeductionCategory | None,
+        schedule: Schedule,
+        property_id: PropertyId | None = None,
+    ) -> None:
         """A standing cashflow between declared accounts, moved when its month opens.
 
-        A property's cashflow moves only while that property is held, so housing is declared first.
+        A cashflow naming a property moves only while that property is held, so housing is declared first.
         """
         self._composing()
-        label = f"cashflow {flow.cause_id!r}"
-        for account in (flow.from_account, flow.to_account):
+        label = f"cashflow {cause_id!r}"
+        for account in (from_account, to_account):
             if account not in self.accounting.declared:
                 raise ValueError(f"{label} names unknown declared account {account.agent_id}:{account.account_id}")
-        if flow.income_category is not None and flow.income_category not in self.income_sources:
-            raise ValueError(f"{label} has undeclared income source {flow.income_category!r}")
-        if isinstance(flow, PreparedPropertyCashflow | PreparedRecurringPropertyCashflow) and flow.property_id not in {
-            purchase.property_id for purchase in self._purchases()
-        }:
-            raise ValueError(f"{label} references undeclared property {flow.property_id!r}")
-        self._check_amount(label, flow.amount, self._due_months(label, flow))
-        match flow:
-            case PreparedPropertyCashflow():
-                self._scheduled_property_cashflows = (*self._scheduled_property_cashflows, flow)
-            case PreparedRecurringPropertyCashflow():
-                self._recurring_property_cashflows = (*self._recurring_property_cashflows, flow)
-            case PreparedTransfer():
-                self._scheduled_transfers = (*self._scheduled_transfers, flow)
-            case PreparedRecurringTransfer():
-                self._recurring_transfers = (*self._recurring_transfers, flow)
+        if income_category is not None and income_category not in self.income_sources:
+            raise ValueError(f"{label} has undeclared income source {income_category!r}")
+        if property_id is not None and property_id not in {purchase.property_id for purchase in self._purchases()}:
+            raise ValueError(f"{label} references undeclared property {property_id!r}")
+        self._check_amount(label, amount, self._due_months(label, schedule))
+        self._cashflows = (
+            *self._cashflows,
+            _Cashflow(
+                cause_id=cause_id,
+                from_account=from_account,
+                to_account=to_account,
+                amount=amount,
+                income_category=income_category,
+                deduction_category=deduction_category,
+                schedule=schedule,
+                property_id=property_id,
+            ),
+        )
 
-    def declare_deduction(self, policy: _MortgageInterestDeduction | _SaltDeduction) -> None:
+    def declare_deduction(self, policy: MortgageInterestDeduction | SaltDeduction) -> None:
         """An itemized deduction an enrolled taxpayer claims when its tax year closes."""
         self._composing()
-        if isinstance(policy, _MortgageInterestDeduction):
+        if isinstance(policy, MortgageInterestDeduction):
             label, claimant = "mortgage interest deduction", policy.owner_agent_id
         else:
             label, claimant = "SALT deduction", policy.profile_id
@@ -493,13 +613,9 @@ class World:
             raise ValueError(f"{label} for {claimant!r} names no taxpayer")
         authority.declare_deduction(policy)
 
-    def _due_months(
-        self,
-        label: str,
-        schedule: PreparedTransfer | PreparedRecurringTransfer | PreparedObligation | PreparedRecurringObligation,
-    ) -> range:
+    def _due_months(self, label: str, schedule: Schedule) -> range:
         """The horizon months a schedule is due in; a one-off month must fall inside the horizon."""
-        if isinstance(schedule, PreparedTransfer | PreparedObligation):
+        if isinstance(schedule, Once):
             if not 0 <= schedule.month < self.horizon_months:
                 raise ValueError(f"{label} has month {schedule.month}, outside the horizon [0, {self.horizon_months})")
             return range(schedule.month, schedule.month + 1)
@@ -508,9 +624,9 @@ class World:
         end = self.horizon_months if schedule.end_month is None else min(schedule.end_month + 1, self.horizon_months)
         return range(max(schedule.start_month, 0), end)
 
-    def _check_amount(self, label: str, amount: PreparedAmount, months: range) -> None:
+    def _check_amount(self, label: str, amount: Amount, months: range) -> None:
         """An indexed amount due in `months` reads its series at its base month, which none precedes."""
-        if not isinstance(amount, PreparedIndexedAmount) or not months:
+        if not isinstance(amount, IndexedAmount) or not months:
             return
         if months[0] < amount.base_month_index:
             raise ValueError(
@@ -524,9 +640,7 @@ class World:
                 f"series {amount.series_id!r} has zero base level at month {amount.base_month_index} for {label}"
             )
 
-    def statement(
-        self, spec: PreparedTlhPortfolio, portfolio: TlhPortfolio, month: int
-    ) -> observations.TlhPortfolioObservation:
+    def statement(self, spec: Portfolio, portfolio: TlhPortfolio, month: int) -> observations.TlhPortfolioObservation:
         """`portfolio` marked at `month`'s index level, which also decides whether it takes a contribution."""
         price = self.market.value(f"security:{spec.asset_id}", month)
         value = portfolio._observe_at_price(price)
@@ -542,7 +656,7 @@ class World:
 
     def effects(
         self,
-        spec: PreparedTlhPortfolio,
+        spec: Portfolio,
         candidate: TlhPortfolio,
         cash_account_id: AccountId | None,
         cash_amount: int,
@@ -567,9 +681,9 @@ class World:
         if isinstance(actor, TaxAuthority):
             self._composing()
             if isinstance(actor.indexation, CpiIndexedLaw):
-                if "inflation" not in self.market.series:
+                if INFLATION not in self.market.series:
                     raise ValueError("CPI-indexed tax needs a modeled inflation path")
-                if min(self.market.path("inflation")) <= 0:
+                if min(self.market.path(INFLATION)) <= 0:
                     raise ValueError("CPI-indexed tax needs a positive inflation path")
             self.accounting.enroll(actor.profile)
             self.tax_authorities.append(actor)
@@ -583,16 +697,15 @@ class World:
     def _track_biller(self, biller: Biller) -> None:
         if self.started:
             raise ValueError("track components before starting the world")
-        spec = biller.spec
-        if spec.property_id is not None and spec.property_id not in {
+        if biller.property_id is not None and biller.property_id not in {
             purchase.property_id for purchase in self._purchases()
         }:
             raise ValueError("a bill attached to a property needs that property declared first")
-        self.validate_scope(spec.from_account.agent_id)
-        if spec.from_account not in self.accounting.declared:
+        self.validate_scope(biller.from_account.agent_id)
+        if biller.from_account not in self.accounting.declared:
             raise ValueError("bill payer account is not declared")
-        label = f"obligation {spec.obligation_id!r}"
-        self._check_amount(label, spec.amount_due, self._due_months(label, spec))
+        label = f"obligation {biller.obligation_id!r}"
+        self._check_amount(label, biller.amount_due, self._due_months(label, biller.schedule))
         self.billers.append(biller)
 
     def _track_mortgage(self, mortgage: Mortgage) -> None:
@@ -957,23 +1070,13 @@ class World:
         if self.properties is not None:
             originated = self.properties.purchase(self.accounting, month, originations)
             active = {row.property_id for row in self.properties.snapshots() if row.active}
-        flows = [flow for flow in self._scheduled_transfers if flow.month == month]
-        recurring = [
+        due = [
             flow
-            for flow in self._recurring_transfers
-            if flow.start_month <= month and (flow.end_month is None or month <= flow.end_month)
+            for flow in self._cashflows
+            if is_due(flow.schedule, month) and (flow.property_id is None or flow.property_id in active)
         ]
-        property_flows = [
-            flow for flow in self._scheduled_property_cashflows if flow.month == month and flow.property_id in active
-        ]
-        property_recurring = [
-            flow
-            for flow in self._recurring_property_cashflows
-            if flow.start_month <= month
-            and (flow.end_month is None or month <= flow.end_month)
-            and flow.property_id in active
-        ]
-        for flow in (*flows, *recurring, *property_flows, *property_recurring):
+        # Plain transfers before property cashflows, one-off before recurring, each in declaration order.
+        for flow in sorted(due, key=lambda flow: (flow.property_id is not None, isinstance(flow.schedule, Recurring))):
             self.accounting.transfer(
                 month,
                 Transfer(
@@ -1006,7 +1109,7 @@ class World:
         self.claims = claims.Claims(month, [])
         opened = MonthOpened(month=month)
         for biller in self.billers:
-            property_id = biller.spec.property_id
+            property_id = biller.property_id
             statement = (
                 None
                 if property_id is None or self.properties is None
@@ -1026,6 +1129,8 @@ class World:
             )
             if statement is not None and property_authority.handle(statement):
                 raise ValueError("a property statement takes no reply")
+            if property_authority.handle(self.market.statement(month)):
+                raise ValueError("a market statement takes no reply")
             for property_bill in property_authority.handle(opened):
                 self.register(property_bill)
         for authority in self.tax_authorities:
@@ -1214,7 +1319,7 @@ class World:
             if self.properties is not None:
                 self.properties.accrue(self.accounting, self.month)
             for authority in self.tax_authorities:
-                authority.close_month(self.accounting, self.month, mortgages, self.jurisdictions)
+                authority.close_month(self.accounting, self.month, mortgages)
             if self.properties is not None and (self.month + 1) % 12 == 0:
                 self.properties.reset_year()
         self.month += 1
@@ -1269,19 +1374,18 @@ class World:
     ) -> int:
         total = 0
         for lot in self.holdings.lots:
-            spec = lot.spec
             if (
-                spec.agent_id != actor
-                or private_issuer(spec.asset_id) is not None
+                lot.agent_id != actor
+                or private_issuer(lot.asset_id) is not None
                 or not lot.units_remaining
-                or (account is not None and spec.account_id != account)
-                or (asset is not None and spec.asset_id != asset)
+                or (account is not None and lot.account_id != account)
+                or (asset is not None and lot.asset_id != asset)
             ):
                 continue
             total = checked_count(
                 total
                 + position_value(
-                    self.public_price(actor, spec.asset_id, month), lot.units_remaining, spec.quantity_scale
+                    self.public_price(actor, lot.asset_id, month), lot.units_remaining, lot.quantity_scale
                 ),
                 "public value",
             )

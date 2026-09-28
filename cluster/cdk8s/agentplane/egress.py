@@ -18,6 +18,7 @@ from cdk8s_plus_34 import (
     ConfigMap,
     ContainerPort,
     ContainerResources,
+    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
     Deployment,
@@ -38,8 +39,6 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 from trust_manager_crds.io.cert_manager.trust import (
-    Bundle,
-    BundleSpec,
     BundleSpecSources,
     BundleSpecSourcesConfigMap,
     BundleSpecTarget,
@@ -53,13 +52,13 @@ from trust_manager_crds.io.cert_manager.trust import (
 
 from agentplane.egress.database_migrate import MigrationSettings
 from agentplane.egress.main import CONFIG_FILE_ENV, Settings
-from cluster.cdk8s import cilium, container_security, node_scheduling
+from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import actions, database, llm_ingress
 from cluster.cdk8s.agentplane.app_settings import (
     BASIC_POLICY,
+    GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
-    KUBERNETES_POLICY,
     PACKAGES_POLICY,
 )
 from cluster.cdk8s.agentplane.egress_credentials import GITHUB_PAT_SECRET
@@ -68,16 +67,16 @@ from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
-from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
+from cluster.cdk8s.home_assistant import app as home_assistant  # a bare `app.SERVICE` would not say whose
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
+from cluster.cdk8s.providers.cert_manager.bundle import Bundle
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import cli_args, env_name, settings_file
+from util.settings_contract import cli_args, env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "agentplane-egress"
@@ -99,16 +98,19 @@ KUBERNETES_AUDIENCE = "https://localhost:7445"
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 # The credential substituted there, whose placeholder a sandbox's kubeconfig carries (sandbox_pod.py).
 KUBERNETES_CREDENTIAL = "kubernetes-workload"
-# The in-cluster Forgejo, not `git.allegedly.works`: the public name would hairpin out through
-# the Gateway and back for a Service one hop away. Plain HTTP on 3000, so the proxy reads the
-# request without bumping TLS.
+# The in-cluster Forgejo, plain HTTP on 3000, so the proxy reads the request without bumping TLS.
+# It is the name to prefer: the public name below would hairpin out through the Gateway and back
+# for a Service one hop away.
 FORGEJO_HOST = "forgejo-http.forgejo.svc.cluster.local"
+# The same Service under the shorter names its search path resolves (haku-egress-proxy's clients
+# still spell it `forgejo-http.forgejo`). The proxy matches a request's host on the exact string,
+# so a spelling left out is refused `no-rule` although it dials the same address.
+FORGEJO_HOST_ALIASES = ("forgejo-http.forgejo.svc", "forgejo-http.forgejo")
+# Forgejo by its public name: HTTPS through the Gateway, resolving to public addresses.
+FORGEJO_PUBLIC_HOST = "git.allegedly.works"
 FORGEJO_PORT = 3000
-# Home Assistant's in-cluster Service, plain HTTP. Its pod runs on its node's host network, so
-# Cilium sees a node there, not an endpoint: the proxy's rule for it is an entity rule on its port.
-HOME_ASSISTANT_HOST = "home-assistant.home-assistant.svc.cluster.local"
-HOME_ASSISTANT_PORT = 8123
-_SETTINGS_PATH = "/etc/agentplane-egress/settings.yaml"
+# Home Assistant's in-cluster Service, plain HTTP. The proxy matches requests on this exact string.
+HOME_ASSISTANT_HOST = home_assistant.SERVICE.fqdn
 # The trust bundles' ConfigMap key.
 CA_BUNDLE_KEY = "ca-certificates.crt"
 # The sandbox bundle's roots again, as the PKCS12 trust store a JVM reads.
@@ -126,7 +128,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
             "Agentplane destinations. It conveys no LiteLLM credential or operator, Agent, or "
             "Thread authority."
         ),
-        source=Source.authenticated_workload_token().to_spec(),
+        source=Source.authenticated_workload_token(),
         targets=[
             EgressCredentialSpecTargets(
                 header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
@@ -143,7 +145,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
             "not narrow what the token itself may do — the rule's hosts and methods are the only "
             "limit it adds, so treat anything the token can reach on those hosts as reachable."
         ),
-        source=Source.secret_ref(name=GITHUB_PAT_SECRET, key="token").to_spec(),
+        source=Source.secret_ref(name=GITHUB_PAT_SECRET, key="token"),
         targets=[
             EgressCredentialSpecTargets(
                 header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
@@ -164,7 +166,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
             "as that account and by nothing here: what the sandbox may do is the RBAC bound to "
             "it, and this proxy adds only the rule's hosts, methods and paths on top."
         ),
-        source=Source.projected_workload_token(audience=KUBERNETES_AUDIENCE).to_spec(),
+        source=Source.projected_workload_token(audience=KUBERNETES_AUDIENCE),
         targets=[
             EgressCredentialSpecTargets(
                 header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
@@ -207,23 +209,23 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 paths=["/openapi.json", "/v1/rules"],
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="agentplane-workload"),
             ),
-        ],
-    )
-    EgressPolicy(
-        scope,
-        "egresspolicy-kubernetes",
-        metadata=ApiObjectMetadata(name=KUBERNETES_POLICY, namespace=namespace),
-        rules=[
-            # No method or path list: what a sandbox may read or write is the API server's
-            # answer for its own ServiceAccount, and narrowing verbs here would be a second,
-            # weaker copy of RBAC that drifts from it. Upgrade verbs (exec, attach,
-            # port-forward) negotiate SPDY or WebSocket through an intercepting proxy and are
-            # not known to work; ordinary requests and watches are what this admits in practice.
+            # The API server, inside `basic` rather than behind a policy a launch opts into: every
+            # agent talks to Kubernetes, so what decides it is RBAC and not whether a preset or a
+            # caller happened to name a policy. Every SandboxTemplate already mounts the kubeconfig
+            # naming this credential (sandbox_pod.py), so a box without this rule held a config
+            # whose requests the proxy refused for want of a rule -- a transport gap that read as
+            # an authorization answer and could not be narrowed into one.
+            #
+            # No method or path list: what a sandbox may read or write is the API server's answer
+            # for its own ServiceAccount, and narrowing verbs here would be a second, weaker copy
+            # of RBAC that drifts from it. Upgrade verbs (exec, attach, port-forward) negotiate
+            # SPDY or WebSocket through an intercepting proxy and are not known to work; ordinary
+            # requests and watches are what this admits in practice.
             EgressPolicySpecRules(
                 hosts=[KUBERNETES_HOST],
                 cluster_internal=True,
                 credential_ref=EgressPolicySpecRulesCredentialRef(name=KUBERNETES_CREDENTIAL),
-            )
+            ),
         ],
     )
     EgressPolicy(
@@ -293,6 +295,22 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
     )
     EgressPolicy(
         scope,
+        "egresspolicy-github-actions-logs",
+        metadata=ApiObjectMetadata(name=GITHUB_ACTIONS_LOGS_POLICY, namespace=namespace),
+        rules=[
+            # A workflow run's job logs (`GET .../actions/jobs/{id}/logs`) and artifacts
+            # (`GET .../actions/artifacts/{id}/zip`) answer from api.github.com with a 302 to
+            # a presigned Azure Blob Storage URL rather than the log bytes themselves; without
+            # this, following that redirect fails and a sandbox reviewing its own PR's CI
+            # cannot read why a check failed. The URL's SAS token is in the query string, not
+            # a header, so there is nothing for the PAT substitution to attach and no
+            # credentialRef here -- this is the same shape as `packages` below. GET-only:
+            # retrieving a log or artifact archive, never uploading one.
+            EgressPolicySpecRules(hosts=["*.blob.core.windows.net"], methods=[EgressPolicySpecRulesMethods.GET])
+        ],
+    )
+    EgressPolicy(
+        scope,
         "egresspolicy-github-clone",
         metadata=ApiObjectMetadata(name=GITHUB_CLONE_POLICY, namespace=namespace),
         rules=[
@@ -326,13 +344,26 @@ class Egress(Construct):
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the proxy
         # calls TokenReview as itself, so it needs its own mounted token.
         service_account = ServiceAccount(
-            self, "serviceaccount", metadata=metadata(NAME, env.namespace), automount_token=True
+            self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace), automount_token=True
         )
         self._add_rbac(service_account)
         self._add_certificate_and_bundle()
         self.upstream_bundle = self._add_upstream_bundle()
-        settings_cm = self._add_settings_configmap()
-        deployment = self._add_deployment(service_account, settings_cm)
+        # Settings this deployment supplies as YAML rather than flags, so a list is a list.
+        settings = SettingsFile(
+            self,
+            "settings",
+            metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
+            model=Settings,
+            content={
+                "allowed_service_account_namespaces": [env.namespace],
+                "projected_token_audiences": [KUBERNETES_AUDIENCE],
+            },
+            # A directory of its own: the CA volumes mount under /etc/agentplane-egress, and nothing
+            # can mount inside a read-only ConfigMap volume.
+            path="/etc/agentplane-egress/settings/settings.yaml",
+        )
+        deployment = self._add_deployment(service_account, settings)
         self._add_services(deployment)
         self._add_network_policy()
         if env.replicas.pdb_min_available is not None:
@@ -358,7 +389,7 @@ class Egress(Construct):
         Role(
             self,
             "role",
-            metadata=metadata(NAME, self.env.namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
             rules=[
                 RolePolicyRule(
                     resources=[
@@ -372,7 +403,7 @@ class Egress(Construct):
         RoleBinding(
             self,
             "rolebinding",
-            metadata=metadata(NAME, self.env.namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
             role=Role.from_role_name(self, "role-ref", NAME),
         ).add_subjects(service_account)
 
@@ -412,53 +443,33 @@ class Egress(Construct):
             self,
             "upstream-bundle",
             metadata=ApiObjectMetadata(name=f"{self.env.namespace}-egress-upstream-ca"),
-            spec=BundleSpec(
-                sources=[
-                    BundleSpecSources(use_default_c_as=True),
-                    BundleSpecSources(config_map=BundleSpecSourcesConfigMap(name="kube-root-ca.crt", key="ca.crt")),
-                ],
-                target=BundleSpecTarget(
-                    config_map=BundleSpecTargetConfigMap(
-                        key=CA_BUNDLE_KEY,
-                        metadata=BundleSpecTargetConfigMapMetadata(
-                            annotations={
-                                "description": (
-                                    f"Trust bundle the {self.env.namespace} egress proxy verifies "
-                                    "destinations with: public roots plus this cluster's CA"
-                                )
-                            }
-                        ),
-                    ),
-                    namespace_selector=BundleSpecTargetNamespaceSelector(
-                        match_expressions=[
-                            BundleSpecTargetNamespaceSelectorMatchExpressions(
-                                key="kubernetes.io/metadata.name", operator="In", values=[self.env.namespace]
+            sources=[
+                BundleSpecSources(use_default_c_as=True),
+                BundleSpecSources(config_map=BundleSpecSourcesConfigMap(name="kube-root-ca.crt", key="ca.crt")),
+            ],
+            target=BundleSpecTarget(
+                config_map=BundleSpecTargetConfigMap(
+                    key=CA_BUNDLE_KEY,
+                    metadata=BundleSpecTargetConfigMapMetadata(
+                        annotations={
+                            "description": (
+                                f"Trust bundle the {self.env.namespace} egress proxy verifies "
+                                "destinations with: public roots plus this cluster's CA"
                             )
-                        ]
+                        }
                     ),
+                ),
+                namespace_selector=BundleSpecTargetNamespaceSelector(
+                    match_expressions=[
+                        BundleSpecTargetNamespaceSelectorMatchExpressions(
+                            key="kubernetes.io/metadata.name", operator="In", values=[self.env.namespace]
+                        )
+                    ]
                 ),
             ),
         )
 
-    def _add_settings_configmap(self) -> ConfigMap:
-        return ConfigMap(
-            self,
-            "settings",
-            metadata=metadata(f"{NAME}-settings", self.env.namespace),
-            data={
-                "settings.yaml": yaml_config(
-                    settings_file(
-                        Settings,
-                        {
-                            "allowed_service_account_namespaces": [self.env.namespace],
-                            "projected_token_audiences": [KUBERNETES_AUDIENCE],
-                        },
-                    )
-                )
-            },
-        )
-
-    def _add_deployment(self, service_account: ServiceAccount, settings_cm: ConfigMap) -> Deployment:
+    def _add_deployment(self, service_account: ServiceAccount, settings: SettingsFile) -> Deployment:
         ca_secret = Secret.from_secret_name(self, "ca-secret-ref", self.env.egress.ca_secret_name)
         ca_volume = Volume.from_secret(self, "ca-volume", ca_secret, name="ca")
         confdir_volume = Volume.from_empty_dir(self, "confdir-volume", "confdir")
@@ -480,9 +491,7 @@ class Egress(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                NAME, self.env.namespace, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-            ),
+            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace, labels=_LABELS),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=self.env.replicas.count,
             strategy=self.env.replicas.strategy,
@@ -517,9 +526,7 @@ class Egress(Construct):
                         secret=Secret.from_secret_name(self, "postgres-egress-secret-proxy", "postgres-egress"),
                         key="uri",
                     )
-                ),
-                # Settings this deployment supplies as YAML rather than flags, so a list is a list.
-                CONFIG_FILE_ENV: EnvValue.from_value(_SETTINGS_PATH),
+                )
             },
             ports=[
                 ContainerPort(name="proxy", number=PROXY_PORT, protocol=Protocol.TCP),
@@ -532,24 +539,23 @@ class Egress(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(256), limit=Size.gibibytes(1)),
             ),
-            security_context=container_security.WRITABLE_ROOT,
+            # Writable: its root filesystem writes are unaudited.
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         deployment.containers[0].mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         deployment.containers[0].mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)
         deployment.containers[0].mount("/var/lib/agentplane-egress", confdir_volume)
-        settings_volume = Volume.from_config_map(self, "settings-volume", settings_cm)
-        deployment.containers[0].mount(_SETTINGS_PATH, settings_volume, sub_path="settings.yaml", read_only=True)
+        settings.mount_into(deployment.containers[0], env=CONFIG_FILE_ENV)
 
-        node_scheduling.attract_to_zone(deployment)
-        node_scheduling.tolerate_control_plane_taint(deployment)
-        apply_pod_spec_patches(deployment)
+        pod_policy.place(deployment, node_scheduling.HIL_OVH, tolerate_control_plane=True)
+        pod_policy.harden(deployment)
         return deployment
 
     def _add_services(self, deployment: Deployment) -> None:
         Service(
             self,
             "service",
-            metadata=metadata(NAME, self.env.namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
             selector=deployment,
             ports=[
                 ServicePort(name="http", port=80, target_port=_AGENT_API_PORT, protocol=Protocol.TCP),
@@ -559,7 +565,7 @@ class Egress(Construct):
         Service(
             self,
             "service-admin",
-            metadata=metadata(f"{NAME}-admin", self.env.namespace),
+            metadata=ApiObjectMetadata(name=f"{NAME}-admin", namespace=self.env.namespace),
             selector=deployment,
             ports=[ServicePort(name="admin", port=ADMIN_PORT, target_port=ADMIN_PORT, protocol=Protocol.TCP)],
         )
@@ -574,8 +580,8 @@ class Egress(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=metadata(NAME, namespace),
-            selector=_LABELS,
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            endpoint_selector=_LABELS,
             ingress=[
                 # Runner Pods, and the sandbox Actions' command boxes (command_sandbox.py, which
                 # imports this module).
@@ -605,7 +611,8 @@ class Egress(Construct):
                     {"k8s:io.kubernetes.pod.namespace": "forgejo", "k8s:app.kubernetes.io/name": "forgejo"},
                     FORGEJO_PORT,
                 ),
-                EgressRule.to_entities(Entity.REMOTE_NODE, Entity.HOST, ports=[HOME_ASSISTANT_PORT]),
+                # hostNetwork: Cilium sees the node, not an endpoint.
+                EgressRule.to_entities(Entity.REMOTE_NODE, Entity.HOST, ports=[home_assistant.SERVICE.port.number]),
                 EgressRule.to_entities(Entity.WORLD, Entity.REMOTE_NODE, Entity.HOST, ports=[443, 80]),
             ],
         )

@@ -97,8 +97,11 @@ const chunkSchema = z.object({
   text: z.string(),
 });
 
-// Rows per page: the tail a reader opens on, and each page before the oldest row it holds.
+// Rows per page: each page before the oldest row a reader holds.
 const PAGE = 30;
+// The tail a reader opens on: several pages up front, so opening a thread reads like a couple of
+// screens of history rather than one short page that immediately asks for another.
+const INITIAL_ROWS = PAGE * 3;
 // The proxy's bounds on one subset read.
 const SUBSET_ROWS = 200;
 const SUBSET_BODIES = 100;
@@ -442,7 +445,7 @@ class EpochWindow extends Listeners {
     );
     void this.#guard(async () => {
       await Promise.all([
-        this.#serial(() => this.#page(PAGE)),
+        this.#serial(() => this.#catchUp(INITIAL_ROWS)),
         this.#shape.subset(VIEW_STATE),
         this.#shape.subset(PENDING_COMMANDS),
       ]);
@@ -521,11 +524,20 @@ class EpochWindow extends Listeners {
     return rows.length;
   }
 
+  /** Enough PAGE-sized reads, oldest-ward from wherever #lowest already is, to hold at least
+   * `rows` -- or the whole thread, if it is shorter than that. */
+  async #catchUp(rows: number): Promise<void> {
+    let loaded = 0;
+    while (loaded < rows && !this.#exhausted) loaded += await this.#page(PAGE);
+  }
+
   /** After Electric retires the shape's log, as many rows again, kept on screen meanwhile. */
   async #refetch(): Promise<void> {
     const held = this.#lowest;
     let remaining =
-      held === null ? PAGE : [...this.#rows.values()].filter((row) => decimalBigInt(row.entityIndex) >= held).length;
+      held === null
+        ? INITIAL_ROWS
+        : [...this.#rows.values()].filter((row) => decimalBigInt(row.entityIndex) >= held).length;
     this.#refreshed = new Set();
     await this.#guard(async () => {
       await Promise.all([

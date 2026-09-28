@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -19,19 +19,20 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategy,
     HelmReleaseSpecUpgradeStrategyName,
 )
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRulesFiltersResponseHeaderModifierSet
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
+from cluster.cdk8s import cilium
 from cluster.cdk8s.authentik import db
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "authentik"
@@ -50,6 +51,13 @@ _SOPS_SECRETS = (
 _SERVER_LABELS = {"app.kubernetes.io/component": "server", "app.kubernetes.io/name": NAME}
 # Pod ports: 9000 (HTTP), 9443 (HTTPS), 9300 (metrics).
 _HTTP, _HTTPS, _METRICS = 9000, 9443, 9300
+# The chart's server Service, which also serves the embedded proxy outpost.
+SERVER = ServiceRef(
+    name="authentik-server",
+    port=Port(name="http", number=80),
+    pods=Pods(namespace=NAMESPACE, labels=tuple(_SERVER_LABELS.items())),
+    target_port=_HTTP,
+)
 
 
 def _pod_env() -> dict[str, object]:
@@ -170,17 +178,11 @@ def _values() -> dict[str, object]:
 
 
 def _helm_release(chart: Chart) -> None:
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://charts.goauthentik.io"),
-    )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(chart, NAME, NAMESPACE, url="https://charts.goauthentik.io"),
         chart="authentik",
         version="2026.8.2",
         interval="15m",
@@ -216,10 +218,9 @@ def _http_route(chart: Chart) -> None:
     https_route(
         chart,
         "route",
-        metadata=metadata(NAME, NAMESPACE),
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         hostnames=["auth.allegedly.works"],
-        backend="authentik-server",
-        port=80,
+        backend=SERVER,
         hsts=False,
         listener=None,
         # Let the operator-owned Haku console (haku.allegedly.works) frame Authentik's pages, so
@@ -254,8 +255,8 @@ def _network_policy(chart: Chart) -> None:
     NetworkPolicy(
         chart,
         "server-ingress",
-        metadata=metadata("authentik-server-ingress", NAMESPACE),
-        selector=_SERVER_LABELS,
+        metadata=ApiObjectMetadata(name="authentik-server-ingress", namespace=NAMESPACE),
+        endpoint_selector=_SERVER_LABELS,
         ingress=[
             IngressRule.from_gateway(_HTTP, _HTTPS),
             # Outposts sync their config from the server API.
@@ -265,7 +266,7 @@ def _network_policy(chart: Chart) -> None:
             # Grafana OIDC token exchange and Prometheus scraping.
             IngressRule.from_endpoints(_namespace_source("monitoring"), ports=[_HTTP, _METRICS]),
             # Gatus liveness probes.
-            IngressRule.from_endpoints(_namespace_source("gatus"), ports=[_HTTP]),
+            IngressRule.from_endpoints(_namespace_source(cilium.PROBER.namespace), ports=[_HTTP]),
             # The agentplane app and Action Service use the public issuer so discovery returns the
             # canonical external endpoints. When the public hostname resolves to the caller's own
             # node, hostNetwork Gateway hairpin traffic can arrive with the caller's namespace
@@ -285,8 +286,8 @@ def _pod_monitor(chart: Chart) -> None:
     PodMonitor(
         chart,
         "server-podmonitor",
-        metadata=metadata("authentik-server", NAMESPACE),
-        selector=_SERVER_LABELS,
+        metadata=ApiObjectMetadata(name="authentik-server", namespace=NAMESPACE),
+        selector=PodMonitorSpecSelector(match_labels=_SERVER_LABELS),
         # TODO: Consider adding bearer token auth if Authentik metrics require authentication.
         pod_metrics_endpoints=[Endpoint.plain(port="metrics")],
     )

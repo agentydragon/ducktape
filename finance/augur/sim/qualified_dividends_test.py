@@ -9,22 +9,20 @@ assessed apart from them.
 """
 
 from dataclasses import dataclass
-from decimal import Decimal
 
 import pytest
 import pytest_bazel
 
 from finance.augur.sim.books import TaxAccrual
-from finance.augur.sim.compiler.tax import compile_profile
-from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import AgentId, JurisdictionId
+from finance.augur.sim.income import ORDINARY_INCOME, QualifiedDividendIncome
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.scenario import ORDINARY_INCOME, QualifiedDividendIncome, TaxProfile
+from finance.augur.sim.money import USD
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.tax_year import TaxBook
 
-QUANTUM = Decimal("0.01")
 FILER = AgentId("test_filer")
 FEDERAL, CALIFORNIA = JurisdictionId("federal_us"), JurisdictionId("california")
 YEAR_END = 11
@@ -40,26 +38,22 @@ class Year:
     long_term: int = 0
 
 
-def _quanta(dollars: int) -> int:
-    return int(currency_amount_to_quanta(Decimal(dollars), quantum=QUANTUM))
-
-
 def close(year: Year) -> dict[JurisdictionId, TaxAccrual]:
     """The year-end rows a federal + California single filer's authority posts for `year`."""
     profile = compile_profile(
         TaxProfile(agent_id=FILER, jurisdiction_ids=[FEDERAL, CALIFORNIA], tax_authority_agent_id=AgentId("test_irs")),
         {id_: load_jurisdiction(id_) for id_ in (FEDERAL, CALIFORNIA)},
-        quantum=QUANTUM,
+        currency=USD,
     )
     book = TaxBook((ORDINARY_INCOME, QualifiedDividendIncome()))
     book.enroll(FILER)
-    book.income.accrue(FILER, ORDINARY_INCOME, _quanta(year.wages))
-    book.income.accrue(FILER, QualifiedDividendIncome(), _quanta(year.dividends))
-    book.gain(FILER, _quanta(year.short_term), long_term=False)
-    book.gain(FILER, _quanta(year.long_term), long_term=True)
+    book.income.accrue(FILER, ORDINARY_INCOME, USD.quanta(year.wages))
+    book.income.accrue(FILER, QualifiedDividendIncome(), USD.quanta(year.dividends))
+    book.gain(FILER, USD.quanta(year.short_term), long_term=False)
+    book.gain(FILER, USD.quanta(year.long_term), long_term=True)
     return {
         row.jurisdiction_id: row
-        for row in TaxAuthority(profile, indexation=FixedNominalLaw()).assessments(book, YEAR_END, [], ())
+        for row in TaxAuthority(profile, indexation=FixedNominalLaw()).assessments(book, YEAR_END, [])
     }
 
 

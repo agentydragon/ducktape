@@ -6,23 +6,9 @@ egress fence forcing their external traffic through haku-egress-proxy. See READM
 from __future__ import annotations
 
 import shlex
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import ConfigMap, k8s
-from cilium_clusterwide_crds.io.cilium import (
-    CiliumClusterwideNetworkPolicy,
-    CiliumClusterwideNetworkPolicySpec,
-    CiliumClusterwideNetworkPolicySpecEgress,
-    CiliumClusterwideNetworkPolicySpecEgressToEndpoints,
-    CiliumClusterwideNetworkPolicySpecEgressToEntities,
-    CiliumClusterwideNetworkPolicySpecEgressToPorts,
-    CiliumClusterwideNetworkPolicySpecEgressToPortsPorts,
-    CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumClusterwideNetworkPolicySpecEndpointSelector,
-    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions,
-    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator,
-)
+from cdk8s_plus_34 import ConfigMap
 from keda_scaledjob_crds.sh import keda
 from keda_scaledjob_crds.sh.keda import (
     ScaledJobSpecJobTargetRefTemplateSpecContainers as Container,
@@ -48,16 +34,18 @@ from keda_scaledjob_crds.sh.keda import (
     ScaledJobSpecJobTargetRefTemplateSpecVolumesConfigMap as VolumeConfigMap,
     ScaledJobSpecJobTargetRefTemplateSpecVolumesEmptyDir as EmptyDir,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from keda_triggerauthentication_crds.sh.keda import (
+    TriggerAuthentication,
+    TriggerAuthenticationSpec,
+    TriggerAuthenticationSpecSecretTargetRef,
+)
 
-from cluster.cdk8s import cilium
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.haku_ci import runner_config
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.keda.scaled_job import ScaledJob
-from cluster.cdk8s.providers.keda.trigger_authentication import TriggerAuthentication
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 
 NAME = "haku-ci"
 NAMESPACE = "haku-ci"
@@ -219,70 +207,24 @@ def _add_egress_fence(chart: Chart) -> None:
     default-deny egress, so this replaces the old per-namespace CiliumNetworkPolicy (which listed
     direct external FQDNs).
     """
-
-    def ports(
-        *numbers: int,
-        protocol: CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol = (
-            CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-        ),
-    ) -> list[CiliumClusterwideNetworkPolicySpecEgressToPortsPorts]:
-        return [CiliumClusterwideNetworkPolicySpecEgressToPortsPorts(port=str(n), protocol=protocol) for n in numbers]
-
-    CiliumClusterwideNetworkPolicy(
+    cilium.force_proxy_egress(
         chart,
         "force-proxy-egress",
-        metadata=ApiObjectMetadata(name="haku-ci-force-proxy-egress"),
-        spec=CiliumClusterwideNetworkPolicySpec(
-            endpoint_selector=CiliumClusterwideNetworkPolicySpecEndpointSelector(
-                match_expressions=[
-                    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions(
-                        key="k8s:io.kubernetes.pod.namespace",
-                        operator=CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator.IN,
-                        values=[NAMESPACE],
-                    )
-                ]
-            ),
-            egress=[
-                # DNS resolution (CoreDNS in kube-system)
-                CiliumClusterwideNetworkPolicySpecEgress(
-                    to_endpoints=[
-                        CiliumClusterwideNetworkPolicySpecEgressToEndpoints(match_labels=cilium.KUBE_DNS_LABELS)
-                    ],
-                    to_ports=[
-                        CiliumClusterwideNetworkPolicySpecEgressToPorts(
-                            ports=[
-                                *ports(53, protocol=CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol.UDP),
-                                *ports(53),
-                            ]
-                        )
-                    ],
-                ),
-                # All cluster-internal traffic (bypasses the proxy via NO_PROXY). This is how the
-                # runner reaches the in-cluster Forgejo git + OCI registry (forgejo-http.forgejo:3000)
-                # it clones source from, pushes images to, and long-polls for jobs, plus the
-                # oci-cache Zot mirror for dind base-image pulls.
-                # GOTCHA: Cilium's socket-LB translates a ClusterIP:port to backend podIP:targetPort
-                # *before* egress policy is enforced, so the port here must be the backend
-                # targetPort, not the Service port. oci-cache's Service is :80 but its pods listen on
-                # 5000 -- hence 5000, not 80, is what unblocks dind->oci-cache.
-                CiliumClusterwideNetworkPolicySpecEgress(
-                    to_entities=[CiliumClusterwideNetworkPolicySpecEgressToEntities.CLUSTER],
-                    to_ports=[CiliumClusterwideNetworkPolicySpecEgressToPorts(ports=ports(80, 443, 3000, 5000))],
-                ),
-                # haku-egress-proxy -- all external internet traffic must go through here.
-                CiliumClusterwideNetworkPolicySpecEgress(
-                    to_endpoints=[
-                        CiliumClusterwideNetworkPolicySpecEgressToEndpoints(
-                            match_labels={
-                                "k8s:io.kubernetes.pod.namespace": "haku-egress-proxy",
-                                "k8s:app.kubernetes.io/name": "haku-egress-proxy",
-                            }
-                        )
-                    ],
-                    to_ports=[CiliumClusterwideNetworkPolicySpecEgressToPorts(ports=ports(8080))],
-                ),
-            ],
-        ),
+        name="haku-ci-force-proxy-egress",
+        namespaces=[NAMESPACE],
+        proxy_namespace="haku-egress-proxy",
+        proxy_name="haku-egress-proxy",
+        proxy_port=8080,
+        # All cluster-internal traffic (bypasses the proxy via NO_PROXY). This is how the
+        # runner reaches the in-cluster Forgejo git + OCI registry (forgejo-http.forgejo:3000)
+        # it clones source from, pushes images to, and long-polls for jobs, plus the
+        # oci-cache Zot mirror for dind base-image pulls.
+        # GOTCHA: Cilium's socket-LB translates a ClusterIP:port to backend podIP:targetPort
+        # *before* egress policy is enforced, so the port here must be the backend
+        # targetPort, not the Service port. oci-cache's Service is :80 but its pods listen on
+        # 5000 -- hence 5000, not 80, is what unblocks dind->oci-cache.
+        cluster_ports=[80, 443, 3000, 5000],
+        kube_apiserver=False,
     )
 
 
@@ -472,20 +414,26 @@ def _add_runner(chart: Chart) -> None:
     # No name-suffix hash: each ScaledJob pod is a fresh one-CI-job Job, so the next job reads the
     # new config on its own and there is nothing to roll.
     config = ConfigMap(
-        chart, "runner-config", metadata=metadata(_CONFIG_MAP, NAMESPACE), data={_CONFIG_FILE: _config().to_yaml()}
+        chart,
+        "runner-config",
+        metadata=ApiObjectMetadata(name=_CONFIG_MAP, namespace=NAMESPACE),
+        data={_CONFIG_FILE: _config().to_yaml()},
     )
     # Forgejo's /metrics endpoint exposes no Actions queue-depth metric. KEDA's native
     # forgejo-runner scaler instead polls Forgejo's authenticated, repo-scoped runner-jobs endpoint,
     # filtered to this runner label. Its result is exactly the number of jobs presently waiting for
     # a haku-ci runner.
-    trigger_auth = TriggerAuthentication.from_secret_key(
+    trigger_auth = TriggerAuthentication(
         chart,
         "trigger-authentication",
-        name=_AUTH,
-        namespace=NAMESPACE,
-        parameter="token",
-        secret_name=FORGEJO_TOKEN_SECRET,
-        secret_key=FORGEJO_TOKEN_KEY,
+        metadata=ApiObjectMetadata(name=_AUTH, namespace=NAMESPACE),
+        spec=TriggerAuthenticationSpec(
+            secret_target_ref=[
+                TriggerAuthenticationSpecSecretTargetRef(
+                    parameter="token", name=FORGEJO_TOKEN_SECRET, key=FORGEJO_TOKEN_KEY
+                )
+            ]
+        ),
     )
     # ScaledJob, NOT ScaledObject -- this is the whole point.
     #
@@ -500,96 +448,99 @@ def _add_runner(chart: Chart) -> None:
     # own life when its single CI job is done. There is no scale-down path to get wrong, so the
     # failure mode is structurally absent rather than mitigated. This is also the shape the scaler
     # is documented for: https://keda.sh/docs/2.20/scalers/forgejo/
-    ScaledJob(
+    keda.ScaledJob(
         chart,
         "scaled-job",
-        name=_RUNNER,
-        namespace=NAMESPACE,
-        labels=_LABELS,
-        # One pod per queued job, up to four concurrently. No minimum: between bursts there are
-        # no runner pods at all, which was already true under the ScaledObject
-        # (minReplicaCount: 0) -- the runner holds no state worth keeping warm.
-        max_replica_count=4,
-        polling_interval=15,
-        successful_jobs_history_limit=3,
-        # Keep more failures than successes: a failed pod's logs are the only forensics for an
-        # infrastructure fault (registration refused, dind never came up), since a failed
-        # *build* exits 0 here -- see `backoff_limit` below.
-        failed_jobs_history_limit=5,
-        # gradual = editing this ScaledJob does NOT delete Jobs already running. The default
-        # ("immediate") would kill in-flight builds on every Flux reconcile that touches this
-        # object, reintroducing the exact bug this migration removes, just with a different
-        # trigger.
-        rollout=keda.ScaledJobSpecRollout(strategy=keda.ScaledJobSpecRolloutStrategy.GRADUAL),
-        job_target_ref=keda.ScaledJobSpecJobTargetRef(
-            parallelism=1,
-            completions=1,
-            # No Kubernetes-level retry. A failed *build* is not a failed Job -- the runner
-            # reports the failure to Forgejo and exits 0 -- so a non-zero exit here means an
-            # infrastructure fault, and retrying it in-place would just fail the same way. The
-            # correct retry already exists: the CI job stays queued, so the next KEDA poll
-            # creates a fresh pod.
-            backoff_limit=0,
-            # Upper bound on the pod's whole life: waiting for a task + running it.
-            # `one-job --wait` blocks until Forgejo hands it a task, so a pod created for a job
-            # that is cancelled before pickup would otherwise wait forever holding one of the
-            # four slots. The runner's job timeout plus slack for the wait and registration.
-            active_deadline_seconds=_JOB_TIMEOUT_SECONDS + 600,
-            template=keda.ScaledJobSpecJobTargetRefTemplate(
-                metadata=keda.ScaledJobSpecJobTargetRefTemplateMetadata(labels=_LABELS),
-                spec=keda.ScaledJobSpecJobTargetRefTemplateSpec(
-                    restart_policy="Never",
-                    automount_service_account_token=False,
-                    # Only matters for eviction/drain now -- nothing deletes this pod mid-build
-                    # any more. Slightly above the runner's shutdown timeout so a drained node
-                    # lets a build of up to that length finish instead of dropping it; at or
-                    # below it, the kubelet SIGKILLs before that timeout can elapse.
-                    termination_grace_period_seconds=_SHUTDOWN_TIMEOUT_SECONDS + 30,
-                    # No node affinity: this privileged, agent-controlled build compute may land
-                    # on any worker -- the HIL workers, the home OptiPlex, wyrm2, and the roaming
-                    # laptops when they are reachable. Control-plane nodes keep their NoSchedule
-                    # taint and stay out. A Talos worker needs `user.max_user_namespaces` raised
-                    # for rootless dind (ovh-nodes.tf, home-nodes.tf); the NixOS hosts keep the
-                    # kernel default.
-                    tolerations=[
-                        # Roaming laptops (iguana, rugged) are tainted so ordinary workloads avoid
-                        # them; a CI job is disposable enough to run there. If the laptop leaves
-                        # mid-build the unreachable taint evicts the pod and the queued job is
-                        # retried on the next KEDA poll, at the cost of the minutes already spent.
-                        keda.ScaledJobSpecJobTargetRefTemplateSpecTolerations(
-                            key="node-role.kubernetes.io/roaming", operator="Equal", value="true", effect="NoSchedule"
-                        )
-                    ],
-                    # Requests describe only the runner's idle footprint, so the default
-                    # scheduler's resource scoring alone can co-locate an entire four-job burst.
-                    # Prefer an even host spread, but keep CI available when only one capable
-                    # worker is schedulable.
-                    topology_spread_constraints=[
-                        keda.ScaledJobSpecJobTargetRefTemplateSpecTopologySpreadConstraints(
-                            max_skew=1,
-                            topology_key="kubernetes.io/hostname",
-                            when_unsatisfiable="ScheduleAnyway",
-                            label_selector=keda.ScaledJobSpecJobTargetRefTemplateSpecTopologySpreadConstraintsLabelSelector(
-                                match_labels=_LABELS
-                            ),
-                        )
-                    ],
-                    init_containers=[_register(), _dind()],
-                    containers=[_runner()],
-                    volumes=_volumes(config),
+        metadata=ApiObjectMetadata(name=_RUNNER, namespace=NAMESPACE, labels=_LABELS),
+        spec=keda.ScaledJobSpec(
+            # One pod per queued job, up to four concurrently. No minimum: between bursts there are
+            # no runner pods at all, which was already true under the ScaledObject
+            # (minReplicaCount: 0) -- the runner holds no state worth keeping warm.
+            max_replica_count=4,
+            polling_interval=15,
+            successful_jobs_history_limit=3,
+            # Keep more failures than successes: a failed pod's logs are the only forensics for an
+            # infrastructure fault (registration refused, dind never came up), since a failed
+            # *build* exits 0 here -- see `backoff_limit` below.
+            failed_jobs_history_limit=5,
+            # gradual = editing this ScaledJob does NOT delete Jobs already running. The default
+            # ("immediate") would kill in-flight builds on every Flux reconcile that touches this
+            # object, reintroducing the exact bug this migration removes, just with a different
+            # trigger.
+            rollout=keda.ScaledJobSpecRollout(strategy=keda.ScaledJobSpecRolloutStrategy.GRADUAL),
+            job_target_ref=keda.ScaledJobSpecJobTargetRef(
+                parallelism=1,
+                completions=1,
+                # No Kubernetes-level retry. A failed *build* is not a failed Job -- the runner
+                # reports the failure to Forgejo and exits 0 -- so a non-zero exit here means an
+                # infrastructure fault, and retrying it in-place would just fail the same way. The
+                # correct retry already exists: the CI job stays queued, so the next KEDA poll
+                # creates a fresh pod.
+                backoff_limit=0,
+                # Upper bound on the pod's whole life: waiting for a task + running it.
+                # `one-job --wait` blocks until Forgejo hands it a task, so a pod created for a job
+                # that is cancelled before pickup would otherwise wait forever holding one of the
+                # four slots. The runner's job timeout plus slack for the wait and registration.
+                active_deadline_seconds=_JOB_TIMEOUT_SECONDS + 600,
+                template=keda.ScaledJobSpecJobTargetRefTemplate(
+                    metadata=keda.ScaledJobSpecJobTargetRefTemplateMetadata(labels=_LABELS),
+                    spec=keda.ScaledJobSpecJobTargetRefTemplateSpec(
+                        restart_policy="Never",
+                        automount_service_account_token=False,
+                        # Only matters for eviction/drain now -- nothing deletes this pod mid-build
+                        # any more. Slightly above the runner's shutdown timeout so a drained node
+                        # lets a build of up to that length finish instead of dropping it; at or
+                        # below it, the kubelet SIGKILLs before that timeout can elapse.
+                        termination_grace_period_seconds=_SHUTDOWN_TIMEOUT_SECONDS + 30,
+                        # No node affinity: this privileged, agent-controlled build compute may land
+                        # on any worker -- the HIL workers, the home OptiPlex, wyrm2, and the roaming
+                        # laptops when they are reachable. Control-plane nodes keep their NoSchedule
+                        # taint and stay out. A Talos worker needs `user.max_user_namespaces` raised
+                        # for rootless dind (ovh-nodes.tf, home-nodes.tf); the NixOS hosts keep the
+                        # kernel default.
+                        tolerations=[
+                            # Roaming laptops (iguana, rugged) are tainted so ordinary workloads avoid
+                            # them; a CI job is disposable enough to run there. If the laptop leaves
+                            # mid-build the unreachable taint evicts the pod and the queued job is
+                            # retried on the next KEDA poll, at the cost of the minutes already spent.
+                            keda.ScaledJobSpecJobTargetRefTemplateSpecTolerations(
+                                key="node-role.kubernetes.io/roaming",
+                                operator="Equal",
+                                value="true",
+                                effect="NoSchedule",
+                            )
+                        ],
+                        # Requests describe only the runner's idle footprint, so the default
+                        # scheduler's resource scoring alone can co-locate an entire four-job burst.
+                        # Prefer an even host spread, but keep CI available when only one capable
+                        # worker is schedulable.
+                        topology_spread_constraints=[
+                            keda.ScaledJobSpecJobTargetRefTemplateSpecTopologySpreadConstraints(
+                                max_skew=1,
+                                topology_key="kubernetes.io/hostname",
+                                when_unsatisfiable="ScheduleAnyway",
+                                label_selector=keda.ScaledJobSpecJobTargetRefTemplateSpecTopologySpreadConstraintsLabelSelector(
+                                    match_labels=_LABELS
+                                ),
+                            )
+                        ],
+                        init_containers=[_register(), _dind()],
+                        containers=[_runner()],
+                        volumes=_volumes(config),
+                    ),
                 ),
             ),
+            triggers=[
+                keda.ScaledJobSpecTriggers(
+                    type="forgejo-runner",
+                    # No `name:` -- the docs list it as required, but the scaler filters on labels
+                    # and the current deployment has worked without it. A fixed name could not
+                    # match anyway: every pod registers under its own pod name.
+                    metadata={"address": _FORGEJO_URL, "owner": "haku", "repo": "haku-state", "labels": "haku-ci"},
+                    authentication_ref=keda.ScaledJobSpecTriggersAuthenticationRef(name=trigger_auth.name),
+                )
+            ],
         ),
-        triggers=[
-            keda.ScaledJobSpecTriggers(
-                type="forgejo-runner",
-                # No `name:` -- the docs list it as required, but the scaler filters on labels
-                # and the current deployment has worked without it. A fixed name could not
-                # match anyway: every pod registers under its own pod name.
-                metadata={"address": _FORGEJO_URL, "owner": "haku", "repo": "haku-state", "labels": "haku-ci"},
-                authentication_ref=keda.ScaledJobSpecTriggersAuthenticationRef(name=trigger_auth.name),
-            )
-        ],
     )
 
 
@@ -600,47 +551,52 @@ def chart(app: App) -> Chart:
     # registry/git push creds. But the runner executes Haku-authored build steps (its workflow +
     # Dockerfile), so it IS agent-controlled compute and is egress-fenced like haku-sandbox. See
     # README.md.
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                "name": NAMESPACE,
-                "rbac.ducktape.io/agent-readable-logs": "true",
-                # The runner's resources are set deliberately; no VPA recommendations wanted.
-                "goldilocks.fairwinds.com/enabled": "false",
-                # Enforce the privileged Pod Security level. The dind sidecar runs privileged (the
-                # documented requirement for docker:dind-rootless -- it provides /dev/net/tun and
-                # disables the mount masks RootlessKit needs; the daemon itself still runs rootless
-                # as UID 1000). baseline/restricted forbid both privileged and its Unconfined
-                # seccomp, so the namespace must enforce privileged. Safe because haku-ci is
-                # operator-only (Haku has no RBAC here; only Flux applies), so the loosened level
-                # grants Haku nothing.
-                "pod-security.kubernetes.io/enforce": "privileged",
-                "pod-security.kubernetes.io/warn": "privileged",
-                "pod-security.kubernetes.io/audit": "privileged",
-            },
-        ),
+        name=NAMESPACE,
+        # The runner's resources are set deliberately; no VPA recommendations wanted.
+        vpa=Vpa.DISABLED,
+        agent_readable=AgentReadable.LOGS,
+        labels={
+            "name": NAMESPACE,
+            # Enforce the privileged Pod Security level. The dind sidecar runs privileged (the
+            # documented requirement for docker:dind-rootless -- it provides /dev/net/tun and
+            # disables the mount masks RootlessKit needs; the daemon itself still runs rootless
+            # as UID 1000). baseline/restricted forbid both privileged and its Unconfined
+            # seccomp, so the namespace must enforce privileged. Safe because haku-ci is
+            # operator-only (Haku has no RBAC here; only Flux applies), so the loosened level
+            # grants Haku nothing.
+            "pod-security.kubernetes.io/enforce": "privileged",
+            "pod-security.kubernetes.io/warn": "privileged",
+            "pod-security.kubernetes.io/audit": "privileged",
+        },
     )
     _add_egress_fence(chart)
+    # The registration token tf/gitops/haku-state reads from haku-state's runner API.
+    secret_copy.secret_copy(chart, _REGISTRATION_SECRET, reader=secret_copy.reader(chart, NAMESPACE))
     _add_runner(chart)
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def haku_ci(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, keda_kustomization: Kustomization) -> Kustomization:
+def haku_ci(
+    chart: Chart,
+    directory: RenderedDirectory,
+    keda_kustomization: Kustomization,
+    external_secrets_operator: Kustomization,
+) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         timeout="5m",
-        # The runner pod stays pending until its registration-token Secret is provisioned by
-        # tf/gitops/haku-state -- don't block on health.
+        # The runner pod stays pending until tf/gitops/haku-state has written its
+        # registration-token Secret for this chart to copy -- don't block on health.
         wait=False,
-        # Supplies the ScaledJob and TriggerAuthentication CRDs.
-        depends_on=flux_kustomization_depends_on_many(keda_kustomization),
+        depends_on=flux_kustomization_depends_on_many(
+            # Supplies the ScaledJob and TriggerAuthentication CRDs.
+            keda_kustomization,
+            # Supplies the ExternalSecret and ClusterSecretStore CRDs.
+            external_secrets_operator,
+        ),
     )

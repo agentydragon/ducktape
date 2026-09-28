@@ -124,7 +124,9 @@ Sandbox discovery and runner addresses use the existing Kubernetes list/watch ca
 relist recovery; watch changes wake reconciliation. The timer renews leases and discovers sessions
 via runner `ListSessions`, which currently has no watch RPC. Merely observing a stopped session
 does not restart its harness. Explicit Open starts/resumes it and waits for ingestion to catch up
-before returning, so a resumed browser does not read the previous harness's terminal state.
+before returning, so a resumed browser does not read the previous harness's terminal state. On a
+Thread page, **Resume harness** opens that Thread's existing runner session using its retained
+runner-owned spec; it cannot create a new Thread or substitute another harness.
 
 The retained-event SSE API reads committed PostgreSQL events on whichever replica receives
 its request. Transactional `NOTIFY` wakes event/archive and inventory readers; notifications
@@ -247,7 +249,8 @@ The retained snapshot stays navigable during an outage, with separate warnings f
 connection, stale Kubernetes watch, and disconnected database listener. A Thread's running dot
 requires fresh sources, a running Sandbox, and its last observed harness state; a stale persisted
 RUNNING state alone does not make a suspended or deleted Sandbox look live. These are operational
-snapshots, not replacements for a Thread's runner Event prefix.
+snapshots, not replacements for a Thread's runner Event prefix. Archiving checks the runner's live
+session state and refuses while that Thread's harness is running; stop the harness first.
 
 ## Shutdown
 
@@ -413,9 +416,8 @@ federation (`/v1/operator/action-policy/service-accounts/{namespace}/{name}`, so
 is required as for the Actions page): the unexpired `ActionPolicyBinding`s naming that account, each
 with expiry
 and the service's `Ready` verdict; every `ActionPolicySet` those name, as present, edited since the
-service judged it, refused with the validation report, or missing; the resulting `autoApproveIf`,
-`autoDenyIf` and `autoDenyUnless` lists in the order the service walks them, each entry naming the
-binding, set and index a Decision's evidence names; and `synced`, false while the service's watch
+service judged it, refused with the validation report, or missing; the resulting `autoApproveIf` list in the order the service walks it, each entry naming the binding,
+set and index a Decision's evidence names; and `synced`, false while the service's watch
 has not synced and nothing auto-decides. It is the resolution an admission would use now, from the
 service that would use it, and says nothing about past Decisions; the Actions page holds those. The
 app adds only each binding's provenance (git, this app at launch, or the operator with kubectl),

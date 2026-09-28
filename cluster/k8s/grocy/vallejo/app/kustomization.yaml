@@ -2,6 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: grocy-vallejo
 resources:
+  - ../mcp
   # cdk8s-generated (cluster/cdk8s/grocy/app.py) -- see cluster/docs/cdk8s.md.
   - grocy.k8s.yaml
   - grocy-vallejo.k8s.yaml

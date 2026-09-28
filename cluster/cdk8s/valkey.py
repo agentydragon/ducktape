@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from pathlib import Path
 
-from cdk8s import App, Chart, Size
-from cdk8s_plus_34 import Cpu, k8s
+from cdk8s import ApiObjectMetadata, App, Chart, Size
+from cdk8s_plus_34 import Cpu
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -16,7 +15,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeCrds,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
     RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution,
     RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
@@ -24,13 +22,12 @@ from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
     RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
     RedisReplicationSpecTolerations,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.redis_operator.replication import RedisReplication
 
 NAME = "valkey"
@@ -42,24 +39,21 @@ _OPERATOR_TAG = "v0.25.0"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE, annotations={"description": "Redis operator for managing Valkey instances"}
-        ),
-    )
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=metadata("ot-helm", "flux-system"),
-        spec=HelmRepositorySpec(interval="24h", url="https://ot-container-kit.github.io/helm-charts"),
+        name=NAMESPACE,
+        vpa=Vpa.RECOMMEND,
+        agent_readable=None,
+        annotations={"description": "Redis operator for managing Valkey instances"},
     )
     helm_release(
         chart,
         _RELEASE,
         NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(
+            chart, "ot-helm", "flux-system", url="https://ot-container-kit.github.io/helm-charts"
+        ),
         chart=_RELEASE,
         version="0.26.1",
         interval="30m",
@@ -97,7 +91,7 @@ def valkey_instance(
     return RedisReplication(
         scope,
         name,
-        metadata=metadata(name, namespace, annotations={"description": description}),
+        metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations={"description": description}),
         image="valkey/valkey:9-alpine",
         cluster_size=2,
         cpu_request=Cpu.millis(50),
@@ -110,7 +104,7 @@ def valkey_instance(
         tolerations=tolerations,
         node_affinity_match=[
             RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                key="topology.kubernetes.io/zone", operator="In", values=["hil-ovh"]
+                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.HIL_OVH_ZONE]
             )
         ],
         # Prefer ordinary workers, for an instance that tolerates control planes.
@@ -120,7 +114,7 @@ def valkey_instance(
                 preference=RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference(
                     match_expressions=[
                         RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions(
-                            key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
+                            key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="DoesNotExist"
                         )
                     ]
                 ),
@@ -129,15 +123,11 @@ def valkey_instance(
     )
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def valkey(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
+def valkey(chart: Chart, directory: RenderedDirectory) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         wait=None,
         health_checks=[
             KustomizationSpecHealthChecks(

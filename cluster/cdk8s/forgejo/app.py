@@ -1,5 +1,5 @@
-"""Forgejo: the Helm release, its git volume, S3 bucket and credentials, metrics token, route,
-public SSH listener, disruption budget and ServiceMonitor.
+"""Forgejo: the Helm release, its git volume, S3 bucket, identity and credentials, metrics
+token, route, public SSH listener, disruption budget and ServiceMonitor.
 
 Hand-written beside the generated output: `forgejo-admin-password.sops.yaml`.
 """
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_envoyconfig_crds.io.cilium import (
     CiliumEnvoyConfig,
@@ -17,12 +17,9 @@ from cilium_envoyconfig_crds.io.cilium import (
     CiliumEnvoyConfigSpecNodeSelector,
 )
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecRefreshPolicy,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
-    ExternalSecretSpecTargetTemplate,
 )
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -32,25 +29,33 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecValuesFrom,
     HelmReleaseSpecValuesFromKind,
 )
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/app"
 _NAME = "forgejo"
 _NAMESPACE = "forgejo"
-_S3_CREDENTIALS_SECRET = "forgejo-s3-credentials"
-_METRICS_TOKEN = "forgejo-metrics-token"
+_S3_CREDENTIALS = SecretRef(namespace=_NAMESPACE, name="forgejo-s3-credentials")
+_METRICS_TOKEN = SecretRef(namespace=_NAMESPACE, name="forgejo-metrics-token").key("token")
 _GIT_CLAIM = "forgejo-git-rwx-ssd"
 _RELEASE_LABELS = {"app.kubernetes.io/name": _NAME, "app.kubernetes.io/instance": _NAME}
+# The chart's HTTP Service.
+HTTP = ServiceRef(
+    name="forgejo-http",
+    port=Port(name="http", number=3000),
+    pods=Pods(namespace=_NAMESPACE, labels=tuple(_RELEASE_LABELS.items())),
+)
 _VALKEY = "redis://forgejo-valkey-ovh-master.forgejo.svc.cluster.local:6379/0"
 _CLUSTER_CA_MOUNT = {"name": "cluster-ca", "mountPath": "/etc/ssl/certs/cluster-ca", "readOnly": True}
 
@@ -93,12 +98,11 @@ def _object_storage(scope: Construct) -> None:
         adopt_existing=True,
         description="Forgejo packages, LFS, attachments, and artifacts.",
     )
-    # Declared by the seaweedfs-forgejo-bucket Kustomization.
-    identity = s3.IdentityRef(scope, "identity", name=_NAME)
+    identity = s3.Identity(scope, "identity", name=_NAME, namespace=_NAMESPACE)
     bucket.grant_read_write(identity)
     identity.credentials(
         namespace=_NAMESPACE,
-        secret=_S3_CREDENTIALS_SECRET,
+        secret=_S3_CREDENTIALS.name,
         key_fields=s3.SecretKeyFields(access_key="accessKey", secret_key="secretKey"),
         description="Forgejo's SeaweedFS S3 credentials.",
     )
@@ -107,27 +111,15 @@ def _object_storage(scope: Construct) -> None:
 def _metrics_token(scope: Construct) -> None:
     """ESO owns a stable Forgejo metrics bearer token. CreatedOnce avoids rotating the token
     without coordinating a Forgejo restart and Prometheus scrape cutover."""
-    generator = Password(
-        scope,
-        "metrics-token-generator",
-        metadata=metadata(_METRICS_TOKEN, _NAMESPACE),
-        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         scope,
         "metrics-token",
-        name=_METRICS_TOKEN,
-        namespace=_NAMESPACE,
-        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[DataFrom.from_password_generator(generator.name)],
+        name=_METRICS_TOKEN.secret.name,
+        namespace=_METRICS_TOKEN.secret.namespace,
+        key=_METRICS_TOKEN.key,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"token": "{{ .password }}"}),
     )
-
-
-def _secret_env(name: str, secret: str, key: str) -> dict[str, object]:
-    return {"name": name, "valueFrom": {"secretKeyRef": {"name": secret, "key": key}}}
 
 
 def _values() -> dict[str, object]:
@@ -148,21 +140,9 @@ def _values() -> dict[str, object]:
         },
         # Pin to OVH kimsufi nodes: required by the seaweedfs-ovh CSI (OVH-only) and
         # co-located with the OVH-HA forgejo-db (cnpg_conventions R5).
-        "nodeSelector": {"topology.kubernetes.io/zone": "hil-ovh"},
+        "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
         "affinity": {
-            # Prefer ordinary workers when this workload tolerates control planes.
-            "nodeAffinity": {
-                "preferredDuringSchedulingIgnoredDuringExecution": [
-                    {
-                        "weight": 100,
-                        "preference": {
-                            "matchExpressions": [
-                                {"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}
-                            ]
-                        },
-                    }
-                ]
-            },
+            "nodeAffinity": node_scheduling.PREFER_WORKERS.node_affinity,
             # Keep the two replicas on different hosts so a single node loss can't take
             # both down. Required (not preferred): with two off-CP workers they land one
             # each; if a worker is gone the second can still schedule elsewhere (the off-CP
@@ -210,7 +190,7 @@ def _values() -> dict[str, object]:
                     "DOMAIN": "git.allegedly.works",
                     "SSH_DOMAIN": "git.allegedly.works",
                     "ROOT_URL": "https://git.allegedly.works",
-                    "HTTP_PORT": 3000,
+                    "HTTP_PORT": HTTP.pod_port,
                     "SSH_PORT": 2222,
                     "DISABLE_SSH": False,
                     "START_SSH_SERVER": True,
@@ -221,7 +201,7 @@ def _values() -> dict[str, object]:
                 # default to per-instance backends (memory / leveldb on the pod's PVC):
                 # with >1 replica each instance would keep its own cache (stale reads) and,
                 # worse, two leveldb queues on one shared volume would corrupt. Both move
-                # to the shared, replicated forgejo-valkey-ovh (cluster/generated/forgejo/cache)
+                # to the shared, replicated forgejo-valkey-ovh (cache.py)
                 # so the deployment can scale to 2 replicas. (Switching the queue backend
                 # abandons any in-flight leveldb queue items on the next restart — fine for
                 # this instance's transient queues: webhook deliveries, mirror syncs.)
@@ -271,22 +251,21 @@ def _values() -> dict[str, object]:
             # SeaweedFS S3 credentials from the operator-owned Secret in the Forgejo
             # namespace. FORGEJO__ is the chart's env -> app.ini prefix.
             "additionalConfigFromEnvs": [
-                _secret_env("FORGEJO__metrics__TOKEN", _METRICS_TOKEN, "token"),
-                _secret_env("FORGEJO__storage__MINIO_ACCESS_KEY_ID", _S3_CREDENTIALS_SECRET, "accessKey"),
-                _secret_env("FORGEJO__storage__MINIO_SECRET_ACCESS_KEY", _S3_CREDENTIALS_SECRET, "secretKey"),
+                _METRICS_TOKEN.env_var("FORGEJO__metrics__TOKEN"),
+                _S3_CREDENTIALS.key("accessKey").env_var("FORGEJO__storage__MINIO_ACCESS_KEY_ID"),
+                _S3_CREDENTIALS.key("secretKey").env_var("FORGEJO__storage__MINIO_SECRET_ACCESS_KEY"),
             ],
         },
         # Trust cluster CA bundle (includes Let's Encrypt staging CA)
-        "deployment": {
-            # Reloader: auto-restart pods when secrets change
-            "annotations": {"reloader.stakater.com/auto": "true"},
-            "env": [{"name": "SSL_CERT_FILE", "value": "/etc/ssl/certs/cluster-ca/ca-certificates.crt"}],
-        },
+        "deployment": {"env": [{"name": "SSL_CERT_FILE", "value": "/etc/ssl/certs/cluster-ca/ca-certificates.crt"}]},
         # Mount CA bundle (includes Let's Encrypt staging CA when in staging mode)
         "extraVolumes": [{"name": "cluster-ca", "configMap": {"name": "cluster-internal-ca-bundle"}}],
         "extraContainerVolumeMounts": [_CLUSTER_CA_MOUNT],
         "extraInitVolumeMounts": [_CLUSTER_CA_MOUNT],
-        "service": {"http": {"type": "ClusterIP", "port": 3000}, "ssh": {"type": "ClusterIP", "port": 2222}},
+        "service": {
+            "http": {"type": "ClusterIP", "port": HTTP.port.number},
+            "ssh": {"type": "ClusterIP", "port": 2222},
+        },
         # Resources. Forgejo is a monolith: the web UI, API, git HTTP/SSH, the
         # container/package registry, AND the Actions coordinator all run in this one
         # process — so they share this CPU budget. The old 500m limit caused constant
@@ -339,19 +318,11 @@ def _values() -> dict[str, object]:
 
 
 def _helm_release(scope: Construct) -> None:
-    repository = HelmRepository(
-        scope,
-        "helm-repository",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=HelmRepositorySpec(
-            type=HelmRepositorySpecType.OCI, interval="24h", url="oci://code.forgejo.org/forgejo-helm"
-        ),
-    )
     helm_release(
         scope,
         _NAME,
         _NAMESPACE,
-        repository=repository,
+        repository=oci_helm_repository(scope, _NAME, _NAMESPACE, url="oci://code.forgejo.org/forgejo-helm"),
         chart=_NAME,
         version="17.1.6",
         interval="15m",
@@ -390,7 +361,9 @@ def _ssh_listener(scope: Construct) -> None:
     CiliumEnvoyConfig(
         scope,
         "ssh-listener",
-        metadata=metadata(service, _NAMESPACE, annotations={"cec.cilium.io/use-original-source-address": "false"}),
+        metadata=ApiObjectMetadata(
+            name=service, namespace=_NAMESPACE, annotations={"cec.cilium.io/use-original-source-address": "false"}
+        ),
         spec=CiliumEnvoyConfigSpec(
             node_selector=CiliumEnvoyConfigSpecNodeSelector(match_labels={"topology.kubernetes.io/region": "hil"}),
             backend_services=[
@@ -435,10 +408,9 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["git.allegedly.works"],
-        backend="forgejo-http",
-        port=3000,
+        backend=HTTP,
         hsts=False,
         listener=None,
     )
@@ -460,10 +432,12 @@ def chart(app: App) -> Chart:
     ServiceMonitor(
         chart,
         "service-monitor",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         # Helm release name; robust regardless of the chart's app name label.
-        selector={"app.kubernetes.io/instance": _NAME},
-        endpoints=[Endpoint.bearer_token_secret(port="http", secret_name=_METRICS_TOKEN, key="token")],
+        selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/instance": _NAME}),
+        endpoints=[
+            Endpoint.bearer_token_secret(port="http", secret_name=_METRICS_TOKEN.secret.name, key=_METRICS_TOKEN.key)
+        ],
     )
     _metrics_token(chart)
     _ssh_listener(chart)

@@ -22,35 +22,21 @@ from finance.augur.product.simulation import (
     simulate_product_metrics,
 )
 from finance.augur.sim.actions import LotSale, Sell
-from finance.augur.sim.compiler.execution import (
-    compile_accounts,
-    compile_holding_pools,
-    compile_housing,
-    compile_jurisdictions,
-    compile_locations,
-    compile_lots,
-    compile_series,
-)
-from finance.augur.sim.compiler.tax import compile_profile
+from finance.augur.sim.books import AccountRef
 from finance.augur.sim.events import EVENT_FRAME_SPECS
-from finance.augur.sim.external_series import ExternalSeriesContext
-from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId, PropertyId
-from finance.augur.sim.locations import Location
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
+from finance.augur.sim.property import Housing, ScheduledPurchase, ScheduledSale
 from finance.augur.sim.runtime import load_jurisdictions_for
-from finance.augur.sim.scenario import (
-    ORDINARY_INCOME,
-    Currency,
-    InitialAccountBalance,
-    InitialLot,
-    PropertySaleEvent,
-    ScheduledPropertyPurchase,
-    TaxProfile,
-)
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.scripted import Scripted
+from finance.augur.sim.testing.series import level_series
+from finance.augur.sim.testing.situs import UNTAXED
 from finance.augur.sim.world import Capture, World
 
 CHECKING = AccountId("checking")
@@ -58,10 +44,9 @@ CHECKING = AccountId("checking")
 AGENT = AgentId("alice")
 IRS = AgentId("irs")
 SELLER = AgentId("seller")
-CURRENCY = Currency()
 HORIZON_MONTHS = 30
 SALE_MONTH = 14
-UNITS = 2.0
+UNITS = 2
 LOT_BASIS = Decimal(10_000)
 SALE_PRICE = Decimal(60_000)
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
@@ -79,7 +64,7 @@ PURCHASE_PRICE = Decimal("400000.00")
 HOME_VALUE_AT_SALE_QUANTA = 60_000_001
 
 # 6.375% is 637.5 basis points -- representable as a rate, never as a whole number of them.
-FRACTIONAL_CLOSING_COST_PCT = 6.375
+FRACTIONAL_CLOSING_COST_PCT = Decimal("6.375")
 FRACTIONAL_CLOSING_COST_PROCEEDS_QUANTA = 56_175_001
 
 # Fresh, unstarted worlds, one per path: a world runs once, so every simulation composes its own.
@@ -94,39 +79,21 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
     than a feature-rich one.
     """
 
-    lot = InitialLot(
-        lot_id=LotId("alice-vti"),
-        agent_id=AGENT,
-        account_id=CHECKING,
-        asset=VTI,
-        purchase_month_index=-24,  # comfortably long-term
-        quantity=UNITS,
-        cost_basis=Decimal(str(UNITS)) * LOT_BASIS,
-    )
+    scale = quantity_scale_for_asset(VTI)
+    lot_id, asset_id, units = LotId("alice-vti"), AssetId(VTI.symbol), quantity_to_quanta(UNITS, scale=scale)
     sale = Sell(
         cause_id="sell-vti",
         agent_id=AGENT,
         proceeds_account_id=CHECKING,
-        asset_id=AssetId(VTI.symbol),
-        lots=(
-            LotSale(
-                account_id=CHECKING,
-                lot_id=lot.lot_id,
-                units=int(quantity_to_quanta(UNITS, scale=quantity_scale_for_asset(VTI))),
-            ),
-        ),
+        asset_id=asset_id,
+        lots=(LotSale(account_id=CHECKING, lot_id=lot_id, units=units),),
     )
     profile = TaxProfile(agent_id=AGENT, jurisdiction_ids=[JurisdictionId("federal_us")], tax_authority_agent_id=IRS)
     jurisdictions = load_jurisdictions_for([profile])
-    series = compile_series(
-        ExternalSeriesContext.from_level_blocks(
-            [(VTI, np.full((rollout_count, HORIZON_MONTHS + 1), float(SALE_PRICE)))],
-            rollout_count=rollout_count,
-            horizon_months=HORIZON_MONTHS,
-        ),
+    series = level_series(
+        {VTI: np.full((rollout_count, HORIZON_MONTHS + 1), float(SALE_PRICE))},
         rollout_count=rollout_count,
         horizon_months=HORIZON_MONTHS,
-        currency_quantum=CURRENCY.quantum,
     )
 
     def compose(rollout_id: int) -> World:
@@ -134,32 +101,28 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
             MarketPath(series, rollout_id, rollout_count=rollout_count),
             horizon_months=HORIZON_MONTHS,
             income_sources=(ORDINARY_INCOME,),
-            jurisdictions=compile_jurisdictions(jurisdictions, bonds=(), distributions=()),
         )
-        for account in compile_accounts(
-            [
-                InitialAccountBalance(agent_id=agent_id, account_id=CHECKING, balance=Decimal(0))
-                for agent_id in (AGENT, IRS)
-            ],
-            quantum=CURRENCY.quantum,
-        ):
-            world.declare_account(account)
-        world.track(
-            TaxAuthority(
-                compile_profile(profile, jurisdictions, quantum=CURRENCY.quantum), indexation=FixedNominalLaw()
-            )
+        for agent_id in (AGENT, IRS):
+            world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
+        world.track(TaxAuthority(compile_profile(profile, jurisdictions, currency=USD), indexation=FixedNominalLaw()))
+        world.declare_pool(agent_id=AGENT, account_id=CHECKING, asset_id=asset_id, quantity_scale=scale)
+        world.hold_lot(
+            lot_id=lot_id,
+            agent_id=AGENT,
+            account_id=CHECKING,
+            asset_id=asset_id,
+            purchase_month=-24,  # comfortably long-term
+            quantity_scale=scale,
+            units=units,
+            basis=USD.quanta(UNITS * LOT_BASIS),
         )
-        for pool in compile_holding_pools(lots=[lot]):
-            world.declare_pool(pool)
-        for held in compile_lots([lot], quantum=CURRENCY.quantum):
-            world.hold(held)
         world.track(Scripted(ClaimPayer(AgentId(AGENT)), {SALE_MONTH: (sale,)}))
         return world
 
     return lambda: [compose(rollout_id) for rollout_id in range(rollout_count)]
 
 
-def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
+def a_property_bought_and_sold(closing_cost_pct: Decimal = Decimal(0)) -> Worlds:
     """One all-cash property, bought at what it is worth and sold while it is worth more.
 
     The home-value levels are deliberately not whole cents. A property is valued from that
@@ -168,30 +131,28 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
     observable exactly when the level is fractional.
     """
 
-    purchase = ScheduledPropertyPurchase(
+    purchase = ScheduledPurchase(
         month=0,
         cause_id="buy-house",
         property_id=PropertyId("house"),
-        location_id=LOCATION,
+        parcel=UNTAXED,
+        market=LOCATION,
         buyer_agent_id=AGENT,
         buyer_account_id=CHECKING,
         seller_agent_id=SELLER,
+        seller_account_id=CHECKING,
         # Bought for exactly what the series says it is worth, so the sale's proceeds are
         # the home value itself rather than a figure a reader has to recompute.
-        purchase_price=PURCHASE_PRICE,
-        down_payment=PURCHASE_PRICE,
+        purchase_price=USD.quanta(PURCHASE_PRICE),
+        down_payment=USD.quanta(PURCHASE_PRICE),
+        buyer_closing_cost=0,
+        rented_fraction_ppb=0,
+        land_value_fraction_ppb=rate_to_ppb(Decimal("0.20")),
+        mortgage=None,
     )
     levels = np.full((1, HORIZON_MONTHS + 1), HOME_VALUE_AT_PURCHASE)
     levels[:, PROPERTY_SALE_MONTH] = HOME_VALUE_AT_SALE
-    series = compile_series(
-        ExternalSeriesContext.from_level_blocks([(HOME_VALUE, levels)], rollout_count=1, horizon_months=HORIZON_MONTHS),
-        rollout_count=1,
-        horizon_months=HORIZON_MONTHS,
-        currency_quantum=CURRENCY.quantum,
-    )
-    location = Location(
-        location_id=LOCATION, display_name="Acceptance Town", jurisdiction_ids=[], annual_property_tax_rate=0.0
-    )
+    series = level_series({HOME_VALUE: levels}, rollout_count=1, horizon_months=HORIZON_MONTHS)
 
     def compose() -> World:
         # Untaxed on purpose: what the gain is assessed at is the statute suites' business, and
@@ -199,28 +160,24 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
         world = World(
             MarketPath(series, 0, rollout_count=1), horizon_months=HORIZON_MONTHS, income_sources=(ORDINARY_INCOME,)
         )
-        for account in compile_accounts(
-            [
-                InitialAccountBalance(agent_id=agent_id, account_id=CHECKING, balance=Decimal(1_000_000))
-                for agent_id in (AGENT, SELLER)
-            ],
-            quantum=CURRENCY.quantum,
-        ):
-            world.declare_account(account)
+        for agent_id in (AGENT, SELLER):
+            world.declare_account(
+                account=AccountRef(agent_id=agent_id, account_id=CHECKING),
+                opening_balance=USD.quanta(Decimal(1_000_000)),
+            )
         world.declare_housing(
-            compile_housing(
-                purchases=[purchase],
-                initial_residences=(),
-                residence_events=(),
-                lifecycle_events=[
-                    PropertySaleEvent(
-                        month=PROPERTY_SALE_MONTH, property_id=PropertyId("house"), closing_cost_pct=closing_cost_pct
-                    )
-                ],
-                quantum=CURRENCY.quantum,
+            Housing(
+                purchases=(purchase,),
+                sales=(
+                    ScheduledSale(
+                        month=PROPERTY_SALE_MONTH,
+                        property_id=PropertyId("house"),
+                        commission_ppb=rate_to_ppb(closing_cost_pct / 100),
+                        escrow_title_ppb=0,
+                    ),
+                ),
             ),
             (),
-            compile_locations([purchase], {LOCATION: location}, quantum=CURRENCY.quantum),
         )
         world.track(ClaimPayer(AgentId(AGENT)))
         return world
@@ -229,7 +186,7 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
 
 
 def product_metrics(worlds: Worlds) -> ProductMetricArrays:
-    return simulate_product_metrics(worlds(), horizon_months=HORIZON_MONTHS, currency=CURRENCY, primary_agent_id=AGENT)
+    return simulate_product_metrics(worlds(), horizon_months=HORIZON_MONTHS, currency=USD, primary_agent_id=AGENT)
 
 
 class TestConfigured:
@@ -282,7 +239,7 @@ class TestConfigured:
         for name in METRIC_NAMES:
             assert arrays[name].shape == (HORIZON_MONTHS + 1, 1), f"{name} is not snapshots by rollouts"
         assert metrics.failed_month.shape == (1,)
-        assert metrics.currency_code == CURRENCY.code
+        assert metrics.currency_code == USD.code
 
     def test_a_funded_rollout_does_not_report_a_failure(self, run: Worlds) -> None:
         """Anti-vacuity for the assertions above: they describe a rollout that ran to the end."""
@@ -360,7 +317,7 @@ class TestConfigured:
 def test_completed_capture_projects_same_financial_metrics(capture: Capture) -> None:
     run = sale_and_tax_year()
     completed = execute(run(), capture, AGENT)
-    arrays = project_product_metrics(completed, horizon_months=HORIZON_MONTHS, currency=CURRENCY)
+    arrays = project_product_metrics(completed, horizon_months=HORIZON_MONTHS, currency=USD)
     compact = product_metrics(run)
 
     assert arrays.rollout_ids == compact.rollout_ids
@@ -383,8 +340,8 @@ def test_projection_preserves_selected_original_path_identity() -> None:
     run = sale_and_tax_year(rollout_count=3)
     completed = execute(run(), "dense", AGENT)
     selected = (completed[-1], completed[0])
-    arrays = project_product_metrics(selected, horizon_months=HORIZON_MONTHS, currency=CURRENCY)
-    expected = project_product_metrics(completed, horizon_months=HORIZON_MONTHS, currency=CURRENCY).select(
+    arrays = project_product_metrics(selected, horizon_months=HORIZON_MONTHS, currency=USD)
+    expected = project_product_metrics(completed, horizon_months=HORIZON_MONTHS, currency=USD).select(
         tuple(result.rollout_id for result in selected)
     )
 

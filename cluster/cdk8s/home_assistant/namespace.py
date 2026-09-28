@@ -6,6 +6,7 @@ from pathlib import Path
 
 from cluster.cdk8s.generation import write_namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 
 
 def write_manifests(root: Path) -> None:
@@ -13,8 +14,9 @@ def write_manifests(root: Path) -> None:
         root,
         f"{HAND_WRITTEN_ROOT}/home-assistant",
         name="home-assistant",
+        vpa=Vpa.RECOMMEND,
+        agent_readable=None,
         labels={
-            "goldilocks.fairwinds.com/enabled": "true",
             # Home Assistant and Matter need the host network for mDNS, Bluetooth and
             # Matter fabric traffic on the physical home LAN.
             "pod-security.kubernetes.io/enforce": "privileged",

@@ -4,21 +4,10 @@ from grafana_grafanadashboard_crds.org.integreatly.grafana import (
     GrafanaDashboardSpecConfigMapRef,
     GrafanaDashboardSpecDatasources,
     GrafanaDashboardSpecGrafanaCom,
+    GrafanaDashboardSpecInstanceSelector,
 )
 
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
-
-
-def test_instance_selector_labels_become_nested_selector() -> None:
-    chart = Cdk8sTesting.chart()
-    GrafanaDashboard(
-        chart, "test", metadata=ApiObjectMetadata(name="dashboard"), instance_selector_labels={"dashboards": "grafana"}
-    )
-    (manifest,) = Cdk8sTesting.synth(chart)
-    spec = manifest["spec"]
-    assert spec["instanceSelector"] == {"matchLabels": {"dashboards": "grafana"}}
-    assert "folder" not in spec
-    assert "configMapRef" not in spec
 
 
 def test_optional_fields_pass_through() -> None:
@@ -27,7 +16,7 @@ def test_optional_fields_pass_through() -> None:
         chart,
         "test",
         metadata=ApiObjectMetadata(name="dashboard"),
-        instance_selector_labels={"dashboards": "grafana"},
+        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels={"dashboards": "grafana"}),
         folder="Analytics",
         datasources=[GrafanaDashboardSpecDatasources(input_name="DS_PROMETHEUS", datasource_name="Mimir")],
         config_map_ref=GrafanaDashboardSpecConfigMapRef(name="dashboard-cm", key="dashboard.json"),

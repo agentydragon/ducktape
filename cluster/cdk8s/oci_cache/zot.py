@@ -11,14 +11,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/oci-cache"
@@ -26,6 +29,12 @@ _NAMESPACE = "oci-cache"
 _NAME = "zot"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _PUBLIC_AUTH_PORT = 8080
+# The nginx sidecar's authenticated port on the `oci-cache` Service.
+_PUBLIC_AUTH = ServiceRef(
+    name=_NAMESPACE,
+    port=Port(name="public-auth", number=_PUBLIC_AUTH_PORT),
+    pods=Pods(namespace=_NAMESPACE, labels=tuple(_LABELS.items())),
+)
 _VALKEY = "oci-cache-valkey"
 
 
@@ -63,8 +72,7 @@ def _deployment(chart: Chart) -> None:
                     " staging on emptyDir, so the pod reschedules freely. The in-cluster Service is"
                     " intentionally unauthenticated for Docker registry-mirror compatibility; the public"
                     " endpoint is authenticated by the nginx sidecar."
-                ),
-                "reloader.stakater.com/auto": "true",
+                )
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -175,18 +183,7 @@ def _deployment(chart: Chart) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAMESPACE, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
-        chart,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
-    )
+    namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
     _deployment(chart)
     k8s.KubeService(
         chart,
@@ -217,9 +214,9 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "httproute",
-        metadata=metadata(
-            _NAMESPACE,
-            _NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_NAMESPACE,
+            namespace=_NAMESPACE,
             annotations={
                 "description": (
                     "Authenticated public endpoint for the Zot pull-through cache. The cluster-gateway"
@@ -229,20 +226,19 @@ def chart(app: App) -> Chart:
             },
         ),
         hostnames=["oci-cache.allegedly.works"],
-        backend=_NAMESPACE,
-        port=_PUBLIC_AUTH_PORT,
+        backend=_PUBLIC_AUTH,
         hsts=False,
         listener=None,
     )
     ServiceMonitor(
         chart,
         "servicemonitor",
-        metadata=metadata(
-            _NAME,
-            _NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_NAME,
+            namespace=_NAMESPACE,
             annotations={"description": "Zot OCI-cache application metrics scraped into Mimir by Alloy."},
         ),
-        selector=_LABELS,
+        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
         endpoints=[Endpoint.plain(port="http", scrape_timeout="10s")],
     )
     valkey_instance(

@@ -23,9 +23,9 @@ them. The engine's own counterpart is the double-entry journal it validates on e
 from collections.abc import Mapping, Sequence
 from decimal import Decimal
 
-import numpy as np
 import polars as pl
 import pytest_bazel
+from more_itertools import one
 
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.series import (
@@ -39,46 +39,40 @@ from finance.augur.model.series import (
 )
 from finance.augur.policy.cash_band_household import CashBandHousehold, SecuritySleeve
 from finance.augur.policy.funding import ClaimPayer
-from finance.augur.sim.actions import Action, DecisionActions, LotSale, Sell
+from finance.augur.sim.actions import Action, LotSale, Sell
 from finance.augur.sim.bills import Biller
-from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.compiler.tax import compile_profile
-from finance.augur.sim.external_series import ExternalSeriesContext
-from finance.augur.sim.fixed_point import (
-    currency_amount_to_quanta,
-    quantity_scale_for_asset,
-    quantity_to_quanta,
-    rate_to_ppb,
-)
+from finance.augur.sim.books import AccountRef
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLocation,
-    PreparedLot,
-    PreparedRecurringObligation,
-    PreparedSeries,
-    _CapitalImprovement,
-    _MortgageFinancing,
-    _PropertyPurchase,
-    _PropertySale,
-    _TenderPolicy,
+from finance.augur.sim.market_path import MarketPath, Series
+from finance.augur.sim.money import USD
+from finance.augur.sim.private_equity import TenderPolicy
+from finance.augur.sim.property import (
+    CapitalImprovement,
+    Housing,
+    MortgageFinancing,
+    Parcel,
+    ScheduledPurchase,
+    ScheduledSale,
 )
-from finance.augur.sim.property import Housing
-from finance.augur.sim.results import Finished, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME, TaxProfile
+from finance.augur.sim.property_tax import PropertyTaxPolicy
+from finance.augur.sim.results import Rollout
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.situs import compile_situs
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.issuer_protocol import at_month, issuer_protocol
+from finance.augur.sim.testing.rollouts import book
 from finance.augur.sim.testing.scripted import Scripted
+from finance.augur.sim.testing.series import level_series
+from finance.augur.sim.testing.session import each, finish
+from finance.augur.sim.testing.situs import START_YEAR
 from finance.augur.sim.world import World
 
-QUANTUM = Decimal("0.01")
 QUANTA_PER_UNIT = 100
 ALICE = AgentId("alice")
 CHECKING = AccountId("checking")
@@ -91,101 +85,61 @@ ACME_ASSET_ID = AssetId("private_equity:acme")
 ACME_SCALE = quantity_scale_for_asset(ACME)
 
 SALE_MONTH = 4
-SALE_UNITS, SALE_PRICE = 5_000.0, Decimal(150)
-SALE_PROCEEDS_QUANTA = int(SALE_UNITS * int(SALE_PRICE)) * QUANTA_PER_UNIT
+SALE_UNITS, SALE_PRICE = 5_000, Decimal(150)
+SALE_PROCEEDS_QUANTA = SALE_UNITS * int(SALE_PRICE) * QUANTA_PER_UNIT
 
 RENT_MONTH = 0
 RENT = Decimal(5_000)
 
 TENDER_MONTH, TENDER_HORIZON = 12, 24
-TENDER_UNITS, TENDER_MARK = 100.0, Decimal(50)
-TENDER_PROCEEDS_QUANTA = int(TENDER_UNITS * int(TENDER_MARK)) * QUANTA_PER_UNIT
+TENDER_UNITS, TENDER_MARK = 100, Decimal(50)
+TENDER_PROCEEDS_QUANTA = TENDER_UNITS * int(TENDER_MARK) * QUANTA_PER_UNIT
 
 PROPERTY_HORIZON, PROPERTY_SALE_MONTH, CAPEX_MONTH = 36, 24, 12
 PROPERTY_LOCATION_ID = LocationId("loc")
-PROPERTY_LOCATION = PreparedLocation(
-    location_id=PROPERTY_LOCATION_ID,
-    display_name="Loc",
-    jurisdiction_ids=(FEDERAL,),
-    annual_property_tax_rate_ppb=0,
-    annual_special_assessment=0,
-)
+COUNTY = AgentId("county")
 
 
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
-
-
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
+def account(world: World, agent_id: AgentId, balance: Decimal | int = 0) -> None:
+    world.declare_account(
+        account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=USD.quanta(balance)
+    )
 
 
 def ref(agent_id: AgentId) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
-def path(key: LevelSeriesKey, levels: Sequence[Decimal], *, horizon_months: int) -> tuple[PreparedSeries, ...]:
+def path(key: LevelSeriesKey, levels: Sequence[Decimal], *, horizon_months: int) -> tuple[Series, ...]:
     """One exogenous level series on the single rollout every case here runs."""
 
-    return compile_series(
-        ExternalSeriesContext.from_level_blocks(
-            [(key, np.asarray([[float(level) for level in levels]], dtype=np.float64))],
-            rollout_count=1,
-            horizon_months=horizon_months,
-        ),
-        rollout_count=1,
-        horizon_months=horizon_months,
-        currency_quantum=QUANTUM,
-    )
+    return level_series({key: [[float(level) for level in levels]]}, rollout_count=1, horizon_months=horizon_months)
 
 
-def vti_lot(lot_id: LotId, *, quantity: float, cost_basis: Decimal | int, purchase_month: int) -> PreparedLot:
-    return PreparedLot(
+def hold_vti(
+    world: World, lot_id: LotId, *, quantity: Decimal | int, cost_basis: Decimal | int, purchase_month: int
+) -> None:
+    """Alice's VTI pool in checking, holding one lot."""
+    world.declare_pool(agent_id=ALICE, account_id=CHECKING, asset_id=AssetId(VTI.symbol), quantity_scale=VTI_SCALE)
+    world.hold_lot(
         lot_id=lot_id,
         agent_id=ALICE,
         account_id=CHECKING,
         asset_id=AssetId(VTI.symbol),
         purchase_month=purchase_month,
         quantity_scale=VTI_SCALE,
-        units=int(quantity_to_quanta(quantity, scale=VTI_SCALE)),
-        basis=money(cost_basis),
+        units=quantity_to_quanta(quantity, scale=VTI_SCALE),
+        basis=USD.quanta(cost_basis),
     )
-
-
-def hold_vti(world: World, lot: PreparedLot) -> None:
-    world.declare_pool(
-        PreparedHoldingPool(agent_id=ALICE, account_id=CHECKING, asset_id=AssetId(VTI.symbol), quantity_scale=VTI_SCALE)
-    )
-    world.hold(lot)
 
 
 def run(world: World, *, funded_by: SecurityKey | None = None, script: Mapping[int, Sequence[Action]] = {}) -> Rollout:
     """Alice makes her scripted trades, sells `funded_by` as her claims need, then pays every due claim in full, in order."""
 
     household = Scripted(ClaimPayer(ALICE) if funded_by is None else sell_into_cash(funded_by), script)
-    session = ActionSession({0: world}, ALICE)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id, decision.observation.month, household.decide(decision.observation)
-                    )
-                    for decision in batch
-                ]
-            )
-        [rollout] = batch.rollouts
-        assert rollout.stop is None
-        return rollout
-    finally:
-        session.close()
-
-
-def book(rollout: Rollout, month: int) -> Book:
-    assert rollout.trace is not None
-    [snapshot] = [snapshot for snapshot in rollout.trace.books if snapshot.month == month]
-    return snapshot
+    [rollout] = finish(ActionSession({0: world}, ALICE), each(household.decide)).rollouts
+    assert rollout.stop is None
+    return rollout
 
 
 def crossed_the_boundary(rollout: Rollout, declared: frozenset[AccountRef], *, month: int) -> int:
@@ -223,8 +177,8 @@ def security_sale_world() -> World:
         horizon_months=6,
         income_sources=(ORDINARY_INCOME,),
     )
-    world.declare_account(account(ALICE, Decimal(1_000_000)))
-    hold_vti(world, vti_lot(LotId("bought"), quantity=SALE_UNITS, cost_basis=int(SALE_UNITS) * 100, purchase_month=0))
+    account(world, ALICE, Decimal(1_000_000))
+    hold_vti(world, LotId("bought"), quantity=SALE_UNITS, cost_basis=SALE_UNITS * 100, purchase_month=0)
     return world
 
 
@@ -236,23 +190,20 @@ def target_allocation_world() -> World:
         horizon_months=3,
         income_sources=(ORDINARY_INCOME,),
     )
-    world.declare_account(account(ALICE, Decimal(1_000)))
-    world.declare_account(account(AgentId("landlord")))
-    hold_vti(world, vti_lot(LotId("alice-vti"), quantity=200.0, cost_basis=10_000, purchase_month=-1))
+    account(world, ALICE, Decimal(1_000))
+    account(world, AgentId("landlord"))
+    hold_vti(world, LotId("alice-vti"), quantity=200, cost_basis=10_000, purchase_month=-1)
     world.track(
         Biller(
-            PreparedRecurringObligation(
-                start_month=RENT_MONTH,
-                end_month=None,
-                obligation_id="alice-rent",
-                obligation_type="rent",
-                from_account=ref(ALICE),
-                to_account=ref(AgentId("landlord")),
-                amount_due=money(RENT),
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=rate_to_ppb(1.0),
-            )
+            schedule=Recurring(start_month=RENT_MONTH, end_month=None),
+            obligation_id="alice-rent",
+            obligation_type="rent",
+            from_account=ref(ALICE),
+            to_account=ref(AgentId("landlord")),
+            amount_due=USD.quanta(RENT),
+            property_id=None,
+            deduction_category=None,
+            deductible_fraction_ppb=rate_to_ppb(1),
         )
     )
     return world
@@ -293,24 +244,20 @@ def private_equity_tender_world() -> World:
         horizon_months=TENDER_HORIZON,
         income_sources=(ORDINARY_INCOME,),
     )
-    world.declare_account(account(ALICE, Decimal(100_000)))
-    world.declare_pool(
-        PreparedHoldingPool(agent_id=ALICE, account_id=CHECKING, asset_id=ACME_ASSET_ID, quantity_scale=ACME_SCALE)
-    )
-    world.hold(
-        PreparedLot(
-            lot_id=LotId("acme-lot"),
-            agent_id=ALICE,
-            account_id=CHECKING,
-            asset_id=ACME_ASSET_ID,
-            purchase_month=-36,
-            quantity_scale=ACME_SCALE,
-            units=int(quantity_to_quanta(TENDER_UNITS, scale=ACME_SCALE)),
-            basis=money(Decimal(str(TENDER_UNITS)) * 10),
-        )
+    account(world, ALICE, Decimal(100_000))
+    world.declare_pool(agent_id=ALICE, account_id=CHECKING, asset_id=ACME_ASSET_ID, quantity_scale=ACME_SCALE)
+    world.hold_lot(
+        lot_id=LotId("acme-lot"),
+        agent_id=ALICE,
+        account_id=CHECKING,
+        asset_id=ACME_ASSET_ID,
+        purchase_month=-36,
+        quantity_scale=ACME_SCALE,
+        units=quantity_to_quanta(TENDER_UNITS, scale=ACME_SCALE),
+        basis=USD.quanta(Decimal(TENDER_UNITS) * 10),
     )
     world.declare_tender_policy(
-        _TenderPolicy(owner_agent_id=ALICE, proceeds_account_id=CHECKING, liquid_net_worth_floor=money(500_000))
+        TenderPolicy(owner_agent_id=ALICE, proceeds_account_id=CHECKING, liquid_net_worth_floor=USD.quanta(500_000))
     )
     return world
 
@@ -335,21 +282,21 @@ def property_sale_world() -> World:
         ),
         horizon_months=PROPERTY_HORIZON,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=FEDERAL, level=jurisdictions[FEDERAL].level),),
     )
     for agent_id, balance in (
         (ALICE, Decimal(1_000_000)),
         (AgentId("seller"), 0),
         (AgentId("bank"), 0),
         (AgentId("irs"), 0),
+        (COUNTY, 0),
     ):
-        world.declare_account(account(agent_id, balance))
+        account(world, agent_id, balance)
     world.track(
         TaxAuthority(
             compile_profile(
                 TaxProfile(agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=AgentId("irs")),
                 jurisdictions,
-                quantum=QUANTUM,
+                currency=USD,
             ),
             indexation=FixedNominalLaw(),
         )
@@ -357,43 +304,61 @@ def property_sale_world() -> World:
     world.declare_housing(
         Housing(
             purchases=(
-                _PropertyPurchase(
+                ScheduledPurchase(
                     month=0,
                     cause_id="buy-house",
                     property_id=PropertyId("house"),
-                    location_id=PROPERTY_LOCATION_ID,
+                    # The seller's lower assessed value makes month 1 carry a supplemental bill too.
+                    parcel=Parcel(
+                        situs=compile_situs(load_jurisdiction(JurisdictionId("san_francisco")), currency=USD),
+                        prior_assessed_value=USD.quanta(400_000),
+                    ),
+                    market=PROPERTY_LOCATION_ID,
                     buyer_agent_id=ALICE,
                     buyer_account_id=CHECKING,
                     seller_agent_id=AgentId("seller"),
                     seller_account_id=CHECKING,
-                    purchase_price=money(500_000),
-                    down_payment=money(100_000),
+                    purchase_price=USD.quanta(500_000),
+                    down_payment=USD.quanta(100_000),
                     buyer_closing_cost=0,
                     rented_fraction_ppb=0,
-                    land_value_fraction_ppb=rate_to_ppb(0.2),
-                    mortgage=_MortgageFinancing(
+                    land_value_fraction_ppb=rate_to_ppb(Decimal("0.2")),
+                    mortgage=MortgageFinancing(
                         liability_id=LiabilityId("house-mortgage"),
                         lender_agent_id=AgentId("bank"),
                         lender_account_id=CHECKING,
-                        principal=money(400_000),
-                        annual_interest_rate_ppb=rate_to_ppb(0.06),
+                        principal=USD.quanta(400_000),
+                        annual_interest_rate_ppb=rate_to_ppb(Decimal("0.06")),
                         term_months=360,
                     ),
                 ),
             ),
             sales=(
-                _PropertySale(
-                    month=PROPERTY_SALE_MONTH, property_id=PropertyId("house"), closing_cost_ppb=rate_to_ppb(0.06)
+                ScheduledSale(
+                    month=PROPERTY_SALE_MONTH,
+                    property_id=PropertyId("house"),
+                    commission_ppb=rate_to_ppb(Decimal("0.06")),
+                    escrow_title_ppb=0,
                 ),
             ),
             capital_improvements=(
-                _CapitalImprovement(
-                    month=CAPEX_MONTH, property_id=PropertyId("house"), amount=money(30_000), description="roof"
+                CapitalImprovement(
+                    month=CAPEX_MONTH, property_id=PropertyId("house"), amount=USD.quanta(30_000), description="roof"
                 ),
             ),
         ),
-        (),
-        (PROPERTY_LOCATION,),
+        (
+            PropertyTaxPolicy(
+                property_id=PropertyId("house"),
+                owner_agent_id=ALICE,
+                from_account_id=CHECKING,
+                tax_authority_agent_id=COUNTY,
+                tax_authority_account_id=CHECKING,
+                start_year=START_YEAR,
+                start_month=0,
+                end_month=None,
+            ),
+        ),
     )
     return world
 
@@ -418,7 +383,7 @@ def test_a_security_sale_brings_in_exactly_its_proceeds() -> None:
                         LotSale(
                             account_id=CHECKING,
                             lot_id=LotId("bought"),
-                            units=int(quantity_to_quanta(SALE_UNITS, scale=VTI_SCALE)),
+                            units=quantity_to_quanta(SALE_UNITS, scale=VTI_SCALE),
                         ),
                     ),
                 ),
@@ -467,6 +432,19 @@ def test_a_property_sale_brings_in_its_net_and_not_its_gross() -> None:
     assert sale["mortgage_payoff_quanta"] > 0, "a payoff of nothing would not tell gross from net"
     assert sale["net_cash_to_owner_quanta"] > 0
     assert crossed_the_boundary(rollout, accounts, month=PROPERTY_SALE_MONTH) == sale["net_cash_to_owner_quanta"]
+
+
+def test_property_tax_moves_cash_only_to_the_modeled_county() -> None:
+    """A month whose only flows are the installment and the regular and supplemental tax bills: each
+    reaches a modeled agent."""
+
+    world = property_sale_world()
+    accounts = declared(world)
+    rollout = run(world)
+    county = AccountRef(agent_id=COUNTY, account_id=CHECKING)
+
+    assert crossed_the_boundary(rollout, accounts, month=1) == 0
+    assert one(row.balance for row in book(rollout, 2).balances if row.account == county) > 0
 
 
 def test_a_capital_improvement_takes_cash_out_of_the_modeled_world() -> None:

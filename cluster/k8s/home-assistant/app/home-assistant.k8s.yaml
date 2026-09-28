@@ -152,6 +152,7 @@ spec:
           ports:
             - containerPort: 8123
               name: http
+              protocol: TCP
           readinessProbe:
             httpGet:
               path: /
@@ -214,7 +215,8 @@ spec:
   ports:
     - name: http
       port: 8123
-      targetPort: http
+      protocol: TCP
+      targetPort: 8123
   selector:
     app.kubernetes.io/name: home-assistant
 ---
@@ -317,7 +319,7 @@ metadata:
 data:
   settings.yaml: |
     endpoint:
-      url: http://home-assistant.home-assistant.svc.cluster.local:8123
+      url: http://home-assistant.home-assistant.svc:8123
       client_id: https://home.allegedly.works/
       redirect_uri: https://home.allegedly.works/
     owner_username: ha-local-admin
@@ -528,8 +530,6 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  labels:
-    release: kube-prometheus-stack
   name: home-assistant
   namespace: home-assistant
 spec:

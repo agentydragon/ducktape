@@ -77,7 +77,7 @@ def proxy_objects() -> list[dict[str, Any]]:
             app,
             app_namespace=public_coder_agent_config.NAMESPACE,
             app_labels=public_coder_agent_config.LABELS,
-            aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key_selector,
+            aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key,
         )
     )
 
@@ -115,7 +115,7 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
 
     sources = {
         "clickhouse agent-diagnostics-rbac chart": clickhouse_diagnostics_objects,
-        "haku-console chart": console_objects,
+        "haku-console chart": _named(console_objects, "agent-haku-console-metadata-reader"),
         "public-coder-agent chart": _named(app_objects, "agent-public-coder-extended-diagnostics-reader"),
     }
     for source, objects in sources.items():

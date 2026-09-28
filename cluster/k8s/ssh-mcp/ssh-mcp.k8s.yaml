@@ -7,6 +7,7 @@ metadata:
     goldilocks.fairwinds.com/enabled: "false"
     name: ssh-mcp
   name: ssh-mcp
+spec: {}
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
@@ -88,8 +89,6 @@ immutable: false
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: ssh-mcp
   name: ssh-mcp

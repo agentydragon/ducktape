@@ -8,6 +8,7 @@ metadata:
     name: agentplane-index
     rbac.ducktape.io/agent-readable-logs: "true"
   name: agentplane-index
+spec: {}
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
@@ -116,8 +117,6 @@ metadata:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   name: ducktape
   namespace: agentplane-index
 spec:
@@ -254,12 +253,10 @@ metadata:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   name: haku-state
   namespace: agentplane-index
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app.kubernetes.io/instance: haku-state

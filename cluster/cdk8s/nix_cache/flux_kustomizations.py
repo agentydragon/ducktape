@@ -12,12 +12,8 @@ def nix_cache(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
-    external_creds: Kustomization,
-    external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
-    gateway: Kustomization,
-    cert_manager: Kustomization,
-    seaweedfs_cluster: Kustomization,
+    external_secrets_operator: Kustomization,
+    seaweedfs_operator: Kustomization,
 ) -> Kustomization:
     name = "nix-cache"
     return flux_kustomization(
@@ -26,7 +22,5 @@ def nix_cache(
         artifact,
         timeout="5m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(
-            cnpg, external_creds, external_secrets_config, forgejo_images, gateway, cert_manager, seaweedfs_cluster
-        ),
+        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, seaweedfs_operator),
     )

@@ -47,6 +47,16 @@ These sampling intervals do not measure model uncertainty, establish independent
 historical windows, or validate a joint forecast. Per-market divergence is not an
 aggregate decision-quality score.
 
+Matching quotes is reproduction, not forecast skill. Quotes about thresholds, dates or
+events do not identify a joint trajectory distribution, so any coupling or
+interpolation between them is the model's assumption even when a fit matches every
+supplied marginal. Reweighting existing samples cannot create missing support, and
+fitting generative parameters to quotes does not guarantee it; report residuals and
+weight concentration apart from predictive evidence. A skill comparison needs frozen
+information dates, resolved outcomes or held-out series, compatible question meanings
+and dependence-aware uncertainty; an LLM's asserted knowledge cutoff alone does not
+make an evaluation leakage-free.
+
 <../calibration/resolvers.py> owns event meaning; its adjacent tests pin deadline,
 unresolved-horizon, inflation-history and bucket behavior. Calibration tests cover
 missing channels/quotes and family fitting. API endpoint tests exercise the
@@ -54,7 +64,7 @@ same library with hermetic price clients.
 
 ## Issuer model configuration
 
-<../model/private_equity_risk.py> supports explicit public-market CDF anchors,
+<../x/models/private_equity_risk.py> supports explicit public-market CDF anchors,
 converted to monthly hazards, with a configured tail hazard after the last anchor.
 <../calibration/ipo_prior.py> derives paste-ready anchors from catalog quotes; its
 duplicate/decreasing-point treatment is separate from calibration's weighted
@@ -70,7 +80,7 @@ The [PE model conventions](private_equity_model.md) describe the implemented
 issuance and fitter/runtime distinctions; they are not an adoption decision.
 
 Scale-dependent valuation drift is an optional model assumption, not a financial
-rule or proof of predictive quality. <../fit/bayes_dilution.py> separates fixed
+rule or proof of predictive quality. <../x/models/bayes_dilution.py> separates fixed
 shape priors from fitted parameters. Single-issuer observations confined to a
 narrow size regime do not establish the full maturation shape; any fit or claimed
 improvement needs its evidence window, priors and held-out evaluation identified.

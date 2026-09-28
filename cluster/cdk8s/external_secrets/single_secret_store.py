@@ -3,20 +3,9 @@
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
 from constructs import Construct
-from external_secret_store_crds.io.external_secrets import (
-    ClusterSecretStore,
-    ClusterSecretStoreSpec,
-    ClusterSecretStoreSpecConditions,
-    ClusterSecretStoreSpecProvider,
-    ClusterSecretStoreSpecProviderKubernetes,
-    ClusterSecretStoreSpecProviderKubernetesAuth,
-    ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount,
-    ClusterSecretStoreSpecProviderKubernetesServer,
-    ClusterSecretStoreSpecProviderKubernetesServerCaProvider,
-    ClusterSecretStoreSpecProviderKubernetesServerCaProviderType,
-)
+from external_secret_store_crds.io.external_secrets import ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount
 
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.external_secrets.kubernetes_store import cluster_secret_store
 
 
 def single_secret_store(
@@ -37,37 +26,24 @@ def single_secret_store(
     source_role = Role(
         scope,
         f"{name}-source-role",
-        metadata=metadata(reader_role, source_namespace),
+        metadata=ApiObjectMetadata(name=reader_role, namespace=source_namespace),
         rules=[
             RolePolicyRule(resources=[Secret.from_secret_name(scope, f"{name}-source", source_secret)], verbs=["get"])
         ],
     )
     RoleBinding(
-        scope, f"{name}-source-binding", metadata=metadata(reader_role, source_namespace), role=source_role
+        scope,
+        f"{name}-source-binding",
+        metadata=ApiObjectMetadata(name=reader_role, namespace=source_namespace),
+        role=source_role,
     ).add_subjects(reader)
     store = f"kubernetes-{name}-secret-store"
-    ClusterSecretStore(
+    cluster_secret_store(
         scope,
         f"{name}-store",
         metadata=ApiObjectMetadata(name=store),
-        spec=ClusterSecretStoreSpec(
-            conditions=[ClusterSecretStoreSpecConditions(namespaces=[consumer_namespace])],
-            provider=ClusterSecretStoreSpecProvider(
-                kubernetes=ClusterSecretStoreSpecProviderKubernetes(
-                    remote_namespace=source_namespace,
-                    auth=ClusterSecretStoreSpecProviderKubernetesAuth(
-                        service_account=ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(name=reader.name)
-                    ),
-                    server=ClusterSecretStoreSpecProviderKubernetesServer(
-                        ca_provider=ClusterSecretStoreSpecProviderKubernetesServerCaProvider(
-                            type=ClusterSecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
-                            name="kube-root-ca.crt",
-                            key="ca.crt",
-                            namespace="default",
-                        )
-                    ),
-                )
-            ),
-        ),
+        namespaces=[consumer_namespace],
+        remote_namespace=source_namespace,
+        service_account=ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(name=reader.name),
     )
     return store

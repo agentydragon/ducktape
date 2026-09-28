@@ -267,7 +267,6 @@ export function buildLifecycleEvents(events) {
           kind: "capital_improvement",
           month: event.month,
           amount: String(Number(event.amount) || 0),
-          description: "",
         };
       }
       if (event.kind === "property_sale") {

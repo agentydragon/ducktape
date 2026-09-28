@@ -116,10 +116,10 @@ There is a smaller, real version of the problem. iron-proxy's `env` source is re
 when the pipeline is built, so a rotated refresh token needs a proxy restart. Its
 sources that re-fetch on a `ttl` are AWS Secrets Manager, AWS SSM, and 1Password
 (service account or Connect) — we run none of them, and there is no "file on disk with
-a ttl" source, so a mounted Secret does not self-refresh either. The proxy Deployment
-already carries `reloader.stakater.com/auto: "true"`, which restarts it on Secret
-change; restarting the proxy drops in-flight connections but does not touch the agent's
-session, unlike restarting the agent (F14).
+a ttl" source, so a mounted Secret does not self-refresh either. Reloader's
+`autoReloadAll` already restarts the proxy Deployment on Secret change; restarting the
+proxy drops in-flight connections but does not touch the agent's session, unlike
+restarting the agent (F14).
 
 How often that fires is the part that matters, and for Gmail it is weekly. Google keeps
 an app requesting restricted scopes in **Testing** publishing status unless it goes

@@ -1,7 +1,7 @@
 # augur/sim
 
-Typed financial declarations, execution preparation, fixed-point helpers and
-shared result types. Financial settlement executes in the Python <world.py> (see <docs/financial_engine.md>);
+The `World` of simulated economic actors, the typed values its month-0 declarations take,
+fixed-point money helpers and shared result types. Financial settlement executes in the Python <world.py> (see <docs/financial_engine.md>);
 experiment policies and their outer time loops are Python code.
 
 ## Experiment path
@@ -27,11 +27,20 @@ spending/allocation comparison and <../x/monthly_actions/README.md> for explicit
 batch actions.
 Shared proposal helpers live in <../policy/>; they do not settle trades or taxes.
 
-<prepared.py> holds the typed resolved facts a world declares: exact integer money,
-quantities, tax rules and supplied paths. The compiler's per-table pieces in <compiler/>
-lower the authored records of <scenario.py> into them; the app lowers its request through
-them and tracks its household (<../policy/cash_band_household.py>, or a claims-only
-<../policy/funding.py> `ClaimPayer`) on each world it composes.
+Each declaration takes its fact as keyword arguments in exact integer money and quantities.
+The typed values some of them take live with their readers: an `Amount` and the supplied
+`Series` beside the `MarketPath` that prices and reads them (<market_path.py>), a bond's
+coupon in <observations.py>, a purchase's `Parcel` in <property.py> with the law <situs.py> compiles
+from its situs, and when a cashflow or bill is due in <schedule.py>. The housing, tender and deduction declarations take the record their
+component keeps: a `property.Housing` schedule of purchases, sales and lifecycle events,
+`property_tax.PropertyTaxPolicy`, `private_equity.TenderPolicy`, and
+`tax_authority.MortgageInterestDeduction` or `SaltDeduction`. Callers convert money
+through a `Currency` (<money.py>) and the exact helpers in <fixed_point.py>. A component
+that keeps what it was declared with owns that record (`holdings.Lot`, `held_bonds.Bond`,
+`managed.Portfolio`, …); none is a way to declare. The app keeps its own records of a
+request in <../product/> and tracks its household
+(<../policy/cash_band_household.py>, or a claims-only <../policy/funding.py> `ClaimPayer`)
+on each world it composes.
 
 ## Outcomes and failure
 

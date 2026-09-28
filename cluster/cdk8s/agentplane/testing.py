@@ -4,7 +4,9 @@ credentialless MCP fixtures in place of the real action groups.
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
+from pathlib import Path
+
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import DeploymentStrategy
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
@@ -13,6 +15,11 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
+from agentplane.action_service.main import ActionServiceDeploymentSettings
+from agentplane.action_service.mcp_linkage import McpOAuthServer
+from agentplane.action_service.operator_oidc import OperatorOidcSettings, OperatorTokenProfile
+from agentplane.app.action_federation import DirectFederationSettings
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, app as app_component, dex, egress, rbac, testing_config
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
@@ -35,77 +42,75 @@ from cluster.cdk8s.agentplane.environment import (
     ReplicaProfile,
 )
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 
 _NAMESPACE = "agentplane-testing"
 _HOSTNAME = "agentplane-testing.allegedly.works"
 _DEX_HOSTNAME = "agentplane-dex-testing.allegedly.works"
 _DEX_ISSUER = f"https://{_DEX_HOSTNAME}/dex"
+# The Terraform-owned key, replicated into this namespace by the ExternalSecret that
+# `litellm/credentials.py` writes as `litellm-credentials.k8s.yaml` beside `agentplane.k8s.yaml`.
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
-# The ESO ExternalSecret replicating the Terraform-owned key into this namespace,
-# a sibling resource in the same Kustomization -- see litellm/credentials.py.
-_LITELLM_CREDENTIALS_DIR = "litellm-credentials/"
 _OAUTH_FIXTURE_MCP_URL = f"http://{OAUTH_FIXTURE_NAME}.{_NAMESPACE}.svc.cluster.local:{OAUTH_FIXTURE_PORT}/mcp"
 
-_FEDERATION_TARGET = {
-    "issuer": _DEX_ISSUER,
-    "audience": "agentplane-testing",
-    "jwks_uri": f"{_DEX_ISSUER}/keys",
-    "token_profile": "dex",
-}
-_ACTION_FEDERATION = {
-    "mode": "direct",
-    "service_url": f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions.CONTAINER_PORT}",
-    "login_jwks_uri": f"{_DEX_ISSUER}/keys",
-    "login_token_profile": "dex",
-    "target": _FEDERATION_TARGET,
-    "scope": "openid",
-}
-_ACTIONS_SETTINGS = {
-    "operator_oidc": _FEDERATION_TARGET,
-    "allowed_service_account_namespaces": [_NAMESPACE],
-    "mcp_servers": {
-        "example": {
-            "server_id": "example",
-            "server_url": _OAUTH_FIXTURE_MCP_URL,
-            "client_id": "agentplane-testing-mcp",
-            "client_secret_file": "/etc/agentplane-mcp/client-secret",
-            "redirect_uri": f"https://{_HOSTNAME}/mcp-linkage/callback",
-            "scopes": ["openid"],
-        }
+_FEDERATION_TARGET = OperatorOidcSettings(
+    issuer=_DEX_ISSUER,
+    audience="agentplane-testing",
+    jwks_uri=f"{_DEX_ISSUER}/keys",
+    token_profile=OperatorTokenProfile.DEX,
+)
+_ACTION_FEDERATION = DirectFederationSettings(
+    mode="direct",
+    service_url=f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions.CONTAINER_PORT}",
+    login_jwks_uri=f"{_DEX_ISSUER}/keys",
+    login_token_profile=OperatorTokenProfile.DEX,
+    target=_FEDERATION_TARGET,
+    scope="openid",
+)
+_ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
+    operator_oidc=_FEDERATION_TARGET,
+    allowed_service_account_namespaces=frozenset({_NAMESPACE}),
+    mcp_servers={
+        "example": McpOAuthServer(
+            server_id="example",
+            server_url=_OAUTH_FIXTURE_MCP_URL,
+            client_id="agentplane-testing-mcp",
+            client_secret_file=Path("/etc/agentplane-mcp/client-secret"),
+            redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
+            scopes=["openid"],
+        )
     },
-    "action_groups": {
-        "everything": {
-            "title": "Upstream Everything",
-            "description": "Credentialless MCP reference server for testing acceptance.",
-            "executor": {
-                "kind": "mcp",
-                "description": "Community-built Everything image; no user account, workload token, or mounted credentials.",
-                "config": {
+    action_groups={
+        "everything": ActionGroup(
+            title="Upstream Everything",
+            description="Credentialless MCP reference server for testing acceptance.",
+            executor=McpExecutorBinding(
+                kind="mcp",
+                description="Community-built Everything image; no user account, workload token, or mounted credentials.",
+                config={
                     "transport": "streamable-http",
                     "url": f"http://{MCP_EVERYTHING_NAME}.{_NAMESPACE}.svc.cluster.local:{MCP_EVERYTHING_PORT}/mcp",
                     "auth": "none",
                 },
-            },
-        },
-        "example": {
-            "title": "OAuth Example",
-            "description": "Dex-backed OAuth-linked MCP fixture for testing acceptance of the linkage flow.",
-            "executor": {
-                "kind": "mcp",
-                "description": "MCP tool protected by Dex-issued JWTs; no real credentials.",
-                "config": {
+            ),
+        ),
+        "example": ActionGroup(
+            title="OAuth Example",
+            description="Dex-backed OAuth-linked MCP fixture for testing acceptance of the linkage flow.",
+            executor=McpExecutorBinding(
+                kind="mcp",
+                description="MCP tool protected by Dex-issued JWTs; no real credentials.",
+                config={
                     "transport": "streamable-http",
                     "url": _OAUTH_FIXTURE_MCP_URL,
                     "server_id": "example",
                     "auth": "oauth",
                 },
-            },
-        },
+            ),
+        ),
     },
-}
+)
 
 
 ENV = Environment(
@@ -117,9 +122,9 @@ ENV = Environment(
         "Complete Agentplane testing environment, including namespace, database, Dex, egress, LLM ingress, "
         "Actions fixtures, app, runner template, and operator RBAC."
     ),
-    extra_resources=(_LITELLM_CREDENTIALS_DIR,),
+    extra_resources=(),
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
-    app_config={**testing_config.config(), "action_federation": _ACTION_FEDERATION},
+    app_config=testing_config.config(action_federation=_ACTION_FEDERATION),
     db=DbProps(instances=1),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
     egress=EgressProps(ca_secret_name="agentplane-testing-egress-ca", credentials_namespace=TESTING_NAMESPACE),
@@ -150,8 +155,8 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "networkpolicy-app-from-staging-egress",
-        metadata=metadata(f"{app_component.NAME}-from-staging-egress", ENV.namespace),
-        selector={"app.kubernetes.io/name": app_component.NAME},
+        metadata=ApiObjectMetadata(name=f"{app_component.NAME}-from-staging-egress", namespace=ENV.namespace),
+        endpoint_selector={"app.kubernetes.io/name": app_component.NAME},
         ingress=[
             IngressRule.from_endpoints(
                 cilium.endpoint_labels("agentplane-staging", egress.NAME), ports=[app_component.CONTAINER_PORT]
@@ -173,11 +178,9 @@ def agentplane_testing(
     health_checks: list[KustomizationSpecHealthChecks],
     agentplane_crds: Kustomization,
     agent_sandbox_controller: Kustomization,
-    cert_manager_environment: Kustomization,
     cert_manager_trust: Kustomization,
-    claude_rbac: Kustomization,
     cnpg: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -195,14 +198,7 @@ def agentplane_testing(
                 api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
             )
         ],
-        decryption=sops_decryption(ENV.extra_resources),
         depends_on=flux_kustomization_depends_on_many(
-            agentplane_crds,
-            agent_sandbox_controller,
-            cert_manager_environment,
-            cert_manager_trust,
-            claude_rbac,
-            cnpg,
-            external_secrets_config,
+            agentplane_crds, agent_sandbox_controller, cert_manager_trust, cnpg, external_secrets_operator
         ),
     )

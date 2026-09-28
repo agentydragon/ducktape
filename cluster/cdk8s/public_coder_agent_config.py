@@ -14,29 +14,27 @@ import textwrap
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import Namespace, k8s
+from cdk8s_plus_34 import k8s
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
-    ExternalSecretSpecTargetTemplate,
 )
 
-from cluster.cdk8s import external_creds, public_coder_proxy, public_coder_sshpiper
+from cluster.cdk8s import external_creds, forgejo_images, namespaces, public_coder_proxy, public_coder_sshpiper
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json5_config, yaml_config
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.haku import console, console_config, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.model_rosters import (
     ANTIGRAVITY_MODELS,
     GEMINI_CONTEXT_WINDOW,
     GEMINI_MAX_OUTPUT_TOKENS,
     GEMINI_MODELS,
+    GPT6_CODEX_MODELS,
     OLLAMA_EMBEDDING_MODEL,
-    OPENCLAW_CODEX_MODELS,
     AntigravityModel,
     ApiShape,
     CodexModel,
@@ -45,41 +43,36 @@ from cluster.cdk8s.model_rosters import (
     codex_responses_name,
     exposed_name,
 )
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.openclaw_gateway import (
     disabled_commands,
     haku_console_mcp,
     session_memory_hook,
     trusted_proxy_gateway,
 )
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, remote_data
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.secret_ref import SecretRef
 
-_CODEX_BY_ID = {model.id: model for model in OPENCLAW_CODEX_MODELS}
+_CODEX_BY_ID = {model.id: model for model in GPT6_CODEX_MODELS}
 _DEFAULT_CODEX_MODEL = _CODEX_BY_ID["gpt-6-luna"]
 _TPM_CODEX_MODEL = _CODEX_BY_ID["gpt-6-astra"]
 _CONFIG_MAP_NAME = "public-coder-agent-config"
 _NAME = "public-coder-agent"
 NAMESPACE = "public-coder-agent"
 LABELS = {"app.kubernetes.io/name": _NAME}
-_NAMESPACE_LABELS = {
-    "goldilocks.fairwinds.com/enabled": "true",
-    "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-    "name": NAMESPACE,
-    "rbac.ducktape.io/agent-readable-metadata": "true",
-}
 _NAMESPACE_ANNOTATIONS = {
     "description": (
         "Second OpenClaw agent, egress-confined to a CONNECT proxy and reachable only through the Authentik proxy "
         "outpost. Opens pull requests against public repositories as agentydragon-agent."
     )
 }
-_IMAGE = "ghcr.io/agentydragon/openclaw:unset"
+_IMAGE = "git.allegedly.works/ducktape-ci/public-coder-agent:unset"
 _GATEWAY_PORT = 18789
 _HOME = "/home/openclaw"
 _CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
 _STATE_CLAIM_NAME = "public-coder-agent-state-v2"
 _DIAGNOSTICS_CLAIM_NAME = "public-coder-agent-diagnostics"
-_GATEWAY_PASSWORD_NAME = "public-coder-agent-gateway-password"
-_GITHUB_TOKEN_NAME = "public-coder-agent-github-token"
+_GATEWAY_PASSWORD = SecretRef(namespace=NAMESPACE, name="public-coder-agent-gateway-password")
 # Also the Matrix channel's `proxy` in config(): the same proxy performs Matrix login-password
 # substitution.
 _EGRESS_PROXY = (
@@ -239,7 +232,7 @@ def config() -> dict:
                     "apiKey": "${OPENCLAW_LITELLM_API_KEY}",
                     "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
                     "models": [
-                        *(_codex_model_entry(model) for model in OPENCLAW_CODEX_MODELS),
+                        *(_codex_model_entry(model) for model in GPT6_CODEX_MODELS),
                         *(_gemini_model_entry(model) for model in GEMINI_MODELS),
                         *(_antigravity_model_entry(model) for model in _ANTIGRAVITY_OPENCLAW_MODELS),
                     ],
@@ -345,12 +338,6 @@ def _env(name: str, value: str) -> k8s.EnvVar:
     return k8s.EnvVar(name=name, value=value)
 
 
-def _secret_env(name: str, secret_name: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret_name, key=key))
-    )
-
-
 # Seed the GitOps config into the state PVC before startup. Remove the gateway's own config
 # backups so the ConfigMap remains authoritative; see
 # docs/personal_agents/findings/harness_behaviour.md F19.
@@ -446,11 +433,13 @@ def _openclaw_container() -> k8s.Container:
             # in the egress proxy and substituted solely in X-Subscription-Token requests to
             # api.search.brave.com.
             _env("BRAVE_API_KEY", public_coder_proxy.BRAVE_API_KEY_PLACEHOLDER),
-            _secret_env("OPENCLAW_LITELLM_API_KEY", "litellm-key-public-coder-agent", "api-key"),
+            SecretRef(namespace=NAMESPACE, name="litellm-key-public-coder-agent")
+            .key("api-key")
+            .env_var("OPENCLAW_LITELLM_API_KEY"),
             # Authentik authenticates proxied browser traffic. OpenClaw's subagent completion
             # path calls the local gateway directly and therefore uses the documented
             # trusted-proxy local-password fallback instead of proxy identity headers.
-            _secret_env("OPENCLAW_GATEWAY_PASSWORD", _GATEWAY_PASSWORD_NAME, "password"),
+            _GATEWAY_PASSWORD.key("password").env_var("OPENCLAW_GATEWAY_PASSWORD"),
             # OpenClaw's password login puts this value in the Matrix JSON body. It is a proxy
             # placeholder: iron-proxy replaces it with the real controller-owned password only
             # on the Matrix login endpoint.
@@ -516,13 +505,6 @@ def _openclaw_container() -> k8s.Container:
             # useDefaultCAs, so it already contains the public roots plus the cluster root plus
             # this proxy's interception root -- replacing the distro file loses nothing.
             k8s.VolumeMount(name="trust", mount_path=_CA_BUNDLE, sub_path="ca-certificates.crt", read_only=True),
-            # The #4943 fence trust anchor, deliberately in the exact shape the fleet
-            # inject-haku-egress-proxy policy would inject (same volume name, same mountPath):
-            # carrying the policy's own wiring is what its every rule preconditions on, so if the
-            # fleet injection ever widens to this namespace (#4670 adoption), this pod reads as
-            # already wired and no port-8080 env is appended over the iron values above. The fence
-            # trust stays a per-request opt-in until the fence owns this pod's egress.
-            k8s.VolumeMount(name="haku-egress-proxy-ca-cert", mount_path="/egress-proxy-ca", read_only=True),
             # `ssh devbox` -- config, host-key pin, and the Agent's own downstream key, projected
             # into one directory because ~/.ssh has to be a single path. See ./ssh_config.
             k8s.VolumeMount(name="ssh", mount_path=f"{_HOME}/.ssh", read_only=True),
@@ -566,9 +548,7 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE, labels=LABELS),
         spec=k8s.DeploymentSpec(
             # Keep the replica count GitOps-owned; the worker-local state claim is selected by the
             # affinity and PVC declarations below.
@@ -596,6 +576,9 @@ def _deployment(scope: Construct) -> None:
                             )
                         )
                     ),
+                    # The Secret comes from public_coder_proxy's ExternalSecret, rendered into this
+                    # same Flux Kustomization through app/kustomization.yaml's ../proxy.
+                    image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
                     init_containers=[
                         k8s.Container(
                             name="seed-config",
@@ -619,12 +602,6 @@ def _deployment(scope: Construct) -> None:
                         k8s.Volume(name="cfg", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP_NAME)),
                         k8s.Volume(
                             name="trust", config_map=k8s.ConfigMapVolumeSource(name="public-coder-agent-proxy-ca-cert")
-                        ),
-                        # Delivered here by the haku-egress-proxy trust-manager Bundle
-                        # (haku_egress_proxy.py's namespaceSelector).
-                        k8s.Volume(
-                            name="haku-egress-proxy-ca-cert",
-                            config_map=k8s.ConfigMapVolumeSource(name="haku-egress-proxy-ca-cert"),
                         ),
                         # 0440 rather than 0400: fsGroup makes these root:1000, so owner-only would
                         # be unreadable by the container's own uid. OpenSSH's "unprotected private
@@ -817,11 +794,10 @@ def _credentials(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "github-token",
-        name=_GITHUB_TOKEN_NAME,
-        namespace=NAMESPACE,
-        refresh="1h",
-        store=external_creds.STORE,
-        data=[remote_data("github-agentydragon-agent", "token", secret_key="GITHUB_TOKEN")],
+        metadata=ApiObjectMetadata(name=public_coder_proxy.GITHUB_TOKEN.secret.name, namespace=NAMESPACE),
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
+        data=[remote_data("github-agentydragon-agent", "token", secret_key=public_coder_proxy.GITHUB_TOKEN.key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
@@ -833,24 +809,18 @@ def _credentials(scope: Construct) -> None:
     # (OPENCLAW_GATEWAY_PASSWORD). Generate it once and retain it; rotating this Secret
     # deliberately restarts the agent and invalidates local clients until they read the
     # replacement value from the same environment.
-    generator = Password(
-        scope,
-        "gateway-password-generator",
-        metadata=metadata("public-coder-agent-gateway-password-generator", NAMESPACE),
-        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         scope,
         "gateway-password",
-        name=_GATEWAY_PASSWORD_NAME,
-        namespace=NAMESPACE,
+        name=_GATEWAY_PASSWORD.name,
+        namespace=_GATEWAY_PASSWORD.namespace,
+        generator_name=f"{_GATEWAY_PASSWORD.name}-generator",
         # A generated password is stable for the generator's lifetime. Avoid an automatic
         # rotation that would unnecessarily interrupt active sessions.
         refresh="8760h",
-        data_from=[DataFrom.from_password_generator(generator.name)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        template=ExternalSecretSpecTargetTemplate(data={"password": "{{ .password }}"}),
+        secret_type=None,
     )
 
 
@@ -1070,10 +1040,14 @@ def namespace_chart(app: App) -> Chart:
     Workloads that don't set their own imagePullSecrets (the devbox VM's containerDisk pull) need it.
     """
     chart = Chart(app, "namespace", disable_resource_name_hashes=True)
-    namespace = Namespace(
+    namespace = namespaces.namespace(
         chart,
         "namespace",
-        metadata=ApiObjectMetadata(name=NAMESPACE, labels=_NAMESPACE_LABELS, annotations=_NAMESPACE_ANNOTATIONS),
+        name=NAMESPACE,
+        vpa=Vpa.AUTO,
+        agent_readable=AgentReadable.METADATA,
+        labels={"name": NAMESPACE},
+        annotations=_NAMESPACE_ANNOTATIONS,
     )
     k8s.KubeServiceAccount(
         chart,

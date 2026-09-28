@@ -3,17 +3,11 @@ Secret or ConfigMap they reference changes, so secret rotation needs no manual r
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "reloader"
 NAMESPACE = "kube-system"
@@ -72,17 +66,13 @@ def _values() -> dict[str, object]:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=metadata("stakater", "flux-system"),
-        spec=HelmRepositorySpec(interval="24h", url="https://stakater.github.io/stakater-charts"),
-    )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(
+            chart, "stakater", "flux-system", url="https://stakater.github.io/stakater-charts"
+        ),
         chart=NAME,
         version="2.*",
         interval="30m",
@@ -92,11 +82,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def reloader(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno: Kustomization) -> Kustomization:
+def reloader(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart, NAME, artifact, interval="10m0s", timeout="5m", depends_on=[flux_kustomization_depends_on(kyverno)]
+        chart, NAME, directory, interval="10m0s", timeout="5m", depends_on=[flux_kustomization_depends_on(kyverno)]
     )

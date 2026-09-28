@@ -12,10 +12,9 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesEnsure,
@@ -23,20 +22,18 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
 )
 from constructs import Construct
 from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
     HttpRouteSpecRules,
     HttpRouteSpecRulesBackendRefs,
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
 )
 
-from cluster.cdk8s import cnpg
+from cluster.cdk8s import cnpg, namespaces, node_scheduling
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter, RouteMatch
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.providers.gateway_api.http_route import HttpRoute, RouteFilter, RouteMatch
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/study-casino"
 _NAME = "study-casino"
@@ -65,18 +62,14 @@ _PROVISIONER_SCRIPT = textwrap.dedent(
 
 
 def _namespace(scope: Construct) -> None:
-    k8s.KubeNamespace(
+    namespaces.namespace(
         scope,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={
-                "name": _NAMESPACE,
-                # Single-pod personal app; opt out of Goldilocks/VPA recommendations.
-                "goldilocks.fairwinds.com/enabled": "false",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
+        name=_NAMESPACE,
+        # Single-pod personal app; opt out of Goldilocks/VPA recommendations.
+        vpa=Vpa.DISABLED,
+        agent_readable=AgentReadable.LOGS,
+        labels={"name": _NAMESPACE},
     )
 
 
@@ -111,7 +104,7 @@ def _database(scope: Construct) -> None:
             ]
         ),
         # CNPG auto-generates credentials in secret study-casino-db-app
-        initdb=ClusterSpecBootstrapInitdb(database=_DATABASE, owner=_DATABASE),
+        initdb=cnpg.same_owner_initdb(_DATABASE),
     )
 
 
@@ -236,27 +229,8 @@ def _deployment(scope: Construct) -> None:
                     # Stateless: all state is in study-casino-db (CNPG), no local storage. Allow
                     # control-plane nodes as overflow capacity, but prefer workers to keep
                     # ordinary application I/O away from etcd disks.
-                    tolerations=[
-                        k8s.Toleration(
-                            key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                        )
-                    ],
-                    affinity=k8s.Affinity(
-                        node_affinity=k8s.NodeAffinity(
-                            preferred_during_scheduling_ignored_during_execution=[
-                                k8s.PreferredSchedulingTerm(
-                                    weight=100,
-                                    preference=k8s.NodeSelectorTerm(
-                                        match_expressions=[
-                                            k8s.NodeSelectorRequirement(
-                                                key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
-                                            )
-                                        ]
-                                    ),
-                                )
-                            ]
-                        )
-                    ),
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
+                    affinity=node_scheduling.PREFER_WORKERS,
                     containers=[
                         k8s.Container(
                             name="app",
@@ -310,11 +284,11 @@ def _deployment(scope: Construct) -> None:
 
 def _cache_rule(prefix: str, cache_control: str) -> HttpRouteSpecRules:
     return HttpRouteSpecRules(
-        matches=[RouteMatch.path_prefix(prefix).to_spec()],
+        matches=[RouteMatch.path_prefix(prefix)],
         filters=[
             RouteFilter.response_header_modifier(
                 set=[HttpRouteSpecRulesFiltersResponseHeaderModifierSet(name="Cache-Control", value=cache_control)]
-            ).to_spec()
+            )
         ],
         backend_refs=[HttpRouteSpecRulesBackendRefs(name=_NAME, port=_PORT)],
     )
@@ -327,24 +301,22 @@ def _route(scope: Construct) -> None:
     HttpRoute(
         scope,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=["casino.allegedly.works"],
-            rules=[
-                # Hermetic font files — content-stable; cache forever.
-                _cache_rule("/fonts/", _IMMUTABLE),
-                # Vite's content-hashed bundle output (after frontend migrates to Vite):
-                # /assets/<name>-<hash>.{js,css,…}. URL changes whenever bytes change,
-                # so safe to cache forever.
-                _cache_rule("/assets/", _IMMUTABLE),
-                # Everything else (index.html, sw.js, manifest, icon, current /main.js,
-                # API endpoints): do not store. Bazel-normalized mtimes can make app-shell
-                # validators lie across deploys, while hashed /assets/ remain immutable
-                # above.
-                _cache_rule("/", "no-store"),
-            ],
-        ),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        parent_refs=[cluster_gateway_parent_ref()],
+        hostnames=["casino.allegedly.works"],
+        rules=[
+            # Hermetic font files — content-stable; cache forever.
+            _cache_rule("/fonts/", _IMMUTABLE),
+            # Vite's content-hashed bundle output (after frontend migrates to Vite):
+            # /assets/<name>-<hash>.{js,css,…}. URL changes whenever bytes change,
+            # so safe to cache forever.
+            _cache_rule("/assets/", _IMMUTABLE),
+            # Everything else (index.html, sw.js, manifest, icon, current /main.js,
+            # API endpoints): do not store. Bazel-normalized mtimes can make app-shell
+            # validators lie across deploys, while hashed /assets/ remain immutable
+            # above.
+            _cache_rule("/", "no-store"),
+        ],
     )
 
 

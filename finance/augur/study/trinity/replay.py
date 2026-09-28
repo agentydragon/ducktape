@@ -143,28 +143,20 @@ from finance.augur.model.series import (
 from finance.augur.policy.funding import fund_claims
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.external_series import ExternalSeriesContext, materialize_sampled_exogenous
+from finance.augur.sim.claims import ObligationType
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series, materialize_sampled_exogenous
 from finance.augur.sim.fixed_point import (
     currency_amount_to_quanta,
+    quantity_for_value,
     quantity_scale_for_asset,
-    quantity_to_quanta,
     rate_to_ppb,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
-from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedDistribution,
-    PreparedDistributionSlice,
-    PreparedHoldingPool,
-    PreparedIndexedAmount,
-    PreparedLot,
-    PreparedObligation,
-    PreparedSeries,
-)
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable
+from finance.augur.sim.market_path import IndexedAmount, MarketPath, Series
+from finance.augur.sim.money import USD
 from finance.augur.sim.results import Finished, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, ObligationType
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
@@ -279,7 +271,7 @@ class Situation:
     in what it declares, never in the paths underneath.
     """
 
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     rollout_count: int
     horizon_months: int
 
@@ -289,14 +281,24 @@ def situation(
 ) -> Situation:
     return Situation(
         series=compile_series(
-            external_series, rollout_count=rollout_count, horizon_months=horizon_months, currency_quantum=QUANTUM
+            external_series, rollout_count=rollout_count, horizon_months=horizon_months, currency=USD
         ),
         rollout_count=rollout_count,
         horizon_months=horizon_months,
     )
 
 
-def opening_lots(equity_share: float, *, portfolio: Decimal = INITIAL_PORTFOLIO) -> tuple[PreparedLot, ...]:
+@dataclass(frozen=True, kw_only=True)
+class OpeningLot:
+    """One sleeve's retiree-held brokerage lot, bought the month before the window opens."""
+
+    symbol: SecuritySymbol
+    quantity_scale: int
+    units: int
+    basis: int
+
+
+def opening_lots(equity_share: float, *, portfolio: Decimal = INITIAL_PORTFOLIO) -> tuple[OpeningLot, ...]:
     """`equity_share` of `portfolio` in stocks and the rest in bonds, bought at `UNIT_PRICE` the month before."""
     if not 0 <= equity_share <= 1:
         raise ValueError("equity_share must be finite and in [0, 1]")
@@ -304,26 +306,46 @@ def opening_lots(equity_share: float, *, portfolio: Decimal = INITIAL_PORTFOLIO)
     for symbol, share in ((EQUITY, equity_share), (BONDS, 1.0 - equity_share)):
         if share <= 0.0:
             continue
-        value = portfolio * Decimal(str(share))
+        basis = int(
+            currency_amount_to_quanta(
+                (portfolio * Decimal(str(share))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), quantum=QUANTUM
+            )
+        )
         scale = quantity_scale_for_asset(SecurityKey(symbol=symbol))
         lots.append(
-            PreparedLot(
-                lot_id=LotId(f"{symbol}_initial"),
-                agent_id=RETIREE,
-                account_id=BROKERAGE,
-                asset_id=AssetId(symbol),
-                purchase_month=-1,
+            OpeningLot(
+                symbol=symbol,
                 quantity_scale=scale,
-                units=int(quantity_to_quanta(float(value / UNIT_PRICE), scale=scale)),
-                basis=int(
-                    currency_amount_to_quanta(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), quantum=QUANTUM)
+                # What `basis` buys: a float share's unrounded value is no exact quantity.
+                units=quantity_for_value(
+                    basis, int(currency_amount_to_quanta(UNIT_PRICE, quantum=QUANTUM)), scale, round_up=False
                 ),
+                basis=basis,
             )
         )
     return tuple(lots)
 
 
-def compose(case: Situation, rollout_id: int, *, lots: Sequence[PreparedLot], annual_withdrawal: Decimal) -> World:
+def hold_lots(world: World, lots: Sequence[OpeningLot]) -> None:
+    """Each lot's pool, then the lots themselves."""
+    for lot in lots:
+        world.declare_pool(
+            agent_id=RETIREE, account_id=BROKERAGE, asset_id=AssetId(lot.symbol), quantity_scale=lot.quantity_scale
+        )
+    for lot in lots:
+        world.hold_lot(
+            lot_id=LotId(f"{lot.symbol}_initial"),
+            agent_id=RETIREE,
+            account_id=BROKERAGE,
+            asset_id=AssetId(lot.symbol),
+            purchase_month=-1,
+            quantity_scale=lot.quantity_scale,
+            units=lot.units,
+            basis=lot.basis,
+        )
+
+
+def compose(case: Situation, rollout_id: int, *, lots: Sequence[OpeningLot], annual_withdrawal: Decimal) -> World:
     """One window's books: `lots` in the brokerage, drawn down by `annual_withdrawal` at the start of
     each year and indexed to CPI thereafter — the paper's inflation-adjusted Table 3 rather than
     its constant-dollar Table 1.
@@ -332,65 +354,45 @@ def compose(case: Situation, rollout_id: int, *, lots: Sequence[PreparedLot], an
     policy. Exact exhaustion after the final paid withdrawal is a success. The all-stock
     cell holds no bond lot and so declares no payout.
     """
-    holds_bonds = any(lot.asset_id == str(BONDS) for lot in lots)
+    holds_bonds = any(lot.symbol == BONDS for lot in lots)
     world = World(
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         # The bond payout names its (corporate) interest source; nothing here is taxed.
-        income_sources=(ORDINARY_INCOME, InterestIncome(issuer_jurisdiction_id=None))
-        if holds_bonds
-        else (ORDINARY_INCOME,),
+        income_sources=(ORDINARY_INCOME, InterestIncome(character=Taxable())) if holds_bonds else (ORDINARY_INCOME,),
     )
     for agent_id in (RETIREE, WORLD):
-        world.declare_account(
-            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
-        )
-    for lot in lots:
-        world.declare_pool(
-            PreparedHoldingPool(
-                agent_id=lot.agent_id,
-                account_id=lot.account_id,
-                asset_id=lot.asset_id,
-                quantity_scale=lot.quantity_scale,
-            )
-        )
-    for lot in lots:
-        world.hold(lot)
+        world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
+    hold_lots(world, lots)
     for month in range(0, case.horizon_months, MONTHS_PER_YEAR):
         world.track(
             Biller(
-                PreparedObligation(
-                    month=month,
-                    obligation_id=f"withdrawal_year_{month // MONTHS_PER_YEAR}",
-                    obligation_type=ObligationType.CASH_SPEND,
-                    from_account=AccountRef(agent_id=RETIREE, account_id=CHECKING),
-                    to_account=AccountRef(agent_id=WORLD, account_id=CHECKING),
-                    amount_due=PreparedIndexedAmount(
-                        base_amount=int(currency_amount_to_quanta(annual_withdrawal, quantum=QUANTUM)),
-                        series_id=InflationKey().wire_id,
-                        base_month_index=0,
-                        adjustment_period_months=MONTHS_PER_YEAR,
-                    ),
-                    property_id=None,
-                    deduction_category=None,
-                    deductible_fraction_ppb=rate_to_ppb(1.0),
-                )
+                schedule=Once(month=month),
+                obligation_id=f"withdrawal_year_{month // MONTHS_PER_YEAR}",
+                obligation_type=ObligationType.CASH_SPEND,
+                from_account=AccountRef(agent_id=RETIREE, account_id=CHECKING),
+                to_account=AccountRef(agent_id=WORLD, account_id=CHECKING),
+                amount_due=IndexedAmount(
+                    base_amount=int(currency_amount_to_quanta(annual_withdrawal, quantum=QUANTUM)),
+                    series_id=InflationKey().wire_id,
+                    base_month_index=0,
+                    adjustment_period_months=MONTHS_PER_YEAR,
+                ),
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=rate_to_ppb(1),
             )
         )
     if holds_bonds:
         world.declare_distribution(
-            PreparedDistribution(
-                agent_id=RETIREE,
-                holding_account_id=BROKERAGE,
-                asset_id=AssetId(BONDS),
-                to_account_id=CHECKING,
-                # Nobody is taxed here, so the character is inert; it is required because a
-                # payout that allocates less than all of itself would pay out less than the
-                # fund distributes.
-                tax_character=(
-                    PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), income_category=InterestIncome()),
-                ),
-            )
+            agent_id=RETIREE,
+            holding_account_id=BROKERAGE,
+            asset_id=AssetId(BONDS),
+            to_account_id=CHECKING,
+            # Nobody is taxed here, so the character is inert; it is required because a
+            # payout that allocates less than all of itself would pay out less than the
+            # fund distributes.
+            tax_character={InterestIncome(character=Taxable()): rate_to_ppb(1)},
         )
     return world
 

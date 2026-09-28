@@ -10,55 +10,36 @@ from itertools import pairwise
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.actions import DecisionActions, PayClaim
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.books import IncomeState
-from finance.augur.sim.ids import AccountId, AgentId
-from finance.augur.sim.results import Finished, RejectedAction, Rollout
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
+from finance.augur.sim.income import Municipal
+from finance.augur.sim.results import RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.bonds import (
-    CORPORATE,
     CPI_DEFLATING,
     CPI_DOUBLING,
     CPI_FLAT,
     FACE,
     MUNI,
     NOMINAL_COUPON,
+    TAXABLE,
     TREASURY,
     Situation,
     bond_case,
     compose,
 )
+from finance.augur.sim.testing.rollouts import tax_by_jurisdiction
+from finance.augur.sim.testing.session import each, finish
 
 
 def execute(case: Situation) -> Rollout:
     """Pay only observed due claims in order; no native configured policy or rescue."""
-    session = ActionSession({0: compose(case)}, AgentId("alice"), capture="forensic")
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id,
-                        decision.observation.month,
-                        [
-                            PayClaim(
-                                request_id=index,
-                                cause_id=claim.cause_id,
-                                claim=claim,
-                                from_account=claim.from_account,
-                                amount=claim.amount_due,
-                            )
-                            for index, claim in enumerate(decision.observation.claims)
-                        ],
-                    )
-                    for decision in batch
-                ]
-            )
-        [result] = batch.rollouts
-        return result
-    finally:
-        session.close()
+    [result] = finish(
+        ActionSession({0: compose(case)}, AgentId("alice"), capture="forensic"),
+        each(ClaimPayer(AgentId("alice")).decide),
+    ).rollouts
+    return result
 
 
 def _quanta(amount: Decimal | int | float) -> int:
@@ -74,13 +55,6 @@ def _cash_by_month(result: Rollout) -> dict[int, int]:
 
 def _paid(result: Rollout) -> dict[int, int]:
     return {month: delta for month, delta in _cash_by_month(result).items() if delta}
-
-
-def _tax_by_jurisdiction(result: Rollout) -> dict[str, int]:
-    taxes: dict[str, int] = {}
-    for accrual in result.summary.tax_accruals:
-        taxes[accrual.jurisdiction_id] = taxes.get(accrual.jurisdiction_id, 0) + accrual.total_tax
-    return taxes
 
 
 def _alice_income(result: Rollout) -> list[tuple[int, IncomeState]]:
@@ -101,24 +75,31 @@ def test_coupons_arrive_as_cash_on_their_schedule() -> None:
 
 
 def test_a_treasury_coupon_is_federally_taxed_and_california_exempt() -> None:
-    tax = _tax_by_jurisdiction(execute(bond_case(issuer=TREASURY)))
+    tax = tax_by_jurisdiction(execute(bond_case(character=TREASURY)))
 
     assert tax["federal_us"] > 0
     assert tax["california"] == 0
 
 
 def test_an_in_state_muni_coupon_is_exempt_everywhere() -> None:
-    tax = _tax_by_jurisdiction(execute(bond_case(issuer=MUNI)))
+    tax = tax_by_jurisdiction(execute(bond_case(character=MUNI)))
 
     assert tax["federal_us"] == 0
     assert tax["california"] == 0
 
 
-def test_a_corporate_coupon_is_taxed_by_both() -> None:
-    """A `None` issuer is a real state, not a missing one: a non-governmental issuer that
-    no jurisdiction exempts."""
+def test_another_states_muni_coupon_is_federally_exempt_and_california_taxed() -> None:
+    """Federal law exempts every state's munis; California exempts only its own. The muni's state
+    is declared nowhere: only the taxing jurisdictions' own rules read it."""
 
-    tax = _tax_by_jurisdiction(execute(bond_case(issuer=CORPORATE)))
+    tax = tax_by_jurisdiction(execute(bond_case(character=Municipal(state=JurisdictionId("test_state")))))
+
+    assert tax["federal_us"] == 0
+    assert tax["california"] > 0
+
+
+def test_a_corporate_coupon_is_taxed_by_both() -> None:
+    tax = tax_by_jurisdiction(execute(bond_case(character=TAXABLE)))
 
     assert tax["federal_us"] > 0
     assert tax["california"] > 0
@@ -127,9 +108,9 @@ def test_a_corporate_coupon_is_taxed_by_both() -> None:
 def test_a_coupon_accrues_as_interest_and_not_as_ordinary_income() -> None:
     """Which row it lands in is what decides whether California can reach it."""
 
-    december = [row for month, row in _alice_income(execute(bond_case(issuer=TREASURY))) if month == 11]
+    december = [row for month, row in _alice_income(execute(bond_case(character=TREASURY))) if month == 11]
 
-    assert [row.income_source for row in december] == ["interest:federal_us"]
+    assert [row.income_source for row in december] == ["interest:treasury"]
     assert [row.income for row in december] == [_quanta(NOMINAL_COUPON)]
 
 
@@ -205,7 +186,7 @@ def test_accretion_is_treasury_interest_and_inherits_its_exemption() -> None:
     """Accretion is interest on the same obligation, so 31 USC 3124 reaches it like a
     coupon. Booked as ordinary income instead, California would tax it."""
 
-    tax = _tax_by_jurisdiction(execute(bond_case(indexed=True, cpi=CPI_DOUBLING)))
+    tax = tax_by_jurisdiction(execute(bond_case(indexed=True, cpi=CPI_DOUBLING)))
 
     assert tax["federal_us"] > 0
     assert tax["california"] == 0

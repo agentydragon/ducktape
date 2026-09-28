@@ -9,9 +9,7 @@ untyped in the operator's CRD schema, so they are plain dicts here.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from clickhouse_installation_crds.com.altinity.clickhouse import (
     ClickHouseInstallation,
@@ -47,24 +45,23 @@ from clickhouse_keeper_installation_crds.com.altinity.clickhouse_keeper import (
     ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
-from cluster.cdk8s import public_coder_proxy
+from cluster.cdk8s import node_scheduling, public_coder_proxy
 from cluster.cdk8s.clickhouse import client
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.haku import console_config
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/cluster"
+SOPS_FILES = (
+    "admin-credentials.sops.yaml",
+    "aiquota-credentials.sops.yaml",
+    "langfuse-credentials.sops.yaml",
+    "grafana-credentials.sops.yaml",
+    "public-coder-credentials.sops.yaml",
+)
 _KEEPER_NAME = "clickhouse-keeper"
 _KEEPER_LABELS = {"app.kubernetes.io/name": _KEEPER_NAME, "app.kubernetes.io/instance": _KEEPER_NAME}
 _ADMIN_CREDENTIALS = "clickhouse-admin-credentials"  # admin-credentials.sops.yaml
@@ -73,7 +70,7 @@ _INTERSERVER_PORT = 9009
 _CLICKHOUSE_UID = 101  # the images' `clickhouse` user
 _STORAGE_CLASS = "local-path-ovh-hdd-retain"
 _ANY_ADDRESS = ["0.0.0.0/0", "::/0"]
-_HDD_NODE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh", "storage.allegedly.works/tier": "hdd"}
+_HDD_NODE_SELECTOR = {**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "hdd"}
 _RUNTIME_DEFAULT_SECCOMP = {"type": "RuntimeDefault"}
 _CONTAINER_SECURITY_CONTEXT = {
     "allowPrivilegeEscalation": False,
@@ -232,7 +229,7 @@ def clickhouse_chart(app: App) -> Chart:
     ClickHouseInstallation(
         chart,
         "installation",
-        metadata=metadata(client.NAME, client.NAMESPACE),
+        metadata=ApiObjectMetadata(name=client.NAME, namespace=client.NAMESPACE),
         spec=ClickHouseInstallationSpec(
             configuration=ClickHouseInstallationSpecConfiguration(
                 zookeeper=ClickHouseInstallationSpecConfigurationZookeeper(
@@ -355,8 +352,8 @@ def clickhouse_chart(app: App) -> Chart:
     PodMonitor(
         chart,
         "podmonitor",
-        metadata=metadata(client.NAME, client.NAMESPACE),
-        selector=client.LABELS,
+        metadata=ApiObjectMetadata(name=client.NAME, namespace=client.NAMESPACE),
+        selector=PodMonitorSpecSelector(match_labels=client.LABELS),
         pod_metrics_endpoints=[Endpoint.plain(port="metrics", scrape_timeout="15s")],
     )
     return chart
@@ -370,7 +367,7 @@ def keeper_chart(app: App) -> Chart:
     ClickHouseKeeperInstallation(
         chart,
         "installation",
-        metadata=metadata(_KEEPER_NAME, client.NAMESPACE),
+        metadata=ApiObjectMetadata(name=_KEEPER_NAME, namespace=client.NAMESPACE),
         spec=ClickHouseKeeperInstallationSpec(
             configuration=ClickHouseKeeperInstallationSpecConfiguration(
                 clusters=[
@@ -415,13 +412,7 @@ def keeper_chart(app: App) -> Chart:
                         spec={
                             "nodeSelector": _HDD_NODE_SELECTOR,
                             # Three-member Keeper quorum needs distinct HDD-tier hosts; use all workers.
-                            "tolerations": [
-                                {
-                                    "key": "node-role.kubernetes.io/control-plane",
-                                    "operator": "Exists",
-                                    "effect": "NoSchedule",
-                                }
-                            ],
+                            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
                             "affinity": _one_per_host(_KEEPER_LABELS),
                             "securityContext": {"fsGroup": _CLICKHOUSE_UID, "seccompProfile": _RUNTIME_DEFAULT_SECCOMP},
                             "containers": [
@@ -619,44 +610,15 @@ def agent_diagnostics_rbac_chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(
-        root,
-        OUTPUT_DIR,
-        clickhouse_chart,
-        keeper_chart,
-        service_chart,
-        networkpolicy_chart,
-        agent_diagnostics_rbac_chart,
-    )
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(
-            resources=[
-                "agent-diagnostics-rbac.k8s.yaml",
-                "admin-credentials.sops.yaml",
-                "aiquota-credentials.sops.yaml",
-                "langfuse-credentials.sops.yaml",
-                "grafana-credentials.sops.yaml",
-                "public-coder-credentials.sops.yaml",
-                "keeper.k8s.yaml",
-                "clickhouse.k8s.yaml",
-                "clickhouse-service.k8s.yaml",
-                "networkpolicy.k8s.yaml",
-            ]
-        ),
-    )
+CHARTS = (agent_diagnostics_rbac_chart, keeper_chart, clickhouse_chart, service_chart, networkpolicy_chart)
 
 
-def clickhouse(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, clickhouse_operator: Kustomization
-) -> Kustomization:
+def clickhouse(chart: Chart, directory: RenderedDirectory, clickhouse_operator: Kustomization) -> Kustomization:
     name = "clickhouse"
     return flux_kustomization(
         chart,
         name,
-        artifact,
-        decryption=SOPS_DECRYPTION,
+        directory,
         timeout="20m",
         health_check_exprs=[
             KustomizationSpecHealthCheckExprs(
