@@ -178,6 +178,7 @@ def _gateway(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],

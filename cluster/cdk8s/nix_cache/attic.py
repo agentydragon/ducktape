@@ -90,6 +90,7 @@ def _server(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_SELECTOR),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     # Co-located with SeaweedFS and attic-db on OVH kimsufi workers.
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     # Stateless S3-backed service; allow control-plane nodes as overflow capacity.
@@ -253,6 +254,8 @@ def _rotation(scope: Construct) -> None:
                     template=k8s.PodTemplateSpec(
                         spec=k8s.PodSpec(
                             service_account_name=_ROTATOR,
+                            # The rotator runs `kubectl exec deploy/attic` with this token.
+                            automount_service_account_token=True,
                             restart_policy="OnFailure",
                             volumes=[
                                 k8s.Volume(
@@ -316,6 +319,7 @@ def _rotation(scope: Construct) -> None:
                     # atticadm against deploy/attic. The bootstrap subcommand doesn't touch SOPS
                     # or git, so it doesn't need the rotator's GitHub PAT.
                     service_account_name=_ROTATOR,
+                    automount_service_account_token=True,
                     # Keep the registry credential explicit on the Pod. The Secret is reflected
                     # into nix-cache; this avoids relying on ServiceAccount admission timing for
                     # the image pull.

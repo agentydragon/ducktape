@@ -55,6 +55,7 @@ def chart(app: App) -> Chart:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     # Only wyrm2 has GPUs. Generalize to a GPU label if more GPU nodes appear.
                     node_selector={"kubernetes.io/hostname": "wyrm2"},
                     # nvidia-container-runtime.cdi injects /dev/nvidia*, driver libs, and NVML.
