@@ -194,7 +194,8 @@ function ThreadRow({
 }): JSX.Element {
   const label = thread.name ?? thread.session_id;
   const readonly = sandbox === null;
-  const dot = fresh && sandbox?.state === "running" && thread.harness_state === "HARNESS_STATE_RUNNING" ? "ok" : "gray";
+  const harnessRunning = fresh && sandbox?.state === "running" && thread.harness_state === "HARNESS_STATE_RUNNING";
+  const dot = harnessRunning ? "ok" : "gray";
   const className = [
     "agentplane-sidebar-row",
     current ? "current" : "",
@@ -222,12 +223,23 @@ function ThreadRow({
         title={dot === "ok" ? "Last observed harness running" : "No live harness confirmed"}
       />
       <span className="agentplane-sidebar-row-name">{label}</span>
-      <Tooltip label={thread.archived ? "Unarchive" : "Archive"} withArrow>
+      <Tooltip
+        label={thread.archived ? "Unarchive" : harnessRunning ? "Stop the harness before archiving" : "Archive"}
+        withArrow
+      >
         <ActionIcon
           className="agentplane-sidebar-row-action"
           size="xs"
           variant="subtle"
-          aria-label={thread.archived ? `Unarchive ${label}` : `Archive ${label}`}
+          disabled={!thread.archived && harnessRunning}
+          aria-label={
+            thread.archived
+              ? `Unarchive ${label}`
+              : harnessRunning
+                ? `Stop harness before archiving ${label}`
+                : `Archive ${label}`
+          }
+          title={!thread.archived && harnessRunning ? "Stop the harness before archiving" : undefined}
           onClick={(event) => {
             event.stopPropagation();
             onToggleArchived(thread);

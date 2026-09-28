@@ -24,8 +24,20 @@ not approve a new abstraction, resource owner, authorization grant, or deploymen
 Each CRD family's `cdk8s_import` bindings and generic constructors live in
 `cluster/cdk8s/providers/<name>/`, in the shape
 [the builder-authoring skill](../skills/cdk8s_builders/SKILL.md) states. Kinds still
-built raw at several call sites, each its own call: `CleanupPolicy`, `SandboxWarmPool`,
-Terraform and `VirtualMachine` (2 or 3 each).
+built raw at more than one call site, counted on devel 9904055a45:
+
+- Flux `ImageRepository`, `ImagePolicy` and `ImageUpdateAutomation` (2 each).
+- Flux `Receiver` (2), and `Alert` and `Provider` (2 each, both in `flux_webhook/chart.py`).
+- Flux `HelmRelease`: `seaweedfs_csi/driver.py` builds one raw beside `helm.helm_release`.
+- External Secrets `ClusterSecretStore` (4), `SecretStore` (3) and the `Password`
+  generator (2).
+- Gateway API `HTTPRoute` (4) and `Gateway` (2).
+- CNPG `Database` (3).
+- trust-manager `Bundle` (3).
+- Kyverno `CleanupPolicy` (3).
+- Terraform (2).
+- Agentplane `EgressBinding` (2, one module).
+- SeaweedFS `ResourceReferenceGrant` (2, both in `seaweedfs/s3.py`).
 
 Done: no ducktape-specific module builds a CRD's generated dataclasses raw at more than
 one call site, with no rendered-output diff from `//cluster/cdk8s:test_generate_manifests`.

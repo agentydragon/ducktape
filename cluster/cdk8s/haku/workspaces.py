@@ -30,13 +30,6 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpecVolumesEmptyDir,
     SandboxTemplateSpecPodTemplateSpecVolumesEmptyDirSizeLimit,
 )
-from agent_sandbox_sandboxwarmpool_crds.io.x_k8s.agents.extensions import (
-    SandboxWarmPool,
-    SandboxWarmPoolSpec,
-    SandboxWarmPoolSpecSandboxTemplateRef,
-    SandboxWarmPoolSpecUpdateStrategy,
-    SandboxWarmPoolSpecUpdateStrategyType,
-)
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
@@ -55,7 +48,7 @@ from kyverno_cleanuppolicy_crds.io.kyverno import (
     CleanupPolicySpecMatchAnyResources,
 )
 
-from cluster.cdk8s import external_creds, forgejo_images
+from cluster.cdk8s import agent_sandbox, external_creds, forgejo_images
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.haku.namespace import NAMESPACE
@@ -323,20 +316,10 @@ def chart(app: App) -> Chart:
     k8s.KubeServiceAccount(
         chart, "external-creds-reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=NAMESPACE)
     )
-    sandbox_template = _sandbox_template(chart)
     # One pre-warmed Haku sandbox so a SandboxClaim (from the sandbox-provisioning MCP) is ready
     # in seconds instead of a cold image pull + PVC bind. Costs one idle pod (1 cpu / 2Gi
     # requests) inside the namespace quota; bump replicas only if claims routinely outpace warmup.
-    SandboxWarmPool(
-        chart,
-        "warm-pool",
-        metadata=ApiObjectMetadata(name="haku", namespace=NAMESPACE),
-        spec=SandboxWarmPoolSpec(
-            replicas=1,
-            update_strategy=SandboxWarmPoolSpecUpdateStrategy(type=SandboxWarmPoolSpecUpdateStrategyType.RECREATE),
-            sandbox_template_ref=SandboxWarmPoolSpecSandboxTemplateRef(name=sandbox_template.name),
-        ),
-    )
+    agent_sandbox.warm_pool(chart, "warm-pool", template=_sandbox_template(chart))
     # Same 7-day backstop as the agent-workspaces janitor: a Sandbox/SandboxClaim whose owner
     # forgot shutdownTime would otherwise pin quota forever. Reaping is at the CR level (the
     # controller recreates a Sandbox's pod, so a pod-level janitor just churns). Warm-pool

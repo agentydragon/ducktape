@@ -65,13 +65,6 @@ build time.
   by their text and a light shade of grey instead, reserving actual color for when it's semantically meaningful
   (as the prominent-lifecycle `Alert color="red"` at ~line 376 and the failed-tool-call `Badge color="red"` at
   ~line 444 already do).
-- **Markdown code fences in agent prose aren't syntax highlighted**: `Markdown` (`markdown.tsx`) allows `pre`/`code`
-  through its sanitizer but never runs them through `highlight()` (`syntax_highlight.tsx`), unlike tool call
-  Arguments/Output (`LazyBody ... format="code"`), which get `.agentplane-hljs` highlighting. Worth extending
-  `Markdown` to highlight fenced code blocks by their declared language, and once it does, telling agents about it
-  through the session's standing instructions (`SessionSpec.instructions`, sent via `RunnerClient.attach` per
-  `agentplane/runner/test_instructions.py`) or whichever preset default supplies them -- so they know fenced code
-  renders highlighted and are encouraged to tag the language.
 
 ## Approval-arrival attention, and merging the pending/history Action pages
 

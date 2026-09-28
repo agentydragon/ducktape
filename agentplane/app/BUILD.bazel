@@ -65,6 +65,7 @@ py_library(
         "//agentplane/app/agent_runtime/view:fold",
         "//agentplane/app/agent_runtime/view:views",
         "//agentplane/runner:client",
+        "//agentplane/runner:protocol_pb2",
         "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//httpx",
