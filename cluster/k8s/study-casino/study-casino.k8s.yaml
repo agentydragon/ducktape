@@ -6,6 +6,7 @@ metadata:
     name: study-casino
     rbac.ducktape.io/agent-readable-logs: "true"
   name: study-casino
+spec: {}
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster

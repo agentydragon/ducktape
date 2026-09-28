@@ -4,7 +4,7 @@ metadata:
   annotations:
     goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
   labels:
-    goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: initial
     rbac.ducktape.io/agent-readable-logs: "true"
   name: authentik
+spec: {}
