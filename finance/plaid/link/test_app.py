@@ -20,17 +20,23 @@ from plaid.model.institutions_search_request import InstitutionsSearchRequest
 from plaid.model.institutions_search_response import InstitutionsSearchResponse
 from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
 from plaid.model.investments_transactions_get_request import InvestmentsTransactionsGetRequest
+from plaid.model.item import Item
 from plaid.model.item_get_request import ItemGetRequest
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
 from plaid.model.item_public_token_exchange_response import ItemPublicTokenExchangeResponse
 from plaid.model.item_remove_request import ItemRemoveRequest
 from plaid.model.item_remove_response import ItemRemoveResponse
+from plaid.model.item_webhook_update_request import ItemWebhookUpdateRequest
+from plaid.model.item_webhook_update_response import ItemWebhookUpdateResponse
+from plaid.model.jwk_public_key import JWKPublicKey
 from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_response import LinkTokenCreateResponse
 from plaid.model.products import Products
 from plaid.model.transactions_get_request import TransactionsGetRequest
+from plaid.model.transactions_sync_response import TransactionsSyncResponse
 from plaid.model.webhook_verification_key_get_request import WebhookVerificationKeyGetRequest
+from plaid.model.webhook_verification_key_get_response import WebhookVerificationKeyGetResponse
 
 from finance.plaid.db.client import PlaidClient, PlaidSdkApiLike
 from finance.plaid.db.config import PlaidWebSettings
@@ -139,29 +145,44 @@ class _FakePlaidApi:
         self.removed_access_tokens.append(request.access_token)
         return cast(ItemRemoveResponse, ItemRemoveResponse(request_id="req-item-remove"))
 
-    def item_webhook_update(self, request: object) -> SimpleNamespace:
-        return SimpleNamespace(to_dict=lambda: {"request_id": "req-webhook-update"})
+    def item_webhook_update(self, request: ItemWebhookUpdateRequest) -> ItemWebhookUpdateResponse:
+        return ItemWebhookUpdateResponse(
+            item=Item(
+                item_id="item_123",
+                webhook=request.webhook,
+                error=None,
+                available_products=[Products("transactions")],
+                billed_products=[],
+                consent_expiration_time=None,
+                update_type="background",
+                _check_type=False,
+            ),
+            request_id="req-webhook-update",
+        )
 
-    def webhook_verification_key_get(self, request: WebhookVerificationKeyGetRequest) -> SimpleNamespace:
+    def webhook_verification_key_get(
+        self, request: WebhookVerificationKeyGetRequest
+    ) -> WebhookVerificationKeyGetResponse:
         assert request.key_id == "test-key"
         numbers = self.webhook_private_key.public_key().public_numbers()
 
         def encode(value: int) -> str:
             return base64.urlsafe_b64encode(value.to_bytes(32, "big")).rstrip(b"=").decode("ascii")
 
-        key_data = {
-            "alg": "ES256",
-            "crv": "P-256",
-            "kid": "test-key",
-            "kty": "EC",
-            "use": "sig",
-            "x": encode(numbers.x),
-            "y": encode(numbers.y),
-            "expired_at": None,
-        }
-        return SimpleNamespace(key=SimpleNamespace(**key_data, to_dict=lambda: key_data))
+        key = JWKPublicKey(
+            alg="ES256",
+            crv="P-256",
+            kid="test-key",
+            kty="EC",
+            use="sig",
+            x=encode(numbers.x),
+            y=encode(numbers.y),
+            created_at=0,
+            expired_at=None,
+        )
+        return WebhookVerificationKeyGetResponse(key=key, request_id="req-webhook-key")
 
-    def transactions_sync(self, request: object) -> SimpleNamespace:
+    def transactions_sync(self, request: object) -> TransactionsSyncResponse:
         raise AssertionError("unexpected transaction sync in this app test")
 
     def item_get(self, request: ItemGetRequest) -> object:
