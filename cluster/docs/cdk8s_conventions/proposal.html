@@ -10357,15 +10357,14 @@ CONFIG = {
           <tbody>
             <tr>
               <td><a href="https://github.com/agentydragon/ducktape/pull/8185">#8185</a></td>
-              <td>cluster: drop 17 Flux dependsOn edges that only order namespace existence</td>
+              <td>cluster: drop 14 Flux dependsOn edges that only order namespace existence</td>
               <td><span class="chip chip-land-as-is">land as is</span></td>
               <td>
                 <div class="rich">
                   <p>
                     Step 1. Open, and merges cleanly onto devel 55d6374fd2. It removes the 14 namespace-class edges
                     whose target only creates the namespace, the last of that class, and keeps every direct
-                    <code>kyverno</code> and <code>kyverno-policies</code> edge. Its title&#39;s 17 counts the 3
-                    seaweedfs-namespace edges #8389 deleted with their units.
+                    <code>kyverno</code> and <code>kyverno-policies</code> edge.
                   </p>
                 </div>
               </td>

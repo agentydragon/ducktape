@@ -1969,9 +1969,9 @@
   "open_prs": [
     {
       "pr": 8185,
-      "title": "cluster: drop 17 Flux dependsOn edges that only order namespace existence",
+      "title": "cluster: drop 14 Flux dependsOn edges that only order namespace existence",
       "recommendation": "land as is",
-      "reason": "Step 1. Open, and merges cleanly onto devel 55d6374fd2. It removes the 14 namespace-class edges whose target only creates the namespace, the last of that class, and keeps every direct `kyverno` and `kyverno-policies` edge. Its title's 17 counts the 3 seaweedfs-namespace edges #8389 deleted with their units."
+      "reason": "Step 1. Open, and merges cleanly onto devel 55d6374fd2. It removes the 14 namespace-class edges whose target only creates the namespace, the last of that class, and keeps every direct `kyverno` and `kyverno-policies` edge."
     },
     {
       "pr": 8035,
