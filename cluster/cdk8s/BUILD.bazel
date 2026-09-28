@@ -407,6 +407,7 @@ py_library(
         ":artifact_generators",
         ":flux",
         ":manifest_roots",
+        ":namespaces",
         ":terraform",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -477,6 +478,7 @@ py_library(
         ":flux",
         ":generation",
         ":manifest_roots",
+        ":namespaces",
         "//cluster/cdk8s/haku:console_config",
         "//cluster/cdk8s/providers/flux:git_repository",
         "//cluster/cdk8s/providers/flux:gitrepository",
@@ -1094,6 +1096,7 @@ py_library(
         ":flux",
         ":gateway",
         ":manifest_roots",
+        ":namespaces",
         ":node_scheduling",
         ":pod_policy",
         ":probes",
@@ -1128,8 +1131,8 @@ py_library(
         ":artifact_generators",
         ":flux",
         ":manifest_roots",
+        ":namespaces",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
     ],
 )
 
