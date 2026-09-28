@@ -68,15 +68,15 @@ from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
-from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
 from cluster.cdk8s.providers.cert_manager.bundle import Bundle
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import cli_args, env_name, settings_file
+from util.settings_contract import cli_args, env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "agentplane-egress"
@@ -107,7 +107,6 @@ FORGEJO_PORT = 3000
 # Cilium sees a node there, not an endpoint: the proxy's rule for it is an entity rule on its port.
 HOME_ASSISTANT_HOST = "home-assistant.home-assistant.svc.cluster.local"
 HOME_ASSISTANT_PORT = 8123
-_SETTINGS_PATH = "/etc/agentplane-egress/settings.yaml"
 # The trust bundles' ConfigMap key.
 CA_BUNDLE_KEY = "ca-certificates.crt"
 # The sandbox bundle's roots again, as the PKCS12 trust store a JVM reads.
@@ -346,8 +345,21 @@ class Egress(Construct):
         self._add_rbac(service_account)
         self._add_certificate_and_bundle()
         self.upstream_bundle = self._add_upstream_bundle()
-        settings_cm = self._add_settings_configmap()
-        deployment = self._add_deployment(service_account, settings_cm)
+        # Settings this deployment supplies as YAML rather than flags, so a list is a list.
+        settings = SettingsFile(
+            self,
+            "settings",
+            metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
+            model=Settings,
+            content={
+                "allowed_service_account_namespaces": [env.namespace],
+                "projected_token_audiences": [KUBERNETES_AUDIENCE],
+            },
+            # A directory of its own: the CA volumes mount under /etc/agentplane-egress, and nothing
+            # can mount inside a read-only ConfigMap volume.
+            path="/etc/agentplane-egress/settings/settings.yaml",
+        )
+        deployment = self._add_deployment(service_account, settings)
         self._add_services(deployment)
         self._add_network_policy()
         if env.replicas.pdb_min_available is not None:
@@ -453,25 +465,7 @@ class Egress(Construct):
             ),
         )
 
-    def _add_settings_configmap(self) -> ConfigMap:
-        return ConfigMap(
-            self,
-            "settings",
-            metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=self.env.namespace),
-            data={
-                "settings.yaml": yaml_config(
-                    settings_file(
-                        Settings,
-                        {
-                            "allowed_service_account_namespaces": [self.env.namespace],
-                            "projected_token_audiences": [KUBERNETES_AUDIENCE],
-                        },
-                    )
-                )
-            },
-        )
-
-    def _add_deployment(self, service_account: ServiceAccount, settings_cm: ConfigMap) -> Deployment:
+    def _add_deployment(self, service_account: ServiceAccount, settings: SettingsFile) -> Deployment:
         ca_secret = Secret.from_secret_name(self, "ca-secret-ref", self.env.egress.ca_secret_name)
         ca_volume = Volume.from_secret(self, "ca-volume", ca_secret, name="ca")
         confdir_volume = Volume.from_empty_dir(self, "confdir-volume", "confdir")
@@ -528,9 +522,7 @@ class Egress(Construct):
                         secret=Secret.from_secret_name(self, "postgres-egress-secret-proxy", "postgres-egress"),
                         key="uri",
                     )
-                ),
-                # Settings this deployment supplies as YAML rather than flags, so a list is a list.
-                CONFIG_FILE_ENV: EnvValue.from_value(_SETTINGS_PATH),
+                )
             },
             ports=[
                 ContainerPort(name="proxy", number=PROXY_PORT, protocol=Protocol.TCP),
@@ -549,8 +541,7 @@ class Egress(Construct):
         deployment.containers[0].mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         deployment.containers[0].mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)
         deployment.containers[0].mount("/var/lib/agentplane-egress", confdir_volume)
-        settings_volume = Volume.from_config_map(self, "settings-volume", settings_cm)
-        deployment.containers[0].mount(_SETTINGS_PATH, settings_volume, sub_path="settings.yaml", read_only=True)
+        settings.mount_into(deployment.containers[0], env=CONFIG_FILE_ENV)
 
         pod_policy.place(deployment, node_scheduling.HIL_OVH, tolerate_control_plane=True)
         pod_policy.harden(deployment)
