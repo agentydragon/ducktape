@@ -438,6 +438,7 @@ py_library(
     deps = [
         ":actor",
         ":money",
+        "//finance/augur/model:series",
     ],
 )
 
