@@ -209,7 +209,8 @@ def _deployment(scope: Construct) -> None:
         "deployment",
         metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
-            replicas=0 if _PAUSED_FOR_HOST_EXPERIMENTS else 1,
+            # Temporary exclusive HDD registry handoff to setup-gpt-oss-v8.
+            replicas=0,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             selector=k8s.LabelSelector(match_labels=_LABELS),
             template=k8s.PodTemplateSpec(
