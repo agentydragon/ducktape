@@ -48,6 +48,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "ntfy"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ntfy"
@@ -56,6 +57,9 @@ HOSTNAME = "ntfy.allegedly.works"
 PORT = 2586
 _IMAGE = "binwiederhier/ntfy:v2.28.0"
 _LABELS = {"app.kubernetes.io/name": NAME}
+SERVICE = ServiceRef(
+    name=NAME, port=Port(name="http", number=PORT), pods=Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items()))
+)
 _DATABASE_CLUSTER = "ntfy-db"
 _DATABASE_APP_SECRET = f"{_DATABASE_CLUSTER}-app"
 _AUTH_SOURCE_SECRET = "ntfy-credentials"
@@ -186,8 +190,7 @@ class Ntfy(Construct):
             "httproute",
             metadata=ApiObjectMetadata(name="ntfy", namespace=NAMESPACE),
             hostnames=[HOSTNAME],
-            backend=NAME,
-            port=PORT,
+            backend=SERVICE,
         )
         self._add_service_monitor()
 

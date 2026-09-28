@@ -39,7 +39,7 @@ from cdk8s_plus_34 import (
 from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef
 from constructs import Construct
 
-from cluster.cdk8s import cilium, pod_policy
+from cluster.cdk8s import cilium, pod_policy, service_ref
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console
@@ -56,6 +56,11 @@ _TLS_PORT = 8443
 _TLS_SECRET = "haku-kube-api-proxy-tls"
 _TLS_DIR = "/etc/haku-kube-api-proxy-tls"
 LABELS = {"app.kubernetes.io/name": NAME}
+_HTTP = service_ref.ServiceRef(
+    name=NAME,
+    port=service_ref.Port(name="http", number=_HTTP_PORT),
+    pods=service_ref.Pods(namespace=console.NAMESPACE, labels=tuple(LABELS.items())),
+)
 _SERVICE_FQDN = f"{NAME}.{console.NAMESPACE}.svc.cluster.local"
 URL = f"https://{_SERVICE_FQDN}:{_TLS_PORT}"
 
@@ -119,8 +124,7 @@ class KubeApiProxy(Construct):
                 },
             ),
             hostnames=[HOSTNAME],
-            backend=NAME,
-            port=_HTTP_PORT,
+            backend=_HTTP,
             timeout="3600s",
             hsts=False,
         )
