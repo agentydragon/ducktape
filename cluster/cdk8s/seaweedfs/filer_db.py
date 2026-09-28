@@ -24,18 +24,18 @@ from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.seaweedfs import namespace
 from cluster.cdk8s.secret_ref import SecretRef
 
-NAME = "seaweedfs-filer-db-ssd"
-# The application role's credentials, which the filer authenticates with too. The -creds
-# name deliberately avoids CNPG's reserved <cluster>-app: CNPG auto-generates a bogus one
-# (default user "app") for this cluster.
-CREDENTIALS_SECRET = "seaweedfs-filer-db-ssd-creds"
 POSTGRES = cnpg.PostgresRef(
-    name=NAME, namespace=namespace.NAME, app_secret=SecretRef(namespace=namespace.NAME, name=CREDENTIALS_SECRET)
+    name="seaweedfs-filer-db-ssd",
+    namespace=namespace.NAME,
+    # The application role's credentials, which the filer authenticates with too. The -creds
+    # name deliberately avoids CNPG's reserved <cluster>-app: CNPG auto-generates a bogus one
+    # (default user "app") for this cluster.
+    app_secret=SecretRef(namespace=namespace.NAME, name="seaweedfs-filer-db-ssd-creds"),
 )
 
 
 def chart(app: App) -> Chart:
-    chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    chart = Chart(app, POSTGRES.name, disable_resource_name_hashes=True)
     cnpg.cluster(
         chart,
         "cluster",

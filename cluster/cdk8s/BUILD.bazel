@@ -1052,6 +1052,7 @@ py_library(
         ":secret_ref",
         "//cluster/cdk8s/providers/tofu_controller:terraform",
         "//cluster/cdk8s/providers/tofu_controller:tofu_controller_terraform",
+        "//cluster/cdk8s/tofu_state:db",
         "@pypi//cdk8s",
         "@pypi//constructs",
         "@pypi//pydantic",

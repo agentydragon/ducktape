@@ -29,15 +29,10 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.providers.cnpg.database import Database
 
 NAMESPACE = "haku-console"
-CLUSTER_NAME = "haku-console-db"
+POSTGRES = cnpg.PostgresRef.generated(name="haku-console-db", namespace=NAMESPACE)
 DATABASE = "approval_store"
-# CNPG mints the initdb owner's credentials into this Secret.
-APP_SECRET = f"{CLUSTER_NAME}-app"
 INDEXER_ROLE = "haku_indexer"
-INDEXER_SECRET = f"{CLUSTER_NAME}-indexer"
-RW_HOST = f"{CLUSTER_NAME}-rw.{NAMESPACE}.svc"
-_POSTGRES_PORT = 5432
-POSTGRES = cnpg.PostgresRef.generated(name=CLUSTER_NAME, namespace=NAMESPACE)
+INDEXER_SECRET = f"{POSTGRES.name}-indexer"
 
 
 class Db(Construct):
@@ -89,8 +84,8 @@ class Db(Construct):
         Database(
             self,
             "database",
-            metadata=ApiObjectMetadata(name=f"{CLUSTER_NAME}-approval-store", namespace=NAMESPACE),
-            cluster=DatabaseSpecCluster(name=CLUSTER_NAME),
+            metadata=ApiObjectMetadata(name=f"{POSTGRES.name}-approval-store", namespace=NAMESPACE),
+            cluster=DatabaseSpecCluster(name=POSTGRES.name),
             name=DATABASE,
             owner=DATABASE,
             database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
@@ -109,8 +104,8 @@ class Db(Construct):
             name=INDEXER_SECRET,
             namespace=NAMESPACE,
             role=INDEXER_ROLE,
-            host=RW_HOST,
-            port=_POSTGRES_PORT,
+            host=POSTGRES.rw.host,
+            port=POSTGRES.rw.port.number,
             database=DATABASE,
             url_scheme="postgresql+asyncpg",
             include_host_fields=False,

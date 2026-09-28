@@ -12,23 +12,23 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
 
-NAME = "authentik-db-ovh"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/db"
 _NAMESPACE = "authentik"
 # The database is on node-local `local-path-ovh` storage and cannot move; Authentik's server
 # selects the same zone to stay beside it.
 PLACEMENT = node_scheduling.HIL_OVH
 DATABASE = "authentik"
-# The credentials CNPG generated for the retired `authentik-db`, which this cluster was
-# cloned from; the role's password came with the clone.
-CREDENTIALS_SECRET = "authentik-db-app"
 POSTGRES = cnpg.PostgresRef(
-    name=NAME, namespace=_NAMESPACE, app_secret=SecretRef(namespace=_NAMESPACE, name=CREDENTIALS_SECRET)
+    name="authentik-db-ovh",
+    namespace=_NAMESPACE,
+    # The credentials CNPG generated for the retired `authentik-db`, which this cluster was
+    # cloned from; the role's password came with the clone.
+    app_secret=SecretRef(namespace=_NAMESPACE, name="authentik-db-app"),
 )
 
 
 def chart(app: App) -> Chart:
-    chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    chart = Chart(app, POSTGRES.name, disable_resource_name_hashes=True)
     cnpg.cluster(
         chart,
         "cluster",

@@ -39,8 +39,7 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/study-casino"
 _NAME = "study-casino"
 _NAMESPACE = "study-casino"
 _PORT = 8080
-_DB_NAME = "study-casino-db"
-POSTGRES = cnpg.PostgresRef.generated(name=_DB_NAME, namespace=_NAMESPACE)
+POSTGRES = cnpg.PostgresRef.generated(name="study-casino-db", namespace=_NAMESPACE)
 _DATABASE = "studycasino"
 _REGION = "hil"
 _IMMUTABLE = "public, max-age=31536000, immutable"
@@ -103,7 +102,6 @@ def _database(scope: Construct) -> None:
                 )
             ]
         ),
-        # CNPG auto-generates credentials in secret study-casino-db-app
         initdb=cnpg.same_owner_initdb(_DATABASE),
         wal_archive=False,
     )
@@ -152,19 +150,9 @@ def _readonly_provisioner(scope: Construct) -> None:
                             env=[
                                 # Run as the database owner. Object-level GRANTs only need owner
                                 # privileges, not superuser; this lets us drop enableSuperuserAccess.
-                                k8s.EnvVar(
-                                    name="PGUSER",
-                                    value_from=k8s.EnvVarSource(
-                                        secret_key_ref=k8s.SecretKeySelector(name=f"{_DB_NAME}-app", key="username")
-                                    ),
-                                ),
-                                k8s.EnvVar(
-                                    name="PGPASSWORD",
-                                    value_from=k8s.EnvVarSource(
-                                        secret_key_ref=k8s.SecretKeySelector(name=f"{_DB_NAME}-app", key="password")
-                                    ),
-                                ),
-                                k8s.EnvVar(name="PGHOST", value=f"{_DB_NAME}-rw.{_NAMESPACE}.svc"),
+                                POSTGRES.app_secret.key("username").env_var("PGUSER"),
+                                POSTGRES.app_secret.key("password").env_var("PGPASSWORD"),
+                                k8s.EnvVar(name="PGHOST", value=POSTGRES.rw.host),
                                 k8s.EnvVar(name="PGDATABASE", value=_DATABASE),
                             ],
                             volume_mounts=[k8s.VolumeMount(name="sql", mount_path="/sql", read_only=True)],
@@ -180,12 +168,6 @@ def _readonly_provisioner(scope: Construct) -> None:
                 ),
             ),
         ),
-    )
-
-
-def _db_env(name: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=f"{_DB_NAME}-app", key=key))
     )
 
 
@@ -244,11 +226,11 @@ def _deployment(scope: Construct) -> None:
                                 # `$(VAR)` syntax in env values is resolved by the kubelet from
                                 # earlier-defined env vars in the same container. `+psycopg`
                                 # forces SQLAlchemy to pick the psycopg v3 driver.
-                                _db_env("PG_USER", "user"),
-                                _db_env("PG_PASSWORD", "password"),
-                                _db_env("PG_HOST", "host"),
-                                _db_env("PG_PORT", "port"),
-                                _db_env("PG_DBNAME", "dbname"),
+                                POSTGRES.app_secret.key("user").env_var("PG_USER"),
+                                POSTGRES.app_secret.key("password").env_var("PG_PASSWORD"),
+                                POSTGRES.app_secret.key("host").env_var("PG_HOST"),
+                                POSTGRES.app_secret.key("port").env_var("PG_PORT"),
+                                POSTGRES.app_secret.key("dbname").env_var("PG_DBNAME"),
                                 k8s.EnvVar(
                                     name="STUDY_CASINO_DATABASE_URL",
                                     value="postgresql+psycopg://$(PG_USER):$(PG_PASSWORD)@$(PG_HOST):$(PG_PORT)/$(PG_DBNAME)",

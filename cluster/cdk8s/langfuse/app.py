@@ -62,7 +62,6 @@ def _database(scope: Construct) -> None:
         placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh-ssd",
         size="10Gi",
-        # CNPG auto-generates credentials in secret langfuse-db-app
         initdb=cnpg.same_owner_initdb("langfuse"),
         wal_archive=False,
     )
@@ -228,11 +227,11 @@ def _values() -> dict[str, object]:
         },
         "postgresql": {
             "deploy": False,
-            "host": "langfuse-db-rw",
+            "host": DATABASE.rw.name,
             "auth": {
                 "username": "langfuse",
                 "database": "langfuse",
-                "existingSecret": "langfuse-db-app",
+                "existingSecret": DATABASE.app_secret.name,
                 "secretKeys": {"userPasswordKey": "password"},
             },
         },

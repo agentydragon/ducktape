@@ -53,11 +53,13 @@ _SERVICE = ServiceRef(
     pods=Pods(namespace=_NAMESPACE, labels=(("app", _NAME),)),
 )
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/grafana-instance"
-_DB_NAME = "grafana-db-ovh"
-# The credentials CNPG generated for the retired `grafana-db`, which this cluster was cloned
-# from; the role's password came with the clone.
-_DB_CREDENTIALS = SecretRef(namespace=_NAMESPACE, name="grafana-db-app")
-DATABASE = cnpg.PostgresRef(name=_DB_NAME, namespace=_NAMESPACE, app_secret=_DB_CREDENTIALS)
+DATABASE = cnpg.PostgresRef(
+    name="grafana-db-ovh",
+    namespace=_NAMESPACE,
+    # The credentials CNPG generated for the retired `grafana-db`, which this cluster was cloned
+    # from; the role's password came with the clone.
+    app_secret=SecretRef(namespace=_NAMESPACE, name="grafana-db-app"),
+)
 _ADMIN = SecretRef(namespace=_NAMESPACE, name="grafana-admin-password")
 _OIDC = SecretRef(namespace=_NAMESPACE, name="grafana-oidc-config")
 # The label the Grafana CR carries and every dashboard and datasource selects.
@@ -110,7 +112,7 @@ def _grafana(chart: Chart) -> None:
             },
             "database": {
                 "type": "postgres",
-                "host": f"{_DB_NAME}-rw.monitoring.svc.cluster.local:5432",
+                "host": f"{DATABASE.rw.host}:{DATABASE.rw.port.number}",
                 "name": _NAME,
                 "user": _NAME,
                 "password": "${GF_DATABASE_PASSWORD}",
@@ -165,7 +167,7 @@ def _grafana(chart: Chart) -> None:
                                     # Secret key names don't match GF_* env var names — explicit mapping.
                                     _secret_env("GF_SECURITY_ADMIN_USER", _ADMIN.key("admin-user")),
                                     _secret_env("GF_SECURITY_ADMIN_PASSWORD", _ADMIN.key("admin-password")),
-                                    _secret_env("GF_DATABASE_PASSWORD", _DB_CREDENTIALS.key("password")),
+                                    _secret_env("GF_DATABASE_PASSWORD", DATABASE.app_secret.key("password")),
                                     *(
                                         _secret_env(key, _OIDC.key(key))
                                         for key in (

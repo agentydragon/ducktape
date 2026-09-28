@@ -39,13 +39,12 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/tofu-state"
 _DB_DIR = f"{OUTPUT_DIR}/db"
 _NAMESPACE = "tofu-state"
-_CLUSTER_NAME = "tofu-state-db-ovh"
 _CREDENTIALS_FILE = "credentials.sops.yaml"
-DATABASE = cnpg.PostgresRef.generated(name=_CLUSTER_NAME, namespace=_NAMESPACE)
+DATABASE = cnpg.PostgresRef.generated(name="tofu-state-db-ovh", namespace=_NAMESPACE)
 
 
 def chart(app: App) -> Chart:
-    chart = Chart(app, _CLUSTER_NAME, disable_resource_name_hashes=True)
+    chart = Chart(app, DATABASE.name, disable_resource_name_hashes=True)
     cnpg.cluster(
         chart,
         "cluster",
@@ -94,7 +93,7 @@ def write_manifests(root: Path) -> None:
     write_charts(root, _DB_DIR, chart)
     write_yaml(
         root / _DB_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[_CREDENTIALS_FILE, f"{_CLUSTER_NAME}.k8s.yaml"]),
+        kustomize_kustomization(resources=[_CREDENTIALS_FILE, f"{DATABASE.name}.k8s.yaml"]),
     )
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=["namespace.k8s.yaml", "db"])

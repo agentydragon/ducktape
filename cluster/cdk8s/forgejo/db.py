@@ -15,18 +15,18 @@ from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/db"
 NAMESPACE = "forgejo"
-CLUSTER_NAME = "forgejo-db-ssd"
 DATABASE = "forgejo"
-# Not `<cluster>-app`: CNPG reserves that name for a Secret it generates itself.
-CREDENTIALS_SECRET = f"{CLUSTER_NAME}-creds"
-_CREDENTIALS_FILE = f"{CREDENTIALS_SECRET}.sops.yaml"
 POSTGRES = cnpg.PostgresRef(
-    name=CLUSTER_NAME, namespace=NAMESPACE, app_secret=SecretRef(namespace=NAMESPACE, name=CREDENTIALS_SECRET)
+    name="forgejo-db-ssd",
+    namespace=NAMESPACE,
+    # Not `<cluster>-app`: CNPG reserves that name for a Secret it generates itself.
+    app_secret=SecretRef(namespace=NAMESPACE, name="forgejo-db-ssd-creds"),
 )
+_CREDENTIALS_FILE = f"{POSTGRES.app_secret.name}.sops.yaml"
 
 
 def _chart(app: App) -> Chart:
-    chart = Chart(app, CLUSTER_NAME, disable_resource_name_hashes=True)
+    chart = Chart(app, POSTGRES.name, disable_resource_name_hashes=True)
     cnpg.cluster(
         chart,
         "cluster",
@@ -57,5 +57,5 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, _chart)
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{CLUSTER_NAME}.k8s.yaml", _CREDENTIALS_FILE]),
+        kustomize_kustomization(resources=[f"{POSTGRES.name}.k8s.yaml", _CREDENTIALS_FILE]),
     )

@@ -42,8 +42,8 @@ _LABELS = {"app.kubernetes.io/name": NAME}
 _INGRESS_NAME = "haku-mailbox-smtp-ingress"
 _INGRESS_LABELS = {"app.kubernetes.io/name": _INGRESS_NAME}
 _TLS_SECRET = "mx-allegedly-works-tls"
-_DB_SECRET = "haku-mailbox-db-app"  # CNPG-generated app credentials
 DATABASE = cnpg.PostgresRef.generated(name="haku-mailbox-db", namespace=NAMESPACE)
+_DB_PASSWORD = DATABASE.app_secret.key("password")
 _PUBLIC_URL = "https://haku-mailbox.allegedly.works"
 # In-repo repack of stalwartlabs/stalwart with stalwart-cli layered in
 # (//cluster/k8s/haku/mailbox/image) -- upstream ships the CLI only as a distroless image,
@@ -92,13 +92,6 @@ def _stalwart_mounts() -> list[k8s.VolumeMount]:
     ]
 
 
-def _db_password_env() -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name="STALWART_DB_PASSWORD",
-        value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=_DB_SECRET, key="password")),
-    )
-
-
 def _curl_probe(path: str, *, period_seconds: int, failure_threshold: int | None = None) -> k8s.Probe:
     return k8s.Probe(
         exec=k8s.ExecAction(command=["curl", "--fail", "--silent", f"http://127.0.0.1:{_HTTP_PORT}{path}"]),
@@ -118,7 +111,6 @@ def _add_store(chart: Chart) -> None:
         placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="10Gi",
-        # CNPG auto-generates credentials in secret haku-mailbox-db-app.
         initdb=cnpg.same_owner_initdb("stalwart"),
         wal_archive=False,
     )
@@ -160,7 +152,7 @@ def _add_deployment(chart: Chart) -> None:
                             command=["/bin/sh", f"{_CONFIG_DIR}/{_INITIALIZE}"],
                             termination_message_policy="FallbackToLogsOnError",
                             env=[
-                                _db_password_env(),
+                                _DB_PASSWORD.env_var("STALWART_DB_PASSWORD"),
                                 k8s.EnvVar(
                                     name="STALWART_ADMIN_PASSWORD",
                                     value_from=k8s.EnvVarSource(
@@ -192,7 +184,7 @@ def _add_deployment(chart: Chart) -> None:
                                 k8s.ContainerPort(name="http", container_port=_HTTP_PORT),
                                 k8s.ContainerPort(name="imap", container_port=_IMAP_PORT),
                             ],
-                            env=[_db_password_env(), public_url],
+                            env=[_DB_PASSWORD.env_var("STALWART_DB_PASSWORD"), public_url],
                             volume_mounts=_stalwart_mounts(),
                             resources=_stalwart_resources(),
                             # Loopback exec probes avoid the kubelet-to-pod-IP path that caused

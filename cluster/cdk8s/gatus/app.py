@@ -37,8 +37,7 @@ from cluster.cdk8s.service_ref import Port, ServiceRef
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/gatus"
 _NAME = "gatus"
 _NAMESPACE = "gatus"
-_DB_NAME = "gatus-db"
-DATABASE = cnpg.PostgresRef.generated(name=_DB_NAME, namespace=_NAMESPACE)
+DATABASE = cnpg.PostgresRef.generated(name="gatus-db", namespace=_NAMESPACE)
 _HELM_REPOSITORY = "twin"
 # The chart's Service: port 80 to the Pods' `http` (8080), selecting `app.kubernetes.io/name`.
 SERVICE = ServiceRef(name=_NAME, port=Port(name="http", number=80), pods=cilium.PROBER, target_port=8080)
@@ -57,7 +56,6 @@ def _database(scope: Construct) -> None:
         placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="1Gi",
-        # CNPG auto-generates credentials in secret gatus-db-app
         initdb=cnpg.same_owner_initdb("gatus"),
         wal_archive=False,
     )
@@ -86,9 +84,7 @@ def _helm_release(scope: Construct) -> None:
         values={
             "externalConfigMap": "gatus-config",
             "env": {
-                "GATUS_DB_URI": {
-                    "valueFrom": SecretRef(namespace=_NAMESPACE, name=f"{_DB_NAME}-app").key("uri").value_from()
-                },
+                "GATUS_DB_URI": {"valueFrom": DATABASE.app_secret.key("uri").value_from()},
                 "LITELLM_API_KEY": {"valueFrom": _LITELLM_KEY.value_from()},
             },
             "envFrom": [{"secretRef": {"name": "gatus-oidc-secret"}}],

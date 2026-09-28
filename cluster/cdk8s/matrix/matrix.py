@@ -39,8 +39,7 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/matrix"
 NAMESPACE = "matrix"
 SYNAPSE = "matrix-synapse"
 _NAME = "matrix"
-_DB_NAME = "matrix-db"
-DATABASE = cnpg.PostgresRef.generated(name=_DB_NAME, namespace=NAMESPACE)
+DATABASE = cnpg.PostgresRef.generated(name="matrix-db", namespace=NAMESPACE)
 _HELM_REPOSITORY = "ananace-charts"
 # The chart's main Service: its selector is the chart name, the release and the component.
 _SYNAPSE_HTTP = ServiceRef(
@@ -113,7 +112,6 @@ def _database(scope: Construct) -> None:
         placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="10Gi",
-        # CNPG auto-generates credentials in secret matrix-db-app
         initdb=cnpg.same_owner_initdb("synapse", locale_c_type="C", locale_collate="C"),
         wal_archive=False,
     )
@@ -201,11 +199,11 @@ def _synapse(scope: Construct) -> None:
             # PostgreSQL via external CNPG cluster (matrix-db)
             "postgresql": {"enabled": False},
             "externalPostgresql": {
-                "host": f"{_DB_NAME}-rw",
-                "port": 5432,
+                "host": DATABASE.rw.name,
+                "port": DATABASE.rw.port.number,
                 "username": "synapse",
                 "database": "synapse",
-                "existingSecret": f"{_DB_NAME}-app",
+                "existingSecret": DATABASE.app_secret.name,
                 "existingSecretPasswordKey": "password",
             },
             # Redis (required by chart even for single-instance setup)
