@@ -374,7 +374,8 @@ def home_and_rental_case() -> Situation:
                 ScheduledSale(
                     month=RENTAL_SALE_MONTH,
                     property_id=PropertyId("rental"),
-                    closing_cost_ppb=rate_to_ppb(Decimal("0.06")),
+                    commission_ppb=rate_to_ppb(Decimal("0.06")),
+                    escrow_title_ppb=0,
                 ),
             ),
             initial_residences=(PrimaryResidence(agent_id=ALICE, property_id=PropertyId("home")),),

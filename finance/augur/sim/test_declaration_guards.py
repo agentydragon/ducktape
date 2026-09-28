@@ -434,14 +434,15 @@ def rented(month: int, property_id: PropertyId = PURCHASE.property_id) -> Rented
         (
             Housing(
                 purchases=(PURCHASE,),
-                sales=(ScheduledSale(month=1, property_id=PURCHASE.property_id, closing_cost_ppb=0),) * 2,
+                sales=(ScheduledSale(month=1, property_id=PURCHASE.property_id, commission_ppb=0, escrow_title_ppb=0),)
+                * 2,
             ),
             "multiple sales",
         ),
         (
             Housing(
                 purchases=(PURCHASE,),
-                sales=(ScheduledSale(month=1, property_id=PURCHASE.property_id, closing_cost_ppb=0),),
+                sales=(ScheduledSale(month=1, property_id=PURCHASE.property_id, commission_ppb=0, escrow_title_ppb=0),),
                 rented_fraction_events=(rented(1),),
             ),
             "frozen after sale",

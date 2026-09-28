@@ -1916,3 +1916,33 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "transfer_tax_test",
+    srcs = ["transfer_tax_test.py"],
+    deps = [
+        ":actions",
+        ":books",
+        ":fixed_point",
+        ":ids",
+        ":income",
+        ":jurisdictions",
+        ":market_path",
+        ":money",
+        ":property",
+        ":property_tax",
+        ":results",
+        ":session",
+        ":situs",
+        ":world",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/policy:funding",
+        "//finance/augur/sim/testing:situs",
+        "@pypi//more_itertools",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

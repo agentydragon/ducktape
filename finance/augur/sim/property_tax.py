@@ -5,7 +5,7 @@ from fractions import Fraction
 
 from finance.augur.sim.actor import Actor, MonthOpened
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.claims import Demand, PropertyTax
+from finance.augur.sim.claims import Demand, ObligationType, PropertyTax, TransferTax
 from finance.augur.sim.ids import AccountId, AgentId, PropertyId
 from finance.augur.sim.market_path import MarketStatement
 from finance.augur.sim.money import round_ratio, scaled
@@ -49,7 +49,7 @@ class _Roll:
 
 class PropertyTaxBill(Demand):
     amount: int
-    effect: PropertyTax
+    effect: PropertyTax | TransferTax
 
 
 class PropertyTaxAuthority(Actor[MonthOpened | PropertyStatement | MarketStatement, PropertyTaxBill]):
@@ -68,6 +68,9 @@ class PropertyTaxAuthority(Actor[MonthOpened | PropertyStatement | MarketStateme
     for the next fiscal year, which the law bills as a second supplemental of the same amount. Not
     modeled: supplemental bills on new construction, the exemption on a supplemental bill,
     Proposition 8 reductions and the two installment dates.
+
+    In the month of a purchase or a sale it also bills the owner's share of the transfer tax the
+    property's `PropertyStatement` reports.
     """
 
     def __init__(self, policy: PropertyTaxPolicy, purchase: ScheduledPurchase) -> None:
@@ -117,6 +120,18 @@ class PropertyTaxAuthority(Actor[MonthOpened | PropertyStatement | MarketStateme
             self.assess(property_, month, cpi if lien else None)
         if lien:
             self.january_cpi = cpi
+        transfer = (
+            []
+            if property_ is None or not property_.transfer_tax
+            else [
+                self.bill(
+                    f"{policy.property_id}_transfer_tax_m{month}",
+                    ObligationType.TRANSFER_TAX,
+                    property_.transfer_tax,
+                    TransferTax(policy.owner_agent_id),
+                )
+            ]
+        )
         if (
             property_ is None
             or not property_.active
@@ -124,18 +139,21 @@ class PropertyTaxAuthority(Actor[MonthOpened | PropertyStatement | MarketStateme
             or policy.start_month > month
             or (policy.end_month is not None and month > policy.end_month)
         ):
-            return []
+            return transfer
         fiscal = fiscal_year(policy, month)
         roll = self.roll[fiscal]
         taxable = max(0, roll.value - self.law.homeowners_exemption) if roll.exempt else roll.value
         bill = self.law.secured_bill(taxable, fiscal)
         elapsed = (month % 12 - 6) % 12
+        ad_valorem = PropertyTax(policy.owner_agent_id, property_.rented_fraction_ppb)
         bills = [
+            *transfer,
             self.bill(
                 f"{policy.property_id}_property_tax_m{month}",
+                ObligationType.PROPERTY_TAX,
                 round_ratio(bill * (elapsed + 1), 12) - round_ratio(bill * elapsed, 12),
-                property_,
-            )
+                ad_valorem,
+            ),
         ]
         prior = self.purchase.parcel.prior_assessed_value
         if prior is not None and month == property_.purchase_month + 1:
@@ -145,21 +163,24 @@ class PropertyTaxAuthority(Actor[MonthOpened | PropertyStatement | MarketStateme
                 bills.append(
                     self.bill(
                         f"{policy.property_id}_supplemental_tax_m{month}",
+                        ObligationType.PROPERTY_TAX,
                         round_ratio(full_year * share.numerator, share.denominator),
-                        property_,
+                        ad_valorem,
                     )
                 )
         return bills
 
-    def bill(self, cause_id: str, amount: int, property_: PropertyStatement) -> PropertyTaxBill:
+    def bill(
+        self, cause_id: str, obligation_type: ObligationType, amount: int, effect: PropertyTax | TransferTax
+    ) -> PropertyTaxBill:
         policy = self.policy
         return PropertyTaxBill(
             cause_id=cause_id,
-            obligation_type="property_tax",
+            obligation_type=obligation_type,
             from_account=AccountRef(agent_id=policy.owner_agent_id, account_id=policy.from_account_id),
             to_account=AccountRef(agent_id=policy.tax_authority_agent_id, account_id=policy.tax_authority_account_id),
             amount=amount,
-            effect=PropertyTax(policy.owner_agent_id, property_.rented_fraction_ppb),
+            effect=effect,
         )
 
     def assess(self, property_: PropertyStatement, month: int, cpi: int | None) -> None:

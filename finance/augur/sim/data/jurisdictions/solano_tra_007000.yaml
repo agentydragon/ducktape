@@ -5,7 +5,7 @@
 # total rate; the others add a district's voter-approved debt.
 # https://content.solanocounty.gov/sites/default/files/2025-10/FY2526_TRA_Fund_Composition_and_Rates.pdf
 jurisdiction_id: solano_tra_007000
-parent: california
+parent: vallejo
 
 # The voter-approved debt rate is the TRA's total rate less Proposition 13's 1% base.
 # FY 2023-24 and 2024-25: "General Tax Rate by City" FY 2024-25, Vallejo, TRA 7000, totals
@@ -17,3 +17,14 @@ debt_rates:
   2023: "0.00113727"
   2024: "0.00133439"
   2025: "0.00119373"
+
+# Solano County Code section 11-60: a tax on a conveyance "when the consideration or value of the
+# interest or property conveyed (exclusive of the value of any lien or encumbrances remaining
+# thereon at the time of sale) exceeds one hundred dollars a tax at the rate of fifty-five cents for
+# each five hundred dollars or fractional part thereof." Section 11-67's credit applies only to a
+# city tax levied under R&TC Part 6.7 at half the county's rate, which Vallejo's is not.
+# https://www.codepublishing.com/CA/SolanoCounty/html/SolanoCounty1100.html
+transfer_tax:
+  per: 500
+  brackets:
+    - { lower: 100, lower_included: false, rate: "0.55" }
