@@ -733,8 +733,6 @@ def generate_manifests(root: Path) -> None:
             root, alloy_otlp_bearer_artifact, alloy_otlp_bearer.chart, siblings=[f"{alloy_otlp_bearer.NAME}.sops.yaml"]
         ),
         external_secrets_operator_kustomization,
-        claude_rbac_kustomization,
-        haku_rbac_kustomization,
     )
     github_secrets_sync_secrets_artifact = artifact(
         "github-secrets-sync-secrets", github_secrets_sync_secrets.OUTPUT_DIR
@@ -760,11 +758,7 @@ def generate_manifests(root: Path) -> None:
     )
     ollama_app_artifact = artifact("ollama-app", ollama_app.OUTPUT_DIR)
     ollama_flux_kustomizations.ollama(
-        flux_chart,
-        ollama_app_artifact,
-        external_secrets_operator_kustomization,
-        claude_rbac_kustomization,
-        kyverno_kustomization,
+        flux_chart, ollama_app_artifact, external_secrets_operator_kustomization, kyverno_kustomization
     )
     seaweedfs_cluster_artifact = artifact("seaweedfs-cluster", seaweedfs_cluster.OUTPUT_DIR)
     seaweedfs_flux_kustomizations.seaweedfs_cluster(
@@ -1366,7 +1360,6 @@ def generate_manifests(root: Path) -> None:
         agentplane_crds_kustomization,
         agent_sandbox_controller_kustomization,
         cert_manager_trust_kustomization,
-        claude_rbac_kustomization,
         cnpg_kustomization,
         external_secrets_operator_kustomization,
     )
@@ -1421,7 +1414,6 @@ def generate_manifests(root: Path) -> None:
         agentplane_crds_kustomization,
         agent_sandbox_controller_kustomization,
         cert_manager_trust_kustomization,
-        claude_rbac_kustomization,
         cnpg_kustomization,
         external_secrets_operator_kustomization,
     )
