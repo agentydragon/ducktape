@@ -83,25 +83,24 @@ def check_external_credential_ownership(cluster: ParsedCluster, repo_root: Path)
 
 
 def check_goldilocks_namespace_labels(cluster: ParsedCluster) -> list[str]:
-    """Check that namespaces with a goldilocks vpa-update-mode label also have goldilocks enabled."""
+    """A namespace with a Goldilocks update mode is not opted out of Goldilocks, which would ignore
+    the mode. Goldilocks runs on by default, so the mode needs no `enabled: "true"` beside it."""
     errors = []
     for origin, resource in _rendered_or_source_resources(cluster):
         if resource.kind != "Namespace":
             continue
         labels = resource.metadata.labels
-        if (
-            "goldilocks.fairwinds.com/vpa-update-mode" in labels
-            and labels.get("goldilocks.fairwinds.com/enabled") != "true"
-        ):
+        if _VPA_UPDATE_MODE_LABEL in labels and labels.get(_GOLDILOCKS_ENABLED_LABEL, "true") != "true":
             errors.append(
-                f"{origin}: namespace '{resource.name}' has goldilocks.fairwinds.com/vpa-update-mode "
-                f'but is missing goldilocks.fairwinds.com/enabled="true"'
+                f"{origin}: namespace '{resource.name}' has {_VPA_UPDATE_MODE_LABEL} "
+                f'but is labeled {_GOLDILOCKS_ENABLED_LABEL}: "{labels[_GOLDILOCKS_ENABLED_LABEL]}"'
             )
     return errors
 
 
 _WORKLOAD_KINDS = {"Deployment", "StatefulSet", "DaemonSet"}
 _GOLDILOCKS_ENABLED_LABEL = "goldilocks.fairwinds.com/enabled"
+_VPA_UPDATE_MODE_LABEL = "goldilocks.fairwinds.com/vpa-update-mode"
 
 
 def _rendered_or_source_resources(cluster: ParsedCluster) -> list[tuple[Path, K8sResource]]:
@@ -149,7 +148,7 @@ def check_forgejo_image_namespace_reflection(cluster: ParsedCluster) -> list[str
 
 
 def check_goldilocks_explicit_decision(cluster: ParsedCluster) -> list[str]:
-    """Every namespace with workloads must explicitly set goldilocks enabled label."""
+    """Every namespace with workloads labels its Goldilocks decision: an update mode or the enabled label."""
     errors = []
     resources = [resource for _, resource in _rendered_or_source_resources(cluster)]
 
@@ -161,7 +160,8 @@ def check_goldilocks_explicit_decision(cluster: ParsedCluster) -> list[str]:
     namespace_goldilocks: dict[str, str | None] = {}
     for resource in resources:
         if resource.kind == "Namespace":
-            label = resource.metadata.labels.get(_GOLDILOCKS_ENABLED_LABEL)
+            labels = resource.metadata.labels
+            label = labels.get(_VPA_UPDATE_MODE_LABEL) or labels.get(_GOLDILOCKS_ENABLED_LABEL)
             if label is not None or resource.name not in namespace_goldilocks:
                 namespace_goldilocks[resource.name] = label
 
@@ -170,8 +170,8 @@ def check_goldilocks_explicit_decision(cluster: ParsedCluster) -> list[str]:
             continue
         if namespace_goldilocks[ns] is None:
             errors.append(
-                f"Namespace '{ns}' has workloads but is missing explicit "
-                f'{_GOLDILOCKS_ENABLED_LABEL} label (set to "true" or "false")'
+                f"Namespace '{ns}' has workloads but labels no Goldilocks decision "
+                f"({_VPA_UPDATE_MODE_LABEL}, or {_GOLDILOCKS_ENABLED_LABEL})"
             )
     return errors
 
