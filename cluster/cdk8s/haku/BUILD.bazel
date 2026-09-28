@@ -222,6 +222,7 @@ py_library(
     deps = [
         ":kube_api_proxy",
         ":namespace",
+        "//cluster/cdk8s:agent_sandbox",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:forgejo_images",
@@ -229,7 +230,6 @@ py_library(
         "//cluster/cdk8s/kyverno:janitor",
         "//cluster/cdk8s/providers/agent_sandbox:sandbox_template",
         "//cluster/cdk8s/providers/agent_sandbox:sandboxtemplate",
-        "//cluster/cdk8s/providers/agent_sandbox:sandboxwarmpool",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "@pypi//cdk8s",

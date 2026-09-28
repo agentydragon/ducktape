@@ -33,17 +33,10 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecVolumeClaimTemplatesSpecResources,
     SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests,
 )
-from agent_sandbox_sandboxwarmpool_crds.io.x_k8s.agents.extensions import (
-    SandboxWarmPool,
-    SandboxWarmPoolSpec,
-    SandboxWarmPoolSpecSandboxTemplateRef,
-    SandboxWarmPoolSpecUpdateStrategy,
-    SandboxWarmPoolSpecUpdateStrategyType,
-)
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 
-from cluster.cdk8s import forgejo_images
+from cluster.cdk8s import agent_sandbox, forgejo_images
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.kyverno.janitor import SANDBOX_KINDS, janitor
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -202,18 +195,8 @@ def chart(app: App) -> Chart:
         ),
     )
     forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
-    codex_template = _codex_template(chart)
     # One pre-warmed codex-lane workspace.
-    SandboxWarmPool(
-        chart,
-        "codex-warm-pool",
-        metadata=ApiObjectMetadata(name="codex", namespace=NAMESPACE),
-        spec=SandboxWarmPoolSpec(
-            replicas=1,
-            update_strategy=SandboxWarmPoolSpecUpdateStrategy(type=SandboxWarmPoolSpecUpdateStrategyType.RECREATE),
-            sandbox_template_ref=SandboxWarmPoolSpecSandboxTemplateRef(name=codex_template.name),
-        ),
-    )
+    agent_sandbox.warm_pool(chart, "codex-warm-pool", template=_codex_template(chart))
     janitor(chart, "janitor", name="workspace-janitor", namespace=NAMESPACE, schedule="40 * * * *", kinds=SANDBOX_KINDS)
     return chart
 
