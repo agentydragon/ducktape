@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from cdk8s import Chart
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
@@ -38,6 +39,7 @@ def grocy_mcp_sf(
         chart,
         name,
         artifact,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_operator,
@@ -94,6 +96,7 @@ def grocy_mcp_vallejo(
         chart,
         name,
         artifact,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_operator,

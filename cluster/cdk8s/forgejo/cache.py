@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from cdk8s import App, Chart, Size
 from cdk8s_plus_34 import Cpu
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import RedisReplicationSpecTolerations
 
 from cluster.cdk8s import node_scheduling
@@ -47,6 +48,7 @@ def forgejo_cache(chart: Chart, directory: RenderedDirectory, valkey: Kustomizat
         chart,
         name,
         directory,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         timeout="5m",
         # Retry until the forgejo aggregate creates the Namespace. Waiting for
         # Forgejo readiness would deadlock its cache-dependent startup.
