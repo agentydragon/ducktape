@@ -85,13 +85,18 @@ class Actions(Construct):
 
         service_account = self._add_service_account()
         self._add_rbac(service_account)
+        # These leaves come from container environment variables, not the settings file.
+        supplied: list[tuple[str, ...]] = [("database_url",)]
+        if env.actions.web_push_secret_name is not None:
+            supplied.append(("web_push", "private_key_pem"))
         settings = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name="agentplane-actions-settings", namespace=env.namespace),
             model=Settings,
-            content=env.actions.settings,
+            content=env.actions.settings.model_dump(mode="json", exclude_unset=True),
             path="/etc/agentplane-actions/settings.yaml",
+            supplied=supplied,
         )
         deployment = self._add_deployment(service_account, settings)
         self._add_service(deployment)

@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart, Size
-from cdk8s_plus_34 import Cpu, k8s
+from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
@@ -26,13 +26,13 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.mcp_oauth_state import CONSUMER_SECRET, TANA, add_consumer_credentials
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/tana-mcp"
 _NAMESPACE = "tana-mcp"
@@ -47,7 +47,6 @@ _REFRESH_TOKEN = SecretRef(namespace=_NAMESPACE, name="tana-firebase-refresh-tok
 # The ESO copy of the external-creds Secret of the same name.
 _PAT = SecretRef(namespace=_NAMESPACE, name="tana-agentydragon-gmail-com-account-pat").key("token")
 _FACADE_OIDC = SecretRef(namespace=_NAMESPACE, name="tana-mcp-facade-oidc")
-_VALKEY = "mcp-valkey-ovh"
 _TANA_PORT = 8262
 _PROXY_PORT = 8263
 _NOVNC_PORT = 6080
@@ -237,10 +236,7 @@ def _facade(chart: Chart) -> None:
             "MCP_FACADE_FACADE_NAME": "Tana MCP Facade",
             "MCP_FACADE_UPSTREAM__KIND": "http",
             "MCP_FACADE_UPSTREAM__URL": f"http://{_NAME}.{_NAMESPACE}.svc.cluster.local:{_PROXY_PORT}/mcp",
-            "MCP_FACADE_PERSISTENCE__KIND": "valkey",
-            # The RedisReplication's primary Service.
-            "MCP_FACADE_PERSISTENCE__HOST": f"{_VALKEY}-master.{_NAMESPACE}.svc.cluster.local",
-            "MCP_FACADE_PERSISTENCE__DB": "0",
+            "MCP_FACADE_PERSISTENCE__KIND": "postgres",
             # Let Uvicorn's existing access log report the original client when requests
             # arrive through trusted in-cluster Gateway/Envoy paths.
             "FORWARDED_ALLOW_IPS": "10.42.0.0/16,10.244.0.0/16,127.0.0.1",
@@ -303,6 +299,9 @@ def _facade(chart: Chart) -> None:
                                 _FACADE_OIDC.key("client_id").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_ID"),
                                 _FACADE_OIDC.key("client_secret").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_SECRET"),
                                 _PAT.env_var("MCP_FACADE_UPSTREAM__BEARER_TOKEN"),
+                                SecretRef(namespace=_NAMESPACE, name=CONSUMER_SECRET)
+                                .key("uri")
+                                .env_var("MCP_FACADE_PERSISTENCE__URL"),
                             ],
                             resources=k8s.ResourceRequirements(
                                 requests={
@@ -431,6 +430,7 @@ def _facade(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
+    add_consumer_credentials(chart, TANA)
     k8s.KubeServiceAccount(
         chart,
         "external-creds-reader",
@@ -479,18 +479,6 @@ def chart(app: App) -> Chart:
         ),
     )
     _facade(chart)
-    valkey_instance(
-        chart,
-        name=_VALKEY,
-        namespace=_NAMESPACE,
-        description="Replacement OVH Valkey for Tana MCP facade OAuth state",
-        memory_request=Size.mebibytes(64),
-        cpu_limit=Cpu.millis(200),
-        memory_limit=Size.mebibytes(128),
-        max_memory_percent_of_limit=None,
-        storage_class="local-path-ovh",
-        storage_size=Size.gibibytes(1),
-    )
     return chart
 
 

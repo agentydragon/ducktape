@@ -46,6 +46,7 @@ from cluster.cdk8s import (
     kubectl_passthrough_mcp,
     local_path_provisioner,
     loki_read_proxy,
+    mcp_oauth_state,
     metrics_server,
     mitmproxy,
     node_feature_discovery,
@@ -288,12 +289,14 @@ def generate_manifests(root: Path) -> None:
     agents_namespaces.write_manifests(root)
     tofu_state_namespace.write_manifests(root)
     tofu_state_db.write_manifests(root)
+    mcp_oauth_state.write_manifests(root)
     authentik_namespace.write_manifests(root)
     authentik_db.write_manifests(root)
     authentik_app.write_manifests(root)
     authentik_proxy_routes.write_manifests(root)
     forgejo_namespace.write_manifests(root)
     forgejo_db.write_manifests(root)
+    forgejo_cache.write_manifests(root)
     home_assistant_namespace.write_manifests(root)
     nix_cache_attic.write_manifests(root)
     vm_images_publisher_publisher.write_manifests(root)
@@ -513,10 +516,6 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, seaweedfs_operator_artifact, seaweedfs_namespace.chart, seaweedfs_operator_release.chart),
     )
     snapshot_controller_flux_kustomizations.snapshot_controller(flux_chart)
-    forgejo_cache_artifact = artifact("forgejo-cache", forgejo_cache.OUTPUT_DIR)
-    forgejo_cache.forgejo_cache(
-        flux_chart, write_directory(root, forgejo_cache_artifact, forgejo_cache.chart), valkey_kustomization
-    )
     haku_forgejo_tea_artifact = artifact(haku_forgejo_tea.NAME, haku_forgejo_tea.OUTPUT_DIR)
     haku_forgejo_tea.haku_forgejo_tea(
         flux_chart,
@@ -641,6 +640,15 @@ def generate_manifests(root: Path) -> None:
     )
     tofu_state_db_artifact = artifact("tofu-state-db", tofu_state_db.OUTPUT_DIR)
     tofu_state_db.tofu_state_db(flux_chart, tofu_state_db_artifact, cnpg_kustomization)
+    mcp_oauth_state_artifact = artifact("mcp-oauth-state", mcp_oauth_state.OUTPUT_DIR)
+    mcp_oauth_state_kustomization = mcp_oauth_state.mcp_oauth_state_db(
+        flux_chart,
+        mcp_oauth_state_artifact,
+        cnpg_kustomization,
+        external_secrets_operator_kustomization,
+        monitoring_crds_kustomization,
+        kyverno_kustomization,
+    )
     website_artifact = artifact("website", website.OUTPUT_DIR)
     website.website(flux_chart, write_directory(root, website_artifact, website.chart), kyverno_kustomization)
     proxmox_proxy_artifact = artifact("proxmox-proxy", proxmox_proxy.OUTPUT_DIR)
@@ -901,6 +909,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
         monitoring_crds_kustomization,
+        valkey_kustomization,
     )
     matrix_app_artifact = artifact("matrix-app", matrix.OUTPUT_DIR)
     matrix_kustomization = matrix.matrix(
@@ -1046,7 +1055,7 @@ def generate_manifests(root: Path) -> None:
         plaid_mcp_artifact,
         cnpg_kustomization,
         external_secrets_operator_kustomization,
-        valkey_kustomization,
+        mcp_oauth_state_kustomization,
         monitoring_crds_kustomization,
     )
     tana_mcp_artifact = artifact("tana-mcp", tana_mcp.OUTPUT_DIR)
@@ -1054,7 +1063,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         tana_mcp_artifact,
         external_secrets_operator_kustomization,
-        valkey_kustomization,
+        mcp_oauth_state_kustomization,
         monitoring_crds_kustomization,
     )
     cli_proxy_api_artifact = artifact("cli-proxy-api", cli_proxy_api.OUTPUT_DIR)
@@ -1109,13 +1118,32 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         grafana_operator_kustomization,
     )
-    grocy_sf_artifact = artifact("grocy-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/app")
-    grocy_sf_kustomization = grocy_flux_kustomizations.grocy_sf(
-        flux_chart, grocy_sf_artifact, volsync_kustomization, kyverno_kustomization
+    grocy_sf_artifact = artifact(
+        "grocy-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/app", f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", grocy_mcp.BASE_DIR
     )
-    grocy_vallejo_artifact = artifact("grocy-vallejo", f"{HAND_WRITTEN_ROOT}/grocy/vallejo/app")
+    grocy_sf_kustomization = grocy_flux_kustomizations.grocy_sf(
+        flux_chart,
+        grocy_sf_artifact,
+        volsync_kustomization,
+        external_secrets_operator_kustomization,
+        mcp_oauth_state_kustomization,
+        monitoring_crds_kustomization,
+        kyverno_kustomization,
+    )
+    grocy_vallejo_artifact = artifact(
+        "grocy-vallejo",
+        f"{HAND_WRITTEN_ROOT}/grocy/vallejo/app",
+        f"{HAND_WRITTEN_ROOT}/grocy/vallejo/mcp",
+        grocy_mcp.BASE_DIR,
+    )
     grocy_vallejo_kustomization = grocy_flux_kustomizations.grocy_vallejo(
-        flux_chart, grocy_vallejo_artifact, volsync_kustomization, kyverno_kustomization
+        flux_chart,
+        grocy_vallejo_artifact,
+        volsync_kustomization,
+        external_secrets_operator_kustomization,
+        mcp_oauth_state_kustomization,
+        monitoring_crds_kustomization,
+        kyverno_kustomization,
     )
     haku_mailbox_artifact = artifact("haku-mailbox", haku_mailbox.OUTPUT_DIR)
     haku_flux_kustomizations.haku_mailbox(
@@ -1205,30 +1233,10 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         kyverno_kustomization,
     )
-    grocy_mcp_sf_artifact = artifact("grocy-mcp-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", grocy_mcp.BASE_DIR)
-    grocy_flux_kustomizations.grocy_mcp_sf(
-        flux_chart,
-        grocy_mcp_sf_artifact,
-        external_secrets_operator_kustomization,
-        valkey_kustomization,
-        monitoring_crds_kustomization,
-        kyverno_kustomization,
-    )
     grocy_sf_user_perms_artifact = artifact(
         "grocy-sf-user-perms", f"{HAND_WRITTEN_ROOT}/grocy/sf/user-perms", grocy_user_perms.BASE_DIR
     )
     grocy_flux_kustomizations.grocy_sf_user_perms(flux_chart, grocy_sf_user_perms_artifact, grocy_sf_kustomization)
-    grocy_mcp_vallejo_artifact = artifact(
-        "grocy-mcp-vallejo", f"{HAND_WRITTEN_ROOT}/grocy/vallejo/mcp", grocy_mcp.BASE_DIR
-    )
-    grocy_flux_kustomizations.grocy_mcp_vallejo(
-        flux_chart,
-        grocy_mcp_vallejo_artifact,
-        external_secrets_operator_kustomization,
-        valkey_kustomization,
-        monitoring_crds_kustomization,
-        kyverno_kustomization,
-    )
     grocy_vallejo_user_perms_artifact = artifact(
         "grocy-vallejo-user-perms", f"{HAND_WRITTEN_ROOT}/grocy/vallejo/user-perms", grocy_user_perms.BASE_DIR
     )
@@ -1389,6 +1397,7 @@ def generate_manifests(root: Path) -> None:
             seaweedfs_operator_artifact,
             tofu_controller_artifact,
             tofu_state_db_artifact,
+            mcp_oauth_state_artifact,
             valkey_artifact,
             kyverno_policies_artifact,
             agentplane_crds_artifact,
@@ -1455,16 +1464,13 @@ def generate_manifests(root: Path) -> None:
             flux_webhook_artifact,
             forgejo_gitops_artifact,
             budget_namespace_artifact,
-            forgejo_cache_artifact,
             gatus_artifact,
             github_api_proxy_artifact,
             github_tf_artifact,
             github_exporter_artifact,
             goldilocks_artifact,
             google_mcp_artifact,
-            grocy_mcp_sf_artifact,
             grocy_sf_user_perms_artifact,
-            grocy_mcp_vallejo_artifact,
             grocy_vallejo_user_perms_artifact,
             haku_console_artifact,
             haku_mailbox_artifact,

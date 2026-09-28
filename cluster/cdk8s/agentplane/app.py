@@ -136,7 +136,7 @@ class App(Construct):
             "config",
             metadata=ApiObjectMetadata(name="agentplane-app-config", namespace=env.namespace),
             model=Settings,
-            content=env.app_config,
+            content=env.app_config.to_config_file(),
             path="/etc/agentplane/config.yaml",
         )
         deployment = self._add_deployment(app_service_account, config)

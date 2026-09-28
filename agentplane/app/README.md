@@ -124,7 +124,9 @@ Sandbox discovery and runner addresses use the existing Kubernetes list/watch ca
 relist recovery; watch changes wake reconciliation. The timer renews leases and discovers sessions
 via runner `ListSessions`, which currently has no watch RPC. Merely observing a stopped session
 does not restart its harness. Explicit Open starts/resumes it and waits for ingestion to catch up
-before returning, so a resumed browser does not read the previous harness's terminal state.
+before returning, so a resumed browser does not read the previous harness's terminal state. On a
+Thread page, **Resume harness** opens that Thread's existing runner session using its retained
+runner-owned spec; it cannot create a new Thread or substitute another harness.
 
 The retained-event SSE API reads committed PostgreSQL events on whichever replica receives
 its request. Transactional `NOTIFY` wakes event/archive and inventory readers; notifications

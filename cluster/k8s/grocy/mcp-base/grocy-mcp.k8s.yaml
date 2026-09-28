@@ -48,6 +48,11 @@ spec:
                 secretKeyRef:
                   key: grocy_proxy_client_id
                   name: grocy-mcp-oidc
+            - name: GROCY_MCP_PERSISTENCE__URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: mcp-oauth-db-credentials
           image: git.allegedly.works/ducktape-ci/grocy-mcp:unset
           imagePullPolicy: Always
           livenessProbe:

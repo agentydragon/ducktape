@@ -98,6 +98,9 @@ class Client:
     async def suspend_sandbox(self, name: str) -> None:
         await self._json("POST", f"/sandboxes/{name}/suspend")
 
+    async def resume_sandbox(self, name: str) -> None:
+        await self._json("POST", f"/sandboxes/{name}/resume")
+
     async def delete_sandbox(self, name: str) -> None:
         await self._json("DELETE", f"/sandboxes/{name}")
 
@@ -122,6 +125,11 @@ class Client:
         """Open with the concrete defaults recorded on the Sandbox, plus caller overrides."""
         body = NewSession(session_id=session_id, spec=overrides or {})
         answered = await self._json("POST", f"/sandboxes/{name}/sessions", json=body.model_dump())
+        return Attachment(ParseDict(answered, protocol_pb2.Attached()))
+
+    async def resume_thread(self, thread_id: UUID) -> Attachment:
+        """Resume the runner session already bound to this Thread."""
+        answered = await self._json("POST", f"/threads/{thread_id}/resume")
         return Attachment(ParseDict(answered, protocol_pb2.Attached()))
 
     async def thread(self, sandbox: str, session_id: str) -> ThreadView:

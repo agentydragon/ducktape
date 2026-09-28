@@ -45,6 +45,8 @@ export interface Scenario extends ScenarioOptions {
    * `reconnecting` fails every live read of the thread's rows once they have loaded, which
    * Electric's client retries. */
   sessionReplay?: "catching-up" | "unavailable" | "reconnecting";
+  /** The runner feed ended while the Sandbox remains available, so the Thread can resume it. */
+  endedAttachment?: boolean;
   /** Assistant output precedes coalesced queued input, then model/interrupt effects. */
   interleavedEvents?: boolean;
   /** Mundane lifecycle observations collapse into one comma-joined row; a prominent one (harness
@@ -632,6 +634,14 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 900 },
     outputName: "session-states",
     readySelectors: ['[data-thread-anchor="16"]'],
+    captureViewport: true,
+  },
+  session_resume: {
+    element: "#app",
+    route: SESSION_STATES_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    endedAttachment: true,
+    readySelectors: ['[aria-label="Runner feed ended · harness stopped"]', '[aria-label="Resume harness"]'],
     captureViewport: true,
   },
   session_pending: {

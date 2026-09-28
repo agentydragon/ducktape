@@ -1,7 +1,7 @@
 /**
  * The shared shell topbar (app.tsx): one toggle button plus two DOM slots the current route
- * portals its own title and trailing actions into, so a thread's title and menu render in the
- * same row as the toggle without app.tsx needing to know anything about threads.
+ * portals its own title and trailing actions into, so each route's title and controls render in
+ * the same row as the toggle without app.tsx needing to know about individual pages.
  */
 import { createContext, type Context, type JSX, type ReactNode, useContext } from "react";
 import { createPortal } from "react-dom";

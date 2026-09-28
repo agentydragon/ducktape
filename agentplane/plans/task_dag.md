@@ -924,6 +924,9 @@ Do not merely enable the composer against a dead session, create a replacement T
 or treat a fresh harness without the original context as a successful resume. Missing
 recovery state must be explicit. This does not introduce offline command admission or
 automatic replay of unsettled predecessor commands (`THREAD_SUCCESSOR_DELIVERY`).
+For this first implementation, the acceptance scope starts from an idle harness after a
+completed turn. Recovery of an in-flight turn, including tool calls aborted by harness
+shutdown, is deferred for a later design and implementation pass.
 
 Add integration and deployed acceptance for both Claude and Codex: create at least two
 Threads in one fixture Sandbox, complete a turn in each, suspend until the old Pod is
@@ -932,8 +935,7 @@ and retained context with exact mocked-LLM request assertions; deployed acceptan
 observe new input confirmation and a completed reply, not just a Ready Pod. Verify
 monotonic replay without duplicate history and no cross-Thread routing/context mix-up.
 Add focused frontend coverage that the original page and a reloaded page both recover
-from the ended attachment and can send successfully. Cover in-flight suspension
-separately with explicit pending-command outcomes. Use owned test fixtures, not the
+from the ended attachment and can send successfully. Use owned test fixtures, not the
 operator's affected Thread. Archive-before-deletion work does not gate this regression.
 
 ### `SANDBOX_VM_ISOLATION` — selectable VM-backed Sandbox isolation
@@ -962,6 +964,14 @@ truthful failure reporting, and recovery without invented or duplicated command 
 This investigation does not block current container correctness work.
 
 ### `THREAD_EVENT_CONTINUITY` — one runner-owned Thread Event log through harness resume
+
+**Deferred identity decision:** decide whether the app's `thread_id` and the runner's persistent
+`session_id` should share one stable identity. Carrying two IDs for one conversation across UI,
+HTTP, and resume paths can suggest that resuming creates a new session. A shared identity could make
+the conversation identity consistent end to end; separate IDs may still be right for the app's
+product identity versus the runner's storage/recovery ownership. Record the choice and its rationale
+in the identity cutover. This decision does not change the immediate rule: shutdown/resume reopens
+the same runner session under the same Thread.
 
 **Identity/storage cutover:** implement
 [one high-water mark per Event log](../docs/thread_layering.md#one-event-high-water-mark-per-log-across-harness-sessions):
