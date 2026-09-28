@@ -50,7 +50,7 @@ from finance.augur.sim.income import (
     income_source_wire_id,
 )
 from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios, Portfolio, TlhStatement
-from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath
+from finance.augur.sim.market_path import INFLATION, Amount, IndexedAmount, MarketPath
 from finance.augur.sim.money import checked_count, is_quantity_scale, position_value
 from finance.augur.sim.mortgage import InstallmentPaid, Mortgage, MortgagePayment, ServicingStatement
 from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
@@ -318,10 +318,10 @@ class World:
         ):
             raise ValueError(f"invalid bond terms for {bond.bond_id!r}")
         if isinstance(bond.coupon, IndexedCoupon):
-            if "inflation" not in self.market.series:
+            if INFLATION not in self.market.series:
                 raise ValueError(f"missing inflation series for indexed bond {bond.bond_id!r}")
             if max(0, bond.purchase_month_index) > self.horizon_months or any(
-                value <= 0 for value in self.market.path("inflation")
+                value <= 0 for value in self.market.path(INFLATION)
             ):
                 raise ValueError(f"invalid bond inflation path for {bond.bond_id!r}")
 
@@ -538,7 +538,7 @@ class World:
             for month in range(12 * (purchase.month // 12 + 1), self.horizon_months, 12)
             if latest is None or calendar_year(policy, month) > latest
         ]
-        if simulated and "inflation" not in self.market.series:
+        if simulated and INFLATION not in self.market.series:
             raise ValueError(
                 f"property tax on {policy.property_id!r} factors simulated lien dates from month {simulated[0]}, "
                 "which needs a modeled inflation path"
@@ -666,9 +666,9 @@ class World:
         if isinstance(actor, TaxAuthority):
             self._composing()
             if isinstance(actor.indexation, CpiIndexedLaw):
-                if "inflation" not in self.market.series:
+                if INFLATION not in self.market.series:
                     raise ValueError("CPI-indexed tax needs a modeled inflation path")
-                if min(self.market.path("inflation")) <= 0:
+                if min(self.market.path(INFLATION)) <= 0:
                     raise ValueError("CPI-indexed tax needs a positive inflation path")
             self.accounting.enroll(actor.profile)
             self.tax_authorities.append(actor)

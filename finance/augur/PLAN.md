@@ -109,6 +109,8 @@ without them.
   end date from each district's rate-and-method document: Mare Island's CFDs 2002-1, 2005-1A
   and 2005-1B (research so far: <docs/mare_island_special_taxes.md>), and San Francisco's parcel
   taxes.
+- **DEBTPATH**: a rate area's debt rate for unpublished fiscal years comes from a supplied
+  exogenous series, in place of carrying the last published rate forward.
 - **DECLINE**: a Proposition 8 reduction while the home-value path is below the
   factored base, recovering toward it.
 - **INSTALLMENTS** (after MIDYEAR): the July–June secured bill is paid in its two

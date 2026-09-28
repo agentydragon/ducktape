@@ -5,8 +5,12 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from finance.augur.model.series import InflationKey
 from finance.augur.sim.actor import Statement
 from finance.augur.sim.money import mul_div
+
+# The modeled CPI's series id.
+INFLATION = InflationKey().wire_id
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -74,7 +78,7 @@ class MarketPath:
     def statement(self, month: int) -> MarketStatement:
         return MarketStatement(
             month=month,
-            cpi=(self.value("inflation", month), self.value("inflation", 0)) if "inflation" in self.series else None,
+            cpi=(self.value(INFLATION, month), self.value(INFLATION, 0)) if INFLATION in self.series else None,
         )
 
     def amount(self, amount: Amount, month: int) -> int:
