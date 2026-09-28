@@ -29,6 +29,7 @@ from finance.augur.sim.testing.bonds import (
     bond_case,
     compose,
 )
+from finance.augur.sim.testing.rollouts import tax_by_jurisdiction
 
 
 def execute(case: Situation) -> Rollout:
@@ -77,13 +78,6 @@ def _paid(result: Rollout) -> dict[int, int]:
     return {month: delta for month, delta in _cash_by_month(result).items() if delta}
 
 
-def _tax_by_jurisdiction(result: Rollout) -> dict[str, int]:
-    taxes: dict[str, int] = {}
-    for accrual in result.summary.tax_accruals:
-        taxes[accrual.jurisdiction_id] = taxes.get(accrual.jurisdiction_id, 0) + accrual.total_tax
-    return taxes
-
-
 def _alice_income(result: Rollout) -> list[tuple[int, IncomeState]]:
     assert result.trace is not None
     return [
@@ -102,14 +96,14 @@ def test_coupons_arrive_as_cash_on_their_schedule() -> None:
 
 
 def test_a_treasury_coupon_is_federally_taxed_and_california_exempt() -> None:
-    tax = _tax_by_jurisdiction(execute(bond_case(character=TREASURY)))
+    tax = tax_by_jurisdiction(execute(bond_case(character=TREASURY)))
 
     assert tax["federal_us"] > 0
     assert tax["california"] == 0
 
 
 def test_an_in_state_muni_coupon_is_exempt_everywhere() -> None:
-    tax = _tax_by_jurisdiction(execute(bond_case(character=MUNI)))
+    tax = tax_by_jurisdiction(execute(bond_case(character=MUNI)))
 
     assert tax["federal_us"] == 0
     assert tax["california"] == 0
@@ -119,14 +113,14 @@ def test_another_states_muni_coupon_is_federally_exempt_and_california_taxed() -
     """Federal law exempts every state's munis; California exempts only its own. The muni's state
     is declared nowhere: only the taxing jurisdictions' own rules read it."""
 
-    tax = _tax_by_jurisdiction(execute(bond_case(character=Municipal(state=JurisdictionId("test_state")))))
+    tax = tax_by_jurisdiction(execute(bond_case(character=Municipal(state=JurisdictionId("test_state")))))
 
     assert tax["federal_us"] == 0
     assert tax["california"] > 0
 
 
 def test_a_corporate_coupon_is_taxed_by_both() -> None:
-    tax = _tax_by_jurisdiction(execute(bond_case(character=TAXABLE)))
+    tax = tax_by_jurisdiction(execute(bond_case(character=TAXABLE)))
 
     assert tax["federal_us"] > 0
     assert tax["california"] > 0
@@ -213,7 +207,7 @@ def test_accretion_is_treasury_interest_and_inherits_its_exemption() -> None:
     """Accretion is interest on the same obligation, so 31 USC 3124 reaches it like a
     coupon. Booked as ordinary income instead, California would tax it."""
 
-    tax = _tax_by_jurisdiction(execute(bond_case(indexed=True, cpi=CPI_DOUBLING)))
+    tax = tax_by_jurisdiction(execute(bond_case(indexed=True, cpi=CPI_DOUBLING)))
 
     assert tax["federal_us"] > 0
     assert tax["california"] == 0

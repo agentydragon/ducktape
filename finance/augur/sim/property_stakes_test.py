@@ -46,6 +46,7 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.testing.rollouts import book
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, flat_parcel
 from finance.augur.sim.world import World
@@ -246,10 +247,6 @@ def books(rollout: Rollout) -> list[Book]:
 def properties(book: Book) -> list[PropertyState]:
     assert book.properties is not None
     return book.properties
-
-
-def book(rollout: Rollout, month: int) -> Book:
-    return one(entry for entry in books(rollout) if entry.month == month)
 
 
 def two_property_case() -> Situation:

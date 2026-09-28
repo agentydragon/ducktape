@@ -12,7 +12,7 @@ from more_itertools import one
 from finance.augur.model.series import LocationId
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import DecisionActions
-from finance.augur.sim.books import AccountRef, Book
+from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import rate_to_ppb, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
@@ -22,6 +22,7 @@ from finance.augur.sim.property import Housing, MortgageFinancing, Parcel, Sched
 from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.rollouts import book, cash
 from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
 from finance.augur.sim.world import World
 
@@ -139,16 +140,6 @@ def run(case: Situation) -> Rollout:
     finally:
         session.close()
     return one(batch.rollouts)
-
-
-def book(rollout: Rollout, month: int) -> Book:
-    assert rollout.trace is not None
-    return one(entry for entry in rollout.trace.books if entry.month == month)
-
-
-def cash(rollout: Rollout, agent_id: AgentId, month: int) -> float:
-    account_ = AccountRef(agent_id=agent_id, account_id=CHECKING)
-    return usd(one(row.balance for row in book(rollout, month).balances if row.account == account_))
 
 
 def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
