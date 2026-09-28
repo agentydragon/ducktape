@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from cdk8s import App, Chart
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
@@ -36,4 +37,12 @@ def chart(app: App) -> Chart:
 
 def seaweedfs_namespace(chart: Chart, directory: RenderedDirectory) -> Kustomization:
     name = "seaweedfs-namespace"
-    return flux_kustomization(chart, name, directory, retry_interval=None, wait=None, suspend=False)
+    return flux_kustomization(
+        chart,
+        name,
+        directory,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        retry_interval=None,
+        wait=None,
+        suspend=False,
+    )

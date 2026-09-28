@@ -329,6 +329,7 @@ metadata:
   name: seaweedfs-namespace
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   interval: 10m
   path: ./cluster/generated/seaweedfs/namespace
   prune: true
@@ -835,6 +836,7 @@ metadata:
   name: forgejo-cache
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: valkey
       namespace: ducktape-flux
@@ -1275,6 +1277,7 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
     - name: seaweedfs-namespace
       namespace: ducktape-flux
@@ -1330,6 +1333,7 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
     - name: seaweedfs-namespace
       namespace: ducktape-flux
