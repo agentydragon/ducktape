@@ -35,6 +35,10 @@ spec:
   vars:
     - name: model_allowlists
       value:
+        agentplane_staging_oai_models:
+          - chatgpt/oai-responses/gpt-6-astra
+          - chatgpt/oai-responses/gpt-6-sol
+          - chatgpt/oai-responses/gpt-6-luna
         antigravity_client_models:
           - antigravity/ant-messages/claude-opus-4-6-thinking
           - antigravity/ant-messages/claude-sonnet-4-6

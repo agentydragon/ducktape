@@ -172,14 +172,14 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ["a.agentplane-sidebar-group-name"],
   },
   threads_phone: { element: "#app", route: "/", viewport: PHONE, outputName: "threads-phone" },
-  // The phone-width sidebar drawer opened over the landing view: the hamburger,
-  // the backdrop, and the same group/thread list the desktop sidebar shows.
+  // The phone-width sidebar drawer opened full-screen over the landing view: the same
+  // group/thread list the desktop sidebar shows.
   threads_phone_drawer: {
     element: "#app",
     route: "/",
     viewport: PHONE,
     outputName: "threads-phone-drawer",
-    readySelectors: [".agentplane-sidebar-backdrop", "a.agentplane-sidebar-group-name"],
+    readySelectors: [".agentplane-sidebar-open", "a.agentplane-sidebar-group-name"],
     openMobileSidebar: true,
   },
   threads_provisioning: {
@@ -195,7 +195,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: PHONE,
     threadlessSandbox: true,
     openMobileSidebar: true,
-    readySelectors: ['a[href="#/sandboxes/test-provisioning"]', ".agentplane-sidebar-backdrop"],
+    readySelectors: ['a[href="#/sandboxes/test-provisioning"]', ".agentplane-sidebar-open"],
   },
   threads_updates_disconnected: {
     element: "#app",
@@ -222,7 +222,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     sidebarSource: "disconnected",
     outageAge: 10_000,
     openMobileSidebar: true,
-    readySelectors: [".agentplane-sidebar-backdrop", '[data-connection="degraded"]'],
+    readySelectors: [".agentplane-sidebar-open", '[data-connection="degraded"]'],
   },
   threads_watch_stale: {
     element: "#app",

@@ -2,9 +2,10 @@
 
 ## Scope and baseline
 
-The SSD-resident Qwen routes are already offered by both harness catalogs in
-Agentplane staging and testing. Authenticated `/models` responses confirmed the
-`ollama/{oai-chat,olm-chat}/qwen3.8-flash-next-iq4xs-{128k,256k}` entries.
+Agentplane staging and testing offer the SSD-resident Qwen through
+`ollama/oai-chat/qwen3.8-flash-next-iq4xs-{128k,256k}` for both harnesses.
+All local models use only the OpenAI-compatible route in the picker. The earlier
+acceptance below exercised both `oai-chat` and `olm-chat` before deduplication.
 The older HDD-resident Qwen Q4 entry is disabled in the shared roster; other
 Ollama models remain offered.
 
@@ -37,7 +38,7 @@ whose mapper forwards the object to Ollama instead of failing locally.
 Use `oai-chat` for Codex. A native-adapter correction must preserve effort and
 thinking semantics; dropping reasoning options is not equivalent.
 
-Both environments advertise these routes. Actual tasks ran on testing with image
+Both environments advertised these routes during the run. Actual tasks ran on testing with image
 `devel-20260928010047-9a3565b`, wheel `agentplane-runner-42b857721ffb`.
 The owned sandbox reported Claude 2.1.280 and Codex 0.156.1. Repository fixture
 pins (Claude 2.1.252 / Codex 0.152.0) are not the deployed binary versions.
@@ -160,5 +161,6 @@ bazelisk test //agentplane/acceptance:test_ollama_routes \
   --test_arg=-k --test_arg=iq4xs
 ```
 
-This selects eight cases. Preserve each run's undeclared test outputs before
+The current picker roster selects four Qwen cases (both harnesses, both context
+sizes, OpenAI-compatible route only). Preserve each run's undeclared test outputs before
 rerunning, since the Bazel output paths are reused.

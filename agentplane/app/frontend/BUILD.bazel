@@ -170,6 +170,7 @@ ts_library(
         ":client",
         ":json_view",
         ":stream_status",
+        ":topbar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -1077,6 +1078,7 @@ ts_library(
         ":stream_status",
         ":thread_sync",
         ":thread_title",
+        ":topbar",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -1085,6 +1087,18 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/protocol:command_pb",
         "//agentplane/protocol:event_pb",
+    ],
+)
+
+ts_library(
+    name = "topbar",
+    srcs = ["topbar.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
     ],
 )
 
@@ -1142,6 +1156,7 @@ ts_library(
         ":stream_status",
         ":thread_entity_fixture",
         ":thread_sync",
+        ":topbar",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -1194,6 +1209,7 @@ ts_library(
         ":sidebar",
         ":thread_store",
         ":thread_sync",
+        ":topbar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
