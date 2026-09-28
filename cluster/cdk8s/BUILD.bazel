@@ -637,6 +637,7 @@ py_library(
         ":namespaces",
         ":pod_policy",
         ":probes",
+        ":secret_ref",
         ":service_ref",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/external_secrets:single_secret_store",
