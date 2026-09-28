@@ -31,7 +31,7 @@ from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
-from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
+from finance.augur.sim.fixed_point import rate_to_ppb, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import (
     ORDINARY_INCOME,
@@ -89,24 +89,20 @@ BUILDING_BASIS_QUANTA = 400_000 * 100
 MUNI_INTEREST = InterestIncome(character=Municipal(state=CALIFORNIA))
 
 
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
-
-
 def ref(agent_id: AgentId) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
 def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
     """An account and its opening balance."""
-    return ref(agent_id), money(balance)
+    return ref(agent_id), USD.quanta(balance)
 
 
 def indexed(base_amount: Decimal | int) -> IndexedAmount:
     """A rent-indexed amount resetting annually, which is what the product layer lowers rent to."""
 
     return IndexedAmount(
-        base_amount=money(base_amount), series_id=RENT.wire_id, base_month_index=0, adjustment_period_months=12
+        base_amount=USD.quanta(base_amount), series_id=RENT.wire_id, base_month_index=0, adjustment_period_months=12
     )
 
 
@@ -252,7 +248,7 @@ def financing(
         liability_id=liability_id,
         lender_agent_id=LENDER,
         lender_account_id=CHECKING,
-        principal=money(principal),
+        principal=USD.quanta(principal),
         annual_interest_rate_ppb=rate_to_ppb(rate),
         term_months=term_months,
     )
@@ -283,9 +279,9 @@ def purchase(
         buyer_account_id=CHECKING,
         seller_agent_id=SELLER,
         seller_account_id=CHECKING,
-        purchase_price=money(price),
-        down_payment=money(price) - financed,
-        buyer_closing_cost=money(closing_cost),
+        purchase_price=USD.quanta(price),
+        down_payment=USD.quanta(price) - financed,
+        buyer_closing_cost=USD.quanta(closing_cost),
         rented_fraction_ppb=rate_to_ppb(rented_fraction),
         land_value_fraction_ppb=rate_to_ppb(land_value_fraction),
         mortgage=mortgage,
@@ -312,7 +308,7 @@ def mortgage_interest_deduction(liability_id: LiabilityId, owner: AgentId) -> Mo
         liability_id=liability_id,
         owner_agent_id=owner,
         debt_class="acquisition",
-        per_jurisdiction_principal_cap={FEDERAL: money(750_000), CALIFORNIA: money(1_000_000)},
+        per_jurisdiction_principal_cap={FEDERAL: USD.quanta(750_000), CALIFORNIA: USD.quanta(1_000_000)},
     )
 
 
@@ -320,7 +316,7 @@ def salt_cap(profile_id: AgentId, cap: Decimal | int) -> SaltDeduction:
     return SaltDeduction(
         profile_id=profile_id,
         federal_jurisdiction_id=FEDERAL,
-        cap_schedule=(SaltCap(effective_year_index=0, cap=money(cap)),),
+        cap_schedule=(SaltCap(effective_year_index=0, cap=USD.quanta(cap)),),
     )
 
 
@@ -652,7 +648,7 @@ def sale_situation(
                 end_month=23,
                 payer=EMPLOYER,
                 payee=OWNER,
-                amount=money(round_currency_amount(Decimal(year2_wage) / Decimal(12), quantum=QUANTUM)),
+                amount=USD.quanta(round_currency_amount(Decimal(year2_wage) / Decimal(12), quantum=QUANTUM)),
                 income=ORDINARY_INCOME,
             )
         )
@@ -1083,7 +1079,7 @@ class TestRentalIncomeTaxation:
                 purchases=(purchase(PropertyId("p1"), rented_fraction=1),),
                 capital_improvements=(
                     CapitalImprovement(
-                        month=6, property_id=PropertyId("p1"), amount=money(100_000), description="new roof"
+                        month=6, property_id=PropertyId("p1"), amount=USD.quanta(100_000), description="new roof"
                     ),
                 ),
             ),
@@ -1128,7 +1124,7 @@ class TestRentalIncomeTaxation:
                 ),
                 capital_improvements=(
                     CapitalImprovement(
-                        month=6, property_id=PropertyId("p1"), amount=money(100_000), description="new roof"
+                        month=6, property_id=PropertyId("p1"), amount=USD.quanta(100_000), description="new roof"
                     ),
                 ),
             ),
@@ -1822,7 +1818,7 @@ class TestRentalIncomeTaxation:
                 ),
                 capital_improvements=(
                     CapitalImprovement(
-                        month=8, property_id=PropertyId("p1"), amount=money(50_000), description="new roof"
+                        month=8, property_id=PropertyId("p1"), amount=USD.quanta(50_000), description="new roof"
                     ),
                 ),
             ),
