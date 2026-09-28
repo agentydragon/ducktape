@@ -23,7 +23,6 @@ them. The engine's own counterpart is the double-entry journal it validates on e
 from collections.abc import Mapping, Sequence
 from decimal import Decimal
 
-import numpy as np
 import polars as pl
 import pytest_bazel
 from more_itertools import one
@@ -43,7 +42,6 @@ from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import Action, DecisionActions, LotSale, Sell
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
@@ -70,6 +68,7 @@ from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.issuer_protocol import at_month, issuer_protocol
 from finance.augur.sim.testing.rollouts import book
 from finance.augur.sim.testing.scripted import Scripted
+from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.situs import START_YEAR
 from finance.augur.sim.world import World
 
@@ -113,16 +112,7 @@ def ref(agent_id: AgentId) -> AccountRef:
 def path(key: LevelSeriesKey, levels: Sequence[Decimal], *, horizon_months: int) -> tuple[Series, ...]:
     """One exogenous level series on the single rollout every case here runs."""
 
-    return compile_series(
-        ExternalSeriesContext.from_level_blocks(
-            [(key, np.asarray([[float(level) for level in levels]], dtype=np.float64))],
-            rollout_count=1,
-            horizon_months=horizon_months,
-        ),
-        rollout_count=1,
-        horizon_months=horizon_months,
-        currency=USD,
-    )
+    return level_series({key: [[float(level) for level in levels]]}, rollout_count=1, horizon_months=horizon_months)
 
 
 def hold_vti(

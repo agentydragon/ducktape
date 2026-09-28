@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from functools import partial
 
-import numpy as np
 import pytest
 import pytest_bazel
 
@@ -16,7 +15,6 @@ from finance.augur.policy.sleeves import withdraw
 from finance.augur.sim.actions import ClaimId, DecisionActions, PayClaim, Transfer
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
@@ -35,6 +33,7 @@ from finance.augur.sim.results import (
 )
 from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.world import World
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
@@ -174,10 +173,7 @@ def _run(
     prices: tuple[tuple[int, ...], ...] = ((100, 100),),
 ) -> tuple[list[Rollout], list[tuple[int, int]]]:
     rollout_count = len(prices)
-    paths = ExternalSeriesContext.from_level_blocks(
-        [(VTI, np.asarray(prices, dtype=np.float64))], rollout_count=rollout_count, horizon_months=case.horizon_months
-    )
-    series = compile_series(paths, rollout_count=rollout_count, horizon_months=case.horizon_months, currency=USD)
+    series = level_series({VTI: prices}, rollout_count=rollout_count, horizon_months=case.horizon_months)
     session = ActionSession(
         {id_: compose(case, id_, series=series, rollout_count=rollout_count) for id_ in range(rollout_count)},
         AgentId("alice"),

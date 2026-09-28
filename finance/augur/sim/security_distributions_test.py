@@ -13,7 +13,6 @@ from finance.augur.sim.actions import DecisionActions, PayClaim
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import (
     currency_amount_to_quanta,
     quantity_scale_for_asset,
@@ -53,6 +52,7 @@ from finance.augur.sim.testing.security_distributions import (
     YEAR_END,
     payout_quanta,
 )
+from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -80,15 +80,10 @@ def _paths(payout: np.ndarray | None) -> tuple[Series, ...]:
     primitive rather than a rate.
     """
 
-    blocks: list[tuple[LevelSeriesKey, np.ndarray]] = [(FUND, np.full((1, HORIZON + 1), float(PRICE)))]
+    blocks: dict[LevelSeriesKey, np.ndarray] = {FUND: np.full((1, HORIZON + 1), float(PRICE))}
     if payout is not None:
-        blocks.append((SecurityDistributionKey(symbol=SYMBOL), payout))
-    return compile_series(
-        ExternalSeriesContext.from_level_blocks(blocks, rollout_count=1, horizon_months=HORIZON),
-        rollout_count=1,
-        horizon_months=HORIZON,
-        currency=USD,
-    )
+        blocks[SecurityDistributionKey(symbol=SYMBOL)] = payout
+    return level_series(blocks, rollout_count=1, horizon_months=HORIZON)
 
 
 def _account(world: World, agent_id: AgentId, balance: Decimal) -> None:
