@@ -502,7 +502,7 @@ def test_concurrent_fan_and_terminal_requests_run_serially(
 
     def slow_simulate_product_summary(
         scenario: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...] | None
-    ) -> tuple[ProductMetricFanSummary | ProductTerminalSummary, str]:
+    ) -> ProductMetricFanSummary | ProductTerminalSummary:
         nonlocal active_simulations, max_active_simulations
         with active_lock:
             active_simulations += 1
