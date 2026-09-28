@@ -1134,13 +1134,32 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         grafana_operator_kustomization,
     )
-    grocy_sf_artifact = artifact("grocy-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/app")
-    grocy_sf_kustomization = grocy_flux_kustomizations.grocy_sf(
-        flux_chart, grocy_sf_artifact, volsync_kustomization, kyverno_kustomization
+    grocy_sf_artifact = artifact(
+        "grocy-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/app", f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", grocy_mcp.BASE_DIR
     )
-    grocy_vallejo_artifact = artifact("grocy-vallejo", f"{HAND_WRITTEN_ROOT}/grocy/vallejo/app")
+    grocy_sf_kustomization = grocy_flux_kustomizations.grocy_sf(
+        flux_chart,
+        grocy_sf_artifact,
+        volsync_kustomization,
+        external_secrets_operator_kustomization,
+        valkey_kustomization,
+        monitoring_crds_kustomization,
+        kyverno_kustomization,
+    )
+    grocy_vallejo_artifact = artifact(
+        "grocy-vallejo",
+        f"{HAND_WRITTEN_ROOT}/grocy/vallejo/app",
+        f"{HAND_WRITTEN_ROOT}/grocy/vallejo/mcp",
+        grocy_mcp.BASE_DIR,
+    )
     grocy_vallejo_kustomization = grocy_flux_kustomizations.grocy_vallejo(
-        flux_chart, grocy_vallejo_artifact, volsync_kustomization, kyverno_kustomization
+        flux_chart,
+        grocy_vallejo_artifact,
+        volsync_kustomization,
+        external_secrets_operator_kustomization,
+        valkey_kustomization,
+        monitoring_crds_kustomization,
+        kyverno_kustomization,
     )
     haku_mailbox_artifact = artifact("haku-mailbox", haku_mailbox.OUTPUT_DIR)
     haku_flux_kustomizations.haku_mailbox(
@@ -1230,30 +1249,10 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         kyverno_kustomization,
     )
-    grocy_mcp_sf_artifact = artifact("grocy-mcp-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", grocy_mcp.BASE_DIR)
-    grocy_flux_kustomizations.grocy_mcp_sf(
-        flux_chart,
-        grocy_mcp_sf_artifact,
-        external_secrets_operator_kustomization,
-        valkey_kustomization,
-        monitoring_crds_kustomization,
-        kyverno_kustomization,
-    )
     grocy_sf_user_perms_artifact = artifact(
         "grocy-sf-user-perms", f"{HAND_WRITTEN_ROOT}/grocy/sf/user-perms", grocy_user_perms.BASE_DIR
     )
     grocy_flux_kustomizations.grocy_sf_user_perms(flux_chart, grocy_sf_user_perms_artifact, grocy_sf_kustomization)
-    grocy_mcp_vallejo_artifact = artifact(
-        "grocy-mcp-vallejo", f"{HAND_WRITTEN_ROOT}/grocy/vallejo/mcp", grocy_mcp.BASE_DIR
-    )
-    grocy_flux_kustomizations.grocy_mcp_vallejo(
-        flux_chart,
-        grocy_mcp_vallejo_artifact,
-        external_secrets_operator_kustomization,
-        valkey_kustomization,
-        monitoring_crds_kustomization,
-        kyverno_kustomization,
-    )
     grocy_vallejo_user_perms_artifact = artifact(
         "grocy-vallejo-user-perms", f"{HAND_WRITTEN_ROOT}/grocy/vallejo/user-perms", grocy_user_perms.BASE_DIR
     )
@@ -1490,9 +1489,7 @@ def generate_manifests(root: Path) -> None:
             github_exporter_artifact,
             goldilocks_artifact,
             google_mcp_artifact,
-            grocy_mcp_sf_artifact,
             grocy_sf_user_perms_artifact,
-            grocy_mcp_vallejo_artifact,
             grocy_vallejo_user_perms_artifact,
             haku_console_artifact,
             haku_mailbox_artifact,
