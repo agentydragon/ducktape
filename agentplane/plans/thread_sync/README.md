@@ -69,17 +69,17 @@ commit order.
 `+` meets it, `~` meets it with work or a caveat, `−` fails it. Cells are judgements from the option
 files, not measurements. Rows where every column is `+` are left out.
 
-| Req / desire                  | Electric (deployed) | Window poll | Moving window | SSE push |
-| ----------------------------- | ------------------- | ----------- | ------------- | -------- |
-| P6 disconnect resumes         | +                   | +           | +             | ~        |
-| D6 bounded browser cache      | − (accepted)        | +           | +             | +        |
-| E4 scroll loads new           | +                   | −           | +             | +        |
-| E5 no re-transfer             | ~                   | −           | +             | +        |
-| O1 bounded/shared             | +                   | +           | +             | −        |
-| O2 horizontal scale           | ~                   | +           | +             | ~        |
-| O4 few moving parts           | ~                   | +           | +             | ~        |
-| D1 no overlap re-sent          | +                   | −           | +             | +        |
-| D3 incremental                | +                   | +           | +             | ~        |
+| Req / desire             | Electric (deployed) | Window poll | Moving window | SSE push |
+| ------------------------ | ------------------- | ----------- | ------------- | -------- |
+| P6 disconnect resumes    | +                   | +           | +             | ~        |
+| D6 bounded browser cache | − (accepted)        | +           | +             | +        |
+| E4 scroll loads new      | +                   | −           | +             | +        |
+| E5 no re-transfer        | ~                   | −           | +             | +        |
+| O1 bounded/shared        | +                   | +           | +             | −        |
+| O2 horizontal scale      | ~                   | +           | +             | ~        |
+| O4 few moving parts      | ~                   | +           | +             | ~        |
+| D1 no overlap re-sent    | +                   | −           | +             | +        |
+| D3 incremental           | +                   | +           | +             | ~        |
 
 The window poll's `−` cells are one omission — the client never says what it holds — and adding it
 is the moving window. Electric's `−` on D6 is the accepted browser-cache tradeoff above; its `~` on E5 is
