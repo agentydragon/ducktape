@@ -24,7 +24,7 @@ from more_itertools import one
 from finance.augur.model.series import LocationId
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
+from finance.augur.sim.fixed_point import rate_to_ppb, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
@@ -72,10 +72,6 @@ TCJA_CAP_YEAR = 4
 FEDERAL_PRINCIPAL_CAP = 750_000.0
 
 
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
-
-
 def usd(row: dict[str, Any], field: str) -> float:
     return int(row[field]) / 100
 
@@ -84,14 +80,14 @@ def usd(row: dict[str, Any], field: str) -> float:
 HOME_PARCEL = flat_parcel(Decimal("0.012"))
 
 DEFAULT_SALT_SCHEDULE = (
-    SaltCap(effective_year_index=0, cap=money(int(OBBBA_CAP))),
-    SaltCap(effective_year_index=TCJA_CAP_YEAR, cap=money(int(TCJA_CAP))),
+    SaltCap(effective_year_index=0, cap=USD.quanta(int(OBBBA_CAP))),
+    SaltCap(effective_year_index=TCJA_CAP_YEAR, cap=USD.quanta(int(TCJA_CAP))),
 )
 
 
 def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
     """An account and its opening balance."""
-    return AccountRef(agent_id=agent_id, account_id=CHECKING), money(balance)
+    return AccountRef(agent_id=agent_id, account_id=CHECKING), USD.quanta(balance)
 
 
 def deducts(
@@ -101,7 +97,7 @@ def deducts(
         liability_id=liability_id,
         owner_agent_id=ALICE,
         debt_class=debt_class,
-        per_jurisdiction_principal_cap={FEDERAL: money(750_000), CALIFORNIA: money(1_000_000)},
+        per_jurisdiction_principal_cap={FEDERAL: USD.quanta(750_000), CALIFORNIA: USD.quanta(1_000_000)},
     )
 
 
@@ -129,8 +125,8 @@ def financed_purchase(
         buyer_account_id=CHECKING,
         seller_agent_id=SELLER,
         seller_account_id=CHECKING,
-        purchase_price=money(price),
-        down_payment=money(down),
+        purchase_price=USD.quanta(price),
+        down_payment=USD.quanta(down),
         buyer_closing_cost=0,
         rented_fraction_ppb=0,
         land_value_fraction_ppb=rate_to_ppb(Decimal("0.20")),
@@ -138,7 +134,7 @@ def financed_purchase(
             liability_id=liability_id,
             lender_agent_id=BANK,
             lender_account_id=CHECKING,
-            principal=money(price - down),
+            principal=USD.quanta(price - down),
             annual_interest_rate_ppb=rate_to_ppb(annual_rate),
             term_months=term_months,
         ),
@@ -261,7 +257,7 @@ def compose(case: Situation) -> World:
         cause_id="alice_paycheck",
         from_account=AccountRef(agent_id=PAYROLL, account_id=CHECKING),
         to_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
-        amount=money(round_currency_amount(Decimal(case.annual_w2_income) / 12, quantum=QUANTUM)),
+        amount=USD.quanta(round_currency_amount(Decimal(case.annual_w2_income) / 12, quantum=QUANTUM)),
         income_category=ORDINARY_INCOME,
         deduction_category=None,
     )
@@ -582,7 +578,7 @@ def test_an_authored_schedule_overrides_the_default() -> None:
     rollout = run(
         standard_home(
             mortgage_interest_policies=(deducts(MORTGAGE_ID),),
-            salt_policies=(salt(cap_schedule=(SaltCap(effective_year_index=0, cap=money(5000)),)),),
+            salt_policies=(salt(cap_schedule=(SaltCap(effective_year_index=0, cap=USD.quanta(5000)),)),),
         )
     )
 

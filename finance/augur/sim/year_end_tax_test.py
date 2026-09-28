@@ -18,12 +18,7 @@ from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.books import AccountRef, Book, TaxLiabilityState
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
-from finance.augur.sim.fixed_point import (
-    currency_amount_to_quanta,
-    quantity_scale_for_asset,
-    quantity_to_quanta,
-    round_currency_amount,
-)
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import (
     ORDINARY_INCOME,
@@ -52,10 +47,6 @@ CHECKING = AccountId("checking")
 FEDERAL, CALIFORNIA = JurisdictionId("federal_us"), JurisdictionId("california")
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 IXUS = SecurityKey(symbol=SecuritySymbol("ixus"))
-
-
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
 def usd(quanta: Any) -> float:
@@ -113,12 +104,12 @@ class Monthly:
 def monthly(
     cause_id: str, payer: AgentId, payee: AgentId, amount: Decimal, *, income: bool, end_month: int | None = 11
 ) -> Monthly:
-    return Monthly(cause_id, payer, payee, money(amount), ORDINARY_INCOME if income else None, end_month)
+    return Monthly(cause_id, payer, payee, USD.quanta(amount), ORDINARY_INCOME if income else None, end_month)
 
 
 def monthly_interest(cause_id: str, character: InterestCharacter, amount: Decimal) -> Monthly:
     """A year of monthly coupons of `character` into Alice's checking."""
-    return Monthly(cause_id, PAYROLL, ALICE, money(amount), InterestIncome(character=character), 11)
+    return Monthly(cause_id, PAYROLL, ALICE, USD.quanta(amount), InterestIncome(character=character), 11)
 
 
 def sell_into_cash(asset: SecurityKey) -> CashBandHousehold:
@@ -193,7 +184,8 @@ def compose(case: Situation, indexation: TaxIndexation) -> World:
     )
     for opened in case.accounts:
         world.declare_account(
-            account=AccountRef(agent_id=opened.agent_id, account_id=CHECKING), opening_balance=money(opened.balance)
+            account=AccountRef(agent_id=opened.agent_id, account_id=CHECKING),
+            opening_balance=USD.quanta(opened.balance),
         )
     if case.jurisdiction_ids:
         world.track(
@@ -229,7 +221,7 @@ def compose(case: Situation, indexation: TaxIndexation) -> World:
             purchase_month=held.purchase_month,
             quantity_scale=scale,
             units=quantity_to_quanta(held.quantity, scale=scale),
-            basis=money(held.cost_basis),
+            basis=USD.quanta(held.cost_basis),
         )
     for flow in case.recurring_transfers:
         world.declare_flow(

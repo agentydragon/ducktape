@@ -8,25 +8,19 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
-QUANTUM = Decimal("0.01")
-
 
 def checking(agent_id: AgentId) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=AccountId("checking"))
-
-
-def quanta(amount: Decimal) -> int:
-    return int(currency_amount_to_quanta(amount, quantum=QUANTUM))
 
 
 @dataclass(frozen=True)
@@ -73,14 +67,14 @@ def compose(case: Situation, rollout_id: int, *, rollout_count: int) -> World:
         income_sources=(ORDINARY_INCOME,),
     )
     for agent_id, balance in case.balances:
-        world.declare_account(account=checking(agent_id), opening_balance=quanta(balance))
+        world.declare_account(account=checking(agent_id), opening_balance=USD.quanta(balance))
     for flow in case.payments:
         world.declare_flow(
             schedule=flow.schedule,
             cause_id=flow.cause_id,
             from_account=checking(flow.payer),
             to_account=checking(flow.payee),
-            amount=quanta(flow.amount),
+            amount=USD.quanta(flow.amount),
             income_category=None,
             deduction_category=None,
         )
