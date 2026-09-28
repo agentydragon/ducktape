@@ -71,3 +71,14 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "egress_binding",
+    srcs = ["egress_binding.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//agentplane/crds:egressbinding",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)

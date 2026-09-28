@@ -266,6 +266,7 @@ py_library(
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s/providers/agentplane:action_policy_set",
+        "//cluster/cdk8s/providers/agentplane:egress_binding",
         "//cluster/cdk8s/providers/agentplane:egress_policy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
