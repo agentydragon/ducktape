@@ -44,9 +44,11 @@ argument, not a statistical certificate: a century of US data holds about three 
 30-year windows, and no record can tell a 1% tail from a 5% one. Sanity checks catch the absurd;
 the rest is judged the way one picks a model on little data: plausible assumptions, the simplest
 structure that produces the behavior a decision depends on, and numbers that look right beside
-history and published results. Today `x/models/structural_macro.py` is Gaussian and US-only,
-with equity independent of inflation and no parameter uncertainty, and historical replay has
-only US history.
+history and published results. The decisions served turn on the chance of ruin and of forced
+spending cuts, not on final wealth, so what a model must make believable is sequence risk: how
+deep and long drawdowns and inflation episodes run, above all early in the horizon. Today
+`x/models/structural_macro.py` is Gaussian and US-only, with equity independent of inflation
+and no parameter uncertainty, and historical replay has only US history.
 
 - **CARDS:** each model in `x/models/` says in prose beside its code what it assumes, what it
   leaves out, its data window, and why those choices are sensible for a 30–60 year household
@@ -156,7 +158,7 @@ per location over a purchase, hold, rent-out and sale horizon.
   partially sell the existing nominal-bond slice, then off-par acquisition. Hold-to-maturity
   becomes a policy, not the instrument's illiquidity. Then a native-position version of
   <x/bond_policies/README.md>'s supplied-curve control.
-- **EXUS** (with PANEL or a fitted ex-US series): VT's and VSUX's ex-US holdings follow an
+- **EXUS** (with PANEL or a fitted ex-US series): VT's and VXUS's ex-US holdings follow an
   ex-US equity path, not US returns.
 - **Trading costs:** a proportional cost per trade, readable in the trace (#5486, held #8143).
 - **Fund expense ratios:** a fund's annual expense ratio accrues as a drag on its value,
