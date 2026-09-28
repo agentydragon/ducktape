@@ -34,7 +34,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
 from cluster.cdk8s import cnpg, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
-from cluster.cdk8s.helm import helm_release, helm_repository
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.gateway_api.http_route import RouteMatch
@@ -110,7 +110,7 @@ def _synapse(scope: Construct) -> None:
         scope,
         SYNAPSE,
         NAMESPACE,
-        repository=helm_repository(scope, _HELM_REPOSITORY, NAMESPACE, url="https://ananace.gitlab.io/charts"),
+        repository=https_helm_repository(scope, _HELM_REPOSITORY, NAMESPACE, url="https://ananace.gitlab.io/charts"),
         chart="matrix-synapse",
         version="3.12.37",
         interval="15m",

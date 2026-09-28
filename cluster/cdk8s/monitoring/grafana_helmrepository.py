@@ -5,7 +5,7 @@ from __future__ import annotations
 from cdk8s import App, Chart
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import helm_repository, helm_repository_source_ref
+from cluster.cdk8s.helm import helm_repository_source_ref, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/grafana-helmrepository"
@@ -17,7 +17,7 @@ SOURCE_REF = helm_repository_source_ref(_NAME, _NAMESPACE)
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "helmrepository", disable_resource_name_hashes=True)
-    helm_repository(chart, _NAME, _NAMESPACE, url="https://grafana.github.io/helm-charts", interval="12h")
+    https_helm_repository(chart, _NAME, _NAMESPACE, url="https://grafana.github.io/helm-charts", interval="12h")
     return chart
 
 

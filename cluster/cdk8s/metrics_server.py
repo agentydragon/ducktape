@@ -5,7 +5,7 @@ from __future__ import annotations
 from cdk8s import App, Chart
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "metrics-server"
@@ -19,7 +19,9 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        repository=helm_repository(chart, NAME, "flux-system", url="https://kubernetes-sigs.github.io/metrics-server/"),
+        repository=https_helm_repository(
+            chart, NAME, "flux-system", url="https://kubernetes-sigs.github.io/metrics-server/"
+        ),
         chart="metrics-server",
         version="3.14.0",
         interval="30m",

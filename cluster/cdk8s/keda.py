@@ -15,7 +15,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.haku_ci import runner
-from cluster.cdk8s.helm import helm_release, helm_repository
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "keda"
@@ -37,7 +37,7 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        repository=helm_repository(chart, NAME, NAMESPACE, url="https://kedacore.github.io/charts"),
+        repository=https_helm_repository(chart, NAME, NAMESPACE, url="https://kedacore.github.io/charts"),
         chart="keda",
         # 2.20.2 reports an empty Forgejo queue as inactive, allowing haku-ci
         # to scale to zero.

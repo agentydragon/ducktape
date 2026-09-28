@@ -10,7 +10,7 @@ from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "trust-manager"
@@ -25,7 +25,7 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        repository=helm_repository(chart, "cert-manager", NAMESPACE, url="https://charts.jetstack.io"),
+        repository=https_helm_repository(chart, "cert-manager", NAMESPACE, url="https://charts.jetstack.io"),
         chart="trust-manager",
         version="0.25.*",
         interval="30m",

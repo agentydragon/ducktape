@@ -29,22 +29,33 @@ from cluster.cdk8s.providers.flux.helm_repository import HelmRepository
 RETRY_FAILED_INSTALL = HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3))
 
 
-def helm_repository(
-    scope: Construct, name: str, namespace: str, *, url: str, interval: str | None = None
-) -> HelmRepository:
-    """Add and return a Flux `HelmRepository` serving the charts at `url`: an OCI repository for an
-    `oci://` URL, else Flux's default HTTP/S type, whose index is re-fetched every `interval` (our
-    policy: 24h). An OCI repository takes no `interval`: source-controller never polls one."""
-    oci = url.startswith("oci://")
-    if oci and interval is not None:
-        raise ValueError(f"An OCI HelmRepository is never polled, so it takes no interval: {url=} {interval=}")
+def oci_helm_repository(scope: Construct, name: str, namespace: str, *, url: str) -> HelmRepository:
+    """Add and return a Flux OCI `HelmRepository` serving the charts at the `oci://` `url`. It has no
+    `interval`: source-controller never polls an OCI repository; each HelmChart pulls on its own."""
+    if not url.startswith("oci://"):
+        raise ValueError(f"An OCI HelmRepository needs an oci:// URL: {url=}")
     return HelmRepository(
         scope,
         f"helm-repository-{name}",
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
         url=url,
-        type=HelmRepositorySpecType.OCI if oci else None,
-        interval=None if oci else (interval or "24h"),
+        type=HelmRepositorySpecType.OCI,
+    )
+
+
+def https_helm_repository(
+    scope: Construct, name: str, namespace: str, *, url: str, interval: str = "24h"
+) -> HelmRepository:
+    """Add and return a Flux `HelmRepository` of the default type, serving the chart index at the
+    `https://` `url`, which source-controller re-fetches every `interval`. Our policy: 24h."""
+    if not url.startswith("https://"):
+        raise ValueError(f"A default-type HelmRepository needs an https:// URL here: {url=}")
+    return HelmRepository(
+        scope,
+        f"helm-repository-{name}",
+        metadata=ApiObjectMetadata(name=name, namespace=namespace),
+        url=url,
+        interval=interval,
     )
 
 
