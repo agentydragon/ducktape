@@ -63,6 +63,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console_config, database
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.settings_file import SettingsFile
 from haku.console.config import CONFIG_FILE_ENV
 from haku.console.mcp_config import ConsoleConfigFile
@@ -76,18 +77,24 @@ PUBLIC_BASE_URL = f"https://{HOSTNAME}"
 IMAGE = "git.allegedly.works/ducktape-ci/haku-console"
 _STATIC_IMAGE = "git.allegedly.works/ducktape-ci/haku-console-static"
 PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
-API_PORT = 8080
-_METRICS_PORT = 9090
+# The public route targets the static shell; this port serves nginx's in-cluster proxy and any
+# trusted in-cluster API consumer.
+_API = service_ref.ServiceRef(
+    name=NAME,
+    port=service_ref.Port(name="api", number=8080),
+    pods=service_ref.Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
+)
+# The ServiceMonitor's target: nginx deliberately does not proxy /metrics, so this names the API
+# container without making metrics public.
+_METRICS = service_ref.ServiceRef(
+    name=_API.name, port=service_ref.Port(name="metrics", number=9090), pods=_API.pods, target_port=_API.pod_port
+)
 STATIC_NAME = "haku-console-static"
-_STATIC_PORT = 8081
-_STATIC_SERVICE_PORT = 8080
-LABELS = {"app.kubernetes.io/name": NAME}
-_STATIC_LABELS = {"app.kubernetes.io/name": STATIC_NAME}
 _STATIC = service_ref.ServiceRef(
     name=STATIC_NAME,
-    port=service_ref.Port(name="http", number=_STATIC_SERVICE_PORT),
-    pods=service_ref.Pods(namespace=NAMESPACE, labels=tuple(_STATIC_LABELS.items())),
-    target_port=_STATIC_PORT,
+    port=service_ref.Port(name="http", number=8080),
+    pods=service_ref.Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", STATIC_NAME),)),
+    target_port=8081,
 )
 # Hand-written siblings carrying Flux image-automation markers: the static image's tag,
 # projected as a file so /api/deployment reports the frontend revision without a
@@ -102,6 +109,7 @@ INDEXER_SQL_CONFIG_MAP = "haku-console-db-indexer-sql"
 _INDEXER_SQL_DIR = "/sql"
 _INDEXER_PROVISIONER_NAME = "haku-console-db-indexer-provisioner"
 _AUTHENTIK = "https://auth.allegedly.works"
+_DB_APP = SecretRef(namespace=database.NAMESPACE, name=database.APP_SECRET)
 
 _DB_ENV = {
     "HAKU_CONSOLE_DB_USER": "username",
@@ -119,9 +127,8 @@ _DB_AUTHORITY = (
 def database_env(scope: Construct) -> dict[str, EnvValue]:
     """The CNPG app credential's parts and the SQLAlchemy asyncpg URL assembled from them, as the
     API and the migration Job both read them."""
-    secret = Secret.from_secret_name(scope, "db-app-secret", database.APP_SECRET)
     return {
-        **{name: EnvValue.from_secret_value(SecretValue(secret=secret, key=key)) for name, key in _DB_ENV.items()},
+        **{name: _DB_APP.key(key).env_value(scope, f"db-app-{key}") for name, key in _DB_ENV.items()},
         env_name(Settings, "database_url"): EnvValue.from_value(f"postgresql+asyncpg://{_DB_AUTHORITY}"),
     }
 
@@ -238,15 +245,15 @@ class Console(Construct):
             self._secrets[name] = Secret.from_secret_name(self, f"secret-{name}", name)
         return self._secrets[name]
 
-    def _from_secret(self, secret: str, key: str, *path: str, optional: bool = False) -> tuple[str, EnvValue]:
-        """The env var for the settings leaf at `path`, read from `secret`'s `key`."""
+    def _from_secret(self, key: SecretKey, *path: str, optional: bool = False) -> tuple[str, EnvValue]:
+        """The env var for the settings leaf at `path`, read from `key`."""
         self._supplied.append(path)
         return env_name(Settings, *path), EnvValue.from_secret_value(
-            SecretValue(secret=self._secret(secret), key=key), optional=optional
+            SecretValue(secret=self._secret(key.secret.name), key=key.key), optional=optional
         )
 
     def _container_env(self) -> dict[str, EnvValue]:
-        oidc = "haku-console-oidc"
+        oidc = SecretRef(namespace=NAMESPACE, name="haku-console-oidc")
         image_metadata = ConfigMap.from_config_map_name(self, "image-metadata-ref", IMAGE_METADATA_CONFIG_MAP)
         return dict(
             [
@@ -255,7 +262,10 @@ class Console(Construct):
                     env_name(Settings, "aiquota_url"),
                     EnvValue.from_value("http://aiquota-api.cli-proxy-api.svc.cluster.local:8080"),
                 ),
-                self._from_secret("aiquota-api-bearer-haku-console", "bearer-token", "aiquota_bearer_token"),
+                self._from_secret(
+                    SecretRef(namespace=NAMESPACE, name="aiquota-api-bearer-haku-console").key("bearer-token"),
+                    "aiquota_bearer_token",
+                ),
                 # Capability tier: the launch-routine action. The console builds both the fire
                 # URL and the claude.ai/code deep-link from this routine (trigger) id; the bearer
                 # lives only in this namespace, so Haku cannot read it.
@@ -263,11 +273,19 @@ class Console(Construct):
                     env_name(Settings, "launch_routine", "routine_id"),
                     EnvValue.from_value("trig_0158pCMU1XBhoALBWikwSyK4"),
                 ),
-                self._from_secret("haku-routine-launch-token", "token", "launch_routine", "token"),
+                self._from_secret(
+                    SecretRef(namespace=NAMESPACE, name="haku-routine-launch-token").key("token"),
+                    "launch_routine",
+                    "token",
+                ),
                 # Web Push: the VAPID key the console signs approval notifications with. Its
                 # public half is derived at startup and handed to each browser at subscribe
                 # time, so rotating it makes every enrolled device re-subscribe.
-                self._from_secret("haku-console-web-push-vapid", "private-key-pem", "web_push", "private_key_pem"),
+                self._from_secret(
+                    SecretRef(namespace=NAMESPACE, name="haku-console-web-push-vapid").key("private-key-pem"),
+                    "web_push",
+                    "private_key_pem",
+                ),
                 (env_name(Settings, "web_push", "subject"), EnvValue.from_value("mailto:agentydragon@gmail.com")),
                 # The Authentik-gated origin of Haku's own UI, framed as a sandboxed cross-origin
                 # iframe (haku/console/docs/containment.md).
@@ -286,15 +304,25 @@ class Console(Construct):
                 *database_env(self).items(),
                 # The static Agents' bearers; the durable Agent UUIDs and display names are in
                 # the config file.
-                self._from_secret("haku-console-agent-api", "token", "static_agents", "haku", "token"),
+                self._from_secret(
+                    SecretRef(namespace=NAMESPACE, name="haku-console-agent-api").key("token"),
+                    "static_agents",
+                    "haku",
+                    "token",
+                ),
                 # public-coder-agent's bearer reaches only its iron-proxy; the OpenClaw
                 # container sees a non-secret placeholder.
-                self._from_secret("haku-console-public-coder-agent", "token", "static_agents", "public_coder", "token"),
+                self._from_secret(
+                    SecretRef(namespace=NAMESPACE, name="haku-console-public-coder-agent").key("token"),
+                    "static_agents",
+                    "public_coder",
+                    "token",
+                ),
                 # The Operator each static Agent acts as: the controller-fed Authentik user id,
                 # resolved through the identity trust domain to a canonical Operator UUID and never
                 # live request authority.
-                self._from_secret(oidc, "operator_subject", "static_agents", "haku", "operator_subject"),
-                self._from_secret(oidc, "operator_subject", "static_agents", "public_coder", "operator_subject"),
+                self._from_secret(oidc.key("operator_subject"), "static_agents", "haku", "operator_subject"),
+                self._from_secret(oidc.key("operator_subject"), "static_agents", "public_coder", "operator_subject"),
                 # Agent-facing MCP OAuth: an Authentik-backed OIDCProxy (DCR + PKCE) on /mcp,
                 # composed with the static bearers via MultiAuth. Provider and client secret are
                 # minted by tf/gitops/agent-machine-access (application slug haku-console-mcp);
@@ -303,8 +331,8 @@ class Console(Construct):
                     env_name(Settings, "mcp_oauth", "oidc_issuer"),
                     EnvValue.from_value(f"{_AUTHENTIK}/application/o/haku-console-mcp/"),
                 ),
-                self._from_secret(oidc, "mcp_client_id", "mcp_oauth", "oidc_client_id"),
-                self._from_secret(oidc, "mcp_client_secret", "mcp_oauth", "oidc_client_secret"),
+                self._from_secret(oidc.key("mcp_client_id"), "mcp_oauth", "oidc_client_id"),
+                self._from_secret(oidc.key("mcp_client_secret"), "mcp_oauth", "oidc_client_secret"),
                 # DCR + token state shared across the replicas, in the console's own Postgres
                 # (py-key-value's PostgreSQLStore auto-creates its table). The asyncpg DSN, not
                 # the SQLAlchemy `+asyncpg` URL the ORM uses.
@@ -320,9 +348,9 @@ class Console(Construct):
                     env_name(Settings, "operator_oidc", "issuer"),
                     EnvValue.from_value(f"{_AUTHENTIK}/application/o/haku-console/"),
                 ),
-                self._from_secret(oidc, "operator_client_id", "operator_oidc", "client_id"),
-                self._from_secret(oidc, "operator_client_secret", "operator_oidc", "client_secret"),
-                self._from_secret(oidc, "operator_session_secret", "operator_oidc", "session_secret"),
+                self._from_secret(oidc.key("operator_client_id"), "operator_oidc", "client_id"),
+                self._from_secret(oidc.key("operator_client_secret"), "operator_oidc", "client_secret"),
+                self._from_secret(oidc.key("operator_session_secret"), "operator_oidc", "session_secret"),
                 # The Authentik user-id namespace both providers above share (sub_mode=user_id).
                 (
                     env_name(Settings, "operator_identity", "trust_domain"),
@@ -338,7 +366,7 @@ class Console(Construct):
             metadata=ApiObjectMetadata(
                 name=NAME,
                 namespace=NAMESPACE,
-                labels=LABELS,
+                labels=_API.pods.selector,
                 annotations={
                     # Only the API's own mounted ConfigMap and credentials, never reloader's
                     # blanket auto mode: the projected static-image metadata changes on every
@@ -347,7 +375,7 @@ class Console(Construct):
                     "secret.reloader.stakater.com/reload": ",".join(sorted(self._secrets)),
                 },
             ),
-            pod_metadata=ApiObjectMetadata(labels=LABELS),
+            pod_metadata=ApiObjectMetadata(labels=_API.pods.selector),
             select=False,
             replicas=2,
             # Keep one replica serving while the controller frees capacity for its replacement:
@@ -364,12 +392,12 @@ class Console(Construct):
             termination_grace_period=Duration.seconds(25),
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
         )
-        deployment.select(LabelSelector.of(labels=LABELS))
+        deployment.select(LabelSelector.of(labels=_API.pods.selector))
         container = deployment.add_container(
             name="server",
             image=f"{IMAGE}:{PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
-            ports=[ContainerPort(name="api", number=API_PORT)],
+            ports=[_API.port.container_port()],
             env_variables=env,
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(500)),
@@ -382,13 +410,13 @@ class Console(Construct):
             # boot still constructs authenticated clients and validates schema read
             # compatibility before binding its port. Five minutes separates "still starting"
             # from "wedged".
-            startup=Probe.from_tcp_socket(port=API_PORT, failure_threshold=60, period_seconds=Duration.seconds(5)),
+            startup=Probe.from_tcp_socket(port=_API.pod_port, failure_threshold=60, period_seconds=Duration.seconds(5)),
             # httpGet /healthz, not tcpSocket: the port stays open after FastMCP's
             # StreamableHTTPSessionManager task group wedges (haku/console/identity/
             # fastmcp_adapter.py, `mcp_session_manager_liveness`), so only /healthz notices a
             # replica stuck 500ing every /mcp request.
-            liveness=http_probe("/healthz", port=API_PORT, initial_delay_seconds=10, period_seconds=30),
-            readiness=http_probe("/healthz", port=API_PORT, initial_delay_seconds=5, period_seconds=10),
+            liveness=http_probe("/healthz", port=_API.pod_port, initial_delay_seconds=10, period_seconds=30),
+            readiness=http_probe("/healthz", port=_API.pod_port, initial_delay_seconds=5, period_seconds=10),
             # The aspect py_binary launcher materializes its venv on the rootfs at startup.
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
@@ -409,15 +437,16 @@ class Console(Construct):
         Service(
             self,
             "service",
-            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=LABELS),
-            selector=Pods.select(self, "pods", labels=LABELS),
+            metadata=ApiObjectMetadata(name=_API.name, namespace=NAMESPACE, labels=_API.labels),
+            selector=Pods.select(self, "pods", labels=_API.pods.selector),
             ports=[
-                # The public route targets the static shell; this port serves nginx's
-                # in-cluster proxy and any trusted in-cluster API consumer.
-                ServicePort(name="api", port=API_PORT, target_port=API_PORT, protocol=Protocol.TCP),
-                # The ServiceMonitor's target: nginx deliberately does not proxy /metrics, so
-                # this names the API container without making metrics public.
-                ServicePort(name="metrics", port=_METRICS_PORT, target_port=API_PORT, protocol=Protocol.TCP),
+                _API.port.service_port(),
+                ServicePort(
+                    name=_METRICS.port.name,
+                    port=_METRICS.port.number,
+                    target_port=_METRICS.pod_port,
+                    protocol=Protocol.TCP,
+                ),
             ],
         )
 
@@ -426,8 +455,8 @@ class Console(Construct):
             self,
             "servicemonitor",
             metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-            selector=ServiceMonitorSpecSelector(match_labels=LABELS),
-            endpoints=[Endpoint.plain(port="metrics")],
+            selector=ServiceMonitorSpecSelector(match_labels=_API.labels),
+            endpoints=[Endpoint.plain(port=_METRICS.port.name)],
         )
 
     def _add_static(self) -> None:
@@ -435,8 +464,8 @@ class Console(Construct):
         deployment = Deployment(
             self,
             "static-deployment",
-            metadata=ApiObjectMetadata(name=STATIC_NAME, namespace=NAMESPACE, labels=_STATIC_LABELS),
-            pod_metadata=ApiObjectMetadata(labels=_STATIC_LABELS),
+            metadata=ApiObjectMetadata(name=STATIC_NAME, namespace=NAMESPACE, labels=_STATIC.pods.selector),
+            pod_metadata=ApiObjectMetadata(labels=_STATIC.pods.selector),
             select=False,
             replicas=2,
             strategy=DeploymentStrategy.rolling_update(
@@ -446,7 +475,7 @@ class Console(Construct):
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "static-forgejo-images-creds-ref"),
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
         )
-        deployment.select(LabelSelector.of(labels=_STATIC_LABELS))
+        deployment.select(LabelSelector.of(labels=_STATIC.pods.selector))
         container = deployment.add_container(
             name="static",
             image=f"{_STATIC_IMAGE}:{PLACEHOLDER_TAG}",
@@ -457,16 +486,16 @@ class Console(Construct):
             env_variables={
                 "HAKU_CONSOLE_HAKU_UI_URL": EnvValue.from_value("https://haku-ui.allegedly.works"),
                 "HAKU_CONSOLE_AUTH_ORIGIN": EnvValue.from_value(_AUTHENTIK),
-                "HAKU_CONSOLE_API_UPSTREAM": EnvValue.from_value(f"{NAME}.{NAMESPACE}.svc.cluster.local:{API_PORT}"),
+                "HAKU_CONSOLE_API_UPSTREAM": EnvValue.from_value(f"{_API.host}:{_API.port.number}"),
             },
-            ports=[ContainerPort(name="http", number=_STATIC_PORT)],
+            ports=[ContainerPort(name=_STATIC.port.name, number=_STATIC.pod_port, protocol=Protocol.TCP)],
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(10), limit=Cpu.millis(100)),
                 memory=MemoryResources(request=Size.mebibytes(32), limit=Size.mebibytes(128)),
             ),
             # nginx's own SPA response, not /healthz, which is proxied to the API.
-            liveness=http_probe("/", port=_STATIC_PORT, initial_delay_seconds=10, period_seconds=30),
-            readiness=http_probe("/", port=_STATIC_PORT, initial_delay_seconds=5, period_seconds=10),
+            liveness=http_probe("/", port=_STATIC.pod_port, initial_delay_seconds=10, period_seconds=30),
+            readiness=http_probe("/", port=_STATIC.pod_port, initial_delay_seconds=5, period_seconds=10),
             # Writable: its root filesystem writes are unaudited.
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
@@ -476,10 +505,15 @@ class Console(Construct):
         Service(
             self,
             "static-service",
-            metadata=ApiObjectMetadata(name=STATIC_NAME, namespace=NAMESPACE, labels=_STATIC_LABELS),
-            selector=Pods.select(self, "static-pods", labels=_STATIC_LABELS),
+            metadata=ApiObjectMetadata(name=_STATIC.name, namespace=NAMESPACE, labels=_STATIC.labels),
+            selector=Pods.select(self, "static-pods", labels=_STATIC.pods.selector),
             ports=[
-                ServicePort(name="http", port=_STATIC_SERVICE_PORT, target_port=_STATIC_PORT, protocol=Protocol.TCP)
+                ServicePort(
+                    name=_STATIC.port.name,
+                    port=_STATIC.port.number,
+                    target_port=_STATIC.pod_port,
+                    protocol=Protocol.TCP,
+                )
             ],
         )
 
@@ -525,7 +559,6 @@ class Console(Construct):
             restart_policy=RestartPolicy.NEVER,
             automount_service_account_token=False,
         )
-        app_secret = Secret.from_secret_name(self, "indexer-db-app-secret", database.APP_SECRET)
         container = job.add_container(
             name="psql",
             image="ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie",
@@ -534,8 +567,8 @@ class Console(Construct):
             args=["--set=ON_ERROR_STOP=1", "-f", f"{_INDEXER_SQL_DIR}/indexer-role.sql"],
             # As the database owner: object-level GRANTs need owner privileges, not superuser.
             env_variables={
-                "PGUSER": EnvValue.from_secret_value(SecretValue(secret=app_secret, key="username")),
-                "PGPASSWORD": EnvValue.from_secret_value(SecretValue(secret=app_secret, key="password")),
+                "PGUSER": _DB_APP.key("username").env_value(self, "indexer-db-username"),
+                "PGPASSWORD": _DB_APP.key("password").env_value(self, "indexer-db-password"),
                 "PGHOST": EnvValue.from_value(database.RW_HOST),
                 "PGDATABASE": EnvValue.from_value(database.DATABASE),
             },
