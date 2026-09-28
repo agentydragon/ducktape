@@ -348,12 +348,7 @@ def generate_manifests(root: Path) -> None:
     flux_image_automation_ghcr_artifact = artifact("flux-image-automation-ghcr", flux_image_automation_ghcr.OUTPUT_DIR)
     flux_image_automation_ghcr_kustomization = flux_image_automation_ghcr.flux_image_automation_ghcr(
         flux_chart,
-        write_directory(
-            root,
-            flux_image_automation_ghcr_artifact,
-            flux_image_automation_ghcr.automation_chart,
-            flux_image_automation_ghcr.openclaw_chart,
-        ),
+        write_directory(root, flux_image_automation_ghcr_artifact, flux_image_automation_ghcr.automation_chart),
     )
     budget_namespace_artifact = artifact("budget-namespace", forgejo_budget_namespace.OUTPUT_DIR)
     budget_namespace_kustomization = forgejo_budget_namespace.budget_namespace(

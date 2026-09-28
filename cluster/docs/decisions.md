@@ -305,12 +305,12 @@ See the facade Deployment in `cluster/cdk8s/tana_mcp.py` for a working example
 - **OpenClaw gateway / OpenShell** (2026-07-31): manifests deleted rather than parked.
   The gateway was unused and wedged (no exec traffic, idle orphaned sandboxes), and the
   operator could not be egress-confined (`docs/personal_agents/findings/` F3). OpenClaw
-  as an agent runtime is alive: `public-coder-agent` (the reference agent — same
-  `ghcr.io/agentydragon/openclaw` image, plain Deployment, `sandbox.mode: "off"`) and
-  `haku-openclaw-spike` (its own OpenClaw build) run today, and the `openclaw`
-  ImageRepository/ImagePolicy are kept for that image. The former `openclaw-gateway` and
-  `openclaw-sandbox` namespaces were retired after their retained credentials moved to
-  `agents/shared-secrets`; see <../archive/2026_08_openclaw_namespace_retirement.md>.
+  as an agent runtime is alive: `public-coder-agent` (the reference agent — its own
+  OpenClaw build, `git.allegedly.works/ducktape-ci/public-coder-agent`, plain Deployment,
+  `sandbox.mode: "off"`) and `haku-openclaw-spike` (its own OpenClaw build) run today.
+  The former `openclaw-gateway` and `openclaw-sandbox` namespaces were retired after their
+  retained credentials moved to `agents/shared-secrets`; see
+  <../archive/2026_08_openclaw_namespace_retirement.md>.
   Evaluated alternatives: `docs/personal_agents/verdicts.md`.
 - **LiteLLM ChatGPT sub-instance** (`litellm-chatgpt`, deleted 2026-08-06): a second
   LiteLLM Deployment holding its own ChatGPT/Codex OAuth session on a PVC, serving the

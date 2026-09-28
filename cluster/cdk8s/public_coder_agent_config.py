@@ -71,7 +71,7 @@ _NAMESPACE_ANNOTATIONS = {
         "outpost. Opens pull requests against public repositories as agentydragon-agent."
     )
 }
-_IMAGE = "ghcr.io/agentydragon/openclaw:unset"
+_IMAGE = "git.allegedly.works/ducktape-ci/public-coder-agent:unset"
 _GATEWAY_PORT = 18789
 _HOME = "/home/openclaw"
 _CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"

@@ -11,7 +11,6 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:image_automation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/flux:image_repository",
         "@pypi//cdk8s",
     ],
 )

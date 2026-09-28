@@ -98,16 +98,6 @@ def chart(app: App) -> Chart:
                     name="ducktape",
                     namespace="ducktape-flux",
                 ),
-                ReceiverSpecResources(
-                    api_version="image.toolkit.fluxcd.io/v1",
-                    kind=ReceiverSpecResourcesKind.IMAGE_REPOSITORY,
-                    name="haku-openclaw-spike",
-                ),
-                ReceiverSpecResources(
-                    api_version="image.toolkit.fluxcd.io/v1",
-                    kind=ReceiverSpecResourcesKind.IMAGE_REPOSITORY,
-                    name="openclaw",
-                ),
             ],
         ),
     )
