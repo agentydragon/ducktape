@@ -1556,7 +1556,6 @@ py_library(
         "//cluster/cdk8s/seaweedfs:external_credentials",
         "//cluster/cdk8s/seaweedfs:filer_db",
         "//cluster/cdk8s/seaweedfs:flux_kustomizations",
-        "//cluster/cdk8s/seaweedfs:forgejo_bucket",
         "//cluster/cdk8s/seaweedfs:loom_gym_bucket",
         "//cluster/cdk8s/seaweedfs:monitoring",
         "//cluster/cdk8s/seaweedfs:namespace",

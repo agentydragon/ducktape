@@ -84,20 +84,6 @@ py_library(
 )
 
 py_library(
-    name = "forgejo_bucket",
-    srcs = ["forgejo_bucket.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = [
-        ":cluster",
-        ":namespace",
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/seaweedfs:s3",
-        "@pypi//cdk8s",
-    ],
-)
-
-py_library(
     name = "public_coder_agent_backups_bucket",
     srcs = ["public_coder_agent_backups_bucket.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],

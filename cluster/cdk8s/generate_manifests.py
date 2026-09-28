@@ -221,7 +221,6 @@ from cluster.cdk8s.seaweedfs import (
     external_credentials as seaweedfs_external_credentials,
     filer_db as seaweedfs_filer_db,
     flux_kustomizations as seaweedfs_flux_kustomizations,
-    forgejo_bucket as seaweedfs_forgejo_bucket,
     loom_gym_bucket as seaweedfs_loom_gym_bucket,
     monitoring as seaweedfs_monitoring,
     namespace as seaweedfs_namespace,
@@ -872,12 +871,6 @@ def generate_manifests(root: Path) -> None:
             seaweedfs_external_credentials.chart,
             siblings=["claude-reader-credentials.sops.yaml", "drivefs-artifacts-credentials.sops.yaml"],
         ),
-        seaweedfs_operator_kustomization,
-    )
-    seaweedfs_forgejo_bucket_artifact = artifact("seaweedfs-forgejo-bucket", seaweedfs_forgejo_bucket.OUTPUT_DIR)
-    seaweedfs_forgejo_bucket.seaweedfs_forgejo_bucket(
-        flux_chart,
-        write_directory(root, seaweedfs_forgejo_bucket_artifact, seaweedfs_forgejo_bucket.chart),
         seaweedfs_operator_kustomization,
     )
     seaweedfs_loom_gym_bucket_artifact = artifact("seaweedfs-loom-gym-bucket", seaweedfs_loom_gym_bucket.OUTPUT_DIR)
@@ -1556,7 +1549,6 @@ def generate_manifests(root: Path) -> None:
             proxmox_proxy_artifact,
             reloader_artifact,
             seaweedfs_drivefs_artifacts_bucket_artifact,
-            seaweedfs_forgejo_bucket_artifact,
             seaweedfs_loom_gym_bucket_artifact,
             seaweedfs_pr_visuals_bucket_artifact,
             seaweedfs_public_coder_agent_backups_bucket_artifact,

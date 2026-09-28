@@ -262,12 +262,26 @@ spec:
       kind: Bucket
       namespace: forgejo
     - group: seaweed.seaweedfs.com
+      kind: S3Identity
+      namespace: forgejo
+    - group: seaweed.seaweedfs.com
       kind: S3Credentials
       namespace: forgejo
   to:
     - group: seaweed.seaweedfs.com
       kind: Seaweed
       name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
