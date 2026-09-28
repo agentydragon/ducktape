@@ -197,7 +197,7 @@ spec:
           containers:
             - args:
                 - --base-url
-                - http://cpap-card.cpap-sync.svc.cluster.local
+                - http://cpap-card.cpap-sync.svc:80
                 - --git-url
                 - $(GIT_REPO_URL)
                 - --wifi-interface
@@ -355,7 +355,7 @@ spec:
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: cpap-sync
-            k8s:kubevirt.io/domain: cpap-gateway
+            kubevirt.io/domain: cpap-gateway
       toPorts:
         - ports:
             - port: "18080"
