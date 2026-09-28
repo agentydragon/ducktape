@@ -1092,13 +1092,13 @@
     <div class="eyebrow">cluster/cdk8s · design proposal · draft</div>
     <h1>Ducktape cdk8s Conventions</h1>
     <p class="lede">
-      Nine conventions for the ducktape cdk8s layer, one shape per job, where its 215 shared helpers use 39 mechanism
+      Nine conventions for the ducktape cdk8s layer, one shape per job, where its 236 shared helpers use 39 mechanism
       combinations. Each was chosen against the jobs the cluster does often or will need soon, checked against what
       cdk8s can do from Python, and aligned with admission-only Flux dependencies. This page starts from devel as it is
       and lists only what is left.
     </p>
     <div class="meta">
-      <span>baseline <b>origin/devel 12a18e9c2c</b></span
+      <span>baseline <b>origin/devel d86d9ae49d</b></span
       ><span>date <b>2026-09-28</b></span
       ><span>branch <b>claude/jolly-darwin-al6qse</b></span
       ><span>status <b>awaiting your decisions</b></span>
@@ -1156,7 +1156,8 @@
             <li>
               <strong>C5 Pod policy.</strong> <code>pod_policy.harden()</code> and <code>pod_policy.place()</code> are
               the only functions that amend a built object. They reach cdk8s-plus, raw and CRD-embedded pod specs
-              through one path table, and <code>place()</code> writes the placement as a nodeSelector.
+              through one path table, and <code>place()</code> writes the placement as a nodeSelector, as it does on
+              devel.
             </li>
             <li>
               <strong>C6 Fleet rules everywhere.</strong> The writer attaches them to every chart, so coverage does not
@@ -1192,12 +1193,10 @@
           </p>
           <ul>
             <li>
-              <strong>Ready now:</strong> the namespace edges (#8185) and the Forgejo users&#39; Secrets moved into
-              <code>forgejo</code> behind ESO, after which 8 non-admission edges remain, each named by the edge check;
-              the edge-justification check; provider classes for the 14 kinds still built raw (#8293, #8315);
-              <code>place()</code> writing a nodeSelector; <code>SettingsFile</code>; <code>harden()</code> and
-              <code>place()</code> on the raw and CRD-embedded workloads; the 12 SeaweedFS identity moves; and the
-              revised SeaweedFS provider split (#8035).
+              <strong>Ready now:</strong> the namespace edges (#8185), after which 8 non-admission edges remain, each
+              named by the edge check; the edge-justification check; <code>SettingsFile</code>;
+              <code>harden()</code> and <code>place()</code> on the raw and CRD-embedded workloads; and the revised
+              SeaweedFS provider split (#8035).
             </li>
             <li>
               <strong>Waiting on a decision:</strong> everything built on C4&#39;s references (decision 1), the secrets
@@ -1572,9 +1571,9 @@
                       mirrors <code>variables.tf</code>, passed as <code>gitops_terraform(variables=...)</code>, and one
                       relation test ties each model&#39;s top-level field names to <code>variables.tf</code> (nested
                       object attributes stay unchecked); the module&#39;s BUILD exports <code>variables.tf</code> for it
-                      (<code>terraform.py:51-110</code>, <code>test_terraform_vars.py:20-25</code>). Terraform CRs group
-                      per external system (authentik-tf, github-tf; the Forgejo modules are decision 11) unless a #7094
-                      rule-3 exception applies, and order among themselves through the CR&#39;s own
+                      (<code>terraform.py:102-149</code>, <code>test_terraform_vars.py:20-25</code>). Terraform CRs
+                      group per external system (authentik-tf, github-tf; the Forgejo modules are decision 11) unless a
+                      #7094 rule-3 exception applies, and order among themselves through the CR&#39;s own
                       <code>spec.dependsOn</code> (<code>gitops_terraform(depends_on=...)</code>), never through Flux
                       <code>dependsOn</code>.
                     </li>
@@ -1607,7 +1606,7 @@
           <div class="sub">
             <div class="rich">
               <p>
-                Root causes 1 and 8: 215 shared helpers use 39 mechanism combinations, and each dedupe helper added one
+                Root causes 1 and 8: 236 shared helpers use 39 mechanism combinations, and each dedupe helper added one
                 more (<code>env_helpers</code>, <code>minted_secret.py</code>).
                 <code>cluster/cdk8s/AGENTS.md:82-86</code> states the rule. Choosing among shapes the tree already has
                 keeps the learning cost and the migration diff small.
@@ -1626,7 +1625,7 @@
           <div class="sub">
             <div class="rich">
               <p>
-                PLAN.md F forbids a parallel deployment specification (<code>cluster/cdk8s/PLAN.md:133-134</code>), and
+                PLAN.md F forbids a parallel deployment specification (<code>cluster/cdk8s/PLAN.md:112-113</code>), and
                 the owner has steered hand-rolled spec records toward generated bindings in review.
               </p>
             </div>
@@ -1699,7 +1698,7 @@
           <div class="sub">
             <div class="rich">
               <p>
-                Fleet rules run on 12 of 191 charts, and the graph check, which reads
+                Fleet rules run on 12 of 190 charts, and the graph check, which reads
                 <code>kustomize build</code> output, cannot see the 11 CRD edges known only from their comments. Opt-in
                 enforcement fails at the rate the inventory measured.
               </p>
@@ -1739,9 +1738,9 @@
               <p>
                 Readiness edges turn a fault that heals by retry into a gate that propagates, and the tiny units they
                 produced cost reconcile time and I/O, which is the owner&#39;s reason for the change (#7094). On devel,
-                29 of 243 edges are not admission edges (56 if the 27 direct <code>kyverno</code> edges count as
-                runtime, as decision 8 recommends), 94 of the 123 <code>wait: true</code> nodes are unsuspended and gate
-                nothing admission needs, and 59 of 165 measurable units render 3 objects or fewer.
+                25 of 241 edges are not admission edges (52 if the 27 direct <code>kyverno</code> edges count as
+                runtime, as decision 8 recommends), 92 of the 121 <code>wait: true</code> nodes are unsuspended and gate
+                nothing admission needs, and 55 of 163 measurable units render 3 objects or fewer.
               </p>
             </div>
           </div>
@@ -1833,9 +1832,9 @@
                   <div class="rich">
                     <p>
                       <code>Bucket.grant</code> appends raw dicts at
-                      <code>/spec/access/-</code> (<code>seaweedfs/s3.py:223-229</code>), and
+                      <code>/spec/access/-</code> (<code>seaweedfs/s3.py:221-227</code>), and
                       <code>_ClusterGrant</code> is a chart singleton found by construct id
-                      (<code>s3.py:109-119</code>). The owner accepts a patch only as a required hatch, and a
+                      (<code>s3.py:107-117</code>). The owner accepts a patch only as a required hatch, and a
                       <code>/-</code> append needs an existing list.
                     </p>
                   </div>
@@ -1963,7 +1962,7 @@
                   <div class="rich">
                     <p>
                       A pure rule over rendered objects catches what a mutator missed, such as a container added after
-                      <code>harden()</code>. The writer attaches it to every chart, where 12 of 191 charts opt in today
+                      <code>harden()</code>. The writer attaches it to every chart, where 12 of 190 charts opt in today
                       (C6).
                     </p>
                   </div>
@@ -2008,7 +2007,7 @@
                 <td>
                   <div class="rich">
                     <p>
-                      Today&#39;s default: ntfy&#39;s port is written 6 times in one module (<code>ntfy.py:67</code> and
+                      Today&#39;s default: ntfy&#39;s port is written 6 times in one module (<code>ntfy.py:56</code> and
                       five reuses), <code>external-creds-reader</code> 31 times, and <code>-app</code>/<code>-rw</code>
                       names are derived by hand 12 times.
                     </p>
@@ -2240,7 +2239,7 @@
                     <p>
                       No node function takes <code>root</code> today: the entry point writes each directory, with
                       <code>write_directory</code> or a module&#39;s <code>write_manifests</code>, before calling its
-                      node (<code>generate_manifests.py:749-757</code>).
+                      node (<code>generate_manifests.py:753-761</code>).
                       <code>cluster/cdk8s/AGENTS.md:107-108</code> says a node writes no file, and
                       <code>AGENTS.md:140-141</code> that a Kustomization never builds the chart it describes.
                     </p>
@@ -2335,7 +2334,7 @@
                 <td>
                   <div class="rich">
                     <p>
-                      It produced the tiny units: 59 of 165 measurable Kustomizations render 3 objects or fewer, and
+                      It produced the tiny units: 55 of 163 measurable Kustomizations render 3 objects or fewer, and
                       each costs its own reconcile loop and I/O.
                     </p>
                   </div>
@@ -2360,7 +2359,7 @@
                 <td>
                   <div class="rich">
                     <p>
-                      29 of 243 edges wait on runtime state, 21 of them on a namespace unit (56 if the 27 direct
+                      25 of 241 edges wait on runtime state, 17 of them on a namespace unit (52 if the 27 direct
                       <code>kyverno</code> edges count as runtime, as decision 8 recommends). Each turns a fault that
                       heals by retry into a gate that propagates, with one alert per downstream node (#7094).
                     </p>
@@ -2375,7 +2374,7 @@
                     <p>
                       An edge points at the provider of a rendered kind&#39;s CRD, an operator whose
                       <code>failurePolicy: Fail</code> webhook gates it, or a
-                      <code>postBuild.substituteFrom</code> source; 214 of today&#39;s 243 edges qualify, 27 of them
+                      <code>postBuild.substituteFrom</code> source; 216 of today&#39;s 241 edges qualify, 27 of them
                       direct <code>kyverno</code> edges that decision 8 would reclassify as runtime. Any other edge is
                       an <code>ORDERING_EXCEPTIONS</code> entry with one of two reasons.
                     </p>
@@ -2418,7 +2417,7 @@
                 <td>
                   <div class="rich">
                     <p>
-                      <code>wait</code> is true on 123 nodes, and 94 of them are unsuspended and gate nothing admission
+                      <code>wait</code> is true on 121 nodes, and 92 of them are unsuspended and gate nothing admission
                       needs; each parks a kustomize-controller worker for <code>timeout</code> on every reconcile of a
                       sick unit. The default becomes <code>None</code>, and only the 23 admission targets gate.
                     </p>
@@ -3099,14 +3098,14 @@
       <h2><span class="sec-no">03</span>Why it feels wrong</h2>
       <div class="stats">
         <div class="stat">
-          <span class="n">215</span
+          <span class="n">236</span
           ><span class="l">shared helpers in <code>cluster/cdk8s</code>, each classified by mechanism</span>
         </div>
         <div class="stat">
           <span class="n">39</span><span class="l">distinct mechanism combinations among them</span>
         </div>
         <div class="stat">
-          <span class="n">12 / 191</span><span class="l">charts that register fleet rules today</span>
+          <span class="n">12 / 190</span><span class="l">charts that register fleet rules today</span>
         </div>
         <div class="stat">
           <span class="n">54 / 20</span
@@ -3116,14 +3115,14 @@
           <span class="n">5</span><span class="l">mechanisms for copying one Secret into another namespace</span>
         </div>
         <div class="stat">
-          <span class="n">29 / 243</span
+          <span class="n">25 / 241</span
           ><span class="l"
-            >Flux <code>dependsOn</code> edges that admission does not need; 56 if the 27 <code>kyverno</code> edges are
+            >Flux <code>dependsOn</code> edges that admission does not need; 52 if the 27 <code>kyverno</code> edges are
             runtime (decision 8)</span
           >
         </div>
         <div class="stat">
-          <span class="n">94 / 123</span
+          <span class="n">92 / 121</span
           ><span class="l"><code>wait: true</code> Kustomizations that gate nothing admission needs</span>
         </div>
       </div>
@@ -3132,71 +3131,71 @@
           <h3>Mechanisms used by shared helpers</h3>
           <div class="bars">
             <div class="bar">
-              <span class="k">value factory</span
-              ><span class="track"><span class="fill" style="width: 100%"></span></span><span class="v">50</span>
-            </div>
-            <div class="bar">
               <span class="k">construct class</span
-              ><span class="track"><span class="fill" style="width: 100%"></span></span><span class="v">50</span>
+              ><span class="track"><span class="fill" style="width: 100%"></span></span><span class="v">64</span>
             </div>
             <div class="bar">
-              <span class="k">constant</span><span class="track"><span class="fill" style="width: 74%"></span></span
-              ><span class="v">37</span>
+              <span class="k">value factory</span
+              ><span class="track"><span class="fill" style="width: 79.7%"></span></span><span class="v">51</span>
+            </div>
+            <div class="bar">
+              <span class="k">constant</span><span class="track"><span class="fill" style="width: 62.5%"></span></span
+              ><span class="v">40</span>
             </div>
             <div class="bar">
               <span class="k">resource function</span
-              ><span class="track"><span class="fill" style="width: 70%"></span></span><span class="v">35</span>
+              ><span class="track"><span class="fill" style="width: 59.4%"></span></span><span class="v">38</span>
             </div>
             <div class="bar">
               <span class="k">composite function</span
-              ><span class="track"><span class="fill" style="width: 44%"></span></span><span class="v">22</span>
+              ><span class="track"><span class="fill" style="width: 35.9%"></span></span><span class="v">23</span>
             </div>
             <div class="bar">
               <span class="k">classmethod factory</span
-              ><span class="track"><span class="fill" style="width: 36%"></span></span><span class="v">18</span>
+              ><span class="track"><span class="fill" style="width: 29.7%"></span></span><span class="v">19</span>
             </div>
             <div class="bar">
-              <span class="k">validation</span><span class="track"><span class="fill" style="width: 26%"></span></span
-              ><span class="v">13</span>
+              <span class="k">validation</span><span class="track"><span class="fill" style="width: 23.4%"></span></span
+              ><span class="v">15</span>
             </div>
             <div class="bar">
-              <span class="k">other</span><span class="track"><span class="fill" style="width: 26%"></span></span
-              ><span class="v">13</span>
+              <span class="k">other</span><span class="track"><span class="fill" style="width: 18.8%"></span></span
+              ><span class="v">12</span>
             </div>
             <div class="bar">
-              <span class="k">JSON patch</span><span class="track"><span class="fill" style="width: 18%"></span></span
+              <span class="k">JSON patch</span><span class="track"><span class="fill" style="width: 14.1%"></span></span
               ><span class="v">9</span>
             </div>
             <div class="bar">
-              <span class="k">writer</span><span class="track"><span class="fill" style="width: 14%"></span></span
+              <span class="k">writer</span><span class="track"><span class="fill" style="width: 10.9%"></span></span
               ><span class="v">7</span>
             </div>
             <div class="bar">
               <span class="k">method on construct</span
-              ><span class="track"><span class="fill" style="width: 14%"></span></span><span class="v">7</span>
+              ><span class="track"><span class="fill" style="width: 10.9%"></span></span><span class="v">7</span>
             </div>
             <div class="bar">
-              <span class="k">mutator</span><span class="track"><span class="fill" style="width: 12%"></span></span
+              <span class="k">mutator</span><span class="track"><span class="fill" style="width: 9.4%"></span></span
               ><span class="v">6</span>
             </div>
             <div class="bar">
               <span class="k">pydantic model</span
-              ><span class="track"><span class="fill" style="width: 10%"></span></span><span class="v">5</span>
+              ><span class="track"><span class="fill" style="width: 7.8%"></span></span><span class="v">5</span>
             </div>
             <div class="bar">
               <span class="k">environment props</span
-              ><span class="track"><span class="fill" style="width: 8%"></span></span><span class="v">4</span>
+              ><span class="track"><span class="fill" style="width: 6.2%"></span></span><span class="v">4</span>
             </div>
             <div class="bar">
               <span class="k">settings contract</span
-              ><span class="track"><span class="fill" style="width: 6%"></span></span><span class="v">3</span>
+              ><span class="track"><span class="fill" style="width: 4.7%"></span></span><span class="v">3</span>
             </div>
           </div>
           <div class="sub">
             <div class="rich">
               <p>
                 A helper counts once for each mechanism it uses, so a construct class that also patches and mutates
-                appears in three rows. Every shared helper in <code>cluster/cdk8s</code> on devel 12a18e9c2c was
+                appears in three rows. Every shared helper in <code>cluster/cdk8s</code> on devel d86d9ae49d was
                 classified from its source.
               </p>
             </div>
@@ -3205,13 +3204,16 @@
         <div class="panel">
           <h3>One service, many conventions</h3>
           <div class="rich">
-            <p><code>ntfy.py</code> (323 lines) is a typical small HTTP service. It uses:</p>
+            <p><code>ntfy.py</code> (294 lines) is a typical small HTTP service. It uses:</p>
             <ul>
               <li>
                 construct classes: <code>Deployment</code>, <code>Service</code>, <code>ServiceMonitor</code>,
                 <code>ExternalSecret</code>;
               </li>
-              <li>resource functions: <code>https_route</code>, <code>cnpg.cluster</code>;</li>
+              <li>
+                resource functions: <code>https_route</code>, <code>cnpg.cluster</code>,
+                <code>kubernetes_store.cluster_secret_store</code>;
+              </li>
               <li>a mutator that writes a JSON patch: <code>pod_policy.harden</code>;</li>
               <li>
                 value factories: <code>http_probe</code>, <code>cnpg.same_owner_initdb</code>, and a module-local
@@ -3220,8 +3222,8 @@
               <li>an opt-in validation: <code>fleet_rules.add_fleet_rules(chart)</code>;</li>
               <li>
                 a Flux node that takes the <code>RenderedDirectory</code> the entry point&#39;s
-                <code>write_directory</code> call returns (<code>ntfy.py:302-323</code>,
-                <code>generate_manifests.py:749-757</code>).
+                <code>write_directory</code> call returns (<code>ntfy.py:273-294</code>,
+                <code>generate_manifests.py:753-761</code>).
               </li>
             </ul>
             <p>
@@ -3237,19 +3239,19 @@
         <li>
           <div class="rich">
             <p>
-              No target shape per job, so each helper author chose one. 215 shared helpers use 39 mechanism
+              No target shape per job, so each helper author chose one. 236 shared helpers use 39 mechanism
               combinations. <code>providers/</code> is uniform apart from seaweedfs: its <code>Identity</code> and
               <code>Bucket</code> are plain Constructs taking
-              <code>name=, namespace=</code> (<code>providers/seaweedfs/s3.py:59-73,89-108</code>), while the other 30
+              <code>name=, namespace=</code> (<code>providers/seaweedfs/s3.py:59-73,89-108</code>), while the other 44
               kind constructors take <code>metadata=</code>. The layer above it is not:
             </p>
             <ul>
               <li>
                 six policy functions that each build and return one object take its identity six ways:
                 <code>cnpg.cluster(scope, id, *, name=, namespace=)</code> (<code>cnpg.py:59-64</code>),
-                <code>gitops_terraform(scope, id, *, name=)</code> (<code>terraform.py:51-55</code>),
-                <code>https_route(scope, id, *, metadata=)</code> (<code>gateway.py:51-55</code>),
-                <code>helm_release(scope, name, namespace)</code> with a derived id (<code>helm.py:69-72,106</code>),
+                <code>gitops_terraform(scope, id, *, name=)</code> (<code>terraform.py:102-106</code>),
+                <code>https_route(scope, id, *, metadata=)</code> (<code>gateway.py:50-54</code>),
+                <code>helm_release(scope, name, namespace)</code> with a derived id (<code>helm.py:75-78,121</code>),
                 <code>valkey_instance(scope, *, name=, namespace=)</code> with <code>name</code> as the id
                 (<code>valkey.py:70-74,91</code>), and
                 <code>flux_kustomization(chart, name, source)</code> (<code>flux.py:132-135</code>);
@@ -3257,7 +3259,7 @@
               <li>
                 reading a Secret key into env has the shared <code>env_helpers</code> pair
                 (<code>env_helpers.py:8-17</code>, 50 calls) and 7 module-local variants beside it, one of them for
-                cdk8s-plus (for example <code>haku_egress_proxy.py:44</code>, <code>ntfy.py:77</code>).
+                cdk8s-plus (for example <code>haku_egress_proxy.py:44</code>, <code>ntfy.py:66</code>).
               </li>
             </ul>
             <p>
@@ -3279,11 +3281,11 @@
             <ul>
               <li>
                 <code>Bucket.grant</code> appends a raw dict at
-                <code>/spec/access/-</code> (<code>cluster/cdk8s/seaweedfs/s3.py:223-229</code>);
+                <code>/spec/access/-</code> (<code>cluster/cdk8s/seaweedfs/s3.py:221-227</code>);
               </li>
               <li>
                 <code>_grant_cluster_reference</code> finds a <code>_ClusterGrant</code> chart singleton by construct id
-                (<code>seaweedfs/s3.py:109-119</code>).
+                (<code>seaweedfs/s3.py:107-117</code>).
               </li>
             </ul>
             <p>The owner accepts a JSON patch only as a required hatch.</p>
@@ -3298,12 +3300,12 @@
             </p>
             <ul>
               <li>
-                one port is written 6 times in one module (<code>ntfy.py:67</code> defines it; 219, 247, 251, 264-265
-                and 282 reuse it);
+                one port is written 6 times in one module (<code>ntfy.py:56</code> defines it; 190, 218, 222, 235-236
+                and 253 reuse it);
               </li>
               <li>
                 <code>&lt;cluster&gt;-app</code> and <code>&lt;name&gt;-rw.&lt;ns&gt;.svc</code> are derived by hand 12
-                times (<code>terraform.py:33</code>, <code>atuin/user_provisioner.py:36-37</code>);
+                times (<code>terraform.py:32</code>, <code>atuin/user_provisioner.py:36-37</code>);
               </li>
               <li>the <code>external-creds-reader</code> literal appears 31 times;</li>
               <li>
@@ -3312,7 +3314,7 @@
               </li>
               <li>
                 <code>single_secret_store</code> returns a
-                <code>str</code> (<code>external_secrets/single_secret_store.py:20-28</code>).
+                <code>str</code> (<code>external_secrets/single_secret_store.py:11-19</code>).
               </li>
             </ul>
             <p>Only <code>Service(selector=deployment)</code> and Settings-derived env names hold by construction.</p>
@@ -3336,10 +3338,10 @@
               </li>
             </ul>
             <p>
-              Placement facts are each named once in <code>node_scheduling.py</code>, yet one placement renders two
-              ways: <code>place()</code> writes a required zone affinity, while the raw pod specs, CNPG clusters,
-              Seaweed specs and Helm values that take <code>HIL_OVH_NODE_SELECTOR</code> write a
-              <code>nodeSelector</code> (step 5 makes <code>place()</code> write the nodeSelector too).
+              Placement facts are each named once in <code>node_scheduling.py</code>, and a placement renders one way,
+              as a <code>nodeSelector</code>: <code>place()</code> writes it on its 8 cdk8s-plus workloads, while the
+              raw pod specs, CNPG clusters, Seaweed specs and Helm values state <code>HIL_OVH_NODE_SELECTOR</code> by
+              hand.
             </p>
           </div>
         </li>
@@ -3347,7 +3349,7 @@
           <div class="rich">
             <p>
               Enforcement depends on the author remembering. Fleet rules are registered per chart by an explicit
-              <code>add_fleet_rules</code> call (<code>fleet_rules.py:143-144</code>) on 12 of 191 charts. Node facts
+              <code>add_fleet_rules</code> call (<code>fleet_rules.py:143-144</code>) on 12 of 190 charts. Node facts
               are restated at each node:
             </p>
             <ul>
@@ -3378,9 +3380,9 @@
           <div class="rich">
             <p>
               Writers come in three shapes. <code>generation.write_directory</code> (<code>generation.py:66-95</code>)
-              writes 108 directories and returns the <code>flux.RenderedDirectory</code> its node reads, so no node
+              writes 106 directories and returns the <code>flux.RenderedDirectory</code> its node reads, so no node
               function takes <code>root</code>, as <code>cluster/cdk8s/AGENTS.md:140-141</code> requires. The rest come
-              from 57 module-writer calls at <code>generate_manifests.py:256-330</code>, through
+              from 58 module-writer calls at <code>generate_manifests.py:257-332</code>, through
               <code>write_charts</code> or a module&#39;s own <code>App</code> (5 modules); they list their files in a
               hand-written <code>kustomization.yaml</code>, write their own (16 <code>write_yaml</code> sites, for
               example <code>tofu_state/db.py:87-97</code>) or leave Flux to generate one, and hold 18
@@ -3397,15 +3399,15 @@
             <ul>
               <li>the external-creds roster;</li>
               <li><code>single_secret_store</code> per-pair stores built from the consumer&#39;s chart;</li>
-              <li>app-owned ESO-ServiceAccount stores (<code>ntfy.py:81-111</code>);</li>
+              <li>app-owned ESO-ServiceAccount stores (<code>ntfy.py:70-82</code>);</li>
               <li>reflector mirrors;</li>
               <li>ClusterExternalSecret.</li>
             </ul>
             <p>
               Store namespace allowlists are hand-kept copies of the consumer list (the outages are recorded in
-              <code>TODO.md</code>; <code>external_secrets/config.py:95-118</code>). The committed YAML has three
-              sources for the same <code>flux-system/external-creds-reader</code> ServiceAccount: two live
-              Kustomizations (generated/dns-automation, k8s/github-secrets-sync-secrets) and the parked
+              <code>TODO.md</code>; <code>external_secrets/config.py:68-91</code>). The committed YAML has three sources
+              for the same <code>flux-system/external-creds-reader</code> ServiceAccount: two live Kustomizations
+              (generated/dns-automation, k8s/github-secrets-sync-secrets) and the parked
               <code>k8s/parked/cloud-agent-tf</code>.
             </p>
           </div>
@@ -3421,7 +3423,7 @@
                 composites that return <code>None</code>, against the skill&#39;s rule that a helper returns what it
                 builds (<code>cluster/skills/cdk8s_builders/SKILL.md:31</code>): <code>mint_bearer_secret</code> with
                 12+ knobs and <code>mint_db_role_secret</code> (<code
-                  >external_secrets/minted_secret.py:37-54, 96-110</code
+                  >external_secrets/minted_secret.py:40-57, 99-113</code
                 >);
               </li>
               <li>thin constructor wrappers (<code>env_helpers.py:8-17</code>).</li>
@@ -3436,26 +3438,25 @@
           <div class="rich">
             <p>
               The Flux graph was built for readiness, so it grew tiny units and <code>wait</code> everywhere; its edges
-              are mostly admission edges. On devel there are 171 Kustomizations and 243 <code>dependsOn</code> edges:
+              are mostly admission edges. On devel there are 169 Kustomizations and 241 <code>dependsOn</code> edges:
             </p>
             <ul>
               <li>
-                214 are admission edges: 184 to a CRD provider (11 of them known only from the comment beside the edge,
+                216 are admission edges: 186 to a CRD provider (11 of them known only from the comment beside the edge,
                 mostly for kinds a Helm chart renders) and 30 to a <code>failurePolicy: Fail</code> webhook, 27 of them
                 direct <code>kyverno</code> edges, which decision 8 would reclassify as runtime; none is to a
                 <code>postBuild</code> source;
               </li>
               <li>
-                the other 29 wait on runtime state: 21 on namespace units (#8185 removes 17, and moving the Forgejo
-                users&#39; Secrets into <code>forgejo</code> the last 4), 5 carry a #7094 rule-2 reason
-                (<code>bootstrap-never-converges</code>, <code>destructive-if-out-of-order</code>), 2 order a
-                user-provisioner Job after its app, and <code>artifact-generators</code> waits on
+                the other 25 wait on runtime state: 17 on namespace units, all of which #8185 removes, 5 carry a #7094
+                rule-2 reason (<code>bootstrap-never-converges</code>, <code>destructive-if-out-of-order</code>), 2
+                order a user-provisioner Job after its app, and <code>artifact-generators</code> waits on
                 <code>flux-system</code>;
               </li>
               <li>
-                <code>wait</code> is true on 123 nodes, and 94 of them are unsuspended and gate nothing admission needs;
+                <code>wait</code> is true on 121 nodes, and 92 of them are unsuspended and gate nothing admission needs;
               </li>
-              <li>59 of 165 measurable units render 3 objects or fewer.</li>
+              <li>55 of 163 measurable units render 3 objects or fewer.</li>
             </ul>
             <p>
               The owner is moving the graph to admission-only edges (#7094) because the tiny units cost reconcile time
@@ -3483,7 +3484,7 @@
           <span class="nid">N1</span><span class="nname">Flux node with policy defaults</span
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
-            >172 <code>flux_kustomization</code> calls with hand-ordered construct predecessors;
+            >170 <code>flux_kustomization</code> calls with hand-ordered construct predecessors;
             <code>wait=True</code> is the default (<code>flux.py:142</code>), and 49 calls pass <code>wait</code>.</span
           >
         </div>
@@ -3500,7 +3501,7 @@
           <span class="nid">N3</span><span class="nname">Packaging and writing directories</span
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
-            >Three writer shapes, of which only <code>write_directory</code> (108 directories) returns a
+            >Three writer shapes, of which only <code>write_directory</code> (106 directories) returns a
             <code>RenderedDirectory</code>; 18 <code>&lt;id&gt;.k8s.yaml</code> literals; a new directory touches three
             places in <code>generate_manifests.py</code>.</span
           >
@@ -3518,7 +3519,9 @@
           <span class="nid">N5</span><span class="nname">Cross-namespace secret propagation</span
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
-            >At least five copy mechanisms with hand-kept allowlists and 17 copies of the reader ServiceAccount.</span
+            >At least five copy mechanisms with hand-kept allowlists, 17 copies of the reader ServiceAccount, and a
+            second reader, <code>forgejo-secret-reader</code>, in the 8 namespaces that copy a Forgejo user&#39;s
+            Secret.</span
           >
         </div>
         <div class="need">
@@ -3527,7 +3530,8 @@
           ><span class="ntoday"
             >14 minted Secrets go through <code>minted_secret.py</code>&#39;s <code>mint_*</code> helpers, which return
             <code>None</code>, carry byte-identity knobs and keep two refresh policies; three MCP bearers are one call
-            written three times, and <code>agentplane/dex.py</code> repeats the <code>PasswordSpec</code> literal.</span
+            written three times, and Agentplane&#39;s Dex pairs the shared <code>password_generator</code> with
+            ExternalSecrets of its own.</span
           >
         </div>
         <div class="need">
@@ -3554,8 +3558,8 @@
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
             >Two parallel wrapper modules; <code>Bucket.grant</code> appends by JSON patch; the namespace grant is a
-            chart singleton found by construct id; consumers re-spell 4-5 names; six one-object bucket units are
-            Kustomizations of their own.</span
+            chart singleton found by construct id; consumers re-spell 4-5 names; four bucket units are Kustomizations of
+            their own, two of them one Bucket each.</span
           >
         </div>
         <div class="need">
@@ -3573,9 +3577,9 @@
           ><span class="ntoday"
             ><code>node_scheduling.py</code> names the zone, its node selector, the control-plane toleration and
             <code>PREFER_WORKERS</code> once, and no other module spells <code>&#34;hil-ovh&#34;</code> or the
-            control-plane key in code. <code>place()</code> pins its 8 cdk8s-plus workloads with a required zone
-            affinity; the 9 raw pod specs and the Helm values that take <code>HIL_OVH_NODE_SELECTOR</code> render a
-            <code>nodeSelector</code>.</span
+            control-plane key in code. <code>place()</code> pins its 8 cdk8s-plus workloads with the same
+            <code>nodeSelector</code> that the 9 raw pod specs and the Helm values that take
+            <code>HIL_OVH_NODE_SELECTOR</code> render.</span
           >
         </div>
         <div class="need">
@@ -3593,14 +3597,14 @@
           ><span class="ntoday"
             >Placeholder tag literals in workloads, hand-written image-pins Components, a hand-kept ImagePolicy roster,
             and a <code>forgejo-images</code> store allowlist of 34 namespaces
-            (<code>external_secrets/config.py:150-192</code>).</span
+            (<code>external_secrets/config.py:123-165</code>).</span
           >
         </div>
         <div class="need">
           <span class="nid">N14</span><span class="nname">Expose via Gateway</span
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
-            ><code>https_route(backend: str, port: int)</code> (<code>gateway.py:51-65</code>) sits beside a separately
+            ><code>https_route(backend: str, port: int)</code> (<code>gateway.py:50-64</code>) sits beside a separately
             spelled <code>IngressRule.from_gateway(PORT)</code>, and 5 of its 35 calls target port 80 on Pods that
             listen elsewhere.</span
           >
@@ -3647,7 +3651,7 @@
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
             >Raw and tier-1 Role and RoleBinding code side by side, role and ServiceAccount names re-spelled across
-            charts, and 17 copies of the reader ServiceAccount.</span
+            charts, and 17 copies of the reader ServiceAccount, beside 8 <code>forgejo-secret-reader</code>s.</span
           >
         </div>
         <div class="need">
@@ -3680,7 +3684,7 @@
           <span class="nid">N23</span><span class="nname">Fleet-wide invariants</span
           ><span class="chip chip-planned">planned</span
           ><span class="ntoday"
-            >Fleet rules (hardening, pinned HTTPS egress, resolved references) are registered on 12 of 191 charts, and
+            >Fleet rules (hardening, pinned HTTPS egress, resolved references) are registered on 12 of 190 charts, and
             the graph is checked after the fact over <code>kustomize build</code> output.</span
           >
         </div>
@@ -3707,7 +3711,7 @@
           ><span class="chip chip-occasional">occasional</span
           ><span class="ntoday"
             >A cert-manager Certificate kind with <code>CertificatePrivateKey</code> factories and the
-            <code>LONG_LIVED_CA</code> TypedDict spread (<code>cert_manager/cluster_ca.py:35-41</code>); the issuer name
+            <code>LONG_LIVED_CA</code> TypedDict spread (<code>cert_manager/cluster_ca.py:34-40</code>); the issuer name
             is the Python constant <code>LETSENCRYPT_ISSUER</code>.</span
           >
         </div>
@@ -3739,7 +3743,7 @@
           <span class="nid">N30</span><span class="nname">Requests, limits and VPA policy</span
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
-            >Requests and limits are written per container, the rule requiring them runs on 12 of 191 charts, and the
+            >Requests and limits are written per container, the rule requiring them runs on 12 of 190 charts, and the
             VPA decision is a label dict per namespace.</span
           >
         </div>
@@ -3776,9 +3780,9 @@
           ><span class="nname">Kustomization granularity and admission-only dependencies</span
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
-            >171 Kustomizations with 243 edges, 29 of which wait on runtime state (56 if the 27 direct
-            <code>kyverno</code> edges count as runtime, decision 8); 94 unsuspended <code>wait: true</code> nodes gate
-            nothing admission needs; 59 of 165 measurable units render 3 objects or fewer.</span
+            >169 Kustomizations with 241 edges, 25 of which wait on runtime state (52 if the 27 direct
+            <code>kyverno</code> edges count as runtime, decision 8); 92 unsuspended <code>wait: true</code> nodes gate
+            nothing admission needs; 55 of 163 measurable units render 3 objects or fewer.</span
           >
         </div>
       </div>
@@ -3837,7 +3841,7 @@
                     generated struct or a plain value. A function that only forwards its arguments to one constructor is
                     not written; that covers <code>env_helpers.secret_env_var</code>/<code>secret_env_value</code> and
                     the module-local <code>_secret_env</code> copies. No factory returns a kwargs TypedDict to spread
-                    (<code>LONG_LIVED_CA</code>, <code>cert_manager/cluster_ca.py:35-41</code>).
+                    (<code>LONG_LIVED_CA</code>, <code>cert_manager/cluster_ca.py:34-40</code>).
                   </p>
                 </div>
               </td>
@@ -3897,7 +3901,7 @@
               <td>
                 <div class="rich">
                   <p>
-                    Ducktape policy over one kind (<code>flux_kustomization</code> with 172 calls,
+                    Ducktape policy over one kind (<code>flux_kustomization</code> with 170 calls,
                     <code>cnpg.cluster</code>, <code>https_route</code>, <code>helm_release</code>,
                     <code>gitops_terraform</code>), plus <code>credentials.grant</code>/<code>copy</code> and
                     <code>write_directory</code>. About 280 call sites already use it, and converting them to classes
@@ -5021,7 +5025,7 @@
         <div>
           <span class="lbl">Today</span>
           <p id="rd-today">
-            172 <code>flux_kustomization</code> calls with hand-ordered construct predecessors;
+            170 <code>flux_kustomization</code> calls with hand-ordered construct predecessors;
             <code>wait=True</code> is the default (<code>flux.py:142</code>), and 49 calls pass <code>wait</code>.
           </p>
         </div>
@@ -5151,7 +5155,7 @@
                 singleton, and one grant per bucket is safe: namespace monitoring already has two coexisting grants
                 (mimir and tempo), and loki has its own. <code>PrivateBucket</code> renders in the consumer&#39;s own
                 unit with its Secret name unchanged and its S3Identity beside its S3Credentials in the tenant, so the
-                six <code>seaweedfs-*-bucket</code> units retire and the consumer&#39;s only SeaweedFS edge is
+                four <code>seaweedfs-*-bucket</code> units retire and the consumer&#39;s only SeaweedFS edge is
                 <code>seaweedfs-operator</code> (CRDs; no webhook).
               </p>
             </div>
@@ -5172,11 +5176,10 @@
             <div class="rich">
               <p>
                 One <code>Placement</code> value feeds <code>place()</code> and <code>cnpg.cluster</code>&#39;s
-                affinity, and <code>place()</code> renders it on every dialect (as a nodeSelector once step 5 lands; a
-                required affinity today) and raises on a second placement (checked in a scratch environment). Helm
-                values and operator CRs embed the same typed values (<code>HIL_OVH_NODE_SELECTOR</code>,
-                <code>[CONTROL_PLANE_TOLERATION]</code>, <code>PREFER_WORKERS</code>), which render wire-shaped inside
-                <code>any</code>-typed values.
+                affinity, and <code>place()</code> renders it on every dialect as a nodeSelector and raises on a second
+                placement (checked in a scratch environment). Helm values and operator CRs embed the same typed values
+                (<code>HIL_OVH_NODE_SELECTOR</code>, <code>[CONTROL_PLANE_TOLERATION]</code>,
+                <code>PREFER_WORKERS</code>), which render wire-shaped inside <code>any</code>-typed values.
               </p>
             </div>
           </dd>
@@ -5467,11 +5470,10 @@
           <span class="lbl">On devel</span>
           <div class="rich">
             <p>
-              On devel, 30 of the 32 provider kind constructors take <code>metadata=</code>, and every variant class
-              returns the generated struct. SeaweedFS&#39;s <code>Identity</code> and
-              <code>Bucket</code> (<code>providers/seaweedfs/s3.py:59-120</code>) still take
-              <code>name=, namespace=</code> (step 9), and 14 kinds are still built raw at more than one site: Terraform
-              and 13 others, both in review (step 4).
+              On devel, 44 of the 46 provider kind constructors take <code>metadata=</code>, every variant class returns
+              the generated struct, and no CRD kind is built raw at more than one site. SeaweedFS&#39;s
+              <code>Identity</code> and <code>Bucket</code> (<code>providers/seaweedfs/s3.py:59-120</code>) still take
+              <code>name=, namespace=</code>, and only their own test calls them (step 5).
             </p>
           </div>
         </div>
@@ -5533,14 +5535,7 @@ class SecretStoreRef:
           <div>
             <dt class="lbl">Use when</dt>
             <dd>
-              <div class="rich">
-                <p>
-                  Every new CRD wrapper, and each kind still built raw at more than one site (<code
-                    >cluster/cdk8s/PLAN.md</code
-                  >
-                  § A lists them).
-                </p>
-              </div>
+              <div class="rich"><p>Every new CRD wrapper, and any kind a second site comes to build.</p></div>
             </dd>
           </div>
           <div>
@@ -5567,15 +5562,7 @@ class SecretStoreRef:
                   </li>
                   <li>
                     The consumer-side constructs holding a <code>self._resource</code> child
-                    (<code>seaweedfs/s3.py:188-241</code>).
-                  </li>
-                  <li>
-                    The raw constructions of the 14 kinds PLAN.md § A lists: Flux <code>Receiver</code>,
-                    <code>Alert</code>, <code>Provider</code> and <code>HelmRelease</code>, ESO
-                    <code>ClusterSecretStore</code>, <code>SecretStore</code> and <code>Password</code>, Gateway API
-                    <code>HTTPRoute</code> and <code>Gateway</code>, CNPG <code>Database</code>, trust-manager
-                    <code>Bundle</code>, Terraform, Agentplane <code>EgressBinding</code> and SeaweedFS
-                    <code>ResourceReferenceGrant</code>.
+                    (<code>seaweedfs/s3.py:186-239</code>).
                   </li>
                 </ul>
               </div>
@@ -5633,12 +5620,12 @@ class SecretStoreRef:
           <span class="lbl">On devel</span>
           <div class="rich">
             <p>
-              On devel the policy functions have about 280 call sites (<code>flux_kustomization</code> 172,
-              <code>helm_release</code> 37, <code>https_route</code> 35, <code>cnpg.cluster</code> 18,
+              On devel the policy functions have about 280 call sites (<code>flux_kustomization</code> 170,
+              <code>helm_release</code> 38, <code>https_route</code> 35, <code>cnpg.cluster</code> 18,
               <code>gitops_terraform</code> 11, <code>valkey_instance</code> 6, <code>fqdn_fence</code> 2), and
               <code>namespaces.namespace</code> has 38. What is left changes parameters, not shapes:
               <code>https_route</code> takes a <code>ServiceRef</code> and <code>cnpg.cluster</code> a
-              <code>PostgresRef</code> once decision 1 allows references (steps 11 and 12).
+              <code>PostgresRef</code> once decision 1 allows references (steps 7 and 8).
             </p>
           </div>
         </div>
@@ -5738,7 +5725,7 @@ def https_route(
                     (<code>cnpg.py:59-103</code>).
                   </li>
                   <li>
-                    <code>https_route</code>&#39;s <code>backend: str, port: int</code> (<code>gateway.py:51-65</code>).
+                    <code>https_route</code>&#39;s <code>backend: str, port: int</code> (<code>gateway.py:50-64</code>).
                   </li>
                   <li><code>valkey_instance</code>&#39;s name-doubles-as-id convention.</li>
                   <li>#8035&#39;s one-line ducktape subclasses.</li>
@@ -5810,9 +5797,9 @@ def https_route(
             <p>
               On devel one composite has this shape: <code>ResticBackup</code> (<code>restic_backup.py</code>), the
               VolSync backups of public-coder and haku-openclaw-spike. <code>SettingsFile</code> needs no reference type
-              and is ready (step 6). <code>MintedSecret</code>, <code>PrivateBucket</code> and
-              <code>PostgresBackup</code> expose references as attributes, so they wait on decision 1 (steps 13, 14 and
-              16); until then <code>minted_secret.py</code>&#39;s helpers and the SeaweedFS constructs in
+              and is ready (step 3). <code>MintedSecret</code>, <code>PrivateBucket</code> and
+              <code>PostgresBackup</code> expose references as attributes, so they wait on decision 1 (steps 9, 10 and
+              12); until then <code>minted_secret.py</code>&#39;s helpers and the SeaweedFS constructs in
               <code>seaweedfs/s3.py</code> do those jobs.
             </p>
           </div>
@@ -5917,13 +5904,13 @@ class PostgresBackup(Construct):
                 <ul>
                   <li>
                     <code>mint_bearer_secret</code> and
-                    <code>mint_db_role_secret</code> (<code>external_secrets/minted_secret.py:37-132</code>), which
-                    return <code>None</code> at their 14 call sites, and the Password helper Agentplane&#39;s Dex keeps
-                    beside them (<code>agentplane/dex.py:64-69</code>).
+                    <code>mint_db_role_secret</code> (<code>external_secrets/minted_secret.py:40-135</code>), which
+                    return <code>None</code> at their 14 call sites, and the <code>password_generator</code> beside them
+                    (<code>minted_secret.py:24-37</code>), which Agentplane&#39;s Dex also calls.
                   </li>
                   <li>
                     <code>IdentityRef</code>, <code>Identity</code> and <code>Bucket</code> with
-                    <code>credentials()</code>/<code>grant()</code> methods (<code>seaweedfs/s3.py:122-241</code>).
+                    <code>credentials()</code>/<code>grant()</code> methods (<code>seaweedfs/s3.py:120-239</code>).
                   </li>
                   <li>The hand-built Barman backup group (<code>authentik/db_backups.py:39-111</code>).</li>
                   <li>
@@ -5932,7 +5919,7 @@ class PostgresBackup(Construct):
                     >).
                   </li>
                   <li>
-                    Units of their own for pieces of a component: the six <code>seaweedfs-*-bucket</code> units and the
+                    Units of their own for pieces of a component: the four <code>seaweedfs-*-bucket</code> units and the
                     provisioner units (atuin-user-provisioner, matrix-user-provisioner).
                   </li>
                 </ul>
@@ -6114,7 +6101,7 @@ class ServiceRef:
 @dataclass(frozen=True)
 class HostNetworkServiceRef:
     &#34;&#34;&#34;A Service in front of hostNetwork Pods. Cilium identifies their traffic by node, so there is no
-    `egress()`; a client admits the node entities (agentplane/egress.py:107-108).&#34;&#34;&#34;
+    `egress()`; a client admits the node entities (agentplane/egress.py:106-107).&#34;&#34;&#34;
 
     name: str
     port: Port
@@ -6184,11 +6171,11 @@ def service(household: str) -&gt; ServiceRef:  # household_chart() builds its Se
               <div class="rich">
                 <ul>
                   <li>
-                    Ports written up to 6 times per service (<code>ntfy.py:67, 219, 247, 251, 264-265, 282</code>;
+                    Ports written up to 6 times per service (<code>ntfy.py:56, 190, 218, 222, 235-236, 253</code>;
                     <code>home_assistant/app.py:95, 276, 313, 678</code>).
                   </li>
                   <li>
-                    12 hand derivations of <code>-app</code> and <code>-rw</code> (<code>terraform.py:33</code>,
+                    12 hand derivations of <code>-app</code> and <code>-rw</code> (<code>terraform.py:32</code>,
                     <code>atuin/user_provisioner.py:36-37</code>, <code>attic.py:112</code>), and 7 spellings of the
                     SeaweedFS S3 endpoint.
                   </li>
@@ -6196,8 +6183,8 @@ def service(household: str) -&gt; ServiceRef:  # household_chart() builds its Se
                   <li>The consumer re-declaring bearer names (<code>agentplane/staging.py:75-78</code>).</li>
                   <li>
                     <code>env_helpers.secret_env_var</code>/<code>secret_env_value</code> (50 calls in 11 modules) and
-                    the 7 module-local <code>secret_env</code> variants beside them (<code>forgejo/app.py:118</code>,
-                    <code>haku_egress_proxy.py:44</code>, <code>ntfy.py:77</code>, ...).
+                    the 7 module-local <code>secret_env</code> variants beside them (<code>forgejo/app.py:117</code>,
+                    <code>haku_egress_proxy.py:44</code>, <code>ntfy.py:66</code>, ...).
                   </li>
                   <li>
                     Hand-typed probe URLs (<code>cluster/k8s/gatus/config.yaml:194-206</code>) and household literals in
@@ -6284,10 +6271,9 @@ def service(household: str) -&gt; ServiceRef:  # household_chart() builds its Se
           <div class="rich">
             <p>
               On devel, <code>harden()</code> reaches the 20 cdk8s-plus workloads and <code>place()</code> 8 of them,
-              and <code>fleet_rules</code> reads <code>POD_SPEC_PATHS</code>. <code>place()</code> still renders its
-              placement as a required node affinity; step 5 makes it the nodeSelector. None of the 54 raw
-              <code>k8s.Kube*</code> workloads, <code>SandboxTemplate</code> or the haku-ci <code>ScaledJob</code> calls
-              either function (step 7).
+              writing the placement as their nodeSelector, and <code>fleet_rules</code> reads
+              <code>POD_SPEC_PATHS</code>. None of the 54 raw <code>k8s.Kube*</code> workloads,
+              <code>SandboxTemplate</code> or the haku-ci <code>ScaledJob</code> calls either function (step 4).
             </p>
           </div>
         </div>
@@ -6336,7 +6322,7 @@ OPTIPLEX = Placement(node_selector={&#34;kubernetes.io/hostname&#34;: &#34;optip
 # In Helm values: {&#34;nodeSelector&#34;: HIL_OVH_NODE_SELECTOR, &#34;tolerations&#34;: [CONTROL_PLANE_TOLERATION], &#34;affinity&#34;: PREFER_WORKERS}
 
 
-# pod_policy.py: harden() as on devel; place() as step 5 leaves it
+# pod_policy.py, as on devel apart from the decision 16 comment in place()
 POD_SPEC_PATHS: Mapping[str, str] = MappingProxyType(
     {
         &#34;Deployment&#34;: &#34;/spec/template/spec&#34;,
@@ -6391,7 +6377,7 @@ def harden(workload: Construct) -&gt; None:
 
 
 def place(workload: Construct, placement: Placement, *, tolerate_control_plane: bool = False) -&gt; None:
-    &#34;&#34;&#34;Pins the Pod to the nodes `placement` selects, as its nodeSelector; with
+    &#34;&#34;&#34;Requires the nodes `placement` selects, as the pod&#39;s `nodeSelector`; with
     `tolerate_control_plane`, control-plane nodes among them qualify too. Raises on a pod spec
     that already states a node affinity or selector.&#34;&#34;&#34;
     obj, path, pod = _workload(workload)
@@ -6444,10 +6430,6 @@ def place(workload: Construct, placement: Placement, *, tolerate_control_plane: 
                     beside <code>CONTROL_PLANE_TOLERATION</code> where the Pod tolerates the control plane
                     (<code>attic.py:94-96</code>).
                   </li>
-                  <li>
-                    The required node affinity <code>place()</code> renders at its 8 call sites
-                    (<code>pod_policy.py:72-100</code>).
-                  </li>
                 </ul>
               </div>
             </dd>
@@ -6465,15 +6447,14 @@ def place(workload: Construct, placement: Placement, *, tolerate_control_plane: 
                   second <code>place()</code> raised.
                 </p>
                 <p>
-                  A nodeSelector is what the raw pod specs, CNPG clusters, Seaweed specs and Helm values already render
-                  from <code>HIL_OVH_NODE_SELECTOR</code>, so one placement renders one way everywhere. Rendered on
-                  devel 12a18e9c2c, switching <code>place()</code> changes nothing at its 8 call sites but the required
-                  affinity, which becomes the equivalent nodeSelector on 13 workloads, and it lets the 9 raw pod specs
-                  that state the selector today move onto <code>place()</code> with no render change (E6).
+                  <code>place()</code> writes the nodeSelector that the raw pod specs, CNPG clusters, Seaweed specs and
+                  Helm values render from <code>HIL_OVH_NODE_SELECTOR</code>, so one placement renders one way
+                  everywhere, and the 9 raw pod specs that state the selector can move onto <code>place()</code> with no
+                  render change (E6).
                 </p>
                 <p>
-                  The two Agentplane services that tolerate the control plane (<code>agentplane/egress.py:558</code>,
-                  <code>agentplane/llm_ingress.py:154</code>) want control-plane nodes only under pressure, which is
+                  The two Agentplane services that tolerate the control plane (<code>agentplane/egress.py:555</code>,
+                  <code>agentplane/llm_ingress.py:160</code>) want control-plane nodes only under pressure, which is
                   what <code>PREFER_WORKERS</code> states (<code>node_scheduling.py:25</code>); whether
                   <code>place()</code> adds it is decision 16.
                 </p>
@@ -6519,10 +6500,10 @@ def place(workload: Construct, placement: Placement, *, tolerate_control_plane: 
           <span class="lbl">On devel</span>
           <div class="rich">
             <p>
-              On devel, 12 of 191 charts register <code>FleetRules</code> through their own
+              On devel, 12 of 190 charts register <code>FleetRules</code> through their own
               <code>add_fleet_rules</code> call, and the Flux graph is checked after the fact over
               <code>kustomize build</code> output. Attaching the rules at the writer is deferred until the shared
-              layer&#39;s scope is agreed (step 28).
+              layer&#39;s scope is agreed (step 24).
             </p>
           </div>
         </div>
@@ -6594,7 +6575,7 @@ class FleetRules:
                 <ul>
                   <li>
                     The 12 opt-in <code>add_fleet_rules</code> calls, some inside <code>chart()</code> and some after it
-                    returns (<code>ntfy.py:298</code>, <code>fleet_rules.py:143-144</code>).
+                    returns (<code>ntfy.py:269</code>, <code>fleet_rules.py:143-144</code>).
                   </li>
                   <li>The <code>cluster/cdk8s/AGENTS.md:48-50</code> note about registration timing.</li>
                   <li>
@@ -6611,7 +6592,7 @@ class FleetRules:
             <dd>
               <div class="rich">
                 <p>
-                  It turns 12-of-191 coverage into all charts, and it gives the Flux direction the same guard: an edge
+                  It turns 12-of-190 coverage into all charts, and it gives the Flux direction the same guard: an edge
                   nobody can justify fails synth, so unjustified edges stop accumulating. In a scratch environment, the
                   writer-attached rule failed synth twice, on a container added after <code>harden()</code> and on a raw
                   Deployment that never states <code>automountServiceAccountToken</code>; the cdk8s-plus Deployment
@@ -6699,13 +6680,13 @@ class FleetRules:
           <span class="lbl">On devel</span>
           <div class="rich">
             <p>
-              On devel, <code>write_directory</code> writes the directories of 108 of the 171 nodes and derives their
+              On devel, <code>write_directory</code> writes the directories of 106 of the 169 nodes and derives their
               decryption; 57 nodes take an artifact from a module&#39;s own writer. Edges are admission edges apart from
-              29: 21 namespace-class ones (steps 1 and 2 remove them), 5 registered rule-2 exceptions, 2
-              user-provisioner Job edges and <code>artifact-generators</code> to <code>flux-system</code>; decision 8
-              classifies the 27 direct <code>kyverno</code> edges. <code>wait</code> still defaults to
+              25: 17 namespace-class ones (step 1 removes them), 5 registered rule-2 exceptions, 2 user-provisioner Job
+              edges and <code>artifact-generators</code> to <code>flux-system</code>; decision 8 classifies the 27
+              direct <code>kyverno</code> edges. <code>wait</code> still defaults to
               <code>True</code> (<code>flux.py:142</code>), Orphan is passed by hand, and no synth-time check reads the
-              graph: those parts are postponed or deferred (steps 24, 25 and 28).
+              graph: those parts are postponed or deferred (steps 20, 21 and 24).
             </p>
           </div>
         </div>
@@ -6917,7 +6898,7 @@ flux_chart.node.add_validation(AdmissionGraph(flux_chart, directories))</code></
                 <ul>
                   <li>
                     The 18 <code>&lt;id&gt;.k8s.yaml</code> literals in the directories a module&#39;s own
-                    <code>write_manifests</code> still writes (<code>forgejo/app.py:445</code>,
+                    <code>write_manifests</code> still writes (<code>forgejo/app.py:444</code>,
                     <code>home_assistant/app.py:692</code>, ...).
                   </li>
                   <li>
@@ -6930,12 +6911,12 @@ flux_chart.node.add_validation(AdmissionGraph(flux_chart, directories))</code></
                     <code>flux.py:98-100</code>, <code>flux.py:123</code>), which becomes one <code>api_objects</code>.
                   </li>
                   <li>
-                    The <code>wait=True</code> default (<code>flux.py:142</code>) and <code>wait</code> on 94 nodes that
+                    The <code>wait=True</code> default (<code>flux.py:142</code>) and <code>wait</code> on 92 nodes that
                     gate nothing admission needs.
                   </li>
                   <li>
-                    The 29 edges that wait on runtime state (56 with the direct <code>kyverno</code> edges, decision 8),
-                    and units per concern: 59 of 165 measurable units render 3 objects or fewer.
+                    The 25 edges that wait on runtime state (52 with the direct <code>kyverno</code> edges, decision 8),
+                    and units per concern: 55 of 163 measurable units render 3 objects or fewer.
                   </li>
                 </ul>
               </div>
@@ -7015,11 +6996,11 @@ flux_chart.node.add_validation(AdmissionGraph(flux_chart, directories))</code></
           <span class="lbl">On devel</span>
           <div class="rich">
             <p>
-              Not on devel: it waits on decisions 1 and 3 to 5 (step 16). Today one Secret crosses namespaces five ways:
+              Not on devel: it waits on decisions 1 and 3 to 5 (step 12). Today one Secret crosses namespaces five ways:
               the external-creds roster (<code>external_creds.py</code>) through a store whose allowlist is kept by
-              hand, 10 <code>single_secret_store</code> per-pair stores built from the consumer&#39;s chart,
-              ESO-ServiceAccount stores (forgejo-images&#39; lists 34 namespaces), Reflector mirrors and
-              ClusterExternalSecret.
+              hand, 24 per-pair stores that <code>single_secret_store</code> builds from the consumer&#39;s chart (11 of
+              them for <code>forgejo/secret_copy.py</code>&#39;s copies), ESO-ServiceAccount stores (forgejo-images&#39;
+              lists 34 namespaces), Reflector mirrors and ClusterExternalSecret.
             </p>
           </div>
         </div>
@@ -7125,21 +7106,22 @@ def copy(scope: Construct, id: str, *, credential: Credential, target: SecretRef
               <div class="rich">
                 <ul>
                   <li>
-                    <code>single_secret_store</code> and its 10 per-pair stores built from the consumer&#39;s chart
-                    (<code>external_secrets/single_secret_store.py:20-74</code>;
-                    <code>agentplane/staging.py:379-398</code>), and its hand-rolled copy
-                    (<code>litellm/credentials.py:37-98</code>).
+                    <code>single_secret_store</code> and the 24 per-pair stores it builds from the consumer&#39;s chart
+                    (<code>external_secrets/single_secret_store.py:11-49</code>;
+                    <code>agentplane/staging.py:379-398</code>; <code>forgejo/secret_copy.py:37-78</code>).
                   </li>
                   <li>
-                    ESO-ServiceAccount stores with hand-kept allowlists (<code>external_secrets/config.py:43-192</code>;
-                    forgejo-images lists 34 namespaces) and app-owned stores (<code>ntfy.py:81-111</code>).
+                    ESO-ServiceAccount stores with hand-kept allowlists (<code>external_secrets/config.py:30-165</code>;
+                    forgejo-images lists 34 namespaces) and app-owned stores (<code>ntfy.py:70-82</code>).
                   </li>
                   <li>
                     Reflector mirrors (<code>aiquota.py:190-210</code>) and ClusterExternalSecret used for copying.
                   </li>
                   <li>
                     18 rendered copies of the reader ServiceAccount in 16 namespaces, three of them flux-system&#39;s,
-                    and hand-typed RoleBinding names (<code>external_creds.py:40-157</code>).
+                    the 8 <code>forgejo-secret-reader</code>s beside them (5 in namespaces that also hold an
+                    <code>external-creds-reader</code>), and hand-typed RoleBinding names
+                    (<code>external_creds.py:40-157</code>).
                   </li>
                 </ul>
               </div>
@@ -7185,7 +7167,7 @@ def copy(scope: Construct, id: str, *, credential: Credential, target: SecretRef
                 <code>variables.tf</code>, passed as <code>gitops_terraform(variables=...)</code>, and one relation test
                 ties each model&#39;s top-level field names to <code>variables.tf</code> (nested object attributes stay
                 unchecked); the module&#39;s BUILD exports <code>variables.tf</code> for it
-                (<code>terraform.py:51-110</code>, <code>test_terraform_vars.py:20-25</code>). Terraform CRs group per
+                (<code>terraform.py:102-149</code>, <code>test_terraform_vars.py:20-25</code>). Terraform CRs group per
                 external system (authentik-tf, github-tf; the Forgejo modules are decision 11) unless a #7094 rule-3
                 exception applies, and order among themselves through the CR&#39;s own
                 <code>spec.dependsOn</code> (<code>gitops_terraform(depends_on=...)</code>), never through Flux
@@ -7212,7 +7194,7 @@ def copy(scope: Construct, id: str, *, credential: Credential, target: SecretRef
               CRs order themselves through <code>depends_on</code>, and authentik-tf and github-tf each hold one
               system&#39;s CRs; Reloader&#39;s <code>autoReloadAll</code> is the one rollout rule. For in-repo binaries,
               <code>settings_file</code> renders 7 config files from their Settings, while the ConfigMap key, mount
-              directory and <code>CONFIG_FILE_ENV</code> path are spelled separately (step 6) and secrets reach Settings
+              directory and <code>CONFIG_FILE_ENV</code> path are spelled separately (step 3) and secrets reach Settings
               env names by hand (#7426).
             </p>
           </div>
@@ -7228,20 +7210,25 @@ def gitops_terraform(
     *,
     name: str,
     variables: BaseModel | None,
-    depends_on: Sequence[TerraformV1Alpha2] = (),
+    depends_on: Sequence[Terraform] = (),
     env: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv] = (),
     env_from: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFrom] = (),
     schema: str | None = None,
     store_readable_plan: TerraformV1Alpha2SpecStoreReadablePlan | None = None,
-) -&gt; TerraformV1Alpha2:
+) -&gt; Terraform:
     &#34;&#34;&#34;... `variables` models the module&#39;s variables.tf (None: it declares none); each field is written
     structurally into the runner&#39;s tfvars. `depends_on` orders this CR after other Terraform CRs of the
     same external system, in the same unit, through the CR&#39;s own spec.dependsOn.&#34;&#34;&#34;
-    ...
-            vars=None
-            if variables is None
-            else [TerraformV1Alpha2SpecVars(name=key, value=value) for key, value in variables.model_dump(mode=&#34;json&#34;).items()],
-            depends_on=[TerraformV1Alpha2SpecDependsOn(name=dependency.name) for dependency in depends_on] or None,
+    return tofu_state_terraform(
+        ...
+        vars=None
+        if variables is None
+        else [
+            TerraformV1Alpha2SpecVars(name=key, value=value) for key, value in variables.model_dump(mode=&#34;json&#34;).items()
+        ],
+        depends_on=[TerraformV1Alpha2SpecDependsOn(name=dependency.name) for dependency in depends_on] or None,
+        ...
+    )
 
 
 # test_terraform_vars.py, as on devel: a relation between two live artifacts, which tofu itself only warns about.
@@ -7320,7 +7307,7 @@ def test_vars_model_matches_module(model: type[BaseModel], module: str) -&gt; No
           <ul>
             <li>
               E1 to E3, E6 and E8 to E12 were rendered on 12a18e9c2c, where every before rendered byte-identical to the
-              committed files. E1, E2 and E6 use <code>place()</code> as step 5 leaves it, writing a nodeSelector.
+              committed files. E1, E2 and E6 use a <code>place()</code> that writes a nodeSelector, as devel&#39;s does.
             </li>
             <li>
               E4, E5 and E7, and E2&#39;s Flux node, need the proposed
@@ -7663,10 +7650,10 @@ class SettingsFile(Construct):
               Rendered on 12a18e9c2c in a scratch environment with the pinned CNPG, ESO, Cilium, Gateway API and
               prometheus-operator bindings: the ntfy chart and the testing Environment&#39;s
               <code>Actions</code> construct from devel (ntfy byte-identical to the committed
-              <code>cluster/k8s/ntfy/ntfy.k8s.yaml</code>), then with the after code and step 5&#39;s
+              <code>cluster/k8s/ntfy/ntfy.k8s.yaml</code>), then with the after code and the nodeSelector
               <code>place()</code>, diffed per object. 8 of 9 ntfy objects are byte-identical, the Deployment gains only
-              the nodeSelector, and the CiliumNetworkPolicy is new. Without step 5&#39;s <code>place()</code>, 9 of 10
-              <code>Actions</code> objects are byte-identical and the migrate init container loses only
+              the nodeSelector, and the CiliumNetworkPolicy is new. Without the nodeSelector <code>place()</code>, 9 of
+              10 <code>Actions</code> objects are byte-identical and the migrate init container loses only
               <code>AGENTPLANE_ACTIONS_CONFIG_FILE</code>.
             </p>
             <p>
@@ -7915,7 +7902,7 @@ _USER_PASSWORD = SecretRef(namespace=NAMESPACE, name=ATUIN_USER_PASSWORD.name)
           <summary>How this example was checked</summary>
           <div class="rich">
             <p>
-              Rendered on 12a18e9c2c with the pinned CNPG and Gateway API bindings: the after code with step 5&#39;s
+              Rendered on 12a18e9c2c with the pinned CNPG and Gateway API bindings: the after code with the nodeSelector
               <code>place()</code>, written as one directory through today&#39;s <code>write_directory</code>, diffed
               per object against the committed cluster/generated/atuin and cluster/generated/atuin-user-provisioner
               files. The Namespace, Cluster and HTTPRoute are byte-identical, and the Deployment, Service, ConfigMap and
@@ -8100,9 +8087,8 @@ def _storage(scope: Construct) -&gt; s3.PrivateBucket:
                 tenant), with the description annotation and <code>seaweedRef.namespace: seaweedfs</code>. The IAM user
                 <code>attic</code> keeps its key and its bucket grant: the new object adopts the user the old one leaves
                 under <code>Retain</code>. That half deletes one object and creates another, so it is not a plain apply:
-                it lands first, alone, by step 8&#39;s identity procedure, with today&#39;s
-                <code>s3.Identity(..., namespace=NAMESPACE)</code>, and the conversion then renders the identity where
-                it already is.
+                it lands first, alone, with today&#39;s <code>s3.Identity(..., namespace=NAMESPACE)</code>, and the
+                conversion then renders the identity where it already is.
               </li>
               <li>
                 The ResourceReferenceGrant <code>seaweedfs/nix-cache</code> becomes
@@ -8629,7 +8615,7 @@ _GOOGLE_MCP_BEARER = SecretRef(namespace=staging_config.NAMESPACE, name=&#34;goo
               <li>
                 The other <code>single_secret_store</code> callers (ha-mcp&#39;s own copy of the Home Assistant token,
                 agentplane-staging&#39;s copy of haku-console&#39;s GitHub MCP client, the egress credentials,
-                plaid-mcp, litellm) convert in the same secrets step (16), not here.
+                plaid-mcp, litellm) convert in the same secrets step (12), not here.
               </li>
             </ul>
           </div>
@@ -8746,7 +8732,7 @@ def _server(scope: Construct) -&gt; None:
             <span class="lbl">Proposed</span>
             <pre
               class="code"
-            ><code class="language-python"># cluster/cdk8s/nix_cache/attic.py: pod_policy as on devel with step 5&#39;s place(), called as agentplane/egress.py:558-559 calls it
+            ><code class="language-python"># cluster/cdk8s/nix_cache/attic.py: pod_policy as on devel, called as agentplane/egress.py:558-559 calls it
 def _server(scope: Construct) -&gt; None:
     deployment = k8s.KubeDeployment(
         ...
@@ -8851,9 +8837,9 @@ def _server(scope: Construct) -&gt; None:
               Rendered on 12a18e9c2c with the pinned agent-sandbox, Kyverno, CNPG, ESO and SeaweedFS bindings: the attic
               and agent-workspaces charts from devel (byte-identical to the committed
               cluster/k8s/nix-cache/attic.k8s.yaml and
-              cluster/k8s/agents/agent-sandbox/workspaces/agent-workspaces.k8s.yaml), then with this after code and step
-              5&#39;s <code>place()</code>, diffed per object and as text. <code>fleet_rules.pod_hardening</code> ran on
-              both renders.
+              cluster/k8s/agents/agent-sandbox/workspaces/agent-workspaces.k8s.yaml), then with this after code and the
+              nodeSelector <code>place()</code>, diffed per object and as text.
+              <code>fleet_rules.pod_hardening</code> ran on both renders.
             </p>
             <p>Read: every <code>harden()</code> and <code>place()</code> caller on devel is a cdk8s-plus workload.</p>
           </div>
@@ -10204,7 +10190,7 @@ CONFIG = {
               <p>
                 Seven small types to learn, and import edges from consumers to producers, where cycles are avoided with
                 leaf modules as <code>ssh_mcp/config.py</code> already does. Without them, cross-module facts stay
-                re-spelled strings, N7, N14 and N15 stay hand-wired on both sides, and steps 11 to 14 and 16 do not
+                re-spelled strings, N7, N14 and N15 stay hand-wired on both sides, and steps 7 to 10 and 12 do not
                 start.
               </p>
             </div>
@@ -10225,7 +10211,7 @@ CONFIG = {
                 Merge it after one revision: rebase it onto devel, where the three-layer law it replaces is already
                 gone; point rule 2&#39;s table at <code>flux.ORDERING_EXCEPTIONS</code>, checked at synth; note that
                 derived Orphan covers the delete-or-rename case rule 3b keeps a narrow unit for; and replace its numbers
-                with devel&#39;s (243 edges, 171 units). Folding only rules 1, 2 and 4 into AGENTS.md would drop rule
+                with devel&#39;s (241 edges, 169 units). Folding only rules 1, 2 and 4 into AGENTS.md would drop rule
                 3&#39;s unit boundaries and rule 6&#39;s shared-artifact ordering, which the folds and exceptions rely
                 on.
               </p>
@@ -10339,7 +10325,7 @@ CONFIG = {
                 >
                 defaults to <code>False</code>), and a Pod that states nothing then loses its token silently:
                 tana-mcp&#39;s firebase resigner calls the API with it
-                (<code>tana/firebase_resigner/resigner.py:216</code>; E11). The rule lands before step 16 converts any
+                (<code>tana/firebase_resigner/resigner.py:216</code>; E11). The rule lands before step 12 converts any
                 account. It reaches every chart only once the writer attaches fleet rules, which you deferred.
               </p>
             </div>
@@ -10369,7 +10355,7 @@ CONFIG = {
             <span class="lbl">Recommendation</span>
             <div class="rich">
               <p>
-                Yes, as its own PR after the per-area <code>harden()</code> PRs (step 7), with the violations fixed or
+                Yes, as its own PR after the per-area <code>harden()</code> PRs (step 4), with the violations fixed or
                 exempted.
               </p>
             </div>
@@ -10399,7 +10385,7 @@ CONFIG = {
                 <code>default-vpa-requests-only</code>) reach an object&#39;s first version. The
                 <code>restrict-agent-*</code> policies gate agents&#39; own requests, which come after bootstrap. Keep
                 the <code>kyverno-policies</code> edges its CRDs need (rule 1), and drop the 27 Kyverno-only edges in
-                their own batch (step 18).
+                their own batch (step 14).
               </p>
             </div>
           </div>
@@ -10409,7 +10395,7 @@ CONFIG = {
               <p>
                 An object created before Kyverno runs misses those mutations at least until Flux next applies it;
                 whether Flux&#39;s dry-run diff picks them up on its own is unverified. Today&#39;s reach is incidental
-                either way: 27 units have a direct <code>kyverno</code> edge, while 62 unsuspended units render a kind
+                either way: 27 units have a direct <code>kyverno</code> edge, while 64 unsuspended units render a kind
                 that a committed Kyverno <code>ClusterPolicy</code> matches and have no <code>dependsOn</code> path to
                 <code>kyverno</code> at all, and nothing checks which is which.
               </p>
@@ -10497,12 +10483,11 @@ CONFIG = {
             <span class="lbl">Recommendation</span>
             <div class="rich">
               <p>
-                Yes, after step 2 takes their namespace edges away, which leaves each depending on
-                <code>tofu-controller</code> alone. One chart builds all six CRs, so their <code>depends_on</code> stays
-                object references and they convert to <code>write_directory</code> in the same change; today each is a
-                directory of its own whose module passes a <code>TerraformV1Alpha2</code> object to the next chart, and
-                <code>gitops_terraform</code> reads only its <code>.name</code>. The CRs keep their names, so tofu state
-                is reused.
+                Yes. Each depends on <code>tofu-controller</code> alone. One chart builds all six CRs, so their
+                <code>depends_on</code> stays object references and they convert to <code>write_directory</code> in the
+                same change; today each is a directory of its own whose module passes a <code>Terraform</code> object to
+                the next chart, and <code>gitops_terraform</code> reads only its <code>.name</code>. The CRs keep their
+                names, so tofu state is reused.
               </p>
             </div>
           </div>
@@ -10552,7 +10537,7 @@ CONFIG = {
               <p>Yes, all five; each converts when a second caller needs it:</p>
               <ul>
                 <li>
-                  the ExternalSecret <code>target</code> stays flattened (<code>creation_policy</code> at 34 of 38
+                  the ExternalSecret <code>target</code> stays flattened (<code>creation_policy</code> at 35 of 39
                   sites);
                 </li>
                 <li><code>redis_operator</code> is heavily flattened for one site;</li>
@@ -10657,9 +10642,9 @@ CONFIG = {
             <div class="rich">
               <p>
                 Yes, when you settle what runs where. The two Agentplane services that tolerate the control plane
-                (<code>agentplane/egress.py:558</code>, <code>agentplane/llm_ingress.py:154</code>) want control-plane
-                nodes only when the workers are full, which is what the weight-100 preference states; after step 5 it is
-                the whole affinity <code>place()</code> renders.
+                (<code>agentplane/egress.py:555</code>, <code>agentplane/llm_ingress.py:160</code>) want control-plane
+                nodes only when the workers are full, which is what the weight-100 preference states; beside the
+                nodeSelector, it would be the whole affinity <code>place()</code> renders.
               </p>
             </div>
           </div>
@@ -10696,105 +10681,11 @@ CONFIG = {
               <td>
                 <div class="rich">
                   <p>
-                    Step 1. Open and mergeable on devel. It removes the 17 namespace-class edges whose target only
-                    creates the namespace, leaves the four Forgejo-user edges to step 2, and keeps every direct
+                    Step 1. Open, and merges cleanly onto devel d86d9ae49d. It removes the 17 namespace-class edges
+                    whose target only creates the namespace, the last of that class, and keeps every direct
                     <code>kyverno</code> and <code>kyverno-policies</code> edge.
                   </p>
                 </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8293">#8293</a></td>
-              <td>cdk8s: build both Terraform CRs through terraform.tofu_state_terraform</td>
-              <td><span class="chip chip-land-as-is">land as is</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    Step 4. A draft in review: the provider class for Terraform, the last kind in PLAN.md § A beside
-                    #8315&#39;s 13.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8315">#8315</a></td>
-              <td>cdk8s: build the 13 remaining raw CRD kinds through providers/ kind classes</td>
-              <td><span class="chip chip-land-as-is">land as is</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    Step 4. A draft, mergeable, one commit per kind family, render-identical by its own check. Its
-                    <code>ResourceReferenceGrant</code> class is deliberately minimal so that #8035&#39;s revision
-                    builds on it.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8325">#8325</a></td>
-              <td>budget-ledger: write the git creds into forgejo; budget copies them through ESO</td>
-              <td><span class="chip chip-land-as-is">land as is</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    Step 2. Removes <code>budget-ledger</code>&#39;s edge to <code>budget-namespace</code>. It adds
-                    <code>forgejo/secret_copy.py</code>, which the other three step-2 PRs use.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8331">#8331</a></td>
-              <td>cpap-data: write the git creds into forgejo; cpap-sync copies them through ESO</td>
-              <td><span class="chip chip-land-as-is">land as is</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    Step 2, stacked on #8325. Removes <code>cpap-data</code>&#39;s edge to <code>cpap-sync</code>; the
-                    Reflector mirror into <code>claude-sandbox</code> stays on the <code>cpap-sync</code> copy.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8332">#8332</a></td>
-              <td>forgejo-claude: write the claude creds into forgejo; consumers copy them through ESO</td>
-              <td><span class="chip chip-land-as-is">land as is</span></td>
-              <td>
-                <div class="rich">
-                  <p>Step 2. Removes <code>forgejo-claude</code>&#39;s edge to <code>claude-rbac</code>.</p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8333">#8333</a></td>
-              <td>haku-state: write the haku Secrets into forgejo; consumers copy them through ESO</td>
-              <td><span class="chip chip-land-as-is">land as is</span></td>
-              <td>
-                <div class="rich">
-                  <p>Step 2. Removes <code>haku-state</code>&#39;s edge to <code>haku-namespace</code>.</p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8321">#8321</a></td>
-              <td>cdk8s: place() renders a nodeSelector instead of a required node affinity</td>
-              <td><span class="chip chip-land-as-is">land as is</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    Step 5. 8 call sites, 13 rendered pod templates, each an affinity replaced by the equivalent
-                    nodeSelector.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8322">#8322</a></td>
-              <td>cluster: move tempo&#39;s S3Identity into monitoring (decision 10, 1 of 11)</td>
-              <td><span class="chip chip-land-as-is">land as is</span></td>
-              <td>
-                <div class="rich"><p>Step 8, the first identity move; watch its handover live before the next.</p></div>
               </td>
             </tr>
             <tr>
@@ -10804,11 +10695,11 @@ CONFIG = {
               <td>
                 <div class="rich">
                   <p>
-                    Step 9. Keep the providers split. Make <code>Bucket</code>, <code>S3Identity</code>,
+                    Step 5. Keep the providers split. Make <code>Bucket</code>, <code>S3Identity</code>,
                     <code>S3Credentials</code> and <code>ResourceReferenceGrant</code> single-shot binding subclasses
                     that take <code>access=</code> and <code>identity_ref=</code> at construction; drop the grant
                     methods, the JSON patches, the <code>_ClusterGrant</code> chart singleton and the one-line ducktape
-                    subclasses. <code>PrivateBucket</code> (step 13) then renders in each consumer&#39;s own unit with
+                    subclasses. <code>PrivateBucket</code> (step 9) then renders in each consumer&#39;s own unit with
                     its Secret name unchanged and its S3Identity in the tenant.
                   </p>
                 </div>
@@ -10821,8 +10712,9 @@ CONFIG = {
               <td>
                 <div class="rich">
                   <p>
-                    Decision 16, postponed. A draft. After step 5 it rebases onto the nodeSelector form, where
-                    <code>PREFER_WORKERS</code> is the whole affinity <code>place()</code> writes.
+                    Decision 16, postponed. A draft written against the required-affinity <code>place()</code>; it
+                    rebases onto devel&#39;s nodeSelector form, where <code>PREFER_WORKERS</code> is the whole affinity
+                    <code>place()</code> writes.
                   </p>
                 </div>
               </td>
@@ -10839,7 +10731,7 @@ CONFIG = {
                     the three-layer law it replaces is already gone; point rule 2&#39;s
                     <code>_ORDERING_EXCEPTIONS</code> at <code>flux.ORDERING_EXCEPTIONS</code>, checked at synth; note
                     that derived Orphan covers the rename case rule 3b&#39;s narrow unit exists for; and replace its
-                    numbers (713 edges, 278 units) with devel&#39;s (243 and 171).
+                    numbers (713 edges, 278 units) with devel&#39;s (241 and 169).
                   </p>
                 </div>
               </td>
@@ -10851,7 +10743,7 @@ CONFIG = {
               <td>
                 <div class="rich">
                   <p>
-                    Step 10. It is C9: Settings is the single contract, secrets included, serialized only at the
+                    Step 6. It is C9: Settings is the single contract, secrets included, serialized only at the
                     ConfigMap boundary. Rebase it before landing.
                   </p>
                 </div>
@@ -10864,9 +10756,9 @@ CONFIG = {
               <td>
                 <div class="rich">
                   <p>
-                    Step 16. It uses the right mechanism (C8). Rebase it onto the <code>write_directory</code> form,
+                    Step 12. It uses the right mechanism (C8). Rebase it onto the <code>write_directory</code> form,
                     where the external-creds siblings are every entry&#39;s
-                    <code>secret_file</code> (<code>generate_manifests.py:615</code>), and express each entry as
+                    <code>secret_file</code> (<code>generate_manifests.py:619</code>), and express each entry as
                     <code>Credential(source=..., consumers=...)</code>, which replaces
                     <code>secret_file: str | None</code>; each consumer&#39;s only new edge is
                     <code>external-secrets-operator</code>. If it converts the resigner&#39;s ServiceAccount to
@@ -10884,7 +10776,7 @@ CONFIG = {
               <td>
                 <div class="rich">
                   <p>
-                    Step 10. Named pin constants with <code># renovate:</code> comments are the N25 convention (C2). A
+                    Step 6. Named pin constants with <code># renovate:</code> comments are the N25 convention (C2). A
                     draft from 2026-09-23; rebase it before landing.
                   </p>
                 </div>
@@ -10897,8 +10789,8 @@ CONFIG = {
               <td>
                 <div class="rich">
                   <p>
-                    Step 10. It uses existing helpers and adds no mechanism; its ESO-generated key moves to
-                    <code>MintedSecret</code> with the rest in step 16. Rebase it before landing.
+                    Step 6. It uses existing helpers and adds no mechanism; its ESO-generated key moves to
+                    <code>MintedSecret</code> with the rest in step 12. Rebase it before landing.
                   </p>
                 </div>
               </td>
@@ -10924,7 +10816,7 @@ CONFIG = {
               <td>
                 <div class="rich">
                   <p>
-                    Step 10. An incidental two-line change to <code>cluster/cdk8s/agentplane/actions.py</code> (a
+                    Step 6. An incidental two-line change to <code>cluster/cdk8s/agentplane/actions.py</code> (a
                     <code>patch</code> verb) that no convention affects.
                   </p>
                 </div>
@@ -10953,14 +10845,14 @@ CONFIG = {
       <div class="prose">
         <div class="rich">
           <p>
-            What is left, from devel 12a18e9c2c, in the recommended order. Each step names its gate: <code>ready</code>,
+            What is left, from devel d86d9ae49d, in the recommended order. Each step names its gate: <code>ready</code>,
             a decision, or a step before it. The PR that lands a convention records it in
             <code>cluster/cdk8s/AGENTS.md</code> or the <code>cdk8s_builders</code> skill (the AGENTS.md changes section
             lists the edits).
           </p>
         </div>
       </div>
-      <h3 class="track"><span class="chip chip-ready-now">ready now</span><span>10 steps</span></h3>
+      <h3 class="track"><span class="chip chip-ready-now">ready now</span><span>6 steps</span></h3>
       <ol class="steps">
         <li>
           <div class="st">
@@ -10973,14 +10865,14 @@ CONFIG = {
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich"><p>Ready: #8185 is open and mergeable on devel.</p></div>
+            <div class="rich"><p>Ready: #8185 is open and merges cleanly onto devel d86d9ae49d.</p></div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
             <div class="rich">
               <p>
                 Node signatures and call sites in the entry point; the only rendered change is
-                <code>spec.dependsOn</code>, from 243 edges to 226.
+                <code>spec.dependsOn</code>, from 241 edges to 224.
               </p>
             </div>
           </div>
@@ -10989,51 +10881,11 @@ CONFIG = {
             <div class="rich">
               <p>
                 Low. During a bootstrap a dependent can apply before its namespace exists; the apply fails and Flux
-                retries it. Every direct <code>kyverno</code> and <code>kyverno-policies</code> edge stays, and the
-                three units that lose an incidental path to <code>kyverno</code> render no kind a Kyverno policy
-                matches.
-              </p>
-            </div>
-          </div>
-        </li>
-        <li>
-          <div class="st">
-            <div class="rich">
-              <p>
-                Move the Forgejo users&#39; Secrets into <code>forgejo</code>: the GitOps Terraform modules
-                <code>forgejo-claude</code>, <code>haku-state</code>, <code>budget-ledger</code> and
-                <code>cpap-data</code>, and the parked <code>augur-evidence</code>, write each user&#39;s Secret into
-                <code>forgejo</code>, and each consumer reads its copy through an ExternalSecret. That removes the last
-                four namespace-class edges: <code>forgejo-claude</code> to <code>claude-rbac</code>,
-                <code>haku-state</code> to <code>haku-namespace</code>, <code>budget-ledger</code> to
-                <code>budget-namespace</code> and <code>cpap-data</code> to <code>cpap-sync</code>.
-              </p>
-            </div>
-          </div>
-          <div class="sg">
-            <span class="lbl">Gate</span>
-            <div class="rich">
-              <p>
-                In review, one PR per module: #8325 (budget-ledger), #8331 (cpap-data, stacked on #8325), #8332
-                (forgejo-claude) and #8333 (haku-state); the parked augur-evidence follows.
-              </p>
-            </div>
-          </div>
-          <div class="sc">
-            <span class="lbl">Scope</span>
-            <div class="rich">
-              <p>
-                The modules under <code>tf/gitops/</code>, their four nodes and one ExternalSecret per consumer
-                namespace; 226 edges to 222.
-              </p>
-            </div>
-          </div>
-          <div class="sr">
-            <span class="lbl">Risk</span>
-            <div class="rich">
-              <p>
-                Medium. Each consumer&#39;s Secret changes writer, from the module&#39;s Terraform to ESO: each PR
-                orders the two so the Secret stays present, and checks the consumer afterwards.
+                retries it. Every direct <code>kyverno</code> and <code>kyverno-policies</code> edge stays. Three units
+                lose an incidental path to <code>kyverno</code>: <code>agent-shared-rbac</code> and
+                <code>agent-shared-secrets</code> render no kind a Kyverno policy matches, and
+                <code>claude-sandbox-secrets</code>&#39; one ClusterSecretStore already names its namespace in
+                <code>conditions</code>, which is all <code>require-secret-store-conditions</code> checks.
               </p>
             </div>
           </div>
@@ -11051,7 +10903,7 @@ CONFIG = {
                 <code>kyverno-policies</code> renders exist); the bootstrap edge <code>artifact-generators</code> to
                 <code>flux-system</code>; or a registered exception with one of #7094 rule 2&#39;s two reasons (the five
                 edges that carry one today, moved from comments into the table). Two tables hold what is not settled:
-                the 27 direct <code>kyverno</code> edges (decision 8) and the two user-provisioner Job edges (step 29).
+                the 27 direct <code>kyverno</code> edges (decision 8) and the two user-provisioner Job edges (step 25).
                 <code>external-secrets-operator</code> to <code>external-secrets-crds</code> needs
                 <code>OPERATOR_CRDS</code> to name the CRD unit. Whatever does not fit fails the check, so no new
                 unjustified edge can land.
@@ -11061,7 +10913,7 @@ CONFIG = {
           <div class="sg">
             <span class="lbl">Gate</span>
             <div class="rich">
-              <p>Ready. Stack it on #8185; after step 2 every non-admission edge left is in a table.</p>
+              <p>Ready. Stack it on #8185, after which every non-admission edge left is in a table.</p>
             </div>
           </div>
           <div class="sc">
@@ -11071,73 +10923,13 @@ CONFIG = {
                 <code>cluster/validation/{crd_layering,dependencies}.py</code>, with the tables beside
                 <code>OPERATOR_CRDS</code> so they are checks, not wiring; tests on synthetic graphs, including
                 suspended units, which <code>flux_kust_resources</code> skips today. The check moves to synth with the
-                graph checks (step 28).
+                graph checks (step 24).
               </p>
             </div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
             <div class="rich"><p>None at runtime; no manifest changes.</p></div>
-          </div>
-        </li>
-        <li>
-          <div class="st">
-            <div class="rich">
-              <p>
-                Provider classes (C1) for the 14 CRD kinds still built raw at more than one site: Terraform (#8293) and
-                the other 13 (#8315). With both, <code>cluster/cdk8s/PLAN.md</code> § A&#39;s done criterion holds.
-              </p>
-            </div>
-          </div>
-          <div class="sg">
-            <span class="lbl">Gate</span>
-            <div class="rich"><p>Ready: both are in review.</p></div>
-          </div>
-          <div class="sc">
-            <span class="lbl">Scope</span>
-            <div class="rich"><p>Two PRs; #8315 is one commit per kind family.</p></div>
-          </div>
-          <div class="sr">
-            <span class="lbl">Risk</span>
-            <div class="rich"><p>Low. Both PRs report render-identical output.</p></div>
-          </div>
-        </li>
-        <li>
-          <div class="st">
-            <div class="rich">
-              <p>
-                <code>place()</code> writes the <code>Placement</code> as the Pod&#39;s nodeSelector: it patches
-                <code>{path}/nodeSelector</code> with the placement&#39;s label map where it now writes a required node
-                affinity, and it still raises on a pod spec that states an affinity or a nodeSelector. Its 8 call sites
-                re-render.
-              </p>
-            </div>
-          </div>
-          <div class="sg">
-            <span class="lbl">Gate</span>
-            <div class="rich"><p>In review: #8321.</p></div>
-          </div>
-          <div class="sc">
-            <span class="lbl">Scope</span>
-            <div class="rich">
-              <p>
-                <code>pod_policy.place</code>, its docstring and test; 13 rendered workloads: the Actions, app, egress,
-                Electric and LLM-ingress Deployments in agentplane-staging and agentplane-testing, and
-                haku-console&#39;s Deployment and its migration and indexer-provisioner Jobs.
-              </p>
-            </div>
-          </div>
-          <div class="sr">
-            <span class="lbl">Risk</span>
-            <div class="rich">
-              <p>
-                Low. Rendered on devel 12a18e9c2c, each of the 13 changes only from the required affinity
-                <code>topology.kubernetes.io/zone In [hil-ovh]</code> to
-                <code>nodeSelector: {topology.kubernetes.io/zone: hil-ovh}</code>, which admits the same nodes. The pod
-                templates change, so the 11 Deployments roll once, and the two Jobs, which carry
-                <code>kustomize.toolkit.fluxcd.io/force: enabled</code>, are replaced and run once more.
-              </p>
-            </div>
           </div>
         </li>
         <li>
@@ -11178,7 +10970,7 @@ CONFIG = {
               <p>
                 <code>harden()</code> and <code>place()</code> on the raw and CRD-embedded workloads, one area per PR
                 (agents, apps, platform, ...), deleting the literal hardening structs and the placement keywords their
-                pod specs state. The provisioner Jobs stay out (step 29), as do required affinities that are not zone
+                pod specs state. The provisioner Jobs stay out (step 25), as do required affinities that are not zone
                 affinities.
               </p>
             </div>
@@ -11187,8 +10979,8 @@ CONFIG = {
             <span class="lbl">Gate</span>
             <div class="rich">
               <p>
-                Ready, after step 5, so that the 9 raw pod specs that state <code>HIL_OVH_NODE_SELECTOR</code> keep
-                rendering the same placement.
+                Ready: <code>place()</code> writes the same nodeSelector the 9 raw pod specs that state
+                <code>HIL_OVH_NODE_SELECTOR</code> render, so moving them onto it changes no placement.
               </p>
             </div>
           </div>
@@ -11217,92 +11009,14 @@ CONFIG = {
           <div class="st">
             <div class="rich">
               <p>
-                Move the 12 S3Identities in <code>seaweedfs</code> that serve another namespace into their tenants&#39;
-                namespaces, one PR per Flux unit (11 PRs), starting with a same-unit move whose data tolerates a gap
-                (tempo), to watch the handover live. Of the 16 S3Identities on devel, 15 are in <code>seaweedfs</code>.
-                The move is <code>s3.Identity(..., namespace=&lt;tenant&gt;)</code>, which renders the S3Identity in the
-                tenant and adds <code>S3Identity</code> to that namespace&#39;s grant
-                (<code>seaweedfs/s3.py:163-185</code>); rendered on devel 12a18e9c2c for attic and forgejo, nothing else
-                in either file changes (E3).
-              </p>
-              <ul>
-                <li>
-                  Within the unit that renders the identity today (9 PRs): attic (nix-cache), langfuse,
-                  vm-images-ci-writer and vm-images-cdi-reader (vm-images-publisher), home-assistant-backups
-                  (home-assistant), tempo, mimir, loki (its legacy S3Credentials in <code>seaweedfs</code> stays pinned
-                  to the same user), pr-visuals-writer (seaweedfs-pr-visuals-bucket, tenant flux-system) and
-                  registry-cache (seaweedfs-registry-cache-bucket, tenant oci-cache). In one reconcile Flux applies the
-                  new identity, prunes the old one, and only then runs health checks.
-                </li>
-                <li>
-                  Across units (2 PRs): forgejo and public-coder-agent-backups, whose S3Identity is alone in
-                  <code>seaweedfs-forgejo-bucket</code> and
-                  <code>seaweedfs-public-coder-agent-backups-bucket</code> while the tenant&#39;s unit holds the bucket,
-                  credentials and grant. The tenant&#39;s module switches <code>IdentityRef</code> to
-                  <code>Identity</code>, and the same PR deletes the old unit, which holds only a
-                  <code>Retain</code> claim and no data. Either reconcile order converges; if the tenant&#39;s unit goes
-                  first, its <code>wait</code> reads the new identity&#39;s <code>Conflict</code> as in progress until
-                  the old unit is gone.
-                </li>
-                <li>
-                  Before each PR, live: the old S3Identity is Ready with <code>reclaimPolicy: Retain</code> and
-                  <code>status.identityName</code> equal to its name; every S3Credentials whose
-                  <code>identityRef</code> names it is Ready with <code>status.identityName</code> set (record its
-                  <code>status.accessKey</code>); no other S3Identity claims the name; the owning unit is not suspended
-                  and prunes.
-                </li>
-                <li>
-                  After: the tenant&#39;s S3Identity is Ready with the same <code>status.identityName</code>; the old
-                  one is gone; each S3Credentials keeps its <code>status.accessKey</code> and its Secret is unchanged;
-                  the consumer&#39;s own S3 write and read (or backup run) succeeds; both units are Ready.
-                </li>
-                <li>
-                  Rollback is the revert, which runs the same move backwards. A new identity stuck in
-                  <code>Conflict</code> means the old one was not pruned: delete the old one by hand once its
-                  <code>Retain</code> is confirmed.
-                </li>
-              </ul>
-              <p>
-                The other three identities in <code>seaweedfs</code> (drivefs-artifacts-writer,
-                drivefs-artifacts-reader, claude-reader) stay, because their S3Credentials are there too;
-                authentik-db-backups is already in authentik. haku-openclaw-spike-backups has no S3Identity; its
-                <code>PrivateBucket</code> declares one in haku-openclaw-spike (step 13), which adopts the user with no
-                other claimant.
-              </p>
-            </div>
-          </div>
-          <div class="sg">
-            <span class="lbl">Gate</span>
-            <div class="rich"><p>In review: tempo is #8322; the other 10 PRs follow it.</p></div>
-          </div>
-          <div class="sc">
-            <span class="lbl">Scope</span>
-            <div class="rich"><p>12 identities in 11 PRs.</p></div>
-          </div>
-          <div class="sr">
-            <span class="lbl">Risk</span>
-            <div class="rich">
-              <p>
-                Medium. Each move deletes one S3Identity and creates another under the same IAM name: the operator keeps
-                the user when a <code>Retain</code> identity is deleted, and also while another S3Identity still claims
-                the name; the new one adopts the user without touching its keys or bucket grants; and each S3Credentials
-                stays pinned to the user it provisioned for, so no key changes. What the code cannot rule out is live
-                drift: an identity whose live <code>reclaimPolicy</code> is <code>Delete</code> deletes the user and its
-                keys when pruned unless the operator already sees its successor, which across units may not exist yet;
-                the pre-check excludes it. None of this has been rehearsed against the live operator.
-              </p>
-            </div>
-          </div>
-        </li>
-        <li>
-          <div class="st">
-            <div class="rich">
-              <p>
                 Revise #8035 into single-shot SeaweedFS kind classes (C1): <code>Bucket</code>, <code>S3Identity</code>,
                 <code>S3Credentials</code> and <code>ResourceReferenceGrant</code> subclass their bindings and take
                 <code>access=</code> and <code>identity_ref=</code> at construction, with no grant methods, JSON
-                patches, <code>_ClusterGrant</code> singleton or one-line ducktape subclasses. It builds on #8315&#39;s
-                <code>ResourceReferenceGrant</code> class.
+                patches, <code>_ClusterGrant</code> singleton or one-line ducktape subclasses. It builds on the
+                <code>ResourceReferenceGrant</code> class in
+                <code>providers/seaweedfs/resource_reference_grant.py</code>, and replaces
+                <code>providers/seaweedfs/s3.py</code>&#39;s <code>Identity</code> and <code>Bucket</code>, which take
+                <code>name=, namespace=</code> and which only their own test calls.
               </p>
             </div>
           </div>
@@ -11405,7 +11119,7 @@ CONFIG = {
             <div class="rich">
               <p>
                 Low for DNS clients in ordinary Pods. Not for hosts compared as strings (<code
-                  >agentplane/egress.py:99-110</code
+                  >agentplane/egress.py:98-109</code
                 >
                 feeds the egress proxy allowlist) or for hostNetwork Pods; those keep the FQDN through
                 <code>ServiceRef.fqdn</code>. A changed URL in a hashed config re-runs its Job.
@@ -11419,7 +11133,7 @@ CONFIG = {
               <p>
                 <code>PrivateBucket</code> (C3) in each consumer&#39;s own unit, with its Secret name unchanged and its
                 S3Identity in the tenant. Migrate consumers per area, then delete <code>_ClusterGrant</code>,
-                <code>Bucket.grant</code> and the duplicate <code>SecretKeyFields</code>. The six
+                <code>Bucket.grant</code> and the duplicate <code>SecretKeyFields</code>. The four
                 <code>seaweedfs-*-bucket</code> units retire here too; their Buckets and S3Credentials move by
                 <code>cluster/AGENTS.md</code> § Migrating stateful Flux Kustomizations, never by delete and recreate,
                 because a deleted <code>Retain</code> S3Credentials leaves its Secret without an owner and a recreated
@@ -11429,7 +11143,7 @@ CONFIG = {
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich"><p>Decision 1, after steps 8 and 9.</p></div>
+            <div class="rich"><p>Decision 1, after step 5.</p></div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
@@ -11459,7 +11173,7 @@ CONFIG = {
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich"><p>Decision 1, after steps 12 and 13.</p></div>
+            <div class="rich"><p>Decision 1, after steps 8 and 9.</p></div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
@@ -11489,14 +11203,14 @@ CONFIG = {
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich"><p>Decision 6. It lands before step 16 converts any ServiceAccount.</p></div>
+            <div class="rich"><p>Decision 6. It lands before step 12 converts any ServiceAccount.</p></div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
             <div class="rich">
               <p>
                 <code>fleet_rules.py</code> plus the raw pod specs that state nothing. Until fleet rules reach every
-                chart (step 28), the rule covers only the 12 charts that call <code>add_fleet_rules</code>.
+                chart (step 24), the rule covers only the 12 charts that call <code>add_fleet_rules</code>.
               </p>
             </div>
           </div>
@@ -11513,15 +11227,17 @@ CONFIG = {
                 <code>mint_bearer_secret</code> and <code>mint_db_role_secret</code>. The external-creds roster moves
                 onto <code>Credential</code> (its store moves into external-creds, whose node gains an edge to
                 <code>external-secrets-operator</code>, and flux-system&#39;s reader gets one owner); convert the minted
-                bearers and their consumers; convert each ESO-ServiceAccount store, one source namespace per PR,
-                forgejo-images last; delete <code>single_secret_store</code> and
-                <code>litellm/credentials.py</code>&#39;s copy. #7432 rebases onto it.
+                bearers and their consumers; convert each ESO-ServiceAccount store and each source namespace&#39;s
+                per-pair stores, one source namespace per PR (<code>forgejo</code>&#39;s are the copies
+                <code>forgejo/secret_copy.py</code> builds, each read by a <code>forgejo-secret-reader</code>),
+                forgejo-images last; delete <code>single_secret_store</code> and <code>forgejo/secret_copy.py</code>.
+                #7432 rebases onto it.
               </p>
             </div>
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich"><p>Decisions 1, 3, 4 and 5, after step 15.</p></div>
+            <div class="rich"><p>Decisions 1, 3, 4 and 5, after step 11.</p></div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
@@ -11533,7 +11249,7 @@ CONFIG = {
               <p>
                 Medium. ExternalSecrets fail transiently while a store is renamed; check ExternalSecret status on the
                 live cluster after each PR. ServiceAccount conversions: grep each account&#39;s pods for
-                <code>service_account_name</code> before converting, and state the token on each (step 15&#39;s rule
+                <code>service_account_name</code> before converting, and state the token on each (step 11&#39;s rule
                 catches a miss).
               </p>
             </div>
@@ -11550,7 +11266,7 @@ CONFIG = {
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich"><p>Decision 7, after step 7.</p></div>
+            <div class="rich"><p>Decision 7, after step 4.</p></div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
@@ -11568,7 +11284,7 @@ CONFIG = {
             <div class="rich">
               <p>
                 Kyverno edges: drop the 27 direct <code>kyverno</code> edges in one batch if Kyverno is not an admission
-                prerequisite; otherwise give the 62 units that render a Kyverno-matched kind an edge, and check it.
+                prerequisite; otherwise give the 64 units that render a Kyverno-matched kind an edge, and check it.
               </p>
             </div>
           </div>
@@ -11638,7 +11354,7 @@ CONFIG = {
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich"><p>Decision 11, after step 2.</p></div>
+            <div class="rich"><p>Decision 11.</p></div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
@@ -11801,7 +11517,7 @@ CONFIG = {
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich"><p>After step 25.</p></div>
+            <div class="rich"><p>After step 21.</p></div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
@@ -11851,7 +11567,7 @@ CONFIG = {
                 On top of the writer: fleet rules attached to every chart (C6), replacing the 12
                 <code>add_fleet_rules</code> calls; the graph checks at synth (<code>AdmissionGraph</code>), which also
                 cover <code>haku-state-workloads</code>; health checks derived from the rendered objects, or
-                <code>wait: true</code> with Flux&#39;s own checks, which belongs with step 24; and absorbing
+                <code>wait: true</code> with Flux&#39;s own checks, which belongs with step 20; and absorbing
                 hand-written kustomization glue through <code>components</code> and <code>config_map_generator</code>,
                 one directory per PR, nix-cache first. The 40 directories with a hand-written
                 <code>kustomization.yaml</code> keep it until then.
@@ -11914,7 +11630,7 @@ CONFIG = {
         <li>
           <div class="rich">
             <p>
-              <code>cluster/cdk8s/AGENTS.md</code> § Boundaries, first bullet, with step 11 (decision 1). Keep &#39;no
+              <code>cluster/cdk8s/AGENTS.md</code> § Boundaries, first bullet, with step 7 (decision 1). Keep &#39;no
               marker annotation, no provides declaration, no registry&#39;. Replace &#39;no record type standing in for
               an object&#39; with: &#39;An identity-only reference is allowed: a frozen dataclass of names, keys, ports
               and labels plus the addresses derived from them, declared once by the producing module and projected into
@@ -11931,7 +11647,7 @@ CONFIG = {
         <li>
           <div class="rich">
             <p>
-              § Boundaries, with steps 24 and 25: construction runs forward, with no registry, sorter, lazy reference or
+              § Boundaries, with steps 20 and 21: construction runs forward, with no registry, sorter, lazy reference or
               node class. Stateful data survives, with Orphan derived for every generated directory that renders a
               stateful kind; a HelmRelease holding state passes it explicitly. Escape hatches stay: an explicit
               <code>deletion_policy</code> on the node wins; a directory needing a decryption the writer cannot derive
@@ -11967,13 +11683,13 @@ CONFIG = {
             <p>§ The Flux graph:</p>
             <ul>
               <li>
-                With step 25: <code>flux_kustomization</code> derives Orphan from the directory too. Replace &#39;a
+                With step 21: <code>flux_kustomization</code> derives Orphan from the directory too. Replace &#39;a
                 second fact that needs to cross is a second parameter&#39; (<code>AGENTS.md:139-140</code>) with
                 &#39;the rendered directory is the one value that crosses; a fact it does not carry is a keyword&#39;,
                 and delete the SOPS-decryption-constant sentence (<code>AGENTS.md:151-152</code>).
               </li>
               <li>
-                With step 3, and step 24 for <code>wait</code>: a predecessor is an admission prerequisite (the
+                With step 2, and step 20 for <code>wait</code>: a predecessor is an admission prerequisite (the
                 CRD&#39;s provider, a Fail-webhook operator, a <code>postBuild</code> source); any other edge is an
                 <code>ORDERING_EXCEPTIONS</code> entry with one of two reasons; <code>wait</code> defaults to off, and
                 only an admission target gates, with health checks from <code>directory.health_checks(kinds)</code>; one
@@ -11995,7 +11711,7 @@ CONFIG = {
         <li>
           <div class="rich">
             <p>
-              § Testing a generator and § Adding a fleet rule, with step 28: the writer attaches fleet rules to every
+              § Testing a generator and § Adding a fleet rule, with step 24: the writer attaches fleet rules to every
               chart. <code>add_fleet_rules</code> goes, with the registration-timing note in the environment-chart
               bullet (<code>AGENTS.md:48-50</code>). Exceptions are <code>FleetExceptions</code> fields at the writer
               call. Rules read <code>pod_policy.POD_SPEC_PATHS</code>, and the graph rules run on the kustomizations
@@ -12008,7 +11724,7 @@ CONFIG = {
             <p>§ Gotchas:</p>
             <ul>
               <li>
-                With step 5: replace the pod-level seccomp patch recipe and the note that
+                With step 4: replace the pod-level seccomp patch recipe and the note that
                 <code>scheduling.attract</code> renders required node affinity (<code>AGENTS.md:277-292</code>) with
                 <code>pod_policy.harden</code> and <code>place</code>, which writes a nodeSelector.
               </li>
@@ -12039,7 +11755,7 @@ CONFIG = {
         </li>
         <li>
           <div class="rich">
-            <p>New § Secrets across namespaces, with step 16:</p>
+            <p>New § Secrets across namespaces, with step 12:</p>
             <ul>
               <li>
                 A <code>Credential</code> (source <code>SecretRef</code>, a non-empty set of consumer namespaces) is the
@@ -12069,7 +11785,7 @@ CONFIG = {
         <li>
           <div class="rich">
             <p>
-              <code>cluster/AGENTS.md:217-224</code>, rewritten to the admission-only wording with step 23: &#39;A
+              <code>cluster/AGENTS.md:217-224</code>, rewritten to the admission-only wording with step 19: &#39;A
               Kustomization applying kind K depends on what makes the API server admit K: the Kustomization providing
               K&#39;s CRD, and the operator itself only where its <code>failurePolicy: Fail</code> webhook gates K (ESO,
               CNPG, cert-manager, virt-api, CDI, and Kyverno if decision 8 rules it one). prometheus-operator,
@@ -12123,7 +11839,7 @@ CONFIG = {
         <li>
           <div class="rich">
             <p>
-              <code>cluster/docs/cdk8s.md</code> § <code>dependsOn</code> rationale (lines 105-108): an admission edge
+              <code>cluster/docs/cdk8s.md</code> § <code>dependsOn</code> rationale (lines 106-109): an admission edge
               needs no comment, because the check computes its reason from the rendered kinds; only an
               <code>ORDERING_EXCEPTIONS</code> entry carries prose, in the table itself.
             </p>
@@ -12342,9 +12058,9 @@ CONFIG = {
                 <div class="rich">
                   <p>
                     It is what the graph grew into, and the owner is moving away from it because the tiny units cost
-                    reconcile time and I/O (#7094). On devel, 29 of 243 edges wait on runtime state that converges by
-                    retry (56 counting the 27 direct <code>kyverno</code> edges, decision 8), 94 unsuspended
-                    <code>wait: true</code> nodes gate nothing admission needs, and 59 of 165 measurable units render 3
+                    reconcile time and I/O (#7094). On devel, 25 of 241 edges wait on runtime state that converges by
+                    retry (52 counting the 27 direct <code>kyverno</code> edges, decision 8), 92 unsuspended
+                    <code>wait: true</code> nodes gate nothing admission needs, and 55 of 163 measurable units render 3
                     objects or fewer.
                   </p>
                 </div>
@@ -12440,7 +12156,7 @@ CONFIG = {
             </li>
           </ul>
           <p>
-            Every count, file:line cite and PR state on this page was measured on devel 12a18e9c2c; each example&#39;s
+            Every count, file:line cite and PR state on this page was measured on devel d86d9ae49d; each example&#39;s
             chip names the revision its after code was rendered on.
           </p>
           <p>
@@ -12564,7 +12280,7 @@ CONFIG = {
   [
     {
       "title": "N1 \u00b7 Flux node with policy defaults",
-      "today": "172 `flux_kustomization` calls with hand-ordered construct predecessors; `wait=True` is the default (`flux.py:142`), and 49 calls pass `wait`.",
+      "today": "170 `flux_kustomization` calls with hand-ordered construct predecessors; `wait=True` is the default (`flux.py:142`), and 49 calls pass `wait`.",
       "note": "`flux_kustomization` stays the one policy function over the generated Kustomization (`flux.py:132-218`), and construct predecessors keep the graph forward-built; a node class (#7444) or registry is forbidden and unnecessary. Its policy changes: `wait` defaults to `None` (Flux: off), so only the 23 admission targets pass `wait=True` or `health_check_exprs`, and every node takes a `RenderedDirectory`, as the directories `write_directory` writes already do.",
       "conventions": "C2, C7"
     },
@@ -12576,7 +12292,7 @@ CONFIG = {
     },
     {
       "title": "N3 \u00b7 Packaging and writing directories",
-      "today": "Three writer shapes, of which only `write_directory` (108 directories) returns a `RenderedDirectory`; 18 `<id>.k8s.yaml` literals; a new directory touches three places in `generate_manifests.py`.",
+      "today": "Three writer shapes, of which only `write_directory` (106 directories) returns a `RenderedDirectory`; 18 `<id>.k8s.yaml` literals; a new directory touches three places in `generate_manifests.py`.",
       "note": "`write_directory` is the one writer that returns a value: it names files from chart ids, derives decryption from its `siblings`, and takes components and configMapGenerator entries, so hand-written kustomization glue can be absorbed. Converting the remaining module writers removes the 18 file-name literals, and the writer is where the fleet rules attach (C6). One component is one `write_directory` call (#7094 rule 3).",
       "conventions": "C7, C6"
     },
@@ -12588,13 +12304,13 @@ CONFIG = {
     },
     {
       "title": "N5 \u00b7 Cross-namespace secret propagation",
-      "today": "At least five copy mechanisms with hand-kept allowlists and 17 copies of the reader ServiceAccount.",
+      "today": "At least five copy mechanisms with hand-kept allowlists, 17 copies of the reader ServiceAccount, and a second reader, `forgejo-secret-reader`, in the 8 namespaces that copy a Forgejo user's Secret.",
       "note": "The roster is the owner's stated standard (`cluster/cdk8s/external_creds.md`) and keeps authorization in one reviewable value: the store's namespace list is derived from it, and `copy()` fails synth for an unapproved consumer. A consumer's only Flux edge is `external-secrets-operator`, whose Fail webhook admits its ExternalSecret, and `grant()` renders in the source's existing unit, so credential plumbing adds no Kustomization and no store edge.",
       "conventions": "C8, C4"
     },
     {
       "title": "N6 \u00b7 Minting secrets shared server to clients",
-      "today": "14 minted Secrets go through `minted_secret.py`'s `mint_*` helpers, which return `None`, carry byte-identity knobs and keep two refresh policies; three MCP bearers are one call written three times, and `agentplane/dex.py` repeats the `PasswordSpec` literal.",
+      "today": "14 minted Secrets go through `minted_secret.py`'s `mint_*` helpers, which return `None`, carry byte-identity knobs and keep two refresh policies; three MCP bearers are one call written three times, and Agentplane's Dex pairs the shared `password_generator` with ExternalSecrets of its own.",
       "note": "`MintedSecret` returns its objects and takes a template, so it covers bearers and DB-role Secrets without the byte-identity knobs of the `mint_*` helpers, and it renders in the producer's own unit. The producer exports the `SecretKey` and the `Credential`, so clients never re-spell the name (`agentplane/staging.py:75-78` today).",
       "conventions": "C3, C8, C4"
     },
@@ -12612,8 +12328,8 @@ CONFIG = {
     },
     {
       "title": "N9 \u00b7 SeaweedFS buckets, identities, grants, consumer creds",
-      "today": "Two parallel wrapper modules; `Bucket.grant` appends by JSON patch; the namespace grant is a chart singleton found by construct id; consumers re-spell 4-5 names; six one-object bucket units are Kustomizations of their own.",
-      "note": "Single-shot kind classes with the access list at construction remove the JSON-patch append and the chart singleton, and one grant per bucket is safe: namespace monitoring already has two coexisting grants (mimir and tempo), and loki has its own. `PrivateBucket` renders in the consumer's own unit with its Secret name unchanged and its S3Identity beside its S3Credentials in the tenant, so the six `seaweedfs-*-bucket` units retire and the consumer's only SeaweedFS edge is `seaweedfs-operator` (CRDs; no webhook).",
+      "today": "Two parallel wrapper modules; `Bucket.grant` appends by JSON patch; the namespace grant is a chart singleton found by construct id; consumers re-spell 4-5 names; four bucket units are Kustomizations of their own, two of them one Bucket each.",
+      "note": "Single-shot kind classes with the access list at construction remove the JSON-patch append and the chart singleton, and one grant per bucket is safe: namespace monitoring already has two coexisting grants (mimir and tempo), and loki has its own. `PrivateBucket` renders in the consumer's own unit with its Secret name unchanged and its S3Identity beside its S3Credentials in the tenant, so the four `seaweedfs-*-bucket` units retire and the consumer's only SeaweedFS edge is `seaweedfs-operator` (CRDs; no webhook).",
       "conventions": "C1, C3, C4"
     },
     {
@@ -12624,8 +12340,8 @@ CONFIG = {
     },
     {
       "title": "N11 \u00b7 Placement and scheduling",
-      "today": "`node_scheduling.py` names the zone, its node selector, the control-plane toleration and `PREFER_WORKERS` once, and no other module spells `\"hil-ovh\"` or the control-plane key in code. `place()` pins its 8 cdk8s-plus workloads with a required zone affinity; the 9 raw pod specs and the Helm values that take `HIL_OVH_NODE_SELECTOR` render a `nodeSelector`.",
-      "note": "One `Placement` value feeds `place()` and `cnpg.cluster`'s affinity, and `place()` renders it on every dialect (as a nodeSelector once step 5 lands; a required affinity today) and raises on a second placement (checked in a scratch environment). Helm values and operator CRs embed the same typed values (`HIL_OVH_NODE_SELECTOR`, `[CONTROL_PLANE_TOLERATION]`, `PREFER_WORKERS`), which render wire-shaped inside `any`-typed values.",
+      "today": "`node_scheduling.py` names the zone, its node selector, the control-plane toleration and `PREFER_WORKERS` once, and no other module spells `\"hil-ovh\"` or the control-plane key in code. `place()` pins its 8 cdk8s-plus workloads with the same `nodeSelector` that the 9 raw pod specs and the Helm values that take `HIL_OVH_NODE_SELECTOR` render.",
+      "note": "One `Placement` value feeds `place()` and `cnpg.cluster`'s affinity, and `place()` renders it on every dialect as a nodeSelector and raises on a second placement (checked in a scratch environment). Helm values and operator CRs embed the same typed values (`HIL_OVH_NODE_SELECTOR`, `[CONTROL_PLANE_TOLERATION]`, `PREFER_WORKERS`), which render wire-shaped inside `any`-typed values.",
       "conventions": "C5, C2"
     },
     {
@@ -12636,13 +12352,13 @@ CONFIG = {
     },
     {
       "title": "N13 \u00b7 Images: placeholder, image-pins, pull creds",
-      "today": "Placeholder tag literals in workloads, hand-written image-pins Components, a hand-kept ImagePolicy roster, and a `forgejo-images` store allowlist of 34 namespaces (`external_secrets/config.py:150-192`).",
+      "today": "Placeholder tag literals in workloads, hand-written image-pins Components, a hand-kept ImagePolicy roster, and a `forgejo-images` store allowlist of 34 namespaces (`external_secrets/config.py:123-165`).",
       "note": "The image-pins Component must stay YAML for its Setters markers (`cluster/cdk8s/AGENTS.md` \u00a7 image-pins), so the writer lists it in `components`. Pull credentials move onto the roster, which derives the store's namespace list in place of the hand-kept 34; no consumer has an edge to `forgejo-images`. The four-artifact image identity is not solved here.",
       "conventions": "C7, C8"
     },
     {
       "title": "N14 \u00b7 Expose via Gateway",
-      "today": "`https_route(backend: str, port: int)` (`gateway.py:51-65`) sits beside a separately spelled `IngressRule.from_gateway(PORT)`, and 5 of its 35 calls target port 80 on Pods that listen elsewhere.",
+      "today": "`https_route(backend: str, port: int)` (`gateway.py:50-64`) sits beside a separately spelled `IngressRule.from_gateway(PORT)`, and 5 of its 35 calls target port 80 on Pods that listen elsewhere.",
       "note": "`https_route` takes the backend's `ServiceRef` and routes to its Service `port`, and the backend admits the Gateway on `pod_port`, so both halves read one value. Helm-rendered backends are `ServiceRef`s with `target_port` (gatus: 80 to 8080).",
       "conventions": "C2, C4"
     },
@@ -12672,7 +12388,7 @@ CONFIG = {
     },
     {
       "title": "N19 \u00b7 RBAC grants",
-      "today": "Raw and tier-1 Role and RoleBinding code side by side, role and ServiceAccount names re-spelled across charts, and 17 copies of the reader ServiceAccount.",
+      "today": "Raw and tier-1 Role and RoleBinding code side by side, role and ServiceAccount names re-spelled across charts, and 17 copies of the reader ServiceAccount, beside 8 `forgejo-secret-reader`s.",
       "note": "Tier-1 cdk8s-plus `Role`, `RoleBinding` and `ServiceAccount` stay, and a `resourceNames` entry is the producer's `SecretRef` through `Secret.from_secret_name`, so the Role and the program's config cannot name different Secrets. A cdk8s-plus ServiceAccount turns its token off, so converting one states `automount_service_account_token` on every Pod that runs as it (C5, decision 6), and Secret reads across namespaces go through the roster (C8).",
       "conventions": "C4, C8"
     },
@@ -12696,7 +12412,7 @@ CONFIG = {
     },
     {
       "title": "N23 \u00b7 Fleet-wide invariants",
-      "today": "Fleet rules (hardening, pinned HTTPS egress, resolved references) are registered on 12 of 191 charts, and the graph is checked after the fact over `kustomize build` output.",
+      "today": "Fleet rules (hardening, pinned HTTPS egress, resolved references) are registered on 12 of 190 charts, and the graph is checked after the fact over `kustomize build` output.",
       "note": "Registration moves from 12 opt-in calls to the writer, so every generated chart is checked, and the Flux graph gets the same treatment on the kustomizations chart. Rules stay pure, because validations run 1+N times per synth, and they share `POD_SPEC_PATHS` with `harden()`.",
       "conventions": "C6, C5"
     },
@@ -12714,7 +12430,7 @@ CONFIG = {
     },
     {
       "title": "N26 \u00b7 Certificates and CAs",
-      "today": "A cert-manager Certificate kind with `CertificatePrivateKey` factories and the `LONG_LIVED_CA` TypedDict spread (`cert_manager/cluster_ca.py:35-41`); the issuer name is the Python constant `LETSENCRYPT_ISSUER`.",
+      "today": "A cert-manager Certificate kind with `CertificatePrivateKey` factories and the `LONG_LIVED_CA` TypedDict spread (`cert_manager/cluster_ca.py:34-40`); the issuer name is the Python constant `LETSENCRYPT_ISSUER`.",
       "note": "The Certificate kind exposes its TLS Secret as a `SecretRef`, and a `ca_certificate` policy function replaces the `LONG_LIVED_CA` TypedDict spread.",
       "conventions": "C1, C2, C4"
     },
@@ -12738,7 +12454,7 @@ CONFIG = {
     },
     {
       "title": "N30 \u00b7 Requests, limits and VPA policy",
-      "today": "Requests and limits are written per container, the rule requiring them runs on 12 of 191 charts, and the VPA decision is a label dict per namespace.",
+      "today": "Requests and limits are written per container, the rule requiring them runs on 12 of 190 charts, and the VPA decision is a label dict per namespace.",
       "note": "Requests and limits are stated at construction, and the existing rule requiring cpu and memory requests and a memory limit (`fleet_rules.py:32-50`) holds everywhere once the writer attaches it. The namespace's VPA decision is the `vpa` keyword on `namespaces.namespace`.",
       "conventions": "C2, C6"
     },
@@ -12762,7 +12478,7 @@ CONFIG = {
     },
     {
       "title": "N34 \u00b7 Kustomization granularity and admission-only dependencies",
-      "today": "171 Kustomizations with 243 edges, 29 of which wait on runtime state (56 if the 27 direct `kyverno` edges count as runtime, decision 8); 94 unsuspended `wait: true` nodes gate nothing admission needs; 59 of 165 measurable units render 3 objects or fewer.",
+      "today": "169 Kustomizations with 241 edges, 25 of which wait on runtime state (52 if the 27 direct `kyverno` edges count as runtime, decision 8); 92 unsuspended `wait: true` nodes gate nothing admission needs; 55 of 163 measurable units render 3 objects or fewer.",
       "note": "One component is one `write_directory` call and one node (#7094 rule 3); an edge exists only for a CRD, a Fail webhook or a `postBuild` source, anything else is an `ORDERING_EXCEPTIONS` entry, and `wait` sits only on admission targets. Derived Orphan makes folding stateful objects safe, and the synth-time checks keep the graph from drifting back.",
       "conventions": "C7, C6"
     }
