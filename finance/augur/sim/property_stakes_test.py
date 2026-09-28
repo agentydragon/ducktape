@@ -15,7 +15,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-import numpy as np
 import polars as pl
 import pytest
 import pytest_bazel
@@ -23,14 +22,11 @@ from more_itertools import one
 
 from finance.augur.model.series import HomeValueKey, LocationId
 from finance.augur.policy.funding import ClaimPayer
-from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef, Book, PropertyState
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
-from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
+from finance.augur.sim.fixed_point import rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.property import (
@@ -43,15 +39,18 @@ from finance.augur.sim.property import (
     ScheduledSale,
 )
 from finance.augur.sim.property_tax import PropertyTaxPolicy
-from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.testing.rollouts import book
+from finance.augur.sim.testing.series import level_series
+from finance.augur.sim.testing.session import each, finish
+from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, flat_parcel
 from finance.augur.sim.world import World
 
-QUANTUM = Decimal("0.01")
 QUANTA_PER_UNIT = 100
 ALICE, SELLER, LENDER, TENANT, COUNTY, IRS = (
     AgentId("alice"),
@@ -80,26 +79,17 @@ MONTHLY_DEP_AFTER_HALF_RENTED = RENTAL_BUILDING_BASIS_AFTER * 0.5 / 27.5 / 12.0
 MONTHLY_RENT = 2_000
 
 
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
-
-
-def location(location_id: LocationId, *, annual_rate: Decimal | int) -> Location:
-    return Location(
-        location_id=location_id, annual_property_tax_rate_ppb=rate_to_ppb(annual_rate), annual_special_assessment=0
-    )
-
-
-LOCATIONS = (location(LOCATION_ID, annual_rate=0),)
-MULTI_PROPERTY_LOCATIONS = (
-    location(HOME_LOCATION_ID, annual_rate=Decimal("0.012")),
-    location(RENTAL_LOCATION_ID, annual_rate=Decimal("0.024")),
-)
+# Each market's parcels are taxed at one flat rate.
+PARCELS = {
+    LOCATION_ID: UNTAXED,
+    HOME_LOCATION_ID: flat_parcel(Decimal("0.012")),
+    RENTAL_LOCATION_ID: flat_parcel(Decimal("0.024")),
+}
 
 
 def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
     """An account and its opening balance."""
-    return AccountRef(agent_id=agent_id, account_id=CHECKING), money(balance)
+    return AccountRef(agent_id=agent_id, account_id=CHECKING), USD.quanta(balance)
 
 
 def financing(
@@ -109,7 +99,7 @@ def financing(
         liability_id=liability_id,
         lender_agent_id=lender,
         lender_account_id=CHECKING,
-        principal=money(principal),
+        principal=USD.quanta(principal),
         annual_interest_rate_ppb=rate_to_ppb(annual_rate),
         term_months=360,
     )
@@ -118,7 +108,7 @@ def financing(
 def purchase(
     cause_id: str,
     property_id: PropertyId,
-    location_id: LocationId,
+    market: LocationId,
     *,
     month: int = 0,
     seller: AgentId = SELLER,
@@ -132,14 +122,15 @@ def purchase(
         month=month,
         cause_id=cause_id,
         property_id=property_id,
-        location_id=location_id,
+        parcel=PARCELS[market],
+        market=market,
         buyer_agent_id=ALICE,
         buyer_account_id=CHECKING,
         seller_agent_id=seller,
         seller_account_id=CHECKING,
-        purchase_price=money(price),
-        down_payment=money(down),
-        buyer_closing_cost=money(closing),
+        purchase_price=USD.quanta(price),
+        down_payment=USD.quanta(down),
+        buyer_closing_cost=USD.quanta(closing),
         rented_fraction_ppb=rate_to_ppb(rented_fraction),
         land_value_fraction_ppb=rate_to_ppb(Decimal("0.20")),
         mortgage=mortgage,
@@ -147,14 +138,13 @@ def purchase(
 
 
 def property_tax(property_id: PropertyId, collector: AgentId) -> PropertyTaxPolicy:
-    """No rate of its own, so the authority charges the rate of the location the property sits in."""
     return PropertyTaxPolicy(
         property_id=property_id,
         owner_agent_id=ALICE,
         from_account_id=CHECKING,
         tax_authority_agent_id=collector,
         tax_authority_account_id=CHECKING,
-        annual_tax_rate_ppb=None,
+        start_year=START_YEAR,
         start_month=0,
         end_month=None,
     )
@@ -176,7 +166,6 @@ class Situation:
     accounts: tuple[tuple[AccountRef, int], ...]
     housing: Housing
     rollout_count: int = 1
-    locations: tuple[Location, ...] = LOCATIONS
     tax_policies: tuple[PropertyTaxPolicy, ...] = ()
     jurisdiction_ids: tuple[JurisdictionId, ...] = ()
     rent: Rent | None = None
@@ -184,21 +173,13 @@ class Situation:
 
 
 def compose(case: Situation, rollout_id: int) -> World:
-    series = compile_series(
-        ExternalSeriesContext.from_level_blocks(
-            [
-                (
-                    HomeValueKey(location_id=LocationId(location_id)),
-                    np.asarray([levels] * case.rollout_count, dtype=np.float64),
-                )
-                for location_id, levels in case.home_values.items()
-            ],
-            rollout_count=case.rollout_count,
-            horizon_months=case.horizon_months,
-        ),
+    series = level_series(
+        {
+            HomeValueKey(location_id=LocationId(location_id)): [levels] * case.rollout_count
+            for location_id, levels in case.home_values.items()
+        },
         rollout_count=case.rollout_count,
         horizon_months=case.horizon_months,
-        currency=USD,
     )
     jurisdictions = {id_: load_jurisdiction(id_) for id_ in case.jurisdiction_ids}
     world = World(
@@ -224,14 +205,14 @@ def compose(case: Situation, rollout_id: int) -> World:
                 indexation=FixedNominalLaw(),
             )
         )
-    world.declare_housing(case.housing, case.tax_policies, case.locations)
+    world.declare_housing(case.housing, case.tax_policies)
     if case.rent is not None:
         world.declare_flow(
             schedule=Recurring(start_month=0, end_month=case.rent.end_month),
             cause_id="rental-income:rental",
             from_account=AccountRef(agent_id=TENANT, account_id=CHECKING),
             to_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
-            amount=money(case.rent.amount),
+            amount=USD.quanta(case.rent.amount),
             income_category=ORDINARY_INCOME,
             deduction_category=None,
         )
@@ -240,22 +221,10 @@ def compose(case: Situation, rollout_id: int) -> World:
 
 def run(case: Situation) -> list[Rollout]:
     """Alice pays every due claim in full, in order: her installments and her property taxes."""
-    household = ClaimPayer(AgentId(ALICE))
-    session = ActionSession({id_: compose(case, id_) for id_ in range(case.rollout_count)}, ALICE)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id, decision.observation.month, household.decide(decision.observation)
-                    )
-                    for decision in batch
-                ]
-            )
-    finally:
-        session.close()
-    return batch.rollouts
+    return finish(
+        ActionSession({id_: compose(case, id_) for id_ in range(case.rollout_count)}, ALICE),
+        each(ClaimPayer(AgentId(ALICE)).decide),
+    ).rollouts
 
 
 def books(rollout: Rollout) -> list[Book]:
@@ -266,10 +235,6 @@ def books(rollout: Rollout) -> list[Book]:
 def properties(book: Book) -> list[PropertyState]:
     assert book.properties is not None
     return book.properties
-
-
-def book(rollout: Rollout, month: int) -> Book:
-    return one(entry for entry in books(rollout) if entry.month == month)
 
 
 def two_property_case() -> Situation:
@@ -351,7 +316,6 @@ def home_and_rental_case() -> Situation:
             account(COUNTY),
             account(IRS),
         ),
-        locations=MULTI_PROPERTY_LOCATIONS,
         jurisdiction_ids=(FEDERAL, CALIFORNIA),
         rent=Rent(MONTHLY_RENT, end_month=RENTAL_SALE_MONTH - 1),
         housing=Housing(
@@ -381,7 +345,8 @@ def home_and_rental_case() -> Situation:
                 ScheduledSale(
                     month=RENTAL_SALE_MONTH,
                     property_id=PropertyId("rental"),
-                    closing_cost_ppb=rate_to_ppb(Decimal("0.06")),
+                    commission_ppb=rate_to_ppb(Decimal("0.06")),
+                    escrow_title_ppb=0,
                 ),
             ),
             initial_residences=(PrimaryResidence(agent_id=ALICE, property_id=PropertyId("home")),),
@@ -392,7 +357,7 @@ def home_and_rental_case() -> Situation:
             ),
             capital_improvements=(
                 CapitalImprovement(
-                    month=12, property_id=PropertyId("rental"), amount=money(RENTAL_CAPEX), description="new roof"
+                    month=12, property_id=PropertyId("rental"), amount=USD.quanta(RENTAL_CAPEX), description="new roof"
                 ),
             ),
         ),
@@ -448,7 +413,7 @@ def test_only_a_purchase_with_a_stake_moves_the_buyer_s_cash() -> None:
 
 
 def test_property_tax_is_charged_at_each_property_s_own_rate(lifecycle: Rollout) -> None:
-    """Two locations, two rates, and the rental's stops at its sale while the home's does not."""
+    """Two parcels, two rates, and the rental's stops at its sale while the home's does not."""
     home_tax = tax_transfers(lifecycle, "home_property_tax_m")
     assert home_tax.get_column("month_index").to_list() == list(range(1, LIFECYCLE_HORIZON))
     assert home_tax.get_column("amount_quanta").to_list() == [50_000] * (LIFECYCLE_HORIZON - 1)

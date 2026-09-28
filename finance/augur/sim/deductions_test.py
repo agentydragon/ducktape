@@ -23,23 +23,23 @@ from more_itertools import one
 
 from finance.augur.model.series import LocationId
 from finance.augur.policy.funding import ClaimPayer
-from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
+from finance.augur.sim.fixed_point import rate_to_ppb, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.property import Housing, MortgageFinancing, ScheduledPurchase
 from finance.augur.sim.property_tax import PropertyTaxPolicy
-from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import MortgageInterestDeduction, SaltCap, SaltDeduction, TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.testing.session import each, finish
+from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -72,27 +72,22 @@ TCJA_CAP_YEAR = 4
 FEDERAL_PRINCIPAL_CAP = 750_000.0
 
 
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
-
-
 def usd(row: dict[str, Any], field: str) -> float:
     return int(row[field]) / 100
 
 
-SAN_FRANCISCO = Location(
-    location_id=LOCATION_ID, annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.01180")), annual_special_assessment=0
-)
+# The home's parcel, taxed a flat 1.2% of its price.
+HOME_PARCEL = flat_parcel(Decimal("0.012"))
 
 DEFAULT_SALT_SCHEDULE = (
-    SaltCap(effective_year_index=0, cap=money(int(OBBBA_CAP))),
-    SaltCap(effective_year_index=TCJA_CAP_YEAR, cap=money(int(TCJA_CAP))),
+    SaltCap(effective_year_index=0, cap=USD.quanta(int(OBBBA_CAP))),
+    SaltCap(effective_year_index=TCJA_CAP_YEAR, cap=USD.quanta(int(TCJA_CAP))),
 )
 
 
 def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
     """An account and its opening balance."""
-    return AccountRef(agent_id=agent_id, account_id=CHECKING), money(balance)
+    return AccountRef(agent_id=agent_id, account_id=CHECKING), USD.quanta(balance)
 
 
 def deducts(
@@ -102,7 +97,7 @@ def deducts(
         liability_id=liability_id,
         owner_agent_id=ALICE,
         debt_class=debt_class,
-        per_jurisdiction_principal_cap={FEDERAL: money(750_000), CALIFORNIA: money(1_000_000)},
+        per_jurisdiction_principal_cap={FEDERAL: USD.quanta(750_000), CALIFORNIA: USD.quanta(1_000_000)},
     )
 
 
@@ -124,13 +119,14 @@ def financed_purchase(
         month=0,
         cause_id=cause_id,
         property_id=property_id,
-        location_id=LOCATION_ID,
+        parcel=HOME_PARCEL,
+        market=LOCATION_ID,
         buyer_agent_id=ALICE,
         buyer_account_id=CHECKING,
         seller_agent_id=SELLER,
         seller_account_id=CHECKING,
-        purchase_price=money(price),
-        down_payment=money(down),
+        purchase_price=USD.quanta(price),
+        down_payment=USD.quanta(down),
         buyer_closing_cost=0,
         rented_fraction_ppb=0,
         land_value_fraction_ppb=rate_to_ppb(Decimal("0.20")),
@@ -138,7 +134,7 @@ def financed_purchase(
             liability_id=liability_id,
             lender_agent_id=BANK,
             lender_account_id=CHECKING,
-            principal=money(price - down),
+            principal=USD.quanta(price - down),
             annual_interest_rate_ppb=rate_to_ppb(annual_rate),
             term_months=term_months,
         ),
@@ -250,19 +246,18 @@ def compose(case: Situation) -> World:
                 from_account_id=CHECKING,
                 tax_authority_agent_id=COLLECTOR,
                 tax_authority_account_id=CHECKING,
-                annual_tax_rate_ppb=rate_to_ppb(Decimal("0.012")),
+                start_year=START_YEAR,
                 start_month=0,
                 end_month=None,
             ),
         ),
-        (SAN_FRANCISCO,),
     )
     world.declare_flow(
         schedule=Recurring(start_month=0, end_month=case.horizon_months - 1),
         cause_id="alice_paycheck",
         from_account=AccountRef(agent_id=PAYROLL, account_id=CHECKING),
         to_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
-        amount=money(round_currency_amount(Decimal(case.annual_w2_income) / 12, quantum=QUANTUM)),
+        amount=USD.quanta(round_currency_amount(Decimal(case.annual_w2_income) / 12, quantum=QUANTUM)),
         income_category=ORDINARY_INCOME,
         deduction_category=None,
     )
@@ -271,22 +266,7 @@ def compose(case: Situation) -> World:
 
 def run(case: Situation) -> Rollout:
     """Alice pays every due claim in full, in order: her installments, her property tax, her assessments."""
-    household = ClaimPayer(AgentId(ALICE))
-    session = ActionSession({0: compose(case)}, ALICE)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id, decision.observation.month, household.decide(decision.observation)
-                    )
-                    for decision in batch
-                ]
-            )
-    finally:
-        session.close()
-    return one(batch.rollouts)
+    return one(finish(ActionSession({0: compose(case)}, ALICE), each(ClaimPayer(AgentId(ALICE)).decide)).rollouts)
 
 
 def breakdown(rollout: Rollout, *, jurisdiction_id: JurisdictionId, year_index: int = 0) -> dict[str, Any]:
@@ -318,9 +298,10 @@ def property_tax_through(rollout: Rollout, *, month: int) -> float:
 def test_acquisition_interest_above_the_standard_deduction_is_itemized() -> None:
     """A $720k mortgage at 7% throws off ~$46k of first-year interest, well past both standards.
 
-    Both returns take the whole of it — the principal is under the federal cap — so the tax
-    saved is exactly the excess over each jurisdiction's standard deduction at that
-    jurisdiction's marginal rate, which $200k of wages leaves unchanged either way.
+    Both returns take the whole of it — the principal is under the federal cap. Federally the tax
+    saved is the excess over the standard deduction at the 24% marginal rate. California itemizes
+    the property tax paid with or without the interest (FTB Schedule CA, line 5e), and that
+    already beats its standard deduction, so the interest saves its full amount at 9.3%.
     """
     baseline = run(standard_home())
     deducted = run(standard_home(mortgage_interest_policies=(deducts(MORTGAGE_ID),)))
@@ -340,12 +321,15 @@ def test_acquisition_interest_above_the_standard_deduction_is_itemized() -> None
     assert usd(federal, "mortgage_interest_deduction_quanta") == pytest.approx(interest, rel=1e-5)
     assert usd(federal, "itemized_deduction_quanta") == pytest.approx(interest, rel=1e-5)
     assert usd(california, "mortgage_interest_deduction_quanta") == pytest.approx(interest, rel=1e-5)
-    assert usd(california, "itemized_deduction_quanta") == pytest.approx(interest, rel=1e-5)
+    assert usd(california, "itemized_deduction_quanta") == pytest.approx(
+        interest + property_tax_through(deducted, month=11), rel=1e-5
+    )
 
     federal_saved = usd(federal_baseline, "total_tax_quanta") - usd(federal, "total_tax_quanta")
     assert federal_saved == pytest.approx((interest - FEDERAL_STANDARD) * 0.24, abs=0.5)
     california_saved = usd(california_baseline, "total_tax_quanta") - usd(california, "total_tax_quanta")
-    assert california_saved == pytest.approx((interest - CALIFORNIA_STANDARD) * 0.093, abs=0.5)
+    assert property_tax_through(baseline, month=11) > CALIFORNIA_STANDARD
+    assert california_saved == pytest.approx(interest * 0.093, abs=0.5)
 
 
 def test_home_equity_interest_is_not_deductible() -> None:
@@ -406,7 +390,8 @@ def test_acquisition_and_home_equity_debt_are_classified_per_liability() -> None
 
 
 def test_without_a_policy_no_interest_is_deducted() -> None:
-    """A mortgage alone does not itemize a return; the standard deduction stands."""
+    """A mortgage alone does not itemize its interest. Federally the standard deduction stands;
+    California itemizes the property tax paid."""
     rollout = run(Situation(purchase_price=900_000, down_payment=180_000, annual_rate=Decimal("0.07")))
 
     federal = breakdown(rollout, jurisdiction_id=FEDERAL)
@@ -415,8 +400,7 @@ def test_without_a_policy_no_interest_is_deducted() -> None:
     assert usd(federal, "itemized_deduction_quanta") == 0.0
     assert usd(federal, "standard_deduction_quanta") == pytest.approx(FEDERAL_STANDARD)
     assert usd(california, "mortgage_interest_deduction_quanta") == 0.0
-    assert usd(california, "itemized_deduction_quanta") == 0.0
-    assert usd(california, "standard_deduction_quanta") == pytest.approx(CALIFORNIA_STANDARD)
+    assert usd(california, "itemized_deduction_quanta") == pytest.approx(property_tax_through(rollout, month=11))
 
 
 def test_the_federal_principal_cap_prorates_interest_and_california_does_not() -> None:
@@ -598,7 +582,7 @@ def test_an_authored_schedule_overrides_the_default() -> None:
     rollout = run(
         standard_home(
             mortgage_interest_policies=(deducts(MORTGAGE_ID),),
-            salt_policies=(salt(cap_schedule=(SaltCap(effective_year_index=0, cap=money(5000)),)),),
+            salt_policies=(salt(cap_schedule=(SaltCap(effective_year_index=0, cap=USD.quanta(5000)),)),),
         )
     )
 

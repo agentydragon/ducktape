@@ -11,8 +11,8 @@ Each worker keeps a bare clone in an emptyDir and fetches it on every poll, so a
 costs one incremental fetch and a pod restart costs one clone. The Ducktape worker ignores
 `props/specimens/` (a copy of code indexed at its real path) and `*.gz`; the indexer
 accepts only strict UTF-8 content without NULs. Haku state is private, so its worker reads
-`haku-forgejo-git`, the read credential the `haku-state` Terraform reconciliation reflects
-into this namespace. Ducktape is public and its worker holds no credential.
+`haku-forgejo-git`, the `haku-state` Terraform credential that Reflector mirrors into this
+namespace from `haku-sandbox`. Ducktape is public and its worker holds no credential.
 
 Both use Ollama's internal `/v1/embeddings` endpoint and `qwen3-embedding:4b` (2560 dimensions).
 The query instruction matches Qwen's query/document asymmetry. Workers and PostgreSQL run

@@ -1,5 +1,5 @@
 """The Attic Nix binary cache (`cache.allegedly.works`): the server and its Postgres, its
-SeaweedFS bucket and credentials, the cache bootstrap Job, and the hourly JWT rotation.
+SeaweedFS bucket, identity and credentials, the cache bootstrap Job, and the hourly JWT rotation.
 
 Hand-written beside the output: `server.toml` and `rotators.yaml` (the directory's
 `kustomization.yaml` generates ConfigMaps from them), the SOPS Secrets, and
@@ -74,7 +74,7 @@ def _storage(scope: Construct) -> None:
         reclaim_policy=None,
         grant_name=NAMESPACE,
     )
-    identity = s3.Identity(scope, "identity", name=NAME)
+    identity = s3.Identity(scope, "identity", name=NAME, namespace=NAMESPACE)
     bucket.grant_read_write(identity)
     identity.credentials(namespace=NAMESPACE, secret=_S3_SECRET, key_fields=s3.AWS_ENV_KEY_FIELDS)
 

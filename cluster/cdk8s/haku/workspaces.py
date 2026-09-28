@@ -40,6 +40,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import agent_sandbox, external_creds, forgejo_images
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.kyverno.janitor import SANDBOX_KINDS, janitor
@@ -103,6 +104,18 @@ def _external_secrets(chart: Chart) -> None:
         data=[remote_data("coinbase-api-credentials", key) for key in ("api_key", "api_secret")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         target_name="haku-sandbox-coinbase-api-credentials",
+    )
+    # tf/gitops/haku-state's `haku` account: its git credentials, which Reflector mirrors on to
+    # the other haku-state git consumers, and the pull secret for Haku's own UI image.
+    reader = secret_copy.reader(chart, NAMESPACE)
+    secret_copy.secret_copy(
+        chart,
+        "haku-forgejo-git",
+        reader=reader,
+        mirror_namespaces=["haku-egress-proxy", "flux-system", "agentplane-index"],
+    )
+    secret_copy.secret_copy(
+        chart, "haku-forgejo-registry-pull", reader=reader, secret_type="kubernetes.io/dockerconfigjson"
     )
 
 

@@ -1,9 +1,8 @@
-"""Tax jurisdiction definitions loaded from YAML.
+"""Tax law as one tree of jurisdictions loaded from YAML.
 
-A jurisdiction is one taxing authority — federal U.S., California
-state, etc. Each carries bracket schedules (ordinary income;
-optionally a separate LTCG schedule) and a standard deduction
-keyed by filing status.
+Each jurisdiction names its parent (`federal_us` → `california` → a city or a county tax rate
+area) and holds only the law it sets itself: a state its income tax and Proposition 13, a rate
+area its voter-approved debt rates. A parcel's situs is the leaf; everything above it applies.
 
 The data files live in `augur/sim/data/jurisdictions/*.yaml`. The
 loader resolves them relative to this module's location so Bazel's
@@ -34,6 +33,13 @@ class StatutoryAmount(StrEnum):
     MAX_CAPITAL_LOSS_ORDINARY_OFFSET = "max_capital_loss_ordinary_offset"
     NET_INVESTMENT_INCOME_TAX = "net_investment_income_tax"
     TAXABLE_INCOME_SURTAX = "taxable_income_surtax"
+
+
+class BillRounding(StrEnum):
+    """How a tax collector rounds a fiscal year's secured bill, which it collects in two halves."""
+
+    # Each half rounded down to the quantum, so the bill is an even number of quanta.
+    DOWN_TO_EVEN = "down_to_even"
 
 
 class StatutoryIndexation(StrEnum):
@@ -72,6 +78,8 @@ class TaxBracket(BaseModel):
     rate applies to income in the slice
     `(previous_upper, upper]`."""
 
+    model_config = ConfigDict(extra="forbid")
+
     upper: BracketUpper
     rate: Rate
 
@@ -82,6 +90,8 @@ class ThresholdTax(BaseModel):
     Which measure a field applies it to is the field's contract; the threshold is keyed by
     filing status, and the jurisdiction's `indexation` says whether it is inflation-indexed.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     rate: Rate
     threshold: dict[str, CurrencyAmount]
@@ -99,14 +109,15 @@ class InterestExemptions(BaseModel):
     )
 
 
-class Jurisdiction(BaseModel):
-    """A taxing authority's complete bracket + deduction config.
+class IncomeTax(BaseModel):
+    """A jurisdiction's income tax: brackets and deductions keyed by filing status.
 
     `ltcg_brackets` is optional: when absent, the engine taxes
     long-term capital gains at the ordinary-income rate
     (California-style)."""
 
-    jurisdiction_id: JurisdictionId
+    model_config = ConfigDict(extra="forbid")
+
     law_year: int = Field(description="The tax year whose statute and published inflation adjustments the amounts are.")
     indexation: dict[StatutoryAmount, StatutoryIndexation] = Field(
         description=(
@@ -126,6 +137,12 @@ class Jurisdiction(BaseModel):
         )
     )
     exempt_interest: InterestExemptions
+    itemizes_real_property_tax: bool = Field(
+        description=(
+            "Whether the ad-valorem real property tax an owner pays is an itemized deduction here without "
+            "a cap. Where it is not, a caller's `SaltDeduction` may claim it under the SALT cap."
+        )
+    )
     net_investment_income_tax: ThresholdTax | None = Field(
         default=None,
         description=(
@@ -142,7 +159,7 @@ class Jurisdiction(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _every_amount_tagged(self) -> Jurisdiction:
+    def _every_amount_tagged(self) -> IncomeTax:
         present = {
             StatutoryAmount.ORDINARY_INCOME_BRACKETS,
             StatutoryAmount.STANDARD_DEDUCTION,
@@ -156,16 +173,126 @@ class Jurisdiction(BaseModel):
             if field is not None:
                 present.add(amount)
         if set(self.indexation) != present:
-            raise ValueError(
-                f"{self.jurisdiction_id!r} indexation tags {sorted(self.indexation)}, not its amounts {sorted(present)}"
-            )
+            raise ValueError(f"indexation tags {sorted(self.indexation)}, not the amounts {sorted(present)}")
         return self
 
 
+class Proposition13(BaseModel):
+    """California's ad-valorem limits (Cal. Const. art. XIII A) and the homeowners' exemption."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    base_rate: Rate = Field(description="The general levy on assessed value, before any voter-approved debt rate.")
+    inflation_cap: Rate = Field(description="The most a lien date may grow an assessed value by.")
+    inflation_factors: dict[int, Rate] = Field(
+        description=(
+            "The Board of Equalization's published factor by lien-date year (the January 1 that opens "
+            "fiscal year `year`-`year + 1`). A lien year after the last published one is simulated."
+        )
+    )
+    homeowners_exemption: CurrencyAmount = Field(
+        description="The reduction of taxable value for a home that is its owner's principal residence on the lien date."
+    )
+    supplemental_proration: dict[int, Rate] = Field(
+        description=(
+            "The share of a full year's tax a supplemental assessment on the current roll bears, by the "
+            "month (1-12) of the first day after the change in ownership; a month absent bears none."
+        )
+    )
+
+
+class TransferTaxBracket(BaseModel):
+    """The rate a consideration pays once it reaches `lower`; `lower_included` says whether `lower` itself does."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lower: CurrencyAmount
+    lower_included: bool
+    rate: CurrencyAmount = Field(description="The tax on each `per` of the whole consideration, or part of one.")
+
+
+class TransferTax(BaseModel):
+    """A documentary or city transfer tax on the whole consideration at the rate of the highest bracket it
+    reaches; below the lowest bracket nothing is due."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    per: CurrencyAmount
+    brackets: list[TransferTaxBracket] = Field(min_length=1)
+
+
+class Jurisdiction(BaseModel):
+    """One level of the tree: the law this level sets, and the level above it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    jurisdiction_id: JurisdictionId
+    parent: Jurisdiction | None = Field(default=None, description="The level whose law also applies here.")
+    income_tax: IncomeTax | None = Field(default=None, description="Absent where this level levies no income tax.")
+    proposition_13: Proposition13 | None = Field(
+        default=None, description="Absent below the state that sets the ad-valorem limits."
+    )
+    debt_rates: dict[int, Rate] | None = Field(
+        default=None,
+        description=(
+            "A tax rate area's voter-approved debt rate on top of the base rate, by the year fiscal year "
+            "`year`-`year + 1` starts. Absent above the rate area."
+        ),
+    )
+    bill_rounding: BillRounding | None = Field(
+        default=None,
+        description=(
+            "How the rate area's collector rounds a secured bill. Absent where no rule is published, and "
+            "the bill rounds to the nearest quantum."
+        ),
+    )
+    transfer_tax: TransferTax | None = Field(
+        default=None,
+        description="The tax this level levies on a transfer of real property; absent where it levies none.",
+    )
+
+    def lineage(self) -> tuple[Jurisdiction, ...]:
+        """This level, then each level above it up to the root."""
+        return (self,) if self.parent is None else (self, *self.parent.lineage())
+
+
 def load_jurisdiction(jurisdiction_id: JurisdictionId) -> Jurisdiction:
-    """Load and validate the YAML for `jurisdiction_id`. Raises
-    `FileNotFoundError` if the file is missing and Pydantic's
-    `ValidationError` if the schema doesn't match."""
+    """Load and validate the YAML for `jurisdiction_id`, loading its parents in turn. Raises
+    `FileNotFoundError` if a file is missing and Pydantic's `ValidationError` if the schema
+    doesn't match."""
     path = _DATA_DIR / f"{jurisdiction_id}.yaml"
     data = yaml.safe_load(path.read_text())
+    if "parent" in data:
+        data["parent"] = load_jurisdiction(JurisdictionId(data["parent"]))
     return Jurisdiction.model_validate(data)
+
+
+# The one hypothetical jurisdiction studies and tests share; no data file carries it.
+HYPOTHETICAL_FLAT_TAX = JurisdictionId("hypothetical-flat-tax")
+
+
+def flat_income_tax(jurisdiction_id: JurisdictionId, *, ordinary_rate: Decimal, ltcg_rate: Decimal) -> Jurisdiction:
+    """Hypothetical law for studies and tests, not a shipped jurisdiction: a single filer's income
+    taxed at `ordinary_rate` and long-term gains at `ltcg_rate`, with no deductions, no capital-loss
+    offset and no exempt interest, fixed in nominal dollars."""
+    return Jurisdiction(
+        jurisdiction_id=jurisdiction_id,
+        income_tax=IncomeTax(
+            law_year=2024,
+            indexation=dict.fromkeys(
+                (
+                    StatutoryAmount.ORDINARY_INCOME_BRACKETS,
+                    StatutoryAmount.LTCG_BRACKETS,
+                    StatutoryAmount.STANDARD_DEDUCTION,
+                    StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET,
+                ),
+                StatutoryIndexation.FIXED,
+            ),
+            ordinary_income_brackets={"single": [TaxBracket(upper="Infinity", rate=ordinary_rate)]},
+            ltcg_brackets={"single": [TaxBracket(upper="Infinity", rate=ltcg_rate)]},
+            standard_deduction={"single": Decimal(0)},
+            max_capital_loss_ordinary_offset={"single": Decimal(0)},
+            exempt_interest=InterestExemptions(treasury=False, municipal=set()),
+            itemizes_real_property_tax=False,
+        ),
+    )

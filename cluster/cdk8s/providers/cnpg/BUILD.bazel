@@ -49,3 +49,14 @@ py_library(
         "@pypi//constructs",
     ],
 )
+
+py_library(
+    name = "cnpg_database",
+    srcs = ["database.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":database",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)

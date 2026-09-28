@@ -58,7 +58,7 @@ from finance.augur.sim.external_series import ExternalSeriesContext, compile_ser
 from finance.augur.sim.fixed_point import rate_to_ppb, round_currency_amount, round_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferDeductionCategory, TransferIncomeCategory
-from finance.augur.sim.locations import Location
+from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
 from finance.augur.sim.money import Currency
 from finance.augur.sim.pricing import OccupancyMode, insurance_rate, maintenance_rate
@@ -68,6 +68,7 @@ from finance.augur.sim.property import (
     CapitalImprovement,
     Housing,
     MortgageFinancing,
+    Parcel,
     PrimaryResidence,
     PrimaryResidenceEvent,
     RentedFraction,
@@ -77,6 +78,7 @@ from finance.augur.sim.property import (
 from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.schedule import Once, Recurring, Schedule
+from finance.augur.sim.situs import compile_situs
 from finance.augur.sim.tax_authority import MortgageInterestDeduction, TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_income_sources, compile_profile
@@ -180,7 +182,6 @@ class Home:
 
     housing: Housing
     property_tax: PropertyTaxPolicy
-    location: Location
     # Claimed only on a financed primary residence.
     interest_deduction: MortgageInterestDeduction | None
     cashflows: tuple[PropertyCashflow, ...]
@@ -265,6 +266,17 @@ def build_situation(
             )
         )
 
+    profile = TaxProfile(
+        agent_id=primary_agent_id,
+        filing_status=FilingStatus.SINGLE,
+        jurisdiction_ids=[JurisdictionId("federal_us"), JurisdictionId("california")],
+        tax_authority_agent_id=TAX_AUTHORITY_AGENT_ID,
+        payment_account_id=PRIMARY_ACCOUNT_ID,
+        tax_authority_account_id=TAX_AUTHORITY_ACCOUNT_ID,
+    )
+    jurisdictions = load_jurisdictions_for([profile])
+    tax_profile = compile_profile(profile, jurisdictions, currency=currency)
+
     home = None
     if scenario_key.property_purchase is not None:
         purchase = scenario_key.property_purchase
@@ -303,7 +315,12 @@ def build_situation(
         accounts.extend(rental_wiring.accounts)
         home = Home(
             housing=_housing(
-                purchase, property_, primary_agent_id=primary_agent_id, mortgage=mortgage, currency=currency
+                purchase,
+                property_,
+                primary_agent_id=primary_agent_id,
+                parcel=_parcel(property_, locations, currency=currency),
+                mortgage=mortgage,
+                currency=currency,
             ),
             property_tax=PropertyTaxPolicy(
                 property_id=property_.id,
@@ -311,11 +328,11 @@ def build_situation(
                 from_account_id=PRIMARY_ACCOUNT_ID,
                 tax_authority_agent_id=TAX_AUTHORITY_AGENT_ID,
                 tax_authority_account_id=TAX_AUTHORITY_ACCOUNT_ID,
-                annual_tax_rate_ppb=None,  # the location's rate applies
+                # The app's month 0 is January of the year its bundled income-tax tables are law for.
+                start_year=one({rules.law_year for rules in tax_profile.jurisdictions}),
                 start_month=0,
                 end_month=end_month,
             ),
-            location=_location(property_, locations, currency=currency),
             interest_deduction=interest_deduction,
             cashflows=(*rental_wiring.scheduled_property_cashflows, *rental_wiring.recurring_property_cashflows),
         )
@@ -335,15 +352,6 @@ def build_situation(
         raise ValueError(
             f"duplicate initial lot purchase months for FIFO pool(s): {sorted(set(duplicates_everseen(bought)))}"
         )
-    profile = TaxProfile(
-        agent_id=primary_agent_id,
-        filing_status=FilingStatus.SINGLE,
-        jurisdiction_ids=[JurisdictionId("federal_us"), JurisdictionId("california")],
-        tax_authority_agent_id=TAX_AUTHORITY_AGENT_ID,
-        payment_account_id=PRIMARY_ACCOUNT_ID,
-        tax_authority_account_id=TAX_AUTHORITY_ACCOUNT_ID,
-    )
-    jurisdictions = load_jurisdictions_for([profile])
     lots = prepared_lots(holdings.portfolio, currency=currency)
     tlh_portfolios = tuple(
         prepared_tlh_portfolio(portfolio, currency=currency) for portfolio in holdings.tlh_portfolios
@@ -381,7 +389,7 @@ def build_situation(
             )
         ),
         accounts=tuple(accounts),
-        tax_profile=compile_profile(profile, jurisdictions, currency=currency),
+        tax_profile=tax_profile,
         pools=holding_pools(holdings.portfolio),
         lots=lots,
         tlh_portfolios=tlh_portfolios,
@@ -458,7 +466,7 @@ def compose(situation: Situation, market: MarketPath) -> World:
             maturity_month_index=bond.maturity_month_index,
         )
     if situation.home is not None:
-        world.declare_housing(situation.home.housing, (situation.home.property_tax,), (situation.home.location,))
+        world.declare_housing(situation.home.housing, (situation.home.property_tax,))
     for distribution in situation.distributions:
         world.declare_distribution(
             agent_id=distribution.agent_id,
@@ -879,6 +887,7 @@ def _housing(
     property_: Property,
     *,
     primary_agent_id: AgentId,
+    parcel: Parcel,
     mortgage: MortgageFinancing | None,
     currency: Currency,
 ) -> Housing:
@@ -924,7 +933,10 @@ def _housing(
                     ScheduledSale(
                         month=month,
                         property_id=property_.id,
-                        closing_cost_ppb=_closing_cost_ppb(float(event.closing_cost_pct)),
+                        # The form asks one selling-cost percent and does not split commissions from
+                        # escrow and title; the situs's transfer tax is charged on top of it.
+                        commission_ppb=_closing_cost_ppb(float(event.closing_cost_pct)),
+                        escrow_title_ppb=0,
                     )
                 )
             case _:
@@ -937,7 +949,8 @@ def _housing(
                 month=0,
                 cause_id=_purchase_cause_id(property_),
                 property_id=property_.id,
-                location_id=property_.location_id,
+                parcel=parcel,
+                market=property_.location_id,
                 buyer_agent_id=primary_agent_id,
                 buyer_account_id=PRIMARY_ACCOUNT_ID,
                 seller_agent_id=PROPERTY_SELLER_AGENT_ID,
@@ -976,8 +989,8 @@ def _purchase_cause_id(property_: Property) -> str:
     return f"{property_.id}_purchase"
 
 
-def _location(property_: Property, locations: Mapping[LocationId, LocationConfig], *, currency: Currency) -> Location:
-    """The location the purchase buys in: the one whose rate the property-tax policy reads."""
+def _parcel(property_: Property, locations: Mapping[LocationId, LocationConfig], *, currency: Currency) -> Parcel:
+    """The parcel the purchase buys: taxed under the law of its location's situs."""
 
     if property_.location_id not in locations:
         known_location_ids = ", ".join(repr(location_id) for location_id in sorted(locations)) or "<none>"
@@ -985,12 +998,10 @@ def _location(property_: Property, locations: Mapping[LocationId, LocationConfig
             f"scheduled property purchase {_purchase_cause_id(property_)!r} references unknown location_id "
             f"{property_.location_id!r}; known location ids: {known_location_ids}"
         )
-    regulation = locations[property_.location_id].local_regulation
-    return Location(
-        location_id=property_.location_id,
-        # A float percent on the location, rounded onto the ppb grid.
-        annual_property_tax_rate_ppb=int(round_ppb(float(regulation.property_tax_annual_pct) / 100.0)),
-        annual_special_assessment=currency.quanta(regulation.special_assessment_annual),
+    # The catalog does not carry the seller's assessed value.
+    return Parcel(
+        situs=compile_situs(load_jurisdiction(locations[property_.location_id].situs), currency=currency),
+        prior_assessed_value=None,
     )
 
 

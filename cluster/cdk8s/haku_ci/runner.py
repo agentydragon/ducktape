@@ -42,6 +42,7 @@ from keda_triggerauthentication_crds.sh.keda import (
 
 from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.haku_ci import runner_config
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
@@ -572,19 +573,30 @@ def chart(app: App) -> Chart:
         },
     )
     _add_egress_fence(chart)
+    # The registration token tf/gitops/haku-state reads from haku-state's runner API.
+    secret_copy.secret_copy(chart, _REGISTRATION_SECRET, reader=secret_copy.reader(chart, NAMESPACE))
     _add_runner(chart)
     return chart
 
 
-def haku_ci(chart: Chart, directory: RenderedDirectory, keda_kustomization: Kustomization) -> Kustomization:
+def haku_ci(
+    chart: Chart,
+    directory: RenderedDirectory,
+    keda_kustomization: Kustomization,
+    external_secrets_operator: Kustomization,
+) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         directory,
         timeout="5m",
-        # The runner pod stays pending until its registration-token Secret is provisioned by
-        # tf/gitops/haku-state -- don't block on health.
+        # The runner pod stays pending until tf/gitops/haku-state has written its
+        # registration-token Secret for this chart to copy -- don't block on health.
         wait=False,
-        # Supplies the ScaledJob and TriggerAuthentication CRDs.
-        depends_on=flux_kustomization_depends_on_many(keda_kustomization),
+        depends_on=flux_kustomization_depends_on_many(
+            # Supplies the ScaledJob and TriggerAuthentication CRDs.
+            keda_kustomization,
+            # Supplies the ExternalSecret and ClusterSecretStore CRDs.
+            external_secrets_operator,
+        ),
     )

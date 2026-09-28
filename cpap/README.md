@@ -54,8 +54,8 @@ PVC-era data was discarded).
 ## Credentials
 
 `tf/gitops/cpap-data/` provisions the Forgejo repo, a `cpap-data` writer user,
-a `cpap-data-reader` read-only collaborator, and two Secrets in the
-`cpap-sync` namespace:
+a `cpap-data-reader` read-only collaborator, and two Secrets in the `forgejo`
+namespace, which ESO copies into `cpap-sync`:
 
 - `cpap-data-git-write` — used by the CronJob (`GIT_USERNAME`/`GIT_PASSWORD` +
   `repo_url`).

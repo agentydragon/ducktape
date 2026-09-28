@@ -13,36 +13,14 @@ locations:
     label: Location A
     city: Location A
     state: Fixture
-    local_regulation:
-      property_tax_regime: california_prop13
-      default_tax_regimes:
-        - california_prop13
-        - california_transfer_tax
-        - federal_mortgage_interest
-        - federal_capital_gains
-        - california_income_tax
-      property_tax_annual_pct: 1.0
-      local_transfer_tax_pct: 0.0
-      special_assessment_annual: 0
-      notes: Synthetic public fixture location.
+    situs: san_francisco
     notes:
       - Synthetic public fixture location.
   - location_id: location_b
     label: Location B
     city: Location B
     state: Fixture
-    local_regulation:
-      property_tax_regime: california_prop13
-      default_tax_regimes:
-        - california_prop13
-        - california_transfer_tax
-        - federal_mortgage_interest
-        - federal_capital_gains
-        - california_income_tax
-      property_tax_annual_pct: 1.0
-      local_transfer_tax_pct: 0.0
-      special_assessment_annual: 0
-      notes: Synthetic public fixture location.
+    situs: san_francisco
     notes:
       - Synthetic public fixture location.
 location_selection:

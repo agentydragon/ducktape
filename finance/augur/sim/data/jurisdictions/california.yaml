@@ -1,54 +1,115 @@
-# California state income tax — 2024 tax-year brackets.
+# California: its income tax (2024 tax-year brackets) and Proposition 13.
 #
-# Single filer only. CA taxes long-term capital gains and qualified
+# Income tax: single filer only. CA taxes long-term capital gains and qualified
 # dividends at ordinary income rates (no separate LTCG bracket), so
 # `ltcg_brackets` is omitted here — the tax layer will fall through to
 # the ordinary bracket when no LTCG-specific brackets are configured.
 jurisdiction_id: california
-# The amounts below are 2024 law: FTB's 2024 inflation-adjusted brackets and deduction.
-law_year: 2024
+parent: federal_us
 
-indexation:
-  # R&TC 17041(h): FTB recomputes the brackets each year by the June-to-June change in the
-  # California CPI (all items).
-  ordinary_income_brackets: cpi
-  # R&TC 17073.5(d): FTB recomputes the standard deduction each year, as for the brackets.
-  standard_deduction: cpi
-  # IRC 1211(b)(1)'s $3,000, conformed below, with no inflation adjustment.
-  max_capital_loss_ordinary_offset: fixed
-  # R&TC 17043: $1,000,000, with no inflation adjustment.
-  taxable_income_surtax: fixed
+income_tax:
+  # The amounts below are 2024 law: FTB's 2024 inflation-adjusted brackets and deduction.
+  law_year: 2024
 
-ordinary_income_brackets:
-  single:
-    - { upper: 10412, rate: "0.010" }
-    - { upper: 24684, rate: "0.020" }
-    - { upper: 38959, rate: "0.040" }
-    - { upper: 54081, rate: "0.060" }
-    - { upper: 68350, rate: "0.080" }
-    - { upper: 349137, rate: "0.093" }
-    - { upper: 418961, rate: "0.103" }
-    - { upper: 698271, rate: "0.113" }
-    - { upper: "Infinity", rate: "0.123" }
+  indexation:
+    # R&TC 17041(h): FTB recomputes the brackets each year by the June-to-June change in the
+    # California CPI (all items).
+    ordinary_income_brackets: cpi
+    # R&TC 17073.5(d): FTB recomputes the standard deduction each year, as for the brackets.
+    standard_deduction: cpi
+    # IRC 1211(b)(1)'s $3,000, conformed below, with no inflation adjustment.
+    max_capital_loss_ordinary_offset: fixed
+    # R&TC 17043: $1,000,000, with no inflation adjustment.
+    taxable_income_surtax: fixed
 
-standard_deduction:
-  single: 5363
-# California conforms to the federal limitation (R&TC 17201).
-max_capital_loss_ordinary_offset:
-  single: 3000
+  ordinary_income_brackets:
+    single:
+      - { upper: 10412, rate: "0.010" }
+      - { upper: 24684, rate: "0.020" }
+      - { upper: 38959, rate: "0.040" }
+      - { upper: 54081, rate: "0.060" }
+      - { upper: 68350, rate: "0.080" }
+      - { upper: 349137, rate: "0.093" }
+      - { upper: 418961, rate: "0.103" }
+      - { upper: 698271, rate: "0.113" }
+      - { upper: "Infinity", rate: "0.123" }
 
-# 31 USC 3124 bars states from taxing federal obligations, so Treasury interest is exempt.
-# California exempts its own munis; munis of OTHER states stay taxable here — the case a
-# single ordinary-income bucket could not represent.
-exempt_interest:
-  treasury: true
-  municipal: [california]
+  standard_deduction:
+    single: 5363
+  # California conforms to the federal limitation (R&TC 17201).
+  max_capital_loss_ordinary_offset:
+    single: 3000
 
-# R&TC 17043's 1% Behavioral Health Services Tax (formerly Mental Health Services Tax):
-# FTB 2025 Form 540 instructions, line 62: 1% of taxable income (Form 540 line 19) over
-# $1,000,000.
-# https://www.ftb.ca.gov/forms/2025/2025-540-instructions.html
-taxable_income_surtax:
-  rate: "0.01"
-  threshold:
-    single: 1000000
+  # 31 USC 3124 bars states from taxing federal obligations, so Treasury interest is exempt.
+  # California exempts its own munis; munis of OTHER states stay taxable here — the case a
+  # single ordinary-income bucket could not represent.
+  exempt_interest:
+    treasury: true
+    municipal: [california]
+
+  # FTB 2025 Schedule CA (540) instructions, line 5a: California allows no deduction for state
+  # income tax; line 5e: "The federal deduction for state and local tax is limited to $40,000 ...
+  # California does not conform." Real property tax is itemized in full.
+  # https://www.ftb.ca.gov/forms/2025/2025-540-ca-instructions.html
+  itemizes_real_property_tax: true
+
+  # R&TC 17043's 1% Behavioral Health Services Tax (formerly Mental Health Services Tax):
+  # FTB 2025 Form 540 instructions, line 62: 1% of taxable income (Form 540 line 19) over
+  # $1,000,000.
+  # https://www.ftb.ca.gov/forms/2025/2025-540-instructions.html
+  taxable_income_surtax:
+    rate: "0.01"
+    threshold:
+      single: 1000000
+
+# Proposition 13 (Cal. Const. art. XIII A). BOE Publication 29, "California Property Tax: An
+# Overview" (March 2025), https://www.boe.ca.gov/proptaxes/pdf/pub29.pdf: Proposition 13
+# "limited the property tax rate to 1 percent plus the rate necessary to fund local
+# voter-approved bonded indebtedness" and "generally limits annual increases in the base year
+# value of real property to no more than 2 percent"; "The Constitution requires a $7,000
+# reduction of taxable value for qualifying owner-occupied homes when the homes are the owners'
+# principal place of residence."
+proposition_13:
+  base_rate: "0.01"
+  inflation_cap: "0.02"
+  # BOE Letter To Assessors No. 2026/002 (January 13, 2026), enclosure "Final Inflation Factors
+  # for Current and Prior Years", https://www.boe.ca.gov/proptaxes/pdf/lta26002.pdf. Keyed by the
+  # lien year that opens the roll year: 2026 is the 2026-27 factor, applied on January 1, 2026.
+  inflation_factors:
+    2010: "0.99763"
+    2011: "1.00753"
+    2012: "1.02"
+    2013: "1.02"
+    2014: "1.00454"
+    2015: "1.01998"
+    2016: "1.01525"
+    2017: "1.02"
+    2018: "1.02"
+    2019: "1.02"
+    2020: "1.02"
+    2021: "1.01036"
+    2022: "1.02"
+    2023: "1.02"
+    2024: "1.02"
+    2025: "1.02"
+    2026: "1.02"
+  # BOE, https://www.boe.ca.gov/proptaxes/homeowners_exemption.htm: "a $7,000 reduction in the
+  # taxable value for a qualifying owner-occupied home", which "must have been the principal
+  # place of residence of the owner on the lien date, January 1st." Fixed in the Constitution.
+  homeowners_exemption: 7000
+  # R&TC 75.41(b)-(c): a change in ownership is "presumed to have occurred on the first day of the
+  # month following", and the current roll's supplemental taxes are multiplied by the factor for
+  # that presumed date; on July 1 "no supplemental assessment shall be made on the current roll."
+  # https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=RTC&sectionNum=75.41
+  supplemental_proration:
+    1: "0.50"
+    2: "0.42"
+    3: "0.33"
+    4: "0.25"
+    5: "0.17"
+    6: "0.08"
+    8: "0.92"
+    9: "0.83"
+    10: "0.75"
+    11: "0.67"
+    12: "0.58"

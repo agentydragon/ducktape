@@ -694,11 +694,13 @@ _Retire, once the production path is proven and rollback is available:_
 
 - `cluster/cdk8s/public_coder_proxy.py` and everything it renders into
   `cluster/k8s/agents/public-coder-agent/proxy/` — the dedicated iron-proxy for this agent, which is
-  an OpenClaw instance (`ghcr.io/agentydragon/openclaw`, configured by
+  an OpenClaw instance (`git.allegedly.works/ducktape-ci/public-coder-agent`, configured by
   `cluster/cdk8s/public_coder_agent_config.py`); the proxy is what lets it hold placeholders instead
   of real credentials. It renders the Deployment, Service, `iron.yaml` substitution rules, the
   `public-coder-agent-proxy-root-ca` Certificate and its trust Bundle, the ingress and egress
   CiliumNetworkPolicies and the ExternalSecrets; `proxy/image-pins/` beside them is hand-written.
+  One of those ExternalSecrets, `forgejo-images-creds`, is also the agent Deployment's and the
+  namespace `default` ServiceAccount's image pull secret: move it, don't delete it.
 - The placeholder contract in `cluster/cdk8s/public_coder_agent_config.py`: the agent is handed the
   placeholder of every credential the proxy substitutes (`public_coder_proxy`'s `*_PLACEHOLDER`
   constants) and told the contract, because only the sibling proxy performs the swap. Whatever

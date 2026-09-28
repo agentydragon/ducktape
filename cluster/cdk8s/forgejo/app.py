@@ -1,5 +1,5 @@
-"""Forgejo: the Helm release, its git volume, S3 bucket and credentials, metrics token, route,
-public SSH listener, disruption budget and ServiceMonitor.
+"""Forgejo: the Helm release, its git volume, S3 bucket, identity and credentials, metrics
+token, route, public SSH listener, disruption budget and ServiceMonitor.
 
 Hand-written beside the generated output: `forgejo-admin-password.sops.yaml`.
 """
@@ -90,8 +90,7 @@ def _object_storage(scope: Construct) -> None:
         adopt_existing=True,
         description="Forgejo packages, LFS, attachments, and artifacts.",
     )
-    # Declared by the seaweedfs-forgejo-bucket Kustomization.
-    identity = s3.IdentityRef(scope, "identity", name=_NAME)
+    identity = s3.Identity(scope, "identity", name=_NAME, namespace=_NAMESPACE)
     bucket.grant_read_write(identity)
     identity.credentials(
         namespace=_NAMESPACE,

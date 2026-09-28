@@ -292,7 +292,7 @@ ENV = Environment(
     ),
     app_config={**staging_config.config(), "action_federation": _ACTION_FEDERATION},
     db=DbProps(instances=2),
-    llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
+    llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET, log_llm_requests=True),
     egress=EgressProps(ca_secret_name="agentplane-egress-ca", credentials_namespace=STAGING_NAMESPACE),
     app=AppProps(
         hostname=_HOSTNAME,

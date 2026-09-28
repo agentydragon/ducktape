@@ -24,6 +24,7 @@ class ObligationType(StrEnum):
     TAX_TRUE_UP = "tax_true_up"
     MORTGAGE_PAYMENT = "mortgage_payment"
     PROPERTY_TAX = "property_tax"
+    TRANSFER_TAX = "transfer_tax"
     HOA_DUES = "hoa_dues"
     HOMEOWNERS_INSURANCE = "homeowners_insurance"
     PROPERTY_MAINTENANCE = "property_maintenance"
@@ -46,12 +47,21 @@ class TaxTrueUp:
 
 
 @dataclass(frozen=True)
-class PropertyTax:
+class AdValoremTax:
+    """Real property tax on assessed value: the owner's itemizable, the rented share an expense."""
+
     owner: AgentId
     rented_fraction: int
 
 
-type Effect = OrdinaryDeduction | TaxPayment | TaxTrueUp | MortgagePayment | PropertyTax | None
+@dataclass(frozen=True)
+class TransferTax:
+    """A transfer tax paid on a purchase or a sale: basis or a selling expense, never a deduction."""
+
+    owner: AgentId
+
+
+type Effect = OrdinaryDeduction | TaxPayment | TaxTrueUp | MortgagePayment | AdValoremTax | TransferTax | None
 
 
 class Demand(Record):
@@ -72,7 +82,7 @@ class AssessmentDue(observations.Claim):
 
 
 class PropertyTaxDue(observations.Claim):
-    """A property's monthly tax, addressed to its owner."""
+    """A property's monthly tax or a transfer tax on it, addressed to its owner."""
 
 
 type Due = BillDue | AssessmentDue | InstallmentDue | PropertyTaxDue
@@ -111,7 +121,7 @@ class Claims:
                     kind = InstallmentDue
                 case TaxPayment() | TaxTrueUp():
                     kind = AssessmentDue
-                case PropertyTax():
+                case AdValoremTax() | TransferTax():
                     kind = PropertyTaxDue
                 case OrdinaryDeduction() | None:
                     kind = BillDue

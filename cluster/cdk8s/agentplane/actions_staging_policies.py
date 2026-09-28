@@ -16,11 +16,7 @@ from agentplane_actionpolicybinding_crds.works.allegedly.agentplane import (
     ActionPolicyBindingSpecSubject,
 )
 from agentplane_actionpolicyset_crds.works.allegedly.agentplane import ActionPolicySetSpecAutoApproveIf
-from agentplane_egressbinding_crds.works.allegedly.agentplane import (
-    EgressBinding,
-    EgressBindingSpec,
-    EgressBindingSpecSubjects,
-)
+from agentplane_egressbinding_crds.works.allegedly.agentplane import EgressBindingSpecSubjects
 from agentplane_egresspolicy_crds.works.allegedly.agentplane import EgressPolicySpecRules, EgressPolicySpecRulesMethods
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
@@ -58,6 +54,7 @@ from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_GITHUB_READS_SET,
 )
 from cluster.cdk8s.providers.agentplane.action_policy_set import ActionPolicySet, AutoApproveIf
+from cluster.cdk8s.providers.agentplane.egress_binding import EgressBinding
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
@@ -106,6 +103,21 @@ def _binding(
         ActionPolicyBinding(
             scope, id, metadata=metadata, spec=ActionPolicyBindingSpec(subject=subject, policy_sets=list(policy_sets))
         ).to_json()["spec"]
+    )
+
+
+def _sandbox_egress_binding(scope: Construct, account: ServiceAccount, *, policies: Sequence[str]) -> None:
+    """What sandboxes running as `account` may reach: the named EgressPolicies."""
+    EgressBinding(
+        scope,
+        f"egressbinding-{account.name}",
+        metadata=ApiObjectMetadata(
+            name=account.name,
+            namespace=_NAMESPACE,
+            annotations={"description": f"What sandboxes running as the {account.name} ServiceAccount may reach."},
+        ),
+        subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name=account.name)],
+        policies=policies,
     )
 
 
@@ -555,71 +567,55 @@ def add_staging_action_policies(scope: Construct) -> None:
     # identity the same *logical* Haku agent runs as from Claude.ai/Claude Code's own
     # out-of-cluster infrastructure, so it still needs Haku's credentials. Revisit whether
     # claude-ai should keep carrying them once haku-agent has been in use for a while.
-    EgressBinding(
+    _sandbox_egress_binding(
         scope,
-        "egressbinding-claude-ai",
-        metadata=ApiObjectMetadata(
-            name="claude-ai",
-            namespace=_NAMESPACE,
-            annotations={"description": "What sandboxes running as the claude-ai ServiceAccount may reach."},
-        ),
-        spec=EgressBindingSpec(
-            subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="claude-ai")],
-            policies=[
-                BASIC_POLICY,
-                KUBERNETES_POLICY,
-                FORGEJO_HAKU_POLICY,
-                PACKAGES_POLICY,
-                GOOGLE_READONLY_POLICY,
-                GROCY_SF_READONLY_POLICY,
-                HOME_ASSISTANT_READONLY_POLICY,
-                ACTIVITYWATCH_READ_POLICY,
-                AIQUOTA_READ_POLICY,
-                HAKU_MAILBOX_POLICY,
-                COINBASE_POLICY,
-                _AGENTPLANE_TESTING_POLICY,
-                _GITHUB_DOWNLOADS_POLICY,
-                GITHUB_CLONE_POLICY,
-                GITHUB_AGENTYDRAGON_AGENT_POLICY,
-                GITHUB_ACTIONS_LOGS_POLICY,
-                BUILDBUDDY_POLICY,
-            ],
-        ),
+        claude_ai,
+        policies=[
+            BASIC_POLICY,
+            KUBERNETES_POLICY,
+            FORGEJO_HAKU_POLICY,
+            PACKAGES_POLICY,
+            GOOGLE_READONLY_POLICY,
+            GROCY_SF_READONLY_POLICY,
+            HOME_ASSISTANT_READONLY_POLICY,
+            ACTIVITYWATCH_READ_POLICY,
+            AIQUOTA_READ_POLICY,
+            HAKU_MAILBOX_POLICY,
+            COINBASE_POLICY,
+            _AGENTPLANE_TESTING_POLICY,
+            _GITHUB_DOWNLOADS_POLICY,
+            GITHUB_CLONE_POLICY,
+            GITHUB_AGENTYDRAGON_AGENT_POLICY,
+            GITHUB_ACTIONS_LOGS_POLICY,
+            BUILDBUDDY_POLICY,
+        ],
     )
 
     # What a sandbox of haku-agent's may reach: at least everything claude-ai's sandboxes may
     # reach (see the comment above), so the "haku" preset (app_settings.py) -- which clones
     # haku-state over `forgejo-haku` and works from it -- has no less reach than claude-ai's
     # Haku-flavored sandboxes already have.
-    EgressBinding(
+    _sandbox_egress_binding(
         scope,
-        "egressbinding-haku-agent",
-        metadata=ApiObjectMetadata(
-            name="haku-agent",
-            namespace=_NAMESPACE,
-            annotations={"description": "What sandboxes running as the haku-agent ServiceAccount may reach."},
-        ),
-        spec=EgressBindingSpec(
-            subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="haku-agent")],
-            policies=[
-                BASIC_POLICY,
-                KUBERNETES_POLICY,
-                FORGEJO_HAKU_POLICY,
-                PACKAGES_POLICY,
-                GOOGLE_READONLY_POLICY,
-                GROCY_SF_READONLY_POLICY,
-                HOME_ASSISTANT_READONLY_POLICY,
-                ACTIVITYWATCH_READ_POLICY,
-                AIQUOTA_READ_POLICY,
-                HAKU_MAILBOX_POLICY,
-                COINBASE_POLICY,
-                _AGENTPLANE_TESTING_POLICY,
-                _GITHUB_DOWNLOADS_POLICY,
-                GITHUB_CLONE_POLICY,
-                GITHUB_AGENTYDRAGON_AGENT_POLICY,
-                GITHUB_ACTIONS_LOGS_POLICY,
-            ],
-        ),
+        haku_agent,
+        policies=[
+            BASIC_POLICY,
+            KUBERNETES_POLICY,
+            FORGEJO_HAKU_POLICY,
+            PACKAGES_POLICY,
+            GOOGLE_READONLY_POLICY,
+            GROCY_SF_READONLY_POLICY,
+            HOME_ASSISTANT_READONLY_POLICY,
+            ACTIVITYWATCH_READ_POLICY,
+            AIQUOTA_READ_POLICY,
+            HAKU_MAILBOX_POLICY,
+            COINBASE_POLICY,
+            _AGENTPLANE_TESTING_POLICY,
+            _GITHUB_DOWNLOADS_POLICY,
+            GITHUB_CLONE_POLICY,
+            GITHUB_AGENTYDRAGON_AGENT_POLICY,
+            GITHUB_ACTIONS_LOGS_POLICY,
+        ],
     )
 
     # Every sandbox Action, auto-approved. Approving each one individually would not be a

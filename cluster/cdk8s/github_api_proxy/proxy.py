@@ -29,8 +29,6 @@ from cilium_crds.io.cilium import (
 )
 from constructs import Construct
 from gateway_api_gateway_crds.io.k8s.networking.gateway import (
-    Gateway,
-    GatewaySpec,
     GatewaySpecListeners,
     GatewaySpecListenersAllowedRoutes,
     GatewaySpecListenersAllowedRoutesNamespaces,
@@ -51,11 +49,13 @@ from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.cert_manager.cluster_ca import LONG_LIVED_CA
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
+from cluster.cdk8s.gateway import GATEWAY_CLASS
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.gateway_api.gateway import Gateway
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 
@@ -442,23 +442,21 @@ def _gateway(scope: Construct) -> None:
                 )
             },
         ),
-        spec=GatewaySpec(
-            gateway_class_name="cilium",
-            listeners=[
-                GatewaySpecListeners(
-                    name=_TLS_LISTENER,
-                    hostname=_HOSTNAME,
-                    port=8443,
-                    protocol="TLS",
-                    tls=GatewaySpecListenersTls(mode=GatewaySpecListenersTlsMode.PASSTHROUGH),
-                    allowed_routes=GatewaySpecListenersAllowedRoutes(
-                        namespaces=GatewaySpecListenersAllowedRoutesNamespaces(
-                            from_=GatewaySpecListenersAllowedRoutesNamespacesFrom.SAME
-                        )
-                    ),
-                )
-            ],
-        ),
+        gateway_class_name=GATEWAY_CLASS,
+        listeners=[
+            GatewaySpecListeners(
+                name=_TLS_LISTENER,
+                hostname=_HOSTNAME,
+                port=8443,
+                protocol="TLS",
+                tls=GatewaySpecListenersTls(mode=GatewaySpecListenersTlsMode.PASSTHROUGH),
+                allowed_routes=GatewaySpecListenersAllowedRoutes(
+                    namespaces=GatewaySpecListenersAllowedRoutesNamespaces(
+                        from_=GatewaySpecListenersAllowedRoutesNamespacesFrom.SAME
+                    )
+                ),
+            )
+        ],
     )
     TlsRoute(
         scope,

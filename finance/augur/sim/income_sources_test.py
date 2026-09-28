@@ -17,7 +17,7 @@ from decimal import Decimal
 
 import pytest_bazel
 
-from finance.augur.sim.actions import DecisionActions, PayClaim
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
@@ -32,12 +32,14 @@ from finance.augur.sim.income import (
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.rollouts import book, tax_by_jurisdiction
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -151,34 +153,9 @@ def run(*payments: Payment) -> Rollout:
     accrual is computed when the year closes, both a month before any assessment is raised.
     """
 
-    world = compose(payments)
-    session = ActionSession({0: world}, min(payment.to_agent_id for payment in payments))
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id,
-                        decision.observation.month,
-                        [
-                            PayClaim(
-                                request_id=index + 1,
-                                cause_id=claim.cause_id,
-                                claim=claim,
-                                from_account=claim.from_account,
-                                amount=claim.amount_due,
-                            )
-                            for index, claim in enumerate(decision.observation.claims)
-                        ],
-                    )
-                    for decision in batch
-                ]
-            )
-        [rollout] = batch.rollouts
-        return rollout
-    finally:
-        session.close()
+    actor = min(payment.to_agent_id for payment in payments)
+    [rollout] = finish(ActionSession({0: compose(payments)}, actor), each(ClaimPayer(actor).decide)).rollouts
+    return rollout
 
 
 def _quanta(amount: Decimal) -> int:
@@ -188,16 +165,7 @@ def _quanta(amount: Decimal) -> int:
 def _earned(rollout: Rollout, month: int) -> dict[tuple[str, str], int]:
     """Every taxpayer's year-to-date income by source, as of one snapshot."""
 
-    assert rollout.trace is not None
-    [book] = [book for book in rollout.trace.books if book.month == month]
-    return {(row.agent_id, row.income_source): row.income for row in book.income}
-
-
-def _tax_by_jurisdiction(rollout: Rollout) -> dict[str, int]:
-    taxes: dict[str, int] = {}
-    for accrual in rollout.summary.tax_accruals:
-        taxes[accrual.jurisdiction_id] = taxes.get(accrual.jurisdiction_id, 0) + accrual.total_tax
-    return taxes
+    return {(row.agent_id, row.income_source): row.income for row in book(rollout, month).income}
 
 
 def test_each_taxpayer_and_source_gets_its_own_row() -> None:
@@ -236,7 +204,7 @@ def test_wages_are_taxed_by_both_jurisdictions() -> None:
     """The positive anchor for every exemption below: without it they could all pass on a
     scenario that collects nothing."""
 
-    tax = _tax_by_jurisdiction(run(Payment(AgentId("alice"), ORDINARY_INCOME, ALICE_WAGES)))
+    tax = tax_by_jurisdiction(run(Payment(AgentId("alice"), ORDINARY_INCOME, ALICE_WAGES)))
 
     assert tax["federal_us"] > 0
     assert tax["california"] > 0
@@ -246,7 +214,7 @@ def test_treasury_interest_is_federally_taxed_and_state_exempt() -> None:
     """31 USC 3124. This is the row no bracket configuration could express while every
     jurisdiction read one shared income scalar."""
 
-    tax = _tax_by_jurisdiction(run(Payment(AgentId("alice"), TREASURY, ALICE_WAGES)))
+    tax = tax_by_jurisdiction(run(Payment(AgentId("alice"), TREASURY, ALICE_WAGES)))
 
     assert tax["federal_us"] > 0
     assert tax["california"] == 0
@@ -257,7 +225,7 @@ def test_in_state_muni_interest_is_exempt_everywhere() -> None:
     stored anywhere — it is California's rule for `Municipal(state=california)`, decided by
     the jurisdiction reading the row rather than by the instrument."""
 
-    tax = _tax_by_jurisdiction(run(Payment(AgentId("alice"), MUNI, ALICE_WAGES)))
+    tax = tax_by_jurisdiction(run(Payment(AgentId("alice"), MUNI, ALICE_WAGES)))
 
     assert tax["federal_us"] == 0
     assert tax["california"] == 0
@@ -267,8 +235,8 @@ def test_federal_tax_on_treasury_interest_matches_tax_on_identical_wages() -> No
     """Same dollars, same federal bracket walk — the split changes WHO taxes it, not how
     much. Guards the masked sum against quietly dropping or double-counting a source."""
 
-    wages = _tax_by_jurisdiction(run(Payment(AgentId("alice"), ORDINARY_INCOME, ALICE_WAGES)))
-    treasury = _tax_by_jurisdiction(run(Payment(AgentId("alice"), TREASURY, ALICE_WAGES)))
+    wages = tax_by_jurisdiction(run(Payment(AgentId("alice"), ORDINARY_INCOME, ALICE_WAGES)))
+    treasury = tax_by_jurisdiction(run(Payment(AgentId("alice"), TREASURY, ALICE_WAGES)))
 
     assert treasury["federal_us"] == wages["federal_us"]
 
@@ -282,8 +250,8 @@ def test_taxpayers_are_independent() -> None:
     survives this — the exemption case below is what pins that down.
     """
 
-    together = _tax_by_jurisdiction(run(*ALICE_AND_BOB))
-    alone = [_tax_by_jurisdiction(run(*ALICE_AND_BOB[pair : pair + 2])) for pair in (0, 2)]
+    together = tax_by_jurisdiction(run(*ALICE_AND_BOB))
+    alone = [tax_by_jurisdiction(run(*ALICE_AND_BOB[pair : pair + 2])) for pair in (0, 2)]
 
     for jurisdiction in FILED_IN:
         assert together[jurisdiction] == sum(tax[jurisdiction] for tax in alone)
@@ -298,8 +266,8 @@ def test_a_state_exemption_applies_to_each_taxpayer_s_own_income() -> None:
     second taxed agent and that no single-taxpayer scenario can show.
     """
 
-    with_interest = _tax_by_jurisdiction(run(*ALICE_AND_BOB))
-    wages_only = _tax_by_jurisdiction(run(*WAGES_ONLY))
+    with_interest = tax_by_jurisdiction(run(*ALICE_AND_BOB))
+    wages_only = tax_by_jurisdiction(run(*WAGES_ONLY))
 
     assert with_interest["california"] == wages_only["california"]
     # Federal still taxes the interest, so the equality above is not passing merely

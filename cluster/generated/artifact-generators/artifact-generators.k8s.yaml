@@ -723,11 +723,6 @@ spec:
       name: seaweedfs-drivefs-artifacts-bucket
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/seaweedfs/forgejo-bucket/**"
-          to: "@artifact/cluster/generated/seaweedfs/forgejo-bucket/"
-      name: seaweedfs-forgejo-bucket
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/seaweedfs/loom-gym-bucket/**"
           to: "@artifact/cluster/generated/seaweedfs/loom-gym-bucket/"
       name: seaweedfs-loom-gym-bucket
@@ -736,11 +731,6 @@ spec:
         - from: "@repo/cluster/generated/seaweedfs/pr-visuals-bucket/**"
           to: "@artifact/cluster/generated/seaweedfs/pr-visuals-bucket/"
       name: seaweedfs-pr-visuals-bucket
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/seaweedfs/public-coder-agent-backups-bucket/**"
-          to: "@artifact/cluster/generated/seaweedfs/public-coder-agent-backups-bucket/"
-      name: seaweedfs-public-coder-agent-backups-bucket
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/seaweedfs/registry-cache-bucket/**"

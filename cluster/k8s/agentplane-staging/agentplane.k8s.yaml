@@ -107,10 +107,10 @@ data:
           display_name: Gemma 4 31B (128K)
         - model: chatgpt/oai-responses/gpt-6-astra
           display_name: GPT-6 Astra
-        - model: chatgpt/oai-responses/gpt-6-sol
-          display_name: GPT-6 Sol
         - model: chatgpt/oai-responses/gpt-6-luna
           display_name: GPT-6 Luna
+        - model: chatgpt/oai-responses/gpt-6-sol
+          display_name: GPT-6 Sol
       harnesses:
         HARNESS_CLAUDE:
           - anthropic-max20/ant-messages/claude-opus-5
@@ -139,8 +139,8 @@ data:
           - ollama/oai-chat/gemma4-31b-it-q8_0-128k
         HARNESS_CODEX:
           - chatgpt/oai-responses/gpt-6-astra
-          - chatgpt/oai-responses/gpt-6-sol
           - chatgpt/oai-responses/gpt-6-luna
+          - chatgpt/oai-responses/gpt-6-sol
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
           - ollama/oai-chat/gpt-oss-20b-128k
@@ -439,15 +439,6 @@ spec:
         app.kubernetes.io/name: agentplane-electric
         cdk8s.io/metadata.addr: agentplane-electric-deployment-c86a4b11
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: false
       containers:
         - env:
@@ -536,6 +527,8 @@ spec:
               name: storage
       dnsPolicy: ClusterFirst
       hostNetwork: false
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 65534
@@ -651,6 +644,7 @@ data:
   settings.yaml: |
     allowed_service_account_namespaces:
       - agentplane-staging
+    log_llm_requests: true
 immutable: false
 ---
 apiVersion: apps/v1
@@ -681,15 +675,6 @@ spec:
         app.kubernetes.io/name: agentplane-llm-ingress
         cdk8s.io/metadata.addr: agentplane-llm-ingress-deployment-c81387cd
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -751,6 +736,8 @@ spec:
       hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -1023,15 +1010,6 @@ spec:
         app.kubernetes.io/name: agentplane-egress
         cdk8s.io/metadata.addr: agentplane-egress-deployment-c84e690f
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -1137,6 +1115,8 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -1737,15 +1717,6 @@ spec:
         app.kubernetes.io/name: agentplane-app
         cdk8s.io/metadata.addr: agentplane-app-deployment-c8d92233
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -1923,6 +1894,8 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -2625,15 +2598,6 @@ spec:
         app.kubernetes.io/name: agentplane-actions
         cdk8s.io/metadata.addr: agentplane-actions-deployment-c8d4c10b
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -2813,6 +2777,8 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000

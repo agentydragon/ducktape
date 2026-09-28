@@ -52,6 +52,7 @@ def federal() -> TaxRules:
         section_1250_rate_ppb=250_000_000,
         law_year=2024,
         indexed=frozenset(),
+        itemizes_real_property_tax=False,
     )
 
 
@@ -223,6 +224,7 @@ def test_state_surtax_on_taxable_income_above_a_million(facts: TaxFacts, surtax:
         section_1250_rate_ppb=0,
         law_year=2024,
         indexed=frozenset(),
+        itemizes_real_property_tax=False,
         taxable_income_surtax=ThresholdTax(rate_ppb=10_000_000, threshold=100_000_000),
     )
     assessment = assess(facts, rules)

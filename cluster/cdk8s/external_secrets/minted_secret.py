@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecRefreshPolicy,
     ExternalSecretSpecTargetCreationPolicy,
@@ -19,17 +18,21 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.providers.external_secrets.password import Password
 
 
-def _password_generator(scope: Construct, id: str, *, name: str, namespace: str, length: int, digits: int) -> str:
+def password_generator(scope: Construct, id: str, *, name: str, namespace: str, length: int, digits: int) -> str:
     """Mints a `Password` generator named `name`, returning that name for
-    `DataFrom.from_password_generator`. `symbols`/`no_upper`/`allow_repeat` never vary
-    across callers, so they aren't parameters."""
+    `DataFrom.from_password_generator`. Our policy: no symbols, upper case and repeats allowed."""
     Password(
         scope,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
-        spec=PasswordSpec(length=length, digits=digits, symbols=0, no_upper=False, allow_repeat=True),
+        length=length,
+        digits=digits,
+        symbols=0,
+        no_upper=False,
+        allow_repeat=True,
     )
     return name
 
@@ -63,7 +66,7 @@ def mint_bearer_secret(
     Secret's own metadata (e.g. reflector mirroring config); `description` is this
     `ExternalSecret` object's own `metadata.annotations.description`.
     """
-    generator = _password_generator(
+    generator = password_generator(
         scope, f"{id}-generator", name=generator_name or name, namespace=namespace, length=length, digits=digits
     )
     template = (
@@ -115,7 +118,7 @@ def mint_db_role_secret(
     Secret's name (unlike `mint_bearer_secret`, every DB role site already used this
     naming).
     """
-    generator = _password_generator(
+    generator = password_generator(
         scope, f"{id}-generator", name=f"{name}-generator", namespace=namespace, length=40, digits=8
     )
     data = {"username": role, "password": "{{ .password }}"}

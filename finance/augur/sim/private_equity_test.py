@@ -19,32 +19,28 @@ import pytest_bazel
 
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
-from finance.augur.sim.actions import DecisionActions, PayClaim
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.bills import Biller
-from finance.augur.sim.books import AccountRef, Book
+from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
-from finance.augur.sim.fixed_point import (
-    currency_amount_to_quanta,
-    quantity_scale_for_asset,
-    quantity_to_quanta,
-    rate_to_ppb,
-)
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.private_equity import TenderPolicy
-from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.issuer_protocol import Code, Money, Rate, at_month, issuer_protocol
+from finance.augur.sim.testing.rollouts import book
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
-QUANTUM = Decimal("0.01")
 QUANTA_PER_UNIT = 100
 ALICE = AgentId("alice")
 SPEND_SINK = AgentId("spend_sink")
@@ -59,13 +55,9 @@ ACME = PrivateEquityAssetKey(issuer_id=IssuerId(ISSUER))
 SCALE = quantity_scale_for_asset(ACME)
 
 
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
-
-
 def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
     """An account and its opening balance."""
-    return AccountRef(agent_id=agent_id, account_id=account_id), money(balance)
+    return AccountRef(agent_id=agent_id, account_id=account_id), USD.quanta(balance)
 
 
 def protocol(
@@ -143,9 +135,9 @@ def holder(
         accounts=(account(ALICE, balance=initial_cash), account(SPEND_SINK), *((account(IRS),) if taxed else ())),
         lot_purchase_month=-pe_holding_period_months,
         lot_units=quantity_to_quanta(pe_units, scale=SCALE),
-        lot_basis=money(Decimal(pe_units) * pe_cost_basis_per_unit),
-        monthly_spend=money(monthly_spend),
-        floor=None if lnw_floor is None else money(lnw_floor),
+        lot_basis=USD.quanta(Decimal(pe_units) * pe_cost_basis_per_unit),
+        monthly_spend=USD.quanta(monthly_spend),
+        floor=None if lnw_floor is None else USD.quanta(lnw_floor),
         taxed=taxed,
     )
 
@@ -202,40 +194,9 @@ def compose(case: Holder, channels: Sequence[Series]) -> World:
 def run(case: Holder, channels: Sequence[Series]) -> Rollout:
     """Alice pays her monthly spend and nothing else; the issuer protocol runs as the month closes."""
 
-    session = ActionSession({0: compose(case, channels)}, ALICE)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id,
-                        decision.observation.month,
-                        [
-                            PayClaim(
-                                request_id=index + 1,
-                                cause_id=claim.cause_id,
-                                claim=claim,
-                                from_account=claim.from_account,
-                                amount=claim.amount_due,
-                            )
-                            for index, claim in enumerate(decision.observation.claims)
-                        ],
-                    )
-                    for decision in batch
-                ]
-            )
-        [rollout] = batch.rollouts
-        assert rollout.stop is None
-        return rollout
-    finally:
-        session.close()
-
-
-def book(rollout: Rollout, month: int) -> Book:
-    assert rollout.trace is not None
-    [snapshot] = [snapshot for snapshot in rollout.trace.books if snapshot.month == month]
-    return snapshot
+    [rollout] = finish(ActionSession({0: compose(case, channels)}, ALICE), each(ClaimPayer(ALICE).decide)).rollouts
+    assert rollout.stop is None
+    return rollout
 
 
 def units_held(rollout: Rollout, *, month: int) -> float:

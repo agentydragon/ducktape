@@ -29,6 +29,9 @@ spec:
       kind: Bucket
       namespace: oci-cache
     - group: seaweed.seaweedfs.com
+      kind: S3Identity
+      namespace: oci-cache
+    - group: seaweed.seaweedfs.com
       kind: S3Credentials
       namespace: oci-cache
   to:
@@ -40,11 +43,12 @@ apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
   name: registry-cache
-  namespace: seaweedfs
+  namespace: oci-cache
 spec:
   reclaimPolicy: Retain
   seaweedRef:
     name: seaweedfs
+    namespace: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials

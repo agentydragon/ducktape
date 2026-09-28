@@ -34,8 +34,8 @@ from cluster.cdk8s.model_rosters import (
     GEMINI_CONTEXT_WINDOW,
     GEMINI_MAX_OUTPUT_TOKENS,
     GEMINI_MODELS,
+    GPT6_CODEX_MODELS,
     OLLAMA_EMBEDDING_MODEL,
-    OPENCLAW_CODEX_MODELS,
     AntigravityModel,
     ApiShape,
     CodexModel,
@@ -52,7 +52,7 @@ from cluster.cdk8s.openclaw_gateway import (
 )
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
-_CODEX_BY_ID = {model.id: model for model in OPENCLAW_CODEX_MODELS}
+_CODEX_BY_ID = {model.id: model for model in GPT6_CODEX_MODELS}
 _DEFAULT_CODEX_MODEL = _CODEX_BY_ID["gpt-6-luna"]
 _TPM_CODEX_MODEL = _CODEX_BY_ID["gpt-6-astra"]
 _CONFIG_MAP_NAME = "public-coder-agent-config"
@@ -71,7 +71,7 @@ _NAMESPACE_ANNOTATIONS = {
         "outpost. Opens pull requests against public repositories as agentydragon-agent."
     )
 }
-_IMAGE = "ghcr.io/agentydragon/openclaw:unset"
+_IMAGE = "git.allegedly.works/ducktape-ci/public-coder-agent:unset"
 _GATEWAY_PORT = 18789
 _HOME = "/home/openclaw"
 _CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
@@ -238,7 +238,7 @@ def config() -> dict:
                     "apiKey": "${OPENCLAW_LITELLM_API_KEY}",
                     "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
                     "models": [
-                        *(_codex_model_entry(model) for model in OPENCLAW_CODEX_MODELS),
+                        *(_codex_model_entry(model) for model in GPT6_CODEX_MODELS),
                         *(_gemini_model_entry(model) for model in GEMINI_MODELS),
                         *(_antigravity_model_entry(model) for model in _ANTIGRAVITY_OPENCLAW_MODELS),
                     ],
@@ -509,13 +509,6 @@ def _openclaw_container() -> k8s.Container:
             # useDefaultCAs, so it already contains the public roots plus the cluster root plus
             # this proxy's interception root -- replacing the distro file loses nothing.
             k8s.VolumeMount(name="trust", mount_path=_CA_BUNDLE, sub_path="ca-certificates.crt", read_only=True),
-            # The #4943 fence trust anchor, deliberately in the exact shape the fleet
-            # inject-haku-egress-proxy policy would inject (same volume name, same mountPath):
-            # carrying the policy's own wiring is what its every rule preconditions on, so if the
-            # fleet injection ever widens to this namespace (#4670 adoption), this pod reads as
-            # already wired and no port-8080 env is appended over the iron values above. The fence
-            # trust stays a per-request opt-in until the fence owns this pod's egress.
-            k8s.VolumeMount(name="haku-egress-proxy-ca-cert", mount_path="/egress-proxy-ca", read_only=True),
             # `ssh devbox` -- config, host-key pin, and the Agent's own downstream key, projected
             # into one directory because ~/.ssh has to be a single path. See ./ssh_config.
             k8s.VolumeMount(name="ssh", mount_path=f"{_HOME}/.ssh", read_only=True),
@@ -613,12 +606,6 @@ def _deployment(scope: Construct) -> None:
                         k8s.Volume(name="cfg", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP_NAME)),
                         k8s.Volume(
                             name="trust", config_map=k8s.ConfigMapVolumeSource(name="public-coder-agent-proxy-ca-cert")
-                        ),
-                        # Delivered here by the haku-egress-proxy trust-manager Bundle
-                        # (haku_egress_proxy.py's namespaceSelector).
-                        k8s.Volume(
-                            name="haku-egress-proxy-ca-cert",
-                            config_map=k8s.ConfigMapVolumeSource(name="haku-egress-proxy-ca-cert"),
                         ),
                         # 0440 rather than 0400: fsGroup makes these root:1000, so owner-only would
                         # be unreadable by the container's own uid. OpenSSH's "unprotected private

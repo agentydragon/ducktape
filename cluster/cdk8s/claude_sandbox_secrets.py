@@ -1,7 +1,8 @@
 """Credentials delivered into the claude-sandbox namespace
 (cluster/k8s/agents/claude-sandbox-secrets): the external-creds referent ServiceAccount and
-the ExternalSecrets copying approved external credentials in. The two SOPS-encrypted Secrets
-beside the output stay hand-written.
+the ExternalSecrets copying approved external credentials in, and the copy of the `claude`
+Forgejo account's credentials. The two SOPS-encrypted Secrets beside the output stay
+hand-written.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import external_creds
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
@@ -54,6 +56,9 @@ def chart(app: App) -> Chart:
     _external_creds_secret(
         chart, _BUILDBUDDY_API_KEY, key="api-key", deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN
     )
+    # tf/gitops/forgejo-claude's account, which agent sessions fetch on demand
+    # (devinfra/claude/claude_hook/creds_banner.sh).
+    secret_copy.secret_copy(chart, "claude-forgejo-credentials", reader=secret_copy.reader(chart, _NAMESPACE))
     return chart
 
 

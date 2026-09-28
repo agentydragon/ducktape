@@ -3,11 +3,6 @@
 # This is a dockerTools archive rather than a Dockerfile build. The gateway is
 # packaged by nix-openclaw and openclaw/default.nix adds the proxy preload plus
 # the small public-coder command-line toolset.
-#
-# CLEANUP(added 2026-09-28): Drop the GHCR matrix row and `packages: write` once
-#   cluster/k8s/agents/public-coder-agent/app/image-pins pins
-#   git.allegedly.works/ducktape-ci/public-coder-agent; until then Flux rolls
-#   public-coder-agent from GHCR.
 name: OpenClaw Image
 
 on:
@@ -62,25 +57,14 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   image:
-    strategy:
-      # The rows push to independent registries; a failed Forgejo push must not
-      # cancel the GHCR push public-coder-agent runs from.
-      fail-fast: false
-      matrix:
-        include:
-          - image: ghcr.io/${{ github.repository_owner }}/openclaw
-            registry: ghcr
-          - image: git.allegedly.works/ducktape-ci/public-coder-agent
-            registry: forgejo
     uses: ./.github/workflows/nix-image.yml
     with:
       attr: openclaw-image
-      image: ${{ matrix.image }}
-      registry: ${{ matrix.registry }}
+      image: git.allegedly.works/ducktape-ci/public-coder-agent
+      registry: forgejo
       smoke: |
         pip install --quiet pyyaml
         python3 -c '

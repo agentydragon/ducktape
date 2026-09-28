@@ -1413,14 +1413,16 @@ def test_property_purchase_emits_purchase_mortgage_and_property_tax_events(
         assert _usd_from_quanta(event.amount_quanta) == pytest.approx(monthly_payment)
         assert int(event.interest_quanta) + int(event.principal_quanta) == int(event.amount_quanta)
 
-    property_taxes = [event for event in detail.rollout.events if event.kind == "property_tax_payment"]
-    monthly_property_tax = 900_000.0 * 0.01 / 12.0
-    assert property_taxes
-    for tax_event in property_taxes:
-        assert isinstance(tax_event, PropertyTaxPaymentEvent)
-        assert _usd_from_quanta(tax_event.amount_due_quanta) == pytest.approx(monthly_property_tax)
-        assert tax_event.amount_paid_quanta == tax_event.amount_due_quanta
-        assert tax_event.shortfall_quanta == _usd_quanta(0.0)
+    # Location A's situs is San Francisco, and the app's month 0 is January 2024. February is the
+    # eighth month of FY 2023-24, billed on the $900,000 price at 1.17769382% with no exemption (the
+    # owner was not there on its lien date): $10,599.24 a year, of which February pays the eighth
+    # cumulative twelfth, $7,066.16 - $6,182.89 = $883.27.
+    [tax_event] = [event for event in detail.rollout.events if event.kind == "property_tax_payment"]
+    assert isinstance(tax_event, PropertyTaxPaymentEvent)
+    assert tax_event.month_index == 1
+    assert tax_event.amount_due_quanta == _usd_quanta(883.27)
+    assert tax_event.amount_paid_quanta == tax_event.amount_due_quanta
+    assert tax_event.shortfall_quanta == _usd_quanta(0.0)
 
 
 def test_product_lowers_primary_residence_assignments_to_housing(

@@ -98,3 +98,14 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "resource_reference_grant",
+    srcs = ["resource_reference_grant.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/seaweedfs:resourcereferencegrant",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)

@@ -25,6 +25,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization,
     flux_kustomization_depends_on_many,
 )
+from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.haku import console
@@ -71,6 +72,14 @@ def console_chart(app: App) -> Chart:
         chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=None, labels={"name": NAMESPACE}
     )
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
+    # The static-Agent bearer tf/gitops/haku-state mints; Reflector mirrors it on to the
+    # Agent's callers.
+    secret_copy.secret_copy(
+        chart,
+        "haku-console-agent-api",
+        reader=secret_copy.reader(chart, NAMESPACE),
+        mirror_namespaces=["haku-sandbox", "haku-egress-proxy"],
+    )
     Db(chart, "db")
     Migration(chart, "migration")
     Console(chart, "console")
@@ -102,9 +111,6 @@ def haku_console(
                 api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
             )
         ],
-        # haku-state writes a credential into this namespace; gating on it (or
-        # haku-workspaces -> haku-egress-proxy -> haku-state) blocks namespace
-        # creation. Pods can wait for credentials after this layer is admitted.
         depends_on=flux_kustomization_depends_on_many(
             # The Cluster CRD and CNPG's failurePolicy: Fail webhook.
             cnpg,
