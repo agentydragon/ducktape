@@ -80,20 +80,15 @@ def test_rejects_truncated_metadata() -> None:
 
 @pytest.mark.parametrize(
     "roles",
-    [
-        ["system", "developer", "user"],
-        ["system", "user", "system", "user"],
-        ["system", "user", "developer", "user"],
-    ],
+    [["system", "developer", "user"], ["system", "user", "system", "user"], ["system", "user", "developer", "user"]],
 )
 def test_template_preserves_instruction_position(roles: list[str]) -> None:
     template = _template_path().read_text()
     messages = [{"role": role, "content": f"part-{index}"} for index, role in enumerate(roles)]
-    rendered = Environment().from_string(template).render(
-        messages=messages,
-        tools=[],
-        enable_thinking=False,
-        add_generation_prompt=True,
+    rendered = (
+        Environment()
+        .from_string(template)
+        .render(messages=messages, tools=[], enable_thinking=False, add_generation_prompt=True)
     )
     expected_roles = ["system" if role == "developer" else role for role in roles]
     if len(roles) >= 2 and roles[:2] == ["system", "developer"]:

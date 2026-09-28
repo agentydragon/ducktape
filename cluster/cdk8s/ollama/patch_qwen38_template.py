@@ -106,7 +106,9 @@ def replace_template(data: bytes, replacement: bytes) -> bytes:
     old_data_start = (reader.pos + alignment - 1) & -alignment
     if old_data_start > len(data):
         raise ValueError("truncated GGUF tensor data")
-    header = data[:template_offset] + struct.pack("<Q", len(replacement)) + replacement + data[template_end : reader.pos]
+    header = (
+        data[:template_offset] + struct.pack("<Q", len(replacement)) + replacement + data[template_end : reader.pos]
+    )
     padding = (-len(header)) % alignment
     return header + bytes(padding) + data[old_data_start:]
 
