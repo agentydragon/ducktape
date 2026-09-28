@@ -211,6 +211,7 @@ py_library(
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s:settings_file",
         "//cluster/cdk8s:token_reviewer_rbac",
         "//cluster/cdk8s/providers/agent_sandbox:sandbox_template",
         "//cluster/cdk8s/providers/agent_sandbox:sandboxtemplate",
@@ -388,12 +389,8 @@ py_library(
         ":llm_ingress",
         ":rbac",
         ":sandbox_pod",
-        "//agentplane/app:main",
-        "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:fleet_rules",
-        "//util:settings_contract",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
     ],
 )
 
