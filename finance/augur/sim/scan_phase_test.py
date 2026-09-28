@@ -29,8 +29,8 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import _MortgageFinancing, _PropertyPurchase, _PropertyTax
-from finance.augur.sim.property import Housing
+from finance.augur.sim.property import Housing, MortgageFinancing, ScheduledPurchase
+from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -262,10 +262,10 @@ def purchase(
     month: int,
     down_payment: Decimal | int,
     buyer_closing_cost: Decimal | int = 0,
-    mortgage: _MortgageFinancing | None = None,
-) -> _PropertyPurchase:
+    mortgage: MortgageFinancing | None = None,
+) -> ScheduledPurchase:
     """Alice buys a $500k SF home, none of it let, so nothing depreciates."""
-    return _PropertyPurchase(
+    return ScheduledPurchase(
         month=month,
         cause_id="alice_buys_home",
         property_id=PropertyId("home"),
@@ -305,7 +305,7 @@ def test_property_tax_accrues_only_once_the_property_is_held() -> None:
     world.declare_housing(
         Housing(purchases=(purchase(month=0, down_payment=500_000),)),
         (
-            _PropertyTax(
+            PropertyTaxPolicy(
                 property_id=PropertyId("home"),
                 owner_agent_id=ALICE,
                 from_account_id=CHECKING,
@@ -337,7 +337,7 @@ def test_financed_purchase_originates_then_services_the_loan() -> None:
                 purchase(
                     month=0,
                     down_payment=100_000,
-                    mortgage=_MortgageFinancing(
+                    mortgage=MortgageFinancing(
                         liability_id=LiabilityId("alice_mortgage"),
                         lender_agent_id=AgentId("lender"),
                         lender_account_id=CHECKING,

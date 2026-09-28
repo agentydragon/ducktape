@@ -61,24 +61,23 @@ from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferDe
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
 from finance.augur.sim.money import Currency
-from finance.augur.sim.prepared import (
-    _CapitalImprovement,
-    _MortgageFinancing,
-    _MortgageInterestDeduction,
-    _PrimaryResidence,
-    _PrimaryResidenceEvent,
-    _PropertyPurchase,
-    _PropertySale,
-    _PropertyTax,
-    _RentedFraction,
-    _TenderPolicy,
-)
 from finance.augur.sim.pricing import OccupancyMode, insurance_rate, maintenance_rate
+from finance.augur.sim.private_equity import TenderPolicy
 from finance.augur.sim.private_equity_series import compile_private_equity_series
-from finance.augur.sim.property import Housing
+from finance.augur.sim.property import (
+    CapitalImprovement,
+    Housing,
+    MortgageFinancing,
+    PrimaryResidence,
+    PrimaryResidenceEvent,
+    RentedFraction,
+    ScheduledPurchase,
+    ScheduledSale,
+)
+from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.schedule import Once, Recurring, Schedule
-from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_authority import MortgageInterestDeduction, TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_income_sources, compile_profile
 from finance.augur.sim.world import World
@@ -180,10 +179,10 @@ class Home:
     """The purchased property: its tables, the authority that taxes it and the cashflows it carries."""
 
     housing: Housing
-    property_tax: _PropertyTax
+    property_tax: PropertyTaxPolicy
     location: Location
     # Claimed only on a financed primary residence.
-    interest_deduction: _MortgageInterestDeduction | None
+    interest_deduction: MortgageInterestDeduction | None
     cashflows: tuple[PropertyCashflow, ...]
 
 
@@ -208,7 +207,7 @@ class Situation:
     bonds: tuple[Bond, ...]
     home: Home | None
     distributions: tuple[Distribution, ...]
-    tender_policy: _TenderPolicy | None
+    tender_policy: TenderPolicy | None
     obligations: tuple[Obligation, ...]
 
 
@@ -276,7 +275,7 @@ def build_situation(
         if mortgage is not None:
             accounts.append(_empty_account(MORTGAGE_LENDER_AGENT_ID, MORTGAGE_LENDER_ACCOUNT_ID))
             if purchase.is_primary_residence:
-                interest_deduction = _MortgageInterestDeduction(
+                interest_deduction = MortgageInterestDeduction(
                     liability_id=mortgage.liability_id,
                     owner_agent_id=primary_agent_id,
                     debt_class="acquisition",
@@ -306,7 +305,7 @@ def build_situation(
             housing=_housing(
                 purchase, property_, primary_agent_id=primary_agent_id, mortgage=mortgage, currency=currency
             ),
-            property_tax=_PropertyTax(
+            property_tax=PropertyTaxPolicy(
                 property_id=property_.id,
                 owner_agent_id=primary_agent_id,
                 from_account_id=PRIMARY_ACCOUNT_ID,
@@ -858,10 +857,10 @@ def _down_payment_for(purchase: PropertyPurchase, property_: Property, *, curren
     )
 
 
-def _mortgage_for(purchase: PropertyPurchase, property_: Property, *, currency: Currency) -> _MortgageFinancing | None:
+def _mortgage_for(purchase: PropertyPurchase, property_: Property, *, currency: Currency) -> MortgageFinancing | None:
     if isinstance(purchase.financing, CashFinancing):
         return None
-    return _MortgageFinancing(
+    return MortgageFinancing(
         liability_id=LiabilityId(f"{property_.id}_mortgage"),
         lender_agent_id=MORTGAGE_LENDER_AGENT_ID,
         lender_account_id=MORTGAGE_LENDER_ACCOUNT_ID,
@@ -880,7 +879,7 @@ def _housing(
     property_: Property,
     *,
     primary_agent_id: AgentId,
-    mortgage: _MortgageFinancing | None,
+    mortgage: MortgageFinancing | None,
     currency: Currency,
 ) -> Housing:
     """The purchase at month 0, its residence assignment and its lifecycle, as the tables `Properties` reads.
@@ -888,16 +887,16 @@ def _housing(
     The wire's fractions and percents are floats, so they round onto the ppb grid.
     """
 
-    sales: list[_PropertySale] = []
-    residence_events: list[_PrimaryResidenceEvent] = []
-    rented_fraction_events: list[_RentedFraction] = []
-    capital_improvements: list[_CapitalImprovement] = []
+    sales: list[ScheduledSale] = []
+    residence_events: list[PrimaryResidenceEvent] = []
+    rented_fraction_events: list[RentedFraction] = []
+    capital_improvements: list[CapitalImprovement] = []
     for event in purchase.lifecycle_events:
         month = int(event.month)
         match event:
             case SetRentedFractionEventWire():
                 rented_fraction_events.append(
-                    _RentedFraction(
+                    RentedFraction(
                         month=month,
                         property_id=property_.id,
                         rented_fraction_ppb=int(round_ppb(float(event.rented_fraction))),
@@ -905,7 +904,7 @@ def _housing(
                 )
             case SetPrimaryResidenceEventWire():
                 residence_events.append(
-                    _PrimaryResidenceEvent(
+                    PrimaryResidenceEvent(
                         month=month,
                         agent_id=primary_agent_id,
                         property_id=property_.id if event.is_primary_residence else None,
@@ -913,7 +912,7 @@ def _housing(
                 )
             case CapitalImprovementEventWire():
                 capital_improvements.append(
-                    _CapitalImprovement(
+                    CapitalImprovement(
                         month=month,
                         property_id=property_.id,
                         amount=currency.quanta(event.amount),
@@ -922,7 +921,7 @@ def _housing(
                 )
             case PropertySaleEventWire():
                 sales.append(
-                    _PropertySale(
+                    ScheduledSale(
                         month=month,
                         property_id=property_.id,
                         closing_cost_ppb=_closing_cost_ppb(float(event.closing_cost_pct)),
@@ -934,7 +933,7 @@ def _housing(
     _, rented_fraction = _initial_occupancy(purchase)
     return Housing(
         purchases=(
-            _PropertyPurchase(
+            ScheduledPurchase(
                 month=0,
                 cause_id=_purchase_cause_id(property_),
                 property_id=property_.id,
@@ -957,7 +956,7 @@ def _housing(
         ),
         sales=tuple(sales),
         initial_residences=(
-            (_PrimaryResidence(agent_id=primary_agent_id, property_id=property_.id),)
+            (PrimaryResidence(agent_id=primary_agent_id, property_id=property_.id),)
             if purchase.is_primary_residence
             else ()
         ),
@@ -1084,7 +1083,7 @@ def _funding_household(
 
 
 def _band_bound_amount(amount: Decimal, *, index_to_inflation: bool, currency: Currency) -> int | IndexedAmount:
-    """Translate an exact configured amount + index flag into a prepared amount.
+    """Translate an exact configured amount + index flag into an `Amount`.
 
     An indexed bound tracks CPI monthly (period=1) so the real-terms band stays constant; a
     nominal bound is the exact configured amount in quanta.
@@ -1103,7 +1102,7 @@ def _household_bound(amount: int | IndexedAmount) -> BandBound:
 
 def _tender_policy(
     scenario_key: ScenarioKey, portfolio: PortfolioConfig, *, primary_agent_id: AgentId, currency: Currency
-) -> _TenderPolicy | None:
+) -> TenderPolicy | None:
     """The wire's pe_tender_policy for the primary agent, whenever the portfolio holds PE.
 
     Emitted even with a zero floor: the floor only controls voluntary tender/public-market
@@ -1113,7 +1112,7 @@ def _tender_policy(
     if not any(isinstance(position.asset, PrivateEquityAssetKey) for position in portfolio.holdings):
         return None
     floor = scenario_key.pe_tender_policy.liquid_net_worth_floor
-    return _TenderPolicy(
+    return TenderPolicy(
         owner_agent_id=primary_agent_id,
         proceeds_account_id=PRIMARY_ACCOUNT_ID,
         liquid_net_worth_floor=(

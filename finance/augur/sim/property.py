@@ -14,14 +14,54 @@ from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.mortgage import Mortgage, MortgageTerms
-from finance.augur.sim.prepared import (
-    _CapitalImprovement,
-    _PrimaryResidence,
-    _PrimaryResidenceEvent,
-    _PropertyPurchase,
-    _PropertySale,
-    _RentedFraction,
-)
+
+
+@dataclass(frozen=True, kw_only=True)
+class MortgageFinancing:
+    liability_id: LiabilityId
+    lender_agent_id: AgentId
+    lender_account_id: AccountId
+    principal: int
+    annual_interest_rate_ppb: int
+    term_months: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class ScheduledPurchase:
+    month: int
+    cause_id: str
+    property_id: PropertyId
+    location_id: LocationId
+    buyer_agent_id: AgentId
+    buyer_account_id: AccountId
+    seller_agent_id: AgentId
+    seller_account_id: AccountId
+    purchase_price: int
+    down_payment: int
+    buyer_closing_cost: int
+    rented_fraction_ppb: int
+    land_value_fraction_ppb: int
+    mortgage: MortgageFinancing | None
+
+
+@dataclass(frozen=True, kw_only=True)
+class ScheduledSale:
+    month: int
+    property_id: PropertyId
+    closing_cost_ppb: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class PrimaryResidence:
+    agent_id: AgentId
+    property_id: PropertyId
+
+
+@dataclass(frozen=True, kw_only=True)
+class PrimaryResidenceEvent:
+    month: int
+    agent_id: AgentId
+    property_id: PropertyId | None
 
 
 @dataclass
@@ -65,14 +105,14 @@ class Residence:
     is_primary_residence: bool
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class RentedFraction:
     month: int
     property_id: PropertyId
     rented_fraction_ppb: int
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class CapitalImprovement:
     month: int
     property_id: PropertyId
@@ -96,11 +136,11 @@ class Origination:
     monthly_payment: int
 
 
-def asset_account(purchase: _PropertyPurchase) -> AccountRef:
+def asset_account(purchase: ScheduledPurchase) -> AccountRef:
     return AccountRef(agent_id=purchase.buyer_agent_id, account_id=AccountId(f"asset:property:{purchase.property_id}"))
 
 
-def principal(accounting: Accounting, purchase: _PropertyPurchase) -> int:
+def principal(accounting: Accounting, purchase: ScheduledPurchase) -> int:
     loan = purchase.mortgage
     if loan is None:
         return 0
@@ -114,7 +154,7 @@ def principal(accounting: Accounting, purchase: _PropertyPurchase) -> int:
     )
 
 
-def mortgage_terms(purchase: _PropertyPurchase) -> MortgageTerms:
+def mortgage_terms(purchase: ScheduledPurchase) -> MortgageTerms:
     financing = purchase.mortgage
     if financing is None:
         raise ValueError("purchase has no mortgage financing")
@@ -134,17 +174,17 @@ def mortgage_terms(purchase: _PropertyPurchase) -> MortgageTerms:
 class Housing:
     """The scenario's housing tables `Properties` reads; the default `Housing()` is a world with no property domain."""
 
-    purchases: tuple[_PropertyPurchase, ...] = ()
-    sales: tuple[_PropertySale, ...] = ()
-    initial_residences: tuple[_PrimaryResidence, ...] = ()
-    residence_events: tuple[_PrimaryResidenceEvent, ...] = ()
-    rented_fraction_events: tuple[_RentedFraction, ...] = ()
-    capital_improvements: tuple[_CapitalImprovement, ...] = ()
+    purchases: tuple[ScheduledPurchase, ...] = ()
+    sales: tuple[ScheduledSale, ...] = ()
+    initial_residences: tuple[PrimaryResidence, ...] = ()
+    residence_events: tuple[PrimaryResidenceEvent, ...] = ()
+    rented_fraction_events: tuple[RentedFraction, ...] = ()
+    capital_improvements: tuple[CapitalImprovement, ...] = ()
 
     def check(self, horizon_months: int) -> None:
         """One purchase per property inside the horizon; its lifecycle strictly after it and frozen
         by its sale; a primary residence only on property its agent bought and still holds."""
-        purchases: dict[PropertyId, _PropertyPurchase] = {}
+        purchases: dict[PropertyId, ScheduledPurchase] = {}
         liabilities: set[LiabilityId] = set()
         for purchase in self.purchases:
             if purchase.property_id in purchases:
@@ -166,7 +206,7 @@ class Housing:
                     f"multiple sales of {sale.property_id!r}: months {sold[sale.property_id]} and {sale.month}"
                 )
             sold[sale.property_id] = sale.month
-        lifecycle: tuple[_PropertySale | _RentedFraction | _CapitalImprovement, ...] = (
+        lifecycle: tuple[ScheduledSale | RentedFraction | CapitalImprovement, ...] = (
             *self.sales,
             *self.rented_fraction_events,
             *self.capital_improvements,
@@ -183,7 +223,7 @@ class Housing:
                     f"its purchase month {bought.month} and inside the horizon [0, {horizon_months})"
                 )
             sale_month = sold.get(event.property_id)
-            if not isinstance(event, _PropertySale) and sale_month is not None and event.month >= sale_month:
+            if not isinstance(event, ScheduledSale) and sale_month is not None and event.month >= sale_month:
                 raise ValueError(
                     f"lifecycle event for {event.property_id!r} at month {event.month} does not precede its sale "
                     f"at month {sale_month}; the property is frozen after sale"
@@ -212,7 +252,7 @@ def _check_residence(
     agent_id: AgentId,
     property_id: PropertyId,
     month: int,
-    purchases: Mapping[PropertyId, _PropertyPurchase],
+    purchases: Mapping[PropertyId, ScheduledPurchase],
     sold: Mapping[PropertyId, int],
 ) -> None:
     purchase = purchases.get(property_id)
@@ -299,7 +339,7 @@ class Properties:
     def snapshots(self) -> list[PropertyState]:
         return [property_.state for property_ in self.properties.values()]
 
-    def market_value(self, purchase: _PropertyPurchase, market: MarketPath, month: int) -> int:
+    def market_value(self, purchase: ScheduledPurchase, market: MarketPath, month: int) -> int:
         series = f"home_value:{purchase.location_id}"
         return mul_div(
             purchase.purchase_price,
@@ -343,7 +383,7 @@ class Properties:
                     property_.state = property_.state.model_copy(
                         update={"rented_fraction_ppb": event.rented_fraction_ppb}
                     )
-                    self.rented_fractions.append(RentedFraction(month, id_, event.rented_fraction_ppb))
+                    self.rented_fractions.append(event)
             for improvement in self.housing.capital_improvements:
                 if improvement.month != month or improvement.property_id != id_:
                     continue
@@ -365,7 +405,9 @@ class Properties:
                     )
                 )
                 property_.state = property_.state.model_copy(update={"building_basis": basis})
-                self.improvements.append(CapitalImprovement(month, id_, improvement.amount, ""))
+                self.improvements.append(
+                    CapitalImprovement(month=month, property_id=id_, amount=improvement.amount, description="")
+                )
             for sale in self.housing.sales:
                 if sale.month == month and sale.property_id == id_ and property_.state.active:
                     payoff = self.sell(accounting, market, purchases[id_], sale, mortgages, section_121_exclusions)
@@ -377,8 +419,8 @@ class Properties:
         self,
         accounting: Accounting,
         market: MarketPath,
-        purchase: _PropertyPurchase,
-        sale: _PropertySale,
+        purchase: ScheduledPurchase,
+        sale: ScheduledSale,
         mortgages: Mapping[LiabilityId, Mortgage],
         section_121_exclusions: Mapping[AgentId, int],
     ) -> LiabilityId | None:

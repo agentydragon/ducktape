@@ -21,7 +21,7 @@ from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import _TenderPolicy
+from finance.augur.sim.private_equity import TenderPolicy
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
@@ -137,7 +137,7 @@ def private_equity_world(*, freeze: bool) -> World:
         basis=money(100),
     )
     world.declare_tender_policy(
-        _TenderPolicy(owner_agent_id=PE_OWNER, proceeds_account_id=CHECKING, liquid_net_worth_floor=0)
+        TenderPolicy(owner_agent_id=PE_OWNER, proceeds_account_id=CHECKING, liquid_net_worth_floor=0)
     )
     if freeze:
         world.track(unfundable(month=PE_FREEZE_MONTH, payer=PE_OWNER, amount=Decimal(1_000)))

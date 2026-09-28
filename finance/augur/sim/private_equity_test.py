@@ -34,7 +34,7 @@ from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import _TenderPolicy
+from finance.augur.sim.private_equity import TenderPolicy
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
@@ -181,7 +181,7 @@ def compose(case: Holder, channels: Sequence[Series]) -> World:
     )
     if case.floor is not None:
         world.declare_tender_policy(
-            _TenderPolicy(owner_agent_id=ALICE, proceeds_account_id=CHECKING, liquid_net_worth_floor=case.floor)
+            TenderPolicy(owner_agent_id=ALICE, proceeds_account_id=CHECKING, liquid_net_worth_floor=case.floor)
         )
     world.track(
         Biller(

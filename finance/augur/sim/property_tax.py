@@ -1,13 +1,27 @@
 """The authority that assesses a held property's monthly tax."""
 
+from dataclasses import dataclass
+
 from finance.augur.sim.actor import Actor, MonthOpened
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import Demand, PropertyTax
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
+from finance.augur.sim.ids import AccountId, AgentId, PropertyId
 from finance.augur.sim.locations import Location
 from finance.augur.sim.money import checked_count, checked_wide, mul_div_wide
-from finance.augur.sim.prepared import _PropertyPurchase, _PropertyTax
-from finance.augur.sim.property import PropertyStatement
+from finance.augur.sim.property import PropertyStatement, ScheduledPurchase
+
+
+@dataclass(frozen=True, kw_only=True)
+class PropertyTaxPolicy:
+    property_id: PropertyId
+    owner_agent_id: AgentId
+    from_account_id: AccountId
+    tax_authority_agent_id: AgentId
+    tax_authority_account_id: AccountId
+    annual_tax_rate_ppb: int | None
+    start_month: int
+    end_month: int | None
 
 
 class PropertyTaxBill(Demand):
@@ -18,7 +32,7 @@ class PropertyTaxBill(Demand):
 class PropertyTaxAuthority(Actor[MonthOpened | PropertyStatement, PropertyTaxBill]):
     """Assesses one property while it is held, at the policy's rate or the location's."""
 
-    def __init__(self, policy: _PropertyTax, purchase: _PropertyPurchase, location: Location) -> None:
+    def __init__(self, policy: PropertyTaxPolicy, purchase: ScheduledPurchase, location: Location) -> None:
         self.policy = policy
         self.purchase = purchase
         self.location = location

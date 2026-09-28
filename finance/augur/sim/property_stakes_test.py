@@ -33,16 +33,16 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    _CapitalImprovement,
-    _MortgageFinancing,
-    _PrimaryResidence,
-    _PropertyPurchase,
-    _PropertySale,
-    _PropertyTax,
-    _RentedFraction,
+from finance.augur.sim.property import (
+    CapitalImprovement,
+    Housing,
+    MortgageFinancing,
+    PrimaryResidence,
+    RentedFraction,
+    ScheduledPurchase,
+    ScheduledSale,
 )
-from finance.augur.sim.property import Housing
+from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
@@ -104,8 +104,8 @@ def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, 
 
 def financing(
     liability_id: LiabilityId, lender: AgentId, *, principal: int, annual_rate: Decimal | int
-) -> _MortgageFinancing:
-    return _MortgageFinancing(
+) -> MortgageFinancing:
+    return MortgageFinancing(
         liability_id=liability_id,
         lender_agent_id=lender,
         lender_account_id=CHECKING,
@@ -126,9 +126,9 @@ def purchase(
     down: int,
     closing: int = 0,
     rented_fraction: Decimal | int = 0,
-    mortgage: _MortgageFinancing | None = None,
-) -> _PropertyPurchase:
-    return _PropertyPurchase(
+    mortgage: MortgageFinancing | None = None,
+) -> ScheduledPurchase:
+    return ScheduledPurchase(
         month=month,
         cause_id=cause_id,
         property_id=property_id,
@@ -146,9 +146,9 @@ def purchase(
     )
 
 
-def property_tax(property_id: PropertyId, collector: AgentId) -> _PropertyTax:
+def property_tax(property_id: PropertyId, collector: AgentId) -> PropertyTaxPolicy:
     """No rate of its own, so the authority charges the rate of the location the property sits in."""
-    return _PropertyTax(
+    return PropertyTaxPolicy(
         property_id=property_id,
         owner_agent_id=ALICE,
         from_account_id=CHECKING,
@@ -177,7 +177,7 @@ class Situation:
     housing: Housing
     rollout_count: int = 1
     locations: tuple[Location, ...] = LOCATIONS
-    tax_policies: tuple[_PropertyTax, ...] = ()
+    tax_policies: tuple[PropertyTaxPolicy, ...] = ()
     jurisdiction_ids: tuple[JurisdictionId, ...] = ()
     rent: Rent | None = None
     home_values: Mapping[str, Sequence[float]] = field(default_factory=dict)
@@ -378,20 +378,20 @@ def home_and_rental_case() -> Situation:
                 ),
             ),
             sales=(
-                _PropertySale(
+                ScheduledSale(
                     month=RENTAL_SALE_MONTH,
                     property_id=PropertyId("rental"),
                     closing_cost_ppb=rate_to_ppb(Decimal("0.06")),
                 ),
             ),
-            initial_residences=(_PrimaryResidence(agent_id=ALICE, property_id=PropertyId("home")),),
+            initial_residences=(PrimaryResidence(agent_id=ALICE, property_id=PropertyId("home")),),
             rented_fraction_events=(
-                _RentedFraction(
+                RentedFraction(
                     month=12, property_id=PropertyId("rental"), rented_fraction_ppb=rate_to_ppb(Decimal("0.5"))
                 ),
             ),
             capital_improvements=(
-                _CapitalImprovement(
+                CapitalImprovement(
                     month=12, property_id=PropertyId("rental"), amount=money(RENTAL_CAPEX), description="new roof"
                 ),
             ),

@@ -67,13 +67,13 @@ ledger principal before that month's servicing, so the sold property creates no
 later mortgage installment. This timing does not provide a household purchase
 action.
 
-The sim's prepared housing records (`Housing` in `sim/property.py`) separate property use
+The sim's housing records (`Housing` in `sim/property.py`) separate property use
 from property ownership:
 
-- `_PropertyPurchase.rented_fraction_ppb` is the initial rented share.
-- `_PrimaryResidence` is agent-scoped, one initial main home per agent.
-- `_PrimaryResidenceEvent` assigns or clears an agent's main home over time.
-- `_RentedFraction`, `_CapitalImprovement` and `_PropertySale` handle rented-fraction
+- `ScheduledPurchase.rented_fraction_ppb` is the initial rented share.
+- `PrimaryResidence` is agent-scoped, one initial main home per agent.
+- `PrimaryResidenceEvent` assigns or clears an agent's main home over time.
+- `RentedFraction`, `CapitalImprovement` and `ScheduledSale` handle rented-fraction
   changes, improvements, and sales.
 - `World.declare_flow` with a `property_id` models property-linked rent,
   management, and leasing cashflows. The engine gates them by property

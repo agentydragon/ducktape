@@ -40,18 +40,18 @@ from finance.augur.sim.income import (
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
 from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
-from finance.augur.sim.prepared import (
-    _MortgageFinancing,
-    _MortgageInterestDeduction,
-    _PrimaryResidence,
-    _PrimaryResidenceEvent,
-    _PropertyPurchase,
-    _PropertySale,
-    _PropertyTax,
-    _RentedFraction,
+from finance.augur.sim.property import (
+    Housing,
+    MortgageFinancing,
+    PrimaryResidence,
+    PrimaryResidenceEvent,
+    RentedFraction,
+    ScheduledPurchase,
+    ScheduledSale,
 )
-from finance.augur.sim.property import Housing
+from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.schedule import Once, Recurring, Schedule
+from finance.augur.sim.tax_authority import MortgageInterestDeduction
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
@@ -237,7 +237,7 @@ def test_a_dated_bond_is_bought_at_par_over_whole_coupon_periods(invalid: Callab
         invalid(composed())
 
 
-PURCHASE = _PropertyPurchase(
+PURCHASE = ScheduledPurchase(
     month=0,
     cause_id="test-purchase",
     property_id=PropertyId("test-home"),
@@ -253,7 +253,7 @@ PURCHASE = _PropertyPurchase(
     land_value_fraction_ppb=200_000_000,
     mortgage=None,
 )
-LOAN = _MortgageFinancing(
+LOAN = MortgageFinancing(
     liability_id=LiabilityId("test-loan"),
     lender_agent_id=COUNTERPARTY,
     lender_account_id=CHECKING,
@@ -263,7 +263,7 @@ LOAN = _MortgageFinancing(
 )
 
 
-def housed(purchase: _PropertyPurchase, *locations: Location) -> None:
+def housed(purchase: ScheduledPurchase, *locations: Location) -> None:
     composed().declare_housing(Housing(purchases=(purchase,)), (), locations)
 
 
@@ -418,8 +418,8 @@ def test_an_indexed_amount_needs_a_nonzero_base_level() -> None:
         flow(composed(cpi(0, 1, 1)), amount=indexed())
 
 
-def rented(month: int, property_id: PropertyId = PURCHASE.property_id) -> _RentedFraction:
-    return _RentedFraction(month=month, property_id=property_id, rented_fraction_ppb=500_000_000)
+def rented(month: int, property_id: PropertyId = PURCHASE.property_id) -> RentedFraction:
+    return RentedFraction(month=month, property_id=property_id, rented_fraction_ppb=500_000_000)
 
 
 @pytest.mark.parametrize(
@@ -435,14 +435,14 @@ def rented(month: int, property_id: PropertyId = PURCHASE.property_id) -> _Rente
         (
             Housing(
                 purchases=(PURCHASE,),
-                sales=(_PropertySale(month=1, property_id=PURCHASE.property_id, closing_cost_ppb=0),) * 2,
+                sales=(ScheduledSale(month=1, property_id=PURCHASE.property_id, closing_cost_ppb=0),) * 2,
             ),
             "multiple sales",
         ),
         (
             Housing(
                 purchases=(PURCHASE,),
-                sales=(_PropertySale(month=1, property_id=PURCHASE.property_id, closing_cost_ppb=0),),
+                sales=(ScheduledSale(month=1, property_id=PURCHASE.property_id, closing_cost_ppb=0),),
                 rented_fraction_events=(rented(1),),
             ),
             "frozen after sale",
@@ -450,37 +450,35 @@ def rented(month: int, property_id: PropertyId = PURCHASE.property_id) -> _Rente
         (
             Housing(
                 purchases=(PURCHASE,),
-                initial_residences=(_PrimaryResidence(agent_id=COUNTERPARTY, property_id=PURCHASE.property_id),),
+                initial_residences=(PrimaryResidence(agent_id=COUNTERPARTY, property_id=PURCHASE.property_id),),
             ),
             "did not buy it",
         ),
         (
             Housing(
                 purchases=(PURCHASE,),
-                initial_residences=(_PrimaryResidence(agent_id=HOLDER, property_id=PURCHASE.property_id),) * 2,
+                initial_residences=(PrimaryResidence(agent_id=HOLDER, property_id=PURCHASE.property_id),) * 2,
             ),
             "multiple initial primary residences",
         ),
         (
             Housing(
                 purchases=(PURCHASE,),
-                residence_events=(_PrimaryResidenceEvent(month=HORIZON, agent_id=HOLDER, property_id=None),),
+                residence_events=(PrimaryResidenceEvent(month=HORIZON, agent_id=HOLDER, property_id=None),),
             ),
             "outside the horizon",
         ),
         (
             Housing(
                 purchases=(PURCHASE,),
-                residence_events=(_PrimaryResidenceEvent(month=1, agent_id=HOLDER, property_id=None),) * 2,
+                residence_events=(PrimaryResidenceEvent(month=1, agent_id=HOLDER, property_id=None),) * 2,
             ),
             "multiple primary residence events",
         ),
         (
             Housing(
                 purchases=(PURCHASE,),
-                residence_events=(
-                    _PrimaryResidenceEvent(month=1, agent_id=AgentId("test-stranger"), property_id=None),
-                ),
+                residence_events=(PrimaryResidenceEvent(month=1, agent_id=AgentId("test-stranger"), property_id=None),),
             ),
             "unknown agent",
         ),
@@ -506,7 +504,7 @@ def test_housing_is_bought_inside_the_horizon_and_its_lifecycle_follows_the_purc
         Housing(
             purchases=(PURCHASE,),
             rented_fraction_events=(rented(1),),
-            initial_residences=(_PrimaryResidence(agent_id=HOLDER, property_id=PURCHASE.property_id),),
+            initial_residences=(PrimaryResidence(agent_id=HOLDER, property_id=PURCHASE.property_id),),
         ),
         (),
         (LOCATION,),
@@ -515,7 +513,7 @@ def test_housing_is_bought_inside_the_horizon_and_its_lifecycle_follows_the_purc
         composed().declare_housing(housing, (), (LOCATION,))
 
 
-PROPERTY_TAX = _PropertyTax(
+PROPERTY_TAX = PropertyTaxPolicy(
     property_id=PURCHASE.property_id,
     owner_agent_id=HOLDER,
     from_account_id=CHECKING,
@@ -537,7 +535,9 @@ PROPERTY_TAX = _PropertyTax(
     ],
     ids=["unbought", "not-the-buyer", "ends-before-it-starts", "overlapping"],
 )
-def test_one_property_tax_policy_at_a_time_is_owed_by_the_buyer(policies: tuple[_PropertyTax, ...], match: str) -> None:
+def test_one_property_tax_policy_at_a_time_is_owed_by_the_buyer(
+    policies: tuple[PropertyTaxPolicy, ...], match: str
+) -> None:
     composed().declare_housing(Housing(purchases=(PURCHASE,)), (PROPERTY_TAX,), (LOCATION,))
     with pytest.raises(ValueError, match=match):
         composed().declare_housing(Housing(purchases=(PURCHASE,)), policies, (LOCATION,))
@@ -546,7 +546,7 @@ def test_one_property_tax_policy_at_a_time_is_owed_by_the_buyer(policies: tuple[
 def test_a_deduction_is_claimed_by_an_enrolled_taxpayer() -> None:
     with pytest.raises(ValueError, match="names no taxpayer"):
         composed().declare_deduction(
-            _MortgageInterestDeduction(
+            MortgageInterestDeduction(
                 liability_id=LOAN.liability_id,
                 owner_agent_id=HOLDER,
                 debt_class="acquisition",

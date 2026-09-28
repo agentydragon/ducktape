@@ -55,14 +55,8 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    _CapitalImprovement,
-    _MortgageFinancing,
-    _PropertyPurchase,
-    _PropertySale,
-    _TenderPolicy,
-)
-from finance.augur.sim.property import Housing
+from finance.augur.sim.private_equity import TenderPolicy
+from finance.augur.sim.property import CapitalImprovement, Housing, MortgageFinancing, ScheduledPurchase, ScheduledSale
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
@@ -291,7 +285,7 @@ def private_equity_tender_world() -> World:
         basis=money(Decimal(TENDER_UNITS) * 10),
     )
     world.declare_tender_policy(
-        _TenderPolicy(owner_agent_id=ALICE, proceeds_account_id=CHECKING, liquid_net_worth_floor=money(500_000))
+        TenderPolicy(owner_agent_id=ALICE, proceeds_account_id=CHECKING, liquid_net_worth_floor=money(500_000))
     )
     return world
 
@@ -337,7 +331,7 @@ def property_sale_world() -> World:
     world.declare_housing(
         Housing(
             purchases=(
-                _PropertyPurchase(
+                ScheduledPurchase(
                     month=0,
                     cause_id="buy-house",
                     property_id=PropertyId("house"),
@@ -351,7 +345,7 @@ def property_sale_world() -> World:
                     buyer_closing_cost=0,
                     rented_fraction_ppb=0,
                     land_value_fraction_ppb=rate_to_ppb(Decimal("0.2")),
-                    mortgage=_MortgageFinancing(
+                    mortgage=MortgageFinancing(
                         liability_id=LiabilityId("house-mortgage"),
                         lender_agent_id=AgentId("bank"),
                         lender_account_id=CHECKING,
@@ -362,14 +356,14 @@ def property_sale_world() -> World:
                 ),
             ),
             sales=(
-                _PropertySale(
+                ScheduledSale(
                     month=PROPERTY_SALE_MONTH,
                     property_id=PropertyId("house"),
                     closing_cost_ppb=rate_to_ppb(Decimal("0.06")),
                 ),
             ),
             capital_improvements=(
-                _CapitalImprovement(
+                CapitalImprovement(
                     month=CAPEX_MONTH, property_id=PropertyId("house"), amount=money(30_000), description="roof"
                 ),
             ),

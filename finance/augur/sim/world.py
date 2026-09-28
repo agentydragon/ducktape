@@ -55,17 +55,11 @@ from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath
 from finance.augur.sim.money import checked_count, is_quantity_scale, position_value
 from finance.augur.sim.mortgage import InstallmentPaid, Mortgage, MortgagePayment, ServicingStatement
 from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
-from finance.augur.sim.prepared import (
-    _MortgageInterestDeduction,
-    _PropertyPurchase,
-    _PropertyTax,
-    _SaltDeduction,
-    _TenderPolicy,
-)
-from finance.augur.sim.property import Housing, Properties, mortgage_terms
-from finance.augur.sim.property_tax import PropertyTaxAuthority, PropertyTaxBill
+from finance.augur.sim.private_equity import TenderPolicy
+from finance.augur.sim.property import Housing, Properties, ScheduledPurchase, mortgage_terms
+from finance.augur.sim.property_tax import PropertyTaxAuthority, PropertyTaxBill, PropertyTaxPolicy
 from finance.augur.sim.schedule import Once, Recurring, Schedule, is_due
-from finance.augur.sim.tax_authority import Assessment, TaxAuthority
+from finance.augur.sim.tax_authority import Assessment, MortgageInterestDeduction, SaltDeduction, TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw
 from finance.augur.sim.tlh import (
     ModeledRealizations,
@@ -326,7 +320,7 @@ class World:
             ):
                 raise ValueError(f"invalid bond inflation path for {bond.bond_id!r}")
 
-    def declare_tender_policy(self, policy: _TenderPolicy) -> None:
+    def declare_tender_policy(self, policy: TenderPolicy) -> None:
         """How an owner answers its issuers' sale opportunities and where compulsory proceeds land."""
         self._composing()
         if (
@@ -448,11 +442,11 @@ class World:
             raise ValueError("no managed portfolio is declared")
         return self.managed
 
-    def _purchases(self) -> tuple[_PropertyPurchase, ...]:
+    def _purchases(self) -> tuple[ScheduledPurchase, ...]:
         return () if self.properties is None else self.properties.housing.purchases
 
     def declare_housing(
-        self, housing: Housing, tax_policies: Sequence[_PropertyTax] = (), locations: Sequence[Location] = ()
+        self, housing: Housing, tax_policies: Sequence[PropertyTaxPolicy] = (), locations: Sequence[Location] = ()
     ) -> None:
         """Properties bought on a scripted schedule (month zero for one held from the start), their scripted
         lifecycle, and the authorities that tax them. Declared once per world."""
@@ -573,10 +567,10 @@ class World:
             ),
         )
 
-    def declare_deduction(self, policy: _MortgageInterestDeduction | _SaltDeduction) -> None:
+    def declare_deduction(self, policy: MortgageInterestDeduction | SaltDeduction) -> None:
         """An itemized deduction an enrolled taxpayer claims when its tax year closes."""
         self._composing()
-        if isinstance(policy, _MortgageInterestDeduction):
+        if isinstance(policy, MortgageInterestDeduction):
             label, claimant = "mortgage interest deduction", policy.owner_agent_id
         else:
             label, claimant = "SALT deduction", policy.profile_id

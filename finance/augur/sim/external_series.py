@@ -47,14 +47,15 @@ from finance.augur.sim.ids import AssetId
 from finance.augur.sim.market_path import Amount, IndexedAmount, Series
 from finance.augur.sim.money import Currency
 from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
-from finance.augur.sim.prepared import _PropertyPurchase, _TenderPolicy
+from finance.augur.sim.private_equity import TenderPolicy
+from finance.augur.sim.property import ScheduledPurchase
 
 _MONEY_SERIES_KINDS = (SecurityKey, SecurityDistributionKey, HomeValueKey)
 _INDEX_SERIES_KINDS = (InflationKey, RentKey)
 
 
 class UnsupportedScenarioError(ValueError):
-    """An authored input the prepared records have no representation for.
+    """An authored input the sim's records have no representation for.
 
     Raised rather than dropped: dropping a feature changes the answer without changing its shape.
     """
@@ -112,8 +113,8 @@ def level_series_demand(
     bond_coupons: Iterable[FixedCoupon | IndexedCoupon],
     distributing_assets: Iterable[AssetId],
     amounts: Iterable[Amount],
-    tender_policies: Iterable[_TenderPolicy],
-    purchases: Iterable[_PropertyPurchase],
+    tender_policies: Iterable[TenderPolicy],
+    purchases: Iterable[ScheduledPurchase],
 ) -> tuple[LevelSeriesKey, ...]:
     """Every level series these declarations REFERENCE — their exogenous demand.
 

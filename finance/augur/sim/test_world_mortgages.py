@@ -15,8 +15,8 @@ from finance.augur.sim.ids import AccountId, LiabilityId, PropertyId
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import Series
 from finance.augur.sim.mortgage import Mortgage, MortgagePayment, MortgageTerms
-from finance.augur.sim.prepared import _MortgageFinancing, _PropertyPurchase, _PropertySale, _PropertyTax
-from finance.augur.sim.property import Housing
+from finance.augur.sim.property import Housing, MortgageFinancing, ScheduledPurchase, ScheduledSale
+from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Executed
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, opening, world_on
@@ -29,8 +29,8 @@ LOCATION = Location(location_id=LocationId("test-market"), annual_property_tax_r
 class Situation:
     """A financed month-2 purchase sold in month 5, an ordinary bill and a property tax, on the market's paths."""
 
-    purchase: _PropertyPurchase
-    sale: _PropertySale
+    purchase: ScheduledPurchase
+    sale: ScheduledSale
     home_values: Series
     rollout_count: int = 1
 
@@ -38,7 +38,7 @@ class Situation:
 @pytest.fixture
 def case() -> Situation:
     return Situation(
-        purchase=_PropertyPurchase(
+        purchase=ScheduledPurchase(
             month=2,
             cause_id="test-purchase",
             property_id=PropertyId("test-home"),
@@ -52,7 +52,7 @@ def case() -> Situation:
             buyer_closing_cost=0,
             rented_fraction_ppb=0,
             land_value_fraction_ppb=200_000_000,
-            mortgage=_MortgageFinancing(
+            mortgage=MortgageFinancing(
                 liability_id=LiabilityId("test-mortgage"),
                 lender_agent_id=WORLD,
                 lender_account_id=AccountId("cash"),
@@ -61,7 +61,7 @@ def case() -> Situation:
                 term_months=60,
             ),
         ),
-        sale=_PropertySale(month=5, property_id=PropertyId("test-home"), closing_cost_ppb=0),
+        sale=ScheduledSale(month=5, property_id=PropertyId("test-home"), closing_cost_ppb=0),
         home_values=Series(series_id="home_value:test-market", snapshots=7, values=(50, 100, 200, 240, 300, 360, 800)),
     )
 
@@ -108,7 +108,7 @@ def composed(case: Situation, rollout: int = 0) -> World:
     world.declare_housing(
         Housing(purchases=(case.purchase,), sales=(case.sale,)),
         (
-            _PropertyTax(
+            PropertyTaxPolicy(
                 property_id=PropertyId("test-home"),
                 owner_agent_id=HOUSEHOLD,
                 from_account_id=AccountId("checking"),
@@ -287,7 +287,7 @@ def test_a_building_basis_rounds_in_the_engine_not_in_the_authoring() -> None:
     world.declare_housing(
         Housing(
             purchases=(
-                _PropertyPurchase(
+                ScheduledPurchase(
                     month=0,
                     cause_id="test-purchase",
                     property_id=PropertyId("test-home"),

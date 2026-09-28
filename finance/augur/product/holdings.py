@@ -1,4 +1,4 @@
-"""The deployment's opening positions as the prepared facts a world declares.
+"""The deployment's opening positions as the exact facts a world declares.
 
 The records here are the app's own: each is what one path's world is told, in quanta.
 `scenarios.compose` declares them onto that world.
