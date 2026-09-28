@@ -17,12 +17,7 @@ from finance.augur.sim.agent import EconomicAgent
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
-from finance.augur.sim.fixed_point import (
-    currency_amount_to_quanta,
-    quantity_scale_for_asset,
-    quantity_to_quanta,
-    rate_to_ppb,
-)
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
@@ -40,7 +35,6 @@ from finance.augur.sim.world import World
 
 IRS = AgentId("irs")
 
-QUANTUM = Decimal("0.01")
 ALICE = AgentId("alice")
 CHECKING = AccountId("checking")
 FEDERAL = JurisdictionId("federal_us")
@@ -50,17 +44,13 @@ SP500 = SecurityKey(symbol=SP500_SYMBOL)
 HOME_PARCEL = flat_parcel(Decimal("0.012"))
 
 
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
-
-
 def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=account_id)
 
 
 def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
     """An account and its opening balance."""
-    return ref(agent_id), money(balance)
+    return ref(agent_id), USD.quanta(balance)
 
 
 def world_for(*accounts: tuple[AccountRef, int], horizon_months: int, series: tuple[Series, ...] = ()) -> World:
@@ -126,7 +116,7 @@ def paycheck(world: World, amount: Decimal | int, *, end_month: int) -> None:
         cause_id="paycheck",
         from_account=ref(AgentId("payroll")),
         to_account=ref(ALICE),
-        amount=money(amount),
+        amount=USD.quanta(amount),
         income_category=None,
         deduction_category=None,
     )
@@ -139,7 +129,7 @@ def rent(amount: Decimal | int, *, end_month: int) -> Biller:
         obligation_type="rent",
         from_account=ref(ALICE),
         to_account=ref(AgentId("landlord")),
-        amount_due=money(amount),
+        amount_due=USD.quanta(amount),
         property_id=None,
         deduction_category=None,
         deductible_fraction_ppb=1_000_000_000,
@@ -155,7 +145,7 @@ def test_transfers_only_month_loop() -> None:
         cause_id="bob_gifts_alice",
         from_account=ref(AgentId("bob")),
         to_account=ref(ALICE),
-        amount=money(250),
+        amount=USD.quanta(250),
         income_category=None,
         deduction_category=None,
     )
@@ -227,7 +217,7 @@ def test_security_sale_books_proceeds_and_a_long_term_gain() -> None:
         purchase_month=-24,  # long-term when sold at month 3
         quantity_scale=scale,
         units=units,
-        basis=money(8000),
+        basis=USD.quanta(8000),
     )
     books = run(
         world,
@@ -272,9 +262,9 @@ def purchase(
         buyer_account_id=CHECKING,
         seller_agent_id=AgentId("seller"),
         seller_account_id=CHECKING,
-        purchase_price=money(500_000),
-        down_payment=money(down_payment),
-        buyer_closing_cost=money(buyer_closing_cost),
+        purchase_price=USD.quanta(500_000),
+        down_payment=USD.quanta(down_payment),
+        buyer_closing_cost=USD.quanta(buyer_closing_cost),
         rented_fraction_ppb=0,
         land_value_fraction_ppb=rate_to_ppb(Decimal("0.2")),
         mortgage=mortgage,
@@ -336,7 +326,7 @@ def test_financed_purchase_originates_then_services_the_loan() -> None:
                         liability_id=LiabilityId("alice_mortgage"),
                         lender_agent_id=AgentId("lender"),
                         lender_account_id=CHECKING,
-                        principal=money(400_000),
+                        principal=USD.quanta(400_000),
                         annual_interest_rate_ppb=rate_to_ppb(Decimal("0.06")),
                         term_months=360,
                     ),
@@ -365,7 +355,7 @@ def test_year_end_tax_accrues_and_the_following_year_settles_it() -> None:
         cause_id="alice_paycheck",
         from_account=ref(AgentId("payroll")),
         to_account=ref(ALICE),
-        amount=money(Decimal(120_000) / Decimal(12)),
+        amount=USD.quanta(Decimal(120_000) / Decimal(12)),
         income_category=ORDINARY_INCOME,
         deduction_category=None,
     )

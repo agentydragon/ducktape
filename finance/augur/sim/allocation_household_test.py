@@ -19,7 +19,7 @@ from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, SecurityLotState
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
-from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, currency_amount_to_quanta, quantity_scale_for_asset
+from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, quantity_scale_for_asset
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable
 from finance.augur.sim.jurisdictions import HYPOTHETICAL_FLAT_TAX, flat_income_tax
@@ -32,7 +32,6 @@ from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import World
 
-QUANTUM = Decimal("0.01")
 STOCK = SecurityKey(symbol=SecuritySymbol("stock"))
 SECOND = SecurityKey(symbol=SecuritySymbol("second"))
 SCALE = quantity_scale_for_asset(STOCK)
@@ -43,21 +42,17 @@ BROKERAGE = AccountId("brokerage")
 TAX = flat_income_tax(HYPOTHETICAL_FLAT_TAX, ordinary_rate=Decimal("0.20"), ltcg_rate=Decimal("0.10"))
 
 
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
-
-
 def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=account_id)
 
 
 def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
     """An account and its opening balance."""
-    return ref(agent_id, account_id), money(balance)
+    return ref(agent_id, account_id), USD.quanta(balance)
 
 
 def flat(asset: SecurityKey, price: Decimal | int, *, snapshots: int) -> Series:
-    return Series(series_id=f"security:{asset.symbol}", snapshots=snapshots, values=(money(price),) * snapshots)
+    return Series(series_id=f"security:{asset.symbol}", snapshots=snapshots, values=(USD.quanta(price),) * snapshots)
 
 
 def distribution_rate(asset: SecurityKey, amount: Decimal | int, *, snapshots: int) -> Series:
@@ -65,7 +60,7 @@ def distribution_rate(asset: SecurityKey, amount: Decimal | int, *, snapshots: i
     return Series(
         series_id=f"security_distribution:{asset.symbol}",
         snapshots=snapshots,
-        values=(money(amount) * MONEY_FACTOR_SCALE,) * snapshots,
+        values=(USD.quanta(amount) * MONEY_FACTOR_SCALE,) * snapshots,
     )
 
 
@@ -88,7 +83,7 @@ class Spending:
 
 
 def claim(month: int, amount: Decimal | int, identifier: str = "spending") -> Spending:
-    return Spending(identifier, Once(month=month), money(amount))
+    return Spending(identifier, Once(month=month), USD.quanta(amount))
 
 
 @dataclass(frozen=True)
@@ -172,7 +167,7 @@ def compose(case: Situation, rollout_id: int) -> World:
             purchase_month=-24,
             quantity_scale=SCALE,
             units=held.shares * SCALE,
-            basis=money(held.basis),
+            basis=USD.quanta(held.basis),
         )
     for asset in case.distributions:
         world.declare_distribution(
@@ -188,7 +183,7 @@ def compose(case: Situation, rollout_id: int) -> World:
             cause_id=contribution.cause_id,
             from_account=ref(WORLD),
             to_account=ref(ALICE),
-            amount=money(contribution.amount),
+            amount=USD.quanta(contribution.amount),
             income_category=None,
             deduction_category=None,
         )
@@ -323,7 +318,10 @@ def test_indexed_monthly_claims_keep_sales_and_next_year_tax_events() -> None:
                     "indexed",
                     Recurring(start_month=0, end_month=None),
                     IndexedAmount(
-                        base_amount=money(10), series_id="inflation", base_month_index=0, adjustment_period_months=1
+                        base_amount=USD.quanta(10),
+                        series_id="inflation",
+                        base_month_index=0,
+                        adjustment_period_months=1,
                     ),
                 ),
             ),
@@ -368,7 +366,7 @@ def test_fifo_across_two_purchase_dates_preserves_basis_and_tax_character() -> N
                 Series(
                     series_id=f"security:{STOCK.symbol}",
                     snapshots=14,
-                    values=(money(100), money(150)) + (money(200),) * 12,
+                    values=(USD.quanta(100), USD.quanta(150)) + (USD.quanta(200),) * 12,
                 ),
             ),
             accounts=(account(ALICE, balance=200), account(WORLD, balance=300), account(ALICE, AccountId("proceeds"))),

@@ -26,7 +26,7 @@ from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef, Book, PropertyState
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
-from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
+from finance.augur.sim.fixed_point import rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
@@ -51,7 +51,6 @@ from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_prof
 from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, flat_parcel
 from finance.augur.sim.world import World
 
-QUANTUM = Decimal("0.01")
 QUANTA_PER_UNIT = 100
 ALICE, SELLER, LENDER, TENANT, COUNTY, IRS = (
     AgentId("alice"),
@@ -80,10 +79,6 @@ MONTHLY_DEP_AFTER_HALF_RENTED = RENTAL_BUILDING_BASIS_AFTER * 0.5 / 27.5 / 12.0
 MONTHLY_RENT = 2_000
 
 
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
-
-
 # Each market's parcels are taxed at one flat rate.
 PARCELS = {
     LOCATION_ID: UNTAXED,
@@ -94,7 +89,7 @@ PARCELS = {
 
 def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
     """An account and its opening balance."""
-    return AccountRef(agent_id=agent_id, account_id=CHECKING), money(balance)
+    return AccountRef(agent_id=agent_id, account_id=CHECKING), USD.quanta(balance)
 
 
 def financing(
@@ -104,7 +99,7 @@ def financing(
         liability_id=liability_id,
         lender_agent_id=lender,
         lender_account_id=CHECKING,
-        principal=money(principal),
+        principal=USD.quanta(principal),
         annual_interest_rate_ppb=rate_to_ppb(annual_rate),
         term_months=360,
     )
@@ -133,9 +128,9 @@ def purchase(
         buyer_account_id=CHECKING,
         seller_agent_id=seller,
         seller_account_id=CHECKING,
-        purchase_price=money(price),
-        down_payment=money(down),
-        buyer_closing_cost=money(closing),
+        purchase_price=USD.quanta(price),
+        down_payment=USD.quanta(down),
+        buyer_closing_cost=USD.quanta(closing),
         rented_fraction_ppb=rate_to_ppb(rented_fraction),
         land_value_fraction_ppb=rate_to_ppb(Decimal("0.20")),
         mortgage=mortgage,
@@ -225,7 +220,7 @@ def compose(case: Situation, rollout_id: int) -> World:
             cause_id="rental-income:rental",
             from_account=AccountRef(agent_id=TENANT, account_id=CHECKING),
             to_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
-            amount=money(case.rent.amount),
+            amount=USD.quanta(case.rent.amount),
             income_category=ORDINARY_INCOME,
             deduction_category=None,
         )
@@ -386,7 +381,7 @@ def home_and_rental_case() -> Situation:
             ),
             capital_improvements=(
                 CapitalImprovement(
-                    month=12, property_id=PropertyId("rental"), amount=money(RENTAL_CAPEX), description="new roof"
+                    month=12, property_id=PropertyId("rental"), amount=USD.quanta(RENTAL_CAPEX), description="new roof"
                 ),
             ),
         ),
