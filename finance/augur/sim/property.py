@@ -29,9 +29,16 @@ class MortgageFinancing:
 
 @dataclass(frozen=True, kw_only=True)
 class Parcel:
-    """Where a property is for tax purposes: the law of its situs, from its tax rate area up."""
+    """Where a property is for tax purposes, the law of its situs from its tax rate area up, and the
+    seller's assessed value on the roll of the fiscal year it is bought in.
+
+    `prior_assessed_value` is None when the buyer does not know it; that fiscal year is then billed on
+    the price from the month after the purchase, which is what its regular and supplemental bills sum
+    to up to the supplemental proration's rounding.
+    """
 
     situs: SitusLaw
+    prior_assessed_value: int | None
 
 
 @dataclass(frozen=True, kw_only=True)

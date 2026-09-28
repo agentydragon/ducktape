@@ -526,6 +526,12 @@ class World:
         with no published inflation factor finds the modeled CPI it is measured by."""
         law = purchase.parcel.situs
         law.debt_rate(fiscal_year(policy, purchase.month + 1))
+        prior = purchase.parcel.prior_assessed_value
+        if prior is not None and not 0 <= prior <= purchase.purchase_price:
+            raise ValueError(
+                f"{policy.property_id!r} is bought below its prior assessed value, whose supplemental refund "
+                "is not modeled"
+            )
         latest = max(law.inflation_factors, default=None)
         simulated = [
             month

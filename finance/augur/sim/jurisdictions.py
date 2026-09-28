@@ -187,6 +187,12 @@ class Proposition13(BaseModel):
     homeowners_exemption: CurrencyAmount = Field(
         description="The reduction of taxable value for a home that is its owner's principal residence on the lien date."
     )
+    supplemental_proration: dict[int, Rate] = Field(
+        description=(
+            "The share of a full year's tax a supplemental assessment on the current roll bears, by the "
+            "month (1-12) of the first day after the change in ownership; a month absent bears none."
+        )
+    )
 
 
 class Jurisdiction(BaseModel):

@@ -344,8 +344,10 @@ def property_sale_world() -> World:
                     month=0,
                     cause_id="buy-house",
                     property_id=PropertyId("house"),
+                    # The seller's lower assessed value makes month 1 carry a supplemental bill too.
                     parcel=Parcel(
-                        situs=compile_situs(load_jurisdiction(JurisdictionId("san_francisco")), currency=USD)
+                        situs=compile_situs(load_jurisdiction(JurisdictionId("san_francisco")), currency=USD),
+                        prior_assessed_value=money(400_000),
                     ),
                     market=PROPERTY_LOCATION_ID,
                     buyer_agent_id=ALICE,
@@ -468,7 +470,8 @@ def test_a_property_sale_brings_in_its_net_and_not_its_gross() -> None:
 
 
 def test_property_tax_moves_cash_only_to_the_modeled_county() -> None:
-    """A month whose only flows are the installment and the tax bill: both reach a modeled agent."""
+    """A month whose only flows are the installment and the regular and supplemental tax bills: each
+    reaches a modeled agent."""
 
     world = property_sale_world()
     accounts = declared(world)

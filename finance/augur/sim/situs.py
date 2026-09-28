@@ -24,6 +24,7 @@ class SitusLaw:
     inflation_cap: Fraction
     inflation_factors: Mapping[int, Fraction]
     homeowners_exemption: int
+    supplemental_proration: Mapping[int, Fraction]
     debt_rates: Mapping[int, Fraction]
     bill_rounding: BillRounding | None
 
@@ -66,6 +67,9 @@ def compile_situs(situs: Jurisdiction, *, currency: Currency) -> SitusLaw:
         inflation_cap=Fraction(proposition_13.inflation_cap),
         inflation_factors={year: Fraction(factor) for year, factor in proposition_13.inflation_factors.items()},
         homeowners_exemption=currency.quanta(proposition_13.homeowners_exemption),
+        supplemental_proration={
+            month: Fraction(share) for month, share in proposition_13.supplemental_proration.items()
+        },
         debt_rates={year: Fraction(rate) for year, rate in debt_rates.items()},
         bill_rounding=only(
             (level.bill_rounding for level in lineage if level.bill_rounding is not None),

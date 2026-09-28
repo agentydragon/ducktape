@@ -23,11 +23,13 @@ def flat_parcel(rate: Decimal) -> Parcel:
                     inflation_cap=Decimal(0),
                     inflation_factors=dict.fromkeys(range(START_YEAR, START_YEAR + 100), Decimal(1)),
                     homeowners_exemption=Decimal(0),
+                    supplemental_proration={},
                 ),
                 debt_rates={START_YEAR - 1: Decimal(0)},
             ),
             currency=USD,
-        )
+        ),
+        prior_assessed_value=None,
     )
 
 

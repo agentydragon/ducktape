@@ -91,3 +91,19 @@ proposition_13:
   # taxable value for a qualifying owner-occupied home", which "must have been the principal
   # place of residence of the owner on the lien date, January 1st." Fixed in the Constitution.
   homeowners_exemption: 7000
+  # R&TC 75.41(b)-(c): a change in ownership is "presumed to have occurred on the first day of the
+  # month following", and the current roll's supplemental taxes are multiplied by the factor for
+  # that presumed date; on July 1 "no supplemental assessment shall be made on the current roll."
+  # https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=RTC&sectionNum=75.41
+  supplemental_proration:
+    1: "0.50"
+    2: "0.42"
+    3: "0.33"
+    4: "0.25"
+    5: "0.17"
+    6: "0.08"
+    8: "0.92"
+    9: "0.83"
+    10: "0.75"
+    11: "0.67"
+    12: "0.58"

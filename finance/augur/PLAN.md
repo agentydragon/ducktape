@@ -82,14 +82,12 @@ one flat `closing_cost_ppb`.
   mainland Vallejo, Mare Island) buys, holds, rents part out and sells, with every bill and
   deduction worked independently of the engine.
 
-**Caller shape.** A purchase's `parcel` gains its districts (DISTRICTS) and the seller's prior
-assessed value (SUPPLEMENTAL) beside its situs.
+**Caller shape.** A purchase's `parcel` gains its districts (DISTRICTS) beside its situs and the
+seller's prior assessed value.
 
 **First milestone: San Francisco and mainland Vallejo, county and city level.** Accepted when
 each of these holds against an independent calculation or published source:
 
-- **C. Supplemental bill:** (new − prior assessed value) × rate × the fiscal year's remaining
-  share, in the purchase year.
 - **D. Transfer tax:** San Francisco's table just below, at and above bracket edges;
   Solano County's documentary transfer tax, plus Vallejo's own if the sources show one;
   seller-paid reduces the amount realized, buyer-paid adds to basis.
@@ -111,8 +109,6 @@ without them.
   end date from each district's rate-and-method document: Mare Island's CFDs 2002-1, 2005-1A
   and 2005-1B (research so far: <docs/mare_island_special_taxes.md>), and San Francisco's parcel
   taxes.
-- **SUPPLEMENTAL** (after ASSESS): the purchase-year supplemental bill on the change in assessed
-  value, prorated over the rest of the fiscal year.
 - **DECLINE** (after ASSESS): a Proposition 8 reduction while the home-value path is below the
   factored base, recovering toward it.
 - **INSTALLMENTS** (after ASSESS and MIDYEAR): the July–June secured bill is paid in its two

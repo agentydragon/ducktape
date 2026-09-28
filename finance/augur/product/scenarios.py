@@ -995,7 +995,11 @@ def _parcel(property_: Property, locations: Mapping[LocationId, LocationConfig],
             f"scheduled property purchase {_purchase_cause_id(property_)!r} references unknown location_id "
             f"{property_.location_id!r}; known location ids: {known_location_ids}"
         )
-    return Parcel(situs=compile_situs(load_jurisdiction(locations[property_.location_id].situs), currency=currency))
+    # The catalog does not carry the seller's assessed value.
+    return Parcel(
+        situs=compile_situs(load_jurisdiction(locations[property_.location_id].situs), currency=currency),
+        prior_assessed_value=None,
+    )
 
 
 def _initial_rented_fraction(purchase: PropertyPurchase) -> Decimal:

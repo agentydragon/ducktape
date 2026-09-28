@@ -176,8 +176,10 @@ inflation factor, or for a lien year it has not published by the modeled CPI's c
 plus the rate area's voter-approved debt rate on the value enrolled on its lien date, less the
 homeowners' exemption when the owner lived there then, paid in monthly twelfths; a fiscal year
 after the rate area's last published one keeps that year's debt rate. San Francisco and mainland
-Vallejo (Solano County rate area 007000) are the rate areas shipped. Supplemental bills,
-Proposition 8 reductions, special districts and the two installment dates are not modeled.
+Vallejo (Solano County rate area 007000) are the rate areas shipped. Where a purchase names the
+seller's assessed value, its fiscal year is billed on that value plus a supplemental bill on the
+increase, prorated by R&TC 75.41's factor. Supplemental bills on new construction, Proposition 8
+reductions, special districts and the two installment dates are not modeled.
 
 PE paths distinguish marks, voluntary opportunities, eligibility/capacity,
 liquidity blocks and forced sale/recovery. A stated recovery cashout is a total

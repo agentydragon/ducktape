@@ -49,12 +49,12 @@ SF_2024 = Decimal("0.01") + Decimal("0.0017143563")
 SF_2025 = Decimal("0.01") + Decimal("0.0018268325")
 
 
-def purchase(situs: SitusLaw, *, month: int, price: int) -> ScheduledPurchase:
+def purchase(situs: SitusLaw, *, month: int, price: int, prior: int | None = None) -> ScheduledPurchase:
     return ScheduledPurchase(
         month=month,
         cause_id="test-purchase",
         property_id=HOME,
-        parcel=Parcel(situs=situs),
+        parcel=Parcel(situs=situs, prior_assessed_value=prior),
         market=LocationId("test-market"),
         buyer_agent_id=OWNER,
         buyer_account_id=CHECKING,
@@ -97,11 +97,15 @@ class Holding:
     construction: Mapping[int, int] = field(default_factory=dict)
     # The modeled CPI by month, when the case models one.
     cpi: Sequence[int] | None = None
+    # The seller's assessed value, where the case names it.
+    prior: int | None = None
 
 
 @dataclass(frozen=True)
 class Assessed:
+    # The regular and the supplemental bills, by month.
     bills: dict[int, int]
+    supplemental: dict[int, int]
     # The assessed value at the close of each month.
     values: dict[int, int]
 
@@ -112,9 +116,10 @@ class Assessed:
 
 def assess(case: Holding) -> Assessed:
     authority = PropertyTaxAuthority(
-        policy(case.start_year), purchase(case.situs, month=case.purchase_month, price=case.price)
+        policy(case.start_year), purchase(case.situs, month=case.purchase_month, price=case.price, prior=case.prior)
     )
     bills: dict[int, int] = {}
+    supplemental: dict[int, int] = {}
     values: dict[int, int] = {}
     for month in range(case.horizon):
         if month >= case.purchase_month:
@@ -131,10 +136,10 @@ def assess(case: Holding) -> Assessed:
             )
         authority.handle(MarketStatement(month=month, cpi=None if case.cpi is None else (case.cpi[month], case.cpi[0])))
         for bill in authority.handle(MonthOpened(month=month)):
-            bills[month] = bill.amount
+            (supplemental if "_supplemental_tax_" in bill.cause_id else bills)[month] = bill.amount
         if authority.assessed_value is not None:
             values[month] = authority.assessed_value
-    return Assessed(bills, values)
+    return Assessed(bills, supplemental, values)
 
 
 def test_san_francisco_s_published_comparative_bill() -> None:
@@ -247,6 +252,60 @@ def test_a_fiscal_year_whose_lien_date_preceded_the_purchase_is_billed_on_the_pr
     assert min(assessed.bills) == 9
     # The three twelfths July through September are not billed.
     assert assessed.fiscal_year(2024, 2024) == annual - cents(Decimal(annual) / 100 * 3 / 12)
+
+
+def test_a_mid_year_purchase_pays_the_seller_s_roll_and_a_supplemental_on_the_increase() -> None:
+    """Bought in September 2024 for $1,200,000 from a seller assessed at $500,000. October through June
+    pay nine twelfths of FY 2024-25's bill on $500,000: 500,000 × 1.17143563% = $5,857.178, billed as
+    $5,857.16, less the $1,464.29 of July through September, $4,392.87. The supplemental taxes the
+    $700,000 increase for a full year, 700,000 × 1.17143563% = $8,200.049, billed as $8,200.04, times
+    R&TC 75.41's 0.75 for an October 1 presumed date: $6,150.03. The assessed value resets to the price."""
+    assessed = assess(
+        Holding(start_year=2024, purchase_month=8, price=dollars(1_200_000), horizon=18, prior=dollars(500_000))
+    )
+
+    assert assessed.values[8] == dollars(1_200_000)
+    assert assessed.fiscal_year(2024, 2024) == dollars("4392.87")
+    assert assessed.supplemental == {9: dollars("6150.03")}
+
+
+def test_a_spring_purchase_is_enrolled_at_its_price_for_the_next_fiscal_year() -> None:
+    """Bought in March 2025 for $800,000 from a seller assessed at $300,000. April through June pay
+    the last three twelfths of FY 2024-25's bill on $300,000 (300,000 × 1.17143563% = $3,514.307,
+    billed as $3,514.30): $3,514.30 - $2,635.73 = $878.57. The supplemental is the $5,857.16 billed on
+    the $500,000 increase, times 0.25 for April 1: $1,464.29. FY 2025-26, whose lien date also
+    preceded the purchase, is billed on the price: 800,000 × 1.18268325% = $9,461.466, billed as
+    $9,461.46."""
+    assessed = assess(
+        Holding(start_year=2025, purchase_month=2, price=dollars(800_000), horizon=18, prior=dollars(300_000))
+    )
+
+    assert sum(assessed.bills[month] for month in range(3, 6)) == dollars("878.57")
+    assert assessed.supplemental == {3: dollars("1464.29")}
+    assert assessed.fiscal_year(2025, 2025) == dollars("9461.46")
+
+
+def test_a_june_purchase_has_no_supplemental_on_the_closing_roll() -> None:
+    """R&TC 75.41(c)(6): a July 1 presumed date makes no supplemental on the current roll."""
+    assessed = assess(
+        Holding(start_year=2024, purchase_month=5, price=dollars(900_000), horizon=8, prior=dollars(400_000))
+    )
+
+    assert assessed.supplemental == {}
+
+
+def test_a_purchase_below_the_prior_assessed_value_is_refused() -> None:
+    """Its supplemental would be a refund, which is not modeled."""
+    world = World(MarketPath((), 0, rollout_count=1), horizon_months=6)
+    for agent in (OWNER, COUNTY):
+        world.declare_account(
+            account=AccountRef(agent_id=agent, account_id=CHECKING), opening_balance=dollars(2_000_000)
+        )
+    with pytest.raises(ValueError, match="below its prior assessed value"):
+        world.declare_housing(
+            Housing(purchases=(purchase(SAN_FRANCISCO, month=0, price=dollars(1_000_000), prior=dollars(1_000_001)),)),
+            (policy(2024),),
+        )
 
 
 def test_a_simulated_lien_date_needs_a_modeled_cpi_path() -> None:

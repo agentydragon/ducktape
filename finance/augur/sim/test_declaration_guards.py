@@ -43,7 +43,6 @@ from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
 from finance.augur.sim.property import (
     Housing,
     MortgageFinancing,
-    Parcel,
     PrimaryResidence,
     PrimaryResidenceEvent,
     RentedFraction,
@@ -546,7 +545,9 @@ def test_a_taxed_parcel_s_rate_area_publishes_its_first_billed_fiscal_year() -> 
     """Month 1 is in fiscal year START_YEAR - 1, which a rate area first publishing START_YEAR cannot bill."""
     later = replace(UNTAXED.situs, debt_rates={START_YEAR: Fraction(0)})
     with pytest.raises(ValueError, match="publishes no debt rate as early as fiscal year"):
-        composed().declare_housing(Housing(purchases=(replace(PURCHASE, parcel=Parcel(situs=later)),)), (PROPERTY_TAX,))
+        composed().declare_housing(
+            Housing(purchases=(replace(PURCHASE, parcel=replace(PURCHASE.parcel, situs=later)),)), (PROPERTY_TAX,)
+        )
 
 
 def test_a_deduction_is_claimed_by_an_enrolled_taxpayer() -> None:
