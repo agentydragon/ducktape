@@ -13,10 +13,6 @@ build time.
 
 ## Thread view UX
 
-- **Chronological-debug link renders full width**: `ChronologicalDebugLink` (`chronological_debug.tsx`) is a compact
-  Mantine `Button`, but the evidence page view in `projected_session.tsx` places it inside a `Stack`, whose default
-  `align="stretch"` stretches every child to the container's width -- the button ends up as a full-width bar
-  instead of a small pill.
 - **Mobile topbar's only content is an inert hamburger**: `.agentplane-mobile-topbar` (`app.tsx`, `shell.css`) shows
   below 560px width and holds only the `IconMenu2` button that opens the sidebar -- nothing else fills that bar's
   width. Consider moving `ThreadTitle` (`thread_title.tsx`) into it on mobile, since `ProjectedSession` currently
