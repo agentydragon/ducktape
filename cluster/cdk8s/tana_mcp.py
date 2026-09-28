@@ -31,6 +31,7 @@ from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.valkey import valkey_instance
 
@@ -42,7 +43,8 @@ _FACADE = "tana-mcp-facade"
 _FACADE_LABELS = {"app.kubernetes.io/name": _FACADE}
 _RESIGNER = "tana-firebase-resigner"
 _RESIGNER_CONFIG = "tana-firebase-resigner-config"
-_REFRESH_TOKEN_SECRET = "tana-firebase-refresh-token"
+# The Secret the resigner rewrites: its Role and its config both read this one reference.
+_REFRESH_TOKEN = SecretRef(namespace=_NAMESPACE, name="tana-firebase-refresh-token").key("refresh_token")
 _PAT_SECRET = "tana-agentydragon-gmail-com-account-pat"
 _FACADE_OIDC_SECRET = "tana-mcp-facade-oidc"
 _VALKEY = "mcp-valkey-ovh"
@@ -186,9 +188,9 @@ def _resigner(chart: Chart) -> None:
             # Tana web bundle's REACT_APP_FIREBASE_API_KEY for project tagr-prod. This
             # Firebase web API key is a public identifier, not a secret.
             "API_KEY": "AIzaSyA9LtJM6Ga9VAwCfj9w_mNORdOaq2yLshQ",
-            "SECRET_NAMESPACE": _NAMESPACE,
-            "SECRET_NAME": _REFRESH_TOKEN_SECRET,
-            "SECRET_KEY": "refresh_token",
+            "SECRET_NAMESPACE": _REFRESH_TOKEN.secret.namespace,
+            "SECRET_NAME": _REFRESH_TOKEN.secret.name,
+            "SECRET_KEY": _REFRESH_TOKEN.key,
             "FETCH_CUSTOM_TOKEN_URL": "https://app.tana.inc/functions/fetchCustomToken",
             "TANA_HEALTH_URL": _TANA_HEALTH,
             "TANA_MCP_URL": f"http://127.0.0.1:{_TANA_PORT}/mcp",
@@ -208,7 +210,10 @@ def _resigner(chart: Chart) -> None:
         metadata=k8s.ObjectMeta(name=_RESIGNER, namespace=_NAMESPACE),
         rules=[
             k8s.PolicyRule(
-                api_groups=[""], resources=["secrets"], resource_names=[_REFRESH_TOKEN_SECRET], verbs=["get", "patch"]
+                api_groups=[""],
+                resources=["secrets"],
+                resource_names=[_REFRESH_TOKEN.secret.name],
+                verbs=["get", "patch"],
             )
         ],
     )

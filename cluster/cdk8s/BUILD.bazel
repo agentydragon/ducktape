@@ -966,6 +966,7 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         ":node_scheduling",
+        ":secret_ref",
         ":service_ref",
         ":valkey",
         "//cluster/cdk8s/providers/external_secrets:external_secret",

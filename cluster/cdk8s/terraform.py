@@ -27,11 +27,23 @@ from tofu_controller.io.fluxcd.contrib.infra import (
 
 from cluster.cdk8s import ducktape_flux, flux
 from cluster.cdk8s.providers.tofu_controller.terraform import Terraform
-from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 
 NAMESPACE = "flux-system"
 _STATE_DB = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
 _STATE_DB_PASSWORD = SecretRef(namespace=NAMESPACE, name="tofu-state-db-credentials").key("password")
+
+
+def secret_env(name: str, key: SecretKey) -> TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv:
+    """The tofu-controller CRD's own env struct: its schema, not `k8s.EnvVar`."""
+    return TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv(
+        name=name,
+        value_from=TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvValueFrom(
+            secret_key_ref=TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvValueFromSecretKeyRef(
+                name=key.secret.name, key=key.key
+            )
+        ),
+    )
 
 
 def secret_env_from(secret: str) -> TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFrom:
@@ -85,18 +97,7 @@ def tofu_state_terraform(
         depends_on=depends_on,
         runner_pod_template=TerraformV1Alpha2SpecRunnerPodTemplate(
             spec=TerraformV1Alpha2SpecRunnerPodTemplateSpec(
-                env_from=list(env_from) or None,
-                env=[
-                    TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv(
-                        name="PGPASSWORD",
-                        value_from=TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvValueFrom(
-                            secret_key_ref=TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvValueFromSecretKeyRef(
-                                name=_STATE_DB_PASSWORD.secret.name, key=_STATE_DB_PASSWORD.key
-                            )
-                        ),
-                    ),
-                    *env,
-                ],
+                env_from=list(env_from) or None, env=[secret_env("PGPASSWORD", _STATE_DB_PASSWORD), *env]
             )
         ),
     )
