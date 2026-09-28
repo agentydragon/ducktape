@@ -728,10 +728,9 @@ spec:
             readOnlyRootFilesystem: false
             runAsNonRoot: true
           volumeMounts:
-            - mountPath: /etc/agentplane-llm-ingress/settings.yaml
+            - mountPath: /etc/agentplane-llm-ingress
               name: configmap-agentplane-llm-ingress-settings
               readOnly: true
-              subPath: settings.yaml
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -1030,7 +1029,7 @@ spec:
                   key: uri
                   name: postgres-egress
             - name: AGENTPLANE_EGRESS_CONFIG_FILE
-              value: /etc/agentplane-egress/settings.yaml
+              value: /etc/agentplane-egress/settings/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-egress:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
@@ -1083,10 +1082,9 @@ spec:
               readOnly: true
             - mountPath: /var/lib/agentplane-egress
               name: confdir
-            - mountPath: /etc/agentplane-egress/settings.yaml
+            - mountPath: /etc/agentplane-egress/settings
               name: configmap-agentplane-egress-settings
               readOnly: true
-              subPath: settings.yaml
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
