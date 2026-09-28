@@ -1058,10 +1058,14 @@ answer the question. **Flow metrics narrow the candidate set; they never convict
 
 Coverage boundary, unchanged and worth restating: Hubble sees pods, not host namespaces
 (`enable-host-firewall` is `false`). Host→pod flows appear because the pod's endpoint
-generates the event; host→world flows do not. Two nodes were unscrapable during the scan —
-`iguana` is `NotReady`, and `rugged`'s agent is crash-looping on an unrelated kernel issue
-(`bpf_set_retval`; kernel floated to 7.2.0 through `linuxPackages_latest`, pinned back to
-the 7.1 series but not yet rebuilt or rebooted).
+generates the event; host→world flows do not. Two nodes were unscrapable during the
+2026-09-16 scan — `iguana` was `NotReady`, and `rugged`'s agent was crash-looping on an
+unrelated kernel issue (`bpf_set_retval`; kernel floated to 7.2.0 through
+`linuxPackages_latest`, pinned back to the 7.1 series but not yet rebuilt or rebooted).
+On 2026-09-28, Cilium 1.19.8 was rolled out and `rugged` was confirmed healthy on Linux
+7.2.7; `iguana` remains offline. See
+[`ducktape#6825`](https://github.com/agentydragon/ducktape/issues/6825) and the linked
+[kernel incident record](../../../../cluster/docs/lessons_learned/2026_07_16_cilium_set_retval_probe_kernel_7_2.md).
 
 One result looks like it contradicts that boundary and does not. The scan returned large
 unresolved-source flows to GitHub addresses on wyrm2, which invites reading them as host
