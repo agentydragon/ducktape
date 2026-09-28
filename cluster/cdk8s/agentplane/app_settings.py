@@ -181,7 +181,23 @@ def settings(
         # Granted to every sandbox before whatever the operator picks: without the model
         # endpoint a sandbox has no agent, so it is not a choice (see this namespace's
         # egress/ directory).
-        "default_policies": [BASIC_POLICY],
+        #
+        # `github-actions-logs` joins it one step down the same reasoning: a coding sandbox's own
+        # CI is not optional, and a job log answers from api.github.com with a 302 to a presigned
+        # Azure Blob URL, so a box without that host can open its PR and still not read why the
+        # check failed. #8117 put it on the presets, which reaches a sandbox only if the preset
+        # already named it the day that sandbox launched: a launch writes its policies into an
+        # EgressBinding, and nothing reconsiders one afterwards short of an explicit runtime grant
+        # (agentplane/app/api.py's POST /sandboxes/{name}/egress). Naming it here makes the same
+        # grant namespace-wide instead -- every new sandbox, whatever preset it came from or none,
+        # and whatever caller created it. Widening a subject with a rule that carries no credential
+        # is safely additive, as agentplane/docs/egress_composition.md establishes, so reading one's
+        # own CI was never something a preset should have had to opt in to.
+        #
+        # A default is a grant no caller can decline, so what may join this list is bounded: only
+        # policies whose rules ask the proxy to substitute the sandbox's own identity, never an
+        # operator Secret. cluster/cdk8s/agentplane/test_egress.py holds that line.
+        "default_policies": [BASIC_POLICY, GITHUB_ACTIONS_LOGS_POLICY],
         # The egress proxy's admin port (agentplane/egress `Settings.admin_port`), asked
         # for each sandbox's recent decisions; until the proxy Deployment lands the page
         # shows the rules alone.

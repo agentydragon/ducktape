@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 import pytest_bazel
+import yaml
 from more_itertools import one
 
 from agentplane.egress import sidecar
@@ -43,6 +44,38 @@ def test_workload_policy_grants_only_the_agent_facing_actions_api(
     rule = one(rule for rule in policy["spec"]["rules"] if one(rule["hosts"]).startswith("agentplane-actions."))
     assert rule["paths"], "a rule without paths admits every path on the host"
     assert all(path.startswith(_AGENT_FACING_PREFIXES) for path in rule["paths"])
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_default_egress_policies_are_grantable_to_every_sandbox(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    """What `default_policies` names is granted to every new sandbox, whatever its caller picked.
+
+    Two things make that a bound rather than a preference. The app refuses a launch naming a policy
+    the namespace lacks (agentplane/app/egress.py's `require_policies`), so a default naming a
+    policy no `EgressPolicy` answers to would refuse every sandbox in the namespace. And a default
+    is a credential grant no caller can decline, so it may only ever substitute the sandbox's own
+    identity: `basic` qualifies because the sole credential its rules name is the Pod's workload
+    token, while a `secretRef` source is an operator's credential, and defaulting that out would
+    hand every sandbox in the namespace something they never asked for.
+    """
+    docs = agentplane_manifests[namespace]
+    config = one(
+        doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
+    )
+    defaults: list[str] = yaml.safe_load(config["data"]["config.yaml"])["default_policies"]
+    assert defaults
+    policies = {doc["metadata"]["name"]: doc["spec"]["rules"] for doc in docs if doc["kind"] == "EgressPolicy"}
+    credentials = {doc["metadata"]["name"]: doc["spec"]["source"] for doc in docs if doc["kind"] == "EgressCredential"}
+    for name in defaults:
+        assert name in policies, (namespace, name)
+        for rule in policies[name]:
+            ref = rule.get("credentialRef")
+            if ref is None:
+                continue
+            source = credentials[ref["name"]]
+            assert "secretRef" not in source, (namespace, name, ref["name"])
 
 
 def test_testing_github_policy_has_its_credential_and_no_real_account_credentials(

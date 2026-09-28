@@ -132,6 +132,7 @@ data:
           fi
     default_policies:
       - basic
+      - github-actions-logs
     egress_admin_url: http://agentplane-egress-admin.agentplane-testing.svc:8081
     action_federation:
       mode: direct
