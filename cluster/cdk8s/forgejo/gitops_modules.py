@@ -9,11 +9,11 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
-from tofu_controller.io.fluxcd.contrib.infra import TerraformV1Alpha2
 
 from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.providers.tofu_controller.terraform import Terraform
 
 CLAUDE = "forgejo-claude"
 HAKU_STATE = "haku-state"
@@ -30,8 +30,8 @@ AGENTYDRAGON_DIR = f"{GENERATED_ROOT}/forgejo/agentydragon"
 
 
 def _write(
-    root: Path, directory: str, name: str, *, depends_on: Sequence[TerraformV1Alpha2] = (), schema: str | None = None
-) -> TerraformV1Alpha2:
+    root: Path, directory: str, name: str, *, depends_on: Sequence[Terraform] = (), schema: str | None = None
+) -> Terraform:
     out_dir = root / directory
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))

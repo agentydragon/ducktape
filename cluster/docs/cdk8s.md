@@ -48,8 +48,9 @@ imports the deployed source-watcher CRD; `generate_manifests.py` builds each con
 artifact before its Kustomization node, writes the directory with
 `generation.write_directory` as the node's `RenderedDirectory` argument, and hands every
 artifact to `artifact_generators.write_artifact_generators` last. A tofu-controller
-`Terraform` CR is built through `terraform.gitops_terraform`, and a Namespace written into
-the directory of the Kustomization that owns it through `generation.write_namespace`.
+`Terraform` CR is built through `terraform.tofu_state_terraform` (a `tf/gitops` module's
+through `terraform.gitops_terraform`), and a Namespace written into the directory of the
+Kustomization that owns it through `generation.write_namespace`.
 
 ### What stays hand-written
 
