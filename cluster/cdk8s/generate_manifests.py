@@ -614,7 +614,6 @@ def generate_manifests(root: Path) -> None:
             external_creds.chart,
             siblings=[credential.secret_file for credential in external_creds.CREDENTIALS],
         ),
-        claude_rbac_kustomization,
     )
     goldilocks_artifact = artifact("goldilocks", goldilocks.OUTPUT_DIR)
     goldilocks.goldilocks(
