@@ -7,8 +7,6 @@ overrides the workspace image's `unset` tag.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecEnvVarsInjectionPolicy,
     SandboxTemplateSpecNetworkPolicyManagement,
@@ -39,7 +37,7 @@ from agent_sandbox_sandboxwarmpool_crds.io.x_k8s.agents.extensions import (
     SandboxWarmPoolSpecUpdateStrategy,
     SandboxWarmPoolSpecUpdateStrategyType,
 )
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -56,20 +54,12 @@ from kyverno_cleanuppolicy_crds.io.kyverno import (
     CleanupPolicySpecMatchAny,
     CleanupPolicySpecMatchAnyResources,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds, forgejo_images
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     DataFrom,
@@ -98,10 +88,9 @@ def _external_secrets(chart: Chart) -> None:
     ExternalSecret(
         chart,
         "forgejo-images-creds",
-        name=forgejo_images.SECRET_NAME,
-        namespace=NAMESPACE,
-        refresh="1h",
-        store=SecretStoreRef.cluster("kubernetes-flux-system-secret-store"),
+        metadata=ApiObjectMetadata(name=forgejo_images.SECRET_NAME, namespace=NAMESPACE),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster("kubernetes-flux-system-secret-store"),
         data_from=[DataFrom.from_extract(forgejo_images.SECRET_NAME)],
         template=ExternalSecretSpecTargetTemplate(
             type="kubernetes.io/dockerconfigjson", merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE
@@ -116,19 +105,17 @@ def _external_secrets(chart: Chart) -> None:
     ExternalSecret(
         chart,
         "activitywatch-read-token",
-        name="activitywatch-read-token",
-        namespace=NAMESPACE,
-        refresh="1h",
-        store=SecretStoreRef.cluster("kubernetes-activitywatch-secret-store"),
+        metadata=ApiObjectMetadata(name="activitywatch-read-token", namespace=NAMESPACE),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster("kubernetes-activitywatch-secret-store"),
         data=[remote_data("activitywatch-read-token", "token")],
     )
     ExternalSecret(
         chart,
         "coinbase-api-credentials",
-        name="coinbase-api-credentials",
-        namespace=NAMESPACE,
-        refresh="1h",
-        store=external_creds.STORE,
+        metadata=ApiObjectMetadata(name="coinbase-api-credentials", namespace=NAMESPACE),
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data("coinbase-api-credentials", key) for key in ("api_key", "api_secret")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         target_name="haku-sandbox-coinbase-api-credentials",
@@ -159,8 +146,7 @@ def _sandbox_template(chart: Chart) -> SandboxTemplate:
     return SandboxTemplate(
         chart,
         "sandbox-template",
-        name=TEMPLATE_NAME,
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name=TEMPLATE_NAME, namespace=NAMESPACE),
         # Unmanaged so the controller doesn't stamp its own RFC1918-blocking policy that would
         # fight the haku-egress-proxy fence applied at the namespace level (the existing
         # haku-sandbox-force-proxy CCNP).
@@ -344,7 +330,7 @@ def chart(app: App) -> Chart:
     SandboxWarmPool(
         chart,
         "warm-pool",
-        metadata=metadata("haku", NAMESPACE),
+        metadata=ApiObjectMetadata(name="haku", namespace=NAMESPACE),
         spec=SandboxWarmPoolSpec(
             replicas=1,
             update_strategy=SandboxWarmPoolSpecUpdateStrategy(type=SandboxWarmPoolSpecUpdateStrategyType.RECREATE),
@@ -359,7 +345,7 @@ def chart(app: App) -> Chart:
     CleanupPolicy(
         chart,
         "janitor",
-        metadata=metadata("haku-workspace-janitor", NAMESPACE),
+        metadata=ApiObjectMetadata(name="haku-workspace-janitor", namespace=NAMESPACE),
         spec=CleanupPolicySpec(
             schedule="45 * * * *",
             match=CleanupPolicySpecMatch(
@@ -386,40 +372,32 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"], components=["./image-pins"]),
-    )
-
-
 def haku_workspaces(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     agent_sandbox_controller: Kustomization,
     haku_rbac: Kustomization,
     haku_egress_proxy: Kustomization,
     kyverno_policies: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     name = "haku-workspaces"
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
             # shared CRDs + controller
             agent_sandbox_controller,
             # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs
             haku_rbac,
-            # the fence haku-sandbox is opted into
+            # destructive-if-out-of-order: the haku-sandbox egress fence must precede sandbox pods.
             haku_egress_proxy,
             # CleanupPolicy CRD and cleanup-controller permissions
             kyverno_policies,
-            # ESO CRDs and shared ClusterSecretStore
-            external_secrets_config,
+            # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
+            external_secrets_operator,
         ),
         description="General Haku workspaces in haku-sandbox.",
     )

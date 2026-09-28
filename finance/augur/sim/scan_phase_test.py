@@ -16,9 +16,7 @@ from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.agent import EconomicAgent
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.compiler.tax import compile_profile
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import (
     currency_amount_to_quanta,
     quantity_scale_for_asset,
@@ -26,26 +24,22 @@ from finance.augur.sim.fixed_point import (
     rate_to_ppb,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
     PreparedLocation,
-    PreparedLot,
-    PreparedRecurringObligation,
-    PreparedRecurringTransfer,
     PreparedSeries,
-    PreparedTransfer,
     _MortgageFinancing,
     _PropertyPurchase,
     _PropertyTax,
 )
 from finance.augur.sim.property import Housing
-from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, TaxProfile
+from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import World
 
@@ -61,7 +55,7 @@ SF = PreparedLocation(
     location_id=LocationId("sf"),
     display_name="SF",
     jurisdiction_ids=(FEDERAL, CALIFORNIA),
-    annual_property_tax_rate_ppb=rate_to_ppb(0.0118),
+    annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.0118")),
     annual_special_assessment=0,
 )
 
@@ -74,27 +68,18 @@ def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=account_id)
 
 
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
-    return PreparedAccount(account=ref(agent_id), opening_balance=money(balance))
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return ref(agent_id), money(balance)
 
 
-def world_for(
-    *accounts: PreparedAccount,
-    horizon_months: int,
-    jurisdiction_ids: tuple[JurisdictionId, ...] = (),
-    series: tuple[PreparedSeries, ...] = (),
-) -> World:
-    """An empty world holding the declared cash accounts and the tax vocabulary its taxpayers share."""
+def world_for(*accounts: tuple[AccountRef, int], horizon_months: int, series: tuple[PreparedSeries, ...] = ()) -> World:
+    """An empty world holding the declared cash accounts."""
     world = World(
-        MarketPath(series, 0, rollout_count=1),
-        horizon_months=horizon_months,
-        income_sources=(ORDINARY_INCOME,),
-        jurisdictions=tuple(
-            PreparedJurisdiction(jurisdiction_id=id_, level=load_jurisdiction(id_).level) for id_ in jurisdiction_ids
-        ),
+        MarketPath(series, 0, rollout_count=1), horizon_months=horizon_months, income_sources=(ORDINARY_INCOME,)
     )
-    for opening in accounts:
-        world.declare_account(opening)
+    for opened, balance in accounts:
+        world.declare_account(account=opened, opening_balance=balance)
     return world
 
 
@@ -110,7 +95,7 @@ def taxed_by(world: World, *jurisdiction_ids: JurisdictionId, prior_year_tax: De
                     prior_year_tax=prior_year_tax,
                 ),
                 {id_: load_jurisdiction(id_) for id_ in jurisdiction_ids},
-                quantum=QUANTUM,
+                currency=USD,
             ),
             indexation=FixedNominalLaw(),
         )
@@ -145,10 +130,9 @@ def gain(books: list[Book], agent_id: AgentId, month: int, *, long_term: bool) -
     )
 
 
-def paycheck(amount: Decimal | int, *, end_month: int) -> PreparedRecurringTransfer:
-    return PreparedRecurringTransfer(
-        start_month=0,
-        end_month=end_month,
+def paycheck(world: World, amount: Decimal | int, *, end_month: int) -> None:
+    world.declare_flow(
+        schedule=Recurring(start_month=0, end_month=end_month),
         cause_id="paycheck",
         from_account=ref(AgentId("payroll")),
         to_account=ref(ALICE),
@@ -158,10 +142,9 @@ def paycheck(amount: Decimal | int, *, end_month: int) -> PreparedRecurringTrans
     )
 
 
-def rent(amount: Decimal | int, *, end_month: int) -> PreparedRecurringObligation:
-    return PreparedRecurringObligation(
-        start_month=0,
-        end_month=end_month,
+def rent(amount: Decimal | int, *, end_month: int) -> Biller:
+    return Biller(
+        schedule=Recurring(start_month=0, end_month=end_month),
         obligation_id="rent",
         obligation_type="rent",
         from_account=ref(ALICE),
@@ -176,17 +159,15 @@ def rent(amount: Decimal | int, *, end_month: int) -> PreparedRecurringObligatio
 def test_transfers_only_month_loop() -> None:
     # Recurring paycheck for a year + a one-off gift: transfers and nothing else.
     world = world_for(account(AgentId("payroll")), account(ALICE, 100), account(AgentId("bob"), 500), horizon_months=12)
-    world.declare_flow(paycheck(1000, end_month=11))
+    paycheck(world, 1000, end_month=11)
     world.declare_flow(
-        PreparedTransfer(
-            month=6,
-            cause_id="bob_gifts_alice",
-            from_account=ref(AgentId("bob")),
-            to_account=ref(ALICE),
-            amount=money(250),
-            income_category=None,
-            deduction_category=None,
-        )
+        schedule=Once(month=6),
+        cause_id="bob_gifts_alice",
+        from_account=ref(AgentId("bob")),
+        to_account=ref(ALICE),
+        amount=money(250),
+        income_category=None,
+        deduction_category=None,
     )
     books = run(world)
 
@@ -203,8 +184,8 @@ def test_declared_bill_settles_beside_the_paycheck() -> None:
     world = world_for(
         account(AgentId("payroll")), account(ALICE, 1000), account(AgentId("landlord")), horizon_months=12
     )
-    world.declare_flow(paycheck(5000, end_month=11))
-    world.track(Biller(rent(2000, end_month=11)))
+    paycheck(world, 5000, end_month=11)
+    world.track(rent(2000, end_month=11))
     books = run(world)
 
     # alice: 1000 opening + 12 paychecks of 5000 - 12 rents of 2000 = 37000.
@@ -217,7 +198,7 @@ def test_unfundable_bill_stops_the_path_keeping_both_parties_balances() -> None:
     # No income: alice can pay rent in month 0 (1000 -> 400) but not month 1 (needs 600), so the
     # rollout stops at month 1, preserving both parties' actual balances.
     world = world_for(account(ALICE, 1000), account(AgentId("landlord")), horizon_months=12)
-    world.track(Biller(rent(600, end_month=11)))
+    world.track(rent(600, end_month=11))
     books = run(world)
 
     assert cash(books, ALICE, 1) == 40_000  # after month 0: rent paid (1000 -> 400)
@@ -234,33 +215,29 @@ def test_security_sale_books_proceeds_and_a_long_term_gain() -> None:
     # makes the gain reportable rather than what assesses it.
     horizon = 6
     scale = quantity_scale_for_asset(SP500)
-    units = int(quantity_to_quanta(100.0, scale=scale))
+    units = quantity_to_quanta(100, scale=scale)
     series = compile_series(
         ExternalSeriesContext.from_level_blocks(
             [(SP500, np.full((1, horizon + 1), 120.0, dtype=np.float64))], rollout_count=1, horizon_months=horizon
         ),
         rollout_count=1,
         horizon_months=horizon,
-        currency_quantum=QUANTUM,
+        currency=USD,
     )
-    world = world_for(account(ALICE), account(IRS), horizon_months=horizon, jurisdiction_ids=(FEDERAL,), series=series)
+    world = world_for(account(ALICE), account(IRS), horizon_months=horizon, series=series)
     taxed_by(world, FEDERAL)
     world.declare_pool(
-        PreparedHoldingPool(
-            agent_id=ALICE, account_id=AccountId("brokerage"), asset_id=AssetId(SP500.symbol), quantity_scale=scale
-        )
+        agent_id=ALICE, account_id=AccountId("brokerage"), asset_id=AssetId(SP500.symbol), quantity_scale=scale
     )
-    world.hold(
-        PreparedLot(
-            lot_id=LotId("alice_sp500"),
-            agent_id=ALICE,
-            account_id=AccountId("brokerage"),
-            asset_id=AssetId(SP500.symbol),
-            purchase_month=-24,  # long-term when sold at month 3
-            quantity_scale=scale,
-            units=units,
-            basis=money(8000),
-        )
+    world.hold_lot(
+        lot_id=LotId("alice_sp500"),
+        agent_id=ALICE,
+        account_id=AccountId("brokerage"),
+        asset_id=AssetId(SP500.symbol),
+        purchase_month=-24,  # long-term when sold at month 3
+        quantity_scale=scale,
+        units=units,
+        basis=money(8000),
     )
     books = run(
         world,
@@ -308,7 +285,7 @@ def purchase(
         down_payment=money(down_payment),
         buyer_closing_cost=money(buyer_closing_cost),
         rented_fraction_ppb=0,
-        land_value_fraction_ppb=rate_to_ppb(0.2),
+        land_value_fraction_ppb=rate_to_ppb(Decimal("0.2")),
         mortgage=mortgage,
     )
 
@@ -341,7 +318,7 @@ def test_property_tax_accrues_only_once_the_property_is_held() -> None:
                 from_account_id=CHECKING,
                 tax_authority_agent_id=AgentId("county"),
                 tax_authority_account_id=CHECKING,
-                annual_tax_rate_ppb=rate_to_ppb(0.012),
+                annual_tax_rate_ppb=rate_to_ppb(Decimal("0.012")),
                 start_month=0,
                 end_month=None,
             ),
@@ -372,7 +349,7 @@ def test_financed_purchase_originates_then_services_the_loan() -> None:
                         lender_agent_id=AgentId("lender"),
                         lender_account_id=CHECKING,
                         principal=money(400_000),
-                        annual_interest_rate_ppb=rate_to_ppb(0.06),
+                        annual_interest_rate_ppb=rate_to_ppb(Decimal("0.06")),
                         term_months=360,
                     ),
                 ),
@@ -395,24 +372,15 @@ def test_year_end_tax_accrues_and_the_following_year_settles_it() -> None:
     # accrues a federal + CA liability, and the following year's estimated-tax and true-up claims
     # settle it.
     horizon = 36
-    world = world_for(
-        account(AgentId("payroll")),
-        account(ALICE),
-        account(IRS),
-        horizon_months=horizon,
-        jurisdiction_ids=(FEDERAL, CALIFORNIA),
-    )
+    world = world_for(account(AgentId("payroll")), account(ALICE), account(IRS), horizon_months=horizon)
     world.declare_flow(
-        PreparedRecurringTransfer(
-            start_month=0,
-            end_month=35,
-            cause_id="alice_paycheck",
-            from_account=ref(AgentId("payroll")),
-            to_account=ref(ALICE),
-            amount=money(Decimal(120_000) / Decimal(12)),
-            income_category=ORDINARY_INCOME,
-            deduction_category=None,
-        )
+        schedule=Recurring(start_month=0, end_month=35),
+        cause_id="alice_paycheck",
+        from_account=ref(AgentId("payroll")),
+        to_account=ref(ALICE),
+        amount=money(Decimal(120_000) / Decimal(12)),
+        income_category=ORDINARY_INCOME,
+        deduction_category=None,
     )
     # > 0 -> quarterly estimated-tax claims the next year.
     taxed_by(world, FEDERAL, CALIFORNIA, prior_year_tax=Decimal(15_000))

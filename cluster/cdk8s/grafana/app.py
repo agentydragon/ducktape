@@ -10,10 +10,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
-from grafana_grafanadashboard_crds.org.integreatly.grafana import GrafanaDashboardSpecConfigMapRef
+from cdk8s import ApiObjectMetadata, App, Chart
+from grafana_grafanadashboard_crds.org.integreatly.grafana import (
+    GrafanaDashboardSpecConfigMapRef,
+    GrafanaDashboardSpecInstanceSelector,
+)
 from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecDatasource,
+    GrafanaDatasourceSpecInstanceSelector,
     GrafanaDatasourceSpecValuesFrom,
     GrafanaDatasourceSpecValuesFromValueFrom,
     GrafanaDatasourceSpecValuesFromValueFromSecretKeyRef,
@@ -21,7 +25,6 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
 
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
 
@@ -35,8 +38,8 @@ def chart(app: App) -> Chart:
     GrafanaDatasource(
         chart,
         "datasource",
-        metadata=metadata("clickhouse", _NAMESPACE),
-        instance_selector_labels=_INSTANCE_LABELS,
+        metadata=ApiObjectMetadata(name="clickhouse", namespace=_NAMESPACE),
+        instance_selector=GrafanaDatasourceSpecInstanceSelector(match_labels=_INSTANCE_LABELS),
         values_from=[
             GrafanaDatasourceSpecValuesFrom(
                 target_path="secureJsonData.password",
@@ -70,8 +73,8 @@ def chart(app: App) -> Chart:
     GrafanaDashboard(
         chart,
         "dashboard",
-        metadata=metadata("aiquota-history", _NAMESPACE),
-        instance_selector_labels=_INSTANCE_LABELS,
+        metadata=ApiObjectMetadata(name="aiquota-history", namespace=_NAMESPACE),
+        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=_INSTANCE_LABELS),
         folder="Analytics",
         config_map_ref=GrafanaDashboardSpecConfigMapRef(name="aiquota-history-dashboard", key="dashboard.json"),
     )

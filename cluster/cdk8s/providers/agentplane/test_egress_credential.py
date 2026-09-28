@@ -19,7 +19,7 @@ def test_source_secret_ref() -> None:
         "test",
         metadata=ApiObjectMetadata(name="test-credential"),
         description="test",
-        source=Source.secret_ref(name="my-secret", key="token").to_spec(),
+        source=Source.secret_ref(name="my-secret", key="token"),
         targets=_TARGETS,
     )
     (manifest,) = Cdk8sTesting.synth(chart)
@@ -35,7 +35,7 @@ def test_source_authenticated_workload_token() -> None:
         "test",
         metadata=ApiObjectMetadata(name="test-credential"),
         description="test",
-        source=Source.authenticated_workload_token().to_spec(),
+        source=Source.authenticated_workload_token(),
         targets=_TARGETS,
     )
     (manifest,) = Cdk8sTesting.synth(chart)
@@ -49,7 +49,7 @@ def test_source_projected_workload_token() -> None:
         "test",
         metadata=ApiObjectMetadata(name="test-credential"),
         description="test",
-        source=Source.projected_workload_token(audience="https://example.com").to_spec(),
+        source=Source.projected_workload_token(audience="https://example.com"),
         targets=_TARGETS,
     )
     (manifest,) = Cdk8sTesting.synth(chart)

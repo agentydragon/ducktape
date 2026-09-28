@@ -21,3 +21,6 @@ PropertyId = NewType("PropertyId", str)
 # A mortgage: the liability a financed purchase originates.
 LiabilityId = NewType("LiabilityId", str)
 JurisdictionId = NewType("JurisdictionId", str)
+
+# The default account an authored record falls back to when it names none.
+CHECKING = AccountId("checking")

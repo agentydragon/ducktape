@@ -46,30 +46,26 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMetadata,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from aiquota.api import Settings
 from aiquota.config import Config
-from cluster.cdk8s import public_coder_proxy
+from cluster.cdk8s import pod_policy, public_coder_proxy
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE
 from cluster.cdk8s.cli_proxy_api import cli_proxy_api as cli_proxy_api_app  # aiquota()'s parameter is its Kustomization
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.env_helpers import secret_env_value
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
     ConfigMapArgs,
     Kustomization,
+    RenderedDirectory,
     flux_kustomization,
     flux_kustomization_depends_on_many,
-    kustomize_kustomization,
 )
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -181,7 +177,7 @@ class Aiquota(Construct):
         https_route(
             self,
             "httproute",
-            metadata=metadata(_API_NAME, NAMESPACE),
+            metadata=ApiObjectMetadata(name=_API_NAME, namespace=NAMESPACE),
             hostnames=[_HOSTNAME],
             backend=_API_NAME,
             port=_PORT,
@@ -194,10 +190,9 @@ class Aiquota(Construct):
         ExternalSecret(
             self,
             f"bearer-{mirror.consumer}",
-            name=mirror.secret_name,
-            namespace=NAMESPACE,
-            refresh="1h",
-            store=SecretStoreRef.cluster("kubernetes-cli-proxy-api-secret-store"),
+            metadata=ApiObjectMetadata(name=mirror.secret_name, namespace=NAMESPACE),
+            refresh_interval="1h",
+            secret_store_ref=SecretStoreRef.cluster("kubernetes-cli-proxy-api-secret-store"),
             data=[remote_data(BEARER_SECRET_NAME, _BEARER_KEY)],
             creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
             deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
@@ -221,14 +216,11 @@ class Aiquota(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                _API_NAME,
-                NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=_API_NAME,
+                namespace=NAMESPACE,
                 labels=_LABELS,
-                annotations={
-                    "description": "Claude and Codex subscription quota API via the CLIProxyAPI integration.",
-                    "reloader.stakater.com/auto": "true",
-                },
+                annotations={"description": "Claude and Codex subscription quota API via the CLIProxyAPI integration."},
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=1,
@@ -254,7 +246,6 @@ class Aiquota(Construct):
             ],
         )
         deployment.select(LabelSelector.of(labels=_LABELS))
-        apply_pod_spec_patches(deployment)
 
         bearer = Secret.from_secret_name(self, "bearer-ref", BEARER_SECRET_NAME)
         cli_proxy_api = Secret.from_secret_name(self, "cli-proxy-api-management-ref", "cli-proxy-api-management")
@@ -311,15 +302,16 @@ class Aiquota(Construct):
                 )
             ],
         )
+        pod_policy.harden(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
         Service(
             self,
             "service",
-            metadata=metadata(
-                _API_NAME,
-                NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=_API_NAME,
+                namespace=NAMESPACE,
                 labels=_LABELS,
                 annotations={
                     "description": (
@@ -336,8 +328,8 @@ class Aiquota(Construct):
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=metadata(NAME, NAMESPACE),
-            selector=_LABELS,
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
             endpoints=[Endpoint.plain(port="http", scrape_timeout="15s")],
         )
 
@@ -345,62 +337,24 @@ class Aiquota(Construct):
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     Aiquota(chart, NAME)
+    add_fleet_rules(chart)
     return chart
 
 
 def aiquota(
-    flux_chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    root: Path,
-    external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
-    cli_proxy_api: Kustomization,
-    external_secrets_operator: Kustomization,
-    clickhouse_schema: Kustomization,
-    agent_machine_access_tf: Kustomization,
-    reflector: Kustomization,
+    flux_chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
-    name = NAME
-    out_dir = root / OUTPUT_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    rendered_chart = chart(app)
-    add_fleet_rules(rendered_chart)
-    app.synth()
-
-    kustomization = flux_kustomization(
+    return flux_kustomization(
         flux_chart,
-        name,
-        artifact,
+        NAME,
+        directory,
         description="aiquota API with Claude and Codex quota through the CLIProxyAPI integration.",
         timeout="5m",
-        # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.
-        decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config,
-            forgejo_images,
-            # Provides the shared namespace and the CLIProxyAPI management Secret.
-            cli_proxy_api,
             # Materializes the narrow mirrored copies of the API bearer for its
             # consumers; the source Secret stays SOPS-managed here.
             external_secrets_operator,
-            # Creates the aiquota database the migrate init container populates.
-            clickhouse_schema,
-            # Mints the aiquota-oidc Authentik OAuth2 client credentials Secret.
-            agent_machine_access_tf,
-            # Reflects clickhouse-aiquota-credentials from the clickhouse namespace.
-            reflector,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+            kyverno,
         ),
     )
-    write_yaml(
-        out_dir / "kustomization.yaml",
-        # aiquota-api-bearer.sops.yaml and schema.sql stay hand-written (cluster/docs/cdk8s.md);
-        # the generator entries render schema.sql and the config into the ConfigMaps the
-        # Deployment mounts.
-        kustomize_kustomization(
-            resources=[f"{name}.k8s.yaml", f"{BEARER_SECRET_NAME}.sops.yaml"],
-            components=["./image-pins"],
-            config_map_generator=[CONFIG_CONFIG_MAP, SCHEMA_CONFIG_MAP],
-        ),
-    )
-    return kustomization

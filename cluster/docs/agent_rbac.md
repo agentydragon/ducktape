@@ -30,7 +30,7 @@ Contains:
 
 ### 2. `shared-rbac` — cluster-scoped bindings
 
-Depends on: `agent-rbac-base`, `kyverno-policies`.
+Depends on: `agent-rbac-base`.
 
 Contains:
 
@@ -183,8 +183,8 @@ agentplane-staging's `claude-ai` ServiceAccount. The Kyverno policy
 corresponding namespaced RoleBindings. Sensitive or identity-specific access remains explicit
 service RBAC.
 
-Augur is reconciled from `gaffer-private`, so its agent RBAC lives cross-repo at
-`gaffer-private/k8s/parked/augur/agent-rbac/`. That directory also defines an
+Augur is parked in `gaffer-private` and has no namespace in the cluster. Its agent RBAC
+is parked with it at `gaffer-private/k8s/parked/augur/agent-rbac/`, including an
 in-namespace Role granting `pods/exec`, `pods/attach`, and `pods/portforward` for
 debugging the single-replica augur deployment.
 

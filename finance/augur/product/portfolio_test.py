@@ -12,11 +12,13 @@ from finance.augur.api.portfolio import (
     PortfolioAccountConfig,
     PortfolioConfig,
     SecurityHoldingConfig,
+    TlhCohort,
+    TlhPortfolioSpec,
 )
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.portfolio import ProductTlhCohort, product_portfolio_response
 from finance.augur.sim.ids import AccountId, AgentId, LotId, PortfolioId
-from finance.augur.sim.scenario import TlhCohort, TlhPortfolioSpec
+from finance.augur.sim.money import USD
 from finance.augur.sim.tlh import TlhAssumptions
 
 
@@ -55,6 +57,7 @@ def test_product_portfolio_response_includes_holding_positions_and_lots() -> Non
             ),
         ),
         tlh_portfolios=(),
+        currency=USD,
     )
 
     assert response.as_of_date == "2026-05-14"
@@ -107,6 +110,7 @@ def test_product_portfolio_response_carries_tlh_portfolios_as_money_apart_from_h
                 label="Test direct indexing",
             ),
         ),
+        currency=USD,
     )
 
     # The managed sleeve is not an ordinary holding, so it is not in the holdings total.

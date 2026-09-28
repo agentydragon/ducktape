@@ -17,19 +17,13 @@ from finance.augur.policy.cash_band_household import CashBandHousehold, Reinvest
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.holdings import Disposition
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedLot,
-    PreparedRecurringObligation,
-    PreparedRecurringTransfer,
-)
+from finance.augur.sim.money import USD
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.world import World
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
@@ -42,7 +36,7 @@ LANDLORD = AgentId("landlord")
 CHECKING = AccountId("checking")
 # Weights default equal against a 9:1 holding, so stock is the overweight sleeve and every
 # raise has to come out of it first.
-STOCK_UNITS, BOND_UNITS = 900.0, 100.0
+STOCK_UNITS, BOND_UNITS = 900, 100
 QUANTA_PER_UNIT = 100
 FULL_DRIFT = 250_000_000  # A 25% drift band, in parts per billion.
 REINVEST = Reinvest(rebalance_tolerance_ppb=None)
@@ -69,8 +63,8 @@ class Situation:
     opening_cash: Decimal | int
     floor: Decimal | int
     ceiling: Decimal | int
-    stock_units: float = STOCK_UNITS
-    bond_units: float = BOND_UNITS
+    stock_units: int = STOCK_UNITS
+    bond_units: int = BOND_UNITS
     rent: Decimal | int = 0
     income: Decimal | int = 0
     rent_months: tuple[int, int | None] = (1, None)
@@ -79,17 +73,19 @@ class Situation:
     weights: tuple[int, int] = (1, 1)
 
 
-def lot(lot_id: LotId, asset: SecurityKey, quantity: float) -> PreparedLot:
+def hold(world: World, lot_id: LotId, asset: SecurityKey, quantity: Decimal | int) -> None:
+    """Alice's pool of `asset` and her `quantity` of it, bought at `PRICE` in month zero."""
     scale = quantity_scale_for_asset(asset)
-    return PreparedLot(
+    world.declare_pool(agent_id=ALICE, account_id=CHECKING, asset_id=AssetId(asset.symbol), quantity_scale=scale)
+    world.hold_lot(
         lot_id=lot_id,
         agent_id=ALICE,
         account_id=CHECKING,
         asset_id=AssetId(asset.symbol),
         purchase_month=0,
         quantity_scale=scale,
-        units=int(quantity_to_quanta(quantity, scale=scale)),
-        basis=money(Decimal(str(quantity)) * PRICE),
+        units=quantity_to_quanta(quantity, scale=scale),
+        basis=money(Decimal(quantity) * PRICE),
     )
 
 
@@ -100,55 +96,39 @@ def compose(case: Situation) -> World:
         horizon_months=HORIZON,
     )
     world = World(
-        MarketPath(
-            compile_series(paths, rollout_count=1, horizon_months=HORIZON, currency_quantum=QUANTUM), 0, rollout_count=1
-        ),
+        MarketPath(compile_series(paths, rollout_count=1, horizon_months=HORIZON, currency=USD), 0, rollout_count=1),
         horizon_months=HORIZON,
     )
-    world.declare_account(PreparedAccount(account=ref(ALICE), opening_balance=money(case.opening_cash)))
+    world.declare_account(account=ref(ALICE), opening_balance=money(case.opening_cash))
     # Funded only for what it owes, so an unfunded counterparty can never fail a rollout.
-    world.declare_account(
-        PreparedAccount(account=ref(LANDLORD), opening_balance=money(Decimal(case.income) * (HORIZON + 1)))
-    )
-    lots = (lot(LotId("stock"), VTI, case.stock_units), lot(LotId("bond"), BND, case.bond_units))
-    for holding in lots:
-        world.declare_pool(
-            PreparedHoldingPool(
-                agent_id=ALICE, account_id=CHECKING, asset_id=holding.asset_id, quantity_scale=holding.quantity_scale
-            )
-        )
-        world.hold(holding)
+    world.declare_account(account=ref(LANDLORD), opening_balance=money(Decimal(case.income) * (HORIZON + 1)))
+    hold(world, LotId("stock"), VTI, case.stock_units)
+    hold(world, LotId("bond"), BND, case.bond_units)
     if case.rent:
         start, end = case.rent_months
         world.track(
             Biller(
-                PreparedRecurringObligation(
-                    start_month=start,
-                    end_month=end,
-                    obligation_id="rent",
-                    obligation_type="rent",
-                    from_account=ref(ALICE),
-                    to_account=ref(LANDLORD),
-                    amount_due=money(case.rent),
-                    property_id=None,
-                    deduction_category=None,
-                    deductible_fraction_ppb=1_000_000_000,
-                )
+                schedule=Recurring(start_month=start, end_month=end),
+                obligation_id="rent",
+                obligation_type="rent",
+                from_account=ref(ALICE),
+                to_account=ref(LANDLORD),
+                amount_due=money(case.rent),
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=1_000_000_000,
             )
         )
     if case.income:
         start, end = case.income_months
         world.declare_flow(
-            PreparedRecurringTransfer(
-                start_month=start,
-                end_month=end,
-                cause_id="income",
-                from_account=ref(LANDLORD),
-                to_account=ref(ALICE),
-                amount=money(case.income),
-                income_category=None,
-                deduction_category=None,
-            )
+            schedule=Recurring(start_month=start, end_month=end),
+            cause_id="income",
+            from_account=ref(LANDLORD),
+            to_account=ref(ALICE),
+            amount=money(case.income),
+            income_category=None,
+            deduction_category=None,
         )
     world.track(
         CashBandHousehold(
@@ -384,8 +364,8 @@ def test_a_runtime_purchase_keeps_its_month_when_later_sold() -> None:
             opening_cash=0,
             floor=0,
             ceiling=1_000,
-            stock_units=1.0,
-            bond_units=1.0,
+            stock_units=1,
+            bond_units=1,
             income=30_000,
             income_months=(2, 2),
             rent=10_000,

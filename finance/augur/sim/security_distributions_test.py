@@ -1,5 +1,6 @@
 """Independent public-distribution controls through the common Python action session."""
 
+from collections.abc import Mapping
 from decimal import Decimal
 from itertools import pairwise
 
@@ -11,10 +12,8 @@ from finance.augur.model.series import LevelSeriesKey, SecurityDistributionKey
 from finance.augur.sim.actions import DecisionActions, PayClaim
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.compiler.income_sources import income_source_sort_key
-from finance.augur.sim.compiler.tax import compile_profile
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.claims import ObligationType
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import (
     currency_amount_to_quanta,
     quantity_scale_for_asset,
@@ -22,27 +21,20 @@ from finance.augur.sim.fixed_point import (
     rate_to_ppb,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME, TransferIncomeCategory, income_source_sort_key
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedDistribution,
-    PreparedDistributionSlice,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedObligation,
-    PreparedSeries,
-)
+from finance.augur.sim.money import USD
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Finished, Paid, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME, DistributionTaxSlice, InterestIncome, ObligationType, TaxProfile
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.security_distributions import (
     AGGREGATE,
     CALIFORNIA_MUNI,
-    CORPORATE,
     CORPORATE_SHARE,
     FUND,
     HORIZON,
@@ -54,6 +46,7 @@ from finance.augur.sim.testing.security_distributions import (
     QUALIFIED_DIVIDENDS,
     SUB_QUANTUM_PER_UNIT,
     SYMBOL,
+    TAXABLE,
     TREASURY,
     TREASURY_SHARE,
     UNITS,
@@ -94,78 +87,43 @@ def _paths(payout: np.ndarray | None) -> tuple[PreparedSeries, ...]:
         ExternalSeriesContext.from_level_blocks(blocks, rollout_count=1, horizon_months=HORIZON),
         rollout_count=1,
         horizon_months=HORIZON,
-        currency_quantum=QUANTUM,
+        currency=USD,
     )
 
 
-def _slices(tax_character: tuple[DistributionTaxSlice, ...]) -> tuple[PreparedDistributionSlice, ...]:
-    return tuple(
-        PreparedDistributionSlice(
-            fraction_ppb=rate_to_ppb(tax_slice.fraction), income_category=tax_slice.income_category
-        )
-        for tax_slice in tax_character
-    )
-
-
-def _account(agent_id: AgentId, balance: Decimal) -> PreparedAccount:
-    return PreparedAccount(
+def _account(world: World, agent_id: AgentId, balance: Decimal) -> None:
+    world.declare_account(
         account=AccountRef(agent_id=agent_id, account_id=CHECKING),
         opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
     )
 
 
-def _bill(amount: Decimal) -> PreparedObligation:
-    """A one-off required payment from alice to the tax authority's cash account."""
-
-    return PreparedObligation(
-        month=0,
-        obligation_id="bill",
-        obligation_type=ObligationType.CASH_SPEND,
-        from_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
-        to_account=AccountRef(agent_id=IRS, account_id=CHECKING),
-        amount_due=int(currency_amount_to_quanta(amount, quantum=QUANTUM)),
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=rate_to_ppb(1.0),
-    )
-
-
 def compose(
     *,
-    tax_character: tuple[DistributionTaxSlice, ...] = TREASURY,
+    tax_character: Mapping[TransferIncomeCategory, int] = TREASURY,
     is_taxed: bool = True,
     distributes: bool = True,
     holding_account_id: AccountId = BROKERAGE,
     payout: np.ndarray | None = PAYOUT,
     opening_cash: Decimal = Decimal(50_000),
-    bill: PreparedObligation | None = None,
+    bill: Decimal | None = None,
 ) -> World:
-    """Alice holds one fund in a brokerage account and its payout lands in checking.
+    """Alice holds one fund in a brokerage account and its payout lands in checking; `bill` is a one-off
+    month-zero payment she owes the tax authority's cash account.
 
     `is_taxed=False` leaves the payout standing alone in the cash channel, which the
     cashflow cases want: with a tax authority the year-end settlement lands in the same months.
     """
 
-    slices = _slices(tax_character) if distributes else ()
-    # The vocabulary a taxpayer shares: what the fund's slices name, plus where alice files.
-    issuers = {
-        part.income_category.issuer_jurisdiction_id
-        for part in slices
-        if isinstance(part.income_category, InterestIncome) and part.income_category.issuer_jurisdiction_id is not None
-    }
+    # The vocabulary a taxpayer shares: what the fund's slices name.
+    categories = tuple(tax_character) if distributes else ()
     world = World(
         MarketPath(_paths(payout), 0, rollout_count=1),
         horizon_months=HORIZON,
-        income_sources=tuple(
-            sorted({ORDINARY_INCOME, *(part.income_category for part in slices)}, key=income_source_sort_key)
-        ),
-        jurisdictions=tuple(
-            PreparedJurisdiction(jurisdiction_id=id_, level=load_jurisdiction(id_).level)
-            for id_ in sorted(issuers | (set(FILED_IN) if is_taxed else set()))
-        ),
+        income_sources=tuple(sorted({ORDINARY_INCOME, *categories}, key=income_source_sort_key)),
     )
-    world.declare_account(_account(ALICE, opening_cash))
-    world.declare_account(_account(IRS, Decimal(0)))
+    _account(world, ALICE, opening_cash)
+    _account(world, IRS, Decimal(0))
     if is_taxed:
         # One single filer paying from checking to the irs agent; the rates, brackets and
         # exemptions come from the deployment's own jurisdiction records.
@@ -174,39 +132,45 @@ def compose(
                 compile_profile(
                     TaxProfile(agent_id=ALICE, jurisdiction_ids=list(FILED_IN), tax_authority_agent_id=IRS),
                     {id_: load_jurisdiction(id_) for id_ in FILED_IN},
-                    quantum=QUANTUM,
+                    currency=USD,
                 ),
                 indexation=FixedNominalLaw(),
             )
         )
     scale = quantity_scale_for_asset(FUND)
-    world.declare_pool(
-        PreparedHoldingPool(agent_id=ALICE, account_id=BROKERAGE, asset_id=AssetId(SYMBOL), quantity_scale=scale)
-    )
-    world.hold(
-        PreparedLot(
-            lot_id=LotId("bnd-lot"),
-            agent_id=ALICE,
-            account_id=BROKERAGE,
-            asset_id=AssetId(SYMBOL),
-            purchase_month=-24,
-            quantity_scale=scale,
-            units=int(quantity_to_quanta(UNITS, scale=scale)),
-            basis=int(currency_amount_to_quanta(Decimal(str(UNITS)) * PRICE, quantum=QUANTUM)),
-        )
+    world.declare_pool(agent_id=ALICE, account_id=BROKERAGE, asset_id=AssetId(SYMBOL), quantity_scale=scale)
+    world.hold_lot(
+        lot_id=LotId("bnd-lot"),
+        agent_id=ALICE,
+        account_id=BROKERAGE,
+        asset_id=AssetId(SYMBOL),
+        purchase_month=-24,
+        quantity_scale=scale,
+        units=quantity_to_quanta(UNITS, scale=scale),
+        basis=int(currency_amount_to_quanta(UNITS * PRICE, quantum=QUANTUM)),
     )
     if distributes:
         world.declare_distribution(
-            PreparedDistribution(
-                agent_id=ALICE,
-                holding_account_id=holding_account_id,
-                asset_id=AssetId(SYMBOL),
-                to_account_id=CHECKING,
-                tax_character=slices,
-            )
+            agent_id=ALICE,
+            holding_account_id=holding_account_id,
+            asset_id=AssetId(SYMBOL),
+            to_account_id=CHECKING,
+            tax_character=tax_character,
         )
     if bill is not None:
-        world.track(Biller(bill))
+        world.track(
+            Biller(
+                obligation_id="bill",
+                obligation_type=ObligationType.CASH_SPEND,
+                from_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
+                to_account=AccountRef(agent_id=IRS, account_id=CHECKING),
+                amount_due=int(currency_amount_to_quanta(bill, quantum=QUANTUM)),
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=rate_to_ppb(1),
+                schedule=Once(month=0),
+            )
+        )
     return world
 
 
@@ -334,18 +298,18 @@ def test_an_in_state_muni_funds_distribution_is_exempt_everywhere() -> None:
 def test_a_mixed_fund_is_exempt_only_on_its_treasury_slice() -> None:
     """The reason the tax character is a vector. California taxes the corporate 60% and
     not the Treasury 40%, so a mixed fund owes strictly between the all-Treasury and
-    all-corporate cases — a number neither single tag can produce."""
+    all-taxable cases — a number neither single tag can produce."""
 
     mixed = _tax_by_jurisdiction(_run(compose(tax_character=AGGREGATE)))
     treasury = _tax_by_jurisdiction(_run(compose(tax_character=TREASURY)))
-    corporate = _tax_by_jurisdiction(_run(compose(tax_character=CORPORATE)))
+    taxable = _tax_by_jurisdiction(_run(compose(tax_character=TAXABLE)))
 
-    assert treasury["california"] < mixed["california"] < corporate["california"]
+    assert treasury["california"] < mixed["california"] < taxable["california"]
     # Federal taxes both slices, so the split changes nothing there.
-    assert mixed["federal_us"] == treasury["federal_us"] == corporate["federal_us"]
+    assert mixed["federal_us"] == treasury["federal_us"] == taxable["federal_us"]
 
 
-def test_the_payout_accrues_as_interest_per_issuer_and_not_as_one_lump() -> None:
+def test_the_payout_accrues_as_interest_per_character_and_not_as_one_lump() -> None:
     """The slices land in their own income rows rather than summing into one, which is
     what makes the per-jurisdiction exemption computable at all."""
 
@@ -363,7 +327,7 @@ def test_the_payout_accrues_as_interest_per_issuer_and_not_as_one_lump() -> None
     )
     paid = PAYOUTS_BY_YEAR_END * MONTHLY_PAYOUT_QUANTA
 
-    assert [row.income_source for row in december] == ["interest:corporate", "interest:federal_us"]
+    assert [row.income_source for row in december] == ["interest:taxable", "interest:treasury"]
     assert [row.income for row in december] == [int(CORPORATE_SHARE * paid), int(TREASURY_SHARE * paid)]
 
 
@@ -376,7 +340,7 @@ def test_qualified_dividends_take_federal_preferential_rates_and_california_ordi
         "federal_us": 0,
         "california": 26_862,
     }
-    assert _tax_by_jurisdiction(_run(compose(tax_character=CORPORATE)))["federal_us"] == 94_000
+    assert _tax_by_jurisdiction(_run(compose(tax_character=TAXABLE)))["federal_us"] == 94_000
 
 
 def test_qualified_dividends_are_their_own_row_in_the_holders_tax_records() -> None:
@@ -399,7 +363,7 @@ def test_a_declared_distribution_with_no_sampled_payout_series_is_rejected() -> 
 
 
 def test_current_payout_funds_an_explicit_same_month_claim() -> None:
-    result = _run(compose(is_taxed=False, opening_cash=Decimal(0), bill=_bill(Decimal(2_000))))
+    result = _run(compose(is_taxed=False, opening_cash=Decimal(0), bill=Decimal(2_000)))
     assert result.summary.cash[0].values[:2] == [0, 0]
     assert result.summary.cash[0].values[-1] == 2_400_000
     [payment] = result.summary.payments
@@ -410,7 +374,7 @@ def test_current_payout_funds_an_explicit_same_month_claim() -> None:
     assert result.trace is not None
     assert result.trace.distributions is not None
     [payout] = [row for row in result.trace.distributions if row.month == 0]
-    assert (payout.asset_id, payout.amount, payout.income_source) == ("bnd", 200_000, "interest:federal_us")
+    assert (payout.asset_id, payout.amount, payout.income_source) == ("bnd", 200_000, "interest:treasury")
 
 
 if __name__ == "__main__":

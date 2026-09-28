@@ -11,30 +11,25 @@ import numpy as np
 from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.compiler.tax import compile_profile
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.claims import ObligationType
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import (
+    InterestExemptions,
     Jurisdiction,
-    JurisdictionLevel,
     StatutoryAmount,
     StatutoryIndexation,
     TaxBracket,
 )
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedObligation,
-    PreparedSeries,
-)
-from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, ObligationType, TaxProfile
+from finance.augur.sim.money import USD
+from finance.augur.sim.prepared import PreparedSeries
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -46,9 +41,9 @@ STEADY = SecuritySymbol("test-steady")
 SECURITIES = (GROWTH, STEADY)
 _FLAT_TAX = Jurisdiction(
     jurisdiction_id=JurisdictionId("test-flat-tax"),
-    level=JurisdictionLevel.FEDERAL,
-    ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.20)]},
-    ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.10)]},
+    exempt_interest=InterestExemptions(treasury=False, municipal=set()),
+    ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
+    ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
     standard_deduction={FilingStatus.SINGLE: Decimal(0)},
     max_capital_loss_ordinary_offset={FilingStatus.SINGLE: Decimal(0)},
     law_year=2024,
@@ -93,9 +88,7 @@ def situation(
     paths: ExternalSeriesContext, *, rollout_count: int, horizon_months: int, taxable: bool, annual_bill: int = 100_000
 ) -> Situation:
     return Situation(
-        series=compile_series(
-            paths, rollout_count=rollout_count, horizon_months=horizon_months, currency_quantum=QUANTUM
-        ),
+        series=compile_series(paths, rollout_count=rollout_count, horizon_months=horizon_months, currency=USD),
         rollout_count=rollout_count,
         horizon_months=horizon_months,
         taxable=taxable,
@@ -109,18 +102,11 @@ def compose(situation: Situation, rollout_id: int) -> World:
         MarketPath(situation.series, rollout_id, rollout_count=situation.rollout_count),
         horizon_months=situation.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=_FLAT_TAX.jurisdiction_id, level=_FLAT_TAX.level),)
-        if situation.taxable
-        else (),
     )
     for name in (RETIREE, COUNTERPARTY, TAX_AUTHORITY):
         world.declare_account(
-            PreparedAccount(
-                account=AccountRef(agent_id=name, account_id=AccountId("checking")),
-                opening_balance=int(
-                    currency_amount_to_quanta(Decimal(10_000 if name == RETIREE else 0), quantum=QUANTUM)
-                ),
-            )
+            account=AccountRef(agent_id=name, account_id=AccountId("checking")),
+            opening_balance=int(currency_amount_to_quanta(Decimal(10_000 if name == RETIREE else 0), quantum=QUANTUM)),
         )
     if situation.taxable:
         profile = TaxProfile(
@@ -131,43 +117,37 @@ def compose(situation: Situation, rollout_id: int) -> World:
         )
         world.track(
             TaxAuthority(
-                compile_profile(profile, {_FLAT_TAX.jurisdiction_id: _FLAT_TAX}, quantum=QUANTUM),
+                compile_profile(profile, {_FLAT_TAX.jurisdiction_id: _FLAT_TAX}, currency=USD),
                 indexation=FixedNominalLaw(),
             )
         )
     for symbol in SECURITIES:
         scale = quantity_scale_for_asset(SecurityKey(symbol=symbol))
         world.declare_pool(
-            PreparedHoldingPool(
-                agent_id=RETIREE, account_id=AccountId("checking"), asset_id=AssetId(symbol), quantity_scale=scale
-            )
+            agent_id=RETIREE, account_id=AccountId("checking"), asset_id=AssetId(symbol), quantity_scale=scale
         )
-        world.hold(
-            PreparedLot(
-                lot_id=LotId(f"test-opening-{symbol}"),
-                agent_id=RETIREE,
-                account_id=AccountId("checking"),
-                asset_id=AssetId(symbol),
-                purchase_month=-24,
-                quantity_scale=scale,
-                units=int(quantity_to_quanta(500, scale=scale)),
-                basis=int(currency_amount_to_quanta(Decimal(40_000), quantum=QUANTUM)),
-            )
+        world.hold_lot(
+            lot_id=LotId(f"test-opening-{symbol}"),
+            agent_id=RETIREE,
+            account_id=AccountId("checking"),
+            asset_id=AssetId(symbol),
+            purchase_month=-24,
+            quantity_scale=scale,
+            units=quantity_to_quanta(500, scale=scale),
+            basis=int(currency_amount_to_quanta(Decimal(40_000), quantum=QUANTUM)),
         )
     for month in range(0, situation.horizon_months, 12):
         world.track(
             Biller(
-                PreparedObligation(
-                    month=month,
-                    obligation_id="test-committed-bill",
-                    obligation_type=ObligationType.OUTSIDE_RENT,
-                    from_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
-                    to_account=AccountRef(agent_id=COUNTERPARTY, account_id=AccountId("checking")),
-                    amount_due=situation.annual_bill,
-                    property_id=None,
-                    deduction_category=None,
-                    deductible_fraction_ppb=1_000_000_000,
-                )
+                schedule=Once(month=month),
+                obligation_id="test-committed-bill",
+                obligation_type=ObligationType.OUTSIDE_RENT,
+                from_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
+                to_account=AccountRef(agent_id=COUNTERPARTY, account_id=AccountId("checking")),
+                amount_due=situation.annual_bill,
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=1_000_000_000,
             )
         )
     return world

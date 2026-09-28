@@ -3,15 +3,12 @@ Flux Kustomization owning it."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart, Size
 from cdk8s_plus_34 import Cpu
 from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import RedisReplicationSpecTolerations
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.valkey import valkey_instance
 
@@ -19,7 +16,7 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/forgejo/cache"
 NAME = "forgejo-valkey-ovh"
 
 
-def _chart(app: App) -> Chart:
+def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     valkey_instance(
         chart,
@@ -37,27 +34,21 @@ def _chart(app: App) -> Chart:
         storage_size=Size.gibibytes(2),
         tolerations=[
             RedisReplicationSpecTolerations(
-                key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
+                key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
             )
         ],
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, _chart)
-
-
-def forgejo_cache(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, valkey: Kustomization, local_path_provisioner: Kustomization
-) -> Kustomization:
+def forgejo_cache(chart: Chart, directory: RenderedDirectory, valkey: Kustomization) -> Kustomization:
     name = "forgejo-cache"
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         timeout="5m",
         # Retry until the forgejo aggregate creates the Namespace. Waiting for
         # Forgejo readiness would deadlock its cache-dependent startup.
-        depends_on=flux_kustomization_depends_on_many(valkey, local_path_provisioner),
+        depends_on=flux_kustomization_depends_on_many(valkey),
     )

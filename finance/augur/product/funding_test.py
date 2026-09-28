@@ -11,6 +11,13 @@ import numpy as np
 import pytest
 import pytest_bazel
 
+from finance.augur.api.config import DistributionTaxShareConfig, SecurityDistributionConfig
+from finance.augur.api.portfolio import (
+    HoldingTaxLotConfig,
+    PortfolioAccountConfig,
+    PortfolioConfig,
+    SecurityHoldingConfig,
+)
 from finance.augur.model.series import (
     InflationKey,
     LevelSeriesKey,
@@ -21,33 +28,26 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.product.funding import Policy
+from finance.augur.product.holdings import opening_holdings
 from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, TAX_AUTHORITY_AGENT_ID, Situation, build_situation
 from finance.augur.product.wire import FundingPolicy, ScenarioKey, SecuritySleeveWeight, SleeveWeight, SpendIndex
 from finance.augur.sim.bills import Biller
-from finance.augur.sim.compiler.execution import compile_holding_pools, compile_jurisdictions, compile_series
-from finance.augur.sim.compiler.tax import compile_profile
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId
+from finance.augur.sim.income import Taxable
 from finance.augur.sim.jurisdictions import (
+    InterestExemptions,
     Jurisdiction,
-    JurisdictionLevel,
     StatutoryAmount,
     StatutoryIndexation,
     TaxBracket,
 )
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
-from finance.augur.sim.scenario import (
-    DistributionTaxSlice,
-    FilingStatus,
-    InitialLot,
-    InterestIncome,
-    SecurityDistribution,
-    TaxProfile,
-)
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
 from finance.augur.sim.world import World
 
 BROKERAGE = AccountId("brokerage")
@@ -57,38 +57,52 @@ FIRST = SecurityKey(symbol=SecuritySymbol("test-first"))
 SECOND = SecurityKey(symbol=SecuritySymbol("test-second"))
 
 
-def lot(id_: LotId, account: AccountId, asset: SecurityKey, quantity: Decimal, month: int = -24) -> InitialLot:
-    return InitialLot(
-        lot_id=id_,
-        agent_id=ACTOR,
+def lot(
+    id_: LotId, account: AccountId, asset: SecurityKey, quantity: Decimal, month: int = -24
+) -> SecurityHoldingConfig:
+    """A position holding one lot bought `month` months from month 0."""
+    return SecurityHoldingConfig(
+        position_id=id_,
         account_id=account,
-        asset=asset,
-        purchase_month_index=month,
-        quantity=float(quantity),
-        cost_basis=quantity * Decimal(50),
+        symbol=asset.symbol,
+        unit_value=Decimal(100),
+        lots=(
+            HoldingTaxLotConfig(
+                lot_id=id_,
+                holding_period_months_at_start=-month,
+                quantity=float(quantity),
+                cost_basis=quantity * Decimal(50),
+            ),
+        ),
     )
 
 
 @dataclass(frozen=True)
 class Product:
-    """The app's situation for one request, and the opening lots the Python policy reads."""
+    """The app's situation for one request, and the opening portfolio the Python policy reads."""
 
     situation: Situation
-    lots: tuple[InitialLot, ...]
-    distributions: tuple[SecurityDistribution, ...]
+    portfolio: PortfolioConfig
 
 
 def product_situation(
     config: FundingPolicy,
     *,
-    lots: tuple[InitialLot, ...],
+    lots: tuple[SecurityHoldingConfig, ...],
     cash: Decimal = Decimal(0),
     spend: Decimal = Decimal(10),
     rent: Decimal = Decimal(0),
     spend_index: SpendIndex = SpendIndex.NONE,
     horizon: int = 1,
-    distributions: tuple[SecurityDistribution, ...] = (),
+    distributions: tuple[SecurityDistributionConfig, ...] = (),
 ) -> Product:
+    portfolio = PortfolioConfig(
+        accounts=tuple(
+            PortfolioAccountConfig(account_id=account_id, owner_agent_id=ACTOR)
+            for account_id in dict.fromkeys(position.account_id for position in lots)
+        ),
+        holdings=lots,
+    )
     situation = build_situation(
         ScenarioKey(
             model_id="stipulated-policy-control",
@@ -101,12 +115,13 @@ def product_situation(
         ),
         primary_agent_id=ACTOR,
         initial_cash=cash,
-        initial_lots=lots,
+        holdings=opening_holdings(
+            portfolio, distributions, tlh_portfolios=(), primary_agent_id=ACTOR, payout_account_id=PRIMARY_ACCOUNT_ID
+        ),
         properties_by_id={},
         locations={},
-        security_distributions=distributions,
     )
-    return Product(situation=situation, lots=lots, distributions=distributions)
+    return Product(situation=situation, portfolio=portfolio)
 
 
 def run(
@@ -130,37 +145,68 @@ def run(
                 ),
                 rollout_count=1,
                 horizon_months=situation.horizon_months,
-                currency_quantum=situation.currency.quantum,
+                currency=situation.currency,
             ),
             0,
             rollout_count=1,
         ),
         horizon_months=situation.horizon_months,
         income_sources=situation.income_sources,
-        jurisdictions=compile_jurisdictions(jurisdictions, bonds=(), distributions=product.distributions),
     )
-    for account in situation.accounts:
-        world.declare_account(account)
+    for account, balance in situation.accounts:
+        world.declare_account(account=account, opening_balance=balance)
     if tax is not None:
         world.track(
             TaxAuthority(
-                compile_profile(tax[0], jurisdictions, quantum=situation.currency.quantum), indexation=FixedNominalLaw()
+                compile_profile(tax[0], jurisdictions, currency=situation.currency), indexation=FixedNominalLaw()
             )
         )
-    for pool in compile_holding_pools(lots=product.lots):
-        world.declare_pool(pool)
+    for pool in situation.pools:
+        world.declare_pool(
+            agent_id=pool.agent_id,
+            account_id=pool.account_id,
+            asset_id=pool.asset_id,
+            quantity_scale=pool.quantity_scale,
+        )
     for held in situation.lots:
-        world.hold(held)
+        world.hold_lot(
+            lot_id=held.lot_id,
+            agent_id=held.agent_id,
+            account_id=held.account_id,
+            asset_id=held.asset_id,
+            purchase_month=held.purchase_month,
+            quantity_scale=held.quantity_scale,
+            units=held.units,
+            basis=held.basis,
+        )
     for distribution in situation.distributions:
-        world.declare_distribution(distribution)
+        world.declare_distribution(
+            agent_id=distribution.agent_id,
+            holding_account_id=distribution.holding_account_id,
+            asset_id=distribution.asset_id,
+            to_account_id=distribution.to_account_id,
+            tax_character=distribution.tax_character,
+        )
     for obligation in situation.obligations:
-        world.track(Biller(obligation))
+        world.track(
+            Biller(
+                obligation_id=obligation.obligation_id,
+                obligation_type=obligation.obligation_type,
+                from_account=obligation.from_account,
+                to_account=obligation.to_account,
+                amount_due=obligation.amount_due,
+                property_id=obligation.property_id,
+                deduction_category=obligation.deduction_category,
+                deductible_fraction_ppb=obligation.deductible_fraction_ppb,
+                schedule=obligation.schedule,
+            )
+        )
     policy = Policy(
         config,
         actor_id=ACTOR,
         cash_account_id=PRIMARY_ACCOUNT_ID,
-        initial_lots=product.lots,
-        currency_quantum=situation.currency.quantum,
+        portfolio=product.portfolio,
+        currency=situation.currency,
     )
     session = ActionSession({0: world}, ACTOR)
     try:
@@ -326,9 +372,9 @@ def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim()
     config = FundingPolicy(sleeve_weights=(SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),))
     rule = Jurisdiction(
         jurisdiction_id=JurisdictionId("test-flat"),
-        level=JurisdictionLevel.FEDERAL,
-        ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.20)]},
-        ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.10)]},
+        exempt_interest=InterestExemptions(treasury=False, municipal=set()),
+        ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
+        ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
         standard_deduction={FilingStatus.SINGLE: Decimal(0)},
         max_capital_loss_ordinary_offset={FilingStatus.SINGLE: Decimal(0)},
         law_year=2024,
@@ -348,12 +394,8 @@ def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim()
         horizon=13,
         lots=(lot(LotId("fund"), BROKERAGE, FIRST, Decimal(20)),),
         distributions=(
-            SecurityDistribution(
-                asset=FIRST,
-                agent_id=ACTOR,
-                holding_account_id=BROKERAGE,
-                to_account_id=PRIMARY_ACCOUNT_ID,
-                tax_character=(DistributionTaxSlice(fraction=1, income_category=InterestIncome()),),
+            SecurityDistributionConfig(
+                symbol=FIRST.symbol, tax_character=(DistributionTaxShareConfig(fraction=1.0, character=Taxable()),)
             ),
         ),
     )

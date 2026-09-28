@@ -22,8 +22,6 @@ from finance.augur.api.config import Config
 from finance.augur.calibration.catalog import CatalogMetadata, ExactMarket, IpoByDateMapping, ManifoldRef, MarketCatalog
 from finance.augur.calibration.ipo_prior import derive_public_market_anchors
 from finance.augur.calibration.testing import mock_price_clients
-from finance.augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
-from finance.augur.model.provider_config import CompositeProviderConfig
 from finance.augur.model.series import IssuerId, SecuritySymbol
 from finance.augur.product.conftest import MakeProductService
 from finance.augur.product.service import ProductService
@@ -34,6 +32,8 @@ from finance.augur.product.wire import (
     SecuritySleeveWeight,
     SpendIndex,
 )
+from finance.augur.x.models.private_equity_risk import PrivateEquityRiskProviderConfig
+from finance.augur.x.models.provider_config import CompositeProviderConfig
 from finance.evidence.markets import Platform
 
 # One market, deadline six months after the catalog's model anchor. Its YES price is the whole

@@ -21,35 +21,34 @@ indexation:
 
 ordinary_income_brackets:
   single:
-    - { upper: 10412, rate: 0.010 }
-    - { upper: 24684, rate: 0.020 }
-    - { upper: 38959, rate: 0.040 }
-    - { upper: 54081, rate: 0.060 }
-    - { upper: 68350, rate: 0.080 }
-    - { upper: 349137, rate: 0.093 }
-    - { upper: 418961, rate: 0.103 }
-    - { upper: 698271, rate: 0.113 }
-    - { upper: "Infinity", rate: 0.123 }
+    - { upper: 10412, rate: "0.010" }
+    - { upper: 24684, rate: "0.020" }
+    - { upper: 38959, rate: "0.040" }
+    - { upper: 54081, rate: "0.060" }
+    - { upper: 68350, rate: "0.080" }
+    - { upper: 349137, rate: "0.093" }
+    - { upper: 418961, rate: "0.103" }
+    - { upper: 698271, rate: "0.113" }
+    - { upper: "Infinity", rate: "0.123" }
 
 standard_deduction:
   single: 5363
 # California conforms to the federal limitation (R&TC 17201).
 max_capital_loss_ordinary_offset:
   single: 3000
-level: state
 
 # 31 USC 3124 bars states from taxing federal obligations, so Treasury interest is exempt.
-# CA-issued munis are exempt as own-issue; munis from OTHER states are neither, so they
-# stay taxable here — the case a single ordinary-income bucket could not represent.
-exempt_interest_from_levels:
-  - federal
-exempts_own_issue: true
+# California exempts its own munis; munis of OTHER states stay taxable here — the case a
+# single ordinary-income bucket could not represent.
+exempt_interest:
+  treasury: true
+  municipal: [california]
 
 # R&TC 17043's 1% Behavioral Health Services Tax (formerly Mental Health Services Tax):
 # FTB 2025 Form 540 instructions, line 62: 1% of taxable income (Form 540 line 19) over
 # $1,000,000.
 # https://www.ftb.ca.gov/forms/2025/2025-540-instructions.html
 taxable_income_surtax:
-  rate: 0.01
+  rate: "0.01"
   threshold:
     single: 1000000

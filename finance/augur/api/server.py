@@ -37,7 +37,6 @@ from finance.augur.calibration.macro_anchors import resolve_anchors
 from finance.augur.calibration.platform import PriceClient
 from finance.augur.model.exogenous import ExogenousSamplingRequest, Sampler, level_series_request_channels
 from finance.augur.model.private_equity_bundle import PrivateEquityFloatChannel
-from finance.augur.model.sample_sanity import SampleSanitySpec, evaluate_sample_checks, partition_spec_coverage
 from finance.augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key
 from finance.augur.product.portfolio import ProductPortfolioResponse, product_portfolio_response
 from finance.augur.product.wire import (
@@ -49,6 +48,8 @@ from finance.augur.product.wire import (
     RolloutResponse,
     TerminalDistributionResponse,
 )
+from finance.augur.sim.money import USD
+from finance.augur.x.models.sample_sanity import SampleSanitySpec, evaluate_sample_checks, partition_spec_coverage
 from finance.budget.service import BudgetService
 from finance.budget.wire import (
     BudgetSnapshotRequest,
@@ -167,6 +168,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
                 snapshot=resolved_portfolio.snapshot,
                 portfolio=resolved_portfolio.portfolio,
                 tlh_portfolios=resolved_portfolio.tlh_portfolios,
+                currency=USD,
             )
         )
 

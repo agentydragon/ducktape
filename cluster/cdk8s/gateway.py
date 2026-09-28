@@ -6,7 +6,6 @@ redirect to HTTPS, and the directory's Flux Kustomization.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
@@ -17,6 +16,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecParentRefs,
     HttpRouteSpecRules,
     HttpRouteSpecRulesBackendRefs,
+    HttpRouteSpecRulesFilters,
     HttpRouteSpecRulesFiltersRequestRedirectScheme,
     HttpRouteSpecRulesFiltersRequestRedirectStatusCode,
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
@@ -29,17 +29,10 @@ from gateway_api_gateway_crds.io.k8s.networking.gateway import (
     GatewaySpecListenersAllowedRoutesNamespaces,
     GatewaySpecListenersAllowedRoutesNamespacesFrom,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import (
-    CERT_MANAGER_ISSUER_SUBSTITUTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-)
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter, RouteMatch
 from cluster.cdk8s.providers.gateway_api.listener import Listener, ListenerTls
 
@@ -68,16 +61,16 @@ def https_route(
     timeout: str | None = None,
     hsts: bool = True,
     listener: str | None = HTTPS_LISTENER,
-    extra_filters: Sequence[RouteFilter] = (),
+    extra_filters: Sequence[HttpRouteSpecRulesFilters] = (),
 ) -> HttpRoute:
     """`hostnames` on the shared Gateway to one Service port. `paths` restricts the route to those
     exact paths; `path_prefix` adds a path-prefix match alongside them. `hsts` sets
     Strict-Transport-Security at the TLS-aware edge, which the backend's own hop cannot see was
     HTTPS; `extra_filters` appends further filters after the HSTS one (when `hsts` is set).
     `timeout` bounds the request and the backend request alike."""
-    matches = [RouteMatch.path_exact(path).to_spec() for path in paths]
+    matches = [RouteMatch.path_exact(path) for path in paths]
     if path_prefix is not None:
-        matches.append(RouteMatch.path_prefix(path_prefix).to_spec())
+        matches.append(RouteMatch.path_prefix(path_prefix))
     filters = list(extra_filters)
     if hsts:
         filters.insert(
@@ -100,7 +93,7 @@ def https_route(
             rules=[
                 HttpRouteSpecRules(
                     matches=matches or None,
-                    filters=[f.to_spec() for f in filters] or None,
+                    filters=filters or None,
                     backend_refs=[HttpRouteSpecRulesBackendRefs(name=backend, port=port)],
                     timeouts=HttpRouteSpecRulesTimeouts(request=timeout, backend_request=timeout) if timeout else None,
                 )
@@ -126,7 +119,9 @@ def chart(app: App) -> Chart:
     Gateway(
         chart,
         "gateway",
-        metadata=metadata(_NAME, _NAMESPACE, annotations={"cert-manager.io/cluster-issuer": "${LETSENCRYPT_ISSUER}"}),
+        metadata=ApiObjectMetadata(
+            name=_NAME, namespace=_NAMESPACE, annotations={"cert-manager.io/cluster-issuer": LETSENCRYPT_ISSUER}
+        ),
         spec=GatewaySpec(
             gateway_class_name="cilium",
             listeners=[
@@ -136,22 +131,22 @@ def chart(app: App) -> Chart:
                     port=443,
                     tls=ListenerTls.terminate("wildcard-allegedly-works-tls"),
                     allowed_routes=all_namespaces,
-                ).to_spec(),
+                ),
                 Listener.https(
                     name="https-apex",
                     hostname="allegedly.works",
                     port=443,
                     tls=ListenerTls.terminate("apex-allegedly-works-tls"),
                     allowed_routes=all_namespaces,
-                ).to_spec(),
-                Listener.http(name=_HTTP_LISTENER, port=80, allowed_routes=all_namespaces).to_spec(),
+                ),
+                Listener.http(name=_HTTP_LISTENER, port=80, allowed_routes=all_namespaces),
             ],
         ),
     )
     HttpRoute(
         chart,
         "http-redirect",
-        metadata=metadata("http-to-https-redirect", _NAMESPACE),
+        metadata=ApiObjectMetadata(name="http-to-https-redirect", namespace=_NAMESPACE),
         spec=HttpRouteSpec(
             parent_refs=[HttpRouteSpecParentRefs(name=_NAME, section_name=_HTTP_LISTENER)],
             rules=[
@@ -160,7 +155,7 @@ def chart(app: App) -> Chart:
                         RouteFilter.request_redirect(
                             scheme=HttpRouteSpecRulesFiltersRequestRedirectScheme.HTTPS,
                             status_code=HttpRouteSpecRulesFiltersRequestRedirectStatusCode.VALUE_301,
-                        ).to_spec()
+                        )
                     ]
                 )
             ],
@@ -169,22 +164,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def gateway(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    cert_manager: Kustomization,
-    kyverno: Kustomization,
-    cert_manager_issuer_config: Kustomization,
-) -> Kustomization:
+def gateway(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart,
-        "gateway",
-        artifact,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(cert_manager, kyverno, cert_manager_issuer_config),
-        post_build=CERT_MANAGER_ISSUER_SUBSTITUTION,
+        chart, "gateway", directory, timeout="5m", depends_on=flux_kustomization_depends_on_many(kyverno)
     )

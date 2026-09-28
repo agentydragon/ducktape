@@ -9,6 +9,7 @@ it; they retry until the Cluster accepts connections.
 
 from __future__ import annotations
 
+from cdk8s import ApiObjectMetadata
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManaged,
     ClusterSpecManagedRoles,
@@ -24,12 +25,9 @@ from cnpg_database_crds.io.cnpg.postgresql import (
     DatabaseSpecExtensionsEnsure,
 )
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
-from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetTemplate
 
 from cluster.cdk8s import cnpg, node_scheduling
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 
 NAMESPACE = "haku-console"
 CLUSTER_NAME = "haku-console-db"
@@ -59,7 +57,7 @@ class Db(Construct):
             # while ownership moves between them. Removing this Cluster is a deliberate
             # `kubectl delete`, never a manifest edit.
             annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
-            node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
+            node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
             storage_class="local-path-ovh",
             size="2Gi",
             initdb=cnpg.same_owner_initdb(DATABASE),
@@ -91,7 +89,7 @@ class Db(Construct):
         Database(
             self,
             "database",
-            metadata=metadata(f"{CLUSTER_NAME}-approval-store", NAMESPACE),
+            metadata=ApiObjectMetadata(name=f"{CLUSTER_NAME}-approval-store", namespace=NAMESPACE),
             spec=DatabaseSpec(
                 cluster=DatabaseSpecCluster(name=CLUSTER_NAME),
                 name=DATABASE,
@@ -105,29 +103,17 @@ class Db(Construct):
         """The indexer role's password, ESO-generated once (symbols disabled so the templated
         URL needs no escaping). Its object-level privileges are the narrow set the provisioner
         Job grants -- never the application owner's."""
-        generator = f"{INDEXER_SECRET}-generator"
-        Password(
-            self,
-            "indexer-password",
-            metadata=metadata(generator, NAMESPACE),
-            spec=PasswordSpec(length=40, digits=8, symbols=0, no_upper=False, allow_repeat=True),
-        )
-        ExternalSecret(
+        # The worker consumes only username/password/DATABASE_URL, in the SQLAlchemy asyncpg
+        # form -- no separate host/port/dbname fields.
+        mint_db_role_secret(
             self,
             "indexer-secret",
             name=INDEXER_SECRET,
             namespace=NAMESPACE,
-            refresh="8760h",
-            data_from=[DataFrom.from_password_generator(generator)],
-            template=ExternalSecretSpecTargetTemplate(
-                type="kubernetes.io/basic-auth",
-                data={
-                    "username": INDEXER_ROLE,
-                    "password": "{{ .password }}",
-                    # The SQLAlchemy asyncpg form the worker consumes directly.
-                    "DATABASE_URL": (
-                        f"postgresql+asyncpg://{INDEXER_ROLE}:{{{{ .password }}}}@{RW_HOST}:{_POSTGRES_PORT}/{DATABASE}"
-                    ),
-                },
-            ),
+            role=INDEXER_ROLE,
+            host=RW_HOST,
+            port=_POSTGRES_PORT,
+            database=DATABASE,
+            url_scheme="postgresql+asyncpg",
+            include_host_fields=False,
         )

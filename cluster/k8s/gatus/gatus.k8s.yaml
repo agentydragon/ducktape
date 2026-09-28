@@ -100,8 +100,6 @@ spec:
       topology.kubernetes.io/zone: hil-ovh
     persistence:
       enabled: false
-    podAnnotations:
-      reloader.stakater.com/auto: "true"
     resources:
       limits:
         cpu: 200m

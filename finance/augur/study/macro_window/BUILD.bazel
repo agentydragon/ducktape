@@ -10,11 +10,11 @@ py_library(
     name = "compare",
     srcs = ["compare.py"],
     deps = [
-        "//finance/augur/fit:macro_var",
-        "//finance/augur/fit:structural_macro",
         "//finance/augur/model:historical_windows",
-        "//finance/augur/model:structural_macro",
         "//finance/augur/study/trinity:evidence_snapshot",
+        "//finance/augur/x/models:macro_var",
+        "//finance/augur/x/models:structural_macro",
+        "//finance/augur/x/models:structural_macro_fit",
         "//finance/evidence:sources",
         "@pypi//numpy",
     ],
@@ -32,7 +32,7 @@ py_test(
         ":compare",
         "//:conftest",
         "//finance/augur:conftest",
-        "//finance/augur/fit:structural_macro",
+        "//finance/augur/x/models:structural_macro_fit",
         "@pypi//pytest_bazel",
     ],
 )
@@ -41,12 +41,12 @@ py_library(
     name = "holdout",
     srcs = ["holdout.py"],
     deps = [
-        "//finance/augur/fit:macro_var",
         "//finance/augur/fit:scoring",
-        "//finance/augur/fit:structural_macro",
         "//finance/augur/model:historical_windows",
-        "//finance/augur/model:structural_macro",
         "//finance/augur/study/trinity:evidence_snapshot",
+        "//finance/augur/x/models:macro_var",
+        "//finance/augur/x/models:structural_macro",
+        "//finance/augur/x/models:structural_macro_fit",
         "@pypi//jax",
         "@pypi//numpy",
         "@pypi//numpyro",
@@ -75,8 +75,8 @@ py_library(
     srcs = ["mixed_windows.py"],
     deps = [
         ":holdout",
-        "//finance/augur/fit:macro_var",
-        "//finance/augur/model:structural_macro",
+        "//finance/augur/x/models:macro_var",
+        "//finance/augur/x/models:structural_macro",
         "@pypi//numpy",
     ],
 )
@@ -119,7 +119,7 @@ py_library(
     srcs = ["stability.py"],
     deps = [
         ":holdout",
-        "//finance/augur/fit:macro_var",
+        "//finance/augur/x/models:macro_var",
     ],
 )
 

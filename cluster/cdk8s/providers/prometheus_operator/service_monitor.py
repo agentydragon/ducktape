@@ -80,11 +80,8 @@ class Endpoint:
 
 
 class ServiceMonitor(_ServiceMonitor):
-    """Prometheus Operator's `ServiceMonitor`. `selector` is `spec.selector.matchLabels`;
-    `endpoints` is `spec.endpoints`. `namespace_selector`, when given, is
-    `spec.namespaceSelector.matchNames` -- by default Prometheus discovers the scraped
-    `Service` only in the `ServiceMonitor`'s own namespace, and this widens that to the
-    named namespaces.
+    """Prometheus Operator's `ServiceMonitor`. Keywords are `ServiceMonitorSpec` fields under
+    their own names and types; `None` leaves a field unset, so the operator's own default applies.
     """
 
     def __init__(
@@ -93,21 +90,15 @@ class ServiceMonitor(_ServiceMonitor):
         id: str,
         *,
         metadata: ApiObjectMetadata,
-        selector: dict[str, str],
+        selector: ServiceMonitorSpecSelector,
         endpoints: Sequence[ServiceMonitorSpecEndpoints],
-        namespace_selector: Sequence[str] | None = None,
+        namespace_selector: ServiceMonitorSpecNamespaceSelector | None = None,
     ) -> None:
         super().__init__(
             scope,
             id,
             metadata=metadata,
             spec=ServiceMonitorSpec(
-                selector=ServiceMonitorSpecSelector(match_labels=selector),
-                endpoints=list(endpoints),
-                namespace_selector=(
-                    ServiceMonitorSpecNamespaceSelector(match_names=list(namespace_selector))
-                    if namespace_selector is not None
-                    else None
-                ),
+                selector=selector, endpoints=list(endpoints), namespace_selector=namespace_selector
             ),
         )

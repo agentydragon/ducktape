@@ -182,7 +182,7 @@ def _ollama_entries() -> list[dict]:
                 model,
                 ollama_model,
                 contexts,
-                upstream_prefix="ollama",
+                upstream_prefix="ollama_chat",
                 protocol="chat",
                 api_base=_OLLAMA_BASE,
                 api_key=None,

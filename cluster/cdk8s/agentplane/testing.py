@@ -4,7 +4,7 @@ credentialless MCP fixtures in place of the real action groups.
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import DeploymentStrategy
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
@@ -35,18 +35,16 @@ from cluster.cdk8s.agentplane.environment import (
     ReplicaProfile,
 )
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 
 _NAMESPACE = "agentplane-testing"
 _HOSTNAME = "agentplane-testing.allegedly.works"
 _DEX_HOSTNAME = "agentplane-dex-testing.allegedly.works"
 _DEX_ISSUER = f"https://{_DEX_HOSTNAME}/dex"
+# The Terraform-owned key, replicated into this namespace by the ExternalSecret that
+# `litellm/credentials.py` writes as `litellm-credentials.k8s.yaml` beside `agentplane.k8s.yaml`.
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
-# The ESO ExternalSecret replicating the Terraform-owned key into this namespace,
-# a sibling resource in the same Kustomization -- see litellm/credentials.py.
-_LITELLM_CREDENTIALS_DIR = "litellm-credentials/"
 _OAUTH_FIXTURE_MCP_URL = f"http://{OAUTH_FIXTURE_NAME}.{_NAMESPACE}.svc.cluster.local:{OAUTH_FIXTURE_PORT}/mcp"
 
 _FEDERATION_TARGET = {
@@ -117,7 +115,7 @@ ENV = Environment(
         "Complete Agentplane testing environment, including namespace, database, Dex, egress, LLM ingress, "
         "Actions fixtures, app, runner template, and operator RBAC."
     ),
-    extra_resources=(_LITELLM_CREDENTIALS_DIR,),
+    extra_resources=(),
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
     app_config={**testing_config.config(), "action_federation": _ACTION_FEDERATION},
     db=DbProps(instances=1),
@@ -150,8 +148,8 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "networkpolicy-app-from-staging-egress",
-        metadata=metadata(f"{app_component.NAME}-from-staging-egress", ENV.namespace),
-        selector={"app.kubernetes.io/name": app_component.NAME},
+        metadata=ApiObjectMetadata(name=f"{app_component.NAME}-from-staging-egress", namespace=ENV.namespace),
+        endpoint_selector={"app.kubernetes.io/name": app_component.NAME},
         ingress=[
             IngressRule.from_endpoints(
                 cilium.endpoint_labels("agentplane-staging", egress.NAME), ports=[app_component.CONTAINER_PORT]
@@ -173,11 +171,10 @@ def agentplane_testing(
     health_checks: list[KustomizationSpecHealthChecks],
     agentplane_crds: Kustomization,
     agent_sandbox_controller: Kustomization,
-    cert_manager_environment: Kustomization,
     cert_manager_trust: Kustomization,
     claude_rbac: Kustomization,
     cnpg: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -195,14 +192,7 @@ def agentplane_testing(
                 api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
             )
         ],
-        decryption=sops_decryption(ENV.extra_resources),
         depends_on=flux_kustomization_depends_on_many(
-            agentplane_crds,
-            agent_sandbox_controller,
-            cert_manager_environment,
-            cert_manager_trust,
-            claude_rbac,
-            cnpg,
-            external_secrets_config,
+            agentplane_crds, agent_sandbox_controller, cert_manager_trust, claude_rbac, cnpg, external_secrets_operator
         ),
     )

@@ -18,13 +18,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy, dns_allowlist
 
 HAKU_EGRESS_PROXY_NAMESPACE = "haku-egress-proxy"
@@ -204,7 +203,11 @@ def _fence(
     Additive with the namespace's default-deny NetworkPolicy."""
     chart = Chart(app, file_stem, disable_resource_name_hashes=True)
     NetworkPolicy(
-        chart, "fence", metadata=metadata(name, namespace), selector={"app.kubernetes.io/name": proxy}, egress=egress
+        chart,
+        "fence",
+        metadata=ApiObjectMetadata(name=name, namespace=namespace),
+        endpoint_selector={"app.kubernetes.io/name": proxy},
+        egress=egress,
     )
     return chart
 

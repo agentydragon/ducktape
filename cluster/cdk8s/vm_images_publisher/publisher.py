@@ -14,6 +14,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.seaweedfs import s3
@@ -97,7 +98,7 @@ def _cron_job(scope: Construct) -> None:
                                             k8s.NodeSelectorTerm(
                                                 match_expressions=[
                                                     k8s.NodeSelectorRequirement(
-                                                        key="node-role.kubernetes.io/control-plane",
+                                                        key=node_scheduling.CONTROL_PLANE_TAINT_KEY,
                                                         operator="DoesNotExist",
                                                     )
                                                 ]

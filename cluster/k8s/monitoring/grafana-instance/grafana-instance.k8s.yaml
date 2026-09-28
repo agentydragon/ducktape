@@ -76,9 +76,6 @@ spec:
   deployment:
     spec:
       template:
-        metadata:
-          annotations:
-            reloader.stakater.com/auto: "true"
         spec:
           containers:
             - env:

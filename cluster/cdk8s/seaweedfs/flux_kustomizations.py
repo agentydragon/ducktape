@@ -9,12 +9,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 
 
 def seaweedfs_cluster(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_operator: Kustomization,
-    seaweedfs_secrets: Kustomization,
-    seaweedfs_filer_db: Kustomization,
-    local_path_provisioner: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_operator: Kustomization
 ) -> Kustomization:
     name = "seaweedfs-cluster"
     return flux_kustomization(
@@ -23,13 +18,7 @@ def seaweedfs_cluster(
         artifact,
         retry_interval=None,
         suspend=False,
-        depends_on=flux_kustomization_depends_on_many(
-            seaweedfs_operator,
-            seaweedfs_secrets,
-            # Filer is configured with postgres2 backend.
-            seaweedfs_filer_db,
-            local_path_provisioner,
-        ),
+        depends_on=flux_kustomization_depends_on_many(seaweedfs_operator),
         wait=False,
         timeout="5m",
     )

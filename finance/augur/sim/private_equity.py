@@ -95,14 +95,14 @@ def liquid_net_worth(
         if account.agent_id == actor:
             total = checked_count(total + accounting.ledger.balance(account), "money addition")
     for lot in holdings.lots:
-        if lot.spec.agent_id != actor or private_issuer(lot.spec.asset_id) is not None or lot.units_remaining <= 0:
+        if lot.agent_id != actor or private_issuer(lot.asset_id) is not None or lot.units_remaining <= 0:
             continue
-        series = f"security:{lot.spec.asset_id}"
+        series = f"security:{lot.asset_id}"
         # The configured PE floor omits an unmarked public holding; it does not price bonds or property.
         if series not in market.series:
             continue
         total = checked_count(
-            total + position_value(market.value(series, month), lot.units_remaining, lot.spec.quantity_scale),
+            total + position_value(market.value(series, month), lot.units_remaining, lot.quantity_scale),
             "money addition",
         )
     for mark in marks:
@@ -130,14 +130,14 @@ class PrivateEquity:
         marks: Sequence[TlhPortfolioObservation],
         month: int,
     ) -> None:
-        issuers = sorted({issuer for lot in holdings.lots if (issuer := private_issuer(lot.spec.asset_id)) is not None})
+        issuers = sorted({issuer for lot in holdings.lots if (issuer := private_issuer(lot.asset_id)) is not None})
         for issuer in issuers:
             asset = AssetId(f"private_equity:{issuer}")
             candidates = sorted(
-                (index for index, lot in enumerate(holdings.lots) if lot.spec.asset_id == asset),
-                key=lambda index: (holdings.lots[index].spec.purchase_month, holdings.lots[index].spec.lot_id),
+                (index for index, lot in enumerate(holdings.lots) if lot.asset_id == asset),
+                key=lambda index: (holdings.lots[index].purchase_month, holdings.lots[index].lot_id),
             )
-            first = holdings.lots[candidates[0]].spec
+            first = holdings.lots[candidates[0]]
             actor, scale = first.agent_id, first.quantity_scale
             mark = market.value(f"private_equity_mark:{issuer}", month)
             regime = PrivateEquityRegimeCode(market.value(f"private_equity_regime:{issuer}", month))
