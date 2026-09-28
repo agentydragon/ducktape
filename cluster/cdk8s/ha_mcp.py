@@ -45,7 +45,7 @@ from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecEndpoints, ServiceMonitorSpecSelector
 
-from cluster.cdk8s import namespaces, pod_policy
+from cluster.cdk8s import cilium, namespaces, pod_policy
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.fleet_rules import add_fleet_rules
@@ -293,9 +293,7 @@ class HaMcpApp(Construct):
                 IngressRule.from_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": "agentplane-staging"}, ports=[_APP_FACADE_PORT]
                 ),
-                IngressRule.from_endpoints(
-                    {"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_APP_METRICS_PORT]
-                ),
+                cilium.SCRAPERS.admit(_APP_METRICS_PORT),
             ],
         )
 

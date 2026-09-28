@@ -44,6 +44,7 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name, settings_file
 
@@ -64,6 +65,15 @@ _MCP_PATHS = (
     "/revoke",
     "/auth/callback",
 )
+
+
+def service(namespace: str) -> ServiceRef:
+    """The Action Service in one environment's namespace."""
+    return ServiceRef(
+        name=_NAME,
+        port=Port(name="http", number=CONTAINER_PORT),
+        pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())),
+    )
 
 
 class Actions(Construct):
@@ -316,8 +326,7 @@ class Actions(Construct):
             "httproute",
             metadata=ApiObjectMetadata(name=f"{_NAME}-mcp", namespace=self.env.namespace),
             hostnames=[self.env.actions.hostname],
-            backend=_NAME,
-            port=CONTAINER_PORT,
+            backend=service(self.env.namespace),
             paths=_MCP_PATHS,
             timeout="3600s",
         )

@@ -40,6 +40,7 @@ from cluster.cdk8s.helm import helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/app"
 _NAME = "forgejo"
@@ -48,6 +49,12 @@ _S3_CREDENTIALS_SECRET = "forgejo-s3-credentials"
 _METRICS_TOKEN = "forgejo-metrics-token"
 _GIT_CLAIM = "forgejo-git-rwx-ssd"
 _RELEASE_LABELS = {"app.kubernetes.io/name": _NAME, "app.kubernetes.io/instance": _NAME}
+# The chart's HTTP Service.
+HTTP = ServiceRef(
+    name="forgejo-http",
+    port=Port(name="http", number=3000),
+    pods=Pods(namespace=_NAMESPACE, labels=tuple(_RELEASE_LABELS.items())),
+)
 _VALKEY = "redis://forgejo-valkey-ovh-master.forgejo.svc.cluster.local:6379/0"
 _CLUSTER_CA_MOUNT = {"name": "cluster-ca", "mountPath": "/etc/ssl/certs/cluster-ca", "readOnly": True}
 
@@ -186,7 +193,7 @@ def _values() -> dict[str, object]:
                     "DOMAIN": "git.allegedly.works",
                     "SSH_DOMAIN": "git.allegedly.works",
                     "ROOT_URL": "https://git.allegedly.works",
-                    "HTTP_PORT": 3000,
+                    "HTTP_PORT": HTTP.pod_port,
                     "SSH_PORT": 2222,
                     "DISABLE_SSH": False,
                     "START_SSH_SERVER": True,
@@ -258,7 +265,10 @@ def _values() -> dict[str, object]:
         "extraVolumes": [{"name": "cluster-ca", "configMap": {"name": "cluster-internal-ca-bundle"}}],
         "extraContainerVolumeMounts": [_CLUSTER_CA_MOUNT],
         "extraInitVolumeMounts": [_CLUSTER_CA_MOUNT],
-        "service": {"http": {"type": "ClusterIP", "port": 3000}, "ssh": {"type": "ClusterIP", "port": 2222}},
+        "service": {
+            "http": {"type": "ClusterIP", "port": HTTP.port.number},
+            "ssh": {"type": "ClusterIP", "port": 2222},
+        },
         # Resources. Forgejo is a monolith: the web UI, API, git HTTP/SSH, the
         # container/package registry, AND the Actions coordinator all run in this one
         # process — so they share this CPU budget. The old 500m limit caused constant
@@ -403,8 +413,7 @@ def chart(app: App) -> Chart:
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["git.allegedly.works"],
-        backend="forgejo-http",
-        port=3000,
+        backend=HTTP,
         hsts=False,
         listener=None,
     )
