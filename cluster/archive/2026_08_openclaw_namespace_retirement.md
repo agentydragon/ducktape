@@ -41,7 +41,5 @@ reflected into another namespace. The obsolete reflector destinations were remov
 from their source Secrets, and the two empty namespaces and their Flux
 Kustomizations were retired.
 
-The `openclaw` ImageRepository and ImagePolicy under
-`cluster/k8s/flux-image-automation-ghcr/` remain active because
-`public-coder-agent` still consumes that image. The retired gateway's LiteLLM key remained only through the time-boxed `agent-lab` experiment and was
+The retired gateway's LiteLLM key remained only through the time-boxed `agent-lab` experiment and was
 removed with that namespace after the experiment ended.

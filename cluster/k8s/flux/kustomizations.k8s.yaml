@@ -89,21 +89,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: budget-namespace
-  namespace: ducktape-flux
-spec:
-  interval: 1h
-  path: ./cluster/generated/forgejo/budget-namespace
-  prune: false
-  sourceRef:
-    kind: ExternalArtifact
-    name: budget-namespace
-    namespace: ducktape-flux
-  timeout: 1m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: haku-namespace
   namespace: ducktape-flux
 spec:
@@ -1071,6 +1056,24 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: budget-namespace
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+  interval: 1h
+  path: ./cluster/generated/forgejo/budget-namespace
+  prune: false
+  sourceRef:
+    kind: ExternalArtifact
+    name: budget-namespace
+    namespace: ducktape-flux
+  timeout: 1m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: external-secrets-config
   namespace: ducktape-flux
 spec:
@@ -1204,9 +1207,6 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
-  dependsOn:
-    - name: claude-rbac
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/external-creds
   prune: true
@@ -2599,8 +2599,6 @@ spec:
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
-    - name: budget-namespace
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/forgejo/budget-ledger
   prune: true
@@ -2620,8 +2618,6 @@ metadata:
 spec:
   dependsOn:
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: claude-rbac
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/forgejo/claude
@@ -3457,8 +3453,6 @@ spec:
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
-    - name: cpap-sync
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/forgejo/cpap-data
   prune: true
@@ -3590,6 +3584,9 @@ metadata:
   name: forgejo-token-rotation
   namespace: ducktape-flux
 spec:
+  dependsOn:
+    - name: external-secrets-operator
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/forgejo-token-rotation
   prune: true
