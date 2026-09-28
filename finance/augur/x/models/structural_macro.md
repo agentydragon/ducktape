@@ -63,16 +63,6 @@ duplicate or unavailable starts reject. Output rollout indices are batch-local,
 and provenance retains their ordered historical dates. Historical windows are
 not random seeds or independent Monte Carlo draws.
 
-The stationary bootstrap resamples that same record in blocks of consecutive months,
-drawn jointly across every series, at a caller-chosen mean block length and any
-horizon, including one longer than the record. Every month after the opening is one
-record month's rates and index growth, so the support is the record's: a path can
-recombine its worst episodes but never exceed its worst month. At a block seam every
-rate moves between two historical levels within a month, and bond funds price that
-move. A rollout depends only on its seed, not on the batch or the horizon, and
-provenance names the record by digest with its span, the mean block length and the
-seeds.
-
 ## What is fitted, and on what
 
 | Block       | Source                                | Window            | Months |

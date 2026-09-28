@@ -776,3 +776,39 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "stationary_bootstrap",
+    srcs = ["stationary_bootstrap.py"],
+    deps = [
+        "//finance/augur/model:bond_fund",
+        "//finance/augur/model:equity",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:historical_windows",
+        "//finance/augur/model:market_paths",
+        "//finance/augur/model:product_paths",
+        "//finance/augur/model:series",
+        "//finance/augur/model:series_model",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "stationary_bootstrap_test",
+    srcs = ["stationary_bootstrap_test.py"],
+    deps = [
+        ":conftest",
+        ":stationary_bootstrap",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:bond_fund",
+        "//finance/augur/model:equity",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:historical_windows",
+        "//finance/augur/model:market_paths",
+        "//finance/augur/model:series",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -20,7 +20,7 @@ from finance.augur.model.exogenous import ExogenousSamplingRequest, Sampler
 from finance.augur.model.historical_windows import HistoricalWindowsModel, MacroHistory
 from finance.augur.model.market_paths import MarketPaths
 from finance.augur.model.series import SecuritySymbol
-from finance.augur.model.stationary_bootstrap import StationaryBootstrapModel
+from finance.augur.x.models.stationary_bootstrap import StationaryBootstrapModel
 
 RATE_STEP = 1e-4
 EQUITY_GROWTH = 0.004

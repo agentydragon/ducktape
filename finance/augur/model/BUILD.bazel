@@ -379,39 +379,3 @@ py_library(
         "@pypi//pydantic",
     ],
 )
-
-py_library(
-    name = "stationary_bootstrap",
-    srcs = ["stationary_bootstrap.py"],
-    deps = [
-        ":bond_fund",
-        ":equity",
-        ":exogenous",
-        ":historical_windows",
-        ":market_paths",
-        ":product_paths",
-        ":series",
-        ":series_model",
-        "@pypi//numpy",
-    ],
-)
-
-py_test(
-    name = "stationary_bootstrap_test",
-    srcs = ["stationary_bootstrap_test.py"],
-    deps = [
-        ":bond_fund",
-        ":conftest",
-        ":equity",
-        ":exogenous",
-        ":historical_windows",
-        ":market_paths",
-        ":series",
-        ":stationary_bootstrap",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
