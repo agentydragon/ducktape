@@ -115,6 +115,7 @@ py_library(
         "//cluster/cdk8s/providers/agentplane:egress_credential",
         "//cluster/cdk8s/providers/agentplane:egress_policy",
         "//cluster/cdk8s/providers/cert_manager:bundle",
+        "//cluster/cdk8s/providers/cert_manager:cert_manager_bundle",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//util:settings_contract",
         "@pypi//cdk8s",
