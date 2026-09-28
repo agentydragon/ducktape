@@ -82,6 +82,40 @@ fixed for the horizon, and a sale pays one flat `closing_cost_ppb`. The sourced 
   mainland Vallejo, Mare Island) buys, holds, rents part out and sells, with every bill and
   deduction worked independently of the engine.
 
+**Caller shape.** A purchase's `parcel` names its rate area, loaded with
+`load_jurisdiction` (parents resolve through the tree), plus its districts and the seller's
+prior assessed value; `market` names the `home_value:`/`rent:` region. `declare_housing` loses
+its `Location` tuple and `PropertyTaxPolicy` its rate override: a study wanting a hypothetical
+rate builds or copies a `Jurisdiction` value in code, so shipped files stay the vetted law.
+
+**First milestone: San Francisco and mainland Vallejo, county and city level.** Accepted when
+each of these holds against an independent calculation or published source:
+
+- **A. Assessed value:** set to the price at purchase; each January lien date grown by the
+  year's factor capped at 2% (3% CPI gives +2%, 1% gives +1%, a negative year a factor below
+  1); capital improvements add their cost when completed; a sale resets it. Past years use the
+  Board of Equalization's published factors. Deviation: simulated years use modeled national
+  CPI, where the law uses California's October-to-October CPI.
+- **B. Secured tax:** (1% + the rate area's debt rate for the fiscal year) × (assessed value −
+  the homeowners' exemption for a primary residence), to the cent, for San Francisco's
+  published rate and one documented mainland-Vallejo rate area.
+- **C. Supplemental bill:** (new − prior assessed value) × rate × the fiscal year's remaining
+  share, in the purchase year.
+- **D. Transfer tax:** San Francisco's table just below, at and above bracket edges;
+  Solano County's documentary transfer tax, plus Vallejo's own if the sources show one;
+  seller-paid reduces the amount realized, buyer-paid adds to basis.
+- **E. Income tax:** the owner's share of ad-valorem tax paid in a calendar year goes to SALT
+  under the cap, a rented share is a rental expense, transfer tax is never itemized; federal
+  and California.
+- **F. Lifecycle:** per location, ten years: buy with a mortgage, live there three, rent the
+  whole of it four, sell. Every year's bills, SALT, rental expense, depreciation, and the
+  sale's transfer tax, gain, §121 exclusion and recapture match a hand calculation checked in
+  beside the test.
+
+Outside the milestone, and listed here until done: district and parcel charges (DISTRICTS),
+Proposition 8 (DECLINE), and installment timing (INSTALLMENTS); annual totals are right
+without them.
+
 **Items**, each landing its rule, data and tests together:
 
 - **ASSESS** (first): parcel situs replaces `Location`. `california.yaml` gains the Proposition
