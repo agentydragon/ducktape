@@ -6,6 +6,7 @@ from pathlib import Path
 
 from cluster.cdk8s.generation import write_namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 
 
 def write_manifests(root: Path) -> None:
@@ -13,11 +14,8 @@ def write_manifests(root: Path) -> None:
         root,
         f"{HAND_WRITTEN_ROOT}/authentik",
         name="authentik",
-        labels={
-            "goldilocks.fairwinds.com/enabled": "true",
-            "goldilocks.fairwinds.com/vpa-update-mode": "initial",
-            "rbac.ducktape.io/agent-readable-logs": "true",
-        },
+        vpa=Vpa.INITIAL,
+        agent_readable=AgentReadable.LOGS,
         # The Kyverno default-vpa-requests-only policy matches only auto-mode namespaces; in
         # initial mode VPA would otherwise scale the declared limits with its requests.
         annotations={
