@@ -339,7 +339,7 @@ def property_sale_world() -> World:
                     # The seller's lower assessed value makes month 1 carry a supplemental bill too.
                     parcel=Parcel(
                         situs=compile_situs(load_jurisdiction(JurisdictionId("san_francisco")), currency=USD),
-                        prior_assessed_value=money(400_000),
+                        prior_assessed_value=USD.quanta(400_000),
                     ),
                     market=PROPERTY_LOCATION_ID,
                     buyer_agent_id=ALICE,
