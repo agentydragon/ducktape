@@ -101,6 +101,7 @@ spec:
                     app.kubernetes.io/name: haku-egress-proxy
                 topologyKey: kubernetes.io/hostname
               weight: 100
+      automountServiceAccountToken: false
       containers:
         - command:
             - mitmdump

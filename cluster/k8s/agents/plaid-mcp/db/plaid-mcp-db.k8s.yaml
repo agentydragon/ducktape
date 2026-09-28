@@ -192,6 +192,7 @@ spec:
       labels:
         app: plaid-mcp-db-readonly-provisioner
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |

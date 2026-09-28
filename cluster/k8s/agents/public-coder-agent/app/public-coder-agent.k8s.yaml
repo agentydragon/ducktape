@@ -109,6 +109,7 @@ spec:
                     operator: In
                     values:
                       - ovh-ns102453
+      automountServiceAccountToken: false
       containers:
         - env:
             - name: HOME

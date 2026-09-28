@@ -84,6 +84,7 @@ spec:
         app.kubernetes.io/component: server
         app.kubernetes.io/name: airlock
     spec:
+      automountServiceAccountToken: true
       containers:
         - env:
             - name: AIRLOCK_IMAGE_TAG

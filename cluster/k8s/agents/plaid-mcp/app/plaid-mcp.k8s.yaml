@@ -87,6 +87,7 @@ spec:
       labels:
         app.kubernetes.io/name: plaid-mcp
     spec:
+      automountServiceAccountToken: true
       containers:
         - env:
             - name: PLAID_MCP_PLAID_ENV
@@ -183,6 +184,7 @@ spec:
           labels:
             app.kubernetes.io/name: plaid-mcp-sync
         spec:
+          automountServiceAccountToken: true
           containers:
             - env:
                 - name: PLAID_MCP_PLAID_ENV

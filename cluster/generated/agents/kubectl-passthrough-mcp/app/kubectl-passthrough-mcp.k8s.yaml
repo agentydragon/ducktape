@@ -49,6 +49,7 @@ spec:
       labels:
         app.kubernetes.io/name: kubectl-passthrough-mcp
     spec:
+      automountServiceAccountToken: true
       containers:
         - args:
             - --config=/etc/kubectl-passthrough-mcp/00-public.toml

@@ -131,6 +131,7 @@ spec:
       labels:
         app.kubernetes.io/name: tana-mcp
     spec:
+      automountServiceAccountToken: true
       containers:
         - env:
             - name: RESOLUTION
@@ -295,6 +296,7 @@ spec:
       labels:
         app.kubernetes.io/name: tana-mcp-facade
     spec:
+      automountServiceAccountToken: false
       containers:
         - env:
             - name: MCP_FACADE_AUTH__OIDC_CLIENT_ID
