@@ -57,6 +57,12 @@ runner change must set the verified 131072/262144-token budget for each Qwen ali
 on initial launch and resume. Model switches across differing configured budgets
 must require a new thread unless the native process can safely update its budget.
 
+Codex 0.156.1's [model-info override](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/models-manager/src/model_info.rs#L16-L27)
+applies `model_context_window`. With no separate explicit compaction limit, its
+[model protocol](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/protocol/src/openai_models.rs#L484-L506)
+derives the automatic-compaction limit as 90% of that resolved window. Therefore
+the runner should set the window and retain Codex's native compaction policy.
+
 Repository fixture pins and runner-image package versions differ: the inspected
 fixture pins are Claude 2.1.252 and Codex 0.152.0; the locked Nix image evaluates
 to Claude 2.1.280 and Codex 0.156.1. Verify the actual deployed binaries during the
