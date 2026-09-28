@@ -129,3 +129,14 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "helm_repository",
+    srcs = ["helm_repository.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/flux:helmrepository",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)

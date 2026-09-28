@@ -24,9 +24,8 @@ not approve a new abstraction, resource owner, authorization grant, or deploymen
 Each CRD family's `cdk8s_import` bindings and generic constructors live in
 `cluster/cdk8s/providers/<name>/`, in the shape
 [the builder-authoring skill](../skills/cdk8s_builders/SKILL.md) states. Kinds still
-built raw at several call sites, each its own call: Flux `HelmRepository` (30
-sites) and `GitRepository` (8), then `SandboxWarmPool`, Terraform and
-`VirtualMachine` (2 each).
+built raw at several call sites, each its own call: Flux `GitRepository` (8), then
+`SandboxWarmPool`, Terraform and `VirtualMachine` (2 each).
 
 Done: no ducktape-specific module builds a CRD's generated dataclasses raw at more than
 one call site, with no rendered-output diff from `//cluster/cdk8s:test_generate_manifests`.

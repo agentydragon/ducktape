@@ -24,7 +24,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecValuesFromKind,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRoute,
     HttpRouteSpec,
@@ -35,7 +34,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
 from cluster.cdk8s import cnpg, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.gateway_api.http_route import RouteMatch
@@ -107,17 +106,11 @@ def _database(scope: Construct) -> None:
 
 
 def _synapse(scope: Construct) -> None:
-    repository = HelmRepository(
-        scope,
-        "helm-repository",
-        metadata=ApiObjectMetadata(name=_HELM_REPOSITORY, namespace=NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://ananace.gitlab.io/charts"),
-    )
     helm_release(
         scope,
         SYNAPSE,
         NAMESPACE,
-        repository=repository,
+        repository=helm_repository(scope, _HELM_REPOSITORY, NAMESPACE, url="https://ananace.gitlab.io/charts"),
         chart="matrix-synapse",
         version="3.12.37",
         interval="15m",

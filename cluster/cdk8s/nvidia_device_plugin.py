@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "nvidia-device-plugin"
@@ -25,17 +24,11 @@ def chart(app: App) -> Chart:
             labels={"pod-security.kubernetes.io/enforce": "privileged", "rbac.ducktape.io/agent-readable-logs": "true"},
         ),
     )
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name="nvidia", namespace=NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://nvidia.github.io/k8s-device-plugin"),
-    )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=helm_repository(chart, "nvidia", NAMESPACE, url="https://nvidia.github.io/k8s-device-plugin"),
         chart=NAME,
         version="0.20.0",
         interval="15m",
