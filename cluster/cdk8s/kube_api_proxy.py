@@ -24,27 +24,30 @@ _CONFIG_MAP = "kubeapi-proxy-config"
 _ROUTE = "kubeapi-allegedly-works"
 _PORT = 8080
 _LABELS = {"app": _PROXY}
-_NGINX_CONF = """\
+# kube-controller-manager publishes the apiserver's CA as this ConfigMap in every namespace.
+_CLUSTER_CA_CONFIG_MAP = "kube-root-ca.crt"
+_CLUSTER_CA_DIR = "/etc/nginx/cluster-ca"
+_NGINX_CONF = f"""\
 pid /tmp/nginx.pid;
 worker_processes 1;
 error_log /dev/stderr warn;
-events { worker_connections 128; }
-http {
+events {{ worker_connections 128; }}
+http {{
   access_log /dev/stderr;
   # kubectl exec/attach/port-forward open an HTTP Upgrade (WebSocket/SPDY) to
   # the apiserver. By default nginx proxies as HTTP/1.0 and strips the hop-by-hop
   # Upgrade/Connection headers, so the apiserver receives a plain GET to /exec and
   # returns 400 "Upgrade request required". The map + directives below fix that.
-  map $http_upgrade $connection_upgrade {
+  map $http_upgrade $connection_upgrade {{
     default upgrade;
     ''      close;
-  }
-  server {
-    listen 8080;
-    location / {
+  }}
+  server {{
+    listen {_PORT};
+    location / {{
       proxy_pass https://kubernetes.default.svc:443;
       proxy_ssl_verify on;
-      proxy_ssl_trusted_certificate /var/run/secrets/kubernetes.io/serviceaccount/ca.crt;
+      proxy_ssl_trusted_certificate {_CLUSTER_CA_DIR}/ca.crt;
       proxy_ssl_server_name on;
       proxy_ssl_name kubernetes.default.svc;
       proxy_set_header Host $host;
@@ -57,9 +60,9 @@ http {
       proxy_set_header Connection $connection_upgrade;
       proxy_read_timeout 300s;
       proxy_send_timeout 300s;
-    }
-  }
-}
+    }}
+  }}
+}}
 """
 
 
@@ -84,7 +87,8 @@ def _deployment(chart: Chart) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
-                    automount_service_account_token=True,
+                    # nginx forwards each caller's own bearer and needs only the cluster CA.
+                    automount_service_account_token=False,
                     containers=[
                         k8s.Container(
                             name="nginx",
@@ -99,6 +103,7 @@ def _deployment(chart: Chart) -> None:
                                     sub_path="nginx.conf",
                                     read_only=True,
                                 ),
+                                k8s.VolumeMount(name="cluster-ca", mount_path=_CLUSTER_CA_DIR, read_only=True),
                                 k8s.VolumeMount(name="tmp", mount_path="/tmp"),
                                 k8s.VolumeMount(name="cache", mount_path="/var/cache/nginx"),
                             ],
@@ -120,6 +125,9 @@ def _deployment(chart: Chart) -> None:
                     ],
                     volumes=[
                         k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP)),
+                        k8s.Volume(
+                            name="cluster-ca", config_map=k8s.ConfigMapVolumeSource(name=_CLUSTER_CA_CONFIG_MAP)
+                        ),
                         k8s.Volume(
                             name="tmp",
                             empty_dir=k8s.EmptyDirVolumeSource(
