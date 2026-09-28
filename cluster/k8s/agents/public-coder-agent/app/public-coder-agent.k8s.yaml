@@ -205,9 +205,6 @@ spec:
               name: trust
               readOnly: true
               subPath: ca-certificates.crt
-            - mountPath: /egress-proxy-ca
-              name: haku-egress-proxy-ca-cert
-              readOnly: true
             - mountPath: /home/openclaw/.ssh
               name: ssh
               readOnly: true
@@ -246,9 +243,6 @@ spec:
         - configMap:
             name: public-coder-agent-proxy-ca-cert
           name: trust
-        - configMap:
-            name: haku-egress-proxy-ca-cert
-          name: haku-egress-proxy-ca-cert
         - name: ssh
           projected:
             defaultMode: 288
