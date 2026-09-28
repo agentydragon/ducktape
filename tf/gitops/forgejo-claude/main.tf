@@ -3,9 +3,10 @@
 # Provisions a `claude` service user that owns no repos of its own; private
 # data repos grant it read-only collaboration where agents should be able to
 # pull (e.g. gaffer-private tf/thrive-scrape adds it as reader on
-# thrive-scrape). The HTTP Basic credentials land in the `claude-sandbox`
-# namespace, where agent sessions fetch them on demand — announced by
-# devinfra/claude/claude_hook/creds_banner.sh. Provider wiring mirrors
+# thrive-scrape). The HTTP Basic credentials land in the `forgejo` namespace;
+# ESO copies them into `claude-sandbox`, where agent sessions fetch them on demand
+# (announced by devinfra/claude/claude_hook/creds_banner.sh), and into
+# `agents-infra` for forgejo-token-rotation. Provider wiring mirrors
 # tf/gitops/augur-evidence.
 
 data "kubernetes_secret" "forgejo_admin" {
@@ -34,12 +35,12 @@ resource "forgejo_user" "claude" {
   visibility           = "private"
 }
 
-# Read credentials for agent sessions, directly in claude-sandbox (the
-# namespace is ducktape-owned, so no reflection hop is needed).
-resource "kubernetes_secret" "claude_forgejo_credentials" {
+# Read credentials for agent sessions, copied into claude-sandbox
+# (cluster/cdk8s/claude_sandbox_secrets.py).
+resource "kubernetes_secret" "claude_forgejo_credentials_source" {
   metadata {
     name      = "claude-forgejo-credentials"
-    namespace = "claude-sandbox"
+    namespace = "forgejo"
   }
 
   data = {
@@ -50,13 +51,14 @@ resource "kubernetes_secret" "claude_forgejo_credentials" {
   }
 }
 
-# Source credential for forgejo-token-rotation. The rotator mints the API token
+# Source credential for forgejo-token-rotation, copied into agents-infra
+# (cluster/cdk8s/forgejo_token_rotation.py). The rotator mints the API token
 # that `tea` consumes, while this Terraform root remains the owner of the
 # account password.
-resource "kubernetes_secret" "claude_forgejo_token_mint" {
+resource "kubernetes_secret" "claude_forgejo_token_mint_source" {
   metadata {
     name      = "forgejo-token-mint-claude"
-    namespace = "agents-infra"
+    namespace = "forgejo"
   }
 
   data = {
@@ -64,5 +66,23 @@ resource "kubernetes_secret" "claude_forgejo_token_mint" {
     password     = random_password.claude.result
     url          = "https://git.allegedly.works"
     internal_url = var.forgejo_url
+  }
+}
+
+# The claude-sandbox and agents-infra ExternalSecrets adopt the Secrets these
+# addresses created there.
+# CLEANUP(added 2026-09-28): Remove once the forgejo_claude state has forgotten
+# both addresses. Never destroy the ESO-owned Secrets.
+removed {
+  from = kubernetes_secret.claude_forgejo_credentials
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = kubernetes_secret.claude_forgejo_token_mint
+  lifecycle {
+    destroy = false
   }
 }

@@ -221,7 +221,6 @@ from cluster.cdk8s.seaweedfs import (
     external_credentials as seaweedfs_external_credentials,
     filer_db as seaweedfs_filer_db,
     flux_kustomizations as seaweedfs_flux_kustomizations,
-    forgejo_bucket as seaweedfs_forgejo_bucket,
     loom_gym_bucket as seaweedfs_loom_gym_bucket,
     monitoring as seaweedfs_monitoring,
     namespace as seaweedfs_namespace,
@@ -348,10 +347,6 @@ def generate_manifests(root: Path) -> None:
     flux_image_automation_ghcr_kustomization = flux_image_automation_ghcr.flux_image_automation_ghcr(
         flux_chart,
         write_directory(root, flux_image_automation_ghcr_artifact, flux_image_automation_ghcr.automation_chart),
-    )
-    budget_namespace_artifact = artifact("budget-namespace", forgejo_budget_namespace.OUTPUT_DIR)
-    budget_namespace_kustomization = forgejo_budget_namespace.budget_namespace(
-        flux_chart, write_directory(root, budget_namespace_artifact, forgejo_budget_namespace.chart)
     )
     haku_namespace_artifact = artifact(haku_namespace.NAME, haku_namespace.OUTPUT_DIR)
     haku_namespace_kustomization = haku_namespace.haku_namespace(
@@ -567,6 +562,17 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, external_secrets_operator_artifact, external_secrets_operator.chart),
         external_secrets_crds_kustomization,
         cert_manager_kustomization,
+    )
+    budget_namespace_artifact = artifact("budget-namespace", forgejo_budget_namespace.OUTPUT_DIR)
+    forgejo_budget_namespace.budget_namespace(
+        flux_chart,
+        write_directory(
+            root,
+            budget_namespace_artifact,
+            forgejo_budget_namespace.chart,
+            forgejo_budget_namespace.git_credentials_chart,
+        ),
+        external_secrets_operator_kustomization,
     )
     external_secrets_config_artifact = artifact("external-secrets-config", external_secrets_config.OUTPUT_DIR)
     external_secrets_config.external_secrets_config(
@@ -873,12 +879,6 @@ def generate_manifests(root: Path) -> None:
         ),
         seaweedfs_operator_kustomization,
     )
-    seaweedfs_forgejo_bucket_artifact = artifact("seaweedfs-forgejo-bucket", seaweedfs_forgejo_bucket.OUTPUT_DIR)
-    seaweedfs_forgejo_bucket.seaweedfs_forgejo_bucket(
-        flux_chart,
-        write_directory(root, seaweedfs_forgejo_bucket_artifact, seaweedfs_forgejo_bucket.chart),
-        seaweedfs_operator_kustomization,
-    )
     seaweedfs_loom_gym_bucket_artifact = artifact("seaweedfs-loom-gym-bucket", seaweedfs_loom_gym_bucket.OUTPUT_DIR)
     seaweedfs_loom_gym_bucket.seaweedfs_loom_gym_bucket(
         flux_chart,
@@ -996,13 +996,9 @@ def generate_manifests(root: Path) -> None:
         flux_chart, forgejo_agentydragon_repos_artifact, tofu_controller_kustomization
     )
     budget_ledger_artifact = artifact("budget-ledger", forgejo_gitops_modules.BUDGET_LEDGER_DIR)
-    forgejo_gitops_modules.budget_ledger(
-        flux_chart, budget_ledger_artifact, tofu_controller_kustomization, budget_namespace_kustomization
-    )
+    forgejo_gitops_modules.budget_ledger(flux_chart, budget_ledger_artifact, tofu_controller_kustomization)
     forgejo_claude_artifact = artifact("forgejo-claude", forgejo_gitops_modules.CLAUDE_DIR)
-    forgejo_gitops_modules.forgejo_claude(
-        flux_chart, forgejo_claude_artifact, tofu_controller_kustomization, claude_rbac_kustomization
-    )
+    forgejo_gitops_modules.forgejo_claude(flux_chart, forgejo_claude_artifact, tofu_controller_kustomization)
     forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
     forgejo_images.forgejo_images(
         flux_chart,
@@ -1102,7 +1098,7 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     cpap_sync_artifact = artifact("cpap-sync", cpap_sync_app.OUTPUT_DIR)
-    cpap_sync_kustomization = cpap_sync_app.cpap_sync(
+    cpap_sync_app.cpap_sync(
         flux_chart,
         write_directory(
             root,
@@ -1241,9 +1237,7 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     cpap_data_artifact = artifact("cpap-data", forgejo_gitops_modules.CPAP_DATA_DIR)
-    forgejo_gitops_modules.cpap_data(
-        flux_chart, cpap_data_artifact, tofu_controller_kustomization, cpap_sync_kustomization
-    )
+    forgejo_gitops_modules.cpap_data(flux_chart, cpap_data_artifact, tofu_controller_kustomization)
     grocy_mcp_sf_artifact = artifact("grocy-mcp-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", grocy_mcp.BASE_DIR)
     grocy_flux_kustomizations.grocy_mcp_sf(
         flux_chart,
@@ -1282,7 +1276,9 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     forgejo_token_rotation_artifact = artifact("forgejo-token-rotation", forgejo_token_rotation.OUTPUT_DIR)
-    agents_flux_kustomizations.forgejo_token_rotation(flux_chart, forgejo_token_rotation_artifact)
+    agents_flux_kustomizations.forgejo_token_rotation(
+        flux_chart, forgejo_token_rotation_artifact, external_secrets_operator_kustomization
+    )
     haku_egress_proxy_artifact = artifact("haku-egress-proxy", haku_egress_proxy.OUTPUT_DIR)
     haku_egress_proxy_kustomization = agents_flux_kustomizations.haku_egress_proxy(
         flux_chart,
@@ -1543,7 +1539,6 @@ def generate_manifests(root: Path) -> None:
             proxmox_proxy_artifact,
             reloader_artifact,
             seaweedfs_drivefs_artifacts_bucket_artifact,
-            seaweedfs_forgejo_bucket_artifact,
             seaweedfs_loom_gym_bucket_artifact,
             seaweedfs_pr_visuals_bucket_artifact,
             seaweedfs_registry_cache_bucket_artifact,

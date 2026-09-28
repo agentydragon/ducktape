@@ -44,6 +44,9 @@ spec:
       kind: Bucket
       namespace: vm-images-publisher
     - group: seaweed.seaweedfs.com
+      kind: S3Identity
+      namespace: vm-images-publisher
+    - group: seaweed.seaweedfs.com
       kind: S3Credentials
       namespace: vm-images-publisher
   to:
@@ -55,11 +58,12 @@ apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
   name: vm-images-ci-writer
-  namespace: seaweedfs
+  namespace: vm-images-publisher
 spec:
   reclaimPolicy: Retain
   seaweedRef:
     name: seaweedfs
+    namespace: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
@@ -80,11 +84,12 @@ apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
   name: vm-images-cdi-reader
-  namespace: seaweedfs
+  namespace: vm-images-publisher
 spec:
   reclaimPolicy: Retain
   seaweedRef:
     name: seaweedfs
+    namespace: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials

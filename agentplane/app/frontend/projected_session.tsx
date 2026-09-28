@@ -1559,14 +1559,16 @@ export function ProjectedSession({ threadId }: { threadId: string }): JSX.Elemen
   return (
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
       <TopbarTitle>
-        <Stack gap={0} style={{ minWidth: 0 }}>
-          <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
+        <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+          <Box style={{ flex: 1, minWidth: 0 }}>
+            <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
+          </Box>
           {thread && (
-            <Text size="xs" c="dimmed" truncate>
+            <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
               {thread.sandbox}
             </Text>
           )}
-        </Stack>
+        </Group>
       </TopbarTitle>
       <Stack style={{ flex: 1, minHeight: 0 }}>
         {/* The controls wait on this stream's word that the sandbox runs, so one down past a blip, or

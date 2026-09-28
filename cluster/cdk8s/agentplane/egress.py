@@ -39,8 +39,6 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 from trust_manager_crds.io.cert_manager.trust import (
-    Bundle,
-    BundleSpec,
     BundleSpecSources,
     BundleSpecSourcesConfigMap,
     BundleSpecTarget,
@@ -75,6 +73,7 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
+from cluster.cdk8s.providers.cert_manager.bundle import Bundle
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name, settings_file
@@ -428,30 +427,28 @@ class Egress(Construct):
             self,
             "upstream-bundle",
             metadata=ApiObjectMetadata(name=f"{self.env.namespace}-egress-upstream-ca"),
-            spec=BundleSpec(
-                sources=[
-                    BundleSpecSources(use_default_c_as=True),
-                    BundleSpecSources(config_map=BundleSpecSourcesConfigMap(name="kube-root-ca.crt", key="ca.crt")),
-                ],
-                target=BundleSpecTarget(
-                    config_map=BundleSpecTargetConfigMap(
-                        key=CA_BUNDLE_KEY,
-                        metadata=BundleSpecTargetConfigMapMetadata(
-                            annotations={
-                                "description": (
-                                    f"Trust bundle the {self.env.namespace} egress proxy verifies "
-                                    "destinations with: public roots plus this cluster's CA"
-                                )
-                            }
-                        ),
-                    ),
-                    namespace_selector=BundleSpecTargetNamespaceSelector(
-                        match_expressions=[
-                            BundleSpecTargetNamespaceSelectorMatchExpressions(
-                                key="kubernetes.io/metadata.name", operator="In", values=[self.env.namespace]
+            sources=[
+                BundleSpecSources(use_default_c_as=True),
+                BundleSpecSources(config_map=BundleSpecSourcesConfigMap(name="kube-root-ca.crt", key="ca.crt")),
+            ],
+            target=BundleSpecTarget(
+                config_map=BundleSpecTargetConfigMap(
+                    key=CA_BUNDLE_KEY,
+                    metadata=BundleSpecTargetConfigMapMetadata(
+                        annotations={
+                            "description": (
+                                f"Trust bundle the {self.env.namespace} egress proxy verifies "
+                                "destinations with: public roots plus this cluster's CA"
                             )
-                        ]
+                        }
                     ),
+                ),
+                namespace_selector=BundleSpecTargetNamespaceSelector(
+                    match_expressions=[
+                        BundleSpecTargetNamespaceSelectorMatchExpressions(
+                            key="kubernetes.io/metadata.name", operator="In", values=[self.env.namespace]
+                        )
+                    ]
                 ),
             ),
         )

@@ -13,8 +13,6 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from cnpg_database_crds.io.cnpg.postgresql import (
-    Database,
-    DatabaseSpec,
     DatabaseSpecCluster,
     DatabaseSpecDatabaseReclaimPolicy,
     DatabaseSpecExtensions,
@@ -29,6 +27,7 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.providers.cnpg.database import Database
 from util.settings_contract import env_name
 
 NAME = "agentplane-index"
@@ -107,13 +106,11 @@ def _worker(
         chart,
         f"{instance}-database",
         metadata=ApiObjectMetadata(name=f"{NAME}-{instance}", namespace=NAME),
-        spec=DatabaseSpec(
-            cluster=DatabaseSpecCluster(name=_DB_CLUSTER),
-            name=database,
-            owner=_DB_OWNER,
-            database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
-            extensions=[DatabaseSpecExtensions(name="vector", ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
-        ),
+        cluster=DatabaseSpecCluster(name=_DB_CLUSTER),
+        name=database,
+        owner=_DB_OWNER,
+        database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
+        extensions=[DatabaseSpecExtensions(name="vector", ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
     )
 
     labels = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/instance": instance}

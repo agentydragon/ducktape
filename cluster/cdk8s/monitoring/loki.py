@@ -1,4 +1,4 @@
-"""Loki (SimpleScalable) with its SeaweedFS bucket and credentials, the two promtail
+"""Loki (SimpleScalable) with its SeaweedFS bucket, identity and credentials, the two promtail
 DaemonSets shipping pod logs and the NixOS journal, and Loki's CiliumNetworkPolicy.
 
 External access goes through the Authentik proxy outpost (native blueprint in
@@ -83,7 +83,7 @@ def _storage(chart: Chart) -> None:
     # Permit only the SeaweedFS operator's S3Credentials resource to populate
     # this exact workload Secret across namespaces.
     s3.secret_grant(chart, secret=_LEGACY_CREDENTIALS_SECRET, namespace=NAME)
-    identity = s3.Identity(chart, "identity", name=NAME)
+    identity = s3.Identity(chart, "identity", name=NAME, namespace=NAME)
     identity.credentials(
         namespace=namespace.NAME,
         secret=_LEGACY_CREDENTIALS_SECRET,

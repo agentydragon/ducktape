@@ -29,6 +29,7 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/cnpg:cluster",
+        "//cluster/cdk8s/providers/cnpg:cnpg_database",
         "//cluster/cdk8s/providers/cnpg:database",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//util:settings_contract",
