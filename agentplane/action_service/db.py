@@ -965,9 +965,3 @@ def _redact_value(value: JsonValue | None) -> JsonValue | None:
     if isinstance(value, list):
         return [_redact_value(item) for item in value]
     return value
-
-
-def verify_metadata_for_connection(connection: Any) -> None:
-    """Fail startup if this image's mappings cannot read the migrated schema."""
-    for table in Base.metadata.tables.values():
-        connection.execute(select(table).limit(0))

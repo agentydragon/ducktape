@@ -1,9 +1,8 @@
 /* Shared syntax highlighting: wrapping so a block reads where it sits instead of scrolling sideways,
    and token colours for the classes the highlight.js grammars `syntax_highlight.tsx` registers
    emit in common. Mantine's palette variables, so the hues match the rest of the app; the dark set
-   follows the scheme attribute Mantine puts on the document. Reused by every highlighted site,
-   including `frame.tsx`'s raw frame view alongside its own `.agentplane-frame` class. A token class
-   with no rule here still renders, just in the surrounding text colour. */
+   follows the scheme attribute Mantine puts on the document. A token class with no rule here still
+   renders, just in the surrounding text colour. */
 
 .agentplane-hljs {
   white-space: pre-wrap;
