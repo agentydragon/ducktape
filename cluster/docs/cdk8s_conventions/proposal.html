@@ -1154,11 +1154,12 @@
             writer, now writing 108 directories, three stateless folds (181 units down to 171), and the cleanups (the
             cores of pod policy and the namespace helper, the scheduling constants, eight more writer conversions and
             the ResticBackup dedupe) have landed. Ready without a decision: #8185&#39;s namespace edges,
-            <code>PREFER_WORKERS</code> on the two Agentplane services that tolerate the control plane (#8244), and the
-            per-area <code>harden()</code> and <code>place()</code> PRs on the raw and CRD-embedded workloads. The edge
-            check you deferred behind the cleanups is unblocked. The fleet rules, graph checks, health-check derivation
-            and glue absorption are deferred. The <code>wait</code> default and derived Orphan are postponed, and C4 and
-            the steps built on it wait on your decision.
+            <code>PREFER_WORKERS</code> on the two Agentplane services that tolerate the control plane (#8244), the
+            per-area <code>harden()</code> and <code>place()</code> PRs on the raw and CRD-embedded workloads, and
+            moving the 12 SeaweedFS identities that serve another namespace into their tenants&#39; namespaces (decision
+            10, step 19). The edge check you deferred behind the cleanups is unblocked. The fleet rules, graph checks,
+            health-check derivation and glue absorption are deferred. The <code>wait</code> default and derived Orphan
+            are postponed, and C4 and the steps built on it wait on your decision.
           </p>
         </div>
       </div>
@@ -1246,9 +1247,10 @@
                       <code>PrivateBucket</code> derives its credential Secret as
                       <code>&lt;name&gt;-s3-credentials</code>, the spelling attic, forgejo and registry-cache already
                       use, and takes the live name where a consumer spells it otherwise: renaming
-                      <code>secretRef</code> in place makes the operator mint a new key pair (decision 10).
-                      <code>local_identity: bool</code> places the S3Identity in the tenant or in the SeaweedFS
-                      namespace, and the grant is built under an <code>if</code> and is not an attribute.
+                      <code>secretRef</code> in place makes the operator mint a new key pair. Its S3Identity always
+                      lives in the tenant, beside the S3Credentials whose <code>identityRef</code> resolves to it;
+                      outside the SeaweedFS namespace the grant <code>&lt;tenant&gt;-&lt;name&gt;</code> admits all
+                      three kinds, is built under an <code>if</code>, and is not an attribute (decision 10).
                     </li>
                     <li>
                       <code>PostgresBackup</code> lives in <code>cnpg_backup.py</code>, which imports
@@ -5106,8 +5108,9 @@
                 Single-shot kind classes with the access list at construction remove the JSON-patch append and the chart
                 singleton, and one grant per bucket is safe: namespace monitoring already has two coexisting grants
                 (mimir and tempo), and loki has its own. <code>PrivateBucket</code> renders in the consumer&#39;s own
-                unit with its Secret name unchanged, so the six <code>seaweedfs-*-bucket</code> units retire and the
-                consumer&#39;s only SeaweedFS edge is <code>seaweedfs-operator</code> (CRDs; no webhook).
+                unit with its Secret name unchanged and its S3Identity beside its S3Credentials in the tenant, so the
+                six <code>seaweedfs-*-bucket</code> units retire and the consumer&#39;s only SeaweedFS edge is
+                <code>seaweedfs-operator</code> (CRDs; no webhook).
               </p>
             </div>
           </dd>
@@ -5717,9 +5720,11 @@ def https_route(
               <li>
                 <code>PrivateBucket</code> derives its credential Secret as <code>&lt;name&gt;-s3-credentials</code>,
                 the spelling attic, forgejo and registry-cache already use, and takes the live name where a consumer
-                spells it otherwise: renaming <code>secretRef</code> in place makes the operator mint a new key pair
-                (decision 10). <code>local_identity: bool</code> places the S3Identity in the tenant or in the SeaweedFS
-                namespace, and the grant is built under an <code>if</code> and is not an attribute.
+                spells it otherwise: renaming <code>secretRef</code> in place makes the operator mint a new key pair.
+                Its S3Identity always lives in the tenant, beside the S3Credentials whose
+                <code>identityRef</code> resolves to it; outside the SeaweedFS namespace the grant
+                <code>&lt;tenant&gt;-&lt;name&gt;</code> admits all three kinds, is built under an <code>if</code>, and
+                is not an attribute (decision 10).
               </li>
               <li>
                 <code>PostgresBackup</code> lives in <code>cnpg_backup.py</code>, which imports <code>cnpg</code> and
@@ -5767,10 +5772,10 @@ class MintedSecret(Construct):
 
 # seaweedfs/s3.py (full body in E3)
 class PrivateBucket(Construct):
-    &#34;&#34;&#34;Bucket `name` in `tenant`, read-write for the one S3Identity of the same name (in `tenant` when
-    `local_identity`, else in the SeaweedFS namespace). The operator writes that identity&#39;s key pair into
-    Secret `&lt;name&gt;-s3-credentials`, or `secret_name` where a live consumer already reads another name.
-    A grant admits exactly the kinds this puts outside the SeaweedFS namespace. Everything Retains.&#34;&#34;&#34;
+    &#34;&#34;&#34;Bucket `name` in `tenant`, read-write for the S3Identity of the same name beside it, where the
+    S3Credentials&#39; `identityRef` resolves. The operator writes that identity&#39;s key pair into Secret
+    `&lt;name&gt;-s3-credentials`, or `secret_name` where a live consumer already reads another name. Outside the
+    SeaweedFS namespace, grant `&lt;tenant&gt;-&lt;name&gt;` admits the three kinds. Everything Retains.&#34;&#34;&#34;
 
     def __init__(
         self,
@@ -5779,7 +5784,6 @@ class PrivateBucket(Construct):
         *,
         name: str,
         tenant: str,
-        local_identity: bool,
         adopt_existing: bool,
         description: str,
         secret_name: str | None = None,  # None: `&lt;name&gt;-s3-credentials`
@@ -5867,10 +5871,11 @@ class PostgresBackup(Construct):
                   and PLAN.md F already says &#39;a Construct when it owns related resources&#39;. Checked in a scratch
                   environment: a composite calling cdk8s-plus <code>mount</code> and <code>env.add_variable</code> after
                   <code>add_container</code> renders the volume, the read-only mount and the env var, and the corrected
-                  <code>PrivateBucket</code> reproduces attic&#39;s live S3Identity and S3Credentials with the Secret
+                  <code>PrivateBucket</code> reproduces attic&#39;s live S3Credentials byte for byte with the Secret
                   name unchanged, its Bucket adding only an explicit <code>reclaimPolicy: Retain</code>, the CRD
-                  default. Rendering in the owner&#39;s unit is #7094 rule 3 and the owner&#39;s &#39;no separate
-                  kustomization for credential plumbing&#39; (#7456).
+                  default, and its S3Identity keeping the IAM name <code>attic</code> in nix-cache. Rendering in the
+                  owner&#39;s unit is #7094 rule 3 and the owner&#39;s &#39;no separate kustomization for credential
+                  plumbing&#39; (#7456).
                 </p>
               </div>
             </dd>
@@ -7898,10 +7903,10 @@ ENDPOINT = ServiceRef(
 
 
 class PrivateBucket(Construct):
-    &#34;&#34;&#34;Bucket `name` in `tenant`, read-write for the one S3Identity of the same name (in `tenant` when
-    `local_identity`, else in the SeaweedFS namespace). The operator writes that identity&#39;s key pair into
-    Secret `&lt;name&gt;-s3-credentials`, or `secret_name` where a live consumer already reads another name.
-    A grant admits exactly the kinds this puts outside the SeaweedFS namespace. Everything Retains.&#34;&#34;&#34;
+    &#34;&#34;&#34;Bucket `name` in `tenant`, read-write for the S3Identity of the same name beside it, where the
+    S3Credentials&#39; `identityRef` resolves. The operator writes that identity&#39;s key pair into Secret
+    `&lt;name&gt;-s3-credentials`, or `secret_name` where a live consumer already reads another name. Outside the
+    SeaweedFS namespace, grant `&lt;tenant&gt;-&lt;name&gt;` admits the three kinds. Everything Retains.&#34;&#34;&#34;
 
     def __init__(
         self,
@@ -7910,14 +7915,12 @@ class PrivateBucket(Construct):
         *,
         name: str,
         tenant: str,
-        local_identity: bool,
         adopt_existing: bool,
         description: str,
         secret_name: str | None = None,  # None: `&lt;name&gt;-s3-credentials`
     ) -&gt; None:
         super().__init__(scope, id)
         described = {&#34;description&#34;: description}
-        identity_namespace = tenant if local_identity else seaweedfs_namespace.NAME
         secret = SecretRef(namespace=tenant, name=secret_name or f&#34;{name}-s3-credentials&#34;)
         self.bucket = Bucket(
             self,
@@ -7931,8 +7934,8 @@ class PrivateBucket(Construct):
         self.identity = S3Identity(
             self,
             &#34;identity&#34;,
-            metadata=ApiObjectMetadata(name=name, namespace=identity_namespace, annotations=described),
-            seaweed_ref=S3IdentitySpecSeaweedRef(name=cluster.NAME, namespace=_seaweed_ref_namespace(identity_namespace)),
+            metadata=ApiObjectMetadata(name=name, namespace=tenant, annotations=described),
+            seaweed_ref=S3IdentitySpecSeaweedRef(name=cluster.NAME, namespace=_seaweed_ref_namespace(tenant)),
             reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN,
         )
         self.credentials = S3Credentials(
@@ -7951,13 +7954,15 @@ class PrivateBucket(Construct):
         self.access_key = secret.key(AWS_ENV_KEY_FIELDS.access_key)
         self.secret_key = secret.key(AWS_ENV_KEY_FIELDS.secret_key)
         if tenant != seaweedfs_namespace.NAME:
-            kinds = [&#34;Bucket&#34;, &#34;S3Credentials&#34;, *([&#34;S3Identity&#34;] if local_identity else [])]
             ResourceReferenceGrant(
                 self,
                 &#34;grant&#34;,
                 metadata=ApiObjectMetadata(name=f&#34;{tenant}-{name}&#34;, namespace=seaweedfs_namespace.NAME),
                 spec=ResourceReferenceGrantSpec(
-                    from_=[ResourceReferenceGrantSpecFrom(group=_GROUP, kind=kind, namespace=tenant) for kind in kinds],
+                    from_=[
+                        ResourceReferenceGrantSpecFrom(group=_GROUP, kind=kind, namespace=tenant)
+                        for kind in (&#34;Bucket&#34;, &#34;S3Identity&#34;, &#34;S3Credentials&#34;)
+                    ],
                     to=[ResourceReferenceGrantSpecTo(group=_GROUP, kind=&#34;Seaweed&#34;, name=cluster.NAME)],
                 ),
             )
@@ -7973,7 +7978,6 @@ def _storage(scope: Construct) -&gt; s3.PrivateBucket:
         &#34;storage&#34;,
         name=NAME,
         tenant=NAMESPACE,
-        local_identity=False,
         adopt_existing=True,
         description=&#34;attic&#39;s NAR chunks; replicated per volume by the SeaweedFS cluster&#39;s defaultReplication.&#34;,
     )
@@ -7997,20 +8001,29 @@ def _storage(scope: Construct) -&gt; s3.PrivateBucket:
             <p>attic.k8s.yaml, before and after:</p>
             <ul>
               <li>
-                Byte-identical: S3Credentials <code>attic</code> (secretRef <code>attic-s3-credentials</code> unchanged,
-                so the operator does not re-mint the key), the Deployment&#39;s four Secret env vars, the CNPG Cluster,
-                the Service and the HTTPRoute.
+                Byte-identical: S3Credentials <code>attic</code> (<code>identityRef: attic</code> and secretRef
+                <code>attic-s3-credentials</code> unchanged, so the operator does not re-mint the key), the
+                Deployment&#39;s four Secret env vars, the CNPG Cluster, the Service and the HTTPRoute.
               </li>
               <li>
                 Bucket <code>nix-cache/attic</code>: gains the description annotation and an explicit
                 <code>reclaimPolicy: Retain</code>, which the CRD already defaulted to.
               </li>
-              <li>S3Identity <code>seaweedfs/attic</code>: gains the description annotation.</li>
+              <li>
+                S3Identity <code>seaweedfs/attic</code> becomes <code>nix-cache/attic</code> (decision 10), with the
+                description annotation and <code>seaweedRef.namespace: seaweedfs</code>. The IAM user
+                <code>attic</code> keeps its key and its bucket grant: the new object adopts the user the old one leaves
+                under <code>Retain</code>. That half deletes one object and creates another, so it is not a plain apply:
+                it lands first, alone, by step 19&#39;s identity procedure, with today&#39;s
+                <code>s3.Identity(..., namespace=NAMESPACE)</code>, and the conversion then renders the identity where
+                it already is.
+              </li>
               <li>
                 The ResourceReferenceGrant <code>seaweedfs/nix-cache</code> becomes
-                <code>seaweedfs/nix-cache-attic</code> with the same spec (the SeaweedFS naming decision: one grant per
-                bucket, <code>&lt;tenant&gt;-&lt;bucket&gt;</code>). Both are in this unit, so Flux applies the new
-                grant before it prunes the old one. It now renders after S3Credentials.
+                <code>seaweedfs/nix-cache-attic</code> (one grant per bucket,
+                <code>&lt;tenant&gt;-&lt;bucket&gt;</code>) and admits <code>S3Identity</code> from nix-cache besides
+                Bucket and S3Credentials. Both grants are in this unit, so Flux applies the new grant before it prunes
+                the old one. It renders after S3Credentials.
               </li>
               <li>The Deployment, CronJob and bootstrap Job changes in this file are E6&#39;s.</li>
             </ul>
@@ -8032,15 +8045,22 @@ def _storage(scope: Construct) -&gt; s3.PrivateBucket:
             <p>
               Re-read at f84301e72c: nix_cache/attic.py, nix_cache/flux_kustomizations.py, seaweedfs/s3.py and
               providers/seaweedfs/s3.py, and the committed cluster/k8s/nix-cache/attic.k8s.yaml and nix-cache node
-              (<code>[cnpg, external-secrets-operator, seaweedfs-operator]</code>, <code>wait: true</code>).
+              (<code>[cnpg, external-secrets-operator, seaweedfs-operator]</code>, <code>wait: true</code>); none of
+              them changed through b8e98deef1.
             </p>
             <p>
-              Re-ran on f84301e72c in a scratch environment with the pinned SeaweedFS, CNPG and ESO bindings: rendered
-              the attic chart from f84301e72c (byte-identical to the committed file) and with the after code,
-              <code>PrivateBucket</code> included, on today&#39;s attic.py, and diffed per object: 14 of 17 objects are
-              byte-identical, the Bucket and S3Identity change as listed, and the grant is renamed with the same spec
-              and renders after S3Credentials.
+              Re-ran in a scratch environment with the pinned SeaweedFS, CNPG and ESO bindings on an f84301e72c export:
+              the attic chart renders byte-identical to the committed file, and the after code,
+              <code>PrivateBucket</code> in its decided form included, diffed per object against it: 14 of 17 objects
+              are byte-identical, the Bucket changes as listed, S3Identity <code>seaweedfs/attic</code> gives way to
+              <code>nix-cache/attic</code>, and the grant is renamed, admits <code>S3Identity</code> from nix-cache and
+              renders after S3Credentials.
             </p>
+            <p>
+              Rendered the identity move alone with today&#39;s <code>s3.Identity(..., namespace=NAMESPACE)</code>: only
+              the S3Identity&#39;s namespace changes and the <code>nix-cache</code> grant gains <code>S3Identity</code>.
+            </p>
+            <p>Not run: the move against the live operator.</p>
           </div>
           <span class="lbl">Fixed during verification</span>
           <div class="rich">
@@ -8050,8 +8070,8 @@ def _storage(scope: Construct) -&gt; s3.PrivateBucket:
                 attic&#39;s live name, so S3Credentials is byte-identical; the input renamed the Secret.
               </li>
               <li>
-                <code>local_identity=False</code> replaces the free identity-namespace parameter; the grant is built
-                under an <code>if</code> and is not an attribute.
+                The identity lives in the tenant and the grant admits it (decision 10), where the input took a free
+                identity namespace; the grant is built under an <code>if</code> and is not an attribute.
               </li>
             </ul>
           </div>
@@ -9584,8 +9604,8 @@ def authentik(
 class PostgresBackup(Construct):
     &#34;&#34;&#34;Base backups and WAL of `db` into PrivateBucket `bucket`, through the barman-cloud ObjectStore
     named after `db` that `cnpg.cluster(wal_archive=True)` points at, and a ScheduledBackup. Our policy:
-    the identity lives beside `db`, the bucket adopts an existing physical one of its name, 30-day
-    retention, gzip, a base backup daily at 02:00 UTC.&#34;&#34;&#34;
+    the bucket adopts an existing physical one of its name, 30-day retention, gzip, a base backup
+    daily at 02:00 UTC.&#34;&#34;&#34;
 
     def __init__(
         self,
@@ -9602,7 +9622,6 @@ class PostgresBackup(Construct):
             &#34;storage&#34;,
             name=bucket,
             tenant=db.namespace,
-            local_identity=True,
             adopt_existing=True,
             description=f&#34;CNPG base backups and WAL of {db.name}.&#34;,
             secret_name=secret_name,
@@ -9796,8 +9815,16 @@ def authentik(
               seaweedfs-operator.
             </p>
             <p>
-              Not run: the handover itself, and the SeaweedFS operator&#39;s handling of a deleted and recreated
-              S3Credentials, which the handover avoids.
+              Re-ran both renders for decision 10: the before is byte-identical to the committed files and node at
+              b8e98deef1, and the after, with <code>PrivateBucket</code> in its decided form, differs from the earlier
+              after only in the grant&#39;s kind order, with identical Helm values and node, so the
+              <code>kustomize build</code> result carries over (not re-run).
+            </p>
+            <p>
+              Not run: the handover itself. A deleted and recreated S3Credentials, which the handover avoids, would fail
+              with <code>SecretOwnershipConflict</code>, because its <code>Retain</code> deletion leaves the Secret
+              without an owner (operator 1.0.39, <code>s3credentials_controller.go:192-196, 324-330</code>); read, not
+              run.
             </p>
           </div>
           <span class="lbl">Fixed during verification</span>
@@ -9819,10 +9846,7 @@ def authentik(
                 consumer lines change in the same commit.
               </li>
               <li>Stated the removed description annotations, the grant rename and its manual cleanup.</li>
-              <li>
-                <code>PostgresBackup</code> takes <code>secret_name</code>, which C3&#39;s signature shape does not list
-                yet.
-              </li>
+              <li><code>PostgresBackup</code> takes <code>secret_name</code>, as C3&#39;s signature shape lists.</li>
             </ul>
           </div>
         </details>
@@ -10708,9 +10732,9 @@ CONFIG = {
           <div class="q">
             <div class="rich">
               <p>
-                SeaweedFS naming: one ResourceReferenceGrant per bucket named
-                <code>&lt;tenant&gt;-&lt;bucket&gt;</code>, credential Secrets never renamed, and
-                <code>local_identity: bool</code> in place of a free identity namespace?
+                Decided by the owner. SeaweedFS naming: one ResourceReferenceGrant per bucket named
+                <code>&lt;tenant&gt;-&lt;bucket&gt;</code>, credential Secrets never renamed, and which namespace holds
+                each S3Identity?
               </p>
             </div>
           </div>
@@ -10718,10 +10742,19 @@ CONFIG = {
             <span class="lbl">Recommendation</span>
             <div class="rich">
               <p>
-                Yes. <code>PrivateBucket</code> derives <code>&lt;bucket&gt;-s3-credentials</code>, the spelling attic,
-                forgejo and registry-cache already use. The eight consumers that spell it otherwise (six
+                Grants: one per bucket, named <code>&lt;tenant&gt;-&lt;bucket&gt;</code>. Secrets: never renamed;
+                <code>PrivateBucket</code> derives <code>&lt;bucket&gt;-s3-credentials</code>, the spelling attic,
+                forgejo and registry-cache already use, and the eight consumers that spell it otherwise (six
                 <code>-seaweedfs-credentials</code> Secrets, <code>authentik-db-backup-s3</code>, openclaw&#39;s volsync
-                Secret) pass their live name, so no key pair changes. Existing identities stay where they are.
+                Secret) pass their live name, so no key pair changes. Identities: every S3Identity lives in its
+                tenant&#39;s namespace, the path the operator is designed for. An S3Credentials&#39;
+                <code>identityRef</code> has only a <code>name</code>, resolved against an S3Identity in the same
+                namespace and otherwise taken as the literal IAM user name (operator 1.0.39,
+                <code>api/v1/s3credentials_types.go:23-34</code>), and the operator&#39;s multi-tenant sample grant
+                admits <code>S3Identity</code> from the tenant
+                (<code>config/samples/seaweed_v1_resourcereferencegrant.yaml:10-37</code>).
+                <code>PrivateBucket</code> has no identity-namespace parameter, and the 12 identities in
+                <code>seaweedfs</code> that serve another namespace move first (step 19).
               </p>
             </div>
           </div>
@@ -10729,10 +10762,16 @@ CONFIG = {
             <span class="lbl">Trade-off</span>
             <div class="rich">
               <p>
-                Grants are renamed, which is safe because Flux applies the new grant before pruning the old one.
-                Credential Secret names stay mixed: unifying them would need the seaweed_operator skill&#39;s handoff
-                per consumer (a new S3Credentials, then a consumer switch), because renaming <code>secretRef</code> in
-                place makes the operator mint a new key pair and strands the old Secret.
+                The identity half costs 11 PRs for 12 identities, each deleting one S3Identity and creating another
+                under the same cluster-global IAM name. The operator is built for that handover: the oldest claimant
+                owns a name, a later one reports <code>Conflict</code> and takes the user over when the owner goes, and
+                deleting a <code>Retain</code> identity keeps the user and its keys. It is unrehearsed here, though, so
+                each PR carries live checks before and after, and the two moves that cross Flux units can leave the
+                tenant&#39;s unit waiting on <code>Conflict</code> until the old unit is gone. Grants are renamed, which
+                is safe because Flux applies the new grant before pruning the old one. Credential Secret names stay
+                mixed: unifying them would need the seaweed_operator skill&#39;s handoff per consumer (a new
+                S3Credentials, then a consumer switch), because renaming <code>secretRef</code> in place makes the
+                operator mint a new key pair and strands the old Secret.
               </p>
             </div>
           </div>
@@ -10897,7 +10936,7 @@ CONFIG = {
                     that take <code>access=</code> and <code>identity_ref=</code> at construction; drop the grant
                     methods, the JSON patches, the <code>_ClusterGrant</code> chart singleton and the one-line ducktape
                     subclasses; add <code>PrivateBucket</code> (C3), rendered in each consumer&#39;s own unit with its
-                    Secret name unchanged (decision 10).
+                    Secret name unchanged and its S3Identity in the tenant (decision 10).
                   </p>
                 </div>
               </td>
@@ -11418,18 +11457,21 @@ CONFIG = {
                 >
                 at 34 of 38 sites); <code>redis_operator</code> is heavily flattened for one site; kyverno
                 <code>match_resources</code> is module-level; <code>ActionPolicySet</code> and flux
-                <code>Kustomization</code> are each built at one site inside a function with many callers; kinds built
-                at several sites have no provider class (Flux <code>HelmRepository</code> at about 31,
-                <code>GitRepository</code> at 8, and <code>CiliumClusterwideNetworkPolicy</code>,
-                <code>SandboxWarmPool</code>, Terraform, <code>VirtualMachine</code> and <code>CleanupPolicy</code> at 2
-                or 3 each); and naming (cilium <code>NetworkPolicy</code> against <code>CiliumNetworkPolicy</code>, the
-                <code>flux_</code> prefix in <code>flux_kustomization.py</code>). The rest of the step landed in #8168,
-                #8173 to #8175, #8177 to #8180 and #8182.
+                <code>Kustomization</code> are each built at one site inside a function with many callers; and naming
+                (cilium <code>NetworkPolicy</code> against <code>CiliumNetworkPolicy</code>, the
+                <code>flux_</code> prefix in <code>flux_kustomization.py</code>). Not your call: a kind built raw at
+                more than one site gets a provider class (C1), one PR per kind. On devel 9904055a45 that is 20 kinds,
+                listed in <code>cluster/cdk8s/PLAN.md</code> § A (#8296); the most repeated are Flux
+                <code>GitRepository</code> (8), External Secrets <code>ClusterSecretStore</code> and Gateway API
+                <code>HTTPRoute</code> (4 each). In review: <code>GitRepository</code> (#8295),
+                <code>CleanupPolicy</code> (#8290) and Terraform (#8293). The rest of the step landed in #8168, #8173 to
+                #8175, #8177 to #8180, #8182, #8288 (<code>CiliumClusterwideNetworkPolicy</code>), #8289
+                (<code>SandboxWarmPool</code>) and #8292 (<code>HelmRepository</code>).
               </p>
             </div>
           </div>
           <div class="sc">
-            <div class="rich"><p>One PR per call you make.</p></div>
+            <div class="rich"><p>One PR per kind, and one per call you make.</p></div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
@@ -11521,21 +11563,84 @@ CONFIG = {
             <div class="rich">
               <p>
                 SeaweedFS (decision 10): provider kind classes with <code>access=</code> (the reworked #8035) and
-                <code>PrivateBucket</code>, rendered in each consumer&#39;s unit with its Secret name unchanged. Migrate
-                consumers per area, then delete <code>_ClusterGrant</code>, <code>Bucket.grant</code> and the duplicate
-                <code>SecretKeyFields</code>. The six <code>seaweedfs-*-bucket</code> units retire here too.
+                <code>PrivateBucket</code>, rendered in each consumer&#39;s unit with its Secret name unchanged and its
+                S3Identity in the tenant. Migrate consumers per area, then delete <code>_ClusterGrant</code>,
+                <code>Bucket.grant</code> and the duplicate <code>SecretKeyFields</code>. The six
+                <code>seaweedfs-*-bucket</code> units retire here too; their Buckets and S3Credentials move by
+                <code>cluster/AGENTS.md</code> § Migrating stateful Flux Kustomizations, never by delete and recreate,
+                because a deleted <code>Retain</code> S3Credentials leaves its Secret without an owner and a recreated
+                one then fails with <code>SecretOwnershipConflict</code>.
+              </p>
+              <p>
+                Identity moves come first and wait on neither decision 1 nor #8035:
+                <code>s3.Identity(..., namespace=&lt;tenant&gt;)</code> renders the S3Identity in the tenant and adds
+                <code>S3Identity</code> to that namespace&#39;s grant (<code>seaweedfs/s3.py:163-185</code>); rendered
+                for attic and forgejo, nothing else in either file changes. Of the 16 S3Identities on devel, 15 are in
+                <code>seaweedfs</code>, and the 12 of those that serve another namespace move, one PR per Flux unit (11
+                PRs), one same-unit move first (tempo, whose traces tolerate a gap) to watch the handover live:
+              </p>
+              <ul>
+                <li>
+                  Within the unit that renders the identity today (9 PRs): attic (nix-cache), langfuse,
+                  vm-images-ci-writer and vm-images-cdi-reader (vm-images-publisher), home-assistant-backups
+                  (home-assistant), tempo, mimir, loki (its legacy S3Credentials in <code>seaweedfs</code> stays pinned
+                  to the same user), pr-visuals-writer (seaweedfs-pr-visuals-bucket, tenant flux-system) and
+                  registry-cache (seaweedfs-registry-cache-bucket, tenant oci-cache). In one reconcile Flux applies the
+                  new identity, prunes the old one, and only then runs health checks.
+                </li>
+                <li>
+                  Across units (2 PRs): forgejo and public-coder-agent-backups, whose S3Identity is alone in
+                  <code>seaweedfs-forgejo-bucket</code> and
+                  <code>seaweedfs-public-coder-agent-backups-bucket</code> while the tenant&#39;s unit holds the bucket,
+                  credentials and grant. The tenant&#39;s module switches <code>IdentityRef</code> to
+                  <code>Identity</code>, and the same PR deletes the old unit, which holds only a
+                  <code>Retain</code> claim and no data. Either reconcile order converges; if the tenant&#39;s unit goes
+                  first, its <code>wait</code> reads the new identity&#39;s <code>Conflict</code> as in progress until
+                  the old unit is gone.
+                </li>
+                <li>
+                  Before each PR, live: the old S3Identity is Ready with <code>reclaimPolicy: Retain</code> and
+                  <code>status.identityName</code> equal to its name; every S3Credentials whose
+                  <code>identityRef</code> names it is Ready with <code>status.identityName</code> set (record its
+                  <code>status.accessKey</code>); no other S3Identity claims the name; the owning unit is not suspended
+                  and prunes.
+                </li>
+                <li>
+                  After: the tenant&#39;s S3Identity is Ready with the same <code>status.identityName</code>; the old
+                  one is gone; each S3Credentials keeps its <code>status.accessKey</code> and its Secret is unchanged;
+                  the consumer&#39;s own S3 write and read (or backup run) succeeds; both units are Ready.
+                </li>
+                <li>
+                  Rollback is the revert, which runs the same move backwards. A new identity stuck in
+                  <code>Conflict</code> means the old one was not pruned: delete the old one by hand once its
+                  <code>Retain</code> is confirmed.
+                </li>
+              </ul>
+              <p>
+                The other three identities in <code>seaweedfs</code> (drivefs-artifacts-writer,
+                drivefs-artifacts-reader, claude-reader) stay, because their S3Credentials are there too;
+                authentik-db-backups is already in authentik. haku-openclaw-spike-backups has no S3Identity; its
+                <code>PrivateBucket</code> declares one in haku-openclaw-spike, which adopts the user with no other
+                claimant.
               </p>
             </div>
           </div>
           <div class="sc">
-            <div class="rich"><p>About 10 S3 consumers.</p></div>
+            <div class="rich"><p>About 10 S3 consumers. Before them, 12 identity moves in 11 PRs.</p></div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
             <div class="rich">
               <p>
                 Medium. Grants are renamed, which Flux handles by applying the new one before pruning the old; no
-                credential Secret is renamed, so no key is re-minted, and the consumers do not restart.
+                credential Secret is renamed, so no key is re-minted, and the consumers do not restart. An identity move
+                deletes one S3Identity and creates another under the same IAM name: the operator keeps the user when a
+                <code>Retain</code> identity is deleted, and also while another S3Identity still claims the name; the
+                new one adopts the user without touching its keys or bucket grants; and each S3Credentials stays pinned
+                to the user it provisioned for, so no key changes. What the code cannot rule out is live drift: an
+                identity whose live <code>reclaimPolicy</code> is <code>Delete</code> deletes the user and its keys when
+                pruned unless the operator already sees its successor, which across units may not exist yet; the
+                pre-check excludes it. None of this has been rehearsed against the live operator.
               </p>
             </div>
           </div>
@@ -11546,7 +11651,7 @@ CONFIG = {
               <p>
                 Backups. <code>ResticBackup</code> replaced the near-copies in <code>public_coder_backup.py</code> and
                 <code>haku_openclaw_spike_backup.py</code>, with the bucket kept outside the composite (#8230). After
-                decisions 1 and 10: <code>PostgresBackup</code> (<code>cnpg_backup.py</code>) takes a
+                decision 1: <code>PostgresBackup</code> (<code>cnpg_backup.py</code>) takes a
                 <code>PostgresRef</code> and builds a <code>PrivateBucket</code>, for authentik first (whose fold is
                 step 14), then one PR per other OVH database you want covered (N8); only
                 <code>authentik-db-ovh</code> has backups today, and enabling the plugin restarts a single-instance
@@ -12297,7 +12402,7 @@ CONFIG = {
     {
       "title": "N9 \u00b7 SeaweedFS buckets, identities, grants, consumer creds",
       "today": "Two parallel wrapper modules; `Bucket.grant` appends by JSON patch; the namespace grant is a chart singleton found by construct id; consumers re-spell 4-5 names; six one-object bucket units are Kustomizations of their own.",
-      "note": "Single-shot kind classes with the access list at construction remove the JSON-patch append and the chart singleton, and one grant per bucket is safe: namespace monitoring already has two coexisting grants (mimir and tempo), and loki has its own. `PrivateBucket` renders in the consumer's own unit with its Secret name unchanged, so the six `seaweedfs-*-bucket` units retire and the consumer's only SeaweedFS edge is `seaweedfs-operator` (CRDs; no webhook).",
+      "note": "Single-shot kind classes with the access list at construction remove the JSON-patch append and the chart singleton, and one grant per bucket is safe: namespace monitoring already has two coexisting grants (mimir and tempo), and loki has its own. `PrivateBucket` renders in the consumer's own unit with its Secret name unchanged and its S3Identity beside its S3Credentials in the tenant, so the six `seaweedfs-*-bucket` units retire and the consumer's only SeaweedFS edge is `seaweedfs-operator` (CRDs; no webhook).",
       "conventions": "C1, C3, C4"
     },
     {
