@@ -4,6 +4,8 @@ credentialless MCP fixtures in place of the real action groups.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import DeploymentStrategy
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
@@ -74,7 +76,7 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
             server_id="example",
             server_url=_OAUTH_FIXTURE_MCP_URL,
             client_id="agentplane-testing-mcp",
-            client_secret_file="/etc/agentplane-mcp/client-secret",
+            client_secret_file=Path("/etc/agentplane-mcp/client-secret"),
             redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
             scopes=["openid"],
         )

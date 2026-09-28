@@ -5,6 +5,8 @@ Google Calendar MCP action groups.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from cdk8s import ApiObjectMetadata, App, Chart, Duration
 from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute, ServiceAccount
 from external_secrets_crds.io.external_secrets import (
@@ -114,7 +116,7 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
             server_id="github",
             server_url=_GITHUB_MCP_URL,
             client_id="configured-by-secret",
-            client_secret_file="/etc/agentplane-github/client_secret",
+            client_secret_file=Path("/etc/agentplane-github/client_secret"),
             redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
         ),
         "kubernetes_admin": McpOAuthServer(
