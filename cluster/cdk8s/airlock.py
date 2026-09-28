@@ -68,6 +68,9 @@ def _deployment(chart: Chart) -> None:
                 spec=k8s.PodSpec(
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     service_account_name=NAME,
+                    # The token store writes OAuth token Secrets through load_incluster_config()
+                    # (airlock/oauth/k8s_client.py).
+                    automount_service_account_token=True,
                     security_context=k8s.PodSecurityContext(fs_group=1000),
                     containers=[
                         k8s.Container(

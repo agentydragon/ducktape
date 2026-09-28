@@ -85,6 +85,7 @@ def _mitmproxy(chart: Chart) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     affinity=k8s.Affinity(
                         pod_anti_affinity=k8s.PodAntiAffinity(
                             # Preferred, not required: this proxy is haku-ci's only egress path, so a

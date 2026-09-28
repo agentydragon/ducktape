@@ -64,6 +64,9 @@ def _deployment(chart: Chart) -> None:
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
                     service_account_name=NAME,
+                    # The in-cluster provider builds its client with client-go's InClusterConfig,
+                    # which reads this token and CA before passthrough swaps in the caller's JWT.
+                    automount_service_account_token=True,
                     containers=[
                         k8s.Container(
                             name="server",

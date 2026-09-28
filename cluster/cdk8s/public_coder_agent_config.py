@@ -562,6 +562,7 @@ def _deployment(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=LABELS),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     security_context=k8s.PodSecurityContext(fs_group=1000),
                     # Keep Public Coder on the worker class that serves its local state PVC; do
                     # not allow it to fall back onto control-plane nodes.

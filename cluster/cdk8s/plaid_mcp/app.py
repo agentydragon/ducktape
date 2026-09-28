@@ -123,6 +123,9 @@ def _deployment(chart: Chart) -> None:
                 spec=k8s.PodSpec(
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     service_account_name=_NAME,
+                    # K8sSecretStore.from_incluster (finance/plaid/db/secret_store.py) writes the
+                    # access-token Secrets with this token.
+                    automount_service_account_token=True,
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     containers=[
                         k8s.Container(
@@ -169,6 +172,8 @@ def _sync_cronjob(chart: Chart) -> None:
                         metadata=k8s.ObjectMeta(labels={"app.kubernetes.io/name": "plaid-mcp-sync"}),
                         spec=k8s.PodSpec(
                             service_account_name=_NAME,
+                            # The sync reads the access-token Secrets through K8sSecretStore.
+                            automount_service_account_token=True,
                             restart_policy="Never",
                             security_context=k8s.PodSecurityContext(
                                 seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")

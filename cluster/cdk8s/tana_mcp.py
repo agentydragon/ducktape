@@ -77,6 +77,9 @@ def _tana_deployment(chart: Chart) -> None:
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     service_account_name=_RESIGNER,
+                    # The firebase-resigner sidecar reads and patches the refresh-token Secret
+                    # through load_incluster_config() (tana/firebase_resigner/resigner.py).
+                    automount_service_account_token=True,
                     containers=[
                         # Tana Desktop running under Xvfb with noVNC for graphical admin access
                         k8s.Container(
@@ -274,6 +277,7 @@ def _facade(chart: Chart) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_FACADE_LABELS),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     containers=[
                         k8s.Container(
