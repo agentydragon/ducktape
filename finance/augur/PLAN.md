@@ -43,10 +43,9 @@ Every change is checked against an independent calculation, never a copy of the 
 ### Property taxes (San Francisco and Vallejo)
 
 Goal: Augur computes a homeowner's and a landlord's property-related taxes correctly in San
-Francisco, mainland Vallejo and Mare Island. Today a parcel's situs is a tax rate area loaded
-from `sim/data/jurisdictions/`, and `sim/property_tax.py` assesses it under Proposition 13 and
-bills its secured tax in monthly twelfths in San Francisco and mainland Vallejo; a purchase or sale
-pays each level's transfer tax.
+Francisco, mainland Vallejo and Mare Island. San Francisco and mainland Vallejo are done at county
+and city level (`sim/property_tax_lifecycle_test.py` holds each one's ten-year hand calculation);
+Mare Island needs its districts.
 
 **Model.**
 
@@ -75,24 +74,13 @@ pays each level's transfer tax.
   came to promise behavior that nothing implemented.
 - **Two kinds of test.** Rule tests pin each rule to a published example: a
   Proposition 13 year where CPI exceeds 2%, a transfer-tax amount at a bracket edge, a CFD
-  charge from Vallejo's annual report. A hand-calculated lifecycle per location (San Francisco,
-  mainland Vallejo, Mare Island) buys, holds, rents part out and sells, with every bill and
-  deduction worked independently of the engine.
+  charge from Vallejo's annual report. A hand-calculated lifecycle per location buys, holds,
+  rents out and sells, with every bill and deduction worked independently of the engine.
 
 **Caller shape.** A purchase's `parcel` gains its districts (DISTRICTS) beside its situs and the
 seller's prior assessed value.
 
-**First milestone: San Francisco and mainland Vallejo, county and city level.** Accepted when
-each of these holds against an independent calculation or published source:
-
-- **F. Lifecycle:** per location, ten years: buy with a mortgage, live there three, rent the
-  whole of it four, sell. Every year's bills, SALT, rental expense, depreciation, and the
-  sale's transfer tax, gain, §121 exclusion and recapture match a hand calculation checked in
-  beside the test.
-
-Outside the milestone, and listed here until done: district and parcel charges (DISTRICTS),
-Proposition 8 (DECLINE), and installment timing (INSTALLMENTS); annual totals are right
-without them.
+Annual totals are right without DECLINE and INSTALLMENTS; Mare Island is not without DISTRICTS.
 
 **Items**, each landing its rule, data and tests together:
 
@@ -101,18 +89,14 @@ without them.
   and 2005-1B (research so far: <docs/mare_island_special_taxes.md>), and San Francisco's parcel
   taxes. A district's charge is never an itemizable real-property tax: on a rented share a
   service charge is an expense and a local-benefit assessment is added to basis, federal and
-  California.
+  California. Mare Island gets the same ten-year hand-calculated lifecycle as the other two
+  locations, and its cases pin to the City of Vallejo's CFD reports.
 - **DEBTPATH**: a rate area's debt rate for unpublished fiscal years comes from a supplied
   exogenous series, in place of carrying the last published rate forward.
 - **DECLINE**: a Proposition 8 reduction while the home-value path is below the
   factored base, recovering toward it.
 - **INSTALLMENTS** (after MIDYEAR): the July–June secured bill is paid in its two
   installments on their due dates.
-- **LIFECYCLE** (after the above): the hand-calculated lifecycle for each location.
-- Pin cases to the San Francisco Assessor-Recorder and Treasurer-Tax Collector (secured rate,
-  transfer-tax table), the Solano County Auditor-Controller's rate book, the City of Vallejo's
-  CFD reports, the California Board of Equalization's inflation factor, and IRS Publications
-  530 and 527.
 
 ### Calendar
 
