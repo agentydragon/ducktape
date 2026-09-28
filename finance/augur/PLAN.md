@@ -65,6 +65,27 @@ Every change is checked against an independent calculation, never a copy of the 
   becomes a policy, not the instrument's illiquidity. Then a native-position version of
   <x/bond_policies/README.md>'s supplied-curve control.
 - **Trading costs:** a proportional cost per trade, readable in the trace (#5486, held #8143).
+- **Fund expense ratios:** a fund's annual expense ratio accrues as a drag on its value,
+  readable in the trace; model them before comparing products whose costs differ materially.
+
+### App funding path
+
+- **Reinvestment:** the app's household never reinvests (`reinvest=None` in
+  `product/scenarios.py::_funding_household`), so the app never buys or contributes, and the
+  zero-mark contribution refusal (`TlhPortfolioObservation.accepts_contributions`) is reached
+  only from `policy/test_cash_band_household{,_world}.py`. Turning it on is a
+  `FundingPolicy.reinvest_surplus` flag, off by default, passed through as
+  `Reinvest(rebalance_tolerance_ppb=None)`, with a funding-form checkbox, a
+  `SCENARIO_SET_VERSION` bump and "nothing buys" dropped from `FundingPolicy`'s docstring. It
+  still lacks:
+  - A purchase in the timeline: `Holdings.buy` records no acquisition, so a `Buy` moves the
+    cash and holding-value series but renders nothing. Needs an acquisition record captured
+    into an `EventLog` frame, a purchase event in `product/wire.py` and
+    `ROLLOUT_EVENT_KIND_ORDER`, and its frontend rendering.
+  - A purchase pool per sleeve: purchases land in `source_account_ids[0]`, and
+    `CashBandHousehold.check` refuses a sleeve without a declared pool there, while the app
+    declares pools only from lots (`product/holdings.py::holding_pools`). Declare an empty pool
+    for each targeted security in that account, or choose a per-sleeve purchase account.
 
 ### Experiments (caller code in `study/` and `x/`)
 
