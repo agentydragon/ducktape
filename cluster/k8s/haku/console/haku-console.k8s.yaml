@@ -26,6 +26,88 @@ spec:
       mergePolicy: Merge
       type: kubernetes.io/dockerconfigjson
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: forgejo-secret-reader
+  namespace: haku-console
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: haku-console-haku-console-agent-api-reader
+  namespace: forgejo
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-console-agent-api
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: haku-console-haku-console-agent-api-reader
+  namespace: forgejo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: haku-console-haku-console-agent-api-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: forgejo-secret-reader
+    namespace: haku-console
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-haku-console-haku-console-agent-api-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - haku-console
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: forgejo-secret-reader
+      remoteNamespace: forgejo
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: haku-console-agent-api
+  namespace: haku-console
+spec:
+  dataFrom:
+    - extract:
+        key: haku-console-agent-api
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-haku-console-haku-console-agent-api-secret-store
+  target:
+    creationPolicy: Owner
+    name: haku-console-agent-api
+    template:
+      metadata:
+        annotations:
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-sandbox,haku-egress-proxy
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-sandbox,haku-egress-proxy
+---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:

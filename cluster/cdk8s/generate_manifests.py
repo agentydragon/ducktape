@@ -1031,7 +1031,10 @@ def generate_manifests(root: Path) -> None:
     )
     haku_ci_artifact = artifact("haku-ci", haku_ci_runner.OUTPUT_DIR)
     haku_ci_runner.haku_ci(
-        flux_chart, write_directory(root, haku_ci_artifact, haku_ci_runner.chart), keda_kustomization
+        flux_chart,
+        write_directory(root, haku_ci_artifact, haku_ci_runner.chart),
+        keda_kustomization,
+        external_secrets_operator_kustomization,
     )
     flux_grafana_secrets_artifact = artifact("flux-grafana-secrets", flux_grafana_secrets.OUTPUT_DIR)
     flux_grafana_secrets.flux_grafana_secrets(
@@ -1233,9 +1236,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, study_casino_artifact, cnpg_kustomization, external_secrets_operator_kustomization
     )
     haku_state_artifact = artifact("haku-state", forgejo_gitops_modules.HAKU_STATE_DIR)
-    forgejo_gitops_modules.haku_state(
-        flux_chart, haku_state_artifact, tofu_controller_kustomization, haku_namespace_kustomization
-    )
+    forgejo_gitops_modules.haku_state(flux_chart, haku_state_artifact, tofu_controller_kustomization)
     litellm_artifact = artifact("litellm", litellm_namespace.OUTPUT_DIR)
     litellm_proxy.litellm(
         flux_chart,
@@ -1300,7 +1301,9 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     forgejo_token_rotation_artifact = artifact("forgejo-token-rotation", forgejo_token_rotation.OUTPUT_DIR)
-    agents_flux_kustomizations.forgejo_token_rotation(flux_chart, forgejo_token_rotation_artifact)
+    agents_flux_kustomizations.forgejo_token_rotation(
+        flux_chart, forgejo_token_rotation_artifact, external_secrets_operator_kustomization
+    )
     haku_egress_proxy_artifact = artifact("haku-egress-proxy", haku_egress_proxy.OUTPUT_DIR)
     haku_egress_proxy_kustomization = agents_flux_kustomizations.haku_egress_proxy(
         flux_chart,
@@ -1311,7 +1314,9 @@ def generate_manifests(root: Path) -> None:
     )
     haku_ui_image_webhook_artifact = artifact("haku-ui-image-webhook", haku_ui_image_webhook.OUTPUT_DIR)
     haku_ui_image_webhook.haku_ui_image_webhook(
-        flux_chart, write_directory(root, haku_ui_image_webhook_artifact, haku_ui_image_webhook.chart)
+        flux_chart,
+        write_directory(root, haku_ui_image_webhook_artifact, haku_ui_image_webhook.chart),
+        external_secrets_operator_kustomization,
     )
     haku_workloads_artifact = artifact("haku-workloads", haku_workloads.OUTPUT_DIR)
     haku_workloads.haku_workloads(flux_chart, write_directory(root, haku_workloads_artifact, haku_workloads.chart))

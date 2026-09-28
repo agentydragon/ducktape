@@ -594,6 +594,7 @@ py_library(
         ":forgejo_images",
         ":generation",
         ":manifest_roots",
+        "//cluster/cdk8s/forgejo:secret_copy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

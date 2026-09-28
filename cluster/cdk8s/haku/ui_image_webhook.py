@@ -14,8 +14,8 @@ own (haku-sandbox), referenced cross-namespace.
 `generic` because Flux has no Forgejo/Gitea receiver type, and Forgejo's HMAC headers
 (X-Gitea-Signature / X-Hub-Signature-256) don't match generic-hmac's X-Signature. Security
 is therefore the unguessable sha256(token) webhook path; a leaked URL only triggers harmless
-re-scans/re-fetches. The token is the forgejo-webhook-token Secret (flux-system), which the
-Forgejo webhook URLs also derive their path from.
+re-scans/re-fetches. The token is the forgejo-webhook-token Secret, which tf/gitops/haku-state
+mints and derives the Forgejo webhook URLs' path from; this chart copies it into flux-system.
 """
 
 from __future__ import annotations
@@ -30,23 +30,27 @@ from flux_receiver_crds.io.fluxcd.toolkit.notification import (
     ReceiverSpecType,
 )
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "haku-ui-image-webhook"
 OUTPUT_DIR = f"{GENERATED_ROOT}/haku/ui-image-webhook"
+_RECEIVER_NAMESPACE = "flux-system"
+_TOKEN_SECRET = "forgejo-webhook-token"
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    secret_copy.secret_copy(chart, _TOKEN_SECRET, reader=secret_copy.reader(chart, _RECEIVER_NAMESPACE))
     Receiver(
         chart,
         "receiver",
-        metadata=ApiObjectMetadata(name="haku-ui-forgejo", namespace="flux-system"),
+        metadata=ApiObjectMetadata(name="haku-ui-forgejo", namespace=_RECEIVER_NAMESPACE),
         spec=ReceiverSpec(
             type=ReceiverSpecType.GENERIC,
-            secret_ref=ReceiverSpecSecretRef(name="forgejo-webhook-token"),
+            secret_ref=ReceiverSpecSecretRef(name=_TOKEN_SECRET),
             resources=[
                 ReceiverSpecResources(
                     api_version="image.toolkit.fluxcd.io/v1",
@@ -94,5 +98,14 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def haku_ui_image_webhook(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    return flux_kustomization(chart, NAME, directory, retry_interval=None, wait=None)
+def haku_ui_image_webhook(
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
+) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        NAME,
+        directory,
+        retry_interval=None,
+        wait=None,
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
+    )

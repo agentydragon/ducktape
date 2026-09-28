@@ -1,3 +1,78 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: forgejo-secret-reader
+  namespace: agents-infra
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agents-infra-forgejo-token-mint-haku-reader
+  namespace: forgejo
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - forgejo-token-mint-haku
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agents-infra-forgejo-token-mint-haku-reader
+  namespace: forgejo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agents-infra-forgejo-token-mint-haku-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: forgejo-secret-reader
+    namespace: agents-infra
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agents-infra-forgejo-token-mint-haku-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agents-infra
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: forgejo-secret-reader
+      remoteNamespace: forgejo
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-token-mint-haku
+  namespace: agents-infra
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-token-mint-haku
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agents-infra-forgejo-token-mint-haku-secret-store
+  target:
+    creationPolicy: Owner
+    name: forgejo-token-mint-haku
+---
 apiVersion: batch/v1
 kind: CronJob
 metadata:

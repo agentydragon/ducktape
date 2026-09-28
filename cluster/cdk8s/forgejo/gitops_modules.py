@@ -88,12 +88,7 @@ def forgejo_claude(
     )
 
 
-def haku_state(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    tofu_controller: Kustomization,
-    haku_namespace: Kustomization,
-) -> Kustomization:
+def haku_state(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         HAKU_STATE,
@@ -101,7 +96,7 @@ def haku_state(
         # haku-forgejo-git Secret) so scan runs can depend on it.
         artifact,
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(tofu_controller, haku_namespace),
+        depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )
 
 
