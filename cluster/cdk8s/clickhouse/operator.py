@@ -7,7 +7,7 @@ chart values that must stay encrypted; the HelmRelease reads it through `valuesF
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecDriftDetection,
     HelmReleaseSpecDriftDetectionMode,
@@ -15,11 +15,10 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecValuesFromKind,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 
@@ -91,19 +90,17 @@ def namespace_chart(app: App) -> Chart:
 
 def helmrelease_chart(app: App) -> Chart:
     chart = Chart(app, "helmrelease", disable_resource_name_hashes=True)
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name="altinity-clickhouse-operator", namespace="flux-system"),
-        spec=HelmRepositorySpec(
-            type=HelmRepositorySpecType.OCI, url="oci://ghcr.io/altinity/clickhouse-operator-helm-chart", interval="12h"
-        ),
-    )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=helm_repository(
+            chart,
+            "altinity-clickhouse-operator",
+            "flux-system",
+            url="oci://ghcr.io/altinity/clickhouse-operator-helm-chart",
+            interval="12h",
+        ),
         chart="altinity-clickhouse-operator",
         version="0.27.3",
         interval="30m",

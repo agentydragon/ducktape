@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "reflector"
@@ -19,17 +18,11 @@ _VERSION = "10.0.65"
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     k8s.KubeNamespace(chart, "namespace", metadata=k8s.ObjectMeta(name=NAMESPACE))
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name="emberstack", namespace=NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://emberstack.github.io/helm-charts"),
-    )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=helm_repository(chart, "emberstack", NAMESPACE, url="https://emberstack.github.io/helm-charts"),
         chart="reflector",
         version=_VERSION,
         interval="15m",

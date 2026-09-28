@@ -3,11 +3,10 @@ goldilocks directory's release also uses)."""
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
+from cdk8s import App, Chart
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository, helm_repository_source_ref
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "vpa"
@@ -32,17 +31,13 @@ def _component(*, memory_request: str, memory_limit: str, **extra: object) -> di
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name=_REPOSITORY_NAME, namespace=_REPOSITORY_NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://charts.fairwinds.com/stable"),
-    )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=helm_repository(
+            chart, _REPOSITORY_NAME, _REPOSITORY_NAMESPACE, url="https://charts.fairwinds.com/stable"
+        ),
         chart=NAME,
         version="5.0.1",
         interval="30m",
