@@ -12,9 +12,11 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.kyverno.janitor import janitor
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "agent-rbac-base"
 NAMESPACE = "claude-sandbox"
@@ -38,13 +40,13 @@ def _cluster_role(chart: Chart, name: str, *rules: k8s.PolicyRule) -> None:
 
 
 def _add_sandbox(chart: Chart) -> None:
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={"name": NAMESPACE, "environment": "development", "goldilocks.fairwinds.com/enabled": "true"},
-        ),
+        name=NAMESPACE,
+        vpa=Vpa.RECOMMEND,
+        agent_readable=None,
+        labels={"name": NAMESPACE, "environment": "development"},
     )
     k8s.KubeResourceQuota(
         chart,
