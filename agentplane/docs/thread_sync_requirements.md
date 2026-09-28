@@ -32,7 +32,6 @@ app.
 | P7  | A **stale-epoch read is refused, never served.** A rebuild may cost the reader a full reload.                                                                                              | <../debug/conversation_acceptance.md>              |
 | P8  | **The client chooses its content selection** — text, reasoning, tool arguments, output — and that choice composes with streaming. Selecting nothing still returns metadata and references. | [§ Queries](thread_view_sync.md#queries)           |
 | P9  | Pending and optimistic commands reconcile after a lost reply.                                                                                                                              | Product behaviour                                  |
-| P10 | A tab left open for months holds **bounded state**: a limited tail and reading window, with eviction.                                                                                      | [Thread view synchronization](thread_view_sync.md) |
 
 **P7 is cheap.** The epoch exists for forward compatibility, not for a runtime event: nothing at
 runtime mints one. `THREAD_FOLD_EPOCH` (`agent_runtime/view/recording.py`) is stamped when a
@@ -44,6 +43,11 @@ swap that keeps a draft is nicer than required, and an implementation need not b
 
 **P8 is not an optimisation to bake into the protocol.** "Reasoning is lazy, text is eager" is the
 client's choice to make, per reader.
+
+**P10 — bounded browser state is deferred.** The current product accepts that the Thread store
+retains loaded rows and bodies until the tab closes. Long content remains load-on-demand. This
+preserves P10 as a stable reference for the **D6** desire below, but it is not an acceptance gate
+for the current sync implementation.
 
 ## Sync semantics
 
@@ -102,7 +106,7 @@ worth more.
   Subscription count is free; re-transfer is the cost. A viewport that is one changing predicate
   re-sends its overlap; non-overlapping partitions, a client that states what it holds, and subset
   reads inside a shape whose predicate never moves do not. A reader that drops a page and scrolls
-  back to it re-downloads it — that is the cost of bounding held pages (P10), not a D1 violation.
+  back to it re-downloads it — that is the cost of bounding held pages (D6), not a D1 violation.
 - **D2 — no seam between windowed and on-demand content.** Whether a body streams or is fetched is
   one mechanism with a parameter, not two code paths that behave differently.
 - **D3 — incrementally reachable.** A design reachable in steps, each shippable and better than the
@@ -114,6 +118,11 @@ worth more.
   one chunk per appending batch and one manifest per revision. Compaction does not change the
   content, so it is not a new version: a reader holding the body refetches nothing. Owner,
   2026-09-23.
+- **D6 — bounded browser state.** A long-open tab may evict loaded rows and bodies outside the tail
+  and reading window. The current implementation retains loaded rows and bodies until the Thread
+  closes; the owner accepts this cache growth for now because long content is loaded on demand.
+  Revisit if observed resource pressure justifies the added eviction and revisit complexity. Owner,
+  2026-09-28.
 
 **D4 is mostly given by the storage.** A body is insert-only chunks: each ingestion batch that
 appends to it writes one chunk row holding only that batch's text (`agent_runtime/view/payloads.py`).
