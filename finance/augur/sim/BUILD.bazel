@@ -38,35 +38,10 @@ filegroup(
     srcs = glob(["data/jurisdictions/*.yaml"]),
 )
 
-filegroup(
-    name = "location_data",
-    srcs = glob(["data/locations/*.yaml"]),
-)
-
 py_library(
     name = "locations",
     srcs = ["locations.py"],
-    deps = [
-        ":fixed_point",
-        ":ids",
-        "//finance/augur/model:series",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "locations_test",
-    size = "medium",
-    srcs = ["locations_test.py"],
-    data = [":location_data"],
-    deps = [
-        ":locations",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
+    deps = ["//finance/augur/model:series"],
 )
 
 py_library(

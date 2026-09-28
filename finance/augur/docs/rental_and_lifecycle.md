@@ -144,6 +144,10 @@ assignment.
 Section 121 still lacks non-qualified-use proration and one-sale-per-24-months tracking.
 Only the single-filer exclusion cap is configured.
 
+Property tax is purchase price × one flat rate plus one flat special assessment, with no
+Proposition 13 assessed-value growth, no special-tax escalation or term, and no transfer tax
+on sale. Location facts for pinning a correct model: [property taxes](property_taxes.md).
+
 Stochastic tenant vacancy and individual tenant turnover are not modeled. Vacancy is a
 deterministic scalar and leasing fees use an average-tenancy cadence.
 
