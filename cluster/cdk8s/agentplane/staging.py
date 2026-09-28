@@ -27,7 +27,7 @@ from agentplane.action_service.operator_oidc import OperatorOidcSettings
 from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 from agentplane.app.action_federation import ExchangeFederationSettings
-from cluster.cdk8s import cilium, external_creds, node_scheduling
+from cluster.cdk8s import cilium, external_creds, ha_mcp, node_scheduling
 from cluster.cdk8s.agentplane import actions, command_sandbox, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.chart import environment_chart
@@ -63,7 +63,7 @@ _GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
 _GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
 _MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata.json"
-_HOME_ASSISTANT_MCP_URL = "http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp"
+_HOME_ASSISTANT_MCP_URL = f"{ha_mcp.FACADE.url}/mcp"
 _TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
 # One google-mcp pod (cluster/cdk8s/google_mcp.py) serves both tool sets at
 # distinct paths -- see that module's docstring for its Google credential.
@@ -90,7 +90,7 @@ _FEDERATION_TARGET = OperatorOidcSettings(
 )
 _ACTION_FEDERATION = ExchangeFederationSettings(
     mode="exchange",
-    service_url=f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions.CONTAINER_PORT}",
+    service_url=actions.service(_NAMESPACE).url,
     token_endpoint=f"{_AUTHENTIK}/application/o/token/",
     login_jwks_uri=f"{_AUTHENTIK}/application/o/agentplane-staging/jwks/",
     target=_FEDERATION_TARGET,
@@ -330,7 +330,7 @@ ENV = Environment(
         extra_egress=[
             EgressRule.to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
             EgressRule.to_endpoints(cilium.endpoint_labels("ssh-mcp", "ssh-mcp"), 8080),
-            EgressRule.to_endpoints(cilium.endpoint_labels("ha-mcp", "ha-mcp"), 8765),
+            ha_mcp.FACADE.egress(),
             EgressRule.to_endpoints(cilium.endpoint_labels("tana-mcp", "tana-mcp"), 8263),
             EgressRule.to_endpoints(cilium.endpoint_labels("google-mcp", "google-mcp"), 8080),
             # Same public-origin Gateway path as the BFF: only Authentik SNI on node:443. The

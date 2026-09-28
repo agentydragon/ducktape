@@ -9,7 +9,6 @@ from urllib.parse import urlsplit
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
-    ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
     Cpu,
@@ -20,15 +19,12 @@ from cdk8s_plus_34 import (
     MemoryResources,
     PathMapping,
     PodSecurityContextProps,
-    Protocol,
     Role,
     RoleBinding,
     RolePolicyRule,
     Secret,
-    SecretValue,
     Service,
     ServiceAccount,
-    ServicePort,
     Volume,
 )
 from constructs import Construct
@@ -44,6 +40,7 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
@@ -53,7 +50,6 @@ _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "agentplane-actions"
 _ACTIONS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-action-service"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-action-service-migrate"
-CONTAINER_PORT = 8080
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _MCP_PATHS = (
     "/mcp",
@@ -70,10 +66,13 @@ _MCP_PATHS = (
 def service(namespace: str) -> ServiceRef:
     """The Action Service in one environment's namespace."""
     return ServiceRef(
-        name=_NAME,
-        port=Port(name="http", number=CONTAINER_PORT),
-        pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())),
+        name=_NAME, port=Port(name="http", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
     )
+
+
+def mcp_oauth_secret(namespace: str) -> SecretRef:
+    """The MCP OAuth linkage Secret the Action Service reads; in testing, Dex writes it (dex.py)."""
+    return SecretRef(namespace=namespace, name="agentplane-mcp-oauth")
 
 
 class Actions(Construct):
@@ -84,6 +83,8 @@ class Actions(Construct):
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
         self.env = env
+        self.service = service(env.namespace)
+        self.mcp_oauth = mcp_oauth_secret(env.namespace)
 
         service_account = self._add_service_account()
         self._add_rbac(service_account)
@@ -179,19 +180,14 @@ class Actions(Construct):
         ).add_subjects(service_account)
 
     def _database_env(self) -> dict[str, EnvValue]:
-        postgres_actions = Secret.from_secret_name(self, "postgres-actions-secret", "postgres-actions")
+        # The managed role's login, which database.py mints.
+        role = SecretRef(namespace=self.env.namespace, name="postgres-actions")
         return {
-            "AGENTPLANE_ACTIONS_DB_USER": EnvValue.from_secret_value(
-                SecretValue(secret=postgres_actions, key="username")
-            ),
-            "AGENTPLANE_ACTIONS_DB_PASSWORD": EnvValue.from_secret_value(
-                SecretValue(secret=postgres_actions, key="password")
-            ),
-            "AGENTPLANE_ACTIONS_DB_HOST": EnvValue.from_secret_value(SecretValue(secret=postgres_actions, key="host")),
-            "AGENTPLANE_ACTIONS_DB_PORT": EnvValue.from_secret_value(SecretValue(secret=postgres_actions, key="port")),
-            "AGENTPLANE_ACTIONS_DB_NAME": EnvValue.from_secret_value(
-                SecretValue(secret=postgres_actions, key="dbname")
-            ),
+            "AGENTPLANE_ACTIONS_DB_USER": role.key("username").env_value(self, "postgres-actions-user-ref"),
+            "AGENTPLANE_ACTIONS_DB_PASSWORD": role.key("password").env_value(self, "postgres-actions-password-ref"),
+            "AGENTPLANE_ACTIONS_DB_HOST": role.key("host").env_value(self, "postgres-actions-host-ref"),
+            "AGENTPLANE_ACTIONS_DB_PORT": role.key("port").env_value(self, "postgres-actions-port-ref"),
+            "AGENTPLANE_ACTIONS_DB_NAME": role.key("dbname").env_value(self, "postgres-actions-dbname-ref"),
             env_name(Settings, "database_url"): EnvValue.from_value(
                 "postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)"
                 "@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)"
@@ -200,26 +196,26 @@ class Actions(Construct):
 
     def _container_env(self) -> dict[str, EnvValue]:
         env = self._database_env()
+        namespace = self.env.namespace
         if self.env.actions.web_push_secret_name is not None:
-            web_push_secret = Secret.from_secret_name(self, "web-push-secret", self.env.actions.web_push_secret_name)
-            env[env_name(Settings, "web_push", "private_key_pem")] = EnvValue.from_secret_value(
-                SecretValue(secret=web_push_secret, key="private-key-pem")
+            env[env_name(Settings, "web_push", "private_key_pem")] = (
+                SecretRef(namespace=namespace, name=self.env.actions.web_push_secret_name)
+                .key("private-key-pem")
+                .env_value(self, "web-push-secret")
             )
         if self.env.actions.github_mcp_client_secret_name is not None:
-            oauth_secret = Secret.from_secret_name(self, "mcp-oauth-secret-env", "agentplane-mcp-oauth")
-            env[env_name(Settings, "oauth")] = EnvValue.from_secret_value(SecretValue(secret=oauth_secret, key="oauth"))
-            github_secret = Secret.from_secret_name(
-                self, "github-mcp-client-secret-env", self.env.actions.github_mcp_client_secret_name
-            )
-            env[env_name(Settings, "mcp_servers", "github", "client_id")] = EnvValue.from_secret_value(
-                SecretValue(secret=github_secret, key="client_id")
+            env[env_name(Settings, "oauth")] = self.mcp_oauth.key("oauth").env_value(self, "mcp-oauth-secret-env")
+            env[env_name(Settings, "mcp_servers", "github", "client_id")] = (
+                SecretRef(namespace=namespace, name=self.env.actions.github_mcp_client_secret_name)
+                .key("client_id")
+                .env_value(self, "github-mcp-client-secret-env")
             )
         return env
 
     def _add_deployment(self, service_account: ServiceAccount, settings: SettingsFile) -> Deployment:
         namespace = self.env.namespace
         env = self._container_env()
-        secret_reload = ",".join(["agentplane-mcp-oauth", *self.env.actions.extra_reload_secrets])
+        secret_reload = ",".join([self.mcp_oauth.name, *self.env.actions.extra_reload_secrets])
 
         deployment = Deployment(
             self,
@@ -254,15 +250,15 @@ class Actions(Construct):
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
             args=cli_args(
-                Settings, host="0.0.0.0", port=CONTAINER_PORT, token_audience=llm_ingress.WORKLOAD_TOKEN_AUDIENCE
+                Settings, host="0.0.0.0", port=self.service.pod_port, token_audience=llm_ingress.WORKLOAD_TOKEN_AUDIENCE
             ),
             env_variables=env,
-            ports=[ContainerPort(name="http", number=CONTAINER_PORT, protocol=Protocol.TCP)],
+            ports=[self.service.port.container_port()],
             readiness=http_probe(
-                "/readyz", port=CONTAINER_PORT, initial_delay_seconds=3, period_seconds=10, timeout_seconds=5
+                "/readyz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10, timeout_seconds=5
             ),
             liveness=http_probe(
-                "/healthz", port=CONTAINER_PORT, initial_delay_seconds=20, period_seconds=30, timeout_seconds=5
+                "/healthz", port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30, timeout_seconds=5
             ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
@@ -272,7 +268,7 @@ class Actions(Construct):
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
 
-        oauth_secret = Secret.from_secret_name(self, "mcp-oauth-secret", "agentplane-mcp-oauth")
+        oauth_secret = Secret.from_secret_name(self, "mcp-oauth-secret", self.mcp_oauth.name)
         oauth_volume = Volume.from_secret(
             self,
             "oauth-volume",
@@ -315,9 +311,9 @@ class Actions(Construct):
         Service(
             self,
             "service",
-            metadata=ApiObjectMetadata(name=_NAME, namespace=self.env.namespace),
+            metadata=ApiObjectMetadata(name=self.service.name, namespace=self.env.namespace),
             selector=deployment,
-            ports=[ServicePort(name="http", port=CONTAINER_PORT, target_port=CONTAINER_PORT, protocol=Protocol.TCP)],
+            ports=[self.service.port.service_port()],
         )
 
     def _add_http_route(self) -> None:
@@ -335,7 +331,7 @@ class Actions(Construct):
             "httproute",
             metadata=ApiObjectMetadata(name=f"{_NAME}-mcp", namespace=self.env.namespace),
             hostnames=[self.env.actions.hostname],
-            backend=service(self.env.namespace),
+            backend=self.service,
             paths=(*_MCP_PATHS, *sorted(set(client_metadata_paths))),
             timeout="3600s",
         )
@@ -346,13 +342,16 @@ class Actions(Construct):
             self,
             "networkpolicy",
             metadata=ApiObjectMetadata(name=_NAME, namespace=namespace),
-            endpoint_selector=_LABELS,
+            endpoint_selector=self.service.pods.selector,
             ingress=[
-                IngressRule.from_gateway(CONTAINER_PORT),
+                IngressRule.from_gateway(self.service.pod_port),
+                # egress.py and app.py import this module, so their Pods are named here.
                 IngressRule.from_endpoints(
-                    cilium.endpoint_labels(namespace, "agentplane-egress"), ports=[CONTAINER_PORT]
+                    cilium.endpoint_labels(namespace, "agentplane-egress"), ports=[self.service.pod_port]
                 ),
-                IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "agentplane-app"), ports=[CONTAINER_PORT]),
+                IngressRule.from_endpoints(
+                    cilium.endpoint_labels(namespace, "agentplane-app"), ports=[self.service.pod_port]
+                ),
             ],
             egress=[
                 cilium.dns_egress(resolves=["*"]),

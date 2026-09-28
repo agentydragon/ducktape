@@ -8,7 +8,6 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
     Capability,
-    ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
     ContainerSecutiryContextCapabilities,
@@ -16,16 +15,12 @@ from cdk8s_plus_34 import (
     CpuResources,
     Deployment,
     DeploymentStrategy,
-    EnvValue,
     ImagePullPolicy,
     MemoryResources,
     PathMapping,
     PodSecurityContextProps,
-    Protocol,
     Secret,
-    SecretValue,
     Service,
-    ServicePort,
     Volume,
 )
 from constructs import Construct
@@ -41,22 +36,28 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import cilium, pod_policy
+from cluster.cdk8s.agentplane import actions, app as app_component
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import password_generator
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy, deny_all_egress
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAMESPACE = "agentplane-testing"
 _NAME = "agentplane-testing-dex"
 _IMAGE = "ghcr.io/dexidp/dex:v2.45.1"
-_PORT = 5556
-_LABELS = {"app.kubernetes.io/name": _NAME}
 _SERVICE = ServiceRef(
-    name=_NAME, port=Port(name="http", number=_PORT), pods=Pods(namespace=_NAMESPACE, labels=tuple(_LABELS.items()))
+    name=_NAME,
+    port=Port(name="http", number=5556),
+    pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
 )
+# The client Secrets this Dex writes, which the app and the Action Service read.
+_OIDC = app_component.oidc_secret(_NAMESPACE)
+_MCP_OAUTH = actions.mcp_oauth_secret(_NAMESPACE)
+_ACCEPTANCE_OPERATOR = SecretRef(namespace=_NAMESPACE, name="agentplane-testing-acceptance-operator")
 _ISSUER = "https://agentplane-dex-testing.allegedly.works/dex"
 # Shared between Dex's own staticPasswords entry and the ExternalSecret template the
 # acceptance suite reads, so the two can't name different identities.
@@ -70,7 +71,7 @@ def _dex_config_yaml() -> str:
         {
             "issuer": _ISSUER,
             "storage": {"type": "memory"},
-            "web": {"http": f"0.0.0.0:{_PORT}"},
+            "web": {"http": f"0.0.0.0:{_SERVICE.pod_port}"},
             "oauth2": {"skipApprovalScreen": True},
             "enablePasswordDB": True,
             "staticClients": [
@@ -151,8 +152,8 @@ def _add_credentials(scope: Construct) -> None:
         scope,
         "oidc-credentials",
         metadata=ApiObjectMetadata(
-            name="agentplane-oidc",
-            namespace=_NAMESPACE,
+            name=_OIDC.name,
+            namespace=_OIDC.namespace,
             annotations={"description": "ESO-generated Dex client credentials and Agentplane session signing key."},
         ),
         refresh_interval="8760h",
@@ -173,8 +174,8 @@ def _add_credentials(scope: Construct) -> None:
         scope,
         "mcp-oauth-credentials",
         metadata=ApiObjectMetadata(
-            name="agentplane-mcp-oauth",
-            namespace=_NAMESPACE,
+            name=_MCP_OAUTH.name,
+            namespace=_MCP_OAUTH.namespace,
             annotations={"description": "ESO-generated credentials for the testing MCP client registered in Dex."},
         ),
         refresh_interval="8760h",
@@ -191,8 +192,8 @@ def _add_credentials(scope: Construct) -> None:
         scope,
         "acceptance-operator-credentials",
         metadata=ApiObjectMetadata(
-            name="agentplane-testing-acceptance-operator",
-            namespace=_NAMESPACE,
+            name=_ACCEPTANCE_OPERATOR.name,
+            namespace=_ACCEPTANCE_OPERATOR.namespace,
             annotations={
                 "description": "Generates the acceptance password and Dex config together from one password value."
             },
@@ -238,19 +239,19 @@ def _add_deployment(scope: Construct) -> Deployment:
         metadata=ApiObjectMetadata(
             name=_NAME,
             namespace=_NAMESPACE,
-            labels=_LABELS,
+            labels=_SERVICE.pods.selector,
             annotations={
                 # Dex reads its generated config and client secret only at startup.
-                "secret.reloader.stakater.com/reload": "agentplane-testing-acceptance-operator,agentplane-oidc,agentplane-mcp-oauth"
+                "secret.reloader.stakater.com/reload": ",".join(
+                    secret.name for secret in (_ACCEPTANCE_OPERATOR, _OIDC, _MCP_OAUTH)
+                )
             },
         ),
-        pod_metadata=ApiObjectMetadata(labels=_LABELS),
+        pod_metadata=ApiObjectMetadata(labels=_SERVICE.pods.selector),
         replicas=1,
         strategy=DeploymentStrategy.recreate(),
         security_context=PodSecurityContextProps(ensure_non_root=True, user=1001, group=1001),
     )
-    oidc_secret = Secret.from_secret_name(scope, "oidc-secret", "agentplane-oidc")
-    mcp_oauth_secret = Secret.from_secret_name(scope, "mcp-oauth-secret", "agentplane-mcp-oauth")
     deployment.add_container(
         name="dex",
         image=_IMAGE,
@@ -258,13 +259,13 @@ def _add_deployment(scope: Construct) -> Deployment:
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         args=["dex", "serve", f"{_CONFIG_DIR}/config.yaml"],
         env_variables={
-            "DEX_CLIENT_ID": EnvValue.from_secret_value(SecretValue(secret=oidc_secret, key="client-id")),
-            "DEX_CLIENT_SECRET": EnvValue.from_secret_value(SecretValue(secret=oidc_secret, key="client-secret")),
-            "MCP_CLIENT_SECRET": EnvValue.from_secret_value(SecretValue(secret=mcp_oauth_secret, key="client-secret")),
+            "DEX_CLIENT_ID": _OIDC.key("client-id").env_value(scope, "oidc-client-id-ref"),
+            "DEX_CLIENT_SECRET": _OIDC.key("client-secret").env_value(scope, "oidc-client-secret-ref"),
+            "MCP_CLIENT_SECRET": _MCP_OAUTH.key("client-secret").env_value(scope, "mcp-oauth-client-secret-ref"),
         },
-        ports=[ContainerPort(name="http", number=_PORT, protocol=Protocol.TCP)],
-        readiness=http_probe("/dex/healthz", port=_PORT, initial_delay_seconds=0, period_seconds=5),
-        liveness=http_probe("/dex/healthz", port=_PORT, initial_delay_seconds=10, period_seconds=30),
+        ports=[_SERVICE.port.container_port()],
+        readiness=http_probe("/dex/healthz", port=_SERVICE.pod_port, initial_delay_seconds=0, period_seconds=5),
+        liveness=http_probe("/dex/healthz", port=_SERVICE.pod_port, initial_delay_seconds=10, period_seconds=30),
         resources=ContainerResources(
             cpu=CpuResources(request=Cpu.millis(10), limit=Cpu.millis(100)),
             memory=MemoryResources(request=Size.mebibytes(64), limit=Size.mebibytes(128)),
@@ -273,7 +274,7 @@ def _add_deployment(scope: Construct) -> Deployment:
             read_only_root_filesystem=True, capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL])
         ),
     )
-    config_secret = Secret.from_secret_name(scope, "config-secret", "agentplane-testing-acceptance-operator")
+    config_secret = Secret.from_secret_name(scope, "config-secret", _ACCEPTANCE_OPERATOR.name)
     config_volume = Volume.from_secret(
         scope, "config-volume", config_secret, items={"config.yaml": PathMapping(path="config.yaml")}
     )
@@ -289,9 +290,9 @@ def _add_service(scope: Construct, deployment: Deployment) -> None:
     Service(
         scope,
         "service",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_SERVICE.name, namespace=_NAMESPACE),
         selector=deployment,
-        ports=[ServicePort(name="http", port=_PORT, target_port=_PORT, protocol=Protocol.TCP)],
+        ports=[_SERVICE.port.service_port()],
     )
 
 
@@ -310,11 +311,13 @@ def _add_network_policy(scope: Construct) -> None:
         scope,
         "networkpolicy",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        endpoint_selector=_LABELS,
+        endpoint_selector=_SERVICE.pods.selector,
         ingress=[
-            IngressRule.from_gateway(_PORT),
-            IngressRule.from_endpoints(cilium.endpoint_labels(_NAMESPACE, "agentplane-app"), ports=[_PORT]),
-            IngressRule.from_endpoints(cilium.endpoint_labels(_NAMESPACE, "agentplane-oauth-fixture"), ports=[_PORT]),
+            IngressRule.from_gateway(_SERVICE.pod_port),
+            app_component.service(_NAMESPACE).pods.admit(_SERVICE.pod_port),
+            IngressRule.from_endpoints(
+                cilium.endpoint_labels(_NAMESPACE, "agentplane-oauth-fixture"), ports=[_SERVICE.pod_port]
+            ),
         ],
         egress=[cilium.dns_egress()],
         egress_deny=deny_all_egress(),
