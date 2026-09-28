@@ -254,7 +254,7 @@ spec:
         - name: forgejo-images-creds
       initContainers:
         - args:
-            - --host=clickhouse.clickhouse.svc.cluster.local
+            - --host=clickhouse.clickhouse.svc
             - --port=9000
             - --connect_timeout=10
             - --receive_timeout=60

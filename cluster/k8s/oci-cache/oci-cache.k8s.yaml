@@ -153,11 +153,11 @@ spec:
     - name: http
       port: 80
       protocol: TCP
-      targetPort: http
+      targetPort: 5000
     - name: public-auth
       port: 8080
       protocol: TCP
-      targetPort: public-auth
+      targetPort: 8080
   selector:
     app.kubernetes.io/name: zot
 ---
