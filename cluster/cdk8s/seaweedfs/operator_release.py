@@ -1,4 +1,5 @@
-"""The SeaweedFS operator's Helm release, and the chart repository it installs from.
+"""The SeaweedFS operator's Helm release, and the chart repository it installs from. Its unit
+also carries the `seaweedfs` Namespace (`namespace.py`).
 
 The chart version is also the version of the CRDs the typed bindings are generated from
 (`seaweed_*_crd` in MODULE.bazel); keep them in step.
@@ -15,7 +16,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeCrds,
 )
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.seaweedfs import namespace
@@ -58,13 +59,6 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def seaweedfs_operator(chart: Chart, directory: RenderedDirectory, seaweedfs_namespace: Kustomization) -> Kustomization:
+def seaweedfs_operator(chart: Chart, directory: RenderedDirectory) -> Kustomization:
     name = "seaweedfs-operator"
-    return flux_kustomization(
-        chart,
-        name,
-        directory,
-        suspend=False,
-        depends_on=[flux_kustomization_depends_on(seaweedfs_namespace)],
-        timeout="5m",
-    )
+    return flux_kustomization(chart, name, directory, suspend=False, timeout="5m")

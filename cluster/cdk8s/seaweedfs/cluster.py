@@ -8,10 +8,13 @@ classes, bound to the Talos data user volume on each node. S3 runs as a standalo
 deployment (`spec.s3`, not `filer.s3`); the filer stays because S3 needs it for metadata.
 Every component is pinned to OVH nodes: the operator default would let pods land anywhere.
 
+The unit also carries the filer DB (`filer_db.py`) and the s3 gateway's config Secret
+(`s3_config.py`), whose charts `write_manifests` writes beside this one.
+
 Hand-written beside the output: `filer.toml` and the directory's `kustomization.yaml`,
 whose configMapGenerator + replacement fill `spec.filer.config` from it (the TOML lives
-in its own file so it can be syntax-checked outside YAML string escaping). The
-PriorityClass beside them is `stateful_infra`'s.
+in its own file so it can be syntax-checked outside YAML string escaping), and the SOPS
+siblings it lists. The PriorityClass beside them is `stateful_infra`'s.
 """
 
 from __future__ import annotations
@@ -489,4 +492,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
+    write_charts(root, OUTPUT_DIR, chart, s3_config.chart, filer_db.chart)
