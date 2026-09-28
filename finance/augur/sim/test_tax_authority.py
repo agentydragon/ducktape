@@ -7,9 +7,9 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.ids import JurisdictionId, LiabilityId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.ledger import Ledger
 from finance.augur.sim.prepared import _MortgageInterestDeduction, _SaltCap, _SaltDeduction
-from finance.augur.sim.scenario import ORDINARY_INCOME
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, OTHER, accounting, flat_rules, taxpayer
@@ -41,13 +41,13 @@ def test_year_close_nets_once_then_reassesses_federal_salt_and_resets() -> None:
     year.rental_interest_deduction = 60
     year.depreciation_deduction = 40
     before = deepcopy(books.tax.years)
-    quoted = authority.assessments(books.tax, 11, [], ())
+    quoted = authority.assessments(books.tax, 11, [])
     assert books.tax.years == before
     federal, state = quoted
     assert federal.ordinary_income == state.ordinary_income == 9600
     assert (state.total_tax, federal.total_tax, federal.salt_deduction) == (1920, 860, 1000)
     assert federal.capital_loss_carryforward == state.capital_loss_carryforward == 400
-    authority.close_month(books, 11, [], ())
+    authority.close_month(books, 11, [])
     assert books.tax_accruals == quoted
     assert books.ledger.balance(CASH) == 100
     assert books.ledger.trial_balance() == 0
@@ -56,7 +56,7 @@ def test_year_close_nets_once_then_reassesses_federal_salt_and_resets() -> None:
     assert books.tax.years[HOUSEHOLD].capital_loss_carryforward == 400
     assert books.tax.years[HOUSEHOLD].short_term_gain == 0
     assert books.tax.years[HOUSEHOLD].depreciation_deduction == 0
-    following = authority.assessments(books.tax, 23, [], ())
+    following = authority.assessments(books.tax, 23, [])
     assert all(row.capital_loss_carryforward == 100 for row in following)
     assert all(row.total_tax == 0 for row in following)
 
@@ -71,7 +71,7 @@ def test_year_close_rejection_keeps_income_carryovers_and_all_jurisdictions_unco
     journal = list(books.journal)
     balances = dict(books.ledger.balances)
     with pytest.raises(KeyError):
-        TaxAuthority(taxpayer(HOUSEHOLD), indexation=FixedNominalLaw()).close_month(books, 11, [], ())
+        TaxAuthority(taxpayer(HOUSEHOLD), indexation=FixedNominalLaw()).close_month(books, 11, [])
     assert books.tax.income.by_source == before.income.by_source
     assert books.tax.years == before.years
     assert books.journal == journal

@@ -12,17 +12,18 @@ import pytest_bazel
 
 from finance.augur.sim.actions import DecisionActions, PayClaim
 from finance.augur.sim.books import IncomeState
-from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
+from finance.augur.sim.income import Municipal
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.bonds import (
-    CORPORATE,
     CPI_DEFLATING,
     CPI_DOUBLING,
     CPI_FLAT,
     FACE,
     MUNI,
     NOMINAL_COUPON,
+    TAXABLE,
     TREASURY,
     Situation,
     bond_case,
@@ -101,24 +102,31 @@ def test_coupons_arrive_as_cash_on_their_schedule() -> None:
 
 
 def test_a_treasury_coupon_is_federally_taxed_and_california_exempt() -> None:
-    tax = _tax_by_jurisdiction(execute(bond_case(issuer=TREASURY)))
+    tax = _tax_by_jurisdiction(execute(bond_case(character=TREASURY)))
 
     assert tax["federal_us"] > 0
     assert tax["california"] == 0
 
 
 def test_an_in_state_muni_coupon_is_exempt_everywhere() -> None:
-    tax = _tax_by_jurisdiction(execute(bond_case(issuer=MUNI)))
+    tax = _tax_by_jurisdiction(execute(bond_case(character=MUNI)))
 
     assert tax["federal_us"] == 0
     assert tax["california"] == 0
 
 
-def test_a_corporate_coupon_is_taxed_by_both() -> None:
-    """A `None` issuer is a real state, not a missing one: a non-governmental issuer that
-    no jurisdiction exempts."""
+def test_another_states_muni_coupon_is_federally_exempt_and_california_taxed() -> None:
+    """Federal law exempts every state's munis; California exempts only its own. The muni's state
+    is declared nowhere: only the taxing jurisdictions' own rules read it."""
 
-    tax = _tax_by_jurisdiction(execute(bond_case(issuer=CORPORATE)))
+    tax = _tax_by_jurisdiction(execute(bond_case(character=Municipal(state=JurisdictionId("test_state")))))
+
+    assert tax["federal_us"] == 0
+    assert tax["california"] > 0
+
+
+def test_a_corporate_coupon_is_taxed_by_both() -> None:
+    tax = _tax_by_jurisdiction(execute(bond_case(character=TAXABLE)))
 
     assert tax["federal_us"] > 0
     assert tax["california"] > 0
@@ -127,9 +135,9 @@ def test_a_corporate_coupon_is_taxed_by_both() -> None:
 def test_a_coupon_accrues_as_interest_and_not_as_ordinary_income() -> None:
     """Which row it lands in is what decides whether California can reach it."""
 
-    december = [row for month, row in _alice_income(execute(bond_case(issuer=TREASURY))) if month == 11]
+    december = [row for month, row in _alice_income(execute(bond_case(character=TREASURY))) if month == 11]
 
-    assert [row.income_source for row in december] == ["interest:federal_us"]
+    assert [row.income_source for row in december] == ["interest:treasury"]
     assert [row.income for row in december] == [_quanta(NOMINAL_COUPON)]
 
 

@@ -324,7 +324,7 @@ function PortfolioBondRow({ bond, currency }) {
         <div className="augur-strong">{bond.label ?? bond.bondId}</div>
         <div className="text-xs augur-muted">
           {bond.inflationIndexed ? "TIPS \u00b7 " : ""}
-          {bond.issuerJurisdictionId ?? "corporate"}
+          {bond.character.kind === "municipal" ? `municipal \u00b7 ${bond.character.state}` : bond.character.kind}
         </div>
       </td>
       <td className="py-1 text-right augur-tabular">{(100 * bond.annualCouponRate).toFixed(2)}%</td>

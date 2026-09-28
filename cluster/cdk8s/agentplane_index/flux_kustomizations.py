@@ -4,30 +4,26 @@ from __future__ import annotations
 
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def agentplane_index(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     cnpg: Kustomization,
-    external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
-    local_path_provisioner: Kustomization,
-    ollama: Kustomization,
+    external_secrets_operator: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     name = "agentplane-index"
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         timeout="10m",
-        # haku-state's Terraform Kustomization depends on this aggregate to create
-        # the target Namespace, then reflects haku-forgejo-git into it. Waiting for
-        # the haku-state Deployment here would deadlock that bootstrap: the Pod
-        # needs the Secret created by the dependency.
+        # The haku-state index worker reads haku-forgejo-git, which the haku-state
+        # Terraform reflects into this Namespace; waiting for that worker would hold
+        # this Kustomization NotReady until the Terraform has applied.
         wait=False,
         health_checks=[
             KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="agentplane-index"),
@@ -54,7 +50,10 @@ def agentplane_index(
             )
         ],
         depends_on=flux_kustomization_depends_on_many(
-            cnpg, external_secrets_config, forgejo_images, local_path_provisioner, ollama
+            cnpg,
+            external_secrets_operator,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployments and Namespace.
+            kyverno,
         ),
         description=(
             "Complete Agentplane repository-index service: namespace, ESO "

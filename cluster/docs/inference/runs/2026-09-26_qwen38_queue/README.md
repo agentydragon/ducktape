@@ -6,7 +6,9 @@ build a synthetic prerequisite. The initial queue source is retained in commit
 83f4894913; this revision runs Terminus-2. The first Q4 attempt
 [passed with two compactions](../2026-09-26_qwen38_q4_terminus_result/README.md).
 Q5 and IQ4 downloads finished at 04:48 Pacific; the serial IQ4 comparison started
-at 12:10. The protocol below records how those runs were launched.
+at 12:10 and [passed the verifier at its eight-hour deadline](../2026-09-26_qwen38_iq4_terminus_result/README.md),
+with three compactions and an agent timeout. The protocol below records how those
+runs were launched.
 Ollama pause PR [8070](https://github.com/agentydragon/ducktape/pull/8070) is merged;
 live replicas were verified zero. No reboot or NixOS activation is involved.
 

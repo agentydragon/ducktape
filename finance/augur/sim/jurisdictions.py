@@ -12,24 +12,17 @@ runfiles tree (which preserves the source layout) can find them.
 
 from __future__ import annotations
 
+from collections.abc import Set
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal
 
 import yaml
-from pydantic import BaseModel, BeforeValidator, Field, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
-from finance.augur.sim.fixed_point import validate_currency_amount
+from finance.augur.sim.fixed_point import validate_currency_amount, validate_rate
 from finance.augur.sim.ids import JurisdictionId
-
-
-class JurisdictionLevel(StrEnum):
-    """Where a taxing authority sits. Load-bearing because exemptions are stated by level:
-    "interest from any STATE issuer" is a rule federal law actually contains."""
-
-    FEDERAL = "federal"
-    STATE = "state"
 
 
 class StatutoryAmount(StrEnum):
@@ -69,6 +62,7 @@ def _validate_bracket_upper(value: object) -> Decimal | Literal["Infinity"]:
 
 type BracketUpper = Annotated[Decimal | Literal["Infinity"], BeforeValidator(_validate_bracket_upper)]
 type CurrencyAmount = Annotated[Decimal, BeforeValidator(validate_currency_amount)]
+type Rate = Annotated[Decimal, BeforeValidator(validate_rate)]
 
 
 class TaxBracket(BaseModel):
@@ -79,7 +73,7 @@ class TaxBracket(BaseModel):
     `(previous_upper, upper]`."""
 
     upper: BracketUpper
-    rate: float
+    rate: Rate
 
 
 class ThresholdTax(BaseModel):
@@ -89,8 +83,20 @@ class ThresholdTax(BaseModel):
     filing status, and the jurisdiction's `indexation` says whether it is inflation-indexed.
     """
 
-    rate: float
+    rate: Rate
     threshold: dict[str, CurrencyAmount]
+
+
+class InterestExemptions(BaseModel):
+    """The interest characters a jurisdiction does not tax. `Taxable` interest has no entry: it
+    is taxable everywhere by definition."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    treasury: bool = Field(description="Whether interest on Treasury obligations is exempt here.")
+    municipal: Literal["all"] | Set[JurisdictionId] = Field(
+        description="The states whose municipal obligations' interest is exempt here, or `all` for every state's."
+    )
 
 
 class Jurisdiction(BaseModel):
@@ -119,23 +125,7 @@ class Jurisdiction(BaseModel):
             "jurisdiction rather than assumed."
         )
     )
-    level: JurisdictionLevel
-    exempt_interest_from_levels: frozenset[JurisdictionLevel] = Field(
-        default=frozenset(),
-        description=(
-            "Issuer LEVELS whose interest this jurisdiction does not tax. Federal exempts "
-            "interest from any state issuer (IRC 103); a state exempts interest from federal "
-            "obligations (31 USC 3124)."
-        ),
-    )
-    exempts_own_issue: bool = Field(
-        default=False,
-        description=(
-            "Whether this jurisdiction exempts interest on debt IT issued — the honest form of "
-            '"in-state muni". California exempts California munis; the federal government does '
-            "NOT exempt Treasuries."
-        ),
-    )
+    exempt_interest: InterestExemptions
     net_investment_income_tax: ThresholdTax | None = Field(
         default=None,
         description=(
@@ -170,21 +160,6 @@ class Jurisdiction(BaseModel):
                 f"{self.jurisdiction_id!r} indexation tags {sorted(self.indexation)}, not its amounts {sorted(present)}"
             )
         return self
-
-    def taxes_interest_from(
-        self, issuer_jurisdiction_id: JurisdictionId | None, issuer_level: JurisdictionLevel | None
-    ) -> bool:
-        """Whether interest issued by `issuer_jurisdiction_id` is taxable HERE.
-
-        `None` issuer means a non-governmental issuer (a corporate bond), which no jurisdiction
-        exempts. "In-state" never appears as data — it is `issuer_jurisdiction_id == self`.
-        """
-
-        if issuer_jurisdiction_id is None or issuer_level is None:
-            return True
-        if issuer_jurisdiction_id == self.jurisdiction_id:
-            return not self.exempts_own_issue
-        return issuer_level not in self.exempt_interest_from_levels
 
 
 def load_jurisdiction(jurisdiction_id: JurisdictionId) -> Jurisdiction:

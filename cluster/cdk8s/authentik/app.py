@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -21,6 +21,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRulesFiltersResponseHeaderModifierSet
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
 from cluster.cdk8s.authentik import db
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
@@ -28,7 +29,6 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
@@ -173,7 +173,7 @@ def _helm_release(chart: Chart) -> None:
     repository = HelmRepository(
         chart,
         "repository",
-        metadata=metadata(NAME, NAMESPACE),
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://charts.goauthentik.io"),
     )
     helm_release(
@@ -216,7 +216,7 @@ def _http_route(chart: Chart) -> None:
     https_route(
         chart,
         "route",
-        metadata=metadata(NAME, NAMESPACE),
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         hostnames=["auth.allegedly.works"],
         backend="authentik-server",
         port=80,
@@ -254,8 +254,8 @@ def _network_policy(chart: Chart) -> None:
     NetworkPolicy(
         chart,
         "server-ingress",
-        metadata=metadata("authentik-server-ingress", NAMESPACE),
-        selector=_SERVER_LABELS,
+        metadata=ApiObjectMetadata(name="authentik-server-ingress", namespace=NAMESPACE),
+        endpoint_selector=_SERVER_LABELS,
         ingress=[
             IngressRule.from_gateway(_HTTP, _HTTPS),
             # Outposts sync their config from the server API.
@@ -285,8 +285,8 @@ def _pod_monitor(chart: Chart) -> None:
     PodMonitor(
         chart,
         "server-podmonitor",
-        metadata=metadata("authentik-server", NAMESPACE),
-        selector=_SERVER_LABELS,
+        metadata=ApiObjectMetadata(name="authentik-server", namespace=NAMESPACE),
+        selector=PodMonitorSpecSelector(match_labels=_SERVER_LABELS),
         # TODO: Consider adding bearer token auth if Authentik metrics require authentication.
         pod_metrics_endpoints=[Endpoint.plain(port="metrics")],
     )

@@ -1,13 +1,32 @@
 """Current-month contractual demands; registering one neither funds nor settles it."""
 
 from dataclasses import dataclass
+from enum import StrEnum
 
 from finance.augur.sim import observations
 from finance.augur.sim.actions import ClaimId
 from finance.augur.sim.books import AccountRef, Record
-from finance.augur.sim.compiler.tax import PreparedTaxProfile
 from finance.augur.sim.ids import AgentId
 from finance.augur.sim.mortgage import InstallmentDue, MortgagePayment
+from finance.augur.sim.tax import PreparedTaxProfile
+
+
+class ObligationType(StrEnum):
+    """Closed set of `obligation_type` values that flow through dense engine event tables.
+
+    Sim and product callers should use these enum members at construction sites and at
+    filter sites in decoded `obligation_settlements` / `obligation_failures` frames.
+    """
+
+    CASH_SPEND = "cash_spend"
+    OUTSIDE_RENT = "outside_rent"
+    ESTIMATED_TAX = "estimated_tax"
+    TAX_TRUE_UP = "tax_true_up"
+    MORTGAGE_PAYMENT = "mortgage_payment"
+    PROPERTY_TAX = "property_tax"
+    HOA_DUES = "hoa_dues"
+    HOMEOWNERS_INSURANCE = "homeowners_insurance"
+    PROPERTY_MAINTENANCE = "property_maintenance"
 
 
 @dataclass(frozen=True)

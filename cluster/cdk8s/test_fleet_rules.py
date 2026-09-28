@@ -54,21 +54,28 @@ def test_pod_hardening_names_the_container_and_what_it_lacks() -> None:
     ]
 
 
-def test_pod_hardening_covers_init_containers_and_sandbox_templates() -> None:
+def test_pod_hardening_covers_init_containers_and_crd_pod_templates() -> None:
     sandbox = {
         "apiVersion": "extensions.agents.x-k8s.io/v1alpha1",
         "kind": "SandboxTemplate",
         "metadata": {"name": "runner"},
         "spec": {"podTemplate": {"spec": {**_HARDENED, "containers": [{"name": "runner"}]}}},
     }
+    scaled_job = {
+        "apiVersion": "keda.sh/v1alpha1",
+        "kind": "ScaledJob",
+        "metadata": {"name": "ci"},
+        "spec": {"jobTargetRef": {"template": {"spec": {"containers": [{"name": "job", "resources": _RESOURCES}]}}}},
+    }
     deployment = _deployment(
         "with-init",
         containers=[{"name": "main", "resources": _RESOURCES}],
         pod={**_HARDENED, "initContainers": [{"name": "migrate"}]},
     )
-    assert [error.split(":")[0] for error in pod_hardening([sandbox, deployment])] == [
+    assert [error.split(":")[0] for error in pod_hardening([sandbox, scaled_job, deployment])] == [
         "SandboxTemplate/runner container runner",
         "SandboxTemplate/runner container runner",
+        "ScaledJob/ci container job",
         "Deployment/with-init container migrate",
         "Deployment/with-init container migrate",
     ]

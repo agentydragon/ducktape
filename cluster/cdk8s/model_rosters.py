@@ -136,6 +136,9 @@ _UPSTREAM_DEFINER: dict[str, str] = {
     "groq": "oai",  # OpenAI-compatible chat at api.groq.com/openai/v1
     "gemini": "goog",
     "ollama": "olm",
+    # LiteLLM's native Ollama chat adapter has its own provider prefix. It speaks
+    # the same Ollama wire shape, so public `olm-chat` route names remain unchanged.
+    "ollama_chat": "olm",
     # The in-process Tana adapter speaks Anthropic Messages on the wire while using its
     # own LiteLLM provider prefix for dispatch.
     "tana": "ant",
@@ -529,6 +532,9 @@ GEMINI_MAX_OUTPUT_TOKENS = 65_536
 # page-cache-hot; see agentplane/debug/agentplane_ollama_live_smoke_2026_09_24.md for the
 # full investigation.
 OLLAMA_CHAT_MODELS: list[tuple[str, str, tuple[int, ...]]] = [
+    ("qwen3.8-flash-next-iq4xs", "qwen3.8-flash-next-iq4xs:latest", (128 * 1024,)),
+    # Ollama /v1 ignores native options.num_ctx; bake this size into an alias.
+    ("qwen3.8-flash-next-iq4xs", "qwen3.8-flash-next-iq4xs-256k:latest", (256 * 1024,)),
     ("gpt-oss-20b", "gpt-oss:20b", (128 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024)),
     ("gpt-oss-120b", "gpt-oss:120b", (128 * 1024,)),
     ("gemma4-31b-it-q8_0", "gemma4:31b-it-q8_0", (128 * 1024,)),

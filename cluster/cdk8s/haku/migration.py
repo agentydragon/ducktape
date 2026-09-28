@@ -19,6 +19,7 @@ from __future__ import annotations
 from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ContainerResources,
+    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
     ImagePullPolicy,
@@ -30,11 +31,9 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import container_security, node_scheduling
+from cluster.cdk8s import node_scheduling, pod_policy
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.haku import console
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 
 NAME = "haku-console-migration"
 
@@ -48,12 +47,14 @@ class Migration(Construct):
         # No Kubernetes API work: separate from the API ServiceAccount, which can manage
         # narrowly scoped sandbox claims.
         service_account = ServiceAccount(
-            self, "serviceaccount", metadata=metadata(NAME, namespace), automount_token=False
+            self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), automount_token=False
         )
         job = Job(
             self,
             "job",
-            metadata=metadata(NAME, namespace, annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"}),
+            metadata=ApiObjectMetadata(
+                name=NAME, namespace=namespace, annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"}
+            ),
             pod_metadata=ApiObjectMetadata(labels={"app.kubernetes.io/name": NAME}),
             select=False,
             # Retries are how this waits for the database, since nothing sequences the two
@@ -80,10 +81,12 @@ class Migration(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            security_context=container_security.WRITABLE_ROOT,
+            # Writable: its root filesystem writes are unaudited.
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
-        node_scheduling.attract_to_zone(job)
-        apply_pod_spec_patches(job)
+        pod_policy.place(job, node_scheduling.HIL_OVH)
+        pod_policy.harden(job)
+        # cdk8s-plus's Container has no terminationMessagePolicy option.
         ApiObject.of(job).add_json_patch(
             JsonPatch.add("/spec/template/spec/containers/0/terminationMessagePolicy", "FallbackToLogsOnError")
         )

@@ -18,9 +18,8 @@ class IncomeCategory(IntEnum):
 
     Note what is NOT here: `in_state` / `out_of_state` variants. "In-state" is not a property
     of a bond — a California muni is in-state for a Californian and out-of-state for a New
-    Yorker. Interest therefore carries its ISSUING jurisdiction, and each jurisdiction's rules
-    decide (see `Jurisdiction.taxes_interest_from`). "In-state" is the derived relation
-    `issuer == me`, never a stored label.
+    Yorker. Interest therefore carries its tax character (`InterestCharacter`), and each
+    jurisdiction's data decide which characters it exempts (see `sim.tax.taxes_interest_from`).
     """
 
     ORDINARY = 0

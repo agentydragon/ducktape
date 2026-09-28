@@ -57,8 +57,8 @@
       "sha256": "60HktLuzMOSwLor92VKJc3YUYXZeErbBSrOt1RbwgK8="
     },
     "skill-flux_reconcile_audit": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-flux_reconcile_audit-323c44f42bf4/flux_reconcile_audit.skill",
-      "sha256": "MjxE9Cv08x1ruDeo/wLARoolgrDeg9jyg9CVnXsu+6s="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-flux_reconcile_audit-173ec315f57b/flux_reconcile_audit.skill",
+      "sha256": "Fz7DFfV70NYlrUti+Yli+AoqEvOPF51z2B/00sjciGM="
     },
     "skill-hetzner_vnc_screenshot": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-hetzner_vnc_screenshot-5b3ad6fd0489/hetzner_vnc_screenshot.skill",
@@ -233,8 +233,8 @@
       "sha256": "xy/l9ScCKrqKAtLFDrjM4mID06m2lmvd+lvmtLJ2NW8="
     },
     "skill-cdk8s_builders": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cdk8s_builders-d8ccfba742bd/cdk8s_builders.skill",
-      "sha256": "2Mz7p0K93GuUX6zDv4Qfh+uT2/PDGZ7/2RrK9DKPvxc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cdk8s_builders-00b07b01f5cf/cdk8s_builders.skill",
+      "sha256": "ALB7AfXP95S8Z1dQ4KeNPbpUeDRLFzRJj00pnm6Eei8="
     }
   }
 }

@@ -21,7 +21,7 @@ from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.views import ThreadEntityView
-from agentplane.app.api import create_app
+from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -52,7 +52,10 @@ def openapi_document() -> dict[str, Any]:
             thread_changes=database_updates.changes[Channel.THREADS],
         ),
         ThreadStore(engine),
-        {harness: ["schema-model"] for harness in Harness},
+        ModelCatalog(
+            models=[ModelOption(model="schema-model", display_name="Schema Model")],
+            harnesses={harness: ["schema-model"] for harness in Harness},
+        ),
         EgressInventory(namespace="schema", custom_objects=cast(Any, None)),
         DecisionsClient(httpx.AsyncClient(base_url="http://schema.invalid")),
         live,

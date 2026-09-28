@@ -7,15 +7,23 @@ submit ordered actions for many paths at once.
 
 ## Preparation and dependencies
 
-The authored records in <scenario.py> describe holdings, contracts, cashflows and
-policies in exact decimals. The compiler's per-table pieces in <compiler/> lower them
-into the records defined in <prepared.py>; preparation does not fetch market evidence,
-fit a model or load tax law independently. Prepared records own exact monetary terms,
-quantized market paths and variable-length resolved tax rules; a world declares them
-directly and keeps no authoring objects.
+`World` is the world of simulated economic actors: households, counterparties, taxes and
+settlement. Exogenous models (`model/`, `x/models/`) are the part of reality Augur does not
+model as actors: markets, prices, rates and inflation. They sample their trajectories first;
+those paths are then piped into the `World` as a `MarketPath`. The effect runs one way only:
+actors never affect the exogenous paths.
+
+Callers declare month-0 facts on a world as keyword arguments, converting exact decimals
+through a `Currency` (<money.py>) and the helpers in <fixed_point.py>, which are exact or
+raise; preparation does not fetch market evidence, fit a model or load tax law
+independently. Prepared values own exact monetary terms, quantized market paths and
+variable-length resolved tax rules; a world keeps no authoring objects. A caller that
+declares one situation onto many worlds keeps its own records of it.
 
 `sim/` owns declarations, execution, and common books/results. Preparation does not depend on the executor.
-`model/` and `fit/` sample and fit; `policy/` contains proposal helpers.
+`model/` holds historical replay, market paths and instrument pricing; `fit/` shared
+evidence loading and scoring; `x/models/` the experimental fitted providers with their
+training code; `policy/` proposal helpers.
 Neither financial settlement nor preparation depends on the app's `product/`
 or HTTP modules.
 
@@ -24,7 +32,7 @@ or HTTP modules.
 ```text
 supplied paths (+ rules)
     -> World(MarketPath(series, rollout_id, ...), horizon_months=...)
-    -> world.declare_account / declare_pool / hold / declare_portfolio / declare_distribution
+    -> world.declare_account / declare_pool / hold_lot / hold_bond / declare_portfolio / declare_distribution  # keyword arguments
     -> world.declare_housing / declare_flow / declare_deduction / declare_tender_policy
     -> world.track(agent | mortgage | biller | tax_authority); world.start()
     -> world.step()  # open: statements and dues to the agent; MonthOpened -> ordered actions; close
@@ -33,9 +41,7 @@ supplied paths (+ rules)
 
 Each declaration refuses what it cannot execute where it is declared: an unknown
 account, a missing or unusable series, a cashflow outside the horizon, a lifecycle
-event before its purchase. The compiler's per-table pieces (`compile_lots`,
-`compile_housing`, `compile_recurring_obligation`, …) lower authored records into
-the prepared records these declarations take.
+event before its purchase.
 
 The batch form drives one such world per selected path:
 
@@ -143,8 +149,8 @@ comparing stopped books with completed horizons.
 
 ## The app
 
-`ProductService` lowers each request once into a `Situation` of prepared declarations
-(<../product/scenarios.py>), samples the series it reads, and composes one world per
+`ProductService` prepares each request once into a `Situation` of prepared declarations
+(<../product/scenarios.py>, over the portfolio <../product/holdings.py> checked at startup), samples the series it reads, and composes one world per
 path with the app household (<../policy/cash_band_household.py>) tracked on it;
 <../product/simulation.py> steps each to the horizon. The household proposes its funding
 sales, pays every due claim in full in observed order — a claim the cash those sales
@@ -158,6 +164,13 @@ every experiment.
 
 ## Rejected designs
 
+- **A scenario object.** One configuration value meant to represent every use case,
+  compiled into declarations, made every use case fit one schema. Callers declare the
+  facts they need.
+- **A facade that runs the rollout loop.** Augur is building blocks: the caller owns
+  the loop and uses `World`'s operations inside it, as a PyTorch user writes their own
+  training loop. A strategy particular to one study is caller code, not something core
+  learns to configure.
 - **Explicit guarded composition without a `World`.** Consistency checks across
   agents, contracts and tax treatment need one registration point; every sketch of
   the lighter form reinvented it.

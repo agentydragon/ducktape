@@ -49,17 +49,6 @@ py_test(
 )
 
 py_library(
-    name = "egress_binding",
-    srcs = ["egress_binding.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        "//agentplane/crds:egressbinding",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
     name = "action_policy_set",
     srcs = ["action_policy_set.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -80,16 +69,5 @@ py_test(
         "//:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "action_policy_binding",
-    srcs = ["action_policy_binding.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        "//agentplane/crds:actionpolicybinding",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
     ],
 )

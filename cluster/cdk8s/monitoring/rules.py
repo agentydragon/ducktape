@@ -2,21 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from textwrap import dedent
 
-from cdk8s import App, Chart
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from cdk8s import ApiObjectMetadata, App, Chart
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 
 NAME = "monitoring-rules"
 NAMESPACE = "monitoring"
-OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/rules"
 
 _CONTROL_PLANE_IO = [
     Rule.alert(
@@ -552,66 +545,46 @@ def chart(app: App) -> Chart:
     PrometheusRule(
         chart,
         "control-plane-io-alerts",
-        metadata=metadata("control-plane-io-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name="control-plane-io-alerts", namespace=NAMESPACE),
         groups=[group("control-plane-io", _CONTROL_PLANE_IO)],
     )
     PrometheusRule(
         chart,
         "external-secrets-alerts",
-        metadata=metadata("external-secrets-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name="external-secrets-alerts", namespace=NAMESPACE),
         groups=[group("external-secrets", _EXTERNAL_SECRETS)],
     )
     PrometheusRule(
         chart,
         "flux-alerts",
-        metadata=metadata("flux-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name="flux-alerts", namespace=NAMESPACE),
         groups=[group("flux", _FLUX)],
     )
     PrometheusRule(
         chart,
         "github-quota-alerts",
-        metadata=metadata("github-quota-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name="github-quota-alerts", namespace=NAMESPACE),
         groups=[group("github-quota", _GITHUB_QUOTA)],
     )
     PrometheusRule(
         chart,
         "grocy-mcp-alerts",
-        metadata=metadata("grocy-mcp-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name="grocy-mcp-alerts", namespace=NAMESPACE),
         groups=[group("grocy-mcp", _GROCY_MCP)],
     )
     PrometheusRule(
         chart,
         "mcp-auth-alerts",
-        metadata=metadata("mcp-auth-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name="mcp-auth-alerts", namespace=NAMESPACE),
         groups=[group("mcp-auth", _MCP_AUTH)],
     )
     PrometheusRule(
         chart,
         "roaming-node-alerts",
-        metadata=metadata("roaming-node-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name="roaming-node-alerts", namespace=NAMESPACE),
         groups=[
             group("roaming-node-alerts", _ROAMING_NODE),
             group("roaming-node-workload-alerts", _ROAMING_NODE_WORKLOAD),
         ],
     )
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def monitoring_rules(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        artifact,
-        retry_interval=None,
-        wait=None,
-        depends_on=[
-            # PrometheusRule
-            flux_kustomization_depends_on(monitoring_crds)
-        ],
-    )

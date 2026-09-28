@@ -15,26 +15,20 @@ from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.policy import sleeves
 from finance.augur.sim.actions import Action, DecisionActions, LotSale, Sell
 from finance.augur.sim.books import AccountRef, SecurityLotState
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.compiler.tax import compile_profile
-from finance.augur.sim.external_series import ExternalSeriesContext, materialize_external_series
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series, materialize_external_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedSeries,
-)
+from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.world import World
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
@@ -47,34 +41,46 @@ VTI_ASSET = AssetId(VTI.symbol)
 
 
 @dataclass(frozen=True)
+class Lot:
+    """One of Alice's opening lots."""
+
+    lot_id: LotId
+    account_id: AccountId
+    asset_id: AssetId
+    purchase_month: int
+    quantity_scale: int
+    units: int
+    basis: int
+
+
+@dataclass(frozen=True)
 class Situation:
     """What every path shares: the compiled paths, the lots each world opens holding, and who files tax."""
 
     series: tuple[PreparedSeries, ...]
     rollout_count: int
     horizon_months: int
-    lots: tuple[PreparedLot, ...]
+    lots: tuple[Lot, ...]
     tax_profiles: tuple[TaxProfile, ...]
 
 
 def _lot(
     lot_id: LotId,
-    quantity: float,
+    quantity: Decimal | int,
     basis: Decimal,
     purchase_month: int,
     *,
     asset: SecurityKey = VTI,
     account: AccountId = CHECKING,
-) -> PreparedLot:
+) -> Lot:
     scale = quantity_scale_for_asset(asset)
-    return PreparedLot(
+    return Lot(
         lot_id=lot_id,
-        agent_id=ALICE,
         account_id=account,
         asset_id=AssetId(asset.symbol),
         purchase_month=purchase_month,
         quantity_scale=scale,
-        units=int(quantity_to_quanta(quantity, scale=scale)),
+        units=quantity_to_quanta(quantity, scale=scale),
         basis=int(currency_amount_to_quanta(basis, quantum=QUANTUM)),
     )
 
@@ -90,7 +96,7 @@ def _taxed(*jurisdiction_ids: JurisdictionId) -> TaxProfile:
 
 
 def _situation(
-    lots: Sequence[PreparedLot],
+    lots: Sequence[Lot],
     prices: Mapping[SecurityKey, Sequence[Decimal]],
     *,
     rollouts: int = 1,
@@ -107,7 +113,7 @@ def _situation(
         horizon_months=horizon,
     )
     return Situation(
-        series=compile_series(paths, rollout_count=rollouts, horizon_months=horizon, currency_quantum=QUANTUM),
+        series=compile_series(paths, rollout_count=rollouts, horizon_months=horizon, currency=USD),
         rollout_count=rollouts,
         horizon_months=horizon,
         lots=tuple(lots),
@@ -126,28 +132,28 @@ def _compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=tuple(
-            PreparedJurisdiction(jurisdiction_id=jurisdiction_id, level=jurisdiction.level)
-            for jurisdiction_id, jurisdiction in sorted(jurisdictions.items())
-        ),
     )
     for agent_id in (ALICE, *(("irs",) if case.tax_profiles else ())):
         world.declare_account(
-            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")), opening_balance=0)
+            account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")), opening_balance=0
         )
     for profile in case.tax_profiles:
-        world.track(
-            TaxAuthority(compile_profile(profile, jurisdictions, quantum=QUANTUM), indexation=FixedNominalLaw())
-        )
-    for pool in {
-        (lot.account_id, lot.asset_id): PreparedHoldingPool(
-            agent_id=ALICE, account_id=lot.account_id, asset_id=lot.asset_id, quantity_scale=lot.quantity_scale
-        )
-        for lot in case.lots
-    }.values():
-        world.declare_pool(pool)
+        world.track(TaxAuthority(compile_profile(profile, jurisdictions, currency=USD), indexation=FixedNominalLaw()))
+    for (account_id, asset_id), quantity_scale in {
+        (lot.account_id, lot.asset_id): lot.quantity_scale for lot in case.lots
+    }.items():
+        world.declare_pool(agent_id=ALICE, account_id=account_id, asset_id=asset_id, quantity_scale=quantity_scale)
     for lot in case.lots:
-        world.hold(lot)
+        world.hold_lot(
+            lot_id=lot.lot_id,
+            agent_id=ALICE,
+            account_id=lot.account_id,
+            asset_id=lot.asset_id,
+            purchase_month=lot.purchase_month,
+            quantity_scale=lot.quantity_scale,
+            units=lot.units,
+            basis=lot.basis,
+        )
     return world
 
 
@@ -433,7 +439,7 @@ def test_gbm_sales_diverge_and_same_seed_reproduces_all_cash() -> None:
         """One seed per path, drawn from the situation's own series model rather than a stipulated curve."""
         paths = materialize_external_series(bundle, rollout_seeds=tuple(range(rollout_count)), horizon_months=6)
         return Situation(
-            series=compile_series(paths, rollout_count=rollout_count, horizon_months=6, currency_quantum=QUANTUM),
+            series=compile_series(paths, rollout_count=rollout_count, horizon_months=6, currency=USD),
             rollout_count=rollout_count,
             horizon_months=6,
             lots=(_lot(LotId("seed"), 5, Decimal(500), 0),),
@@ -451,7 +457,7 @@ def test_gbm_sales_diverge_and_same_seed_reproduces_all_cash() -> None:
 
 
 def test_awkward_thirds_consume_exactly_the_whole_lot_basis() -> None:
-    case = _situation([_lot(LotId("seed"), 2.5, Decimal("83.33"), -24)], {VTI: [Decimal(50)] * 7})
+    case = _situation([_lot(LotId("seed"), Decimal("2.5"), Decimal("83.33"), -24)], {VTI: [Decimal(50)] * 7})
 
     def propose(obs: Observation) -> list[Action]:
         if obs.month not in (1, 2, 3):

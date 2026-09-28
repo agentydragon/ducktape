@@ -11,7 +11,7 @@ If it is unset, the property has no tenant rent stream; a later
 scenario has no rent/vacancy terms to resize.
 
 `RentalIncomePlan.full_property_monthly_rent_usd` is full-property market rent before
-vacancy and management fees. If it is `None`, product lowering uses the selected
+vacancy and management fees. If it is `None`, the app's preparation uses the selected
 property's `rent_estimate_usd`. Collected tenant rent is:
 
 ```text
@@ -45,7 +45,7 @@ Mid-horizon lifecycle events are scoped to the purchased property in product wir
 - `property_sale`: sells the property, pays off mortgage debt, and freezes later
   property activity.
 
-Product lowering turns the effective rented-fraction timeline into tenant-rent and
+The app's preparation turns the effective rented-fraction timeline into tenant-rent and
 agency-fee property cashflows. `set_rented_fraction` events resize, stop, or
 restart those cashflows at the start of their event month. Sale stops rental
 cashflows in the sale month.
@@ -67,15 +67,15 @@ ledger principal before that month's servicing, so the sold property creates no
 later mortgage installment. This timing does not provide a household purchase
 action.
 
-The sim's authored records separate property use from property ownership:
+The sim's prepared housing records (`Housing` in `sim/property.py`) separate property use
+from property ownership:
 
-- `ScheduledPropertyPurchase.rented_fraction` is the initial rented share.
-- `PrimaryResidenceAssignment` is agent-scoped, one initial main home per agent.
-- `SetPrimaryResidenceEvent` assigns or clears an agent's main home over time.
-- `PropertyLifecycleEvent` handles rented-fraction changes, improvements,
-  and sales.
-- `ScheduledPropertyCashflow` and
-  `RecurringPropertyCashflow` model property-linked rent,
+- `_PropertyPurchase.rented_fraction_ppb` is the initial rented share.
+- `_PrimaryResidence` is agent-scoped, one initial main home per agent.
+- `_PrimaryResidenceEvent` assigns or clears an agent's main home over time.
+- `_RentedFraction`, `_CapitalImprovement` and `_PropertySale` handle rented-fraction
+  changes, improvements, and sales.
+- `World.declare_flow` with a `property_id` models property-linked rent,
   management, and leasing cashflows. The engine gates them by property
   ownership lifecycle, then decodes fired rows into the generic transfer event
   frame without adding `property_id` to transfer events.
@@ -86,8 +86,8 @@ lifecycle events, then generic transfers, property purchases, property cashflows
 asset sales, obligations, owner-occupied-month accrual, depreciation, and tax
 accrual. This means a same-month primary-residence event can fire before a sale,
 but the sale clears the assignment and the sold property does not accrue an
-owner-occupied month. Same-property `PropertySaleEvent` cannot share a month with
-`SetRentedFractionEvent` or `CapitalImprovementEvent`; those combinations are
+owner-occupied month. A same-property sale cannot share a month with a
+rented-fraction change or a capital improvement; those combinations are
 rejected because sale basis, depreciation, and rental routing would otherwise be
 ambiguous.
 

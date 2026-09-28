@@ -100,7 +100,7 @@ template needs it; do not build a generic workload framework for the existing ca
 
 A second Haku deployment may justify Environment props. Namespace-default charts may
 help a purely namespaced component, but splitting mixed-scope charts solely to omit
-`metadata(..., namespace)` is not scheduled.
+`namespace=` from each object's `ApiObjectMetadata` is not scheduled.
 
 ## Parked
 

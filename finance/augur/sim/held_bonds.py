@@ -2,17 +2,34 @@
 
 from collections.abc import Sequence
 from copy import deepcopy
+from dataclasses import dataclass
 
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, BondCashflowOutcome, BondState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, BondId
+from finance.augur.sim.income import InterestCharacter, InterestIncome
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.observations import FixedCoupon, HeldBond, IndexedCoupon
-from finance.augur.sim.prepared import PreparedBond, PreparedFixedAmount, PreparedIndexedCoupon
-from finance.augur.sim.scenario import InterestIncome
+from finance.augur.sim.prepared import PreparedFixedAmount, PreparedIndexedCoupon
+
+
+@dataclass(frozen=True, kw_only=True)
+class Bond:
+    """A held dated bond's contract terms."""
+
+    bond_id: BondId
+    agent_id: AgentId
+    account_id: AccountId
+    character: InterestCharacter
+    face_value: int
+    purchase_price: int
+    coupon: PreparedFixedAmount | PreparedIndexedCoupon
+    coupon_period_months: int
+    purchase_month_index: int
+    maturity_month_index: int
 
 
 class BondStatement(Statement):
@@ -22,19 +39,19 @@ class BondStatement(Statement):
 
 
 class HeldBonds:
-    def __init__(self, bonds: Sequence[PreparedBond], market: MarketPath) -> None:
+    def __init__(self, bonds: Sequence[Bond], market: MarketPath) -> None:
         self.terms = tuple(bonds)
         self.market = market
         # This month's cashflows, cleared by `begin_month`; terms plus the ledger are the state.
         self.cashflows: list[BondCashflowOutcome] = []
 
-    def hold(self, bond: PreparedBond) -> None:
+    def hold(self, bond: Bond) -> None:
         self.terms = (*self.terms, bond)
 
     def begin_month(self) -> None:
         self.cashflows.clear()
 
-    def principal(self, bond: PreparedBond, month: int) -> int:
+    def principal(self, bond: Bond, month: int) -> int:
         if not isinstance(bond.coupon, PreparedIndexedCoupon):
             return bond.face_value
         return mul_div(
@@ -44,7 +61,7 @@ class HeldBonds:
             "bond indexed principal",
         )
 
-    def held_principal(self, bond: PreparedBond, snapshot_month: int, valuation_month: int) -> int | None:
+    def held_principal(self, bond: Bond, snapshot_month: int, valuation_month: int) -> int | None:
         if bond.purchase_month_index > max(0, snapshot_month - 1) or bond.maturity_month_index < snapshot_month:
             return None
         return self.principal(bond, valuation_month)
@@ -66,7 +83,7 @@ class HeldBonds:
                 HeldBond(
                     bond_id=bond.bond_id,
                     account_id=bond.account_id,
-                    issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
+                    character=bond.character,
                     face_value=bond.face_value,
                     purchase_price=bond.purchase_price,
                     coupon=coupon,
@@ -117,9 +134,7 @@ class HeldBonds:
             income = checked_count(coupon + accretion, "money addition")
             tax = deepcopy(accounting.tax)
             if income:
-                tax.income.accrue(
-                    bond.agent_id, InterestIncome(issuer_jurisdiction_id=bond.issuer_jurisdiction_id), income
-                )
+                tax.income.accrue(bond.agent_id, InterestIncome(character=bond.character), income)
             changed = coupon != 0 or accretion != 0 or redemption != 0
             cause = f"bond:{bond.bond_id}:m{month}"
             if paid:
@@ -139,7 +154,7 @@ class HeldBonds:
                         bond_id=bond.bond_id,
                         agent_id=bond.agent_id,
                         account_id=bond.account_id,
-                        issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
+                        character=bond.character,
                         coupon=coupon,
                         accretion=accretion,
                         redemption=redemption,

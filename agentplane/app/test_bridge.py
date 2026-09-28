@@ -32,7 +32,7 @@ from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.views import ThreadOperationalState
-from agentplane.app.api import create_app
+from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.changes import Changes
 from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH
 from agentplane.app.database import connect
@@ -171,7 +171,10 @@ async def app_url(
                 inventory,
                 bridge,
                 store,
-                {harness: ["bridge-model"] for harness in Harness},
+                ModelCatalog(
+                    models=[ModelOption(model="bridge-model", display_name="Bridge Model")],
+                    harnesses={harness: ["bridge-model"] for harness in Harness},
+                ),
                 egress,
                 decisions,
                 live_index,

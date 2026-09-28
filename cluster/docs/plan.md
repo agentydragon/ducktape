@@ -33,8 +33,8 @@ editing a route.
       KS-5 HDD control plane (`ovh-ns103656`) is a worker. The 2026-06-28 outage and
       its mitigations remain documented in
       <lessons_learned/2026_06_19_etcd_hdd_io_contention.md>. Worker-first workload
-      placement, control-plane I/O alerting, and the remaining tofu-runner/augur pins
-      are defense in depth; they are no longer blockers for the etcd-on-NVMe move.
+      placement, control-plane I/O alerting, and the remaining tofu-runner pins are
+      defense in depth; they are no longer blockers for the etcd-on-NVMe move.
 - [ ] **Investigate whether to re-enable VPA/Goldilocks recommendations.**
       Forgejo's namespace is Goldilocks-enabled and has a generated
       `goldilocks-forgejo` VPA, but the VPA control-plane deployments in
@@ -233,10 +233,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       itself should decrypt the new token and inject it into the local environment so
       Claude Code sessions work immediately without waiting for the git push + re-source
       cycle.
-- [ ] Require every workload to declare Stakater Reloader explicitly as enabled or
-      intentionally disabled. No implicit default. Enforce via review/docs and
-      add missing `reloader.stakater.com/auto: "true"` or an explicit opt-out
-      comment/setting on existing Deployments, StatefulSets, and Helm releases.
 - [ ] Autopopulate `tf/gitops/dns-records` IP lists from cluster state instead of a
       hand-edited literal. After every `talos-* → ovh-ns*` rename the comments rot
       (none of those rename commits touched the DNS TF) and IPs of nodes whose Cilium

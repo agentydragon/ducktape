@@ -14,18 +14,17 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
-    ExternalSecretSpecTargetTemplate,
 )
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.config_format import json5_config
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.model_rosters import ANTHROPIC_MODELS
 from cluster.cdk8s.openclaw_gateway import (
     disabled_commands,
@@ -33,7 +32,6 @@ from cluster.cdk8s.openclaw_gateway import (
     session_memory_hook,
     trusted_proxy_gateway,
 )
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from cluster.cdk8s.seaweedfs import s3
 
 _NAMESPACE = "haku-openclaw-spike"
@@ -353,9 +351,7 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -373,7 +369,7 @@ def _deployment(scope: Construct) -> None:
                                     k8s.NodeSelectorTerm(
                                         match_expressions=[
                                             k8s.NodeSelectorRequirement(
-                                                key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
+                                                key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="DoesNotExist"
                                             )
                                         ]
                                     )
@@ -448,11 +444,9 @@ def _state_claims(scope: Construct) -> None:
             namespace=_NAMESPACE,
             annotations={
                 "description": (
-                    "Worker-local (optiplex SSD) replacement for the OpenClaw spike state, migrating "
-                    "it off the ovh-ns103656 HDD (which fell over under I/O contention with "
-                    "etcd+kubelet). WaitForFirstConsumer binds it on optiplex when the VolSync "
-                    "restore mover is created; it must not be mounted by the Deployment before the "
-                    "restore completes."
+                    "Persistent OpenClaw home, agent workspace, memory, and Claude Code session "
+                    "transcripts for the isolated Haku spike, on the optiplex worker's local SSD, "
+                    "away from the control-plane disks etcd and kubelet need."
                 )
             },
         ),
@@ -471,24 +465,18 @@ def _gateway_password(scope: Construct) -> None:
     clients, including subagent completion handoffs, connect directly to the loopback
     Gateway and therefore have no Authentik identity headers; OpenClaw's local password
     fallback covers them. Generated once and retained, injected only into this workload."""
-    generator = Password(
-        scope,
-        "gateway-password-generator",
-        metadata=metadata("haku-openclaw-spike-gateway-password-generator", _NAMESPACE),
-        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         scope,
         "gateway-password",
         name=_GATEWAY_PASSWORD_NAME,
         namespace=_NAMESPACE,
+        generator_name=f"{_GATEWAY_PASSWORD_NAME}-generator",
         # The generator value is stable. Avoid automatic rotation, which would
         # interrupt active local Gateway clients unnecessarily.
         refresh="8760h",
-        data_from=[DataFrom.from_password_generator(generator.name)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        template=ExternalSecretSpecTargetTemplate(data={"password": "{{ .password }}"}),
+        secret_type=None,
     )
 
 

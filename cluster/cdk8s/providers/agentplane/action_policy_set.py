@@ -1,6 +1,6 @@
 """Ergonomic wrapper for Agentplane's own `ActionPolicySet` CRD
 (cluster/k8s/agentplane-crds/crd-actionpolicysets.yaml), following cdk8s-plus's own construction
-pattern: a class named after the kind, and a named `@classmethod` factory group for
+pattern: a class named after the kind, and a named `@staticmethod` factory group for
 `autoApproveIf`'s real variant shapes.
 """
 
@@ -34,42 +34,31 @@ class AutoApproveIf:
     this one, so an analogous factory class is what a caller of one of those fields would add.
     """
 
-    def __init__(self, spec: ActionPolicySetSpecAutoApproveIf) -> None:
-        self._spec = spec
-
-    def to_spec(self) -> ActionPolicySetSpecAutoApproveIf:
-        return self._spec
-
-    @classmethod
-    def exact_actions(cls, *, actions: Mapping[str, Sequence[str]]) -> AutoApproveIf:
+    @staticmethod
+    def exact_actions(*, actions: Mapping[str, Sequence[str]]) -> ActionPolicySetSpecAutoApproveIf:
         """Matches by Action name alone."""
-        return cls(
-            ActionPolicySetSpecAutoApproveIf(
-                type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS, actions=actions
-            )
+        return ActionPolicySetSpecAutoApproveIf(
+            type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS, actions=actions
         )
 
-    @classmethod
-    def github_repository(cls, *, owner: str, repository: str, actions: Mapping[str, Sequence[str]]) -> AutoApproveIf:
+    @staticmethod
+    def github_repository(
+        *, owner: str, repository: str, actions: Mapping[str, Sequence[str]]
+    ) -> ActionPolicySetSpecAutoApproveIf:
         """Requires a GitHub MCP call to target `owner`/`repository`."""
-        return cls(
-            ActionPolicySetSpecAutoApproveIf(
-                type=ActionPolicySetSpecAutoApproveIfType.GITHUB_UNDERSCORE_REPOSITORY,
-                owner=owner,
-                repository=repository,
-                actions=actions,
-            )
+        return ActionPolicySetSpecAutoApproveIf(
+            type=ActionPolicySetSpecAutoApproveIfType.GITHUB_UNDERSCORE_REPOSITORY,
+            owner=owner,
+            repository=repository,
+            actions=actions,
         )
 
-    @classmethod
-    def github_public_repository(cls, *, actions: Mapping[str, Sequence[str]]) -> AutoApproveIf:
+    @staticmethod
+    def github_public_repository(*, actions: Mapping[str, Sequence[str]]) -> ActionPolicySetSpecAutoApproveIf:
         """Requires a GitHub MCP call to target a repository a live, unauthenticated lookup
         confirms public."""
-        return cls(
-            ActionPolicySetSpecAutoApproveIf(
-                type=ActionPolicySetSpecAutoApproveIfType.GITHUB_UNDERSCORE_PUBLIC_UNDERSCORE_REPOSITORY,
-                actions=actions,
-            )
+        return ActionPolicySetSpecAutoApproveIf(
+            type=ActionPolicySetSpecAutoApproveIfType.GITHUB_UNDERSCORE_PUBLIC_UNDERSCORE_REPOSITORY, actions=actions
         )
 
 

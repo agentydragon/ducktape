@@ -5,7 +5,8 @@
 #
 # `upper: "Infinity"` is the open-ended top bracket. Brackets are
 # walked low to high; the rate applies to income in the slice
-# (lower_of_this_bracket, upper_of_this_bracket].
+# (lower_of_this_bracket, upper_of_this_bracket]. Rates are quoted:
+# the loader rejects a YAML float as inexact.
 #
 # LTCG brackets are walked separately on long-term capital gains
 # (holding period >= 12 months) plus qualified dividends (§1(h)(11));
@@ -30,37 +31,36 @@ indexation:
 
 ordinary_income_brackets:
   single:
-    - { upper: 11600, rate: 0.10 }
-    - { upper: 47150, rate: 0.12 }
-    - { upper: 100525, rate: 0.22 }
-    - { upper: 191950, rate: 0.24 }
-    - { upper: 243725, rate: 0.32 }
-    - { upper: 609350, rate: 0.35 }
-    - { upper: "Infinity", rate: 0.37 }
+    - { upper: 11600, rate: "0.10" }
+    - { upper: 47150, rate: "0.12" }
+    - { upper: 100525, rate: "0.22" }
+    - { upper: 191950, rate: "0.24" }
+    - { upper: 243725, rate: "0.32" }
+    - { upper: 609350, rate: "0.35" }
+    - { upper: "Infinity", rate: "0.37" }
 
 ltcg_brackets:
   single:
-    - { upper: 47025, rate: 0.00 }
-    - { upper: 518900, rate: 0.15 }
-    - { upper: "Infinity", rate: 0.20 }
+    - { upper: 47025, rate: "0.00" }
+    - { upper: 518900, rate: "0.15" }
+    - { upper: "Infinity", rate: "0.20" }
 
 standard_deduction:
   single: 14600
 # IRC 1211(b).
 max_capital_loss_ordinary_offset:
   single: 3000
-level: federal
 
-# IRC 103 excludes interest on state and local obligations from federal gross income —
-# any state's munis, not just the holder's. Treasury interest is NOT exempt from itself,
-# hence exempts_own_issue is left false.
-exempt_interest_from_levels:
-  - state
+# IRC 103 excludes interest on state and local obligations from federal gross income: every
+# state's munis, not just the holder's. Treasury interest is federally taxable.
+exempt_interest:
+  treasury: false
+  municipal: all
 
 # IRC 1411 net investment income tax. IRS Form 8960 (2025) instructions, Part III: 3.8% of
 # the smaller of net investment income and MAGI over $200,000 for a single filer.
 # https://www.irs.gov/instructions/i8960
 net_investment_income_tax:
-  rate: 0.038
+  rate: "0.038"
   threshold:
     single: 200000

@@ -7,7 +7,7 @@ from pathlib import Path
 import networkx as nx
 
 from cluster.validation.cluster import ParsedCluster
-from cluster.validation.crd_layering import CRD_TO_OPERATOR
+from cluster.validation.crd_layering import BOOTSTRAP_API_GROUPS, BUILT_IN_API_GROUPS, CRD_TO_OPERATOR
 from cluster.validation.flux import EXTERNAL_ARTIFACT_KIND
 
 
@@ -17,7 +17,8 @@ def validate_operator_dependencies(
     """Validate that kustomizations using CRD instances transitively depend on the managing operator.
 
     Uses CRD_TO_OPERATOR from crd_layering.py as the source of truth for which CRD kinds
-    require which operator prerequisite.
+    require which operator prerequisite. A custom kind it does not name fails unless its
+    API group is built in or bootstrapped.
     """
     if crd_to_operator is None:
         crd_to_operator = CRD_TO_OPERATOR
@@ -26,11 +27,14 @@ def validate_operator_dependencies(
     errors = []
     g = cluster.graph
     reported: set[tuple[str, str]] = set()
+    unprovided: set[tuple[str, str]] = set()
 
     for kust_name, resources in flux_resources.items():
         for resource in resources:
             operator = crd_to_operator.get(resource.kind)
             if operator is None:
+                if resource.api_version.rpartition("/")[0] not in BUILT_IN_API_GROUPS | BOOTSTRAP_API_GROUPS:
+                    unprovided.add((kust_name, f"{resource.kind} ({resource.api_version})"))
                 continue
             key = (kust_name, operator)
             if key in reported:
@@ -51,6 +55,10 @@ def validate_operator_dependencies(
                 )
                 reported.add(key)
 
+    errors += [
+        f"{kust_name} uses {kind} resources but no OPERATOR_CRDS entry names the Kustomization installing its CRD"
+        for kust_name, kind in sorted(unprovided)
+    ]
     return errors
 
 

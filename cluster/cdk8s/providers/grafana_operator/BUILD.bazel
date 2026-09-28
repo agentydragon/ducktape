@@ -75,19 +75,6 @@ py_library(
 )
 
 py_test(
-    name = "test_grafana",
-    srcs = ["test_grafana.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":grafana_operator_grafana",
-        "//:conftest",
-        "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_grafana_dashboard",
     srcs = ["test_grafana_dashboard.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],

@@ -15,7 +15,7 @@ from typing import Any, overload
 import numpy as np
 
 from finance.augur.api.config import SecurityDistributionConfig
-from finance.augur.api.portfolio import PortfolioConfig
+from finance.augur.api.portfolio import PortfolioConfig, TlhPortfolioSpec
 from finance.augur.api.schemas import ApiModel, Frame
 from finance.augur.api.wire import Property
 from finance.augur.model.exogenous import (
@@ -26,6 +26,7 @@ from finance.augur.model.exogenous import (
     validate_sample_satisfies_request,
 )
 from finance.augur.model.series import LocationId
+from finance.augur.product.holdings import opening_holdings
 from finance.augur.product.metrics import (
     OutcomeBasis,
     ProductMetricFanSummary,
@@ -36,16 +37,7 @@ from finance.augur.product.metrics import (
     terminal_summary,
 )
 from finance.augur.product.projection import project_product_rollout
-from finance.augur.product.scenarios import (
-    Situation,
-    asset_labels,
-    build_situation,
-    compose,
-    initial_bonds_from_portfolio,
-    initial_lots_from_portfolio,
-    paths,
-    security_distributions_from_portfolio,
-)
+from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, Situation, asset_labels, build_situation, compose, paths
 from finance.augur.product.simulation import execute, project_events, project_product_metrics, simulate_product_metrics
 from finance.augur.product.wire import (
     EndingMetrics,
@@ -65,7 +57,6 @@ from finance.augur.sim.ids import AgentId, PropertyId
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.quantiles import currency_quantiles
-from finance.augur.sim.scenario import TlhPortfolioSpec
 from finance.augur.sim.world import World
 
 
@@ -92,7 +83,6 @@ class ProductService:
             raise ValueError(f"result_cache_entries must not be negative; got {result_cache_entries=}")
         if not models:
             raise ValueError("models must contain at least one preset")
-        self._portfolio = portfolio
         self._initial_cash = initial_cash if isinstance(initial_cash, Decimal) else Decimal(str(initial_cash))
         self._primary_agent_id = primary_agent_id
         self._known_location_ids = known_location_ids
@@ -101,12 +91,13 @@ class ProductService:
         self._models = models
         self._max_rollout_samples = int(max_rollout_samples)
         self._max_horizon_months = int(max_horizon_months)
-        self._initial_lots = initial_lots_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
-        self._initial_bonds = initial_bonds_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
-        self._security_distributions = security_distributions_from_portfolio(
-            portfolio, security_distributions, tlh_portfolios=tlh_portfolios, primary_agent_id=primary_agent_id
+        self._holdings = opening_holdings(
+            portfolio,
+            security_distributions,
+            tlh_portfolios=tlh_portfolios,
+            primary_agent_id=primary_agent_id,
+            payout_account_id=PRIMARY_ACCOUNT_ID,
         )
-        self._tlh_portfolios = tlh_portfolios
         self._asset_labels = asset_labels(portfolio)
         # Keep one product projection in flight per API process. A dense rollout batch is
         # memory-heavy enough that overlapping fan + terminal requests can exceed the pod limit.
@@ -228,12 +219,9 @@ class ProductService:
             scenario_key,
             primary_agent_id=self._primary_agent_id,
             initial_cash=self._initial_cash,
-            initial_lots=self._initial_lots,
+            holdings=self._holdings,
             properties_by_id=self._properties_by_id,
             locations=self._locations,
-            initial_bonds=self._initial_bonds,
-            security_distributions=self._security_distributions,
-            tlh_portfolios=self._tlh_portfolios,
         )
         sampling_request = ExogenousSamplingRequest(
             horizon_months=situation.horizon_months,
@@ -245,7 +233,7 @@ class ProductService:
         )
         sampled = self._models[scenario_key.model_id].sample(sampling_request)
         validate_sample_satisfies_request(sampling_request, sampled)
-        anchors = self._portfolio.level_anchors
+        anchors = self._holdings.portfolio.level_anchors
         sampled = anchor_sampled_series_levels(
             sampled,
             level_series_anchors=anchors.level_series_anchors,

@@ -215,15 +215,15 @@ class CashBandHousehold(EconomicAgent):
                 raise ValueError("purchase pool is not declared, or a managed portfolio owns it")
             prefix = self._lot_prefix(index)
             for lot in world.holdings.lots:
-                suffix = lot.spec.lot_id.removeprefix(prefix)
+                suffix = lot.lot_id.removeprefix(prefix)
                 if (
-                    lot.spec.lot_id.startswith(prefix)
+                    lot.lot_id.startswith(prefix)
                     and suffix.isascii()
                     and suffix.isdigit()
                     and str(int(suffix)) == suffix
                     and int(suffix) < 1 << 32
                 ):
-                    raise ValueError(f"opening lot {lot.spec.lot_id!r} uses a reserved purchase identity")
+                    raise ValueError(f"opening lot {lot.lot_id!r} uses a reserved purchase identity")
 
     def decide(self, observation: Observation) -> list[Action]:
         """This month's sales, then every due claim paid in full in observed order, then the purchases.

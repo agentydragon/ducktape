@@ -7,7 +7,7 @@ and the long record must actually be longer and start where `load_macro_history`
 Which window is BETTER is deliberately not asserted. #5509 is explicit that a negative result —
 the long record scoring worse and the 1955 window staying — is a completed outcome, so pinning
 an answer here would prejudge the thing the run exists to measure. The numbers go to the log and
-a human records the decision in `model/SPEC.md`.
+a human records the decision in `x/models/structural_macro.md`.
 
 Manual, and fetching from the public upstreams, for the reason `//finance/augur/study/trinity`
 gives: an upstream outage must not redden an unrelated PR.
@@ -19,8 +19,8 @@ import asyncio
 
 import pytest_bazel
 
-from finance.augur.fit.structural_macro import MacroFitWindow
 from finance.augur.study.macro_window.compare import compare_windows, describe, fitted_var, spectral_radius
+from finance.augur.x.models.structural_macro_fit import MacroFitWindow
 
 
 def test_both_windows_fit_a_stationary_var() -> None:

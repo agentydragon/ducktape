@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Pods, Protocol, Service, ServicePort, ServiceType, k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -50,7 +50,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import external_creds
+from cluster.cdk8s import external_creds, node_scheduling
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -60,7 +60,6 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAMESPACE = "public-coder-agent"
@@ -82,9 +81,9 @@ def ssh_service(scope: Construct) -> Service:
     return Service(
         scope,
         "ssh-service",
-        metadata=metadata(
-            SERVICE_NAME,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=SERVICE_NAME,
+            namespace=NAMESPACE,
             labels=_SERVICE_LABELS,
             annotations={
                 "description": (
@@ -129,10 +128,9 @@ def _buildbuddy_api_key(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "buildbuddy-api-key",
-        name=name,
-        namespace=NAMESPACE,
-        refresh="1h",
-        store=external_creds.STORE,
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data(name, "api-key")],
         # Reuse the existing Reflector mirror during the staged ownership handoff.
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
@@ -156,7 +154,7 @@ def virtual_machine(scope: Construct) -> VirtualMachine:
     return VirtualMachine(
         scope,
         "virtual-machine",
-        metadata=metadata(VM_NAME, NAMESPACE, labels=_SERVICE_LABELS),
+        metadata=ApiObjectMetadata(name=VM_NAME, namespace=NAMESPACE, labels=_SERVICE_LABELS),
         spec=VirtualMachineSpec(
             run_strategy="Always",
             template=VirtualMachineSpecTemplate(
@@ -175,7 +173,7 @@ def virtual_machine(scope: Construct) -> VirtualMachine:
                                     VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
                                         match_expressions=[
                                             VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                                key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
+                                                key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="DoesNotExist"
                                             )
                                         ]
                                     )
@@ -295,11 +293,7 @@ def public_coder_agent_devbox(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     kubevirt: Kustomization,
-    forgejo_images: Kustomization,
-    external_creds: Kustomization,
-    external_secrets_config: Kustomization,
-    agent_shared_secrets: Kustomization,
-    public_coder_agent_app_kustomization: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     name = "public-coder-agent-devbox"
     return flux_kustomization(
@@ -308,14 +302,7 @@ def public_coder_agent_devbox(
         artifact,
         timeout="30m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(
-            kubevirt,
-            forgejo_images,
-            external_creds,
-            external_secrets_config,
-            agent_shared_secrets,
-            public_coder_agent_app_kustomization,
-        ),
+        depends_on=flux_kustomization_depends_on_many(kubevirt, external_secrets_operator),
         description=(
             "KubeVirt build/test devbox for public-coder-agent "
             "(Bazel/BuildBuddy/direnv), with an ephemeral containerDisk root "

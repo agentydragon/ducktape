@@ -12,15 +12,15 @@ from pydantic import Field, PositiveInt
 
 from finance.augur.api.schemas import ApiModel
 from finance.augur.calibration.calibration import CalibrationResult, MarkFan
-from finance.augur.model.sample_sanity import SanityBandResult, SanityStatus
 from finance.augur.product.wire import MAX_HORIZON_MONTHS
+from finance.augur.x.models.sample_sanity import SanityBandResult, SanityStatus
 
 # Default percentile bands for the issuer mark fan (5/25/50/75/95).
 CALIBRATION_FAN_PERCENTILES: tuple[float, ...] = (5.0, 25.0, 50.0, 75.0, 95.0)
 
 
 class CalibrationSanityBand(ApiModel):
-    """Wire mirror of `augur.model.sample_sanity.SanityBandResult`: one evaluated
+    """Wire mirror of `augur.x.models.sample_sanity.SanityBandResult`: one evaluated
     reasonableness band (expected bounds vs the observed value(s)) for the calibration page.
 
     `expected_lower`/`expected_upper`/`month` are legitimately `None` for some bands (a one-sided

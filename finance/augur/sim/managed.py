@@ -9,16 +9,25 @@ from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Contribute, Liquidate, Withdraw
 from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, DistributionOutcome, JournalEntry, Posting
-from finance.augur.sim.compiler.income_sources import income_source_wire_id
+from finance.augur.sim.distributions import Distribution
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import gain_account
-from finance.augur.sim.ids import AccountId, AgentId, PortfolioId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, PortfolioId
+from finance.augur.sim.income import TransferIncomeCategory, income_source_wire_id
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.observations import TlhPortfolioObservation
-from finance.augur.sim.prepared import PreparedDistribution, PreparedJurisdiction, PreparedTlhPortfolio
-from finance.augur.sim.scenario import InterestIncome, TransferIncomeCategory
 
 type Operation = Literal["modeled_realization", "contribution", "redemption", "distribution"]
+
+
+@dataclass(frozen=True, kw_only=True)
+class Portfolio:
+    """Who owns a managed portfolio, where, and the index its value follows."""
+
+    portfolio_id: PortfolioId
+    owner_agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
 
 
 @dataclass(frozen=True)
@@ -59,7 +68,7 @@ def basis_account(observation: TlhPortfolioObservation) -> AccountRef:
     )
 
 
-def _validate_against(spec: PreparedTlhPortfolio, row: TlhPortfolioObservation) -> None:
+def _validate_against(spec: Portfolio, row: TlhPortfolioObservation) -> None:
     if (
         row.value < 0
         or row.reported_tax_basis < 0
@@ -78,18 +87,15 @@ class TlhStatement(Statement):
 
 
 class ManagedPortfolios:
-    def __init__(
-        self, income_sources: Sequence[TransferIncomeCategory], jurisdictions: Sequence[PreparedJurisdiction]
-    ) -> None:
+    def __init__(self, income_sources: Sequence[TransferIncomeCategory]) -> None:
         self.income_sources = income_sources
-        self.jurisdictions = jurisdictions
-        self.specs: dict[PortfolioId, PreparedTlhPortfolio] = {}
+        self.specs: dict[PortfolioId, Portfolio] = {}
         self.marks: dict[PortfolioId, TlhPortfolioObservation] = {}
         # This month's outcomes, cleared by `begin_month`; marks are the state.
         self.effects: list[FinancialEffect] = []
         self.distributions: list[DistributionOutcome] = []
 
-    def open(self, accounting: Accounting, spec: PreparedTlhPortfolio, observation: TlhPortfolioObservation) -> None:
+    def open(self, accounting: Accounting, spec: Portfolio, observation: TlhPortfolioObservation) -> None:
         """Register a declared portfolio and post its opening basis against the owner's opening equity."""
         if spec.portfolio_id in self.specs:
             raise ValueError(f"portfolio {spec.portfolio_id!r} is already open")
@@ -176,21 +182,8 @@ class ManagedPortfolios:
             operation = "contribution" if isinstance(action, Contribute) else "redemption"
         row = effects.observation
         self.validate_observation(row)
-        for credit in effects.income:
-            source = credit.income_category
-            if (
-                credit.amount < 0
-                or source not in self.income_sources
-                or (
-                    isinstance(source, InterestIncome)
-                    and source.issuer_jurisdiction_id is not None
-                    and not any(
-                        jurisdiction.jurisdiction_id == source.issuer_jurisdiction_id
-                        for jurisdiction in self.jurisdictions
-                    )
-                )
-            ):
-                raise ValueError("component income needs a declared income source and nonnegative amount")
+        if any(credit.amount < 0 or credit.income_category not in self.income_sources for credit in effects.income):
+            raise ValueError("component income needs a declared income source and nonnegative amount")
         if not cause or row.owner_agent_id != actor:
             raise ValueError("component effects need a cause and the component's owner")
         if row.portfolio_id not in self.marks:
@@ -248,7 +241,7 @@ class ManagedPortfolios:
             )
         )
 
-    def distribute(self, accounting: Accounting, month: int, spec: PreparedDistribution, total: int) -> None:
+    def distribute(self, accounting: Accounting, month: int, spec: Distribution, total: int) -> None:
         observation = next(
             (
                 row
@@ -262,10 +255,10 @@ class ManagedPortfolios:
             raise ValueError("negative or unknown component distribution")
         outcomes, credits = [], []
         cash = 0
-        for slice_index, slice_ in enumerate(spec.tax_character):
-            amount = mul_div(total, slice_.fraction_ppb, MONEY_FACTOR_SCALE, "security distribution tax slice")
+        for slice_index, (income_category, fraction_ppb) in enumerate(spec.tax_character.items()):
+            amount = mul_div(total, fraction_ppb, MONEY_FACTOR_SCALE, "security distribution tax slice")
             cash = checked_count(cash + amount, "money addition")
-            credits.append(IncomeCredit(slice_.income_category, amount))
+            credits.append(IncomeCredit(income_category, amount))
             outcomes.append(
                 DistributionOutcome(
                     month=month,
@@ -273,8 +266,8 @@ class ManagedPortfolios:
                     holding_account_id=spec.holding_account_id,
                     asset_id=spec.asset_id,
                     slice_index=slice_index,
-                    fraction_ppb=slice_.fraction_ppb,
-                    income_source=income_source_wire_id(slice_.income_category),
+                    fraction_ppb=fraction_ppb,
+                    income_source=income_source_wire_id(income_category),
                     units=None,
                     amount=amount,
                 )

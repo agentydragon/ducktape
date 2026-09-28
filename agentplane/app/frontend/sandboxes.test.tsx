@@ -35,7 +35,12 @@ const CREATED: SandboxView = {
   conditions: [],
 };
 
-async function render(codexModels: string[] = ["test-codex-a", "test-codex-b"]) {
+async function render(
+  codexModels: { model: string; display_name: string }[] = [
+    { model: "test-codex-a", display_name: "Test Codex A" },
+    { model: "test-codex-b", display_name: "Test Codex B" },
+  ]
+) {
   const onOpen = vi.fn();
   const preset: SandboxPresetView = {
     name: "test-preset",
@@ -58,7 +63,13 @@ async function render(codexModels: string[] = ["test-codex-a", "test-codex-b"]) 
   vi.spyOn(api, "GET").mockImplementation(async (path) => {
     const data =
       path === "/models"
-        ? { HARNESS_CLAUDE: ["test-claude"], HARNESS_CODEX: codexModels }
+        ? {
+            models: [{ model: "test-claude", display_name: "Test Claude" }, ...codexModels],
+            harnesses: {
+              HARNESS_CLAUDE: ["test-claude"],
+              HARNESS_CODEX: codexModels.map((option) => option.model),
+            },
+          }
         : path === "/presets"
           ? [preset]
           : path === "/sandboxes/templates"
@@ -119,13 +130,13 @@ function options(container: HTMLElement, label: string): HTMLElement[] {
 it("inherits the preset model and replaces incompatible choices when the harness changes", async () => {
   const { container } = await render();
   expect(input(container, "Template").value).toBe("test-template");
-  expect(input(container, "Model").value).toBe("test-codex-b");
-  await choose(container, "Model", "test-codex-a");
-  expect(input(container, "Model").value).toBe("test-codex-a");
+  expect(input(container, "Model").value).toBe("Test Codex B");
+  await choose(container, "Model", "Test Codex A");
+  expect(input(container, "Model").value).toBe("Test Codex A");
   await choose(container, "Harness", "Claude");
-  expect(input(container, "Model").value).toBe("test-claude");
+  expect(input(container, "Model").value).toBe("Test Claude");
   await act(async () => input(container, "Model").click());
-  expect(options(container, "Model").map((node) => node.textContent)).toEqual(["test-claude"]);
+  expect(options(container, "Model").map((node) => node.textContent)).toEqual(["Test Claude"]);
 });
 
 it("pre-fills the preset's action policy sets, offers every set with its verdict, and sends the pick", async () => {
@@ -179,7 +190,7 @@ it("clears an unavailable preset model and disables a harness with no offered mo
   expect(input(container, "Model").placeholder).toBe("No models available");
   await choose(container, "Harness", "Claude");
   expect(input(container, "Model").disabled).toBe(false);
-  expect(input(container, "Model").value).toBe("test-claude");
+  expect(input(container, "Model").value).toBe("Test Claude");
 });
 
 it("keeps the creation form and reports rejection without navigating", async () => {

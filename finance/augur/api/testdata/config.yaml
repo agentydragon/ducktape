@@ -239,7 +239,7 @@ portfolio_sources:
           label: TIPS 2031
           # A Treasury: federally taxable, state-exempt. The `inflation_indexed` flag is what
           # makes its principal ride CPI — and what makes the scenario demand an inflation path.
-          issuer_jurisdiction_id: federal_us
+          character: { kind: treasury }
           face_value: 100000
           purchase_price: 100000
           annual_coupon_rate: 0.02
@@ -252,7 +252,7 @@ portfolio_sources:
           label: California Muni 2034
           # In-state for a California resident, so exempt at both levels — the case that makes
           # "in-state" holder-relative rather than a property of the bond.
-          issuer_jurisdiction_id: california
+          character: { kind: municipal, state: california }
           face_value: 50000
           purchase_price: 50000
           annual_coupon_rate: 0.035

@@ -99,7 +99,7 @@ async function render(
   fetchMock.mockImplementation((request: Request) => {
     const url = new URL(request.url);
     if (url.pathname === "/models") {
-      return Promise.resolve(Response.json({ HARNESS_CLAUDE: [], HARNESS_CODEX: [] }));
+      return Promise.resolve(Response.json({ models: [], harnesses: { HARNESS_CLAUDE: [], HARNESS_CODEX: [] } }));
     }
     if (/^\/threads\/[^/]+\/(un)?archive$/.test(url.pathname)) {
       return Promise.resolve(new Response(null, { status: 204 }));

@@ -2,7 +2,7 @@
 `KustomizationSpec` fields unset on `None`, so Flux's own defaults apply."""
 
 import pytest_bazel
-from cdk8s import Testing as Cdk8sTesting
+from cdk8s import ApiObjectMetadata, Testing as Cdk8sTesting
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
 from cluster.cdk8s.providers.flux.flux_kustomization import Kustomization
@@ -15,8 +15,7 @@ def test_required_fields_render_under_their_own_names() -> None:
     Kustomization(
         chart,
         "kustomization",
-        name="test-app",
-        namespace="test-namespace",
+        metadata=ApiObjectMetadata(name="test-app", namespace="test-namespace"),
         source_ref=_SOURCE_REF,
         interval="10m",
         prune=True,
@@ -36,8 +35,7 @@ def test_optional_fields_render_when_given() -> None:
     Kustomization(
         chart,
         "kustomization",
-        name="test-app",
-        namespace="test-namespace",
+        metadata=ApiObjectMetadata(name="test-app", namespace="test-namespace"),
         source_ref=_SOURCE_REF,
         interval="10m",
         prune=True,

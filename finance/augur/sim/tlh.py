@@ -22,7 +22,7 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, rate_to_ppb
+from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, round_ppb
 from finance.augur.sim.money import round_ratio
 
 
@@ -71,10 +71,10 @@ class TlhAssumptions(BaseModel):
             maturity = round_ratio(maturity * base, scale)
         if half_exponent % 2:
             maturity = round_ratio(maturity * isqrt(base * scale), scale)
-        floor = rate_to_ppb(self.floor_annual_yield)
-        annual = floor + round_ratio((rate_to_ppb(self.peak_annual_yield) - floor) * maturity, scale)
+        floor = int(round_ppb(self.floor_annual_yield))
+        annual = floor + round_ratio((int(round_ppb(self.peak_annual_yield)) - floor) * maturity, scale)
         monthly = round_ratio(annual, 12)
-        drawdown_multiplier = scale + round_ratio(rate_to_ppb(self.drawdown_sensitivity) * drawdown_ppb, scale)
+        drawdown_multiplier = scale + round_ratio(int(round_ppb(self.drawdown_sensitivity)) * drawdown_ppb, scale)
         return round_ratio(monthly * drawdown_multiplier, scale)
 
 
@@ -220,7 +220,7 @@ class TlhPortfolio:
             embedded_gain = round_ratio(max(0, value - cohort.basis) * scale, value) if value else 0
             fraction = self._assumptions.monthly_loss_fraction(embedded_gain_ppb=embedded_gain, drawdown_ppb=drawdown)
             loss = min(cohort.basis, round_ratio(value * fraction, scale))
-            short_loss = round_ratio(loss * rate_to_ppb(self._assumptions.short_term_fraction), scale)
+            short_loss = round_ratio(loss * int(round_ppb(self._assumptions.short_term_fraction)), scale)
             short_term -= short_loss
             long_term -= loss - short_loss
             updated.append(replace(cohort, basis=cohort.basis - loss))

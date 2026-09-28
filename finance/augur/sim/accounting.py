@@ -15,14 +15,12 @@ from finance.augur.sim.books import (
     TaxPaymentOutcome,
     TaxSettlementOutcome,
 )
-from finance.augur.sim.compiler.income_sources import income_source_wire_id
-from finance.augur.sim.compiler.tax import PreparedTaxProfile
 from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
+from finance.augur.sim.income import TransferDeductionCategory, TransferIncomeCategory, income_source_wire_id
 from finance.augur.sim.ledger import Ledger
 from finance.augur.sim.money import checked_count
 from finance.augur.sim.observations import TaxRecords
-from finance.augur.sim.prepared import PreparedAccount
-from finance.augur.sim.scenario import TransferDeductionCategory, TransferIncomeCategory
+from finance.augur.sim.tax import PreparedTaxProfile
 from finance.augur.sim.tax_year import TaxBook
 
 
@@ -90,22 +88,22 @@ class Accounting:
         self.mortgage_payments: list[MortgagePaymentOutcome] = []
         self.ledger.ensure_account(EXTERNAL_BOUNDARY)
 
-    def declare(self, account: PreparedAccount) -> None:
+    def declare(self, *, account: AccountRef, opening_balance: int) -> None:
         """Open a household-facing account with its month-zero balance against the owner's opening equity."""
-        if account.account in self.declared:
-            raise ValueError(f"account {account.account!r} is already declared")
-        self.declared = (*self.declared, account.account)
-        self.ledger.ensure_account(account.account)
-        equity = AccountRef(agent_id=account.account.agent_id, account_id=AccountId("equity:opening"))
+        if account in self.declared:
+            raise ValueError(f"account {account!r} is already declared")
+        self.declared = (*self.declared, account)
+        self.ledger.ensure_account(account)
+        equity = AccountRef(agent_id=account.agent_id, account_id=AccountId("equity:opening"))
         self.ledger.ensure_account(equity)
-        if account.opening_balance:
+        if opening_balance:
             self.apply(
                 JournalEntry(
                     month=0,
-                    cause_id=f"opening:{account.account.agent_id}:{account.account.account_id}",
+                    cause_id=f"opening:{account.agent_id}:{account.account_id}",
                     postings=[
-                        Posting(account=account.account, amount=account.opening_balance),
-                        Posting(account=equity, amount=checked_count(-account.opening_balance, "money negation")),
+                        Posting(account=account, amount=opening_balance),
+                        Posting(account=equity, amount=checked_count(-opening_balance, "money negation")),
                     ],
                 )
             )

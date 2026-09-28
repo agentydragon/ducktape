@@ -1,6 +1,6 @@
 """Structured-model calibration baseline on the SAME windows as the LLM kernel backtest (augur/x, throwaway).
 
-The state-space model (`augur/model/state_space.py`) is a joint monthly LOG-return Gaussian: it fits
+The state-space model (`augur/x/models/state_space.py`) is a joint monthly LOG-return Gaussian: it fits
 `monthly_log_return_mu` + `monthly_log_return_cov` and rolls forward as `level = exp(cumsum(returns))`.
 Its one-step marginal predictive for series s is therefore `N(mu_s, sigma_s**2)` on the log-return, and the
 analytic PIT of a realized next value is `Phi((log(realized/last) - mu_s) / sigma_s)`. (Block-shrinkage and

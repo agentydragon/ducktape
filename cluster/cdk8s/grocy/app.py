@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from volsync_replicationdestination_crds.backube.volsync import (
     ReplicationDestinationSpecRsyncTls,
@@ -38,9 +38,10 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.volsync.replication_destination import ReplicationDestination
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 
@@ -49,8 +50,6 @@ _LABELS = {"app.kubernetes.io/name": _NAME}
 _IMAGE = "lscr.io/linuxserver/grocy:v4.6.0-ls318"
 _CONFIG_CLAIM = "grocy-config-ovh"
 _BACKUP = "grocy-config-ovh-backup"
-_ZONE = "hil-ovh"
-_ZONE_KEY = "topology.kubernetes.io/zone"
 _HTTP_PORT = 80
 
 
@@ -73,7 +72,7 @@ def base_chart(app: App) -> Chart:
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(name=_NAME, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}),
+        metadata=k8s.ObjectMeta(name=_NAME, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -224,7 +223,7 @@ def _destination_mover_zone_affinity() -> ReplicationDestinationSpecRsyncTlsMove
                     ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
                         match_expressions=[
                             ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                key=_ZONE_KEY, operator="In", values=[_ZONE]
+                                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.HIL_OVH_ZONE]
                             )
                         ]
                     )
@@ -242,7 +241,7 @@ def _source_mover_zone_affinity() -> ReplicationSourceSpecRsyncTlsMoverAffinity:
                     ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
                         match_expressions=[
                             ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                key=_ZONE_KEY, operator="In", values=[_ZONE]
+                                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.HIL_OVH_ZONE]
                             )
                         ]
                     )
@@ -255,18 +254,7 @@ def _source_mover_zone_affinity() -> ReplicationSourceSpecRsyncTlsMoverAffinity:
 def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
     namespace = f"grocy-{household}"
     chart = Chart(app, namespace, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
-        chart,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=namespace,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
-    )
+    namespaces.namespace(chart, "namespace", name=namespace, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
     k8s.KubePersistentVolumeClaim(
         chart,
         "config-claim",
@@ -286,7 +274,7 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
             template=k8s.PodTemplateSpec(
                 spec=k8s.PodSpec(
                     restart_policy="Never",
-                    node_selector={_ZONE_KEY: _ZONE},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     containers=[
                         k8s.Container(
@@ -314,7 +302,7 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
     ReplicationDestination(
         chart,
         "migration",
-        metadata=metadata("grocy-config-ovh-migration", namespace),
+        metadata=ApiObjectMetadata(name="grocy-config-ovh-migration", namespace=namespace),
         trigger=ReplicationDestinationSpecTrigger(manual="prep-20260520"),
         rsync_tls=ReplicationDestinationSpecRsyncTls(
             destination_pvc=_CONFIG_CLAIM,
@@ -345,7 +333,7 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
     ReplicationDestination(
         chart,
         "backup-destination",
-        metadata=metadata(_BACKUP, namespace),
+        metadata=ApiObjectMetadata(name=_BACKUP, namespace=namespace),
         rsync_tls=ReplicationDestinationSpecRsyncTls(
             destination_pvc=_BACKUP,
             copy_method=ReplicationDestinationSpecRsyncTlsCopyMethod.DIRECT,
@@ -357,7 +345,7 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
     ReplicationSource(
         chart,
         "backup-source",
-        metadata=metadata(_BACKUP, namespace),
+        metadata=ApiObjectMetadata(name=_BACKUP, namespace=namespace),
         source_pvc=_CONFIG_CLAIM,
         trigger=ReplicationSourceSpecTrigger(schedule=backup_schedule),
         mover=ReplicationSourceSpecRsyncTls(

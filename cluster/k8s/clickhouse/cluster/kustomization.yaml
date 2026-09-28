@@ -2,12 +2,12 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - agent-diagnostics-rbac.k8s.yaml
+  - keeper.k8s.yaml
+  - clickhouse.k8s.yaml
+  - clickhouse-service.k8s.yaml
+  - networkpolicy.k8s.yaml
   - admin-credentials.sops.yaml
   - aiquota-credentials.sops.yaml
   - langfuse-credentials.sops.yaml
   - grafana-credentials.sops.yaml
   - public-coder-credentials.sops.yaml
-  - keeper.k8s.yaml
-  - clickhouse.k8s.yaml
-  - clickhouse-service.k8s.yaml
-  - networkpolicy.k8s.yaml

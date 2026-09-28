@@ -4,21 +4,20 @@ WebSocket for the noVNC/xterm.js consoles)."""
 from __future__ import annotations
 
 import textwrap
-from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
     Kustomization,
+    RenderedDirectory,
     flux_kustomization,
     flux_kustomization_depends_on,
-    kustomize_kustomization,
 )
-from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.scripts import nebula_mesh
 
 NAME = "proxmox-proxy"
@@ -31,7 +30,7 @@ _PROXMOX_HOST = "atlas"
 _PROXMOX_UI_PORT = 8006
 
 
-def _config_map(mesh: nebula_mesh.Mesh) -> ConfigMapArgs:
+def config_map(mesh: nebula_mesh.Mesh) -> ConfigMapArgs:
     nginx_conf = textwrap.dedent(f"""\
         worker_processes auto;
         error_log /dev/stderr warn;
@@ -78,18 +77,7 @@ def _tcp_probe(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
-        chart,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
-    )
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
     k8s.KubeDeployment(
         chart,
         "deployment",
@@ -99,7 +87,7 @@ def chart(app: App) -> Chart:
             selector=k8s.LabelSelector(match_labels=_LABELS),
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(annotations={"reloader.stakater.com/auto": "true"}, labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
                     node_selector={"topology.kubernetes.io/region": "proxmox"},
                     containers=[
@@ -148,15 +136,13 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path, mesh: nebula_mesh.Mesh) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"], config_map_generator=[_config_map(mesh)]),
-    )
-
-
-def proxmox_proxy(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, gateway: Kustomization) -> Kustomization:
+def proxmox_proxy(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart, NAME, artifact, suspend=False, timeout="5m", depends_on=[flux_kustomization_depends_on(gateway)]
+        chart,
+        NAME,
+        directory,
+        suspend=False,
+        timeout="5m",
+        # Kyverno's failurePolicy: Fail webhooks admit the Deployment.
+        depends_on=[flux_kustomization_depends_on(kyverno)],
     )

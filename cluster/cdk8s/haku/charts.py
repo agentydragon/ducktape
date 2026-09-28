@@ -10,32 +10,30 @@ rather than relying on the layer beneath them already being Ready.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
     Kustomization,
+    RenderedDirectory,
     flux_kustomization,
     flux_kustomization_depends_on_many,
-    kustomize_kustomization,
 )
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
-from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption, write_yaml
+from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.haku import console
 from cluster.cdk8s.haku.console import Console
 from cluster.cdk8s.haku.database import Db
 from cluster.cdk8s.haku.kube_api_proxy import KubeApiProxy
 from cluster.cdk8s.haku.migration import Migration
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = console.NAME
 NAMESPACE = console.NAMESPACE
@@ -69,17 +67,8 @@ def console_chart(app: App) -> Chart:
     # namespace; this one gets ordinary egress). That is the confidentiality boundary
     # letting the console hold secrets Haku may not read, e.g. the Claude Code web
     # session bearer.
-    k8s.KubeNamespace(
-        chart,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "name": NAMESPACE,
-            },
-        ),
+    namespaces.namespace(
+        chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=None, labels={"name": NAMESPACE}
     )
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     Db(chart, "db")
@@ -90,47 +79,22 @@ def console_chart(app: App) -> Chart:
     return chart
 
 
-def write_console_manifests(root: Path) -> None:
-    """Synthesize the console resource chart and its directory Kustomize config."""
-    out_dir = root / PATH
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    console_chart(app)
-    app.synth()
-    write_yaml(
-        out_dir / "kustomization.yaml",
-        kustomize_kustomization(
-            namespace=NAMESPACE,
-            resources=[f"{NAME}.k8s.yaml", *EXTRA_RESOURCES],
-            components=["./image-pins"],
-            config_map_generator=CONFIG_MAP_GENERATOR,
-        ),
-    )
-
-
 def haku_console(
     flux_chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     cnpg: Kustomization,
-    local_path_provisioner: Kustomization,
-    forgejo_images: Kustomization,
-    gateway: Kustomization,
-    agent_machine_access_tf: Kustomization,
-    reflector: Kustomization,
-    external_creds: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     """Build the Flux graph node from its predecessor nodes."""
     return flux_kustomization(
         flux_chart,
         NAME,
-        artifact,
+        directory,
         timeout=TIMEOUT,
         # This one Kustomization owns the CNPG Cluster's PVCs; pruning on deletion
         # would take the console's approval ledger with them.
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        decryption=sops_decryption(EXTRA_RESOURCES),
         # The two Jobs gate every dependent Kustomization: nothing downstream
         # reconciles until the schema is migrated and the indexer GRANTs applied.
         health_check_exprs=[
@@ -142,19 +106,9 @@ def haku_console(
         # haku-workspaces -> haku-egress-proxy -> haku-state) blocks namespace
         # creation. Pods can wait for credentials after this layer is admitted.
         depends_on=flux_kustomization_depends_on_many(
-            # The Cluster operator and the storage class its PVCs bind.
+            # The Cluster CRD and CNPG's failurePolicy: Fail webhook.
             cnpg,
-            local_path_provisioner,
-            forgejo_images,
-            gateway,
-            # TF creates the Authentik clients and haku-console-oidc Secret;
-            # the console does OIDC discovery synchronously at startup.
-            agent_machine_access_tf,
-            # Copies aiquota's bearer, the ActivityWatch read token and the egress proxy's CA
-            # into this namespace.
-            reflector,
-            external_creds,
-            external_secrets_config,
+            external_secrets_operator,
             # The ServiceMonitor CRD.
             monitoring_crds,
         ),

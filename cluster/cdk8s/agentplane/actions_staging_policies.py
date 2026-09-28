@@ -10,9 +10,17 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from agentplane_actionpolicybinding_crds.works.allegedly.agentplane import ActionPolicyBindingSpecSubject
+from agentplane_actionpolicybinding_crds.works.allegedly.agentplane import (
+    ActionPolicyBinding,
+    ActionPolicyBindingSpec,
+    ActionPolicyBindingSpecSubject,
+)
 from agentplane_actionpolicyset_crds.works.allegedly.agentplane import ActionPolicySetSpecAutoApproveIf
-from agentplane_egressbinding_crds.works.allegedly.agentplane import EgressBindingSpecSubjects
+from agentplane_egressbinding_crds.works.allegedly.agentplane import (
+    EgressBinding,
+    EgressBindingSpec,
+    EgressBindingSpecSubjects,
+)
 from agentplane_egresspolicy_crds.works.allegedly.agentplane import EgressPolicySpecRules, EgressPolicySpecRulesMethods
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
@@ -30,6 +38,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
     BASIC_POLICY,
+    BUILDBUDDY_POLICY,
     COINBASE_POLICY,
     FORGEJO_HAKU_POLICY,
     GITHUB_ACTIONS_LOGS_POLICY,
@@ -48,10 +57,7 @@ from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_GAFFER_PRIVATE_READS_SET,
     PUBLIC_GITHUB_READS_SET,
 )
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.agentplane.action_policy_binding import ActionPolicyBinding
 from cluster.cdk8s.providers.agentplane.action_policy_set import ActionPolicySet, AutoApproveIf
-from cluster.cdk8s.providers.agentplane.egress_binding import EgressBinding
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
@@ -65,6 +71,7 @@ _GMAIL_READS_SET = "gmail-reads"
 _GOOGLE_CALENDAR_READS_SET = "google-calendar-reads"
 _TANA_READS_SET = "tana-reads"
 _GROCY_SF_READS_SET = "grocy-sf-reads"
+_SSH_READS_SET = "ssh-reads"
 # The `cluster-sops-read` Coinbase CDP key, which can only view (no trade, no transfer): the one
 # Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
 _COINBASE_SECRET = "coinbase-api-credentials"
@@ -96,7 +103,9 @@ def _binding(
     policy_sets: Sequence[str],
 ) -> None:
     BindingSpec.model_validate(
-        ActionPolicyBinding(scope, id, metadata=metadata, subject=subject, policy_sets=policy_sets).to_json()["spec"]
+        ActionPolicyBinding(
+            scope, id, metadata=metadata, spec=ActionPolicyBindingSpec(subject=subject, policy_sets=list(policy_sets))
+        ).to_json()["spec"]
     )
 
 
@@ -289,7 +298,7 @@ def _repository_reads(scope: Construct, id: str, *, name: str, description: str,
         auto_approve_if=[
             AutoApproveIf.github_repository(
                 owner=owner, repository=repository, actions={"github": _REPOSITORY_SCOPED_ACTIONS}
-            ).to_spec()
+            )
         ],
     )
 
@@ -314,6 +323,28 @@ def add_staging_action_policies(scope: Construct) -> None:
         automount_token=False,
     )
 
+    # A dedicated identity for the "haku" sandbox preset (app_settings.py), which clones
+    # haku-state and works from there the way Haku itself does. Separate from claude-ai
+    # rather than reusing it: claude-ai is the Claude.ai MCP connector's principal, and
+    # Haku's own credentials (forgejo-haku, haku-mailbox) are bound to claude-ai today only
+    # because claude-ai happens to be "the connection Haku runs through" (see the
+    # EgressBinding comment below) -- a historical accident, not a reason to keep growing
+    # that account's authority. Granted at least claude-ai's own permissions (egress,
+    # Action Service reads, the Coinbase Role, and the acceptance-suite token) below.
+    haku_agent = ServiceAccount(
+        scope,
+        "serviceaccount-haku-agent",
+        metadata=ApiObjectMetadata(
+            name="haku-agent",
+            namespace=_NAMESPACE,
+            labels={"agentplane.allegedly.works/use-action-service": "true"},
+            annotations={
+                "description": "The principal for the 'haku' sandbox preset: agents that clone haku-state and work from it, the way Haku itself does."
+            },
+        ),
+        automount_token=False,
+    )
+
     _policy_set(
         scope,
         "actionpolicyset-github-reads",
@@ -324,7 +355,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The reviewed read-only subset of GitHub MCP's default catalog; every other GitHub Action stays on the human path."
             },
         ),
-        auto_approve_if=[AutoApproveIf.exact_actions(actions={"github": _GITHUB_READS_ACTIONS}).to_spec()],
+        auto_approve_if=[AutoApproveIf.exact_actions(actions={"github": _GITHUB_READS_ACTIONS})],
     )
     # `get_me` returns only the authenticated caller's own GitHub identity and has no
     # repository or mutation surface. Kept separate so a caller can be granted the
@@ -339,7 +370,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The caller's own GitHub identity read, with no repository or mutation surface."
             },
         ),
-        auto_approve_if=[AutoApproveIf.exact_actions(actions={"github": ["get_me"]}).to_spec()],
+        auto_approve_if=[AutoApproveIf.exact_actions(actions={"github": ["get_me"]})],
     )
     # The coder Agent's own fork, used to stage branches before opening PRs into
     # agentydragon/ducktape. It already has write access here (that's how it opens
@@ -383,9 +414,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "Reviewed GitHub reads of any repository a live unauthenticated lookup confirms public."
             },
         ),
-        auto_approve_if=[
-            AutoApproveIf.github_public_repository(actions={"github": _REPOSITORY_SCOPED_ACTIONS}).to_spec()
-        ],
+        auto_approve_if=[AutoApproveIf.github_public_repository(actions={"github": _REPOSITORY_SCOPED_ACTIONS})],
     )
 
     # Coinbase authenticates each request with a fresh JWT signed over its method, host and path,
@@ -396,21 +425,23 @@ def add_staging_action_policies(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "coinbase-external-secret",
-        name=_COINBASE_SECRET,
-        namespace=_NAMESPACE,
-        refresh="1h",
-        store=external_creds.STORE,
+        metadata=ApiObjectMetadata(
+            name=_COINBASE_SECRET,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "ESO copy of the view-only Coinbase CDP key from external-creds, read by claude-ai's sandboxes."
+            },
+        ),
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data(_COINBASE_SECRET, key) for key in ("api_key", "api_secret")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        annotations={
-            "description": "ESO copy of the view-only Coinbase CDP key from external-creds, read by claude-ai's sandboxes."
-        },
     )
     coinbase_reader = Role(
         scope,
         "role-claude-ai-coinbase",
-        metadata=metadata("claude-ai-coinbase-reader", _NAMESPACE),
+        metadata=ApiObjectMetadata(name="claude-ai-coinbase-reader", namespace=_NAMESPACE),
         rules=[
             RolePolicyRule(
                 resources=[Secret.from_secret_name(scope, "coinbase-secret", _COINBASE_SECRET)], verbs=["get"]
@@ -420,9 +451,9 @@ def add_staging_action_policies(scope: Construct) -> None:
     RoleBinding(
         scope,
         "rolebinding-claude-ai-coinbase",
-        metadata=metadata("claude-ai-coinbase-reader", _NAMESPACE),
+        metadata=ApiObjectMetadata(name="claude-ai-coinbase-reader", namespace=_NAMESPACE),
         role=coinbase_reader,
-    ).add_subjects(claude_ai)
+    ).add_subjects(claude_ai, haku_agent)
     EgressPolicy(
         scope,
         "egresspolicy-coinbase",
@@ -447,8 +478,8 @@ def add_staging_action_policies(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "networkpolicy-egress-to-testing-app",
-        metadata=metadata(f"{egress.NAME}-to-testing-app", _NAMESPACE),
-        selector={"app.kubernetes.io/name": egress.NAME},
+        metadata=ApiObjectMetadata(name=f"{egress.NAME}-to-testing-app", namespace=_NAMESPACE),
+        endpoint_selector={"app.kubernetes.io/name": egress.NAME},
         egress=[
             EgressRule.to_endpoints(
                 cilium.endpoint_labels(testing.ENV.namespace, app_component.NAME), app_component.CONTAINER_PORT
@@ -514,6 +545,16 @@ def add_staging_action_policies(scope: Construct) -> None:
     # `github-actions-logs` presents nothing either: GET-only to the Azure Blob Storage hosts
     # a workflow run's job logs and artifacts 302 to, so a sandbox of this caller's can follow
     # that redirect and read its own PR's CI output (egress.py).
+    # `buildbuddy` presents the shared BuildBuddy API key as the literal `x-buildbuddy-api-key`
+    # header/metadata value, letting this caller's sandboxes run `bazel --config=rbe` directly
+    # against BuildBuddy's remote cache and Remote Execution instead of needing bbr/BuildBuddy
+    # CLI tooling this namespace otherwise lacks (egress_staging_credentials.py).
+    #
+    # TODO: `forgejo-haku` and `haku-mailbox` stay bound here for now even though haku-agent
+    # (below) exists specifically to run in-cluster Haku-like sandboxes: claude-ai is still the
+    # identity the same *logical* Haku agent runs as from Claude.ai/Claude Code's own
+    # out-of-cluster infrastructure, so it still needs Haku's credentials. Revisit whether
+    # claude-ai should keep carrying them once haku-agent has been in use for a while.
     EgressBinding(
         scope,
         "egressbinding-claude-ai",
@@ -522,25 +563,63 @@ def add_staging_action_policies(scope: Construct) -> None:
             namespace=_NAMESPACE,
             annotations={"description": "What sandboxes running as the claude-ai ServiceAccount may reach."},
         ),
-        subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="claude-ai")],
-        policies=[
-            BASIC_POLICY,
-            KUBERNETES_POLICY,
-            FORGEJO_HAKU_POLICY,
-            PACKAGES_POLICY,
-            GOOGLE_READONLY_POLICY,
-            GROCY_SF_READONLY_POLICY,
-            HOME_ASSISTANT_READONLY_POLICY,
-            ACTIVITYWATCH_READ_POLICY,
-            AIQUOTA_READ_POLICY,
-            HAKU_MAILBOX_POLICY,
-            COINBASE_POLICY,
-            _AGENTPLANE_TESTING_POLICY,
-            _GITHUB_DOWNLOADS_POLICY,
-            GITHUB_CLONE_POLICY,
-            GITHUB_AGENTYDRAGON_AGENT_POLICY,
-            GITHUB_ACTIONS_LOGS_POLICY,
-        ],
+        spec=EgressBindingSpec(
+            subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="claude-ai")],
+            policies=[
+                BASIC_POLICY,
+                KUBERNETES_POLICY,
+                FORGEJO_HAKU_POLICY,
+                PACKAGES_POLICY,
+                GOOGLE_READONLY_POLICY,
+                GROCY_SF_READONLY_POLICY,
+                HOME_ASSISTANT_READONLY_POLICY,
+                ACTIVITYWATCH_READ_POLICY,
+                AIQUOTA_READ_POLICY,
+                HAKU_MAILBOX_POLICY,
+                COINBASE_POLICY,
+                _AGENTPLANE_TESTING_POLICY,
+                _GITHUB_DOWNLOADS_POLICY,
+                GITHUB_CLONE_POLICY,
+                GITHUB_AGENTYDRAGON_AGENT_POLICY,
+                GITHUB_ACTIONS_LOGS_POLICY,
+                BUILDBUDDY_POLICY,
+            ],
+        ),
+    )
+
+    # What a sandbox of haku-agent's may reach: at least everything claude-ai's sandboxes may
+    # reach (see the comment above), so the "haku" preset (app_settings.py) -- which clones
+    # haku-state over `forgejo-haku` and works from it -- has no less reach than claude-ai's
+    # Haku-flavored sandboxes already have.
+    EgressBinding(
+        scope,
+        "egressbinding-haku-agent",
+        metadata=ApiObjectMetadata(
+            name="haku-agent",
+            namespace=_NAMESPACE,
+            annotations={"description": "What sandboxes running as the haku-agent ServiceAccount may reach."},
+        ),
+        spec=EgressBindingSpec(
+            subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="haku-agent")],
+            policies=[
+                BASIC_POLICY,
+                KUBERNETES_POLICY,
+                FORGEJO_HAKU_POLICY,
+                PACKAGES_POLICY,
+                GOOGLE_READONLY_POLICY,
+                GROCY_SF_READONLY_POLICY,
+                HOME_ASSISTANT_READONLY_POLICY,
+                ACTIVITYWATCH_READ_POLICY,
+                AIQUOTA_READ_POLICY,
+                HAKU_MAILBOX_POLICY,
+                COINBASE_POLICY,
+                _AGENTPLANE_TESTING_POLICY,
+                _GITHUB_DOWNLOADS_POLICY,
+                GITHUB_CLONE_POLICY,
+                GITHUB_AGENTYDRAGON_AGENT_POLICY,
+                GITHUB_ACTIONS_LOGS_POLICY,
+            ],
+        ),
     )
 
     # Every sandbox Action, auto-approved. Approving each one individually would not be a
@@ -561,7 +640,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 )
             },
         ),
-        auto_approve_if=[AutoApproveIf.exact_actions(actions={SANDBOX_GROUP: sorted(SandboxAction)}).to_spec()],
+        auto_approve_if=[AutoApproveIf.exact_actions(actions={SANDBOX_GROUP: sorted(SandboxAction)})],
     )
 
     # Home Assistant's read-only surface (see _HOME_ASSISTANT_READS_ACTIONS above for the
@@ -576,9 +655,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The reviewed read-only subset of Home Assistant MCP's default catalog; every other Home Assistant Action stays on the human path."
             },
         ),
-        auto_approve_if=[
-            AutoApproveIf.exact_actions(actions={"home_assistant": _HOME_ASSISTANT_READS_ACTIONS}).to_spec()
-        ],
+        auto_approve_if=[AutoApproveIf.exact_actions(actions={"home_assistant": _HOME_ASSISTANT_READS_ACTIONS})],
     )
 
     # Gmail's and Google Calendar's read-only surfaces (see the _GMAIL_READS_ACTIONS /
@@ -593,7 +670,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The reviewed read-only subset of the Gmail MCP backend's catalog; every write stays on the human path."
             },
         ),
-        auto_approve_if=[AutoApproveIf.exact_actions(actions={"gmail": _GMAIL_READS_ACTIONS}).to_spec()],
+        auto_approve_if=[AutoApproveIf.exact_actions(actions={"gmail": _GMAIL_READS_ACTIONS})],
     )
     _policy_set(
         scope,
@@ -605,9 +682,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The reviewed read-only subset of the Google Calendar MCP backend's catalog; create_event stays on the human path."
             },
         ),
-        auto_approve_if=[
-            AutoApproveIf.exact_actions(actions={"google_calendar": _GOOGLE_CALENDAR_READS_ACTIONS}).to_spec()
-        ],
+        auto_approve_if=[AutoApproveIf.exact_actions(actions={"google_calendar": _GOOGLE_CALENDAR_READS_ACTIONS})],
     )
 
     _policy_set(
@@ -620,7 +695,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The reviewed read-only subset of the Tana MCP backend's catalog, plus get_or_create_calendar_node; every other write and open_node stay on the human path."
             },
         ),
-        auto_approve_if=[AutoApproveIf.exact_actions(actions={"tana": _TANA_READS_ACTIONS}).to_spec()],
+        auto_approve_if=[AutoApproveIf.exact_actions(actions={"tana": _TANA_READS_ACTIONS})],
     )
     _policy_set(
         scope,
@@ -632,12 +707,29 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The reviewed read-only subset of the Grocy SF MCP backend's catalog; every write, open_product_stock included, stays on the human path."
             },
         ),
-        auto_approve_if=[AutoApproveIf.exact_actions(actions={"grocy_sf": _GROCY_SF_READS_ACTIONS}).to_spec()],
+        auto_approve_if=[AutoApproveIf.exact_actions(actions={"grocy_sf": _GROCY_SF_READS_ACTIONS})],
+    )
+
+    # SSH MCP's `list_targets`: it names which machine/user targets are configured and whether
+    # each one's local key is present -- no hostname is dialed, no command runs, and no secret
+    # material is returned. Every other `ssh` Action (running a command against a target) stays
+    # on the human path.
+    _policy_set(
+        scope,
+        "actionpolicyset-ssh-reads",
+        metadata=ApiObjectMetadata(
+            name=_SSH_READS_SET,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "Auto-approves the SSH MCP backend's list_targets, which only names configured targets and key availability; every other SSH Action stays on the human path."
+            },
+        ),
+        auto_approve_if=[AutoApproveIf.exact_actions(actions={"ssh": ["list_targets"]})],
     )
 
     # The reviewed read sets for GitHub (github-reads and github-identity-reads), Home
-    # Assistant, Gmail, Google Calendar, Tana and Grocy SF, plus sandbox use, attached to the
-    # Claude.ai connector's principal.
+    # Assistant, Gmail, Google Calendar, Tana, Grocy SF and SSH, plus sandbox use, attached to
+    # the Claude.ai connector's principal.
     # The binding's existence is the grant: deleting it, or the label on the ServiceAccount,
     # puts every one of these Actions back on the human path.
     _binding(
@@ -647,10 +739,36 @@ def add_staging_action_policies(scope: Construct) -> None:
             name="claude-ai-reads",
             namespace=_NAMESPACE,
             annotations={
-                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF reads and sandbox use for Connections acting as the claude-ai ServiceAccount."
+                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF/SSH reads and sandbox use for Connections acting as the claude-ai ServiceAccount."
             },
         ),
         subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="claude-ai"),
+        policy_sets=[
+            _GITHUB_READS_SET,
+            _GITHUB_IDENTITY_READS_SET,
+            _SANDBOX_SET,
+            _HOME_ASSISTANT_READS_SET,
+            _GMAIL_READS_SET,
+            _GOOGLE_CALENDAR_READS_SET,
+            _TANA_READS_SET,
+            _GROCY_SF_READS_SET,
+            _SSH_READS_SET,
+        ],
+    )
+
+    # Same reviewed read sets and sandbox use, at least matching claude-ai-reads above, for the
+    # haku-agent ServiceAccount's in-cluster Haku-preset sandboxes.
+    _binding(
+        scope,
+        "actionpolicybinding-haku-agent-reads",
+        metadata=ApiObjectMetadata(
+            name="haku-agent-reads",
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF reads and sandbox use for the haku-agent ServiceAccount."
+            },
+        ),
+        subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="haku-agent"),
         policy_sets=[
             _GITHUB_READS_SET,
             _GITHUB_IDENTITY_READS_SET,

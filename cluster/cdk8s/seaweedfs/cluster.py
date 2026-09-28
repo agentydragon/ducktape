@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from seaweed_adminscript_crds.com.seaweedfs.seaweed import (
@@ -73,17 +73,14 @@ from seaweed_seaweed_crds.com.seaweedfs.seaweed import (
     SeaweedSpecVolumeTopologyTolerations,
 )
 
-from cluster.cdk8s import stateful_infra
+from cluster.cdk8s import node_scheduling, stateful_infra
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import filer_db, namespace, s3_config
 
 NAME = "seaweedfs"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/cluster"
-_ZONE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh"}
 _HOSTNAME = "kubernetes.io/hostname"
-_CONTROL_PLANE = "node-role.kubernetes.io/control-plane"
 
 
 def _component_labels(component: str) -> dict[str, str]:
@@ -135,7 +132,11 @@ def _volume_topology(
         # minFreeSpacePercent, not the slot cap.
         max_volume_counts=max_volume_counts,
         node_selector={"storage.allegedly.works/tier": disk},
-        tolerations=[SeaweedSpecVolumeTopologyTolerations(key=_CONTROL_PLANE, operator="Exists", effect="NoSchedule")],
+        tolerations=[
+            SeaweedSpecVolumeTopologyTolerations(
+                key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
+            )
+        ],
         affinity=SeaweedSpecVolumeTopologyAffinity(
             pod_anti_affinity=SeaweedSpecVolumeTopologyAffinityPodAntiAffinity(
                 required_during_scheduling_ignored_during_execution=[
@@ -164,7 +165,7 @@ def seaweed(scope: Construct) -> Seaweed:
     return Seaweed(
         scope,
         "seaweed",
-        metadata=metadata(NAME, namespace.NAME),
+        metadata=ApiObjectMetadata(name=NAME, namespace=namespace.NAME),
         spec=SeaweedSpec(
             # 4.x is required for the Bucket CR's access wiring: the filer's gRPC server
             # unconditionally registers `iam_pb.SeaweedIdentityAccessManagement` starting at
@@ -217,8 +218,12 @@ def seaweed(scope: Construct) -> Seaweed:
                     "memory": SeaweedSpecMasterRequests.from_string("128Mi"),
                 },
                 limits={"memory": SeaweedSpecMasterLimits.from_string("512Mi")},
-                node_selector=_ZONE_SELECTOR,
-                tolerations=[SeaweedSpecMasterTolerations(key=_CONTROL_PLANE, operator="Exists", effect="NoSchedule")],
+                node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+                tolerations=[
+                    SeaweedSpecMasterTolerations(
+                        key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
+                    )
+                ],
                 # Hard anti-affinity -- each master on a different host so raft quorum can
                 # actually survive a node loss.
                 affinity=SeaweedSpecMasterAffinity(
@@ -336,7 +341,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     "memory": SeaweedSpecFilerRequests.from_string("384Mi"),
                 },
                 limits={"memory": SeaweedSpecFilerLimits.from_string("768Mi")},
-                node_selector=_ZONE_SELECTOR,
+                node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                 affinity=SeaweedSpecFilerAffinity(
                     # Hard anti-affinity -- one filer per host, so the 2 replicas never share a
                     # node and a single node loss can't take out both.
@@ -358,7 +363,7 @@ def seaweed(scope: Construct) -> Seaweed:
                                 preference=SeaweedSpecFilerAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference(
                                     match_expressions=[
                                         SeaweedSpecFilerAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions(
-                                            key=_CONTROL_PLANE, operator="DoesNotExist"
+                                            key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="DoesNotExist"
                                         )
                                     ]
                                 ),
@@ -371,13 +376,9 @@ def seaweed(scope: Construct) -> Seaweed:
                 replicas=2,  # stateless S3 gateway -- scales freely across the 3 kimsufi hosts
                 config_secret=SeaweedSpecS3ConfigSecret(name=s3_config.SECRET_NAME, key=s3_config.SECRET_KEY),
                 # `weed s3` only reads seaweedfs-s3-config at startup, so it must roll when ESO
-                # reassembles that Secret (tenant added/rotated). NOTE: this annotation lands
-                # on the *pod template*, not the Deployment's own metadata, and Reloader only
-                # reads the workload-level annotation -- so it is INERT here. The actual roll
-                # comes from Reloader's cluster-wide `autoReloadAll: true` (see
-                # cluster/generated/reloader/). Kept for intent/future-proofing if the operator ever
-                # sets Deployment annotations.
-                annotations={"reloader.stakater.com/auto": "true"},
+                # reassembles that Secret (tenant added/rotated): Reloader's `autoReloadAll` rolls
+                # it. No `reloader.stakater.com/auto` here: `spec.s3.annotations` lands on the pod
+                # template, and Reloader reads only the Deployment's own metadata.
                 metrics_port=9327,
                 # QoS / eviction protection. No PDB: it is stateless and freely
                 # reschedulable, so descheduler moves are harmless.
@@ -409,10 +410,14 @@ def seaweed(scope: Construct) -> Seaweed:
                 # outside the pod gets "connection refused". Bind to 0.0.0.0 so probes (and
                 # the Service ClusterIP) reach the API.
                 extra_args=["-ip.bind=0.0.0.0"],
-                node_selector=_ZONE_SELECTOR,
+                node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                 # Allow kimsufi CPs as scheduling targets so s3 can spread across OVH hosts
                 # when desirable. Stateless gateway -- no I/O contention.
-                tolerations=[SeaweedSpecS3Tolerations(key=_CONTROL_PLANE, operator="Exists", effect="NoSchedule")],
+                tolerations=[
+                    SeaweedSpecS3Tolerations(
+                        key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
+                    )
+                ],
             ),
         ),
     )
@@ -436,9 +441,9 @@ def chart(app: App) -> Chart:
     AdminScript(
         chart,
         "replication-repair",
-        metadata=metadata(
-            "replication-repair",
-            namespace.NAME,
+        metadata=ApiObjectMetadata(
+            name="replication-repair",
+            namespace=namespace.NAME,
             annotations={"description": "Hourly copy-only repair of SeaweedFS volume replica placement."},
         ),
         spec=AdminScriptSpec(

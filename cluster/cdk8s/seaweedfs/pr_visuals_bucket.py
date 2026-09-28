@@ -3,14 +3,10 @@ credentials, plus the grant letting them reference the SeaweedFS cluster."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 from seaweed_bucket_crds.com.seaweedfs.seaweed import BucketSpecAccessActions
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.seaweedfs import s3
 
@@ -32,19 +28,15 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
 def seaweedfs_pr_visuals_bucket(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_cluster: Kustomization
+    chart: Chart, directory: RenderedDirectory, seaweedfs_operator: Kustomization
 ) -> Kustomization:
     name = "seaweedfs-pr-visuals-bucket"
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         interval="1h",
         timeout="5m",
-        depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
+        depends_on=[flux_kustomization_depends_on(seaweedfs_operator)],
     )

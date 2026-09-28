@@ -6,15 +6,16 @@ from fractions import Fraction
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.compiler.tax import PreparedTaxProfile, compile_profile
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import AgentId, JurisdictionId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, MarketStatement
-from finance.augur.sim.scenario import ORDINARY_INCOME, TaxProfile
-from finance.augur.sim.tax import TaxFacts, assess
+from finance.augur.sim.money import USD
+from finance.augur.sim.tax import PreparedTaxProfile, TaxFacts, assess
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw, rules_for_year
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.tax_year import TaxBook
 from finance.augur.sim.world import World
 
@@ -32,7 +33,7 @@ def profile() -> PreparedTaxProfile:
     return compile_profile(
         TaxProfile(agent_id=FILER, jurisdiction_ids=[FEDERAL, CALIFORNIA], tax_authority_agent_id=AgentId("test_irs")),
         {id_: load_jurisdiction(id_) for id_ in (FEDERAL, CALIFORNIA)},
-        quantum=QUANTUM,
+        currency=USD,
     )
 
 
@@ -65,7 +66,7 @@ def test_a_hand_worked_year_at_index_one_and_a_half(profile: PreparedTaxProfile)
     book.enroll(FILER)
     book.income.accrue(FILER, ORDINARY_INCOME, dollars(150_000))
     book.gain(FILER, dollars(30_000), long_term=True)
-    federal, california = authority.assessments(book, 23, [], ())
+    federal, california = authority.assessments(book, 23, [])
     assert (federal.ordinary_tax, federal.capital_gain_tax, federal.net_investment_income_tax) == (
         dollars(Fraction(2_076_150, 100)),
         dollars(4_500),
