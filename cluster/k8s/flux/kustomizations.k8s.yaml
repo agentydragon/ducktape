@@ -1565,6 +1565,7 @@ metadata:
   name: forgejo-agentydragon
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
@@ -2536,6 +2537,7 @@ metadata:
   name: forgejo-agentydragon-repos
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
@@ -2556,6 +2558,7 @@ metadata:
   name: budget-ledger
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
@@ -2576,6 +2579,7 @@ metadata:
   name: forgejo-claude
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
@@ -3333,6 +3337,7 @@ metadata:
   name: haku-state
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
@@ -3410,6 +3415,7 @@ metadata:
   name: cpap-data
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
