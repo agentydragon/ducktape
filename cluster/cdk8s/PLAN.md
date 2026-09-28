@@ -19,28 +19,6 @@ live in [the design](../docs/cdk8s.md) and [AGENTS.md](AGENTS.md).
 These are recommendations for subsequent implementation PRs. Updating this plan does
 not approve a new abstraction, resource owner, authorization grant, or deployment.
 
-### A. Split generic cdk8s builders from ducktape's cluster-specific wiring
-
-Each CRD family's `cdk8s_import` bindings and generic constructors live in
-`cluster/cdk8s/providers/<name>/`, in the shape
-[the builder-authoring skill](../skills/cdk8s_builders/SKILL.md) states. Kinds still
-built raw at more than one call site, counted on devel 9904055a45:
-
-- Flux `GitRepository` (8).
-- Flux `ImageRepository`, `ImagePolicy` and `ImageUpdateAutomation` (2 each).
-- Flux `Receiver` (2), and `Alert` and `Provider` (2 each, both in `flux_webhook/chart.py`).
-- Flux `HelmRelease`: `seaweedfs_csi/driver.py` builds one raw beside `helm.helm_release`.
-- External Secrets `ClusterSecretStore` (4), `SecretStore` (3) and the `Password`
-  generator (2).
-- Gateway API `HTTPRoute` (4) and `Gateway` (2).
-- CNPG `Database` (3).
-- trust-manager `Bundle` (3).
-- Agentplane `EgressBinding` (2, one module).
-- SeaweedFS `ResourceReferenceGrant` (2, both in `seaweedfs/s3.py`).
-
-Done: no ducktape-specific module builds a CRD's generated dataclasses raw at more than
-one call site, with no rendered-output diff from `//cluster/cdk8s:test_generate_manifests`.
-
 ### B. Restore dependency-update ownership
 
 `renovate.json5` scans both `cluster/k8s` and `cluster/generated` for Flux and

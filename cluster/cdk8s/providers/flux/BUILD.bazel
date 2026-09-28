@@ -140,3 +140,101 @@ py_library(
         "@pypi//constructs",
     ],
 )
+
+py_library(
+    name = "git_repository",
+    srcs = ["git_repository.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/flux:gitrepository",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "image_policy",
+    srcs = ["image_policy.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/flux:imagepolicy",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "image_repository",
+    srcs = ["image_repository.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/flux:imagerepository",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "image_update_automation",
+    srcs = ["image_update_automation.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/flux:imageupdateautomation",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_image_policy",
+    srcs = ["test_image_policy.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":image_policy",
+        "//:conftest",
+        "//cluster/cdk8s/providers/flux:imagepolicy",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "notification",
+    srcs = ["notification.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/flux:alert",
+        "//cluster/cdk8s/providers/flux:provider",
+        "//cluster/cdk8s/providers/flux:receiver",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "helm_release",
+    srcs = ["helm_release.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/flux:helmrelease",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_helm_release",
+    srcs = ["test_helm_release.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":helm_release",
+        "//:conftest",
+        "//cluster/cdk8s/providers/flux:helmrelease",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

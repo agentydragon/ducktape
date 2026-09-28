@@ -6,7 +6,7 @@ from __future__ import annotations
 from cdk8s import App, Chart
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "reloader"
@@ -70,7 +70,9 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        repository=helm_repository(chart, "stakater", "flux-system", url="https://stakater.github.io/stakater-charts"),
+        repository=https_helm_repository(
+            chart, "stakater", "flux-system", url="https://stakater.github.io/stakater-charts"
+        ),
         chart=NAME,
         version="2.*",
         interval="30m",

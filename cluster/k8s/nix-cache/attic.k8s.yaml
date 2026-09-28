@@ -82,6 +82,9 @@ spec:
       kind: Bucket
       namespace: nix-cache
     - group: seaweed.seaweedfs.com
+      kind: S3Identity
+      namespace: nix-cache
+    - group: seaweed.seaweedfs.com
       kind: S3Credentials
       namespace: nix-cache
   to:
@@ -93,11 +96,12 @@ apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
   name: attic
-  namespace: seaweedfs
+  namespace: nix-cache
 spec:
   reclaimPolicy: Retain
   seaweedRef:
     name: seaweedfs
+    namespace: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials

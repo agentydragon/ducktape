@@ -1,4 +1,4 @@
-"""Langfuse: its namespace, Postgres, S3 bucket and credentials, route, log-reader RBAC,
+"""Langfuse: its namespace, Postgres, S3 bucket, identity and credentials, route, log-reader RBAC,
 queue/cache Valkey and Helm release, and the `langfuse` Flux Kustomization owning them.
 
 Hand-written beside the generated output: `langfuse-secrets.sops.yaml`.
@@ -22,7 +22,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 from cluster.cdk8s import cnpg, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.helm import helm_release, helm_repository
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.seaweedfs import s3
@@ -75,7 +75,7 @@ def _storage(scope: Construct) -> None:
         adopt_existing=True,
         description="Langfuse event, export, and media objects.",
     )
-    identity = s3.Identity(scope, "identity", name=_NAME)
+    identity = s3.Identity(scope, "identity", name=_NAME, namespace=_NAMESPACE)
     bucket.grant_read_write(identity)
     identity.credentials(
         namespace=_NAMESPACE,
@@ -280,7 +280,7 @@ def _helm_release(scope: Construct) -> None:
         scope,
         _NAME,
         _NAMESPACE,
-        repository=helm_repository(scope, _NAME, _NAMESPACE, url="https://langfuse.github.io/langfuse-k8s"),
+        repository=https_helm_repository(scope, _NAME, _NAMESPACE, url="https://langfuse.github.io/langfuse-k8s"),
         chart=_NAME,
         version="2.1.0",
         interval="15m",

@@ -17,8 +17,6 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRolesPasswordSecret,
 )
 from cnpg_database_crds.io.cnpg.postgresql import (
-    Database,
-    DatabaseSpec,
     DatabaseSpecCluster,
     DatabaseSpecDatabaseReclaimPolicy,
     DatabaseSpecExtensions,
@@ -28,6 +26,7 @@ from constructs import Construct
 
 from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
+from cluster.cdk8s.providers.cnpg.database import Database
 
 NAMESPACE = "haku-console"
 CLUSTER_NAME = "haku-console-db"
@@ -90,13 +89,11 @@ class Db(Construct):
             self,
             "database",
             metadata=ApiObjectMetadata(name=f"{CLUSTER_NAME}-approval-store", namespace=NAMESPACE),
-            spec=DatabaseSpec(
-                cluster=DatabaseSpecCluster(name=CLUSTER_NAME),
-                name=DATABASE,
-                owner=DATABASE,
-                database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
-                extensions=[DatabaseSpecExtensions(name="vector", ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
-            ),
+            cluster=DatabaseSpecCluster(name=CLUSTER_NAME),
+            name=DATABASE,
+            owner=DATABASE,
+            database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
+            extensions=[DatabaseSpecExtensions(name="vector", ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
         )
 
     def _add_indexer_credential(self) -> None:

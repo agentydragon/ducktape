@@ -21,7 +21,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
-from cluster.cdk8s import external_creds, public_coder_proxy, public_coder_sshpiper
+from cluster.cdk8s import external_creds, forgejo_images, public_coder_proxy, public_coder_sshpiper
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.env_helpers import secret_env_var
@@ -71,7 +71,7 @@ _NAMESPACE_ANNOTATIONS = {
         "outpost. Opens pull requests against public repositories as agentydragon-agent."
     )
 }
-_IMAGE = "ghcr.io/agentydragon/openclaw:unset"
+_IMAGE = "git.allegedly.works/ducktape-ci/public-coder-agent:unset"
 _GATEWAY_PORT = 18789
 _HOME = "/home/openclaw"
 _CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
@@ -509,13 +509,6 @@ def _openclaw_container() -> k8s.Container:
             # useDefaultCAs, so it already contains the public roots plus the cluster root plus
             # this proxy's interception root -- replacing the distro file loses nothing.
             k8s.VolumeMount(name="trust", mount_path=_CA_BUNDLE, sub_path="ca-certificates.crt", read_only=True),
-            # The #4943 fence trust anchor, deliberately in the exact shape the fleet
-            # inject-haku-egress-proxy policy would inject (same volume name, same mountPath):
-            # carrying the policy's own wiring is what its every rule preconditions on, so if the
-            # fleet injection ever widens to this namespace (#4670 adoption), this pod reads as
-            # already wired and no port-8080 env is appended over the iron values above. The fence
-            # trust stays a per-request opt-in until the fence owns this pod's egress.
-            k8s.VolumeMount(name="haku-egress-proxy-ca-cert", mount_path="/egress-proxy-ca", read_only=True),
             # `ssh devbox` -- config, host-key pin, and the Agent's own downstream key, projected
             # into one directory because ~/.ssh has to be a single path. See ./ssh_config.
             k8s.VolumeMount(name="ssh", mount_path=f"{_HOME}/.ssh", read_only=True),
@@ -587,6 +580,9 @@ def _deployment(scope: Construct) -> None:
                             )
                         )
                     ),
+                    # The Secret comes from public_coder_proxy's ExternalSecret, rendered into this
+                    # same Flux Kustomization through app/kustomization.yaml's ../proxy.
+                    image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
                     init_containers=[
                         k8s.Container(
                             name="seed-config",
@@ -610,12 +606,6 @@ def _deployment(scope: Construct) -> None:
                         k8s.Volume(name="cfg", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP_NAME)),
                         k8s.Volume(
                             name="trust", config_map=k8s.ConfigMapVolumeSource(name="public-coder-agent-proxy-ca-cert")
-                        ),
-                        # Delivered here by the haku-egress-proxy trust-manager Bundle
-                        # (haku_egress_proxy.py's namespaceSelector).
-                        k8s.Volume(
-                            name="haku-egress-proxy-ca-cert",
-                            config_map=k8s.ConfigMapVolumeSource(name="haku-egress-proxy-ca-cert"),
                         ),
                         # 0440 rather than 0400: fsGroup makes these root:1000, so owner-only would
                         # be unreadable by the container's own uid. OpenSSH's "unprotected private

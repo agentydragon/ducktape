@@ -2,17 +2,30 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "reflector"
 NAMESPACE = "reflector-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/reflector"
 _VERSION = "10.0.65"
+
+
+def mirror_annotations(namespaces: Sequence[str]) -> dict[str, str]:
+    """Annotations on a source Secret or ConfigMap that make Reflector keep a copy in each of `namespaces`."""
+    value = ",".join(namespaces)
+    return {
+        "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
+        "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": value,
+        "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
+        "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": value,
+    }
 
 
 def chart(app: App) -> Chart:
@@ -22,7 +35,9 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        repository=helm_repository(chart, "emberstack", NAMESPACE, url="https://emberstack.github.io/helm-charts"),
+        repository=https_helm_repository(
+            chart, "emberstack", NAMESPACE, url="https://emberstack.github.io/helm-charts"
+        ),
         chart="reflector",
         version=_VERSION,
         interval="15m",

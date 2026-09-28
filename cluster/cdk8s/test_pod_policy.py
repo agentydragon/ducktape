@@ -111,16 +111,10 @@ def test_place_requires_the_placement_and_appends_the_control_plane_toleration(c
     pod_policy.place(deployment, _PLACEMENT)
     pod_policy.place(cron_job, _PLACEMENT, tolerate_control_plane=True)
 
-    required = {"key": "example.test/zone", "operator": "In", "values": ["zone-a"]}
     cron_pod = cron_job.to_json()["spec"]["jobTemplate"]["spec"]["template"]["spec"]
     for pod in (_deployment_pod(deployment), cron_pod):
-        assert pod["affinity"] == {
-            "nodeAffinity": {
-                "requiredDuringSchedulingIgnoredDuringExecution": {
-                    "nodeSelectorTerms": [{"matchExpressions": [required]}]
-                }
-            }
-        }
+        assert pod["nodeSelector"] == {"example.test/zone": "zone-a"}
+        assert "affinity" not in pod
     assert "tolerations" not in _deployment_pod(deployment)
     assert cron_pod["tolerations"] == [
         {"key": "example.test/roaming", "operator": "Exists"},

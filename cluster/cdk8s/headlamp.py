@@ -9,7 +9,7 @@ from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade, HelmRelease
 
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 
@@ -46,7 +46,7 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        repository=helm_repository(chart, NAME, NAMESPACE, url="https://kubernetes-sigs.github.io/headlamp/"),
+        repository=https_helm_repository(chart, NAME, NAMESPACE, url="https://kubernetes-sigs.github.io/headlamp/"),
         chart=NAME,
         # 0.45.0 ships the Prometheus details-view plugin, enabled by default.
         version="0.45.0",

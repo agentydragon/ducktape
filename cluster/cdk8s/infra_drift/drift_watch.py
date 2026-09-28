@@ -6,7 +6,7 @@ cluster/cdk8s/infra_drift/README.md."""
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitRepositorySpec, GitRepositorySpecRef
+from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecSourceRef,
@@ -14,9 +14,10 @@ from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecStoreReadablePlan,
 )
 
-from cluster.cdk8s import terraform
+from cluster.cdk8s import ducktape_flux, terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
 NAME = "infra-drift"
 OUTPUT_DIR = f"{GENERATED_ROOT}/infra-drift"
@@ -39,41 +40,39 @@ def chart(app: App) -> Chart:
                 "and nebula-mesh.json, for the infra-drift plan-only Terraform CR."
             },
         ),
-        spec=GitRepositorySpec(
-            interval="10m",
-            ref=GitRepositorySpecRef(branch="devel"),
-            url="https://github.com/agentydragon/ducktape.git",
-            # `ignore` rather than `sparseCheckout`: nebula.tf's locals read the repo-root
-            # nebula-mesh.json, and sparseCheckout takes directories only. Exclude-all then
-            # re-include, spelling out each parent: gitignore cannot re-include a path whose
-            # parent directory is excluded.
-            ignore=(
-                "/*\n"
-                "!/nebula-mesh.json\n"
-                "# data.sops_file.ovh_{credentials,rescue_ssh} and, if -target ever stops\n"
-                "# pruning them, the nebula certs under secrets/nebula/. Ciphertext only.\n"
-                "!/secrets\n"
-                "!/cluster\n"
-                "/cluster/*\n"
-                "!/cluster/terraform\n"
-                "# Every file()-family call in the root, wherever it sits: -target does not\n"
-                "# prune configuration evaluation. talos-cloud-controller-manager for\n"
-                "# talos-ccm.tf's locals, flux-system for null_resource.flux_bootstrap's\n"
-                "# triggers. The rest of cluster/{k8s,generated} (10 MB) reads nothing.\n"
-                "!/cluster/generated\n"
-                "/cluster/generated/*\n"
-                "!/cluster/generated/talos-cloud-controller-manager\n"
-                "!/cluster/k8s\n"
-                "/cluster/k8s/*\n"
-                "!/cluster/k8s/flux\n"
-                "/cluster/k8s/flux/*\n"
-                "!/cluster/k8s/flux/flux-system\n"
-                '# module "wyrm2_image": `tofu init` installs every module block in the\n'
-                "# config, whether or not -target keeps it in the plan graph.\n"
-                "!/terraform\n"
-                "/terraform/*\n"
-                "!/terraform/modules\n"
-            ),
+        interval="10m",
+        ref=GitRepositorySpecRef(branch=ducktape_flux.BRANCH),
+        url=ducktape_flux.REPOSITORY_URL,
+        # `ignore` rather than `sparseCheckout`: nebula.tf's locals read the repo-root
+        # nebula-mesh.json, and sparseCheckout takes directories only. Exclude-all then
+        # re-include, spelling out each parent: gitignore cannot re-include a path whose
+        # parent directory is excluded.
+        ignore=(
+            "/*\n"
+            "!/nebula-mesh.json\n"
+            "# data.sops_file.ovh_{credentials,rescue_ssh} and, if -target ever stops\n"
+            "# pruning them, the nebula certs under secrets/nebula/. Ciphertext only.\n"
+            "!/secrets\n"
+            "!/cluster\n"
+            "/cluster/*\n"
+            "!/cluster/terraform\n"
+            "# Every file()-family call in the root, wherever it sits: -target does not\n"
+            "# prune configuration evaluation. talos-cloud-controller-manager for\n"
+            "# talos-ccm.tf's locals, flux-system for null_resource.flux_bootstrap's\n"
+            "# triggers. The rest of cluster/{k8s,generated} (10 MB) reads nothing.\n"
+            "!/cluster/generated\n"
+            "/cluster/generated/*\n"
+            "!/cluster/generated/talos-cloud-controller-manager\n"
+            "!/cluster/k8s\n"
+            "/cluster/k8s/*\n"
+            "!/cluster/k8s/flux\n"
+            "/cluster/k8s/flux/*\n"
+            "!/cluster/k8s/flux/flux-system\n"
+            '# module "wyrm2_image": `tofu init` installs every module block in the\n'
+            "# config, whether or not -target keeps it in the plan graph.\n"
+            "!/terraform\n"
+            "/terraform/*\n"
+            "!/terraform/modules\n"
         ),
     )
     terraform.tofu_state_terraform(

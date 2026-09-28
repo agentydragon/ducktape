@@ -135,15 +135,6 @@ spec:
         app.kubernetes.io/name: haku-console-migration
         cdk8s.io/metadata.addr: haku-console-migration-job-c884b6d8
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: false
       containers:
         - args:
@@ -199,6 +190,8 @@ spec:
       hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Never
       securityContext:
         fsGroupChangePolicy: Always
@@ -478,15 +471,6 @@ spec:
         app.kubernetes.io/name: haku-console
         cdk8s.io/metadata.addr: haku-console-console-deployment-c8971d9a
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - env:
@@ -677,6 +661,8 @@ spec:
       hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -891,15 +877,6 @@ spec:
         app.kubernetes.io/name: haku-console-db-indexer-provisioner
         cdk8s.io/metadata.addr: haku-console-console-indexer-provisioner-c807e4ac
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: false
       containers:
         - args:
@@ -947,6 +924,8 @@ spec:
               readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Never
       securityContext:
         fsGroupChangePolicy: Always

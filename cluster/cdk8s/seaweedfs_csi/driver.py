@@ -4,26 +4,19 @@ from, its StorageClasses, and the directory's Flux Kustomization.
 
 from __future__ import annotations
 
+import textwrap
+
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitRepositorySpec, GitRepositorySpecRef
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-    HelmReleaseSpecUpgrade,
-    HelmReleaseSpecUpgradeRemediation,
-)
+from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef
+from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade, HelmReleaseSpecUpgradeRemediation
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
 NAME = "seaweedfs-csi"
 NAMESPACE = "seaweedfs-csi-system"
@@ -216,49 +209,42 @@ def chart(app: App) -> Chart:
         chart,
         "source",
         metadata=ApiObjectMetadata(name="seaweedfs-csi-driver", namespace="flux-system"),
-        spec=GitRepositorySpec(
-            interval="24h",
-            url="https://github.com/seaweedfs/seaweedfs-csi-driver",
-            ref=GitRepositorySpecRef(tag="v1.4.31"),
-            ignore="/*\n!/deploy/helm/seaweedfs-csi-driver\n",
+        interval="24h",
+        url="https://github.com/seaweedfs/seaweedfs-csi-driver",
+        ref=GitRepositorySpecRef(tag="v1.4.31"),
+        ignore=textwrap.dedent(
+            """\
+            /*
+            !/deploy/helm/seaweedfs-csi-driver
+            """
         ),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=ApiObjectMetadata(name=RELEASE, namespace=NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            upgrade=HelmReleaseSpecUpgrade(
-                # Deviation: upgrades do not wait for resource health. The mount DaemonSet is
-                # `updateStrategy: OnDelete` (chart default, and deliberate -- rolling it kills
-                # the node's FUSE mounts and consumers do not self-heal, #4616). Flux assesses
-                # health with kstatus, which reports a DaemonSet InProgress while
-                # updatedNumberScheduled < desiredNumberScheduled and has no OnDelete
-                # exemption, so any values change here hangs until the timeout and then Stalls
-                # the release -- which also wedges the Kustomization that health-checks it.
-                # (Helm's own readiness checker does exempt OnDelete; Flux does not use it.)
-                # Adding resource requests in #4626 triggered exactly this.
-                #
-                # The cost is that a genuinely broken upgrade of the controller or node
-                # DaemonSet is no longer caught by the release going NotReady. Reverting this
-                # requires either dropping OnDelete or a per-resource wait exemption.
-                disable_wait=True,
-                remediation=HelmReleaseSpecUpgradeRemediation(retries=3),
-            ),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="deploy/helm/seaweedfs-csi-driver",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.GIT_REPOSITORY,
-                        name=source.name,
-                        namespace=source.metadata.namespace,
-                    ),
-                )
-            ),
-            values=_values(),
+        RELEASE,
+        NAMESPACE,
+        repository=source,
+        chart="deploy/helm/seaweedfs-csi-driver",
+        interval="30m",
+        install=RETRY_FAILED_INSTALL,
+        upgrade=HelmReleaseSpecUpgrade(
+            # Deviation: upgrades do not wait for resource health. The mount DaemonSet is
+            # `updateStrategy: OnDelete` (chart default, and deliberate -- rolling it kills
+            # the node's FUSE mounts and consumers do not self-heal, #4616). Flux assesses
+            # health with kstatus, which reports a DaemonSet InProgress while
+            # updatedNumberScheduled < desiredNumberScheduled and has no OnDelete
+            # exemption, so any values change here hangs until the timeout and then Stalls
+            # the release -- which also wedges the Kustomization that health-checks it.
+            # (Helm's own readiness checker does exempt OnDelete; Flux does not use it.)
+            # Adding resource requests in #4626 triggered exactly this.
+            #
+            # The cost is that a genuinely broken upgrade of the controller or node
+            # DaemonSet is no longer caught by the release going NotReady. Reverting this
+            # requires either dropping OnDelete or a per-resource wait exemption.
+            disable_wait=True,
+            remediation=HelmReleaseSpecUpgradeRemediation(retries=3),
         ),
+        values=_values(),
     )
     _storage_class(
         chart,

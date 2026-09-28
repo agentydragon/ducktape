@@ -25,7 +25,7 @@ from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import helm_release, helm_repository
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.redis_operator.replication import RedisReplication
 
@@ -49,7 +49,7 @@ def chart(app: App) -> Chart:
         chart,
         _RELEASE,
         NAMESPACE,
-        repository=helm_repository(
+        repository=https_helm_repository(
             chart, "ot-helm", "flux-system", url="https://ot-container-kit.github.io/helm-charts"
         ),
         chart=_RELEASE,

@@ -30,8 +30,6 @@ from seaweed_bucket_crds.com.seaweedfs.seaweed import (
     BucketSpecReclaimPolicy,
 )
 from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
     ResourceReferenceGrantSpecFrom,
     ResourceReferenceGrantSpecTo,
 )
@@ -49,6 +47,8 @@ from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
     S3IdentitySpecReclaimPolicy,
     S3IdentitySpecSeaweedRef,
 )
+
+from cluster.cdk8s.providers.seaweedfs.resource_reference_grant import ResourceReferenceGrant
 
 # Aliased: the constructs' own `namespace` parameter is the tenant's.
 from cluster.cdk8s.seaweedfs import cluster, namespace as seaweedfs_namespace
@@ -88,10 +88,8 @@ class _ClusterGrant(Construct):
             self,
             "Resource",
             metadata=ApiObjectMetadata(name=name, namespace=seaweedfs_namespace.NAME),
-            spec=ResourceReferenceGrantSpec(
-                from_=[ResourceReferenceGrantSpecFrom(group=_GROUP, kind=kind, namespace=namespace)],
-                to=[ResourceReferenceGrantSpecTo(group=_GROUP, kind="Seaweed", name=cluster.NAME)],
-            ),
+            from_=[ResourceReferenceGrantSpecFrom(group=_GROUP, kind=kind, namespace=namespace)],
+            to=[ResourceReferenceGrantSpecTo(group=_GROUP, kind="Seaweed", name=cluster.NAME)],
         )
 
     @staticmethod
@@ -247,10 +245,6 @@ def secret_grant(scope: Construct, *, secret: str, namespace: str) -> ResourceRe
         scope,
         f"secret-grant-{namespace}-{secret}",
         metadata=ApiObjectMetadata(name=secret, namespace=namespace),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=_GROUP, kind="S3Credentials", namespace=seaweedfs_namespace.NAME)
-            ],
-            to=[ResourceReferenceGrantSpecTo(group="", kind="Secret", name=secret)],
-        ),
+        from_=[ResourceReferenceGrantSpecFrom(group=_GROUP, kind="S3Credentials", namespace=seaweedfs_namespace.NAME)],
+        to=[ResourceReferenceGrantSpecTo(group="", kind="Secret", name=secret)],
     )
