@@ -33,13 +33,6 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecVolumeClaimTemplatesSpecResources,
     SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests,
 )
-from agent_sandbox_sandboxwarmpool_crds.io.x_k8s.agents.extensions import (
-    SandboxWarmPool,
-    SandboxWarmPoolSpec,
-    SandboxWarmPoolSpecSandboxTemplateRef,
-    SandboxWarmPoolSpecUpdateStrategy,
-    SandboxWarmPoolSpecUpdateStrategyType,
-)
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from kyverno_cleanuppolicy_crds.io.kyverno import (
@@ -53,7 +46,7 @@ from kyverno_cleanuppolicy_crds.io.kyverno import (
     CleanupPolicySpecMatchAnyResources,
 )
 
-from cluster.cdk8s import forgejo_images
+from cluster.cdk8s import agent_sandbox, forgejo_images
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
@@ -211,18 +204,8 @@ def chart(app: App) -> Chart:
         ),
     )
     forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
-    codex_template = _codex_template(chart)
     # One pre-warmed codex-lane workspace.
-    SandboxWarmPool(
-        chart,
-        "codex-warm-pool",
-        metadata=ApiObjectMetadata(name="codex", namespace=NAMESPACE),
-        spec=SandboxWarmPoolSpec(
-            replicas=1,
-            update_strategy=SandboxWarmPoolSpecUpdateStrategy(type=SandboxWarmPoolSpecUpdateStrategyType.RECREATE),
-            sandbox_template_ref=SandboxWarmPoolSpecSandboxTemplateRef(name=codex_template.name),
-        ),
-    )
+    agent_sandbox.warm_pool(chart, "codex-warm-pool", template=_codex_template(chart))
     # Workspaces are ephemeral by contract (same 7-day rule as claude-sandbox's sandbox-janitor):
     # a Sandbox whose owner forgot shutdownTime (default shutdownPolicy is Retain) would otherwise
     # pin quota forever. Reaping happens at the CR level, not the pod level -- the controller
