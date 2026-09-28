@@ -29,16 +29,22 @@ from cluster.cdk8s.providers.flux.helm_repository import HelmRepository
 RETRY_FAILED_INSTALL = HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3))
 
 
-def helm_repository(scope: Construct, name: str, namespace: str, *, url: str, interval: str = "24h") -> HelmRepository:
+def helm_repository(
+    scope: Construct, name: str, namespace: str, *, url: str, interval: str | None = None
+) -> HelmRepository:
     """Add and return a Flux `HelmRepository` serving the charts at `url`: an OCI repository for an
-    `oci://` URL, else Flux's default HTTP/S type. Our policy: `interval="24h"`."""
+    `oci://` URL, else Flux's default HTTP/S type, whose index is re-fetched every `interval` (our
+    policy: 24h). An OCI repository takes no `interval`: source-controller never polls one."""
+    oci = url.startswith("oci://")
+    if oci and interval is not None:
+        raise ValueError(f"An OCI HelmRepository is never polled, so it takes no interval: {url=} {interval=}")
     return HelmRepository(
         scope,
         f"helm-repository-{name}",
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
         url=url,
-        type=HelmRepositorySpecType.OCI if url.startswith("oci://") else None,
-        interval=interval,
+        type=HelmRepositorySpecType.OCI if oci else None,
+        interval=None if oci else (interval or "24h"),
     )
 
 

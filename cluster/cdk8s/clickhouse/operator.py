@@ -99,7 +99,6 @@ def helmrelease_chart(app: App) -> Chart:
             "altinity-clickhouse-operator",
             "flux-system",
             url="oci://ghcr.io/altinity/clickhouse-operator-helm-chart",
-            interval="12h",
         ),
         chart="altinity-clickhouse-operator",
         version="0.27.3",

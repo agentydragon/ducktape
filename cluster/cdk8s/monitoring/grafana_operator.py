@@ -21,7 +21,7 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         "monitoring",
-        repository=helm_repository(chart, NAME, "flux-system", url="oci://ghcr.io/grafana/helm-charts", interval="12h"),
+        repository=helm_repository(chart, NAME, "flux-system", url="oci://ghcr.io/grafana/helm-charts"),
         chart=NAME,
         version="~5.22",
         interval="30m",
