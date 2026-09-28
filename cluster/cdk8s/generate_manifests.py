@@ -1018,9 +1018,7 @@ def generate_manifests(root: Path) -> None:
     budget_ledger_artifact = artifact("budget-ledger", forgejo_gitops_modules.BUDGET_LEDGER_DIR)
     forgejo_gitops_modules.budget_ledger(flux_chart, budget_ledger_artifact, tofu_controller_kustomization)
     forgejo_claude_artifact = artifact("forgejo-claude", forgejo_gitops_modules.CLAUDE_DIR)
-    forgejo_gitops_modules.forgejo_claude(
-        flux_chart, forgejo_claude_artifact, tofu_controller_kustomization, claude_rbac_kustomization
-    )
+    forgejo_gitops_modules.forgejo_claude(flux_chart, forgejo_claude_artifact, tofu_controller_kustomization)
     forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
     forgejo_images.forgejo_images(
         flux_chart,
@@ -1123,7 +1121,7 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     cpap_sync_artifact = artifact("cpap-sync", cpap_sync_app.OUTPUT_DIR)
-    cpap_sync_kustomization = cpap_sync_app.cpap_sync(
+    cpap_sync_app.cpap_sync(
         flux_chart,
         write_directory(
             root,
@@ -1260,9 +1258,7 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     cpap_data_artifact = artifact("cpap-data", forgejo_gitops_modules.CPAP_DATA_DIR)
-    forgejo_gitops_modules.cpap_data(
-        flux_chart, cpap_data_artifact, tofu_controller_kustomization, cpap_sync_kustomization
-    )
+    forgejo_gitops_modules.cpap_data(flux_chart, cpap_data_artifact, tofu_controller_kustomization)
     grocy_mcp_sf_artifact = artifact("grocy-mcp-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", grocy_mcp.BASE_DIR)
     grocy_flux_kustomizations.grocy_mcp_sf(
         flux_chart,

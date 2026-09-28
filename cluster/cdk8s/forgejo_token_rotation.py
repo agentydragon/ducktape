@@ -1,6 +1,6 @@
 """The forgejo-token-rotation CronJob (cluster/k8s/agents/forgejo-token-rotation): mints
 Forgejo API tokens for agent service accounts. Source: cluster/rotators/. Also the copy of
-the `haku` account's password that it mints haku's tokens with.
+the `haku` and `claude` accounts' passwords that it mints their tokens with.
 
 Hand-written beside the output: `tokens.yaml`, which the directory's `kustomization.yaml`
 renders into the ConfigMap the job mounts, and `image-pins/kustomization.yaml`, which
@@ -27,19 +27,23 @@ _IMAGE = "git.allegedly.works/ducktape-ci/forgejo-token-rotation:unset"
 _CONFIG_MAP = "forgejo-token-rotations-config"
 
 _HAKU_MINT_SECRET = "forgejo-token-mint-haku"
+_CLAUDE_MINT_SECRET = "forgejo-token-mint-claude"
 # (volume, Secret, mount path) for every credential the rotator reads.
 _SECRET_MOUNTS = (
     ("github-pat", "github-secrets-sync-pat", "/var/run/secrets/github-pat"),
     ("haku-forgejo", _HAKU_MINT_SECRET, "/var/run/secrets/forgejo/haku"),
-    ("claude-forgejo", "forgejo-token-mint-claude", "/var/run/secrets/forgejo/claude"),
+    ("claude-forgejo", _CLAUDE_MINT_SECRET, "/var/run/secrets/forgejo/claude"),
     ("agent-box-codex-forgejo", "forgejo-token-mint-agent-box-codex", "/var/run/secrets/forgejo/agent-box-codex"),
 )
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    # tf/gitops/haku-state's account password, which the rotator mints haku's tokens with.
-    secret_copy.secret_copy(chart, _HAKU_MINT_SECRET, reader=secret_copy.reader(chart, _NAMESPACE))
+    # The account passwords tf/gitops/haku-state and tf/gitops/forgejo-claude write, which the
+    # rotator mints those accounts' tokens with.
+    reader = secret_copy.reader(chart, _NAMESPACE)
+    secret_copy.secret_copy(chart, _HAKU_MINT_SECRET, reader=reader)
+    secret_copy.secret_copy(chart, _CLAUDE_MINT_SECRET, reader=reader)
     k8s.KubeCronJob(
         chart,
         "cronjob",

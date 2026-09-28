@@ -2619,8 +2619,6 @@ spec:
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
-    - name: claude-rbac
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/forgejo/claude
   prune: true
@@ -3454,8 +3452,6 @@ metadata:
 spec:
   dependsOn:
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: cpap-sync
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/forgejo/cpap-data
