@@ -22,7 +22,6 @@ from external_secrets_crds.io.external_secrets import (
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import external_creds, namespaces, node_scheduling
-from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
@@ -45,8 +44,9 @@ _RESIGNER = "tana-firebase-resigner"
 _RESIGNER_CONFIG = "tana-firebase-resigner-config"
 # The Secret the resigner rewrites: its Role and its config both read this one reference.
 _REFRESH_TOKEN = SecretRef(namespace=_NAMESPACE, name="tana-firebase-refresh-token").key("refresh_token")
-_PAT_SECRET = "tana-agentydragon-gmail-com-account-pat"
-_FACADE_OIDC_SECRET = "tana-mcp-facade-oidc"
+# The ESO copy of the external-creds Secret of the same name.
+_PAT = SecretRef(namespace=_NAMESPACE, name="tana-agentydragon-gmail-com-account-pat").key("token")
+_FACADE_OIDC = SecretRef(namespace=_NAMESPACE, name="tana-mcp-facade-oidc")
 _VALKEY = "mcp-valkey-ovh"
 _TANA_PORT = 8262
 _PROXY_PORT = 8263
@@ -148,7 +148,7 @@ def _tana_deployment(chart: Chart) -> None:
                             # accepts it (POST /mcp initialize -> 200), so a renderer that
                             # drifts off the matching account drives a re-sign instead of
                             # silently leaving the facade serving zero tools.
-                            env=[secret_env_var("PAT", _PAT_SECRET, "token")],
+                            env=[_PAT.env_var("PAT")],
                             resources=k8s.ResourceRequirements(
                                 requests={
                                     "cpu": k8s.Quantity.from_string("10m"),
@@ -300,11 +300,9 @@ def _facade(chart: Chart) -> None:
                                 k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name="tana-mcp-facade-config"))
                             ],
                             env=[
-                                secret_env_var("MCP_FACADE_AUTH__OIDC_CLIENT_ID", _FACADE_OIDC_SECRET, "client_id"),
-                                secret_env_var(
-                                    "MCP_FACADE_AUTH__OIDC_CLIENT_SECRET", _FACADE_OIDC_SECRET, "client_secret"
-                                ),
-                                secret_env_var("MCP_FACADE_UPSTREAM__BEARER_TOKEN", _PAT_SECRET, "token"),
+                                _FACADE_OIDC.key("client_id").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_ID"),
+                                _FACADE_OIDC.key("client_secret").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_SECRET"),
+                                _PAT.env_var("MCP_FACADE_UPSTREAM__BEARER_TOKEN"),
                             ],
                             resources=k8s.ResourceRequirements(
                                 requests={
@@ -447,13 +445,13 @@ def chart(app: App) -> Chart:
         chart,
         "tana-pat",
         metadata=ApiObjectMetadata(
-            name=_PAT_SECRET,
-            namespace=_NAMESPACE,
+            name=_PAT.secret.name,
+            namespace=_PAT.secret.namespace,
             annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
         ),
         refresh_interval="1h",
         secret_store_ref=external_creds.STORE,
-        data=[remote_data(_PAT_SECRET, "token")],
+        data=[remote_data(_PAT.secret.name, _PAT.key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )

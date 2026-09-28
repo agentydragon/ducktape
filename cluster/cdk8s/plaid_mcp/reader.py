@@ -17,14 +17,15 @@ from cdk8s_plus_34 import Cpu, k8s
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.plaid_mcp import db
 from cluster.cdk8s.plaid_mcp.app import NAMESPACE
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.valkey import valkey_instance
 
@@ -33,7 +34,7 @@ SERVICEMONITOR_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/servicemonitor"
 _NAME = "plaid-db-mcp"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _CONFIG_MAP = "plaid-db-mcp-config"
-_OIDC_SECRET = "plaid-db-mcp-oidc"
+_OIDC = SecretRef(namespace=NAMESPACE, name="plaid-db-mcp-oidc")
 _UPSTREAM_PORT = 8000
 _HTTP_PORT = 8765
 _METRICS_PORT = 9090
@@ -94,8 +95,7 @@ def _deployment(chart: Chart) -> None:
                                 f"--streamable-http-port={_UPSTREAM_PORT}",
                             ],
                             ports=[k8s.ContainerPort(name="upstream", container_port=_UPSTREAM_PORT, protocol="TCP")],
-                            # The read-only credentials db.py mints.
-                            env=[secret_env_var("AIRMAN_MCP_DATABASE_URL", "plaid-mcp-db-readonly", "DATABASE_URL")],
+                            env=[db.READONLY.key("DATABASE_URL").env_var("AIRMAN_MCP_DATABASE_URL")],
                             resources=k8s.ResourceRequirements(
                                 requests={
                                     "memory": k8s.Quantity.from_string("128Mi"),
@@ -118,8 +118,8 @@ def _deployment(chart: Chart) -> None:
                             ],
                             env_from=[k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=_CONFIG_MAP))],
                             env=[
-                                secret_env_var("MCP_FACADE_AUTH__OIDC_CLIENT_ID", _OIDC_SECRET, "client_id"),
-                                secret_env_var("MCP_FACADE_AUTH__OIDC_CLIENT_SECRET", _OIDC_SECRET, "client_secret"),
+                                _OIDC.key("client_id").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_ID"),
+                                _OIDC.key("client_secret").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_SECRET"),
                             ],
                             resources=k8s.ResourceRequirements(
                                 requests={

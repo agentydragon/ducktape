@@ -24,7 +24,6 @@ from external_secrets_crds.io.external_secrets import (
 from cluster.cdk8s import external_creds, forgejo_images, public_coder_proxy, public_coder_sshpiper
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json5_config, yaml_config
-from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.haku import console, console_config, kube_api_proxy
@@ -51,6 +50,7 @@ from cluster.cdk8s.openclaw_gateway import (
     trusted_proxy_gateway,
 )
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.secret_ref import SecretRef
 
 _CODEX_BY_ID = {model.id: model for model in GPT6_CODEX_MODELS}
 _DEFAULT_CODEX_MODEL = _CODEX_BY_ID["gpt-6-luna"]
@@ -77,8 +77,7 @@ _HOME = "/home/openclaw"
 _CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
 _STATE_CLAIM_NAME = "public-coder-agent-state-v2"
 _DIAGNOSTICS_CLAIM_NAME = "public-coder-agent-diagnostics"
-_GATEWAY_PASSWORD_NAME = "public-coder-agent-gateway-password"
-_GITHUB_TOKEN_NAME = "public-coder-agent-github-token"
+_GATEWAY_PASSWORD = SecretRef(namespace=NAMESPACE, name="public-coder-agent-gateway-password")
 # Also the Matrix channel's `proxy` in config(): the same proxy performs Matrix login-password
 # substitution.
 _EGRESS_PROXY = (
@@ -439,11 +438,13 @@ def _openclaw_container() -> k8s.Container:
             # in the egress proxy and substituted solely in X-Subscription-Token requests to
             # api.search.brave.com.
             _env("BRAVE_API_KEY", public_coder_proxy.BRAVE_API_KEY_PLACEHOLDER),
-            secret_env_var("OPENCLAW_LITELLM_API_KEY", "litellm-key-public-coder-agent", "api-key"),
+            SecretRef(namespace=NAMESPACE, name="litellm-key-public-coder-agent")
+            .key("api-key")
+            .env_var("OPENCLAW_LITELLM_API_KEY"),
             # Authentik authenticates proxied browser traffic. OpenClaw's subagent completion
             # path calls the local gateway directly and therefore uses the documented
             # trusted-proxy local-password fallback instead of proxy identity headers.
-            secret_env_var("OPENCLAW_GATEWAY_PASSWORD", _GATEWAY_PASSWORD_NAME, "password"),
+            _GATEWAY_PASSWORD.key("password").env_var("OPENCLAW_GATEWAY_PASSWORD"),
             # OpenClaw's password login puts this value in the Matrix JSON body. It is a proxy
             # placeholder: iron-proxy replaces it with the real controller-owned password only
             # on the Matrix login endpoint.
@@ -798,10 +799,10 @@ def _credentials(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "github-token",
-        metadata=ApiObjectMetadata(name=_GITHUB_TOKEN_NAME, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=public_coder_proxy.GITHUB_TOKEN.secret.name, namespace=NAMESPACE),
         refresh_interval="1h",
         secret_store_ref=external_creds.STORE,
-        data=[remote_data("github-agentydragon-agent", "token", secret_key="GITHUB_TOKEN")],
+        data=[remote_data("github-agentydragon-agent", "token", secret_key=public_coder_proxy.GITHUB_TOKEN.key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
@@ -816,9 +817,9 @@ def _credentials(scope: Construct) -> None:
     mint_bearer_secret(
         scope,
         "gateway-password",
-        name=_GATEWAY_PASSWORD_NAME,
-        namespace=NAMESPACE,
-        generator_name=f"{_GATEWAY_PASSWORD_NAME}-generator",
+        name=_GATEWAY_PASSWORD.name,
+        namespace=_GATEWAY_PASSWORD.namespace,
+        generator_name=f"{_GATEWAY_PASSWORD.name}-generator",
         # A generated password is stable for the generator's lifetime. Avoid an automatic
         # rotation that would unnecessarily interrupt active sessions.
         refresh="8760h",

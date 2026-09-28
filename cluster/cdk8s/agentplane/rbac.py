@@ -12,21 +12,13 @@ from typing import cast
 
 import jsii
 from cdk8s import ApiObjectMetadata
-from cdk8s_plus_34 import (
-    ApiResource,
-    Group,
-    IApiResource,
-    Namespace,
-    Role,
-    RoleBinding,
-    RolePolicyRule,
-    ServiceAccount,
-    k8s,
-)
+from cdk8s_plus_34 import ApiResource, Group, IApiResource, Role, RoleBinding, RolePolicyRule, ServiceAccount, k8s
 from constructs import Construct
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 
 
 @jsii.implements(IApiResource)
@@ -101,21 +93,17 @@ class NamespaceQuota(Construct):
 
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
-        Namespace(
+        namespaces.namespace(
             self,
             "namespace",
-            metadata=ApiObjectMetadata(
-                name=env.namespace,
-                labels={
-                    "name": env.namespace,
-                    # Runner Pods are Sandbox-owned, not Deployments; nothing here is VPA-managed.
-                    "goldilocks.fairwinds.com/enabled": "false",
-                    # Standing agent access to metadata and logs (Kyverno-generated bindings);
-                    # write access lives in the operator Role below.
-                    "rbac.ducktape.io/agent-readable-logs": "true",
-                },
-                annotations={"description": env.description},
-            ),
+            name=env.namespace,
+            # Runner Pods are Sandbox-owned, not Deployments; nothing here is VPA-managed.
+            vpa=Vpa.DISABLED,
+            # Standing agent access to metadata and logs (Kyverno-generated bindings);
+            # write access lives in the operator Role below.
+            agent_readable=AgentReadable.LOGS,
+            labels={"name": env.namespace},
+            annotations={"description": env.description},
         )
         # Bounds what runner sandboxes take from the node. Each costs 2500m of limits.cpu
         # (2 for the runner, 500m the LimitRange default for the egress sidecar), about
