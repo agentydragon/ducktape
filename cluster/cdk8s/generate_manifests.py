@@ -353,9 +353,7 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, flux_image_automation_ghcr_artifact, flux_image_automation_ghcr.automation_chart),
     )
     haku_namespace_artifact = artifact(haku_namespace.NAME, haku_namespace.OUTPUT_DIR)
-    haku_namespace_kustomization = haku_namespace.haku_namespace(
-        flux_chart, write_directory(root, haku_namespace_artifact, haku_namespace.chart)
-    )
+    haku_namespace.haku_namespace(flux_chart, write_directory(root, haku_namespace_artifact, haku_namespace.chart))
     hubble_ui_artifact = artifact("hubble-ui", hubble_ui.OUTPUT_DIR)
     hubble_ui.hubble_ui(flux_chart, write_directory(root, hubble_ui_artifact, hubble_ui.chart))
     kube_api_proxy_artifact = artifact("kube-api-proxy", kube_api_proxy.OUTPUT_DIR)
@@ -526,7 +524,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, write_directory(root, haku_forgejo_tea_artifact, siblings=["haku-forgejo-tea.sops.yaml"])
     )
     claude_rbac_artifact = artifact("claude-rbac", agent_rbac_base.OUTPUT_DIR)
-    claude_rbac_kustomization = agent_rbac_base.claude_rbac(
+    agent_rbac_base.claude_rbac(
         flux_chart, write_directory(root, claude_rbac_artifact, agent_rbac_base.chart), kyverno_policies_kustomization
     )
     clickhouse_artifact = artifact("clickhouse", clickhouse_installation.OUTPUT_DIR)
