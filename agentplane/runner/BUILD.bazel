@@ -65,6 +65,7 @@ py_library(
     deps = [
         ":adapter",
         ":config",
+        ":rendering_note",
         ":session",
         "//agentplane/native/claude:blocks",
         "//agentplane/native/claude:driver",
@@ -95,6 +96,7 @@ py_library(
     deps = [
         ":adapter",
         ":config",
+        ":rendering_note",
         ":session",
         "//agentplane/native/codex:facade",
         "//agentplane/native/codex:scenarios",
@@ -463,6 +465,7 @@ py_test(
     deps = [
         ":client",
         ":conftest",
+        ":rendering_note",
         "//:conftest",
         "//agentplane/runner:protocol_pb2",
         "//agentplane/runner/testing:events",
@@ -637,4 +640,9 @@ py_test(
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "rendering_note",
+    srcs = ["rendering_note.py"],
 )

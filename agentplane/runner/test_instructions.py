@@ -6,6 +6,7 @@ import pytest_bazel
 
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerClient
+from agentplane.runner.rendering_note import RENDERING_NOTE
 from agentplane.runner.testing import events
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 
@@ -37,6 +38,18 @@ async def test_a_session_without_instructions_sends_none(
         await attachment.until(events.turn_completed)
 
 
+async def test_the_rendering_note_reaches_the_model_even_without_operator_instructions(
+    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+) -> None:
+    async with await client.attach("rendering-note-1", spec=spec) as attachment:
+        assert attachment.attached.spec.instructions == ""
+        await attachment.send("input-1", "Reply with exactly: PLAIN_OK")
+        request = await model.request()
+        assert RENDERING_NOTE in request.system_text
+        await model.reply(request, Text("PLAIN_OK"))
+        await attachment.until(events.turn_completed)
+
+
 async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
@@ -44,6 +57,7 @@ async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
     await first.send("input-1", "Reply with exactly: SEED_OK")
     request = await model.request()
     assert INSTRUCTIONS in request.system_text
+    assert RENDERING_NOTE in request.system_text
     await model.reply(request, Text("SEED_OK"))
     await first.until(events.turn_completed)
     await first.stop_runner_session("stop-instructions")
@@ -60,6 +74,7 @@ async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
         await second.send("input-2", "Reply with exactly: RESUMED_OK")
         request = await model.request()
         assert INSTRUCTIONS in request.system_text
+        assert RENDERING_NOTE in request.system_text
         await model.reply(request, Text("RESUMED_OK"))
         await second.until(events.turn_completed)
 

@@ -28,6 +28,7 @@ from agentplane.native.claude.blocks import Block, TextBlock, ThinkingBlock, Too
 from agentplane.protocol import event_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.config import ClaudeLaunch
+from agentplane.runner.rendering_note import with_rendering_note
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -91,7 +92,7 @@ class ClaudeAdapter(HarnessAdapter):
 
     async def handshake(self) -> str:
         # Every start sends the session's standing instructions, so a resumed harness has them too.
-        response = await self.harness.initialize(instructions=self.session.record.instructions)
+        response = await self.harness.initialize(instructions=with_rendering_note(self.session.record.instructions))
         if not isinstance(response.response, wire.ControlResponseFrame):
             raise RuntimeError(f"Claude initialization failed: {response.response}")
         return self._native_session_id
