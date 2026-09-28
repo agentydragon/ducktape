@@ -32,6 +32,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import (
     ClusterSecretStoreRef,
     cluster_remote_data,
 )
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "haku-mailbox"
 NAMESPACE = "haku-mailbox"
@@ -51,6 +52,10 @@ _IMAGE = "git.allegedly.works/ducktape-ci/stalwart:unset"
 _SMTP_PORT = 2525
 _HTTP_PORT = 8080
 _IMAP_PORT = 1143
+# Stalwart's HTTP listener: JMAP and the management API.
+_HTTP = ServiceRef(
+    name=NAME, port=Port(name="http", number=_HTTP_PORT), pods=Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items()))
+)
 _CONFIG_DIR = "/etc/stalwart"  # where CONFIG_MAP is mounted
 _INITIALIZE = "initialize.sh"
 _SERVER_CONFIG = "config.json"
@@ -453,8 +458,7 @@ def chart(app: App) -> Chart:
             },
         ),
         hostnames=["haku-mailbox.allegedly.works"],
-        backend=NAME,
-        port=_HTTP_PORT,
+        backend=_HTTP,
         timeout="60s",
         hsts=False,
         listener=None,

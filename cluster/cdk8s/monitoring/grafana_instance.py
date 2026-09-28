@@ -42,9 +42,16 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.grafana_operator.grafana import Grafana
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAME = "grafana"
 _NAMESPACE = "monitoring"
+# The Service grafana-operator creates for the Grafana named `_NAME`.
+_SERVICE = ServiceRef(
+    name=f"{_NAME}-service",
+    port=Port(name="grafana", number=3000),
+    pods=Pods(namespace=_NAMESPACE, labels=(("app", _NAME),)),
+)
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/grafana-instance"
 _DB_NAME = "grafana-db-ovh"
 # The credentials CNPG generated for the retired `grafana-db`, which this cluster was cloned
@@ -180,8 +187,7 @@ def _grafana(chart: Chart) -> None:
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["grafana.allegedly.works"],
-        backend="grafana-service",
-        port=3000,
+        backend=_SERVICE,
         hsts=False,
         listener=None,
     )
