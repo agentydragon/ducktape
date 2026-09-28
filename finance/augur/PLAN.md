@@ -38,35 +38,40 @@ Every change is checked against an independent calculation, never a copy of the 
 
 ### Economy model trust
 
-Goal: at least one economy model other than historical replay that can defensibly answer a
-30–60 year FIRE question. None is calibrated in any sense today: no economy model has a PIT,
-coverage or held-out test. `x/models/structural_macro.py` is Gaussian and US-only, with equity
-independent of inflation and no parameter uncertainty; historical replay has about three
-independent 30-year windows and only US history.
+Goal: at least one economy model other than historical replay whose 30–60 year trajectories are
+believable and whose case for being sensible holds up. At that horizon trust is a reasoned
+argument, not a statistical certificate: a century of US data holds about three independent
+30-year windows, and no record can tell a 1% tail from a 5% one. Sanity checks catch the absurd;
+the rest is judged the way one picks a model on little data: plausible assumptions, the simplest
+structure that produces the behavior a decision depends on, and numbers that look right beside
+history and published results. Today `x/models/structural_macro.py` is Gaussian and US-only,
+with equity independent of inflation and no parameter uncertainty, and historical replay has
+only US history.
 
 - **CARDS:** each model in `x/models/` says in prose beside its code what it assumes, what it
-  leaves out, its data window and the evidence behind it.
-- **SANITY:** a check any caller can run on sampled trajectories that rejects absurd output
-  (an economy growing 10,000× in two years). Starts from `x/models/sample_sanity.py`, which
-  only the app calls today.
-- **BOOT:** vet the US stationary block bootstrap (held #8142). It keeps joint crashes and
-  stagflation, but recombines only US history.
+  leaves out, its data window, and why those choices are sensible for a 30–60 year household
+  question.
+- **SANITY:** a check any caller can run on sampled trajectories that rejects absurd output: an
+  economy growing 10,000× in two years, a material chance of prices rising tenfold in a year.
+  Starts from `x/models/sample_sanity.py`, which only the app calls today.
+- **BOOT:** vet the US stationary block bootstrap (held #8142; #5510). It keeps joint crashes
+  and stagflation, but recombines only US history.
 - **PANEL** (after BOOT): a multi-country block bootstrap on the Jordà–Schularick–Taylor
   macrohistory panel, which partly corrects US survivorship and gives an ex-US equity leg.
 - **REGIME:** regime-switching lognormal equity (RSLN2) with the macro VAR, under parameter
-  uncertainty: the first model with tails beyond history.
-- **SCORE:** a model leaves `x/` only after pre-registered checks: 1–5 year PIT and coverage
-  on held-out origins with dependence-aware uncertainty; 5–10 year plausibility against
-  published tables (the American Academy of Actuaries' wealth factors,
-  Anarkulova–Cederburg–O'Doherty's developed-market results); and at 30–60 years, results
-  reported as a bracket across the vetted models and named stresses, saying whether a
-  decision survives it. Existing fits and simple controls are compared on the same
-  observables, origins and held-out periods, or ranking is explicitly refused.
-- **READY** (after ROBUST and any adopted model change): review held-out multi-horizon joint
-  equity/rates/inflation behavior against agreed tolerances before claiming forecast fidelity.
-  Candidates: #5487 (joint fit), #5488 (regimes), #5510 (resampling), #5835 (muni curve); the
-  two-point Treasury curve beyond ten years (`model/bond_fund.py`, #5834 closed without a
-  recorded reason) needs a decision whether to pursue it.
+  uncertainty (#5487, #5488): tails beyond history. Worth its complexity only if a decision
+  turns on the bootstraps' floor at history's worst month.
+- **ADOPT:** a model leaves `x/` when its card's argument survives review, it passes SANITY,
+  and its numbers are believable beside history and published results (the American Academy
+  of Actuaries' wealth factors, Anarkulova–Cederburg–O'Doherty's developed-market withdrawal
+  results). Short-horizon checks on held-out data are welcome where the data allows, not a
+  gate.
+- **BRACKET:** a 30–60 year answer is reported across the adopted models and named stresses
+  (Japan after 1990, the US 1970s), saying whether the decision survives each; where the
+  models disagree, the disagreement is the finding.
+- **CURVES:** a muni yield curve (#5835), and a decision whether to pursue a Treasury curve
+  beyond the two points `model/bond_fund.py` interpolates (#5834 closed without a recorded
+  reason).
 
 ### Taxes (closing the gaps SPEC lists in its supported tax scope)
 
@@ -188,7 +193,7 @@ per location over a purchase, hold, rent-out and sale horizon.
   conventions before its result is labeled a reproduction.
 - **RUN** (after BIND, the tax slices and MIDYEAR): public synthetic-lot household example of
   a spending-flex × allocation grid on shared paths, extending `x/joint_spending_allocation`.
-- **ROBUST** (after RUN and SCORE): select RUN's policies under each model, evaluate them on
+- **ROBUST** (after RUN and ADOPT): select RUN's policies under each model, evaluate them on
   fresh draws under the others.
 
 ### Gated on an owner decision
