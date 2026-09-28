@@ -345,6 +345,19 @@ function EvidencePanel({ threadId, entity }: { threadId: string; entity: ThreadE
   return open ? <EvidencePageView key={id} threadId={threadId} entity={entity} /> : <></>;
 }
 
+/** A sent message once the server has accepted it and is working on it, but before the harness's
+ * own confirmed_input entity lands -- the moment the message is fully ordered in history (it has a
+ * cursor) and no longer needs the composer's Retry/Dismiss affordances, so it can read as the
+ * eventual bubble rather than as a command awaiting an outcome. */
+function pendingSentMessage(entity: ThreadEntity): boolean {
+  return (
+    entity.entityKind === "command" &&
+    "outcome" in entity.state &&
+    entity.state.operation === "submit_input" &&
+    entity.state.outcome === "pending"
+  );
+}
+
 export function EntityCard({
   threadId,
   entity,
@@ -358,13 +371,18 @@ export function EntityCard({
   // always closed, for anything but a reasoning step with a body to disclose.
   const reasoningTextRef = "kind" in entity.state && entity.state.kind === ItemKind.REASONING ? entity.textRef : null;
   const [reasoningOpen] = useRetainedDisclosure(reasoningTextRef && payloadDisclosureId(reasoningTextRef));
-  if (entity.entityKind === "confirmed_input") {
+  if (entity.entityKind === "confirmed_input" || pendingSentMessage(entity)) {
+    const pending = entity.entityKind !== "confirmed_input";
     return (
       <Group justify="flex-end" align="flex-start" gap="xs" wrap="nowrap">
         {/* The bubble has no header row: beside its top corner, in the width it leaves free, the
             icon neither grows the bubble nor covers its text. */}
         <EvidenceToggle entity={entity} />
-        <Paper className="agentplane-user-bubble" p="sm">
+        <Paper
+          className="agentplane-user-bubble"
+          p="sm"
+          style={pending ? { fontStyle: "italic", opacity: 0.6 } : undefined}
+        >
           <Body reference={entity.inputRef} format="text" />
           <EvidencePanel threadId={threadId} entity={entity} />
         </Paper>
@@ -695,6 +713,10 @@ function SelectedCommandRows({
     <Stack role="region" aria-label="Pending commands" gap="xs">
       {commands.map((value) => {
         const row = byId.get(value.command.commandId);
+        // Once the server has admitted the command and is still working on it, it has a cursor and
+        // renders inline in history as a pending message bubble instead -- same as any other
+        // pending submitInput command, whether or not this browser is the one tracking it locally.
+        if (row && pendingSentMessage(row)) return null;
         const admitted = row !== undefined || value.admission !== null;
         const terminal = row && "outcome" in row.state && ["failed", "noop"].includes(row.state.outcome);
         return (
@@ -750,6 +772,14 @@ function commandOutcomeLabel(operation: string, outcome: string): string {
 // How close the top of the loaded rows comes to the viewport's before the page before them loads:
 // a full screen, so the load lands before the reader can actually see the top -- reading up
 // through a long thread feels like an ordinary lazy-loaded scroll, not a stop-and-wait at the edge.
+//
+// This makes eager pagination genuinely viewport-height-relative: shrinking chrome elsewhere on the
+// page (the topbar, the composer) makes this taller, so the same thread settles one page further
+// into its backlog. PR #8308's topbar change tripped this on two E2E tests that assumed a fixed
+// fetch count -- not a flake, just this threshold moving. A test asserting an exact older-page fetch
+// count, or relying on a fixed-size synthetic backlog outlasting a fixed number of scroll-to-top
+// cycles, is coupled to this and needs headroom (see test_thread_window_browser.py's two tests fixed
+// there) rather than an assumption pinned to today's chrome height.
 const loadOlderWithin = (element: HTMLDivElement): number => element.clientHeight;
 
 // Traces VirtualizedHistory's scroll-anchor bookkeeping to the console: off by default (this ran
@@ -1287,7 +1317,7 @@ function ProjectedSessionBody({
   }, [thread.harness]);
   const rows = historyRows(
     entities
-      .filter((row) => ["item", "confirmed_input", "lifecycle"].includes(row.entityKind))
+      .filter((row) => ["item", "confirmed_input", "lifecycle"].includes(row.entityKind) || pendingSentMessage(row))
       .sort((left, right) =>
         decimalBigInt(left.cursor) < decimalBigInt(right.cursor)
           ? -1
@@ -1299,7 +1329,10 @@ function ProjectedSessionBody({
   const localCommandIds = new Set(commands.local.commands.map((value) => value.command.commandId));
   const projectedCommands = entities.filter(
     (row): row is ThreadEntity & { state: Extract<ThreadEntity["state"], { outcome: string }> } =>
-      row.entityKind === "command" && "outcome" in row.state && !localCommandIds.has(row.entityId)
+      row.entityKind === "command" &&
+      "outcome" in row.state &&
+      !localCommandIds.has(row.entityId) &&
+      !pendingSentMessage(row)
   );
   const hasPendingCommands = projectedCommands.length > 0;
   const selectedCommandIds = commands.local.commands.slice(0, 128);
@@ -1564,6 +1597,17 @@ function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean
   return `Last observed Sandbox state: ${sandbox.state}. Showing retained Thread history; controls are disabled.`;
 }
 
+function harnessLabel(harness: ThreadView["harness"]): string {
+  switch (harness) {
+    case "HARNESS_CLAUDE":
+      return "Claude";
+    case "HARNESS_CODEX":
+      return "Codex";
+    default:
+      return "Unknown harness";
+  }
+}
+
 export function ProjectedSession({ threadId }: { threadId: string }): JSX.Element {
   const sync = useThreadSync();
   const [thread, setThread] = useState<ThreadView | null>(null);
@@ -1584,7 +1628,7 @@ export function ProjectedSession({ threadId }: { threadId: string }): JSX.Elemen
           </Box>
           {thread && (
             <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-              {thread.sandbox}
+              {thread.sandbox} · {harnessLabel(thread.harness)}
             </Text>
           )}
         </Group>

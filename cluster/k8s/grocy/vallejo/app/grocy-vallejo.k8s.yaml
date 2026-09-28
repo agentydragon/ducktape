@@ -2,10 +2,10 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
-    goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: auto
     rbac.ducktape.io/agent-readable-logs: "true"
   name: grocy-vallejo
+spec: {}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -139,4 +139,4 @@ spec:
     port: 8000
   sourcePVC: grocy-config-ovh
   trigger:
-    schedule: 29 */6 * * *
+    schedule: 23 */6 * * *

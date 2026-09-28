@@ -68,10 +68,14 @@ from cluster.cdk8s.litellm.config import ConfigMapSpec, proxy_configs
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 APP_DIR = f"{HAND_WRITTEN_ROOT}/litellm/app"
 _CONTAINER_PORT = 4000
+# The proxy's admin key: its env and its ServiceMonitor's scrape bearer.
+_MASTER_KEY = SecretRef(namespace="litellm", name="litellm-master-key").key("api-key")
 _CONFIG_DIR = "/etc/litellm"
 
 
@@ -137,6 +141,14 @@ class ProxySpec:
         return self.config.namespace
 
 
+def service(spec: ProxySpec) -> ServiceRef:
+    return ServiceRef(
+        name=spec.name,
+        port=Port(name="http", number=_CONTAINER_PORT),
+        pods=Pods(namespace=spec.namespace, labels=(("app.kubernetes.io/name", spec.name),)),
+    )
+
+
 def _base_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
     return (_LiteralEnv("HOST", "0.0.0.0"), _LiteralEnv("PORT", "4000"), *entries)
 
@@ -159,7 +171,7 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
             image_name="git.allegedly.works/ducktape-ci/tana-litellm-proxy",
             replicas=2,
             env=_langfuse_env(
-                _SecretEnv("LITELLM_MASTER_KEY", "litellm-master-key", "api-key"),
+                _SecretEnv("LITELLM_MASTER_KEY", _MASTER_KEY.secret.name, _MASTER_KEY.key),
                 _SecretEnv("DATABASE_URL", "litellm-db-app", "uri"),
                 _SecretEnv("LITELLM_SALT_KEY", "litellm-salt-key", "key"),
                 _SecretEnv("ANTHROPIC_API_KEY", "litellm-anthropic-key", "api-key"),
@@ -279,7 +291,7 @@ class LiteLLMProxy(Construct):
         return result
 
     def _add_deployment(self, config_map: ConfigMap, service_account: ServiceAccount | None) -> Deployment:
-        labels = {"app.kubernetes.io/name": self.spec.name}
+        labels = service(self.spec).pods.selector
         deployment = Deployment(
             self,
             "deployment",
@@ -371,8 +383,7 @@ class LiteLLMProxy(Construct):
             "httproute",
             metadata=ApiObjectMetadata(name=self.spec.name, namespace=self.spec.namespace),
             hostnames=[hostname],
-            backend=self.spec.name,
-            port=4000,
+            backend=service(self.spec),
             timeout="600s",
             hsts=False,
             listener=None,
@@ -394,7 +405,7 @@ class LiteLLMServiceMonitor(Construct):
             selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": "litellm"}),
             endpoints=[
                 Endpoint.bearer_token_secret(
-                    port="http", secret_name="litellm-master-key", key="api-key", scrape_timeout="10s"
+                    port="http", secret_name=_MASTER_KEY.secret.name, key=_MASTER_KEY.key, scrape_timeout="10s"
                 )
             ],
         )

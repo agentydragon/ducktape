@@ -24,11 +24,11 @@ metadata:
     goldilocks.fairwinds.com/vpa-resource-policy: |
       { "containerPolicies": [ { "containerName": "*", "controlledValues": "RequestsOnly", "minAllowed": { "cpu": "100m", "memory": "128Mi" } } ] }
   labels:
-    goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: auto
     name: airlock
     rbac.ducktape.io/agent-readable-logs: "true"
   name: airlock
+spec: {}
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password

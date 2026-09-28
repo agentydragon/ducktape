@@ -18,6 +18,7 @@ from cluster.cdk8s import ducktape_flux, terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.flux.git_repository import GitRepository
+from cluster.cdk8s.secret_ref import SecretRef
 
 NAME = "infra-drift"
 OUTPUT_DIR = f"{GENERATED_ROOT}/infra-drift"
@@ -113,7 +114,10 @@ def chart(app: App) -> Chart:
             # narrow one: tf-runner-role is a ClusterRole granting secret CRUD in
             # every namespace, so any runner can already read this very Secret — a
             # single-purpose key would be ceremony, not containment.
-            terraform.secret_env("SOPS_AGE_KEY", "sops-age-cluster-secrets", "age.agekey")
+            terraform.secret_env(
+                "SOPS_AGE_KEY",
+                SecretRef(namespace=terraform.NAMESPACE, name="sops-age-cluster-secrets").key("age.agekey"),
+            )
         ],
     )
     return chart

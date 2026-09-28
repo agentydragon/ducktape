@@ -12,6 +12,8 @@ from cluster.validation.checks import (
     check_egress_bindings_resolve_policies,
     check_external_credential_ownership,
     check_forgejo_image_namespace_reflection,
+    check_goldilocks_explicit_decision,
+    check_goldilocks_namespace_labels,
 )
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.flux import FluxKustomizationSpec
@@ -221,6 +223,44 @@ def test_external_credential_namespace_store_is_rejected(tmp_path: Path) -> None
     cluster = _external_creds_cluster(tmp_path, [_source_binding()], [_consumer_store()])
     errors = check_external_credential_ownership(cluster, tmp_path)
     assert any("use external-secrets-config's shared ClusterSecretStore" in error for error in errors)
+
+
+_VPA_UPDATE_MODE = "goldilocks.fairwinds.com/vpa-update-mode"
+_GOLDILOCKS_ENABLED = "goldilocks.fairwinds.com/enabled"
+
+
+def _namespace(labels: dict[str, str]) -> dict:
+    return {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "test-ns", "labels": labels}}
+
+
+@pytest.mark.parametrize(
+    ("labels", "flagged"),
+    [
+        ({_VPA_UPDATE_MODE: "auto"}, False),
+        ({_VPA_UPDATE_MODE: "auto", _GOLDILOCKS_ENABLED: "true"}, False),
+        ({_VPA_UPDATE_MODE: "auto", _GOLDILOCKS_ENABLED: "false"}, True),
+    ],
+)
+def test_update_mode_contradicts_only_an_opt_out(labels: dict[str, str], flagged: bool) -> None:
+    assert bool(check_goldilocks_namespace_labels(_cluster_with(_namespace(labels)))) is flagged
+
+
+@pytest.mark.parametrize(
+    ("path", "labels", "flagged"),
+    [
+        ("cluster/generated/app/app.k8s.yaml", {}, True),
+        ("cluster/k8s/app/app.k8s.yaml", {_GOLDILOCKS_ENABLED: "true"}, True),
+        ("cluster/k8s/app/app.k8s.yaml", {_VPA_UPDATE_MODE: "off"}, False),
+        ("cluster/generated/app/app.k8s.yaml", {_GOLDILOCKS_ENABLED: "false"}, False),
+        # Hand-written: a sibling file beside generated ones.
+        ("cluster/k8s/app/namespace.yaml", {}, False),
+    ],
+)
+def test_every_generated_namespace_states_a_goldilocks_decision(
+    tmp_path: Path, path: str, labels: dict[str, str], flagged: bool
+) -> None:
+    cluster = ParsedCluster(source_resources={tmp_path / path: parse_k8s_resources([_namespace(labels)])})
+    assert bool(check_goldilocks_explicit_decision(cluster, tmp_path)) is flagged
 
 
 if __name__ == "__main__":

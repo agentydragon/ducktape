@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
-    ConfigMap,
     ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
@@ -39,13 +38,14 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import cli_args, env_name, settings_file
+from util.settings_contract import cli_args, env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "agentplane-actions"
@@ -53,7 +53,6 @@ _ACTIONS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-action-service"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-action-service-migrate"
 CONTAINER_PORT = 8080
 _LABELS = {"app.kubernetes.io/name": _NAME}
-_SETTINGS_DIR = "/etc/agentplane-actions"
 _MCP_PATHS = (
     "/mcp",
     "/.well-known/oauth-authorization-server",
@@ -64,6 +63,15 @@ _MCP_PATHS = (
     "/revoke",
     "/auth/callback",
 )
+
+
+def service(namespace: str) -> ServiceRef:
+    """The Action Service in one environment's namespace."""
+    return ServiceRef(
+        name=_NAME,
+        port=Port(name="http", number=CONTAINER_PORT),
+        pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())),
+    )
 
 
 class Actions(Construct):
@@ -77,8 +85,20 @@ class Actions(Construct):
 
         service_account = self._add_service_account()
         self._add_rbac(service_account)
-        settings_cm = self._add_settings()
-        deployment = self._add_deployment(service_account, settings_cm)
+        # These leaves come from container environment variables, not the settings file.
+        supplied: list[tuple[str, ...]] = [("database_url",)]
+        if env.actions.web_push_secret_name is not None:
+            supplied.append(("web_push", "private_key_pem"))
+        settings = SettingsFile(
+            self,
+            "settings",
+            metadata=ApiObjectMetadata(name="agentplane-actions-settings", namespace=env.namespace),
+            model=Settings,
+            content=env.actions.settings.model_dump(mode="json", exclude_unset=True),
+            path="/etc/agentplane-actions/settings.yaml",
+            supplied=supplied,
+        )
+        deployment = self._add_deployment(service_account, settings)
         self._add_service(deployment)
         self._add_http_route()
         self._add_network_policy()
@@ -156,26 +176,6 @@ class Actions(Construct):
             role=Role.from_role_name(self, "role-ref", _NAME),
         ).add_subjects(service_account)
 
-    def _add_settings(self) -> ConfigMap:
-        # These values are supplied by container environment variables, not the ConfigMap.
-        supplied: list[tuple[str, ...]] = [("database_url",)]
-        if self.env.actions.web_push_secret_name is not None:
-            supplied.append(("web_push", "private_key_pem"))
-        return ConfigMap(
-            self,
-            "settings",
-            metadata=ApiObjectMetadata(name="agentplane-actions-settings", namespace=self.env.namespace),
-            data={
-                "settings.yaml": yaml_config(
-                    settings_file(
-                        Settings,
-                        self.env.actions.settings.model_dump(mode="json", exclude_unset=True),
-                        supplied=supplied,
-                    )
-                )
-            },
-        )
-
     def _database_env(self) -> dict[str, EnvValue]:
         postgres_actions = Secret.from_secret_name(self, "postgres-actions-secret", "postgres-actions")
         return {
@@ -198,7 +198,6 @@ class Actions(Construct):
 
     def _container_env(self) -> dict[str, EnvValue]:
         env = self._database_env()
-        env[CONFIG_FILE_ENV] = EnvValue.from_value(f"{_SETTINGS_DIR}/settings.yaml")
         if self.env.actions.web_push_secret_name is not None:
             web_push_secret = Secret.from_secret_name(self, "web-push-secret", self.env.actions.web_push_secret_name)
             env[env_name(Settings, "web_push", "private_key_pem")] = EnvValue.from_secret_value(
@@ -215,7 +214,7 @@ class Actions(Construct):
             )
         return env
 
-    def _add_deployment(self, service_account: ServiceAccount, settings_cm: ConfigMap) -> Deployment:
+    def _add_deployment(self, service_account: ServiceAccount, settings: SettingsFile) -> Deployment:
         namespace = self.env.namespace
         env = self._container_env()
         secret_reload = ",".join(["agentplane-mcp-oauth", *self.env.actions.extra_reload_secrets])
@@ -231,7 +230,7 @@ class Actions(Construct):
                     "secret.reloader.stakater.com/reload": secret_reload,
                     # No configMapGenerator hash rolls the Deployment on settings changes
                     # (cluster/docs/cdk8s.md); reloader does.
-                    "configmap.reloader.stakater.com/reload": "agentplane-actions-settings",
+                    "configmap.reloader.stakater.com/reload": settings.config_map.name,
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
@@ -279,9 +278,8 @@ class Actions(Construct):
             default_mode=0o440,
             items={key: PathMapping(path=key) for key in self.env.actions.oauth_secret_items},
         )
-        settings_volume = Volume.from_config_map(self, "settings-volume", settings_cm)
         deployment.containers[0].mount("/etc/agentplane-mcp", oauth_volume, read_only=True)
-        deployment.containers[0].mount(_SETTINGS_DIR, settings_volume, read_only=True)
+        settings.mount_into(deployment.containers[0], env=CONFIG_FILE_ENV)
         if self.env.actions.github_mcp_client_secret_name is not None:
             github_secret = Secret.from_secret_name(
                 self, "github-mcp-client-secret", self.env.actions.github_mcp_client_secret_name
@@ -328,8 +326,7 @@ class Actions(Construct):
             "httproute",
             metadata=ApiObjectMetadata(name=f"{_NAME}-mcp", namespace=self.env.namespace),
             hostnames=[self.env.actions.hostname],
-            backend=_NAME,
-            port=CONTAINER_PORT,
+            backend=service(self.env.namespace),
             paths=_MCP_PATHS,
             timeout="3600s",
         )
