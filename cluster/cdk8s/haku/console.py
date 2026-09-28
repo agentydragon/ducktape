@@ -57,7 +57,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import node_scheduling, pod_policy
+from cluster.cdk8s import node_scheduling, pod_policy, service_ref
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
@@ -83,6 +83,12 @@ _STATIC_PORT = 8081
 _STATIC_SERVICE_PORT = 8080
 LABELS = {"app.kubernetes.io/name": NAME}
 _STATIC_LABELS = {"app.kubernetes.io/name": STATIC_NAME}
+_STATIC = service_ref.ServiceRef(
+    name=STATIC_NAME,
+    port=service_ref.Port(name="http", number=_STATIC_SERVICE_PORT),
+    pods=service_ref.Pods(namespace=NAMESPACE, labels=tuple(_STATIC_LABELS.items())),
+    target_port=_STATIC_PORT,
+)
 _CONFIG_MAP_NAME = "haku-console-config"
 _CONFIG_DIR = "/etc/haku-console/config"
 # Hand-written siblings carrying Flux image-automation markers: the static image's tag,
@@ -491,8 +497,7 @@ class Console(Construct):
             "httproute",
             metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
             hostnames=[HOSTNAME],
-            backend=STATIC_NAME,
-            port=_STATIC_SERVICE_PORT,
+            backend=_STATIC,
             timeout="360s",
         )
 

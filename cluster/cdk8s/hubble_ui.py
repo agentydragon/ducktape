@@ -12,6 +12,8 @@ from __future__ import annotations
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
+from cluster.cdk8s import cilium
+
 NAME = "hubble-ui"
 _PORT = 8081
 
@@ -40,7 +42,7 @@ def chart(app: App) -> Chart:
             ingress=[
                 _from("authentik", {"app.kubernetes.io/component": "server", "app.kubernetes.io/name": "authentik"}),
                 # Gatus: health check probes
-                _from("gatus", {"app.kubernetes.io/name": "gatus"}),
+                _from(cilium.PROBER.namespace, cilium.PROBER.selector),
             ],
         ),
     )
