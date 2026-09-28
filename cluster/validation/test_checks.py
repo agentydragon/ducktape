@@ -12,6 +12,7 @@ from cluster.validation.checks import (
     check_egress_bindings_resolve_policies,
     check_external_credential_ownership,
     check_forgejo_image_namespace_reflection,
+    check_goldilocks_explicit_decision,
     check_goldilocks_namespace_labels,
 )
 from cluster.validation.cluster import ParsedCluster
@@ -242,6 +243,24 @@ def _namespace(labels: dict[str, str]) -> dict:
 )
 def test_update_mode_contradicts_only_an_opt_out(labels: dict[str, str], flagged: bool) -> None:
     assert bool(check_goldilocks_namespace_labels(_cluster_with(_namespace(labels)))) is flagged
+
+
+@pytest.mark.parametrize(
+    ("path", "labels", "flagged"),
+    [
+        ("cluster/generated/app/app.k8s.yaml", {}, True),
+        ("cluster/k8s/app/app.k8s.yaml", {_GOLDILOCKS_ENABLED: "true"}, True),
+        ("cluster/k8s/app/app.k8s.yaml", {_VPA_UPDATE_MODE: "off"}, False),
+        ("cluster/generated/app/app.k8s.yaml", {_GOLDILOCKS_ENABLED: "false"}, False),
+        # Hand-written: a sibling file beside generated ones.
+        ("cluster/k8s/app/namespace.yaml", {}, False),
+    ],
+)
+def test_every_generated_namespace_states_a_goldilocks_decision(
+    tmp_path: Path, path: str, labels: dict[str, str], flagged: bool
+) -> None:
+    cluster = ParsedCluster(source_resources={tmp_path / path: parse_k8s_resources([_namespace(labels)])})
+    assert bool(check_goldilocks_explicit_decision(cluster, tmp_path)) is flagged
 
 
 if __name__ == "__main__":

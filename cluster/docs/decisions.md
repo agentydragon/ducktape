@@ -428,7 +428,7 @@ manifests stay with their project under `deploy/` (see <../AGENTS.md> § "Parked
   ledger viewer. Its `budget` namespace remains active at
   `cluster/generated/forgejo/budget-namespace/` because it holds the ESO copy of the ledger's
   git credentials (`budget-ledger-git-creds`). The underlying ledger data (a Forgejo git
-  repo provisioned by `cluster/generated/forgejo/budget-ledger/`) is untouched. Its Authentik
+  repo provisioned by `tf/gitops/budget-ledger/`) is untouched. Its Authentik
   SSO blueprint was tombstoned (`fava-sso-retire.yaml`, replacing `fava-sso.yaml`) per
   <sso.md> § "Deleting Authentik providers or applications".
 - **augur-evidence**: `cluster/k8s/parked/augur-evidence/` — retired Forgejo evidence
