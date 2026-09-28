@@ -46,9 +46,7 @@ def test_public_route_exposes_protocol_paths_only(
     assert paths >= _MCP_PROTOCOL_PATHS
 
 
-def test_staging_exposes_only_the_shared_cimd_path(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
+def test_staging_exposes_only_the_shared_cimd_path(agentplane_manifests: dict[str, list[dict[str, Any]]]) -> None:
     route = one(
         doc
         for doc in agentplane_manifests["agentplane-staging"]

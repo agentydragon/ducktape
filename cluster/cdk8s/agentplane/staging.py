@@ -104,10 +104,7 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
         public_base_url=f"https://{_HOSTNAME}",
         allowed_push_hosts=list(_WEB_PUSH_ALLOWED_HOSTS),
     ),
-    mcp_client_metadata=McpClientMetadataSettings(
-        url=_MCP_CLIENT_METADATA_URL,
-        client_name="Agentplane staging",
-    ),
+    mcp_client_metadata=McpClientMetadataSettings(url=_MCP_CLIENT_METADATA_URL, client_name="Agentplane staging"),
     mcp_servers={
         "github": McpOAuthServer(
             server_id="github",

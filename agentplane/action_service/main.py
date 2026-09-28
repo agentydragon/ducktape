@@ -233,10 +233,7 @@ async def async_main(settings: Settings) -> None:
         connections = ConnectionAuthority(make_sessionmaker(engine), policy_index)
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
         mcp_linkage = McpLinkageAuthority(
-            make_sessionmaker(engine),
-            settings.mcp_servers,
-            client_metadata=settings.mcp_client_metadata,
-            engine=engine,
+            make_sessionmaker(engine), settings.mcp_servers, client_metadata=settings.mcp_client_metadata, engine=engine
         )
         await mcp_linkage.cleanup_removed_servers()
         await mcp_linkage.start_refresh_loop()
