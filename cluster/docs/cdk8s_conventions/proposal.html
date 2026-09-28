@@ -1060,8 +1060,8 @@
     <div class="meta">
       <span
         >baseline
-        <b>origin/devel aaaa3a5b90; cleanup wave re-measured at 2411690fa3; examples synthesized at 85fb8d0d</b></span
-      ><span>date <b>2026-09-27</b></span
+        <b>origin/devel f84301e72c; examples synthesized there, E4, E5, E7 and E2&#39;s node at 85fb8d0d</b></span
+      ><span>date <b>2026-09-28</b></span
       ><span>branch <b>claude/jolly-darwin-al6qse</b></span
       ><span>status <b>awaiting your decisions</b></span>
     </div>
@@ -1331,10 +1331,11 @@
                       drop-ALL capabilities on each init and main container.
                     </li>
                     <li>
-                      <code>place</code> sets the <code>Placement</code>&#39;s nodeSelector, and with
+                      <code>place</code> sets the <code>Placement</code>&#39;s nodeSelector (on devel it still renders
+                      the selector as a required node affinity; decision 8 flips it), and with
                       <code>tolerate_control_plane</code> adds <code>CONTROL_PLANE_TOLERATION</code> and
-                      <code>PREFER_WORKERS</code>, so the Pod uses control-plane nodes only when workers are full. It
-                      raises on a pod spec that is already placed.
+                      <code>PREFER_WORKERS</code> (the latter is #8244), so the Pod uses control-plane nodes only when
+                      workers are full. It raises on a pod spec that is already placed.
                     </li>
                     <li>An unknown kind raises <code>KeyError</code>.</li>
                   </ul>
@@ -1631,7 +1632,7 @@
           <div class="sub">
             <div class="rich">
               <p>
-                Root causes 5 and 7. The 22 missing Orphans and the store-allowlist outages both came from restated
+                Root causes 5 and 7. The 21 missing Orphans and the store-allowlist outages both came from restated
                 facts.
               </p>
             </div>
@@ -1691,7 +1692,7 @@
               <p>
                 Readiness edges turn a fault that heals by retry into a gate that propagates, and the tiny units they
                 produced cost reconcile time and I/O, which is the owner&#39;s reason for the change (#7094). On devel
-                aaaa3a5b90, 35 of 249 edges are not admission edges (62 if the 27 direct <code>kyverno</code> edges
+                f84301e72c, 35 of 249 edges are not admission edges (62 if the 27 direct <code>kyverno</code> edges
                 count as runtime, as decision 13 recommends), 94 of the 123 <code>wait: true</code> nodes are
                 unsuspended and gate nothing admission needs, and 59 of 165 measurable units render 3 objects or fewer.
               </p>
@@ -1806,7 +1807,7 @@
                       <code>Lazy</code> raises a jsii <code>TypeError</code> in any typed slot (#8067) and works only in
                       <code>any</code>-typed ones such as HelmRelease <code>values</code>. A
                       <code>to_json</code> override edits wire JSON after the generated mapping, and a resolver is
-                      app-global and would have to reach 10 <code>App(</code> sites.
+                      app-global and would have to reach 9 <code>App(</code> sites.
                     </p>
                   </div>
                 </td>
@@ -2013,7 +2014,7 @@
                 <td>
                   <div class="rich">
                     <p>
-                      <code>cluster/cdk8s/AGENTS.md:8-13</code> and <code>cluster/cdk8s/TODO.md:40-41</code> forbid it.
+                      <code>cluster/cdk8s/AGENTS.md:8-13</code> and <code>cluster/cdk8s/TODO.md:41-42</code> forbid it.
                       A lookup resolved at synth hides which module a fact came from.
                     </p>
                   </div>
@@ -2207,7 +2208,7 @@
                   <div class="rich">
                     <p>
                       Today&#39;s join: <code>SOPS_DECRYPTION</code> passed by hand at 22 nodes, 39 health-check entries
-                      typed out, and 22 of 40 stateful units without <code>deletionPolicy: Orphan</code>.
+                      typed out, and 21 of 40 stateful units without <code>deletionPolicy: Orphan</code>.
                     </p>
                   </div>
                 </td>
@@ -3153,8 +3154,8 @@
               <p>
                 A helper counts once for each mechanism it uses, so a construct class that also patches and mutates
                 appears in three rows. The counts come from the inventory step, which classified every shared helper
-                from its source; each helper a later commit added, removed or re-shaped was re-classified on
-                <code>2411690fa3</code>.
+                from its source; each helper a later commit added, removed or re-shaped was re-classified, through
+                <code>f84301e72c</code>.
               </p>
             </div>
           </div>
@@ -3317,7 +3318,7 @@
                 <code>flux.health_checks</code> call site, which feeds 2 nodes;
               </li>
               <li>
-                22 of 40 stateful Kustomizations lack the Orphan that
+                21 of 40 stateful Kustomizations lack the Orphan that
                 <code>cluster/cdk8s/AGENTS.md:16-20</code> requires.
               </li>
             </ul>
@@ -3390,7 +3391,7 @@
           <div class="rich">
             <p>
               The Flux graph was built for readiness, so it grew tiny units and <code>wait</code> everywhere; its edges
-              are mostly admission edges. On devel aaaa3a5b90 there are 171 Kustomizations and 249
+              are mostly admission edges. On devel f84301e72c there are 171 Kustomizations and 249
               <code>dependsOn</code> edges:
             </p>
             <ul>
@@ -3448,7 +3449,7 @@
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
             >The writer derives decryption for its directories; elsewhere <code>SOPS_DECRYPTION</code> is passed by hand
-            at 22 nodes and <code>sops_decryption</code> at 1; 39 health-check entries are typed out; 22 of 40 stateful
+            at 22 nodes and <code>sops_decryption</code> at 1; 39 health-check entries are typed out; 21 of 40 stateful
             Kustomizations lack Orphan.</span
           >
         </div>
@@ -3519,7 +3520,7 @@
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
             >Carried three ways: constructor keywords, <code>pod_policy.harden()</code> on the 20 cdk8s-plus workloads,
-            and literal structs on raw and CRD pod specs; 39 containers in 27 generated workloads state no
+            and literal structs on raw and CRD pod specs; 43 containers in 28 generated workloads state no
             securityContext.</span
           >
         </div>
@@ -3679,7 +3680,7 @@
           <span class="nid">N28</span><span class="nname">Uptime probes and DNS from exposed services</span
           ><span class="chip chip-planned">planned</span
           ><span class="ntoday"
-            >Gatus probes are hand-typed URLs in <code>cluster/k8s/gatus/config.yaml</code> (for example 192-204 for the
+            >Gatus probes are hand-typed URLs in <code>cluster/k8s/gatus/config.yaml</code> (for example 194-206 for the
             grocy households); <code>cluster/docs/cdk8s_remainder.md:89-102</code> plans generating them.</span
           >
         </div>
@@ -5021,7 +5022,7 @@
                 Decryption already derives from the writer&#39;s <code>siblings</code> (<code>flux.py:174-178</code>)
                 and health checks from rendered identities (<code>flux.py:119-129</code>); deriving Orphan there too
                 makes a forgotten decryption or Orphan impossible once every node takes its directory, and the 22
-                hand-passed decryption blocks and 22 missing Orphans show forgetting is the failure mode. Health checks
+                hand-passed decryption blocks and 21 missing Orphans show forgetting is the failure mode. Health checks
                 are derived only for admission targets, and a directory whose state lives in a HelmRelease (loki, mimir,
                 matrix) passes <code>deletion_policy=ORPHAN</code> itself, because detection sees only generated kinds.
               </p>
@@ -5126,10 +5127,11 @@
             <div class="rich">
               <p>
                 One <code>Placement</code> value feeds <code>place()</code> and <code>cnpg.cluster</code>&#39;s
-                affinity, and <code>place()</code> renders a nodeSelector on every dialect and raises on a second
-                placement (checked in a scratch environment). Helm values and operator CRs embed the same typed values
-                (<code>HIL_OVH.node_selector</code>, <code>[CONTROL_PLANE_TOLERATION]</code>,
-                <code>PREFER_WORKERS</code>; X1), which render wire-shaped inside <code>any</code>-typed values.
+                affinity, and <code>place()</code> renders it on every dialect (as a required node affinity until
+                decision 8) and raises on a second placement (checked in a scratch environment). Helm values and
+                operator CRs embed the same typed values (<code>HIL_OVH_NODE_SELECTOR</code>,
+                <code>[CONTROL_PLANE_TOLERATION]</code>, <code>PREFER_WORKERS</code>; X1), which render wire-shaped
+                inside <code>any</code>-typed values.
               </p>
             </div>
           </dd>
@@ -5274,7 +5276,7 @@
               <p>
                 <code>helm_release</code> keeps its policy defaults, and values stay dicts because no chart here ships a
                 schema; placement, env and Secret references go into them as the typed values used everywhere else
-                (<code>HIL_OVH.node_selector</code>, <code>SecretKey.value_from()</code>; X1). Hardening of
+                (<code>HIL_OVH_NODE_SELECTOR</code>, <code>SecretKey.value_from()</code>; X1). Hardening of
                 chart-rendered Pods is enforced by neither <code>harden()</code> nor the fleet rules; it is the
                 chart&#39;s own values plus Kyverno admission. A chart that holds state or renders custom resources says
                 so at its node (<code>deletion_policy=ORPHAN</code>) and writer (<code>chart_kinds</code>), because
@@ -6095,7 +6097,7 @@ def service(household: str) -&gt; ServiceRef:  # household_chart() builds its Se
                   </li>
                   <li>
                     12 hand derivations of <code>-app</code> and <code>-rw</code> (<code>terraform.py:33</code>,
-                    <code>atuin/user_provisioner.py:36-37</code>, <code>attic.py:112</code>), and 8 spellings of the
+                    <code>atuin/user_provisioner.py:36-37</code>, <code>attic.py:112</code>), and 7 spellings of the
                     SeaweedFS S3 endpoint.
                   </li>
                   <li><code>cilium.endpoint_labels</code> called with a string name at 30 of 38 sites.</li>
@@ -6106,7 +6108,7 @@ def service(household: str) -&gt; ServiceRef:  # household_chart() builds its Se
                     <code>haku_egress_proxy.py:57</code>, <code>ntfy.py:77</code>, ...).
                   </li>
                   <li>
-                    Hand-typed probe URLs (<code>cluster/k8s/gatus/config.yaml:192-204</code>) and household literals in
+                    Hand-typed probe URLs (<code>cluster/k8s/gatus/config.yaml:194-206</code>) and household literals in
                     two files (<code>grocy/app.py:368-374</code>, <code>grocy/mcp.py:205-210</code>).
                   </li>
                 </ul>
@@ -6154,10 +6156,11 @@ def service(household: str) -&gt; ServiceRef:  # household_chart() builds its Se
                 capabilities on each init and main container.
               </li>
               <li>
-                <code>place</code> sets the <code>Placement</code>&#39;s nodeSelector, and with
+                <code>place</code> sets the <code>Placement</code>&#39;s nodeSelector (on devel it still renders the
+                selector as a required node affinity; decision 8 flips it), and with
                 <code>tolerate_control_plane</code> adds <code>CONTROL_PLANE_TOLERATION</code> and
-                <code>PREFER_WORKERS</code>, so the Pod uses control-plane nodes only when workers are full. It raises
-                on a pod spec that is already placed.
+                <code>PREFER_WORKERS</code> (the latter is #8244), so the Pod uses control-plane nodes only when workers
+                are full. It raises on a pod spec that is already placed.
               </li>
               <li>An unknown kind raises <code>KeyError</code>.</li>
             </ul>
@@ -6192,20 +6195,15 @@ def service(household: str) -&gt; ServiceRef:  # household_chart() builds its Se
         </div>
         <pre
           class="code"
-        ><code class="language-python"># node_scheduling.py: facts shared by pod placement, Helm values and operator CRs
-@dataclass(frozen=True)
-class Placement:
-    label: str
-    value: str
-
-    @property
-    def node_selector(self) -&gt; dict[str, str]:
-        return {self.label: self.value}
-
-
-HIL_OVH = Placement(label=&#34;topology.kubernetes.io/zone&#34;, value=&#34;hil-ovh&#34;)
-OPTIPLEX = Placement(label=&#34;kubernetes.io/hostname&#34;, value=&#34;optiplex&#34;)
-CONTROL_PLANE_TOLERATION = k8s.Toleration(key=&#34;node-role.kubernetes.io/control-plane&#34;, operator=&#34;Exists&#34;, effect=&#34;NoSchedule&#34;)
+        ><code class="language-python"># node_scheduling.py (landed in #8233 and #8243): facts shared by pod placement, Helm values and operator CRs
+ZONE_LABEL = &#34;topology.kubernetes.io/zone&#34;
+# The OVH nodes. Pinning to it keeps a workload off the home nodes (wyrm2, optiplex).
+HIL_OVH_ZONE = &#34;hil-ovh&#34;
+# A dict typed read-only: jsii serializes only `dict` instances as maps.
+HIL_OVH_NODE_SELECTOR: Mapping[str, str] = {ZONE_LABEL: HIL_OVH_ZONE}
+# Control-plane nodes also carry this key as a label, which node affinities and selectors match.
+CONTROL_PLANE_TAINT_KEY = &#34;node-role.kubernetes.io/control-plane&#34;
+CONTROL_PLANE_TOLERATION = k8s.Toleration(key=CONTROL_PLANE_TAINT_KEY, operator=&#34;Exists&#34;, effect=&#34;NoSchedule&#34;)
 # Keeps a Pod that tolerates the control plane on ordinary workers unless they are full.
 PREFER_WORKERS = k8s.Affinity(
     node_affinity=k8s.NodeAffinity(
@@ -6214,22 +6212,34 @@ PREFER_WORKERS = k8s.Affinity(
                 weight=100,
                 preference=k8s.NodeSelectorTerm(
                     match_expressions=[
-                        k8s.NodeSelectorRequirement(key=&#34;node-role.kubernetes.io/control-plane&#34;, operator=&#34;DoesNotExist&#34;)
+                        k8s.NodeSelectorRequirement(key=CONTROL_PLANE_TAINT_KEY, operator=&#34;DoesNotExist&#34;)
                     ]
                 ),
             )
         ]
     )
 )
-# In Helm values: {&#34;nodeSelector&#34;: HIL_OVH.node_selector, &#34;tolerations&#34;: [CONTROL_PLANE_TOLERATION], &#34;affinity&#34;: PREFER_WORKERS}
 
 
-# pod_policy.py
+@dataclass(frozen=True)
+class Placement:
+    &#34;&#34;&#34;The nodes a Pod may run on: those carrying every label in `node_selector`.&#34;&#34;&#34;
+
+    node_selector: Mapping[str, str]
+
+
+HIL_OVH = Placement(node_selector=HIL_OVH_NODE_SELECTOR)
+OPTIPLEX = Placement(node_selector={&#34;kubernetes.io/hostname&#34;: &#34;optiplex&#34;})
+# In Helm values: {&#34;nodeSelector&#34;: HIL_OVH_NODE_SELECTOR, &#34;tolerations&#34;: [CONTROL_PLANE_TOLERATION], &#34;affinity&#34;: PREFER_WORKERS}
+
+
+# pod_policy.py (landed in #8243)
 POD_SPEC_PATHS: Mapping[str, str] = MappingProxyType(
     {
         &#34;Deployment&#34;: &#34;/spec/template/spec&#34;,
         &#34;StatefulSet&#34;: &#34;/spec/template/spec&#34;,
         &#34;DaemonSet&#34;: &#34;/spec/template/spec&#34;,
+        &#34;ReplicaSet&#34;: &#34;/spec/template/spec&#34;,
         &#34;Job&#34;: &#34;/spec/template/spec&#34;,
         &#34;CronJob&#34;: &#34;/spec/jobTemplate/spec/template/spec&#34;,
         &#34;SandboxTemplate&#34;: &#34;/spec/podTemplate/spec&#34;,
@@ -6240,46 +6250,70 @@ _RUNTIME_DEFAULT = k8s.SeccompProfile(type=&#34;RuntimeDefault&#34;)
 _DROP_ALL = k8s.Capabilities(drop=[&#34;ALL&#34;])
 
 
-def _pod_spec(workload: Construct) -&gt; tuple[ApiObject, str, dict[str, Any]]:
+def pod_spec(manifest: dict[str, Any]) -&gt; dict[str, Any]:
+    &#34;&#34;&#34;The pod spec inside a rendered workload; `KeyError` for a kind `POD_SPEC_PATHS` lacks.&#34;&#34;&#34;
+    spec = manifest
+    for key in POD_SPEC_PATHS[manifest[&#34;kind&#34;]].split(&#34;/&#34;)[1:]:
+        spec = spec[key]
+    return spec
+
+
+def _workload(workload: Construct) -&gt; tuple[ApiObject, str, dict[str, Any]]:
     obj = ApiObject.of(workload)
-    path = POD_SPEC_PATHS[obj.kind]
-    pod = obj.to_json()
-    for part in path.strip(&#34;/&#34;).split(&#34;/&#34;):
-        pod = pod[part]
-    return obj, path, pod
+    return obj, POD_SPEC_PATHS[obj.kind], pod_spec(obj.to_json())
 
 
 def harden(workload: Construct) -&gt; None:
-    &#34;&#34;&#34;Fills what the pod spec leaves unset: RuntimeDefault seccomp on the Pod; no privilege escalation
-    and every capability dropped on each container. Call it once every container exists; the fleet
-    rule names a container added later.&#34;&#34;&#34;
-    obj, path, pod = _pod_spec(workload)
+    &#34;&#34;&#34;RuntimeDefault seccomp on the Pod, and no privilege escalation and every capability
+    dropped on each init and main container, where unset. Call it once every container exists.&#34;&#34;&#34;
+    obj, path, pod = _workload(workload)
     if &#34;securityContext&#34; not in pod:
-        obj.add_json_patch(JsonPatch.add(f&#34;{path}/securityContext&#34;, k8s.PodSecurityContext(seccomp_profile=_RUNTIME_DEFAULT)))
+        obj.add_json_patch(
+            JsonPatch.add(f&#34;{path}/securityContext&#34;, k8s.PodSecurityContext(seccomp_profile=_RUNTIME_DEFAULT))
+        )
     elif &#34;seccompProfile&#34; not in pod[&#34;securityContext&#34;]:
         obj.add_json_patch(JsonPatch.add(f&#34;{path}/securityContext/seccompProfile&#34;, _RUNTIME_DEFAULT))
     for field in (&#34;initContainers&#34;, &#34;containers&#34;):
         for index, container in enumerate(pod.get(field, [])):
             at = f&#34;{path}/{field}/{index}/securityContext&#34;
-            context = container.get(&#34;securityContext&#34;)
-            if context is None:
+            if &#34;securityContext&#34; not in container:
                 obj.add_json_patch(
                     JsonPatch.add(at, k8s.SecurityContext(allow_privilege_escalation=False, capabilities=_DROP_ALL))
                 )
                 continue
-            if &#34;capabilities&#34; not in context:
+            if &#34;capabilities&#34; not in container[&#34;securityContext&#34;]:
                 obj.add_json_patch(JsonPatch.add(f&#34;{at}/capabilities&#34;, _DROP_ALL))
-            if &#34;allowPrivilegeEscalation&#34; not in context:
+            if &#34;allowPrivilegeEscalation&#34; not in container[&#34;securityContext&#34;]:
                 obj.add_json_patch(JsonPatch.add(f&#34;{at}/allowPrivilegeEscalation&#34;, False))
 
 
 def place(workload: Construct, placement: Placement, *, tolerate_control_plane: bool = False) -&gt; None:
-    obj, path, pod = _pod_spec(workload)
+    &#34;&#34;&#34;Requires the nodes `placement` selects, as a required node affinity; with
+    `tolerate_control_plane`, control-plane nodes among them qualify too. Raises on a pod spec
+    that already states a node affinity or selector.&#34;&#34;&#34;
+    obj, path, pod = _workload(workload)
     if &#34;nodeSelector&#34; in pod or &#34;affinity&#34; in pod:
         raise ValueError(f&#34;{obj.kind}/{obj.name}: already placed&#34;)
-    obj.add_json_patch(JsonPatch.add(f&#34;{path}/nodeSelector&#34;, placement.node_selector))
+    # Decision 8 replaces the required affinity below with
+    #     obj.add_json_patch(JsonPatch.add(f&#34;{path}/nodeSelector&#34;, placement.node_selector))
+    required = k8s.NodeSelectorTerm(
+        match_expressions=[
+            k8s.NodeSelectorRequirement(key=label, operator=&#34;In&#34;, values=[value])
+            for label, value in placement.node_selector.items()
+        ]
+    )
+    obj.add_json_patch(
+        JsonPatch.add(
+            f&#34;{path}/affinity&#34;,
+            k8s.Affinity(
+                node_affinity=k8s.NodeAffinity(
+                    required_during_scheduling_ignored_during_execution=k8s.NodeSelector(node_selector_terms=[required])
+                )
+            ),
+        )
+    )
     if tolerate_control_plane:
-        obj.add_json_patch(JsonPatch.add(f&#34;{path}/affinity&#34;, PREFER_WORKERS))
+        # #8244 (open) also sets PREFER_WORKERS here, beside the toleration.
         obj.add_json_patch(
             JsonPatch.add(f&#34;{path}/tolerations/-&#34;, CONTROL_PLANE_TOLERATION)
             if &#34;tolerations&#34; in pod
@@ -6771,7 +6805,7 @@ flux_chart.node.add_validation(AdmissionGraph(flux_chart, directories))</code></
                   <li>
                     <code>SOPS_DECRYPTION</code> passed at 22 nodes and the one
                     <code>sops_decryption(resources)</code> call outside the writer (<code>generation.py:98-102</code>);
-                    39 typed-out health-check entries (<code>dns_automation.py:87-94</code>); the 22 missing Orphans.
+                    39 typed-out health-check entries (<code>dns_automation.py:87-94</code>); the 21 missing Orphans.
                   </li>
                   <li>
                     The <code>find_all</code> walk spelled three times (<code>fleet_rules.py:133-135</code>,
@@ -6975,7 +7009,7 @@ def copy(scope: Construct, id: str, *, credential: Credential, target: SecretRef
                   </li>
                   <li>
                     17 copies of the reader ServiceAccount, including three owners of flux-system&#39;s, and hand-typed
-                    RoleBinding names (<code>external_creds.py:40-153</code>).
+                    RoleBinding names (<code>external_creds.py:40-157</code>).
                   </li>
                 </ul>
               </div>
@@ -6990,11 +7024,11 @@ def copy(scope: Construct, id: str, *, credential: Credential, target: SecretRef
                   credential plumbing (#7455, #7456). Five mechanisms become one, and the allowlist is derived from the
                   roster. Exact-name Roles keep the property <code>ha_mcp.py:118-120</code> relies on: the Home
                   Assistant admin token in the same namespace stays unreachable. Checked in a scratch environment
-                  against the committed output: <code>grant()</code> over the whole roster renders all 26 existing Roles
-                  and RoleBindings byte-identical, with one RoleBinding renamed; a roster entry with no consumers would
-                  have rendered a dangling Role, which <code>__post_init__</code> now refuses. Consumers&#39; edges to
-                  stores and credential suppliers went in #8183, #8186 and #8188, finishing what #7559 began; the edge a
-                  copy keeps is to the operator whose webhook admits its ExternalSecret.
+                  against the committed output of an earlier devel: <code>grant()</code> over the whole roster renders
+                  the existing Roles and RoleBindings byte-identical, with one RoleBinding renamed; a roster entry with
+                  no consumers would have rendered a dangling Role, which <code>__post_init__</code> now refuses.
+                  Consumers&#39; edges to stores and credential suppliers went in #8183, #8186 and #8188, finishing what
+                  #7559 began; the edge a copy keeps is to the operator whose webhook admits its ExternalSecret.
                 </p>
               </div>
             </dd>
@@ -7138,13 +7172,15 @@ def test_vars_model_matches_module(model: type[BaseModel], module: str) -&gt; No
         <div class="rich">
           <p>
             Each example deploys to a real module in the repo. <strong>Today</strong> is a verbatim excerpt of devel
-            aaaa3a5b90 with its path and line. <strong>Proposed</strong> is the same thing under the conventions. After
-            the design step, an independent agent tried to break each example on devel 85fb8d0d: it read the provider
-            signatures, ran the cdk8s and cdk8s-plus parts in a scratch environment (with the real SandboxTemplate,
-            prometheus-operator and Cilium bindings where it could build them), and corrected what it found. A final
-            pass re-checked every example against the admission-only Flux direction, and E8 and E10 to E13 were
-            synthesized again on aaaa3a5b90. The notes under each example say what was run, on which revision, and what
-            was only read.
+            f84301e72c with its path and line. <strong>Proposed</strong> is the same thing under the conventions, on the
+            helpers that have landed (<code>pod_policy.harden</code> and <code>place</code>, the
+            <code>node_scheduling</code> constants, <code>namespaces.namespace</code>). After the design step, an
+            independent agent tried to break each example on devel 85fb8d0d: it read the provider signatures, ran the
+            cdk8s and cdk8s-plus parts in a scratch environment (with the real SandboxTemplate, prometheus-operator and
+            Cilium bindings where it could build them), and corrected what it found. A later pass re-checked every
+            example against the admission-only Flux direction. On f84301e72c the charts of E1 to E3, E6 and E8 to E13
+            and the E9 and E10 nodes were synthesized again; E4, E5 and E7, and E2&#39;s node, were last synthesized on
+            85fb8d0d. The notes under each example say what was run, on which revision, and what was only read.
           </p>
         </div>
       </div>
@@ -7169,8 +7205,8 @@ def test_vars_model_matches_module(model: type[BaseModel], module: str) -&gt; No
           to agentplane-staging)</a
         >
         <a href="#ex-E6"
-          ><b>E6</b>Pod policy as two functions over every pod dialect: a cdk8s-plus Deployment, raw Jobs and CronJobs,
-          and a CRD-embedded pod template (agentplane egress, attic, agent-workspaces)</a
+          ><b>E6</b>Pod policy beyond cdk8s-plus: a raw Deployment, CronJob and Job, and a CRD-embedded pod template
+          (attic, agent-workspaces)</a
         >
         <a href="#ex-E7"><b>E7</b>A generated directory&#39;s Flux node, admission-only: ntfy</a>
         <a href="#ex-E8"
@@ -7204,7 +7240,7 @@ def test_vars_model_matches_module(model: type[BaseModel], module: str) -&gt; No
             A small HTTP service end to end: Deployment, Service, HTTPRoute, CiliumNetworkPolicy, ServiceMonitor, and a
             Settings config slot (ntfy; agentplane-actions)
           </h3>
-          <span class="chip chip-verified-on-an-earlier-devel">verified on an earlier devel</span>
+          <span class="chip chip-verified-after-fixes">verified after fixes</span>
         </header>
         <div class="target">
           Deploys to: namespace ntfy (Kustomization ntfy, cluster/k8s/ntfy/ntfy.k8s.yaml); the config slot is the
@@ -7215,13 +7251,13 @@ def test_vars_model_matches_module(model: type[BaseModel], module: str) -&gt; No
         <div class="cols">
           <div class="col before">
             <span class="lbl">Today</span>
-            <pre class="code"><code class="language-python"># cluster/cdk8s/ntfy.py:68-72
+            <pre class="code"><code class="language-python"># cluster/cdk8s/ntfy.py:67-71
 PORT = 2586
 _IMAGE = &#34;binwiederhier/ntfy:v2.28.0&#34;
 _LABELS = {&#34;app.kubernetes.io/name&#34;: NAME}
 _DATABASE_CLUSTER = &#34;ntfy-db&#34;
 _DATABASE_APP_SECRET = f&#34;{_DATABASE_CLUSTER}-app&#34;
-# cluster/cdk8s/ntfy.py:214-221
+# cluster/cdk8s/ntfy.py:213-220
         https_route(
             self,
             &#34;httproute&#34;,
@@ -7230,7 +7266,7 @@ _DATABASE_APP_SECRET = f&#34;{_DATABASE_CLUSTER}-app&#34;
             backend=NAME,
             port=PORT,
         )
-# cluster/cdk8s/ntfy.py:232-241
+# cluster/cdk8s/ntfy.py:231-240
                 annotations={&#34;description&#34;: &#34;Single ntfy server backed by the two-instance ntfy PostgreSQL cluster.&#34;},
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
@@ -7241,7 +7277,7 @@ _DATABASE_APP_SECRET = f&#34;{_DATABASE_CLUSTER}-app&#34;
             security_context=PodSecurityContextProps(ensure_non_root=True, user=65532, group=65532),
         )
         deployment.select(LabelSelector.of(labels=_LABELS))
-# cluster/cdk8s/ntfy.py:248, 257, 265, 267-274
+# cluster/cdk8s/ntfy.py:247, 256, 264, 266-273
             ports=[ContainerPort(name=&#34;http&#34;, number=PORT, protocol=Protocol.TCP)],
                 &#34;NTFY_DATABASE_URL&#34;: _secret_env(self, &#34;database-url&#34;, name=_DATABASE_APP_SECRET, key=&#34;uri&#34;),
             readiness=http_probe(&#34;/v1/health&#34;, port=PORT, initial_delay_seconds=10, failure_threshold=12),
@@ -7252,8 +7288,8 @@ _DATABASE_APP_SECRET = f&#34;{_DATABASE_CLUSTER}-app&#34;
                 read_only_root_filesystem=True,
             ),
         )
-        apply_pod_spec_patches(deployment)
-# cluster/cdk8s/ntfy.py:277-293
+        pod_policy.harden(deployment)
+# cluster/cdk8s/ntfy.py:276-292
     def _add_service(self, deployment: Deployment) -&gt; None:
         Service(
             self,
@@ -7271,13 +7307,13 @@ _DATABASE_APP_SECRET = f&#34;{_DATABASE_CLUSTER}-app&#34;
             selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
             endpoints=[Endpoint.plain(port=&#34;http&#34;)],
         )
-# cluster/cdk8s/ntfy.py:296-300 (and no CiliumNetworkPolicy anywhere in ntfy.py)
+# cluster/cdk8s/ntfy.py:295-299 (and no CiliumNetworkPolicy anywhere in ntfy.py)
 def chart(app: App) -&gt; Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     Ntfy(chart, NAME)
     fleet_rules.add_fleet_rules(chart)
     return chart
-# cluster/cdk8s/agentplane/actions.py:159-165, 189, 237, 269, 271 (the config slot: file, env path and mount spelled separately; the migrate init container takes the whole env dict)
+# cluster/cdk8s/agentplane/actions.py:159-165, 189, 237, 270, 272 (the config slot: file, env path and mount spelled separately; the migrate init container takes the whole env dict)
     def _add_settings(self) -&gt; ConfigMap:
         return ConfigMap(
             self,
@@ -7443,11 +7479,11 @@ class SettingsFile(Construct):
                 The ServiceMonitor selects <code>SERVICE.labels</code>, the labels the Service is built with.
               </li>
               <li>
-                Deployment: gains <code>nodeSelector: {topology.kubernetes.io/zone: hil-ovh}</code> from
-                <code>place(HIL_OVH)</code>. Today the Pod is unpinned while its database lives on hil-ovh storage, so
-                this is a scheduling change for the reviewer to accept or drop, not a respelling. The rest of the pod
-                spec, including the seccomp profile and the container&#39;s drop-ALL, comes out of
-                <code>harden()</code> byte-identical.
+                Deployment: gains the required node affinity <code>topology.kubernetes.io/zone In [hil-ovh]</code> from
+                <code>place(HIL_OVH)</code>, a nodeSelector once decision 8 lands. Today the Pod is unpinned while its
+                database lives on hil-ovh storage, so this is a scheduling change for the reviewer to accept or drop,
+                not a respelling. The rest of the pod spec is byte-identical: <code>harden()</code> runs here today
+                (#8243) and fills the container&#39;s drop-ALL, which the after stops spelling.
               </li>
               <li>
                 New CiliumNetworkPolicy <code>ntfy</code>, rendered between the HTTPRoute and the ServiceMonitor.
@@ -7481,21 +7517,25 @@ class SettingsFile(Construct):
           <summary>How this example was checked</summary>
           <div class="rich">
             <p>
-              Re-read at aaaa3a5b90: ntfy.py, agentplane/actions.py, migrate_container.py and the actions
+              Re-read at f84301e72c: ntfy.py, agentplane/actions.py, migrate_container.py, pod_policy.py and the actions
               <code>MigrationSettings</code> (only <code>database_url</code>); the committed
-              cluster/k8s/ntfy/ntfy.k8s.yaml (nine objects; the Deployment has no nodeSelector, the ServiceMonitor no
-              <code>release</code> label) and cluster/k8s/agentplane-testing/agentplane.k8s.yaml (the
-              <code>Actions</code> construct&#39;s 10 objects; the migrate init container still carries
+              cluster/k8s/ntfy/ntfy.k8s.yaml (nine objects; the Deployment has neither a nodeSelector nor an affinity)
+              and cluster/k8s/agentplane-testing/agentplane.k8s.yaml (the migrate init container carries
               <code>AGENTPLANE_ACTIONS_CONFIG_FILE</code>). Searched cluster/cdk8s for clients of the ntfy Service and
               readers of the actions settings path.
             </p>
             <p>
-              The after code was synthesized and diffed object by object against origin/devel 85fb8d0d, with the pinned
-              CNPG, ESO, Cilium, Gateway API, prometheus-operator and source-watcher bindings, for the real ntfy chart
-              and the <code>Actions</code> construct of the testing Environment. It has not been re-synthesized on
-              aaaa3a5b90; its respellings for today&#39;s providers (<code>endpoint_selector=</code>,
-              <code>ServiceMonitorSpecSelector</code>) are unrun. Since 85fb8d0d the committed ntfy.k8s.yaml changed
-              only by the reloader annotation and the <code>release</code> label.
+              Re-ran on f84301e72c in a scratch environment with the pinned CNPG, ESO, Cilium, Gateway API and
+              prometheus-operator bindings: rendered the ntfy chart (byte-identical to the committed file) and the
+              testing Environment&#39;s <code>Actions</code> construct from f84301e72c, then with the after code merged
+              onto today&#39;s ntfy.py and actions.py, and diffed per object. 8 of 9 ntfy objects are byte-identical,
+              the Deployment gains only the affinity, and the CiliumNetworkPolicy is new; 9 of 10
+              <code>Actions</code> objects are byte-identical. The scratch <code>Actions</code> differs from the
+              committed manifest only by its construct-address label.
+            </p>
+            <p>
+              The <code>write_directory</code> report (encrypted, stateful) belongs to the proposed
+              <code>RenderedDirectory</code>, which is not on devel; it was last run on 85fb8d0d.
             </p>
           </div>
           <span class="lbl">Fixed during verification</span>
@@ -7540,17 +7580,16 @@ class SettingsFile(Construct):
         <div class="cols">
           <div class="col before">
             <span class="lbl">Today</span>
-            <pre class="code"><code class="language-python"># cluster/cdk8s/atuin/server.py:18-24
+            <pre class="code"><code class="language-python"># cluster/cdk8s/atuin/server.py:19-24
 # CNPG generates the application credentials in `&lt;cluster&gt;-app`.
 DB_APP_SECRET = &#34;atuin-db-app&#34;
 _DB_CLUSTER = &#34;atuin-db&#34;
 _SERVER = &#34;atuin-server&#34;
 _PORT = 8888
 _LABELS = {&#34;app.kubernetes.io/name&#34;: NAME}
-_ZONE_SELECTOR = {&#34;topology.kubernetes.io/zone&#34;: &#34;hil-ovh&#34;}
 # cluster/cdk8s/atuin/server.py:52, 59, 70-75
         metadata=k8s.ObjectMeta(name=_SERVER, namespace=NAMESPACE, labels=_LABELS),
-                    node_selector=_ZONE_SELECTOR,
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                                 k8s.EnvVar(
                                     name=&#34;ATUIN_DB_URI&#34;,
                                     value_from=k8s.EnvVarSource(
@@ -7565,7 +7604,7 @@ _ZONE_SELECTOR = {&#34;topology.kubernetes.io/zone&#34;: &#34;hil-ovh&#34;}
             ],
         backend=_SERVER,
         port=_PORT,
-# cluster/cdk8s/atuin/server.py:135-143
+# cluster/cdk8s/atuin/server.py:128-136
 def atuin(chart: Chart, directory: RenderedDirectory, cnpg: Kustomization) -&gt; Kustomization:
     return flux_kustomization(
         chart,
@@ -7575,20 +7614,20 @@ def atuin(chart: Chart, directory: RenderedDirectory, cnpg: Kustomization) -&gt;
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         depends_on=flux_kustomization_depends_on_many(cnpg),
     )
-# cluster/cdk8s/atuin/user_provisioner.py:10, 35-36, 43, 45, 116, 135-140 (the Job re-derives the rw host, port and password Secret)
+# cluster/cdk8s/atuin/user_provisioner.py:11, 36-37, 44, 46, 117, 136-141 (the Job re-derives the rw host, port and password Secret)
 from cluster.cdk8s.atuin.server import DB_APP_SECRET, NAMESPACE
     DB_HOST = &#34;atuin-db-rw.atuin.svc.cluster.local&#34;
     DB_PORT = 5432
         db_password = os.environ[&#34;POSTGRES_PASSWORD&#34;]
         conn = psycopg2.connect(host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=db_password)
-                    node_selector={&#34;topology.kubernetes.io/zone&#34;: &#34;hil-ovh&#34;},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                                 k8s.EnvVar(
                                     name=&#34;POSTGRES_PASSWORD&#34;,
                                     value_from=k8s.EnvVarSource(
                                         secret_key_ref=k8s.SecretKeySelector(name=DB_APP_SECRET, key=&#34;password&#34;)
                                     ),
                                 ),
-# cluster/cdk8s/atuin/user_provisioner.py:153-163 (a unit of its own)
+# cluster/cdk8s/atuin/user_provisioner.py:154-164 (a unit of its own)
 def atuin_user_provisioner(
     chart: Chart, directory: RenderedDirectory, atuin: Kustomization, user_agentydragon: Kustomization
 ) -&gt; Kustomization:
@@ -7600,7 +7639,7 @@ def atuin_user_provisioner(
         wait=None,
         depends_on=flux_kustomization_depends_on_many(atuin, user_agentydragon),
     )
-# cluster/cdk8s/generate_manifests.py:695-698, 765-771
+# cluster/cdk8s/generate_manifests.py:703-706, 773-779
     atuin_artifact = artifact(&#34;atuin&#34;, atuin_server.OUTPUT_DIR)
     atuin_kustomization = atuin_server.atuin(
         flux_chart, write_directory(root, atuin_artifact, atuin_server.chart), cnpg_kustomization
@@ -7718,10 +7757,12 @@ _USER_PASSWORD = SecretRef(namespace=NAMESPACE, name=ATUIN_USER_PASSWORD.name)
               </li>
               <li>
                 Deployment <code>atuin-server</code>: gains <code>automountServiceAccountToken: false</code> (the
-                stated-automount rule), <code>protocol: TCP</code> on its containerPort, the container&#39;s
-                <code>allowPrivilegeEscalation: false</code> and drop-ALL, and the Pod&#39;s RuntimeDefault seccomp
-                (tightened pod hardening). The nodeSelector is unchanged. The pod template changes, so the server
-                restarts once.
+                stated-automount rule), <code>protocol: TCP</code> on its containerPort, and from
+                <code>harden()</code> the container&#39;s <code>allowPrivilegeEscalation: false</code> and drop-ALL and
+                the Pod&#39;s RuntimeDefault seccomp. Its nodeSelector becomes the required node affinity
+                <code>topology.kubernetes.io/zone In [hil-ovh]</code> that <code>place(HIL_OVH)</code> renders, which
+                admits the same nodes (a nodeSelector again once decision 8 lands). The pod template changes, so the
+                server restarts once.
               </li>
               <li>
                 Service <code>atuin-server</code> gains the label <code>app.kubernetes.io/name: atuin</code>, from the
@@ -7734,9 +7775,9 @@ _USER_PASSWORD = SecretRef(namespace=NAMESPACE, name=ATUIN_USER_PASSWORD.name)
               <li>
                 Job <code>atuin-user-provisioner</code>: env PGHOST <code>atuin-db-rw.atuin.svc</code>, PGPORT
                 <code>5432</code> and PGPASSWORD (from <code>atuin-db-app</code>) replace POSTGRES_PASSWORD; it gains
-                resources, automount false, drop-ALL, no escalation and seccomp. The Job carries
-                <code>kustomize.toolkit.fluxcd.io/force: enabled</code>, so Flux replaces it and it runs once more; the
-                script is idempotent.
+                resources, automount false, drop-ALL, no escalation and seccomp, and the same required affinity in place
+                of its nodeSelector. The Job carries <code>kustomize.toolkit.fluxcd.io/force: enabled</code>, so Flux
+                replaces it and it runs once more; the script is idempotent.
               </li>
               <li>
                 Both moved objects are stateless, so the ownership move needs no Orphan handover: whichever
@@ -7762,19 +7803,24 @@ _USER_PASSWORD = SecretRef(namespace=NAMESPACE, name=ATUIN_USER_PASSWORD.name)
           <summary>How this example was checked</summary>
           <div class="rich">
             <p>
-              Re-read at aaaa3a5b90: atuin/server.py, atuin/user_provisioner.py, user_agentydragon.py and the atuin
-              wiring in generate_manifests.py; the committed cluster/generated/atuin and
-              cluster/generated/atuin-user-provisioner files (no <code>${</code> variable, no reloader annotation; the
-              Job&#39;s force annotation and 3600s ttl; neither pod spec states automount or a securityContext, the
-              Deployment&#39;s containerPort has no protocol, and the Job no resources); and both committed nodes (atuin
-              <code>[cnpg]</code>, <code>wait: true</code>, <code>deletionPolicy: Orphan</code>; atuin-user-provisioner
-              <code>[atuin, user-agentydragon]</code>).
+              Re-read at f84301e72c: atuin/server.py, atuin/user_provisioner.py, user_agentydragon.py, pod_policy.py and
+              the atuin wiring in generate_manifests.py; the committed cluster/generated/atuin and
+              cluster/generated/atuin-user-provisioner files (both pods pin
+              <code>topology.kubernetes.io/zone: hil-ovh</code> by nodeSelector and state no automount or
+              securityContext; the Deployment&#39;s containerPort has no protocol, and the Job no resources); and both
+              committed nodes (atuin <code>[cnpg]</code>, <code>wait: true</code>, <code>deletionPolicy: Orphan</code>;
+              atuin-user-provisioner <code>[atuin, user-agentydragon]</code>).
             </p>
             <p>
-              The after code was synthesized against origin/devel 85fb8d0d with the pinned CNPG and Gateway API
-              bindings: both devel charts and nodes, then the folded directory through <code>write_directory</code> and
-              the one node with the admission-graph validation attached, diffed per object, with tightened pod hardening
-              and the stated-automount rule run over the new directory. It has not been re-synthesized on aaaa3a5b90.
+              Re-ran the charts on f84301e72c in a scratch environment with the pinned CNPG and Gateway API bindings:
+              the after code merged onto today&#39;s modules and written as one directory through today&#39;s
+              <code>write_directory</code>, diffed per object against the two committed directories. The Namespace,
+              Cluster and HTTPRoute are byte-identical, and the Deployment, Service, ConfigMap and Job change as listed.
+            </p>
+            <p>
+              The node, its derived Orphan and the admission-graph validation were synthesized on 85fb8d0d only: they
+              need the proposed <code>flux_kustomization</code> and <code>RenderedDirectory</code>, which are not on
+              devel.
             </p>
           </div>
           <span class="lbl">Fixed during verification</span>
@@ -7797,7 +7843,7 @@ _USER_PASSWORD = SecretRef(namespace=NAMESPACE, name=ATUIN_USER_PASSWORD.name)
         <header>
           <span class="cid">E3</span>
           <h3>A private bucket as one composite in the consumer&#39;s own unit (attic in nix-cache)</h3>
-          <span class="chip chip-verified-on-an-earlier-devel">verified on an earlier devel</span>
+          <span class="chip chip-verified-after-fixes">verified after fixes</span>
         </header>
         <div class="target">
           Deploys to: namespace nix-cache and seaweedfs (Kustomization nix-cache, cluster/k8s/nix-cache/attic.k8s.yaml)
@@ -7807,11 +7853,11 @@ _USER_PASSWORD = SecretRef(namespace=NAMESPACE, name=ATUIN_USER_PASSWORD.name)
         <div class="cols">
           <div class="col before">
             <span class="lbl">Today</span>
-            <pre class="code"><code class="language-python"># cluster/cdk8s/nix_cache/attic.py:36-38
+            <pre class="code"><code class="language-python"># cluster/cdk8s/nix_cache/attic.py:37-39
 _DB = &#34;attic-db&#34;
 # The operator mints the S3 key pair straight into this namespace (`_storage` below).
 _S3_SECRET = &#34;attic-s3-credentials&#34;
-# cluster/cdk8s/nix_cache/attic.py:67-82
+# cluster/cdk8s/nix_cache/attic.py:64-79
 def _storage(scope: Construct) -&gt; None:
     # attic&#39;s NAR chunks. Replication is per-volume (the SeaweedFS cluster&#39;s
     # defaultReplication), so the bucket is backed by replicated storage.
@@ -7828,7 +7874,7 @@ def _storage(scope: Construct) -&gt; None:
     identity = s3.Identity(scope, &#34;identity&#34;, name=NAME)
     bucket.grant_read_write(identity)
     identity.credentials(namespace=NAMESPACE, secret=_S3_SECRET, key_fields=s3.AWS_ENV_KEY_FIELDS)
-# cluster/cdk8s/nix_cache/attic.py:115, 119-120
+# cluster/cdk8s/nix_cache/attic.py:112, 116-117
                                 secret_env_var(&#34;ATTIC_SERVER_DATABASE_URL&#34;, f&#34;{_DB}-app&#34;, &#34;uri&#34;),
                                 secret_env_var(&#34;AWS_ACCESS_KEY_ID&#34;, _S3_SECRET, &#34;AWS_ACCESS_KEY_ID&#34;),
                                 secret_env_var(&#34;AWS_SECRET_ACCESS_KEY&#34;, _S3_SECRET, &#34;AWS_SECRET_ACCESS_KEY&#34;),</code></pre>
@@ -7984,18 +8030,16 @@ def _storage(scope: Construct) -&gt; s3.PrivateBucket:
           <summary>How this example was checked</summary>
           <div class="rich">
             <p>
-              Re-read at aaaa3a5b90: nix_cache/attic.py, nix_cache/flux_kustomizations.py, seaweedfs/s3.py and
-              providers/seaweedfs/s3.py (only <code>metadata()</code> respelled since 85fb8d0d), and the SeaweedFS S3
-              Pod labels haku_openclaw_spike_backup.py selects by. Read the committed
-              cluster/k8s/nix-cache/attic.k8s.yaml (Bucket without description or <code>reclaimPolicy</code>, grant
-              <code>seaweedfs/nix-cache</code> rendered before the S3Identity, S3Credentials <code>secretRef</code>
-              <code>attic-s3-credentials</code>) and the committed nix-cache node.
+              Re-read at f84301e72c: nix_cache/attic.py, nix_cache/flux_kustomizations.py, seaweedfs/s3.py and
+              providers/seaweedfs/s3.py, and the committed cluster/k8s/nix-cache/attic.k8s.yaml and nix-cache node
+              (<code>[cnpg, external-secrets-operator, seaweedfs-operator]</code>, <code>wait: true</code>).
             </p>
             <p>
-              The after code was synthesized against origin/devel 85fb8d0d with the pinned SeaweedFS, CNPG and ESO
-              bindings (devel&#39;s chart and node byte-identical to the committed files, then
-              <code>PrivateBucket</code> and the new node) and diffed per object. It has not been re-synthesized on
-              aaaa3a5b90.
+              Re-ran on f84301e72c in a scratch environment with the pinned SeaweedFS, CNPG and ESO bindings: rendered
+              the attic chart from f84301e72c (byte-identical to the committed file) and with the after code,
+              <code>PrivateBucket</code> included, on today&#39;s attic.py, and diffed per object: 14 of 17 objects are
+              byte-identical, the Bucket and S3Identity change as listed, and the grant is renamed with the same spec
+              and renders after S3Credentials.
             </p>
           </div>
           <span class="lbl">Fixed during verification</span>
@@ -8067,7 +8111,7 @@ CREDENTIALS = (
         secret_name=&#34;aws-route53-dns-automation-credentials&#34;,
         consumers=(ApprovedConsumer(&#34;flux-system&#34;, &#34;aws-route53-dns-automation-credentials-flux-system-reader&#34;),),
     ),
-# cluster/cdk8s/external_creds.py:194-203
+# cluster/cdk8s/external_creds.py:198-207
 def external_creds(flux_chart: Chart, directory: RenderedDirectory, claude_rbac: Kustomization) -&gt; Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -8078,7 +8122,7 @@ def external_creds(flux_chart: Chart, directory: RenderedDirectory, claude_rbac:
         depends_on=[flux_kustomization_depends_on(claude_rbac)],
         timeout=&#34;5m&#34;,
     )
-# cluster/cdk8s/generate_manifests.py:601-612 (the writer lists every roster file as a sibling)
+# cluster/cdk8s/generate_manifests.py:607-618 (the writer lists every roster file as a sibling)
     external_creds_artifact = artifact(&#34;external-creds&#34;, external_creds.OUTPUT_DIR)
     external_creds.external_creds(
         flux_chart,
@@ -8202,7 +8246,7 @@ _CREDENTIALS = SecretRef(namespace=terraform.NAMESPACE, name=&#34;aws-route53-cr
           <div class="rich">
             <p>external-creds.k8s.yaml:</p>
             <ul>
-              <li>45 of 46 source-side objects are byte-identical (every Role, and every RoleBinding but one).</li>
+              <li>46 of 47 source-side objects are byte-identical (every Role, and every RoleBinding but one).</li>
               <li>
                 RoleBinding <code>llm-anthropic-haku-flux-reader</code> becomes
                 <code>llm-anthropic-haku-flux-system-reader</code>, because <code>grant()</code> names bindings
@@ -8256,19 +8300,22 @@ _CREDENTIALS = SecretRef(namespace=terraform.NAMESPACE, name=&#34;aws-route53-cr
           <summary>How this example was checked</summary>
           <div class="rich">
             <p>
-              Re-read at aaaa3a5b90: external_creds.py, external_secrets/config.py, dns_automation.py,
-              github_secrets_sync/secrets.py and the external-creds writer call. Counted 15 Roles and 31 RoleBindings in
-              the committed external-creds.k8s.yaml, read the committed dns-records.k8s.yaml (the ExternalSecret reads
-              <code>kubernetes-external-creds-secret-store</code> and states no <code>deletionPolicy</code>) and the
-              external-creds node (<code>[claude-rbac]</code>), and parsed every YAML under cluster/k8s and
-              cluster/generated for a flux-system <code>external-creds-reader</code> ServiceAccount: dns-automation,
-              github-secrets-sync-secrets and parked/cloud-agent-tf.
+              Re-read at f84301e72c: external_creds.py, external_secrets/config.py, dns_automation.py,
+              github_secrets_sync/secrets.py and the external-creds writer call. Counted 15 Roles and 32 RoleBindings in
+              the committed external-creds.k8s.yaml; every roster binding but
+              <code>llm-anthropic-haku-flux-reader</code> is named
+              <code>&lt;secret&gt;-&lt;consumer namespace&gt;-reader</code>. Read the committed dns-records.k8s.yaml
+              (the ExternalSecret reads <code>kubernetes-external-creds-secret-store</code> and states no
+              <code>deletionPolicy</code>) and the external-creds node (<code>[claude-rbac]</code>), and parsed every
+              YAML under cluster/k8s and cluster/generated for a flux-system
+              <code>external-creds-reader</code> ServiceAccount: dns-automation, github-secrets-sync-secrets and
+              parked/cloud-agent-tf.
             </p>
             <p>
               The after code was synthesized against origin/devel 85fb8d0d with the pinned ESO bindings (the
               external-creds, external-secrets-config and dns-records charts and both nodes, byte-identical from devel,
               then through <code>write_directory</code> with the admission-graph validation), diffed per object, and the
-              old and new store specs compared field by field. It has not been re-synthesized on aaaa3a5b90.
+              old and new store specs compared field by field. It has not been re-synthesized since.
             </p>
           </div>
           <span class="lbl">Fixed during verification</span>
@@ -8348,7 +8395,7 @@ _HA_MCP_BEARER_SECRET = &#34;ha-mcp-client-bearer&#34;
     name: str
     secret_name: str
     secret_key: str
-# cluster/cdk8s/agentplane/actions.py:285, 290
+# cluster/cdk8s/agentplane/actions.py:286, 291
             bearer_secret = Secret.from_secret_name(self, f&#34;{mount.name}-bearer-secret&#34;, mount.secret_name)
                 items={mount.secret_key: PathMapping(path=mount.file_name)},</code></pre>
           </div>
@@ -8478,7 +8525,7 @@ _GOOGLE_MCP_BEARER = SecretRef(namespace=staging_config.NAMESPACE, name=&#34;goo
             <p>agentplane-staging chart:</p>
             <ul>
               <li>
-                144 objects are byte-identical, including the Actions Deployment (its mounts, items and reload
+                151 objects are byte-identical, including the Actions Deployment (its mounts, items and reload
                 annotation, now derived from the references) and its CiliumNetworkPolicy (<code>FACADE.egress()</code>
                 renders today&#39;s rule).
               </li>
@@ -8528,14 +8575,15 @@ _GOOGLE_MCP_BEARER = SecretRef(namespace=staging_config.NAMESPACE, name=&#34;goo
           <summary>How this example was checked</summary>
           <div class="rich">
             <p>
-              Re-read at aaaa3a5b90: ha_mcp.py, ssh_mcp/config.py, backend.py, generation.py and test_consumers.py,
+              Re-read at f84301e72c: ha_mcp.py, ssh_mcp/config.py, backend.py, generation.py and test_consumers.py,
               google_mcp.py, external_secrets/minted_secret.py, agentplane/staging.py, staging_config.py, environment.py
               and actions.py, the ssh-mcp writer call, and every <code>single_secret_store</code> and
-              <code>credential_external_secret</code> caller. Compared the committed ha-mcp, ssh-mcp, google-mcp and
-              agentplane-staging manifests with 85fb8d0d&#39;s: the same objects (157 in agentplane-staging, 8 plus the
-              three SOPS files in ssh-mcp), the servers&#39; Deployments differing only by the dropped reloader
-              annotation, so <code>mint_bearer_secret</code> renders the Password and ExternalSecret the hand-built code
-              did. Read the four nodes.
+              <code>credential_external_secret</code> caller. The committed agentplane-staging manifest holds 164
+              objects; the after changes 13 of them (the nine that leave, the three copies and the Actions settings
+              ConfigMap), so the 151 is derived from the committed file, not rendered. The seven objects #8239, #8247
+              and #8249 added there (a ServiceAccount, EgressBinding, EgressCredential, EgressPolicy, ActionPolicySet,
+              ActionPolicyBinding and the buildbuddy ExternalSecret) touch none of the stores, copies or mounts. The
+              committed ssh-mcp directory holds 8 objects plus the three SOPS files. Read the four nodes.
             </p>
             <p>
               The after code was synthesized against origin/devel 85fb8d0d with the pinned ESO, Cilium,
@@ -8543,7 +8591,7 @@ _GOOGLE_MCP_BEARER = SecretRef(namespace=staging_config.NAMESPACE, name=&#34;goo
               agentplane-staging charts and the ssh-mcp and google-mcp nodes, before and after, diffed per object), with
               <code>kustomize build</code> (5.8.1) run on the ssh-mcp directory with and without
               <code>namespace:</code>, and the two bearer tests in ssh_mcp/test_consumers.py run against both renders.
-              It has not been re-synthesized on aaaa3a5b90; the respelled writer call is unrun.
+              It has not been re-synthesized since; the respelled writer call is unrun.
             </p>
           </div>
           <span class="lbl">Fixed during verification</span>
@@ -8575,44 +8623,39 @@ _GOOGLE_MCP_BEARER = SecretRef(namespace=staging_config.NAMESPACE, name=&#34;goo
         <header>
           <span class="cid">E6</span>
           <h3>
-            Pod policy as two functions over every pod dialect: a cdk8s-plus Deployment, raw Jobs and CronJobs, and a
-            CRD-embedded pod template (agentplane egress, attic, agent-workspaces)
+            Pod policy beyond cdk8s-plus: a raw Deployment, CronJob and Job, and a CRD-embedded pod template (attic,
+            agent-workspaces)
           </h3>
-          <span class="chip chip-verified-on-an-earlier-devel">verified on an earlier devel</span>
+          <span class="chip chip-verified">verified</span>
         </header>
         <div class="target">
-          Deploys to: namespaces agentplane-staging and agentplane-testing (the egress Deployment), nix-cache (attic),
-          agent-workspaces (SandboxTemplate codex) · shows <a class="cid" href="#C1">C1</a>
-          <a class="cid" href="#C5">C5</a> <a class="cid" href="#C6">C6</a>
+          Deploys to: namespace nix-cache (Kustomization nix-cache, cluster/k8s/nix-cache/attic.k8s.yaml: Deployment,
+          CronJob and Job attic); namespace agent-workspaces (Kustomization agent-workspaces-app: SandboxTemplate codex)
+          · shows <a class="cid" href="#C5">C5</a>
         </div>
         <div class="cols">
           <div class="col before">
             <span class="lbl">Today</span>
-            <pre class="code"><code class="language-python"># cluster/cdk8s/agentplane/egress.py:549, 557-559
-            security_context=container_security.WRITABLE_ROOT,
-        node_scheduling.attract_to_zone(deployment)
-        node_scheduling.tolerate_control_plane_taint(deployment)
-        apply_pod_spec_patches(deployment)
-# cluster/cdk8s/container_security.py:10-12
-WRITABLE_ROOT = ContainerSecurityContextProps(
-    capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]), read_only_root_filesystem=False
-)
-# cluster/cdk8s/node_scheduling.py:13-20
-def attract_to_zone(workload: Workload) -&gt; None:
-    workload.scheduling.attract(Node.labeled(NodeLabelQuery.is_(&#34;topology.kubernetes.io/zone&#34;, ZONE)))
-
-
-def tolerate_control_plane_taint(deployment: Deployment) -&gt; None:
-    deployment.scheduling.tolerate(
-        Node.tainted(NodeTaintQuery.exists(&#34;node-role.kubernetes.io/control-plane&#34;, effect=TaintEffect.NO_SCHEDULE))
-    )
-# cluster/cdk8s/nix_cache/attic.py:95-99 (the server&#39;s pod states no automountServiceAccountToken)
+            <pre
+              class="code"
+            ><code class="language-python"># cluster/cdk8s/nix_cache/attic.py:82-83, 92-96, 103-110 (a raw Deployment, placed and hardened by hand; its Pod states no securityContext)
+def _server(scope: Construct) -&gt; None:
+    k8s.KubeDeployment(
                 spec=k8s.PodSpec(
                     # Co-located with SeaweedFS and attic-db on OVH kimsufi workers.
-                    node_selector=_ZONE_SELECTOR,
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     # Stateless S3-backed service; allow control-plane nodes as overflow capacity.
-                    tolerations=[_CONTROL_PLANE_TOLERATION],
-# cluster/cdk8s/nix_cache/attic.py:257-259, 266-279 (the rotator hardens by hand)
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
+                            security_context=k8s.SecurityContext(
+                                run_as_user=1000,
+                                run_as_group=1000,
+                                run_as_non_root=True,
+                                allow_privilege_escalation=False,
+                                capabilities=k8s.Capabilities(drop=[&#34;ALL&#34;]),
+                                seccomp_profile=k8s.SeccompProfile(type=&#34;RuntimeDefault&#34;),
+                            ),
+# cluster/cdk8s/nix_cache/attic.py:226, 254-256, 263-267, 273-276 (the rotation CronJob hardens by hand)
+    k8s.KubeCronJob(
                         spec=k8s.PodSpec(
                             service_account_name=_ROTATOR,
                             restart_policy=&#34;OnFailure&#34;,
@@ -8621,22 +8664,26 @@ def tolerate_control_plane_taint(deployment: Deployment) -&gt; None:
                                 run_as_user=65534,
                                 seccomp_profile=k8s.SeccompProfile(type=&#34;RuntimeDefault&#34;),
                             ),
-                            containers=[
-                                k8s.Container(
-                                    name=&#34;rotate&#34;,
-                                    image=_ROTATOR_IMAGE,
-                                    args=[&#34;rotate&#34;, &#34;--config&#34;, &#34;/config/rotators.yaml&#34;],
                                     env=[secret_env_var(&#34;GIT_TOKEN&#34;, _GITHUB_PAT_SECRET, &#34;token&#34;)],
                                     security_context=k8s.SecurityContext(
                                         allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=[&#34;ALL&#34;])
                                     ),
-# cluster/cdk8s/nix_cache/attic.py:317-321 (the bootstrap Job runs as the rotator&#39;s ServiceAccount)
-                spec=k8s.PodSpec(
-                    # Reuses the rotator&#39;s ServiceAccount -- same pods/exec RBAC for invoking
-                    # atticadm against deploy/attic. The bootstrap subcommand doesn&#39;t touch SOPS
-                    # or git, so it doesn&#39;t need the rotator&#39;s GitHub PAT.
-                    service_account_name=_ROTATOR,
-# cluster/cdk8s/agent_workspaces.py:91-113 (a CRD-embedded pod template, hardened by hand)
+# cluster/cdk8s/nix_cache/attic.py:295, 323-328, 340-342 (so does the bootstrap Job)
+    k8s.KubeJob(
+                    restart_policy=&#34;OnFailure&#34;,
+                    security_context=k8s.PodSecurityContext(
+                        run_as_non_root=True,
+                        run_as_user=65534,
+                        seccomp_profile=k8s.SeccompProfile(type=&#34;RuntimeDefault&#34;),
+                    ),
+                            security_context=k8s.SecurityContext(
+                                allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=[&#34;ALL&#34;])
+                            ),
+# cluster/cdk8s/agent_workspaces.py:75-78, 91-113 (a CRD-embedded pod template, hardened by hand)
+    return SandboxTemplate(
+        chart,
+        &#34;codex&#34;,
+        metadata=ApiObjectMetadata(name=&#34;codex&#34;, namespace=NAMESPACE),
                 automount_service_account_token=False,
                 security_context=SandboxTemplateSpecPodTemplateSpecSecurityContext(
                     run_as_non_root=True,
@@ -8665,46 +8712,46 @@ def tolerate_control_plane_taint(deployment: Deployment) -&gt; None:
             <span class="lbl">Proposed</span>
             <pre
               class="code"
-            ><code class="language-python"># cluster/cdk8s/agentplane/egress.py: harden and place as C5 defines them; container_security.py goes
-            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),  # root needs not audited
+            ><code class="language-python"># cluster/cdk8s/nix_cache/attic.py: pod_policy as it landed in #8243, as agentplane/egress.py:558-559 calls it
+def _server(scope: Construct) -&gt; None:
+    deployment = k8s.KubeDeployment(
         ...
-        pod_policy.harden(deployment)
-        pod_policy.place(deployment, HIL_OVH, tolerate_control_plane=True)
-
-
-# cluster/cdk8s/nix_cache/attic.py
-_GITHUB_PAT = SecretRef(namespace=NAMESPACE, name=&#34;github-secrets-sync-pat&#34;)
-...
                 spec=k8s.PodSpec(
-                    # attic never calls the API; the rotator execs in with its own token.
-                    automount_service_account_token=False,
-                    ...
+                    containers=[
+                        k8s.Container(
+                            name=NAME,
+                            ...
+                            security_context=k8s.SecurityContext(run_as_user=1000, run_as_group=1000, run_as_non_root=True),
+                            ...
+    )
+    # Beside SeaweedFS and attic-db on the OVH nodes. Stateless and S3-backed, so control-plane
+    # nodes are overflow capacity.
+    pod_policy.place(deployment, node_scheduling.HIL_OVH, tolerate_control_plane=True)
+    pod_policy.harden(deployment)
+    ...
     rotation = k8s.KubeCronJob(
         ...
                         spec=k8s.PodSpec(
                             service_account_name=_ROTATOR,
-                            # `kubectl exec deploy/attic` authenticates with this Pod&#39;s token.
-                            automount_service_account_token=True,
+                            restart_policy=&#34;OnFailure&#34;,
                             ...
                             security_context=k8s.PodSecurityContext(run_as_non_root=True, run_as_user=65534),
                             containers=[
                                 k8s.Container(
                                     name=&#34;rotate&#34;,
-                                    ...
-                                    env=[_GITHUB_PAT.key(&#34;token&#34;).env_var(&#34;GIT_TOKEN&#34;)],
-                                    ...
+                                    ...,  # no securityContext: harden fills it
+    )
     pod_policy.harden(rotation)
-    k8s.KubeJob(
+    bootstrap = k8s.KubeJob(
         ...
-                    service_account_name=_ROTATOR,
-                    # The rotator&#39;s token: `atticadm` runs through `kubectl exec deploy/attic`.
-                    automount_service_account_token=True,
-    ...
-
-
-def write_manifests(root: Path) -&gt; None:
-    # attic declares no resources yet; it keeps its own container securityContext.
-    write_charts(root, OUTPUT_DIR, chart, fleet=FleetExceptions(unhardened=frozenset({&#34;Deployment/attic&#34;})))
+                    restart_policy=&#34;OnFailure&#34;,
+                    security_context=k8s.PodSecurityContext(run_as_non_root=True, run_as_user=65534),
+                    containers=[
+                        k8s.Container(
+                            name=&#34;bootstrap&#34;,
+                            ...,  # no securityContext: harden fills it
+    )
+    pod_policy.harden(bootstrap)
 
 
 # cluster/cdk8s/agent_workspaces.py
@@ -8729,40 +8776,41 @@ def write_manifests(root: Path) -&gt; None:
         <div class="effect">
           <span class="lbl">Rendered effect</span>
           <div class="rich">
-            <p>Egress (the <code>Egress</code> construct in the testing Environment):</p>
+            <p>attic.k8s.yaml:</p>
             <ul>
-              <li>21 of 22 objects are byte-identical.</li>
               <li>
-                Deployment <code>agentplane-egress</code>: the required nodeAffinity term
-                <code>topology.kubernetes.io/zone In [hil-ovh]</code> becomes
-                <code>nodeSelector: {topology.kubernetes.io/zone: hil-ovh}</code> plus
-                <code>PREFER_WORKERS</code> (weight-100 preference for nodes without
-                <code>node-role.kubernetes.io/control-plane</code>). The control-plane toleration and both containers
-                are unchanged. The scheduler admits the same nodes; workers are now preferred over control planes, as
-                the nodeSelector-at-the-attract-sites decision intends. The pod template changes, so the Pods roll once.
+                16 of 17 objects are byte-identical, among them CronJob <code>attic-jwt-rotation</code> and Job
+                <code>attic-bootstrap-caches</code>: <code>harden()</code> renders exactly the seccomp profile, drop-ALL
+                and no-escalation their pod specs spell by hand.
+              </li>
+              <li>
+                Deployment <code>attic</code>: <code>place(HIL_OVH, tolerate_control_plane=True)</code> renders the
+                required node affinity <code>topology.kubernetes.io/zone In [hil-ovh]</code> in place of
+                <code>nodeSelector: {topology.kubernetes.io/zone: hil-ovh}</code>. The scheduler admits the same nodes,
+                and the control-plane toleration is byte-identical. Decision 8 turns the affinity back into that
+                nodeSelector; #8244 (open) adds <code>PREFER_WORKERS</code> beside the toleration.
+              </li>
+              <li>
+                The attic container&#39;s seccomp profile moves to the Pod&#39;s securityContext; its drop-ALL,
+                no-escalation and uid and gid are byte-identical. The pod template changes, so attic restarts once.
+              </li>
+              <li>
+                <code>fleet_rules.pod_hardening</code> reports the same two faults on both renders: the attic container
+                declares no cpu or memory request and no memory limit. attic&#39;s chart attaches no fleet rules today.
               </li>
             </ul>
-            <p>attic:</p>
-            <ul>
-              <li>Deployment <code>attic</code>: gains <code>automountServiceAccountToken: false</code>.</li>
-              <li>
-                CronJob <code>attic-jwt-rotation</code> and Job <code>attic-bootstrap-caches</code>: gain
-                <code>automountServiceAccountToken: true</code>; the hand-written seccomp, drop-ALL and no-escalation
-                now come from <code>harden()</code> byte-identical.
-              </li>
-              <li>
-                With no <code>FleetExceptions</code> entry, the tightened pod-hardening rule fails the synth on
-                <code>Deployment/attic</code> for missing cpu and memory requests and a memory limit; the entry names
-                that one exception at the writer call.
-              </li>
-            </ul>
-            <p>agent-workspaces:</p>
+            <p>agent-workspaces.k8s.yaml:</p>
             <ul>
               <li>
                 All 7 objects are byte-identical: <code>harden()</code> reaches the SandboxTemplate&#39;s pod spec
-                through <code>POD_SPEC_PATHS</code> and renders exactly the fields the code spelled by hand.
+                through <code>POD_SPEC_PATHS</code> and renders exactly the fields the code spelled by hand. The
+                template stays unplaced; its <code>seaweedfs-ovh</code> volume already pins the zone.
               </li>
             </ul>
+            <p>
+              Every container here states drop-ALL and no escalation by hand, so <code>harden()</code> adds neither;
+              E2&#39;s atuin Deployment and Job are raw pods that gain all three.
+            </p>
             <p>No Flux change.</p>
           </div>
         </div>
@@ -8770,39 +8818,19 @@ def write_manifests(root: Path) -&gt; None:
           <summary>How this example was checked</summary>
           <div class="rich">
             <p>
-              Re-read at aaaa3a5b90: agentplane/egress.py, container_security.py, node_scheduling.py,
-              pod_spec_patches.py, nix_cache/attic.py, agent_workspaces.py and fleet_rules.py. Compared the committed
-              agentplane-testing manifest with 85fb8d0d&#39;s (the same 98 objects; the egress Deployment differs only
-              by the dropped reloader annotation and still carries the required zone nodeAffinity and the control-plane
-              toleration), read the committed attic.k8s.yaml (none of its three pod specs states
-              <code>automountServiceAccountToken</code>; the Deployment has no resources) and the 7-object
-              agent-workspaces manifest. <code>SandboxTemplate</code> takes <code>metadata=</code> on devel (#8153), as
-              the after assumed.
+              Re-read at f84301e72c: pod_policy.py, node_scheduling.py, fleet_rules.py, nix_cache/attic.py,
+              agent_workspaces.py and the SandboxTemplate provider, and every <code>harden()</code> and
+              <code>place()</code> caller: the cdk8s-plus workloads call them, and no raw
+              <code>k8s.Kube*</code> workload or CRD-embedded pod template does.
             </p>
             <p>
-              The after code was synthesized against origin/devel 85fb8d0d with the pinned agent-sandbox, Kyverno, CNPG,
-              ESO and SeaweedFS bindings (the <code>Egress</code> construct of the testing Environment, the attic chart
-              and the agent-workspaces chart, before and after), diffed per object, and the attic chart run through the
-              writer with and without the <code>FleetExceptions</code> entry. It has not been re-synthesized on
-              aaaa3a5b90.
+              Synthesized on f84301e72c in a scratch environment with the pinned agent-sandbox, Kyverno, CNPG, ESO and
+              SeaweedFS bindings: the attic chart and the agent-workspaces chart from f84301e72c, byte-identical to the
+              committed cluster/k8s/nix-cache/attic.k8s.yaml and
+              cluster/k8s/agents/agent-sandbox/workspaces/agent-workspaces.k8s.yaml, then with this after code on
+              today&#39;s attic.py and agent_workspaces.py and the landed pod_policy.py, diffed per object and as text.
+              Ran <code>fleet_rules.pod_hardening</code> on both renders.
             </p>
-          </div>
-          <span class="lbl">Fixed during verification</span>
-          <div class="rich">
-            <ul>
-              <li>
-                <code>place(..., tolerate_control_plane=True)</code> adds <code>PREFER_WORKERS</code> beside the
-                toleration, so the egress Deployment also gains a worker preference; the input showed only the
-                nodeSelector.
-              </li>
-              <li>
-                attic&#39;s Deployment states automount false and the bootstrap Job states true, and the writer names
-                the Deployment&#39;s missing resources in <code>FleetExceptions</code>; the input left the directory
-                failing the tightened rule.
-              </li>
-              <li>The CronJob is bound to <code>rotation</code>, and <code>_GITHUB_PAT</code> is declared.</li>
-              <li>The SandboxTemplate call keeps its volume-claim keywords (elided, not dropped).</li>
-            </ul>
           </div>
         </details>
       </article>
@@ -8819,7 +8847,7 @@ def write_manifests(root: Path) -&gt; None:
         <div class="cols">
           <div class="col before">
             <span class="lbl">Today</span>
-            <pre class="code"><code class="language-python"># cluster/cdk8s/ntfy.py:303-324
+            <pre class="code"><code class="language-python"># cluster/cdk8s/ntfy.py:302-323
 def ntfy(
     flux_chart: Chart,
     directory: RenderedDirectory,
@@ -8842,7 +8870,7 @@ def ntfy(
             kyverno,
         ),
     )
-# cluster/cdk8s/generate_manifests.py:744-752
+# cluster/cdk8s/generate_manifests.py:752-760
     ntfy_artifact = artifact(&#34;ntfy&#34;, ntfy.OUTPUT_DIR)
     ntfy.ntfy(
         flux_chart,
@@ -8944,7 +8972,7 @@ def ntfy(
           <summary>How this example was checked</summary>
           <div class="rich">
             <p>
-              Re-read at aaaa3a5b90: ntfy.py, flux.py (<code>RenderedDirectory</code>, <code>flux_kustomization</code>),
+              Re-read at f84301e72c: ntfy.py, flux.py (<code>RenderedDirectory</code>, <code>flux_kustomization</code>),
               generation.py (<code>write_directory</code>), the ntfy wiring in generate_manifests.py and the committed
               node in cluster/k8s/flux/kustomizations.k8s.yaml (<code
                 >[cnpg, external-secrets-operator, monitoring-crds, kyverno]</code
@@ -8952,10 +8980,11 @@ def ntfy(
               depends on ntfy.
             </p>
             <p>
-              Re-ran the probe graphs above through the 85fb8d0d harness&#39;s <code>AdmissionGraph</code>, with
-              today&#39;s predecessors, <code>kyverno</code> among them, and no dependents; each result is as listed.
-              The node and <code>write_directory</code> after code was rendered against origin/devel 85fb8d0d
-              (devel&#39;s node byte-identical to the committed one) and has not been re-synthesized on aaaa3a5b90.
+              The probe graphs above ran through the 85fb8d0d harness&#39;s <code>AdmissionGraph</code> with
+              aaaa3a5b90&#39;s predecessors, which f84301e72c keeps, <code>kyverno</code> among them. The node and
+              <code>write_directory</code> after code was rendered against origin/devel 85fb8d0d and has not been
+              re-synthesized since: the derived Orphan, the <code>wait</code> default and
+              <code>AdmissionGraph</code> belong to the proposed flux.py, which is not on devel.
             </p>
           </div>
           <span class="lbl">Fixed during verification</span>
@@ -8992,7 +9021,7 @@ def ntfy(
             <span class="lbl">Today</span>
             <pre
               class="code"
-            ><code class="language-python"># cluster/cdk8s/home_assistant/app.py:62, 65, 95 (the labels, token name and URL)
+            ><code class="language-python"># cluster/cdk8s/home_assistant/app.py:63, 65, 95 (the labels, token name and URL)
 _LABELS = {&#34;app.kubernetes.io/name&#34;: _NAME}
 _METRICS_TOKEN = &#34;home-assistant-metrics-token&#34;
     url=f&#34;http://{_NAME}.{_NAMESPACE}.svc.cluster.local:8123&#34;,
@@ -9232,26 +9261,23 @@ HOME_ASSISTANT_HOST = home_assistant.SERVICE.fqdn
             <p>
               Re-read home_assistant/app.py, ha_mcp.py, agentplane/egress.py, staging_config.py,
               external_secrets/minted_secret.py, providers/prometheus_operator/service_monitor.py and gateway.py at
-              aaaa3a5b90. The ESO Helm release still pins v2.10.0, whose externalsecret controller
+              f84301e72c. The ESO Helm release pins v2.10.0, whose externalsecret controller
               (<code>shouldRefresh</code>, <code>isSecretValid</code>) was read for the 85fb8d0d verification.
             </p>
             <p>
-              Re-ran on aaaa3a5b90 in a scratch environment with the pinned bindings: rendered the home-assistant and
-              ha-mcp charts from aaaa3a5b90 (byte-identical to the committed files) and with the after code ported to
-              today&#39;s keywords (<code>ApiObjectMetadata</code>, <code>ServiceMonitorSpecSelector</code>,
-              <code>endpoint_selector=</code>, and <code>MintedSecret</code> on the ExternalSecret provider&#39;s
-              <code>refresh_policy=</code>), and diffed per object: 14 of 18 home-assistant objects and 12 of 14 ha-mcp
-              objects are byte-identical. ha-mcp was rendered with E5&#39;s <code>FACADE</code> but without E5&#39;s
-              bearer and credential changes.
+              Re-ran on f84301e72c in a scratch environment with the pinned bindings: rendered the home-assistant and
+              ha-mcp charts from f84301e72c (byte-identical to the committed files) and with the after code merged onto
+              today&#39;s modules, and diffed per object: 14 of 18 home-assistant objects and 12 of 14 ha-mcp objects
+              are byte-identical. ha-mcp was rendered with E5&#39;s <code>FACADE</code> but without E5&#39;s bearer and
+              credential changes.
             </p>
             <p>
               Ran <code>kustomize build</code> on the home-assistant directory before and after to follow the hashed
               onboarding ConfigMap into the Job.
             </p>
             <p>
-              Not rendered on aaaa3a5b90: agentplane-staging. <code>SERVICE.fqdn</code> and
-              <code>SERVICE.port.number</code> evaluate to the proxy&#39;s current <code>HOME_ASSISTANT_HOST</code> and
-              <code>HOME_ASSISTANT_PORT</code>.
+              Not rendered: agentplane-staging. <code>SERVICE.fqdn</code> and <code>SERVICE.port.number</code> evaluate
+              to the proxy&#39;s <code>HOME_ASSISTANT_HOST</code> and <code>HOME_ASSISTANT_PORT</code>.
             </p>
           </div>
           <span class="lbl">Fixed during verification</span>
@@ -9289,7 +9315,7 @@ HOME_ASSISTANT_HOST = home_assistant.SERVICE.fqdn
             Terraform variables from a model of the module (landed in #8152), and a Terraform unit with admission-only
             edges (dns-automation)
           </h3>
-          <span class="chip chip-not-verified">not verified</span>
+          <span class="chip chip-verified-after-fixes">verified after fixes</span>
         </header>
         <div class="target">
           Deploys to: namespace flux-system (Kustomization dns-automation, cluster/generated/dns-automation: Terraform
@@ -9417,16 +9443,17 @@ def dns_automation(
           <summary>How this example was checked</summary>
           <div class="rich">
             <p>
-              Read dns_automation.py, terraform.py, test_terraform_vars.py, tf/gitops/dns-records/BUILD.bazel, the
-              generated cluster/generated/dns-automation/kustomization.yaml and the committed dns-automation node at
-              aaaa3a5b90: the node depends on tofu-controller and external-secrets-operator, keeps
-              <code>wait=None</code> and one health check, and has no dependents. Nothing was re-rendered on aaaa3a5b90.
+              Read dns_automation.py, terraform.py, test_terraform_vars.py and the committed dns-automation node at
+              f84301e72c: the node depends on tofu-controller and external-secrets-operator, keeps
+              <code>wait=None</code> and one health check, and has no dependents.
             </p>
             <p>
-              The after code was verified at 85fb8d0d: the dns-records chart and the node rendered with the vars model,
-              <code>write_directory</code>, the new node and the admission-graph validation, diffed per object, and the
-              relation ran against the parsed variables.tf.
+              Re-ran on f84301e72c in a scratch environment: rendered the dns-records directory through
+              <code>write_directory</code> and the node from f84301e72c (both byte-identical to the committed files),
+              then with this after code and E4&#39;s copy left out. The directory is byte-identical, and the node loses
+              only its health check.
             </p>
+            <p><code>test_terraform_vars</code> was read, not run.</p>
           </div>
           <span class="lbl">Fixed during verification</span>
           <div class="rich">
@@ -9459,7 +9486,7 @@ NAME = &#34;authentik-db-ovh&#34;
 OUTPUT_DIR = f&#34;{HAND_WRITTEN_ROOT}/authentik/db&#34;
 # The database is on node-local `local-path-ovh` storage and cannot move; Authentik&#39;s server
 # selects the same zone to stay beside it.
-NODE_SELECTOR = {&#34;topology.kubernetes.io/zone&#34;: &#34;hil-ovh&#34;}
+NODE_SELECTOR = node_scheduling.HIL_OVH_NODE_SELECTOR
 DATABASE = &#34;authentik&#34;
 # The credentials CNPG generated for the retired `authentik-db`, which this cluster was
 # cloned from; the role&#39;s password came with the clone.
@@ -9655,7 +9682,7 @@ def chart(app: App) -&gt; Chart:
                 &#34;valueFrom&#34;: {&#34;secretKeyRef&#34;: {&#34;name&#34;: db.POSTGRES.app_secret.name, &#34;key&#34;: &#34;password&#34;}},
                 &#34;secret.reloader.stakater.com/reload&#34;: f&#34;{db.POSTGRES.app_secret.name},authentik-user-password&#34;,
             &#34;postgresql&#34;: {&#34;host&#34;: db.POSTGRES.rw.name, &#34;name&#34;: db.DATABASE, &#34;user&#34;: db.DATABASE, &#34;password&#34;: &#34;&#34;},
-            &#34;nodeSelector&#34;: HIL_OVH.node_selector,
+            &#34;nodeSelector&#34;: HIL_OVH_NODE_SELECTOR,
 
 
 # cluster/cdk8s/authentik/flux_kustomizations.py
@@ -9752,20 +9779,21 @@ def authentik(
             <p>
               Re-read authentik/db.py, db_backups.py, app.py and flux_kustomizations.py, cnpg.py, seaweedfs/s3.py,
               cluster/validation/crd_layering.py and cluster/AGENTS.md § Migrating stateful Flux Kustomizations at
-              aaaa3a5b90, and the Flux specs and dependents of both nodes in the committed kustomizations.k8s.yaml.
+              f84301e72c, and the Flux specs and dependents of both nodes in the committed kustomizations.k8s.yaml.
             </p>
             <p>
-              Re-ran on aaaa3a5b90 in a scratch environment with the pinned bindings: synthesized the db chart, the
-              db-backups directory through <code>write_directory</code> and the authentik node from aaaa3a5b90
+              Re-ran on f84301e72c in a scratch environment with the pinned bindings: synthesized the db chart, the
+              db-backups directory through <code>write_directory</code> and the authentik node from f84301e72c
               (byte-identical to the committed files) and the folded db chart and new node with the after code, diffed
-              per object, and compared Authentik&#39;s Helm values dict before and after. <code>PrivateBucket</code> and
-              the seaweedfs provider came from the 85fb8d0d harness, whose bases differ from aaaa3a5b90 only in spelling
-              <code>metadata()</code>; <code>cnpg.cluster(ref=, placement=, wal_archive=)</code> was rebased onto
-              today&#39;s <code>Cluster(metadata=, storage=, bootstrap=)</code>.
+              per object, and compared Authentik&#39;s Helm values dict before and after (identical).
+              <code>PrivateBucket</code>, <code>PostgresBackup</code> and
+              <code>cnpg.cluster(ref=, placement=, wal_archive=)</code> are the earlier harness&#39;s code merged onto
+              today&#39;s modules.
             </p>
             <p>
               Ran <code>kustomize build</code> on the folded cluster/k8s/authentik tree (35 objects) and mapped every
-              rendered kind to its provider through <code>crd_layering.CRD_TO_OPERATOR</code>.
+              rendered kind to its provider through <code>crd_layering.CRD_TO_OPERATOR</code>: cnpg, monitoring-crds and
+              seaweedfs-operator.
             </p>
             <p>
               Not run: the handover itself, and the SeaweedFS operator&#39;s handling of a deleted and recreated
@@ -9807,86 +9835,50 @@ def authentik(
         </header>
         <div class="target">
           Deploys to: namespace gatus (Kustomization gatus, cluster/k8s/gatus/gatus.k8s.yaml: Namespace, CNPG Cluster
-          gatus-db, HelmRelease gatus, policies, route, ServiceMonitor); kyverno/policies.py reads the namespace label
-          keys · shows <a class="cid" href="#C2">C2</a> <a class="cid" href="#C4">C4</a>
-          <a class="cid" href="#C5">C5</a> <a class="cid" href="#C9">C9</a>
+          gatus-db, HelmRelease gatus, policies, route, ServiceMonitor); the Namespace change is
+          <code>namespaces.namespace</code>&#39;s, so it reaches every namespace that function renders · shows
+          <a class="cid" href="#C2">C2</a> <a class="cid" href="#C4">C4</a> <a class="cid" href="#C5">C5</a>
+          <a class="cid" href="#C9">C9</a>
         </div>
         <div class="cols">
           <div class="col before">
             <span class="lbl">Today</span>
-            <pre class="code"><code class="language-python"># cluster/cdk8s/gatus/app.py:35-42
+            <pre class="code"><code class="language-python"># cluster/cdk8s/gatus/app.py:36-42
 OUTPUT_DIR = f&#34;{HAND_WRITTEN_ROOT}/gatus&#34;
 _NAME = &#34;gatus&#34;
 _NAMESPACE = &#34;gatus&#34;
 _LABELS = {&#34;app.kubernetes.io/name&#34;: _NAME}
 _DB_NAME = &#34;gatus-db&#34;
-_ZONE = &#34;hil-ovh&#34;
 _HELM_REPOSITORY = &#34;twin&#34;
 _PORT = 8080
-# cluster/cdk8s/gatus/app.py:45-71
+# cluster/cdk8s/gatus/app.py:45-46, 49-60
 def _namespace(scope: Construct) -&gt; None:
-    k8s.KubeNamespace(
-        scope,
-        &#34;namespace&#34;,
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={
-                &#34;goldilocks.fairwinds.com/enabled&#34;: &#34;true&#34;,
-                &#34;goldilocks.fairwinds.com/vpa-update-mode&#34;: &#34;auto&#34;,
-                &#34;rbac.ducktape.io/agent-readable-logs&#34;: &#34;true&#34;,
-            },
-        ),
-    )
-
-
+    namespaces.namespace(scope, &#34;namespace&#34;, name=_NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
 def _database(scope: Construct) -&gt; None:
     cnpg.cluster(
         scope,
         &#34;database&#34;,
         name=_DB_NAME,
         namespace=_NAMESPACE,
-        node_selector={&#34;topology.kubernetes.io/zone&#34;: _ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class=&#34;local-path-ovh&#34;,
         size=&#34;1Gi&#34;,
         # CNPG auto-generates credentials in secret gatus-db-app
         initdb=cnpg.same_owner_initdb(&#34;gatus&#34;),
     )
-# cluster/cdk8s/gatus/app.py:101-105, 113-134 (inside helm_release(..., values={...}))
+# cluster/cdk8s/gatus/app.py:90-93 (inside helm_release(..., values={...}); nodeSelector, tolerations and affinity read node_scheduling)
             &#34;env&#34;: {
                 &#34;GATUS_DB_URI&#34;: {&#34;valueFrom&#34;: {&#34;secretKeyRef&#34;: {&#34;name&#34;: f&#34;{_DB_NAME}-app&#34;, &#34;key&#34;: &#34;uri&#34;}}},
                 &#34;LITELLM_API_KEY&#34;: {&#34;valueFrom&#34;: {&#34;secretKeyRef&#34;: {&#34;name&#34;: &#34;litellm-master-key&#34;, &#34;key&#34;: &#34;api-key&#34;}}},
             },
-            &#34;envFrom&#34;: [{&#34;secretRef&#34;: {&#34;name&#34;: &#34;gatus-oidc-secret&#34;}}],
-            &#34;nodeSelector&#34;: {&#34;topology.kubernetes.io/zone&#34;: _ZONE},
-            # Gatus is stateless at the pod level (state moved to gatus-db above). Allow
-            # control-plane nodes as overflow capacity, while the affinity below keeps
-            # ordinary placement on workers.
-            &#34;tolerations&#34;: [
-                {&#34;key&#34;: &#34;node-role.kubernetes.io/control-plane&#34;, &#34;operator&#34;: &#34;Exists&#34;, &#34;effect&#34;: &#34;NoSchedule&#34;}
-            ],
-            # Prefer ordinary workers when this workload tolerates control planes.
-            &#34;affinity&#34;: {
-                &#34;nodeAffinity&#34;: {
-                    &#34;preferredDuringSchedulingIgnoredDuringExecution&#34;: [
-                        {
-                            &#34;weight&#34;: 100,
-                            &#34;preference&#34;: {
-                                &#34;matchExpressions&#34;: [
-                                    {&#34;key&#34;: &#34;node-role.kubernetes.io/control-plane&#34;, &#34;operator&#34;: &#34;DoesNotExist&#34;}
-                                ]
-                            },
-                        }
-                    ]
-                }
-            },
-# cluster/cdk8s/gatus/app.py:150-155
+# cluster/cdk8s/gatus/app.py:123-128
         endpoint_selector=_LABELS,
         ingress=[
             # Cilium Gateway API (reserved:ingress identity) → Gatus
             IngressRule.from_gateway(_PORT),
             # Prometheus → Gatus (ServiceMonitor scraping)
             IngressRule.from_endpoints({&#34;k8s:io.kubernetes.pod.namespace&#34;: &#34;monitoring&#34;}, ports=[_PORT]),
-# cluster/cdk8s/gatus/app.py:198-214
+# cluster/cdk8s/gatus/app.py:171-187
     https_route(
         chart,
         &#34;route&#34;,
@@ -9904,50 +9896,25 @@ def _database(scope: Construct) -&gt; None:
         selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
         endpoints=[Endpoint.plain(port=&#34;http&#34;)],
     )
-# cluster/cdk8s/kyverno/policies.py:603-604
-    metadata_label = &#34;rbac.ducktape.io/agent-readable-metadata&#34;
-    logs_label = &#34;rbac.ducktape.io/agent-readable-logs&#34;</code></pre>
+# cluster/cdk8s/namespaces.py:45-49 (every update mode renders beside `enabled: &#34;true&#34;`)
+    policy: dict[str, str] = (
+        {_GOLDILOCKS_ENABLED_LABEL: &#34;false&#34;}
+        if vpa is Vpa.DISABLED
+        else {_GOLDILOCKS_ENABLED_LABEL: &#34;true&#34;, VPA_UPDATE_MODE_LABEL: vpa}
+    )</code></pre>
           </div>
           <div class="col after">
             <span class="lbl">Proposed</span>
             <pre
               class="code"
-            ><code class="language-python"># cluster/cdk8s/namespaces.py (C2): ducktape&#39;s policy for the Namespace kind
-class AgentReadable(StrEnum):
-    &#34;&#34;&#34;Namespace data classification (cluster/docs/agent_rbac.md); kyverno/policies.py generates the
-    agent RoleBindings from these keys.&#34;&#34;&#34;
-
-    METADATA = &#34;rbac.ducktape.io/agent-readable-metadata&#34;
-    LOGS = &#34;rbac.ducktape.io/agent-readable-logs&#34;
+            ><code class="language-python"># cluster/cdk8s/namespaces.py (landed in #8229): the goldilocks-label decision renders the update mode alone;
+# the two goldilocks checks in cluster/validation/checks.py change with it
+    policy: dict[str, str] = (
+        {_GOLDILOCKS_ENABLED_LABEL: &#34;false&#34;} if vpa is Vpa.DISABLED else {VPA_UPDATE_MODE_LABEL: vpa}
+    )
 
 
-class Vpa(StrEnum):
-    &#34;&#34;&#34;Goldilocks&#39; VPA for the namespace. Its controller runs on-by-default (goldilocks.py:43), so every
-    namespace it has not been told to skip gets a recommending VPA.&#34;&#34;&#34;
-
-    DISABLED = &#34;disabled&#34;
-    RECOMMEND = &#34;off&#34;
-    INITIAL = &#34;initial&#34;
-    AUTO = &#34;auto&#34;
-
-
-def namespace(
-    scope: Construct, id: str, *, name: str, vpa: Vpa, agent_readable: AgentReadable | None
-) -&gt; k8s.KubeNamespace:
-    labels: dict[str, str] = {}
-    match vpa:
-        case Vpa.DISABLED:
-            labels[&#34;goldilocks.fairwinds.com/enabled&#34;] = &#34;false&#34;
-        case Vpa.INITIAL | Vpa.AUTO:
-            labels[&#34;goldilocks.fairwinds.com/vpa-update-mode&#34;] = vpa
-        case Vpa.RECOMMEND:
-            pass
-    if agent_readable is not None:
-        labels[agent_readable] = &#34;true&#34;
-    return k8s.KubeNamespace(scope, id, metadata=k8s.ObjectMeta(name=name, labels=labels or None))
-
-
-# cluster/cdk8s/gatus/app.py: _NAMESPACE, _LABELS, _DB_NAME, _ZONE and _PORT go
+# cluster/cdk8s/gatus/app.py: _NAMESPACE, _LABELS, _DB_NAME and _PORT go
 NAMESPACE = &#34;gatus&#34;
 # The chart&#39;s Service: port 80 to the Pods&#39; `http` (8080), selecting `app.kubernetes.io/name`.
 SERVICE = ServiceRef(
@@ -9969,25 +9936,18 @@ def _database(scope: Construct) -&gt; None:
         scope,
         &#34;database&#34;,
         ref=DATABASE,
-        placement=HIL_OVH,
+        placement=node_scheduling.HIL_OVH,
         storage_class=&#34;local-path-ovh&#34;,
         size=&#34;1Gi&#34;,
         initdb=cnpg.same_owner_initdb(&#34;gatus&#34;),
         wal_archive=False,
     )
 
-# in _helm_release, values=:
+# in _helm_release, values= (nodeSelector, tolerations and affinity stay as they are):
             &#34;env&#34;: {
                 &#34;GATUS_DB_URI&#34;: {&#34;valueFrom&#34;: DATABASE.app_secret.key(&#34;uri&#34;).value_from()},
                 &#34;LITELLM_API_KEY&#34;: {&#34;valueFrom&#34;: _LITELLM_KEY.value_from()},
             },
-            ...
-            &#34;nodeSelector&#34;: HIL_OVH.node_selector,
-            # Stateless at the pod level (state is in gatus-db): control planes are overflow capacity.
-            &#34;tolerations&#34;: [CONTROL_PLANE_TOLERATION],
-            &#34;affinity&#34;: PREFER_WORKERS,
-            # Quantities stay strings: a k8s.Quantity inside values renders as {value: ...}.
-            &#34;resources&#34;: {&#34;requests&#34;: {&#34;cpu&#34;: &#34;20m&#34;, &#34;memory&#34;: &#34;64Mi&#34;}, &#34;limits&#34;: {&#34;cpu&#34;: &#34;200m&#34;, &#34;memory&#34;: &#34;128Mi&#34;}},
 
 # _network_policies: both policies take endpoint_selector=SERVICE.pods.selector
         ingress=[IngressRule.from_gateway(SERVICE.pod_port), cilium.SCRAPERS.admit(SERVICE.pod_port)],
@@ -10008,12 +9968,7 @@ def _database(scope: Construct) -&gt; None:
         metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
         selector=ServiceMonitorSpecSelector(match_labels=SERVICE.labels),
         endpoints=[Endpoint.plain(port=SERVICE.port.name)],
-    )
-
-
-# cluster/cdk8s/kyverno/policies.py:603-604 imports the keys instead of re-spelling them
-    metadata_label = AgentReadable.METADATA
-    logs_label = AgentReadable.LOGS</code></pre>
+    )</code></pre>
           </div>
         </div>
         <div class="effect">
@@ -10029,15 +9984,15 @@ def _database(scope: Construct) -&gt; None:
               <li>
                 Namespace: loses <code>goldilocks.fairwinds.com/enabled: &#34;true&#34;</code> (the goldilocks-label
                 decision; the controller runs on-by-default). <code>vpa-update-mode: auto</code> and
-                <code>agent-readable-logs</code> stay.
+                <code>agent-readable-logs</code> stay. Every namespace <code>namespaces.namespace</code> renders with an
+                update mode loses the same label.
               </li>
               <li>
-                HelmRelease: byte-identical. The typed env sources, toleration and affinity render the same keys and
-                values, so the gatus Pod does not restart. The chart&#39;s Service is port 80 to targetPort
-                <code>http</code>, the container&#39;s 8080, selecting <code>app.kubernetes.io/name: gatus</code> among
-                others, which is what <code>SERVICE</code> states.
+                HelmRelease: byte-identical. The typed env sources render the same keys and values, so the gatus Pod
+                does not restart. The chart&#39;s Service is port 80 to targetPort <code>http</code>, the
+                container&#39;s 8080, selecting <code>app.kubernetes.io/name: gatus</code> among others, which is what
+                <code>SERVICE</code> states.
               </li>
-              <li>kyverno&#39;s generate-agent-diagnostics-readers ClusterPolicy is byte-identical.</li>
             </ul>
             <p>
               No Flux change. Hardening of the chart&#39;s own Pods stays with the chart values and Kyverno, outside
@@ -10049,18 +10004,19 @@ def _database(scope: Construct) -&gt; None:
           <summary>How this example was checked</summary>
           <div class="rich">
             <p>
-              Re-read gatus/app.py, kyverno/policies.py, goldilocks.py and cnpg.py at aaaa3a5b90, and the gatus 1.5.0
-              chart&#39;s service template and values, the version app.py still pins.
+              Re-read gatus/app.py, namespaces.py, kyverno/policies.py, cnpg.py and the goldilocks checks in
+              cluster/validation/checks.py at f84301e72c; the gatus 1.5.0 chart&#39;s service template and values were
+              read at 85fb8d0d, and app.py pins the same version.
             </p>
             <p>
-              Re-ran on aaaa3a5b90 in a scratch environment with the pinned bindings: synthesized the gatus chart and
-              kyverno&#39;s generate-agent-diagnostics-readers chart from aaaa3a5b90 (byte-identical to the committed
-              files) and with the after code ported to today&#39;s keywords, and diffed per object and as text: one
-              removed line, and identical HelmRelease values.
+              Re-ran on f84301e72c in a scratch environment with the pinned bindings: synthesized the gatus chart and
+              kyverno&#39;s generate-agent-diagnostics-readers chart from f84301e72c (byte-identical to the committed
+              files) and with the after code merged onto today&#39;s gatus/app.py and namespaces.py, and diffed per
+              object and as text: one removed line, identical HelmRelease values, and an identical kyverno chart.
             </p>
             <p>
-              At 85fb8d0d the chart was also rendered with <code>helm template</code> (Helm 3.20); on aaaa3a5b90 the
-              values are identical, so it was not re-run.
+              At 85fb8d0d the chart was also rendered with <code>helm template</code> (Helm 3.20); the values are
+              identical on f84301e72c, so it was not re-run.
             </p>
           </div>
           <span class="lbl">Fixed during verification</span>
@@ -10074,10 +10030,7 @@ def _database(scope: Construct) -&gt; None:
                 The route, policies and ServiceMonitor use <code>SERVICE</code> with <code>target_port=8080</code>; the
                 input left them out for lack of the field.
               </li>
-              <li>
-                <code>CONTROL_PLANE_TOLERATION</code>, <code>PREFER_WORKERS</code> and
-                <code>SecretKey.value_from</code> come from C5 and C4 and are not redefined here.
-              </li>
+              <li><code>SecretKey.value_from</code> comes from C4 and is not redefined here.</li>
               <li><code>initdb=cnpg.same_owner_initdb(&#34;gatus&#34;)</code>, as devel already has it (#8105).</li>
               <li>Ran the real chart and the Helm chart instead of a stand-in.</li>
             </ul>
@@ -10102,16 +10055,16 @@ def _database(scope: Construct) -&gt; None:
         <div class="cols">
           <div class="col before">
             <span class="lbl">Today</span>
-            <pre class="code"><code class="language-python"># cluster/cdk8s/tana_mcp.py:41-43
+            <pre class="code"><code class="language-python"># cluster/cdk8s/tana_mcp.py:42-44
 _RESIGNER = &#34;tana-firebase-resigner&#34;
 _RESIGNER_CONFIG = &#34;tana-firebase-resigner-config&#34;
 _REFRESH_TOKEN_SECRET = &#34;tana-firebase-refresh-token&#34;
-# cluster/cdk8s/tana_mcp.py:75-78 (the tana-mcp pod states no automountServiceAccountToken)
+# cluster/cdk8s/tana_mcp.py:76-79 (the tana-mcp pod states no automountServiceAccountToken)
                 spec=k8s.PodSpec(
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
-                    node_selector={&#34;topology.kubernetes.io/zone&#34;: &#34;hil-ovh&#34;},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     service_account_name=_RESIGNER,
-# cluster/cdk8s/tana_mcp.py:177-184
+# cluster/cdk8s/tana_mcp.py:178-185
         metadata=k8s.ObjectMeta(name=_RESIGNER_CONFIG, namespace=_NAMESPACE),
         data={
             # Tana web bundle&#39;s REACT_APP_FIREBASE_API_KEY for project tagr-prod. This
@@ -10120,7 +10073,7 @@ _REFRESH_TOKEN_SECRET = &#34;tana-firebase-refresh-token&#34;
             &#34;SECRET_NAMESPACE&#34;: _NAMESPACE,
             &#34;SECRET_NAME&#34;: _REFRESH_TOKEN_SECRET,
             &#34;SECRET_KEY&#34;: &#34;refresh_token&#34;,
-# cluster/cdk8s/tana_mcp.py:195-214
+# cluster/cdk8s/tana_mcp.py:196-215
     k8s.KubeServiceAccount(
         chart, &#34;resigner-service-account&#34;, metadata=k8s.ObjectMeta(name=_RESIGNER, namespace=_NAMESPACE)
     )
@@ -10173,7 +10126,7 @@ def _resigner_identity(chart: Chart) -&gt; ServiceAccount:
 # _tana_deployment(chart, *, resigner: ServiceAccount), called as _tana_deployment(chart, resigner=_resigner_identity(chart)):
                 spec=k8s.PodSpec(
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
-                    node_selector={&#34;topology.kubernetes.io/zone&#34;: &#34;hil-ovh&#34;},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     service_account_name=resigner.name,
                     # firebase-resigner calls the API with this token; the cdk8s-plus ServiceAccount
                     # turns automount off by default.
@@ -10223,10 +10176,10 @@ def _resigner_identity(chart: Chart) -&gt; ServiceAccount:
           <div class="rich">
             <p>
               Re-read tana_mcp.py and tana/firebase_resigner/resigner.py (the settings model at :36 and the API calls at
-              :187-216) at aaaa3a5b90.
+              :187-216) at f84301e72c.
             </p>
             <p>
-              Re-ran on aaaa3a5b90 in a scratch environment: synthesized the real tana-mcp chart from aaaa3a5b90
+              Re-ran on f84301e72c in a scratch environment: synthesized the real tana-mcp chart from f84301e72c
               (byte-identical to the committed file) and with the after code merged onto it, and diffed per object: 14
               of 17 objects identical, and the ServiceAccount, the tana-mcp Deployment and the RoleBinding change as
               stated.
@@ -10265,7 +10218,7 @@ def _resigner_identity(chart: Chart) -&gt; ServiceAccount:
     interval: 60s
     conditions:
       - &#34;[STATUS] == 200&#34;
-# cluster/k8s/gatus/config.yaml:185-204
+# cluster/k8s/gatus/config.yaml:187-206
   - name: Atuin
     group: services
     url: http://atuin-server.atuin.svc.cluster.local:8888
@@ -10299,10 +10252,10 @@ configMapGenerator:
       - config.yaml
     options:
       disableNameSuffixHash: true
-# cluster/cdk8s/atuin/server.py:21-22 (the producers&#39; own spellings)
+# cluster/cdk8s/atuin/server.py:22-23 (the producers&#39; own spellings)
 _SERVER = &#34;atuin-server&#34;
 _PORT = 8888
-# cluster/cdk8s/grocy/app.py:53, 255, 379-385
+# cluster/cdk8s/grocy/app.py:53, 255, 368-374
 _HTTP_PORT = 80
     namespace = f&#34;grocy-{household}&#34;
         lambda app: household_chart(app, household=&#34;sf&#34;, backup_schedule=&#34;23 */6 * * *&#34;),
@@ -10312,14 +10265,14 @@ _HTTP_PORT = 80
         f&#34;{HAND_WRITTEN_ROOT}/grocy/vallejo/app&#34;,
         base_chart,
         lambda app: household_chart(app, household=&#34;vallejo&#34;, backup_schedule=&#34;29 */6 * * *&#34;),
-# cluster/cdk8s/grocy/mcp.py:218-223
+# cluster/cdk8s/grocy/mcp.py:205-210
         root, f&#34;{HAND_WRITTEN_ROOT}/grocy/sf/mcp&#34;, lambda app: household_chart(app, household=&#34;sf&#34;, display_name=&#34;SF&#34;)
     )
     write_charts(
         root,
         f&#34;{HAND_WRITTEN_ROOT}/grocy/vallejo/mcp&#34;,
         lambda app: household_chart(app, household=&#34;vallejo&#34;, display_name=&#34;Vallejo&#34;),
-# cluster/cdk8s/forgejo/app.py:199-201, 426
+# cluster/cdk8s/forgejo/app.py:188-190, 415
                     &#34;DOMAIN&#34;: &#34;git.allegedly.works&#34;,
                     &#34;SSH_DOMAIN&#34;: &#34;git.allegedly.works&#34;,
                     &#34;ROOT_URL&#34;: &#34;https://git.allegedly.works&#34;,
@@ -10328,7 +10281,7 @@ _HTTP_PORT = 80
                 _from_namespace_pod(&#34;gatus&#34;, {&#34;app.kubernetes.io/name&#34;: &#34;gatus&#34;}),
 # cluster/cdk8s/hubble_ui.py:47
                 _from(&#34;gatus&#34;, {&#34;app.kubernetes.io/name&#34;: &#34;gatus&#34;}),
-# cluster/cdk8s/monitoring/loki.py:555
+# cluster/cdk8s/monitoring/loki.py:540
                 from_endpoints=_from_pods({&#34;app.kubernetes.io/name&#34;: &#34;gatus&#34;, namespace_label: &#34;gatus&#34;}),</code></pre>
           </div>
           <div class="col after">
@@ -10438,7 +10391,7 @@ CONFIG = {
             </p>
             <p>
               The reverse direction: five servers admit the prober by re-spelling it (grocy/app.py:190, hubble_ui.py:47,
-              monitoring/loki.py:555 and monitoring/stack.py:537, and the namespace alone at authentik/app.py:268).
+              monitoring/loki.py:540 and monitoring/stack.py:523, and the namespace alone at authentik/app.py:268).
               gatus/app.py cannot export that fact, because grocy would then import gatus, which imports grocy; so
               <code>PROBER</code> sits beside <code>SCRAPERS</code> in cilium.py, and gatus&#39;s own
               <code>SERVICE</code> takes its Pods from it. The other four sites convert in the same change.
@@ -10451,12 +10404,12 @@ CONFIG = {
           <div class="rich">
             <p>
               Re-read cluster/k8s/gatus/config.yaml and kustomization.yaml, gatus/app.py, atuin/server.py, grocy/app.py
-              and mcp.py, forgejo/app.py and the five prober-admission sites at aaaa3a5b90, and grepped for every
+              and mcp.py, forgejo/app.py and the five prober-admission sites at f84301e72c, and grepped for every
               re-spelling of gatus.
             </p>
             <p>
-              Re-ran on aaaa3a5b90 in a scratch environment: rendered the grocy (both households, app and MCP, and the
-              MCP base) and forgejo directories from aaaa3a5b90 (byte-identical to the committed files) and with the
+              Re-ran on f84301e72c in a scratch environment: rendered the grocy (both households, app and MCP, and the
+              MCP base) and forgejo directories from f84301e72c (byte-identical to the committed files) and with the
               roster, <code>service()</code>, <code>HOSTNAME</code> and <code>PROBER</code>, and compared them byte for
               byte. Built the gatus directory through <code>write_directory</code> on top of E11&#39;s after code, with
               the config rebuilt from today&#39;s config.yaml and the four probes swapped for the reference-derived ones
@@ -10537,7 +10490,7 @@ CONFIG = {
                 Merge it after one revision: rebase past #7441, which already removed the three-layer law it replaces;
                 point rule 2&#39;s table at <code>flux.ORDERING_EXCEPTIONS</code>, checked at synth; note that derived
                 Orphan covers the delete-or-rename case rule 3b keeps a narrow unit for; and refresh its numbers from
-                devel aaaa3a5b90. Folding only rules 1, 2 and 4 into AGENTS.md would drop rule 3&#39;s unit boundaries
+                devel f84301e72c. Folding only rules 1, 2 and 4 into AGENTS.md would drop rule 3&#39;s unit boundaries
                 and rule 6&#39;s shared-artifact ordering, which the folds and exceptions rely on.
               </p>
             </div>
@@ -10601,7 +10554,7 @@ CONFIG = {
             <span class="lbl">Recommendation</span>
             <div class="rich">
               <p>
-                Yes. Audit the 22 unprotected Kustomizations first, and with them the HelmRelease directories whose
+                Yes. Audit the 21 unprotected Kustomizations first, and with them the HelmRelease directories whose
                 chart holds the state (loki, mimir, matrix/synapse), which pass
                 <code>deletion_policy=ORPHAN</code> explicitly because detection sees only generated kinds. A
                 deliberately disposable cache passes <code>MIRROR_PRUNE</code> or <code>DELETE</code>. This is also what
@@ -10912,7 +10865,7 @@ CONFIG = {
                     already removed the three-layer law it replaces; point rule 2&#39;s
                     <code>_ORDERING_EXCEPTIONS</code> at <code>flux.ORDERING_EXCEPTIONS</code>, checked at synth; note
                     that derived Orphan covers the rename case rule 3b&#39;s narrow unit exists for; and refresh its
-                    2026-09-16 numbers (713 edges, 278 units; 249 and 171 on devel aaaa3a5b90).
+                    2026-09-16 numbers (713 edges, 278 units; 249 and 171 on devel f84301e72c).
                   </p>
                 </div>
               </td>
@@ -11046,7 +10999,7 @@ CONFIG = {
       <ol class="steps">
         <li>
           <div class="st">
-            <div class="rich"><p>Housekeeping: land #7426, #7859 and #7909, and #7695 after a rebase.</p></div>
+            <div class="rich"><p>Housekeeping: land #7859, and #7426, #7909 and #7695 after a rebase.</p></div>
           </div>
           <div class="sc">
             <div class="rich"><p>PR state only; no new code.</p></div>
@@ -11300,7 +11253,7 @@ CONFIG = {
             <span class="lbl">Risk</span>
             <div class="rich">
               <p>
-                Medium per container that had no securityContext: 39 containers in 27 workloads gain drop-ALL and no
+                Medium per container that had no securityContext: 43 containers in 28 workloads gain drop-ALL and no
                 escalation. Review the render diff container by container, the haku-ci runner first.
                 <code>place()</code> renders the required zone affinity until decision 8, so the 9 raw pod specs that
                 state <code>HIL_OVH_NODE_SELECTOR</code> render identically under it only after the flip.
@@ -11361,7 +11314,7 @@ CONFIG = {
           <div class="sc">
             <div class="rich">
               <p>
-                <code>generation.py</code>, <code>fleet_rules.py</code>, <code>cluster/validation</code>, and the 50
+                <code>generation.py</code>, <code>fleet_rules.py</code>, <code>cluster/validation</code>, and the
                 hand-written directories that include generated files.
               </p>
             </div>
@@ -11423,7 +11376,7 @@ CONFIG = {
             <span class="lbl">Risk</span>
             <div class="rich">
               <p>
-                Medium. It changes live Flux deletion behavior on the 22 unprotected nodes and the audited HelmRelease
+                Medium. It changes live Flux deletion behavior on the 21 unprotected nodes and the audited HelmRelease
                 directories, in the safe direction.
               </p>
             </div>
@@ -11463,7 +11416,7 @@ CONFIG = {
                 Providers leftovers, each your call: the ExternalSecret <code>target</code> stays flattened (<code
                   >creation_policy</code
                 >
-                at 35 of 39 sites); <code>redis_operator</code> is heavily flattened for one site; kyverno
+                at 34 of 38 sites); <code>redis_operator</code> is heavily flattened for one site; kyverno
                 <code>match_resources</code> is module-level; <code>ActionPolicySet</code> and flux
                 <code>Kustomization</code> are each built at one site inside a function with many callers; kinds built
                 at several sites have no provider class (Flux <code>HelmRepository</code> at about 31,
@@ -12063,7 +12016,7 @@ CONFIG = {
                 <div class="rich">
                   <p>
                     It is what the graph grew into, and the owner is moving away from it because the tiny units cost
-                    reconcile time and I/O (#7094). On devel aaaa3a5b90, 35 of 249 edges wait on runtime state that
+                    reconcile time and I/O (#7094). On devel f84301e72c, 35 of 249 edges wait on runtime state that
                     converges by retry (62 counting the 27 direct <code>kyverno</code> edges, decision 13), 94
                     unsuspended <code>wait: true</code> nodes gate nothing admission needs, and 59 of 165 measurable
                     units render 3 objects or fewer.
@@ -12168,6 +12121,10 @@ CONFIG = {
               Burn-down, after the cleanup wave: the counts that wave changed (pod policy, placement, namespaces, the
               writer, backups, the helper census) were re-measured on devel 2411690fa3; the example excerpts were not
               re-cut.
+            </li>
+            <li>
+              Sweep, on devel f84301e72c: the counts, the file:line cites and the open PRs&#39; states outside the
+              examples were re-measured.
             </li>
           </ul>
           <p>
@@ -12297,8 +12254,8 @@ CONFIG = {
     },
     {
       "title": "N2 \u00b7 Derive node facts from the directory",
-      "today": "The writer derives decryption for its directories; elsewhere `SOPS_DECRYPTION` is passed by hand at 22 nodes and `sops_decryption` at 1; 39 health-check entries are typed out; 22 of 40 stateful Kustomizations lack Orphan.",
-      "note": "Decryption already derives from the writer's `siblings` (`flux.py:174-178`) and health checks from rendered identities (`flux.py:119-129`); deriving Orphan there too makes a forgotten decryption or Orphan impossible once every node takes its directory, and the 22 hand-passed decryption blocks and 22 missing Orphans show forgetting is the failure mode. Health checks are derived only for admission targets, and a directory whose state lives in a HelmRelease (loki, mimir, matrix) passes `deletion_policy=ORPHAN` itself, because detection sees only generated kinds.",
+      "today": "The writer derives decryption for its directories; elsewhere `SOPS_DECRYPTION` is passed by hand at 22 nodes and `sops_decryption` at 1; 39 health-check entries are typed out; 21 of 40 stateful Kustomizations lack Orphan.",
+      "note": "Decryption already derives from the writer's `siblings` (`flux.py:174-178`) and health checks from rendered identities (`flux.py:119-129`); deriving Orphan there too makes a forgotten decryption or Orphan impossible once every node takes its directory, and the 22 hand-passed decryption blocks and 21 missing Orphans show forgetting is the failure mode. Health checks are derived only for admission targets, and a directory whose state lives in a HelmRelease (loki, mimir, matrix) passes `deletion_policy=ORPHAN` itself, because detection sees only generated kinds.",
       "conventions": "C7"
     },
     {
@@ -12345,14 +12302,14 @@ CONFIG = {
     },
     {
       "title": "N10 \u00b7 Workload hardening across pod dialects",
-      "today": "Carried three ways: constructor keywords, `pod_policy.harden()` on the 20 cdk8s-plus workloads, and literal structs on raw and CRD pod specs; 39 containers in 27 generated workloads state no securityContext.",
+      "today": "Carried three ways: constructor keywords, `pod_policy.harden()` on the 20 cdk8s-plus workloads, and literal structs on raw and CRD pod specs; 43 containers in 28 generated workloads state no securityContext.",
       "note": "In a scratch environment, `harden()` reached a cdk8s-plus Deployment, a raw CronJob with an initContainer and the real `SandboxTemplate` binding, filling only unset fields, and the writer-attached rule caught a container added after the call. A pure PodSpec function would need every fluent workload converted to raw first; chart-rendered Pods stay with their chart values and Kyverno.",
       "conventions": "C5, C6"
     },
     {
       "title": "N11 \u00b7 Placement and scheduling",
       "today": "`node_scheduling.py` names the zone, its node selector, the control-plane toleration and `PREFER_WORKERS` once, and no other module spells `\"hil-ovh\"` or the control-plane key in code. `place()` pins its 8 cdk8s-plus workloads with a required zone affinity; the 9 raw pod specs and the Helm values that take `HIL_OVH_NODE_SELECTOR` render a `nodeSelector`.",
-      "note": "One `Placement` value feeds `place()` and `cnpg.cluster`'s affinity, and `place()` renders a nodeSelector on every dialect and raises on a second placement (checked in a scratch environment). Helm values and operator CRs embed the same typed values (`HIL_OVH.node_selector`, `[CONTROL_PLANE_TOLERATION]`, `PREFER_WORKERS`; X1), which render wire-shaped inside `any`-typed values.",
+      "note": "One `Placement` value feeds `place()` and `cnpg.cluster`'s affinity, and `place()` renders it on every dialect (as a required node affinity until decision 8) and raises on a second placement (checked in a scratch environment). Helm values and operator CRs embed the same typed values (`HIL_OVH_NODE_SELECTOR`, `[CONTROL_PLANE_TOLERATION]`, `PREFER_WORKERS`; X1), which render wire-shaped inside `any`-typed values.",
       "conventions": "C5, C2"
     },
     {
@@ -12430,7 +12387,7 @@ CONFIG = {
     {
       "title": "N24 \u00b7 Helm releases",
       "today": "`helm.helm_release` is a resource function with policy defaults and untyped values dicts; placement on OVH comes from the shared `HIL_OVH_NODE_SELECTOR`, `CONTROL_PLANE_TOLERATION` and `PREFER_WORKERS`, while Secret references and the other node selectors are spelled by hand.",
-      "note": "`helm_release` keeps its policy defaults, and values stay dicts because no chart here ships a schema; placement, env and Secret references go into them as the typed values used everywhere else (`HIL_OVH.node_selector`, `SecretKey.value_from()`; X1). Hardening of chart-rendered Pods is enforced by neither `harden()` nor the fleet rules; it is the chart's own values plus Kyverno admission. A chart that holds state or renders custom resources says so at its node (`deletion_policy=ORPHAN`) and writer (`chart_kinds`), because detection sees only generated kinds.",
+      "note": "`helm_release` keeps its policy defaults, and values stay dicts because no chart here ships a schema; placement, env and Secret references go into them as the typed values used everywhere else (`HIL_OVH_NODE_SELECTOR`, `SecretKey.value_from()`; X1). Hardening of chart-rendered Pods is enforced by neither `harden()` nor the fleet rules; it is the chart's own values plus Kyverno admission. A chart that holds state or renders custom resources says so at its node (`deletion_policy=ORPHAN`) and writer (`chart_kinds`), because detection sees only generated kinds.",
       "conventions": "C2, C4, C5, C7"
     },
     {
@@ -12453,7 +12410,7 @@ CONFIG = {
     },
     {
       "title": "N28 \u00b7 Uptime probes and DNS from exposed services",
-      "today": "Gatus probes are hand-typed URLs in `cluster/k8s/gatus/config.yaml` (for example 192-204 for the grocy households); `cluster/docs/cdk8s_remainder.md:89-102` plans generating them.",
+      "today": "Gatus probes are hand-typed URLs in `cluster/k8s/gatus/config.yaml` (for example 194-206 for the grocy households); `cluster/docs/cdk8s_remainder.md:89-102` plans generating them.",
       "note": "The probe config imports producers' exported `HOSTNAME` and `ServiceRef` values into an explicit probe list (X3), so a renamed Service or household changes its probe in the same synth, with no registry. ExternalDNS (#7511) reads HTTPRoutes at runtime and needs nothing new from the layer.",
       "conventions": "C4, C9"
     },
