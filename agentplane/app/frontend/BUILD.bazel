@@ -59,6 +59,16 @@ ts_library(
 )
 
 ts_library(
+    name = "actions_client",
+    srcs = ["actions/client.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":schema",
+    ],
+)
+
+ts_library(
     name = "consent_client",
     srcs = ["consent_client.ts"],
     tsconfig = TSCONFIG,
@@ -100,12 +110,15 @@ ts_library(
 )
 
 ts_library(
-    name = "actions",
-    srcs = ["actions.tsx"],
+    name = "actions_call",
+    srcs = ["actions/call.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":actions_client",
+        ":actions_rendering",
         ":client",
         ":json_view",
+        ":raw_switch",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -113,39 +126,51 @@ ts_library(
 )
 
 ts_library(
-    name = "actions_test",
-    testonly = True,
-    srcs = ["actions.test.tsx"],
+    name = "actions_requests",
+    srcs = ["actions/requests.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":actions",
-        ":actions_testing",
+        ":actions_call",
+        ":actions_client",
         ":client",
+        ":live_stream",
+        ":stream_status",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "actions_requests_test",
+    testonly = True,
+    srcs = ["actions/requests.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_client",
+        ":actions_requests",
+        ":actions_testing",
+        ":stream_status",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/vitest",
     ],
 )
 
-# actions_history.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
-js_library(
-    name = "actions_history_css",
-    srcs = ["actions_history.css"],
-)
-
 ts_library(
     name = "actions_history",
-    srcs = [
-        "actions_history.tsx",
-        # `declare module "*.css"` for the stylesheet import above.
-        "css.d.ts",
-    ],
+    srcs = ["actions/history.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":actions",
-        ":actions_history_css",
+        ":actions_call",
+        ":actions_call_tool_result",
+        ":actions_client",
+        ":actions_rendering",
+        ":actions_requests",
         ":client",
         ":json_view",
+        ":stream_status",
+        ":topbar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -153,15 +178,139 @@ ts_library(
 )
 
 ts_library(
-    name = "actions_history_test",
-    testonly = True,
-    srcs = ["actions_history.test.tsx"],
+    name = "raw_switch",
+    srcs = ["raw_switch.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":actions",
-        ":actions_history",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "actions_call_tool_result",
+    srcs = ["actions/call_tool_result.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":json_view",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+# Widgets for particular Actions' requests and responses, registered by the Action's identity:
+# actions/rendering/index.tsx dispatches, and each group's widgets are a module beside it.
+ts_library(
+    name = "actions_rendering",
+    srcs = ["actions/rendering/index.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_call_tool_result",
+        ":actions_client",
+        ":actions_rendering_entry",
+        ":actions_rendering_result_entry",
+        ":actions_rendering_ssh",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "actions_rendering_entry",
+    srcs = ["actions/rendering/entry.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "actions_rendering_result_entry",
+    srcs = ["actions/rendering/result_entry.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "actions_rendering_ssh",
+    srcs = ["actions/rendering/ssh.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_rendering_entry",
+        ":actions_rendering_result_entry",
+        ":syntax_highlight",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "actions_rendering_test",
+    testonly = True,
+    srcs = ["actions/rendering/index.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_call_tool_result",
+        ":actions_rendering",
         ":actions_testing",
-        ":client",
+        "//:node_modules/@types/react",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "actions_rendering_ssh_test",
+    testonly = True,
+    srcs = ["actions/rendering/ssh.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_rendering_entry",
+        ":actions_rendering_result_entry",
+        ":actions_rendering_ssh",
+        ":actions_testing",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "actions_call_tool_result_test",
+    testonly = True,
+    srcs = ["actions/call_tool_result.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_call_tool_result",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "actions_history_test",
+    testonly = True,
+    srcs = ["actions/history.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_client",
+        ":actions_history",
+        ":actions_requests",
+        ":actions_testing",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/vitest",
@@ -171,10 +320,10 @@ ts_library(
 ts_library(
     name = "actions_testing",
     testonly = True,
-    srcs = ["actions_testing.tsx"],
+    srcs = ["actions/testing.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
+        ":actions_client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -201,6 +350,7 @@ ts_library(
     srcs = ["settings/mcp_servers.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":actions_client",
         ":client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -214,6 +364,7 @@ ts_library(
     srcs = ["settings/mcp_servers.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":actions_client",
         ":client",
         ":mcp_servers",
         "//:node_modules/@mantine/core",
@@ -282,12 +433,60 @@ ts_library(
 )
 
 ts_library(
+    name = "live_stream",
+    srcs = ["live_stream.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
+ts_library(
+    name = "live_stream_test",
+    testonly = True,
+    srcs = ["live_stream.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":live_stream",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "stream_status",
+    srcs = ["stream_status.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":live_stream",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "stream_status_test",
+    testonly = True,
+    srcs = ["stream_status.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":live_stream",
+        ":stream_status",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "live",
     srcs = ["live.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
+        ":live_stream",
         ":schema",
+        ":stream_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -388,11 +587,13 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_policy",
+        ":actions_client",
+        ":actions_policy",
         ":client",
         ":launch_presets",
         ":lifecycle",
         ":live",
+        ":stream_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
@@ -449,6 +650,7 @@ ts_library(
         ":live",
         ":sandboxes",
         ":sidebar_css",
+        ":stream_status",
         ":thread_groups",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -467,6 +669,7 @@ ts_library(
         ":client",
         ":live",
         ":sidebar",
+        ":stream_status",
         ":thread_groups",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -492,11 +695,11 @@ ts_library(
 )
 
 ts_library(
-    name = "action_policy",
-    srcs = ["action_policy.tsx"],
+    name = "actions_policy",
+    srcs = ["actions/policy.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
+        ":actions_client",
         ":egress",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -505,13 +708,13 @@ ts_library(
 )
 
 ts_library(
-    name = "action_policy_test",
+    name = "actions_policy_test",
     testonly = True,
-    srcs = ["action_policy.test.tsx"],
+    srcs = ["actions/policy.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_policy",
-        ":client",
+        ":actions_client",
+        ":actions_policy",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -532,13 +735,15 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_policy",
+        ":actions_policy",
         ":client",
         ":egress",
         ":json_view",
         ":launch_presets",
         ":lifecycle",
         ":live",
+        ":raw_switch",
+        ":stream_status",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -555,6 +760,7 @@ ts_library(
     srcs = ["sandbox_page.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":live",
         ":sandbox_page",
         "//:node_modules/@mantine/core",
@@ -583,6 +789,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":markdown_css",
+        ":syntax_highlight",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/dompurify",
         "//:node_modules/@types/react",
@@ -592,29 +799,71 @@ ts_library(
     ],
 )
 
-# json_view.tsx imports this for the bundler; esbuild resolves it beside the emitted json_view.js
-# and folds it into the SPA's stylesheet, so it travels as a dep of the library that imports it.
-js_library(
-    name = "json_view_css",
-    srcs = ["json_view.css"],
+ts_library(
+    name = "markdown_test",
+    testonly = True,
+    srcs = ["markdown.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":markdown",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
 )
 
-# The one shared syntax-highlighted-JSON component/helpers, reused at every raw-JSON site.
+# syntax_highlight.tsx imports this for the bundler; esbuild resolves it beside the emitted
+# syntax_highlight.js and folds it into the SPA's stylesheet, so it travels as a dep of the library
+# that imports it.
+js_library(
+    name = "syntax_highlight_css",
+    srcs = ["syntax_highlight.css"],
+)
+
+# The one highlight.js setup: its core build with the json and bash grammars, sanitized output, and
+# the token colours.
 ts_library(
-    name = "json_view",
+    name = "syntax_highlight",
     srcs = [
-        "json_view.tsx",
+        "syntax_highlight.tsx",
         # `declare module "*.css"` for the stylesheet import above.
         "css.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":json_view_css",
+        ":syntax_highlight_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/dompurify",
         "//:node_modules/@types/react",
         "//:node_modules/dompurify",
         "//:node_modules/highlight.js",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "syntax_highlight_test",
+    testonly = True,
+    srcs = ["syntax_highlight.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":syntax_highlight",
+        "//:node_modules/vitest",
+    ],
+)
+
+# The one shared syntax-highlighted-JSON component/helpers, reused at every raw-JSON site.
+ts_library(
+    name = "json_view",
+    srcs = ["json_view.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":syntax_highlight",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
@@ -685,6 +934,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":live_stream",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -696,6 +946,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":live_stream",
         ":thread_sync",
         "//:node_modules/@electric-sql/client",
         "//:node_modules/@types/react",
@@ -748,12 +999,16 @@ ts_library(
 
 ts_library(
     name = "chronological_debug",
-    srcs = ["chronological_debug.tsx"],
+    srcs = [
+        "chronological_debug.tsx",
+        "tabler_icons.d.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
         ":json_view",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -771,6 +1026,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":thread_sync",
+        "//:node_modules/@bufbuild/protobuf",
         "//agentplane/protocol:event_pb",
     ],
 )
@@ -783,6 +1039,8 @@ ts_library(
     deps = [
         ":history_rows",
         ":thread_entity_fixture",
+        ":thread_sync",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
         "//agentplane/protocol:event_pb",
     ],
@@ -818,8 +1076,10 @@ ts_library(
         ":markdown",
         ":projected_session_css",
         ":retained_disclosures",
+        ":stream_status",
         ":thread_sync",
         ":thread_title",
+        ":topbar",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -828,6 +1088,18 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/protocol:command_pb",
         "//agentplane/protocol:event_pb",
+    ],
+)
+
+ts_library(
+    name = "topbar",
+    srcs = ["topbar.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
     ],
 )
 
@@ -882,8 +1154,10 @@ ts_library(
         ":local_commands",
         ":projected_session",
         ":retained_disclosures",
+        ":stream_status",
         ":thread_entity_fixture",
         ":thread_sync",
+        ":topbar",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -925,8 +1199,8 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":actions",
         ":actions_history",
+        ":actions_requests",
         ":consent",
         ":projected_session",
         ":sandbox_page",
@@ -936,11 +1210,23 @@ ts_library(
         ":sidebar",
         ":thread_store",
         ":thread_sync",
+        ":topbar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+    ],
+)
+
+ts_library(
+    name = "theme",
+    srcs = ["theme.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
     ],
 )
 
@@ -951,6 +1237,7 @@ ts_library(
     deps = [
         ":app",
         ":operator_login",
+        ":theme",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -973,6 +1260,7 @@ ts_library(
     srcs = ["sandboxes.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":actions_client",
         ":client",
         ":sandboxes",
         "//:node_modules/@mantine/core",
@@ -992,9 +1280,12 @@ vitest_bin.vitest_test(
     data = [
         "test_setup.ts",
         "vitest.config.mts",
-        ":action_policy_test",
+        ":actions_policy_test",
+        ":actions_rendering_ssh_test",
+        ":actions_rendering_test",
         ":actions_history_test",
-        ":actions_test",
+        ":actions_requests_test",
+        ":actions_call_tool_result_test",
         ":client_test",
         ":command_state_test",
         ":connections_test",
@@ -1003,7 +1294,9 @@ vitest_bin.vitest_test(
         ":history_rows_test",
         ":json_view_test",
         ":launch_presets_test",
+        ":live_stream_test",
         ":local_commands_test",
+        ":markdown_test",
         ":mcp_servers_test",
         ":projected_session_test",
         ":push_test",
@@ -1012,10 +1305,14 @@ vitest_bin.vitest_test(
         ":sandboxes_test",
         ":settings_test",
         ":sidebar_test",
+        ":stream_status_test",
+        ":syntax_highlight_test",
         ":thread_groups_test",
         ":thread_store_test",
         ":thread_title_test",
         "//:node_modules/happy-dom",
+        # syntax_highlight.test.ts runs in jsdom; see the note there.
+        "//:node_modules/jsdom",
         "//:node_modules/vitest",
     ],
 )
@@ -1041,11 +1338,14 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":actions_client",
         ":app",
         ":client",
         ":connections_fixture",
         ":live",
         ":local_commands",
+        ":stream_status",
+        ":theme",
         ":visual_scenarios",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",

@@ -17,9 +17,9 @@ from agentplane.app.agent_runtime.events import event_log, ingestion_lease
 from agentplane.app.agent_runtime.events.event_log import EventLogStore, EventReplicationError, FeedError
 from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
 from agentplane.app.agent_runtime.runner.runners import Runners, SandboxNotReachableError
-from agentplane.app.agent_runtime.updates import notify
 from agentplane.app.agent_runtime.view import fold
 from agentplane.app.agent_runtime.view.recording import ThreadFoldError, record_thread_fold, set_operational
+from agentplane.app.database_updates import Channel, notify
 from agentplane.app.inventory import SandboxNotFoundError
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
@@ -108,14 +108,14 @@ class Ingestion:
             # The maximum stored cursor is the checkpoint: the fenced transaction admits
             # only a contiguous suffix, so there is no separately mutable progress counter.
             await event_log.advance_feed(session, thread_id, inserted)
-            await notify(session)
+            await notify(session, Channel.THREADS)
 
     async def set_attached(self, thread_id: UUID, attached: protocol_pb2.Attached, *, lease: IngestionLease) -> None:
         async with self._sessions.begin() as session:
             await ingestion_lease.fence(session, lease, thread_id)
             await event_log.set_attached(session, thread_id, attached)
             await set_operational(session, thread_id, status="active", error=None)
-            await notify(session)
+            await notify(session, Channel.THREADS)
 
     async def end_feed(
         self, thread_id: UUID, *, lease: IngestionLease, error: str | None, error_cursor: int | None = None
@@ -131,7 +131,7 @@ class Ingestion:
                 error_cursor=error_cursor,
             )
             await session.flush()
-            await notify(session)
+            await notify(session, Channel.THREADS)
 
 
 class Feed:

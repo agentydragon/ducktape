@@ -240,7 +240,11 @@ async def test_http_session_discovery_call_and_shutdown(
         assert http_group.actions["echo"].input_schema == fake_server.tools[0]["inputSchema"]
         result = await executor.execute(execution_request, execution_lease)
         assert result.state is ExecutionState.SUCCEEDED
-        assert result.result == {"echoed": "hi", "api_key": "test-only-backend-secret"}
+        assert result.result == {
+            "content": [{"type": "text", "text": "hi"}],
+            "structuredContent": {"echoed": "hi", "api_key": "test-only-backend-secret"},
+            "isError": False,
+        }
         assert [post["method"] for post in fake_server.posts] == [
             "server/discover",
             "initialize",
@@ -261,6 +265,34 @@ async def test_http_session_discovery_call_and_shutdown(
     for request in fake_server.requests[2:]:
         assert request.headers["mcp-session-id"] == "test-http-session"
         assert request.headers["mcp-protocol-version"]
+
+
+async def test_http_configured_headers_are_sent_on_every_request(fake_server: FakeMcpServer) -> None:
+    """A configured extra header (e.g. GitHub MCP's `X-MCP-Toolsets`) reaches the backend."""
+    app = Starlette(routes=[Route("/test-mcp", fake_server.handle, methods=["POST", "GET", "DELETE"])])
+    with serve_app_sync(app) as url:
+        group = ActionGroup(
+            title="HTTP test group with extra headers",
+            description="Credentialless test peer with a configured toolset header",
+            executor=McpExecutorBinding(
+                kind="mcp",
+                description="HTTP test peer",
+                config={
+                    "transport": "streamable-http",
+                    "url": f"{url}/test-mcp",
+                    "auth": "none",
+                    "headers": {"X-MCP-Toolsets": "default,actions"},
+                },
+            ),
+        )
+        executor = McpActionGroupExecutor.from_group("remote", group)
+        try:
+            await executor.start()
+            await wait_available(group)
+        finally:
+            await executor.close()
+    assert fake_server.requests
+    assert all(request.headers["x-mcp-toolsets"] == "default,actions" for request in fake_server.requests)
 
 
 async def test_http_revalidates_live_schema_before_dispatch(
@@ -314,7 +346,7 @@ async def test_http_tool_error_output_is_a_successful_result(
     result = await executor.execute(execution_request, execution_lease)
     assert result.state is ExecutionState.SUCCEEDED
     assert result.error is None
-    assert result.result == {"is_error": True, "content": ["backend tool error text"]}
+    assert result.result == {"content": [{"type": "text", "text": "backend tool error text"}], "isError": True}
     assert len(fake_server.calls) == 1
 
 
@@ -412,7 +444,9 @@ async def test_oauth_auth_resolves_the_current_token_for_each_request() -> None:
         {"transport": "streamable-http", "url": "http://test-user@test.invalid/mcp"},
         {"transport": "streamable-http", "url": "https://test.invalid/mcp#fragment"},
         {"transport": "streamable-http", "url": "https://test.invalid/mcp", "command": "test-server"},
-        {"transport": "streamable-http", "url": "https://test.invalid/mcp", "headers": {}},
+        {"transport": "streamable-http", "url": "https://test.invalid/mcp", "extra_unknown_field": {}},
+        {"transport": "streamable-http", "url": "https://test.invalid/mcp", "headers": {"Authorization": "Bearer x"}},
+        {"transport": "streamable-http", "url": "https://test.invalid/mcp", "headers": {"authorization": "Bearer x"}},
         {"transport": "streamable-http", "url": "https://test.invalid/mcp", "auth": "oauth"},
         {"transport": "sse", "url": "https://test.invalid/mcp"},
     ],
@@ -574,7 +608,11 @@ async def test_main_oauth_serves_during_backend_outage_and_recovers(
                 while (final := await service.get(pending.id, caller)).state is not ActionState.SUCCEEDED:
                     pass  # Database reads yield until the durable result is published.
             assert final.execution is not None
-            assert final.execution.result == {"echoed": "recovered", "api_key": "[redacted]"}
+            assert final.execution.result == {
+                "content": [{"type": "text", "text": "hi"}],
+                "structuredContent": {"echoed": "recovered", "api_key": "[redacted]"},
+                "isError": False,
+            }
             assert len(fake_server.calls) == 1
             assert (await client.get("/.well-known/oauth-authorization-server")).json() == metadata.json()
 
@@ -635,8 +673,12 @@ async def test_production_http_composition_one_execution_no_replay(
                 pass  # Each database read yields; wait for durable completion, not an elapsed delay.
         assert final.execution is not None
         assert final.execution.result == {
-            "success": {"echoed": "hi", "api_key": "[redacted]"},
-            "tool_error": {"is_error": True, "content": ["backend tool error text"]},
+            "success": {
+                "content": [{"type": "text", "text": "hi"}],
+                "structuredContent": {"echoed": "hi", "api_key": "[redacted]"},
+                "isError": False,
+            },
+            "tool_error": {"content": [{"type": "text", "text": "backend tool error text"}], "isError": True},
         }.get(outcome)
         if outcome not in {"success", "tool_error"}:
             assert final.execution.error is not None

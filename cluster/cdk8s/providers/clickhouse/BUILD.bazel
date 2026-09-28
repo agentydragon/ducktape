@@ -1,0 +1,21 @@
+# gazelle:resolve py clickhouse_installation_crds //cluster/cdk8s/providers/clickhouse:clickhouseinstallation
+# gazelle:resolve py clickhouse_keeper_installation_crds //cluster/cdk8s/providers/clickhouse:clickhousekeeperinstallation
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+
+cdk8s_import(
+    name = "clickhouseinstallation",
+    crd = "@clickhouse_installation_crd//file",
+    module_name = "clickhouse_installation_crds",
+    module_path = "com/altinity/clickhouse",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "clickhousekeeperinstallation",
+    crd = "@clickhouse_keeper_installation_crd//file",
+    jsii_module_path = "com/altinity/clickhouse-keeper",
+    module_name = "clickhouse_keeper_installation_crds",
+    module_path = "com/altinity/clickhouse_keeper",
+    visibility = ["//visibility:public"],
+)

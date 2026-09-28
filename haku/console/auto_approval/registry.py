@@ -11,7 +11,6 @@ import jsonschema
 from fastmcp import FastMCP
 
 from haku.console.auto_approval.decision import AutoApprovalDecision, AutoApproved, AutoDenied, NotAutoApproved
-from haku.console.auto_approval.gmail import LABEL_NAMESPACE_TOOLS, evaluate_label_namespace
 from haku.console.auto_approval.home_assistant import CALL_SERVICE_TOOL, evaluate_entity_control
 from haku.console.auto_approval.kubernetes import evaluate_passthrough_redundancy
 from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
@@ -20,14 +19,12 @@ from haku.console.mcp_config import (
     AutoApprovalPolicy,
     ConsoleConfigFile,
     ExactToolsAutoApprovalPolicy,
-    GmailLabelNamespaceAutoApprovalPolicy,
     GrantSelfListAutoApprovalPolicy,
     HomeAssistantEntityControlAutoApprovalPolicy,
     KubernetesPassthroughAutoApprovalPolicy,
     NeverAutoApprovalPolicy,
 )
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
-from haku.console.tools.gmail_client import GmailToolsClient
 
 # The types-jsonschema stubs import referencing, so mypy needs the dist wherever
 # jsonschema is imported; gazelle cannot see the dependency.
@@ -136,12 +133,6 @@ class AutoApprovalPolicyRegistry:
                     if tool_name in tools.get(server_id, ())
                     else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
                 )
-            case GmailLabelNamespaceAutoApprovalPolicy(server=server):
-                return (
-                    ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED
-                    if server_id == server and tool_name in LABEL_NAMESPACE_TOOLS
-                    else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
-                )
             case GrantSelfListAutoApprovalPolicy(server=server):
                 return (
                     ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED
@@ -165,13 +156,7 @@ class AutoApprovalPolicyRegistry:
                 return ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
 
     async def evaluate(
-        self,
-        *,
-        actor: RuntimeActor,
-        server_id: str,
-        tool_name: str,
-        arguments: dict[str, Any],
-        gmail: GmailToolsClient | None,
+        self, *, actor: RuntimeActor, server_id: str, tool_name: str, arguments: dict[str, Any]
     ) -> tuple[str | None, str | None] | PolicyDenial:
         if not isinstance(actor, AgentActor):
             return None, None
@@ -188,7 +173,6 @@ class AutoApprovalPolicyRegistry:
             server_id=server_id,
             tool_name=tool_name,
             arguments=arguments,
-            gmail=gmail,
             evaluation=evaluation,
         )
         if evaluation.denials:
@@ -219,7 +203,6 @@ class AutoApprovalPolicyRegistry:
         server_id: str,
         tool_name: str,
         arguments: dict[str, Any],
-        gmail: GmailToolsClient | None,
         evaluation: AutoApprovalEvaluation,
     ) -> None:
         policy = self._policies[policy_id]
@@ -229,11 +212,6 @@ class AutoApprovalPolicyRegistry:
                 if tool_name not in tools.get(server_id, ()):
                     return
                 evaluation.record(current_path, AutoApproved(f"exact tool {server_id}/{tool_name} is listed"))
-            case GmailLabelNamespaceAutoApprovalPolicy(server=server, label_prefix=label_prefix):
-                if server_id != server or tool_name not in LABEL_NAMESPACE_TOOLS:
-                    return
-                decision = await evaluate_label_namespace(tool_name, arguments, label_prefix, gmail)
-                evaluation.record(current_path, decision)
             case GrantSelfListAutoApprovalPolicy(server=server):
                 if server_id != server or tool_name != _LIST_GRANTS_TOOL:
                     return
@@ -272,7 +250,6 @@ class AutoApprovalPolicyRegistry:
                         server_id=server_id,
                         tool_name=tool_name,
                         arguments=arguments,
-                        gmail=gmail,
                         evaluation=evaluation,
                     )
             case NeverAutoApprovalPolicy():
@@ -309,7 +286,6 @@ async def auto_approve_tool_call(
     server_id: str,
     tool_name: str,
     arguments: dict[str, Any],
-    gmail: GmailToolsClient | None,
     mcp: FastMCP | None,
 ) -> tuple[str | None, str | None] | PolicyDenial:
     """Evaluate one call under the authenticated Agent's configured policy graph."""
@@ -322,6 +298,4 @@ async def auto_approve_tool_call(
             return error
         if error is not None:
             return None, error
-    return await policies.evaluate(
-        actor=actor, server_id=server_id, tool_name=tool_name, arguments=arguments, gmail=gmail
-    )
+    return await policies.evaluate(actor=actor, server_id=server_id, tool_name=tool_name, arguments=arguments)

@@ -379,7 +379,7 @@ locals {
         # Talos hardens user.max_user_namespaces to 0; the haku-ci runner's rootless
         # dind (docker:dind-rootless) needs user namespaces to start. Scoped to the
         # OVH/hil workers, not cluster-wide; the runner has no node affinity, so any
-        # Talos worker that should take CI jobs needs this too (home-nodes.tf: OptiPlex). Applies live — no reboot. See cluster/k8s/haku-ci.
+        # Talos worker that should take CI jobs needs this too (home-nodes.tf: OptiPlex). Applies live — no reboot. See cluster/cdk8s/haku_ci.
         sysctls = {
           "user.max_user_namespaces" = "1048576"
         }
@@ -550,7 +550,6 @@ data "talos_machine_configuration" "kimsufi" {
     local.kimsufi_user_volume_config_patches[each.key],
     local.kimsufi_eno1_peer_route_patches[each.key],
     local.kimsufi_cloud_provider_external_patches[each.key],
-    each.value.role == "controlplane" ? [local.control_plane_metrics_firewall_config] : [],
     local.nebula_machine_patches[each.key],
     [local.talos_node_logging_patch],
   )
@@ -666,7 +665,6 @@ data "talos_machine_configuration" "kimsufi_cp" {
     local.kimsufi_user_volume_config_patches[each.key],
     local.kimsufi_eno1_peer_route_patches[each.key],
     local.kimsufi_cloud_provider_external_patches[each.key],
-    [local.control_plane_metrics_firewall_config],
     local.nebula_machine_patches[each.key],
     [local.talos_node_logging_patch],
   )

@@ -20,7 +20,7 @@ From `cluster/k8s/forgejo/*` and `tf/gitops/*`:
 - **Forgejo Actions CI** — notably `haku-ci`: a warm, **egress-fenced, in-cluster-only**
   runner that builds Haku's UI image from `haku-state` and pushes to the in-cluster
   registry, and must **never** touch BuildBuddy/RBE or external CI (see
-  `cluster/k8s/haku-ci/README.md`). Plus CI in props / budget-ledger / augur-evidence /
+  `cluster/cdk8s/haku_ci/README.md`). Plus CI in props / budget-ledger / augur-evidence /
   cpap-data. Runner tokens are fetched from the API by TF because the Forgejo provider has
   no runner-token resource.
 - **In-cluster container registry** (`forgejo-images`) + **Flux image automation** reading

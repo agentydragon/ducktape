@@ -1,15 +1,8 @@
 import { Alert, Badge, Box, Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { type JSX, type ReactNode, useCallback, useEffect, useState } from "react";
 
-import {
-  type ActionGroupService,
-  actionGroupService,
-  type ActionGroupView,
-  displayableError,
-  mcpLinkageService,
-  type McpLinkageService,
-  type McpLinkageView,
-} from "../client";
+import { displayableError, mcpLinkageService, type McpLinkageService, type McpLinkageView } from "../client";
+import { type ActionGroupService, actionGroupService, type ActionGroupView } from "../actions/client";
 
 type McpHealth = ActionGroupView["health"];
 

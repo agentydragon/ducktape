@@ -5,17 +5,14 @@ ClusterRoleBinding that makes agentydragon's passthrough identity cluster-admin.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization
+from cluster.cdk8s import namespaces
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "kubectl-passthrough-mcp"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agents/kubectl-passthrough-mcp/app"
@@ -57,8 +54,7 @@ def _deployment(chart: Chart) -> None:
                 "description": (
                     "containers/kubernetes-mcp-server in OAuth passthrough mode. Caller's Authentik JWT is"
                     " forwarded directly to kube-apiserver; server itself is unprivileged."
-                ),
-                "reloader.stakater.com/auto": "true",
+                )
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -108,9 +104,7 @@ def _deployment(chart: Chart) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
-        chart, "namespace", metadata=k8s.ObjectMeta(name=NAME, labels={"goldilocks.fairwinds.com/enabled": "false"})
-    )
+    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.DISABLED, agent_readable=None)
     k8s.KubeServiceAccount(
         chart,
         "serviceaccount",
@@ -148,8 +142,8 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "httproute",
-        metadata=metadata(NAME, NAME),
-        hostname="kubectl-passthrough-mcp.allegedly.works",
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAME),
+        hostnames=["kubectl-passthrough-mcp.allegedly.works"],
         backend=NAME,
         port=_PORT,
         timeout="60s",
@@ -174,9 +168,5 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def kubectl_passthrough_mcp(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    return flux_kustomization(chart, NAME, artifact, suspend=False, timeout="5m")
+def kubectl_passthrough_mcp(chart: Chart, directory: RenderedDirectory) -> Kustomization:
+    return flux_kustomization(chart, NAME, directory, suspend=False, timeout="5m")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from enum import StrEnum
+from typing import Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -11,6 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from agentplane.action_service.models import ActionRequestView, ActionState, Principal
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.updates import ActionUpdates
+
+WaitSeconds = Annotated[float, Field(ge=0, le=30, allow_inf_nan=False)]
 
 
 class WaitUntil(StrEnum):
@@ -21,7 +24,7 @@ class WaitUntil(StrEnum):
 class WaitOptions(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    wait_seconds: float = Field(default=0, ge=0, le=30, allow_inf_nan=False)
+    wait_seconds: WaitSeconds = 0
     wait_until: WaitUntil = WaitUntil.TERMINAL
 
 

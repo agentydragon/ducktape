@@ -32,4 +32,4 @@ spec:
       validate:
         deny: {}
         message: "Gateway API routes and Gateways may not be created in agent sandbox namespaces. Public ingress is operator-owned: route through the Authentik proxy (HTTPRoutes in the `authentik` namespace) instead. Resource: {{request.object.kind}}/{{request.object.metadata.name}}"
-  validationFailureAction: Enforce
+  validationFailureAction: enforce

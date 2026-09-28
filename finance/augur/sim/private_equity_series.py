@@ -1,0 +1,185 @@
+"""Quantize typed private-equity paths into the simulation engine's input channels and prepared series."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
+from dataclasses import dataclass
+from typing import NamedTuple
+
+import numpy as np
+from jaxtyping import Int64
+
+from finance.augur.model.private_equity_bundle import PrivateEquityBundle
+from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode
+from finance.augur.sim.fixed_point import round_ppb, sampled_array_to_quanta
+from finance.augur.sim.market_path import Series
+from finance.augur.sim.money import Currency
+
+# Sentinel for absent sampled private-equity regimes.
+NO_CODE = -1
+
+
+class PEExecutionChannels[ArrayT](NamedTuple):
+    """Per-issuer channel arrays consumed by the simulation engine.
+
+    Shape: `(issuer, rollout, month + 1)` for each channel. Built from the
+    typed `PrivateEquityBundle` at compile time so the engine reads PE state
+    by field access instead of going through `external_values[series_index]`.
+    """
+
+    mark_quanta: ArrayT
+    regime_codes: ArrayT
+    sale_opportunity_active: ArrayT
+    sale_capacity_fractions: ArrayT
+    eligible_fractions: ArrayT
+    forced_sale_fractions: ArrayT
+    liquidity_blocked: ArrayT
+    forced_recovery_cashout_quanta: ArrayT
+
+
+@dataclass(frozen=True)
+class PEChannels:
+    """Engine channels and their corresponding private-equity event kinds."""
+
+    execution: PEExecutionChannels[np.ndarray]
+    event_kind_codes: Int64[np.ndarray, " issuer rollout snapshot"]
+
+
+def compile_pe_channels(
+    issuer_ids: tuple[IssuerId, ...],
+    *,
+    private_equity: PrivateEquityBundle,
+    rollout_count: int,
+    horizon_months: int,
+    currency: Currency,
+) -> PEChannels:
+    """Materialize per-issuer PE channel arrays from the typed `PrivateEquityBundle`.
+
+    Returns shape `(issuer, rollout, month + 1)` for each channel. The bundle's
+    `from_issuer_arrays` already validates ranges, dtypes, and known code values;
+    this just slices the typed columns per issuer into dense ndarrays for the
+    engine to read by field access.
+    """
+
+    issuer_count = len(issuer_ids)
+    snapshot_months = horizon_months + 1
+    mark_quanta = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.int64)
+    regime_codes = np.full((issuer_count, rollout_count, snapshot_months), NO_CODE, dtype=np.int64)
+    event_kind_codes = np.full(
+        (issuer_count, rollout_count, snapshot_months), int(PrivateEquityEventKindCode.NONE), dtype=np.int64
+    )
+    sale_opportunity_active = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.bool_)
+    sale_capacity_fractions = np.ones((issuer_count, rollout_count, snapshot_months), dtype=np.float64)
+    eligible_fractions = np.ones((issuer_count, rollout_count, snapshot_months), dtype=np.float64)
+    forced_sale_fractions = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.float64)
+    liquidity_blocked = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.bool_)
+    forced_recovery_cashout_quanta = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.int64)
+    for issuer_idx, issuer_id in enumerate(issuer_ids):
+        if issuer_id not in private_equity.issuer_ids():
+            raise ValueError(f"private-equity bundle missing required issuer {issuer_id!r}")
+        mark_values = private_equity.issuer_float_matrix(
+            issuer_id, "mark_usd_per_unit", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+        # Check executable marks before quantization can round small negative values
+        # to zero. Terminal marks remain informative only; execution uses months 0..H-1.
+        executable_marks = mark_values[:, :horizon_months]
+        if executable_marks.size and (not np.isfinite(executable_marks).all() or (executable_marks < 0.0).any()):
+            raise ValueError(
+                f"private-equity mark series for issuer {issuer_id!r} produced a negative or non-finite value"
+            )
+        mark_quanta[issuer_idx] = sampled_array_to_quanta(mark_values, quantum=currency.quantum)
+        regime_codes[issuer_idx] = private_equity.issuer_int_matrix(
+            issuer_id, "regime_code", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+        event_kind_codes[issuer_idx] = private_equity.issuer_int_matrix(
+            issuer_id, "event_kind_code", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+        sale_opportunity_active[issuer_idx] = private_equity.issuer_bool_matrix(
+            issuer_id, "sale_opportunity_active", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+        sale_capacity_fractions[issuer_idx] = private_equity.issuer_float_matrix(
+            issuer_id, "sale_capacity_fraction", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+        eligible_fractions[issuer_idx] = private_equity.issuer_float_matrix(
+            issuer_id, "eligible_fraction", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+        forced_sale_fractions[issuer_idx] = private_equity.issuer_float_matrix(
+            issuer_id, "forced_sale_fraction", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+        liquidity_blocked[issuer_idx] = private_equity.issuer_bool_matrix(
+            issuer_id, "liquidity_blocked", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+        forced_recovery_values = private_equity.issuer_float_matrix(
+            issuer_id, "forced_recovery_cashout_usd", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+        executable_recovery = forced_recovery_values[:, :horizon_months]
+        if executable_recovery.size and (executable_recovery < 0.0).any():
+            raise ValueError("private-equity forced-recovery cashout series produced a negative value")
+        forced_recovery_cashout_quanta[issuer_idx] = sampled_array_to_quanta(
+            forced_recovery_values, quantum=currency.quantum
+        )
+    return PEChannels(
+        execution=PEExecutionChannels(
+            mark_quanta=mark_quanta,
+            regime_codes=regime_codes,
+            sale_opportunity_active=sale_opportunity_active,
+            sale_capacity_fractions=sale_capacity_fractions,
+            eligible_fractions=eligible_fractions,
+            forced_sale_fractions=forced_sale_fractions,
+            liquidity_blocked=liquidity_blocked,
+            forced_recovery_cashout_quanta=forced_recovery_cashout_quanta,
+        ),
+        event_kind_codes=event_kind_codes,
+    )
+
+
+def compile_private_equity_series(
+    issuer_ids: Sequence[IssuerId],
+    bundle: PrivateEquityBundle,
+    *,
+    rollout_count: int,
+    horizon_months: int,
+    currency: Currency,
+) -> tuple[Series, ...]:
+    """The ten per-issuer private-equity channels, in the execution input's typed integer units.
+
+    `compile_pe_channels` validates raw values and quantizes money; company valuation crosses
+    the same money boundary here.
+    """
+
+    pe_channels = compile_pe_channels(
+        tuple(issuer_ids),
+        private_equity=bundle,
+        rollout_count=rollout_count,
+        horizon_months=horizon_months,
+        currency=currency,
+    )
+    channels = pe_channels.execution
+    snapshots = horizon_months + 1
+    series = []
+    for index, issuer_id in enumerate(issuer_ids):
+        valuation = bundle.issuer_float_matrix(
+            issuer_id, "company_valuation_usd", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+        for channel, values in (
+            ("mark", channels.mark_quanta[index]),
+            ("regime", channels.regime_codes[index]),
+            ("event_kind", pe_channels.event_kind_codes[index]),
+            ("sale_opportunity", channels.sale_opportunity_active[index].astype(np.int64)),
+            ("sale_capacity", round_ppb(channels.sale_capacity_fractions[index])),
+            ("eligible", round_ppb(channels.eligible_fractions[index])),
+            ("forced_sale", round_ppb(channels.forced_sale_fractions[index])),
+            ("liquidity_blocked", channels.liquidity_blocked[index].astype(np.int64)),
+            ("forced_recovery", channels.forced_recovery_cashout_quanta[index]),
+            ("company_valuation", sampled_array_to_quanta(valuation, quantum=currency.quantum)),
+        ):
+            series.append(
+                Series(
+                    series_id=f"private_equity_{channel}:{issuer_id}",
+                    snapshots=snapshots,
+                    values=tuple(int(value) for value in np.asarray(values, dtype=np.int64).reshape(-1)),
+                )
+            )
+    return tuple(series)

@@ -12,7 +12,7 @@ import asyncio
 import contextlib
 import datetime
 import logging
-from collections.abc import Awaitable, Callable, Collection
+from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID
@@ -26,14 +26,7 @@ from haku.console.mcp.execution import (
     McpExecutionContext,
     OperatorMcpExecutionCaller,
 )
-from haku.console.mcp_config import (
-    InProcessServers,
-    McpServerEntry,
-    NoCredential,
-    OperatorConnectionCredential,
-    OperatorLoginIdentityCredential,
-    _server_entry,
-)
+from haku.console.mcp_config import InProcessServers, McpServerEntry, NoCredential, _server_entry
 from haku.console.settings import Settings
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
@@ -44,7 +37,6 @@ from haku.console.tool_calls import (
     ToolCallRecord,
     ToolCallStatus,
 )
-from haku.console.tools.gmail_client import GMAIL_SERVER_ID, GmailToolsClient
 
 logger = logging.getLogger(__name__)
 
@@ -184,35 +176,12 @@ class PendingApprovalNotifier(Protocol):
     async def tool_call_resolved(self, *, operator_id: UUID, record: ToolCallRecord) -> None: ...
 
 
-class ProviderConnectionTokenStore(Protocol):
-    async def access_token_for(self, *, connection: str, operator_id: UUID) -> str | None: ...
-
-    async def is_connected(self, *, connection: str, operator_id: UUID) -> bool: ...
-
-    async def is_provisioned(self, *, connection: str) -> bool: ...
-
-
-class AuthentikOperatorTokenStore(Protocol):
-    async def access_token_for(self, *, operator_id: UUID) -> str | None: ...
-
-
-# Resolves the acting Operator's Gmail client for auto-approval label lookups (or None when the
-# Operator has no Google connection). Production builds it from the provider store; tests inject one.
-GmailClientProvider = Callable[[UUID], Awaitable[GmailToolsClient | None]]
-
-
 class OperatorActorRequiredError(PermissionError):
     """Raised when an AgentActor reaches an operator-only lifecycle operation."""
 
 
 class AgentActorRequiredError(PermissionError):
     """Raised when an OperatorActor reaches an agent-only lifecycle operation."""
-
-
-class BackendAccountNotConnectedError(Exception):
-    def __init__(self, server_id: str) -> None:
-        self.server_id = server_id
-        super().__init__(f"Connect your {server_id} MCP account in the console before approving this tool call.")
 
 
 class ToolCallNotFoundError(LookupError):
@@ -223,38 +192,13 @@ class ToolCallStateConflictError(RuntimeError):
     """The requested lifecycle transition is invalid for the call's durable state."""
 
 
-async def _require_operator_linked_token(token: Awaitable[str | None], server_id: str) -> str:
-    """Await an operator-linked token (provider connection or login identity), or fail loud."""
-    resolved = await token
-    if not resolved:
-        raise BackendAccountNotConnectedError(server_id)
-    return resolved
-
-
-async def backend_auth_for_operator(
-    *,
-    server: McpServerEntry,
-    operator_id: UUID,
-    provider_store: ProviderConnectionTokenStore,
-    authentik_store: AuthentikOperatorTokenStore,
-) -> str | None:
+async def backend_auth_for_operator(*, server: McpServerEntry, operator_id: UUID) -> str | None:
     """Resolve the server's backend credential for the acting operator, per its credential variant.
 
-    - ``OperatorConnectionCredential``: the operator's configured external-account token (Google).
-    - ``OperatorLoginIdentityCredential``: the operator's own Authentik login token (captured via
-      offline_access), which the server exchanges for a per-host token (hostexec); missing ⇒ the
-      operator has not logged in with offline_access yet.
     - ``NoCredential``: none — the server carries its own credential.
     """
+    del operator_id
     match server.backend.credential:
-        case OperatorConnectionCredential(connection=connection):
-            return await _require_operator_linked_token(
-                provider_store.access_token_for(connection=connection, operator_id=operator_id), server.id
-            )
-        case OperatorLoginIdentityCredential():
-            return await _require_operator_linked_token(
-                authentik_store.access_token_for(operator_id=operator_id), server.id
-            )
         case NoCredential():
             return None
 
@@ -270,10 +214,7 @@ class ToolCallApplicationService:
         invalidation_publisher: ToolCallInvalidationPublisher,
         executor: ToolExecutor,
         in_process_servers: InProcessServers,
-        provider_store: ProviderConnectionTokenStore,
-        authentik_token_store: AuthentikOperatorTokenStore,
         approval_notifier: PendingApprovalNotifier,
-        gmail_client_provider: GmailClientProvider,
         kubernetes_authorization: KubernetesAuthorizationService | None = None,
     ) -> None:
         self._settings = settings
@@ -282,9 +223,6 @@ class ToolCallApplicationService:
         self._approval_notifier = approval_notifier
         self._executor = executor
         self._in_process_servers = in_process_servers
-        self._provider_store = provider_store
-        self._authentik_token_store = authentik_token_store
-        self._gmail_client_provider = gmail_client_provider
         self._kubernetes_authorization = kubernetes_authorization
         self._auto_approval_policies = AutoApprovalPolicyRegistry(
             settings, kubernetes_authorization=self._kubernetes_authorization
@@ -294,19 +232,11 @@ class ToolCallApplicationService:
         self._execution_tasks: set[asyncio.Task[ToolCallRecord]] = set()
 
     async def _backend_auth(self, server: McpServerEntry, operator_id: UUID) -> str | None:
-        return await backend_auth_for_operator(
-            server=server,
-            operator_id=operator_id,
-            provider_store=self._provider_store,
-            authentik_store=self._authentik_token_store,
-        )
+        return await backend_auth_for_operator(server=server, operator_id=operator_id)
 
     async def submit_and_wait(self, *, req: SubmitToolCallRequest, actor: RuntimeActor) -> ToolCallRecord:
         actor = self._require_actor(actor)
         server = _server_entry(self._settings, req.server_id)
-        # Gmail label auto-approval resolves label IDs against the acting Operator's own Gmail; the
-        # schema check needs the tool's input schema, so build the (credential-independent) server.
-        gmail = await self._gmail_client_provider(actor.operator_id) if server.id == GMAIL_SERVER_ID else None
         server_builder = self._in_process_servers.get(server.id)
         authorizer = server_builder.authorizer if server_builder is not None else None
         if authorizer is not None and (authorization_denial := authorizer(actor, req.tool_name, req.arguments)):
@@ -333,7 +263,6 @@ class ToolCallApplicationService:
             server_id=server.id,
             tool_name=req.tool_name,
             arguments=req.arguments,
-            gmail=gmail,
             mcp=server_builder.builder(None) if server_builder is not None else None,
         )
         if isinstance(decision, PolicyDenial):
@@ -470,9 +399,9 @@ class ToolCallApplicationService:
         # for a decision that has already been made.
         await self._notify_resolved(operator.operator_id, running)
         # Deciding is not executing. Dispatch the tool run as a tracked background task and return the
-        # RUNNING record immediately, so approving never blocks on a slow or unreachable backend (e.g.
-        # an offline roaming hostexec target). The terminal state reaches observers the same way an
-        # auto-approved call's does: _publish (WS invalidation) plus the durable row agents poll.
+        # RUNNING record immediately, so approving never blocks on a slow or unreachable backend. The
+        # terminal state reaches observers the same way an auto-approved call's does: _publish (WS
+        # invalidation) plus the durable row agents poll.
         self._dispatch_execution(record=running, server=server, auth_token=auth_token, actor=operator)
         return running
 

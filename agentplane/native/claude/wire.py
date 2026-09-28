@@ -279,14 +279,16 @@ ClaudeFrame = Annotated[
         tag_or_unknown(
             "type",
             (
+                # keep-sorted start
+                "assistant",
+                "command_lifecycle",
                 "control_request",
                 "control_response",
-                "command_lifecycle",
-                "system",
-                "stream_event",
-                "assistant",
-                "user",
                 "result",
+                "stream_event",
+                "system",
+                "user",
+                # keep-sorted end
             ),
         )
     ),

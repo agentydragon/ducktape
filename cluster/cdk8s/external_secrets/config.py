@@ -14,33 +14,17 @@ Application-scoped stores live with their applications (`ntfy.py`, ...).
 from __future__ import annotations
 
 from collections.abc import Sequence
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from external_secret_store_crds.io.external_secrets import (
-    ClusterSecretStore,
-    ClusterSecretStoreSpec,
-    ClusterSecretStoreSpecConditions,
-    ClusterSecretStoreSpecProvider,
-    ClusterSecretStoreSpecProviderKubernetes,
-    ClusterSecretStoreSpecProviderKubernetesAuth,
-    ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount,
-    ClusterSecretStoreSpecProviderKubernetesServer,
-    ClusterSecretStoreSpecProviderKubernetesServerCaProvider,
-    ClusterSecretStoreSpecProviderKubernetesServerCaProviderType,
-)
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from external_secret_store_crds.io.external_secrets import ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount
 
 from cluster.cdk8s import external_creds
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.external_secrets.kubernetes_store import ESO_SERVICE_ACCOUNT, cluster_secret_store
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "external-secrets-config"
 OUTPUT_DIR = f"{GENERATED_ROOT}/external-secrets/config"
-_ESO_SERVICE_ACCOUNT = ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(
-    name="external-secrets", namespace="external-secrets-system"
-)
 
 
 def _store(
@@ -49,29 +33,15 @@ def _store(
     *,
     namespaces: Sequence[str],
     remote_namespace: str,
-    service_account: ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount = _ESO_SERVICE_ACCOUNT,
+    service_account: ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount = ESO_SERVICE_ACCOUNT,
 ) -> None:
-    ClusterSecretStore(
+    cluster_secret_store(
         chart,
         name,
         metadata=ApiObjectMetadata(name=name),
-        spec=ClusterSecretStoreSpec(
-            conditions=[ClusterSecretStoreSpecConditions(namespaces=list(namespaces))],
-            provider=ClusterSecretStoreSpecProvider(
-                kubernetes=ClusterSecretStoreSpecProviderKubernetes(
-                    server=ClusterSecretStoreSpecProviderKubernetesServer(
-                        ca_provider=ClusterSecretStoreSpecProviderKubernetesServerCaProvider(
-                            type=ClusterSecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
-                            name="kube-root-ca.crt",
-                            key="ca.crt",
-                            namespace="default",
-                        )
-                    ),
-                    auth=ClusterSecretStoreSpecProviderKubernetesAuth(service_account=service_account),
-                    remote_namespace=remote_namespace,
-                )
-            ),
-        ),
+        namespaces=namespaces,
+        remote_namespace=remote_namespace,
+        service_account=service_account,
     )
 
 
@@ -154,6 +124,7 @@ def chart(app: App) -> Chart:
         chart,
         "kubernetes-forgejo-images-secret-store",
         namespaces=[
+            # keep-sorted start
             "activitywatch",
             "agent-workspaces",
             "agentplane-index",
@@ -186,24 +157,22 @@ def chart(app: App) -> Chart:
             "ssh-mcp",
             "study-casino",
             "tana-mcp",
+            "thrive-scraper",  # gaffer-private (not cdk8s); ESO lives in that repo's k8s/
             "wayback-cache",
+            # keep-sorted end
         ],
         remote_namespace="forgejo-images",
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
 def external_secrets_config(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         interval="10m0s",
         retry_interval="30s",
         timeout="5m0s",

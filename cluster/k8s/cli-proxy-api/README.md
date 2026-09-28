@@ -9,9 +9,10 @@ unlike LiteLLM's `/v1/messages` bridge (BerriAI/litellm#25429) and claude-code-r
 
 The `codex-claude` wrapper points Claude Code at the main LiteLLM proxy
 (`litellm.allegedly.works`), which fronts CLIProxyAPI as its `codex-*` upstream
-(see `cluster/cdk8s/litellm/test_config.py`). The laptop/agent-box/codex-pod
-consumers authenticate to LiteLLM with a scoped `codex-clients` virtual key; the client
-key below is now consumed only by the main LiteLLM pod (ESO-mirrored into `litellm`).
+(see `cluster/cdk8s/litellm/test_config.py`). The laptop and agent-box consumers
+authenticate to LiteLLM with the shared `codex-clients` virtual key; codex-pod has a
+separate GPT-6-only Messages key. The client key below is now consumed only by the main
+LiteLLM pod (ESO-mirrored into `litellm`).
 
 ## Models
 
@@ -127,8 +128,8 @@ image pulls but does not interrupt a running process.
 
 - `client-key.sops.yaml` — SSOT of the client key. ESO renders it into
   `cli-proxy-api-config/config.yaml` for CLIProxyAPI and mirrors it into `litellm` as
-  `CLIPROXY_CLIENT_KEY` for the `codex-*` upstream. Laptops/agent-box/codex-pod use a scoped
-  `codex-clients` LiteLLM virtual key instead.
+  `CLIPROXY_CLIENT_KEY` for the `codex-*` upstream. Laptop and agent-box use the scoped
+  `codex-clients` LiteLLM virtual key; codex-pod uses a GPT-6-only key.
 - The `cli-proxy-api-config` ExternalSecret (`cluster/cdk8s/cli_proxy_api/cli_proxy_api.py`) —
   plaintext CLIProxyAPI configuration template. It includes three bounded
   stream bootstrap retries, which retry a failed upstream stream only before any response bytes

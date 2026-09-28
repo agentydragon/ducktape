@@ -2,25 +2,27 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: props
 resources:
-  - namespace.yaml
-  - role-props-reader.yaml
-  - rolebinding-props-reader.yaml
-  - postgres-cluster.yaml
+  # keep-sorted start
   - agent-password-salt.sops.yaml
+  - cleanuppolicy-finished-pods.yaml
+  - deployment.yaml
   - evaluator-credentials.sops.yaml
   - forgejo-images-creds-eso.yaml
-  - rbac-executor.yaml
-  - deployment.yaml
-  - service.yaml
+  - httproute.yaml
   - llm-proxy-deployment.yaml
   - llm-proxy-service.yaml
+  - namespace.yaml
+  - postgres-cluster.yaml
+  - rbac-executor.yaml
+  - registry-httproute.yaml
   - registry-proxy-deployment.yaml
   - registry-proxy-service.yaml
   - registry-pull-secret.yaml
-  - httproute.yaml
-  - registry-httproute.yaml
+  - role-props-reader.yaml
   - rolebinding-ollama-consumer.yaml
-  - cleanuppolicy-finished-pods.yaml
+  - rolebinding-props-reader.yaml
+  - service.yaml
+  # keep-sorted end
 configMapGenerator:
   - name: props-config
     files:

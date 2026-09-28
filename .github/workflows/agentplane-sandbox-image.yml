@@ -1,4 +1,4 @@
-# Build agentplane's Nix sandbox image (agentplane/sandbox_image/default.nix) and push it to the
+# Build agentplane's Nix sandbox image (agentplane/images/sandbox.nix) and push it to the
 # Forgejo registry, through nix-image.yml. The archive also goes to the Attic cache.
 name: Agentplane Sandbox Image
 
@@ -6,23 +6,27 @@ on:
   push:
     branches: [devel]
     paths:
-      - "agentplane/sandbox_image/**"
-      - "nix/lib/nix-ld-image.nix"
-      - "flake.lock"
-      - "nix/flake/packages.nix"
+      # keep-sorted start
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-sandbox-image.yml"
       - ".github/workflows/nix-image.yml"
+      - "agentplane/images/sandbox.nix"
+      - "flake.lock"
+      - "nix/flake/packages.nix"
+      - "nix/lib/nix-ld-image.nix"
+      # keep-sorted end
   # Build-only on PRs, so a change to the tool list is proven to build before it merges.
   pull_request:
     paths:
-      - "agentplane/sandbox_image/**"
-      - "nix/lib/nix-ld-image.nix"
-      - "flake.lock"
-      - "nix/flake/packages.nix"
+      # keep-sorted start
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-sandbox-image.yml"
       - ".github/workflows/nix-image.yml"
+      - "agentplane/images/sandbox.nix"
+      - "flake.lock"
+      - "nix/flake/packages.nix"
+      - "nix/lib/nix-ld-image.nix"
+      # keep-sorted end
   workflow_dispatch:
 
 concurrency:

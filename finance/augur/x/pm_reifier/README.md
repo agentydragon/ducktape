@@ -1,9 +1,8 @@
 # PM-reifier spike: can an LLM be a base measure `Q` for augur?
 
 Historical June 2026 experiment (design PRs #1903 / #1904), not production code or
-Augur's required model architecture. [Surviving research questions](../../plans/market_model_research.md)
-are optional; the roadmap owns any future dispatch. Reifier retirement is deferred,
-but keeping these scripts executable is not a requirement.
+Augur's required model architecture. Keeping these scripts executable is not a
+requirement.
 
 The LLM drivers remain exploratory scripts; the evidence reader and structured
 baseline have targets in [BUILD.bazel](BUILD.bazel). Recorded run numbers and
@@ -12,7 +11,7 @@ reconciliation and do not establish current model rankings or leakage guarantees
 
 ## The question
 
-The plan reifies prediction-market _marginals_ into a sampleable _joint_ over trajectories by min-KL
+The proposed reifier turns prediction-market _marginals_ into a sampleable _joint_ over trajectories by min-KL
 projection from a **base measure `Q`**. `Q` can be our structured state-space model or an LLM. This
 spike asks: **can an LLM be `Q`** — emit a diverse cloud of trajectories _in augur's native shape_
 that, after **one max-ent reweight to the market prices**, match the crowd _without the effective
@@ -21,7 +20,7 @@ so the reweight is fiction.)
 
 ## augur's native trajectory shape
 
-The macro model (`augur/model/state_space.py`) emits a **dense monthly level path per factor**, shape
+The macro model (`augur/x/models/state_space.py`) emits a **dense monthly level path per factor**, shape
 `(rollout, horizon_months+1, factors)`, factors being augur wire-ids: `inflation` (CPI index), `sp500`,
 `crypto:BTC`, `home_value:<loc>`, `rent:<loc>`, plus private-equity issuer marks. The LLM is asked for
 exactly that — dense monthly paths over those series — plus the OpenAI PE issuer. Market thresholds
@@ -41,8 +40,8 @@ are evaluated at specific month indices on the paths.
 | `plot_*.py`              | rollout fan plot + calibration histograms / horizon plots → `results/*.png`  |
 
 Macro history comes from the **augur-evidence checkout** (`AUGUR_EVIDENCE_DIR`) via
-`evidence_series.py` (sp500/BTC, FRED CPI/home/rent) — the daily scraper already maintains these
-series, so the backtests read them from the checkout instead of fetching live.
+`evidence_series.py` (sp500/BTC, FRED CPI/home/rent) — the checkout already holds these series,
+so the backtests read them from it instead of fetching live.
 `results/` (summaries, plots, `quota_log.jsonl` of per-run token + z.ai-quota burn) and
 `transcripts/` (every request/response) are **git-ignored** — written locally, not committed.
 The numbers below are what those runs produced; re-run the scripts to regenerate them.

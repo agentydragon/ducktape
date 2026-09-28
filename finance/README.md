@@ -12,3 +12,5 @@ Finance tools and portfolio tracking utilities.
 - **`scraper/`**: the augur-evidence git scraper (FRED/Yahoo/Zillow sources + the
   prediction-market mirror). Its cluster pipeline is parked; the retained market roster
   for a future revival lives in the [retained market roster](scraper/market-roster.yaml).
+- **`budget/`**: Plaid transaction classifier (bucket taxonomy, rule DSL, SQL read
+  model) behind augur's Budget tab and the Beancount exporter

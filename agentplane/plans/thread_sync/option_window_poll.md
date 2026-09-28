@@ -104,7 +104,7 @@ Nothing here is a new engine, so **O4** costs nothing to argue.
 1. **The window poll**, as above. **Excluded by E6**, since it re-issues on a timer; kept here
    because the rung above is defined against it.
 2. **Long-poll the same URL** — now the entry point. The server holds the request until the thread's
-   Postgres wake-up (`ThreadUpdates.changes`) fires, re-reads the window and answers only if its
+   Postgres wake-up (`DatabaseUpdates.changes[Channel.THREADS]`) fires, re-reads the window and answers only if its
    `ETag` differs from the client's `If-None-Match`; otherwise it keeps waiting. Same endpoint, same
    client path, no request floor. Comparing whole-window ETags still re-reads wholesale, so this
    rung does not need `revision_cursor` to be correct either. Filtering by revision instead of

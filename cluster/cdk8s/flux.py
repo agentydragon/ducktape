@@ -1,7 +1,7 @@
 """Builds the Flux `Kustomization` custom resource each converted directory needs,
 plus the (kustomize) `kustomization.yaml` referencing its manifests.
 
-The Flux `Kustomization` CR is built from //cluster/cdk8s/crd_bindings/flux:kustomization's
+The Flux `Kustomization` CR is built from //cluster/cdk8s/providers/flux:kustomization's
 generated cdk8s constructs (see devinfra/js/cdk8s_import.bzl) rather than a plain
 dict, so a malformed dependsOn entry or sourceRef kind fails at synth time instead
 of silently emitting invalid YAML. The plain (non-CRD) kustomize.config.k8s.io
@@ -17,14 +17,13 @@ See cluster/docs/cdk8s.md.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import cast
 
 import jsii
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart
 from constructs import IValidation
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    Kustomization,
-    KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
@@ -35,8 +34,6 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecImages,
     KustomizationSpecPatches,
     KustomizationSpecPostBuild,
-    KustomizationSpecPostBuildSubstituteFrom,
-    KustomizationSpecPostBuildSubstituteFromKind,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
@@ -44,21 +41,48 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.providers.flux.flux_kustomization import Kustomization
+
 NAMESPACE = "ducktape-flux"  # shared Flux namespace every generated Kustomization CR lives in
 SOPS_DECRYPTION = KustomizationSpecDecryption(
     provider=KustomizationSpecDecryptionProvider.SOPS,
     secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
 )
-# `${LETSENCRYPT_ISSUER}` from cert_manager/issuer_config.py's ConfigMap, which is reflected
-# into NAMESPACE: Flux reads substitution sources from the Kustomization's own namespace.
-CERT_MANAGER_ISSUER_CONFIG = "cert-manager-issuer-config"
-CERT_MANAGER_ISSUER_SUBSTITUTION = KustomizationSpecPostBuild(
-    substitute_from=[
-        KustomizationSpecPostBuildSubstituteFrom(
-            kind=KustomizationSpecPostBuildSubstituteFromKind.CONFIG_MAP, name=CERT_MANAGER_ISSUER_CONFIG
-        )
-    ]
-)
+
+
+@dataclass(frozen=True)
+class RenderedDirectory:
+    """A directory `generation.write_directory` wrote, as its Flux Kustomization reads it:
+    `sourceRef` and `path` come from the artifact packaging it, and `decryption` is set when a
+    hand-written sibling is SOPS ciphertext."""
+
+    artifact: ArtifactGeneratorSpecArtifacts
+    decryption: KustomizationSpecDecryption | None
+
+
+def artifact_directory(artifact: ArtifactGeneratorSpecArtifacts) -> str:
+    """The repo-relative directory `artifact` copies first: its consumer's Kustomization directory.
+    Later copies are shared bases the Kustomization references.
+
+    Raises on any shape `artifact_generators.artifact` does not build -- no copies, or a copy
+    that is not one whole directory copied to the same path -- since the Kustomization's `path`
+    would otherwise silently point at the wrong directory.
+    """
+    directories = []
+    for copy in artifact.copy:
+        directory = copy.to.removeprefix("@artifact/").removesuffix("/")
+        if (
+            not directory
+            or copy.to != f"@artifact/{directory}/"
+            or copy.from_ != f"@repo/{directory}/**"
+            or copy.exclude is not None
+            or copy.strategy is not None
+        ):
+            raise ValueError(f"{artifact.name=}: not a whole-directory copy: {copy.from_=} {copy.to=}")
+        directories.append(directory)
+    if not directories:
+        raise ValueError(f"{artifact.name=} copies nothing")
+    return directories[0]
 
 
 @jsii.implements(IValidation)
@@ -108,7 +132,7 @@ def health_checks(chart: Chart, kinds: Sequence[str]) -> list[KustomizationSpecH
 def flux_kustomization(
     chart: Chart,
     name: str,
-    source: ArtifactGeneratorSpecArtifacts | KustomizationSpecSourceRef,
+    source: RenderedDirectory | ArtifactGeneratorSpecArtifacts | KustomizationSpecSourceRef,
     *,
     path: str | None = None,
     interval: str = "10m",
@@ -133,10 +157,11 @@ def flux_kustomization(
 ) -> Kustomization:
     """Add and return a Flux `Kustomization` custom resource in `chart`.
 
-    `source` is the node's `ArtifactGenerator` artifact, from which `sourceRef` and `path`
-    (its first directory) derive, or a direct `sourceRef` -- a `GitRepository` -- which
-    takes an explicit `path`. The spec keywords are `KustomizationSpec` fields under the
-    same names and types. Our policy, which a node overrides only where it differs:
+    `source` is the node's `RenderedDirectory`, from which `sourceRef`, `path` and
+    `decryption` derive; or its `ArtifactGenerator` artifact, from which `sourceRef` and
+    `path` (its first directory) derive; or a direct `sourceRef` -- a `GitRepository` --
+    which takes an explicit `path`. The spec keywords are `KustomizationSpec` fields under
+    the same names and types. Our policy, which a node overrides only where it differs:
     `interval="10m"`, `retry_interval="1m"`, `prune=True`, `wait=True`. `None` leaves a
     field unset, so Flux's own default applies (which for `retry_interval` is `interval`
     and for `wait` is false). `health_checks` needs `wait` off: with `wait=True` Flux ignores
@@ -146,6 +171,11 @@ def flux_kustomization(
     """
     if wait and health_checks:
         raise ValueError(f"{name=}: wait=True health-checks every applied object and Flux ignores health_checks")
+    if isinstance(source, RenderedDirectory):
+        if decryption is not None:
+            raise ValueError(f"{name=}: a rendered directory derives its decryption; got {decryption=}")
+        decryption = source.decryption
+        source = source.artifact
     match source:
         case ArtifactGeneratorSpecArtifacts():
             if path is not None:
@@ -153,7 +183,7 @@ def flux_kustomization(
             source_ref = KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=source.name, namespace=NAMESPACE
             )
-            path = "./" + source.copy[0].to.removeprefix("@artifact/").removesuffix("/")
+            path = f"./{artifact_directory(source)}"
         case KustomizationSpecSourceRef():
             if path is None:
                 raise ValueError(f"{name=}: a direct sourceRef needs an explicit path")
@@ -167,26 +197,24 @@ def flux_kustomization(
         chart,
         name,
         metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=metadata_annotations or None),
-        spec=KustomizationSpec(
-            source_ref=source_ref,
-            path=path,
-            interval=interval,
-            retry_interval=retry_interval,
-            timeout=timeout,
-            prune=prune,
-            wait=wait,
-            suspend=suspend,
-            deletion_policy=deletion_policy,
-            decryption=decryption,
-            depends_on=depends_on,
-            health_checks=health_checks,
-            health_check_exprs=health_check_exprs,
-            post_build=post_build,
-            target_namespace=target_namespace,
-            service_account_name=service_account_name,
-            images=images,
-            patches=patches,
-        ),
+        source_ref=source_ref,
+        path=path,
+        interval=interval,
+        retry_interval=retry_interval,
+        timeout=timeout,
+        prune=prune,
+        wait=wait,
+        suspend=suspend,
+        deletion_policy=deletion_policy,
+        decryption=decryption,
+        depends_on=depends_on,
+        health_checks=health_checks,
+        health_check_exprs=health_check_exprs,
+        post_build=post_build,
+        target_namespace=target_namespace,
+        service_account_name=service_account_name,
+        images=images,
+        patches=patches,
     )
 
 

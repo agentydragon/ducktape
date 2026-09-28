@@ -12,14 +12,16 @@ oauth:
       authorize_url: https://cloud.ouraring.com/oauth/authorize
       token_url: https://api.ouraring.com/oauth/token
       scopes:
-        - email
-        - personal
+        # keep-sorted start
         - daily
+        - email
         - heartrate
-        - workout
-        - tag
+        - personal
         - session
         - spo2
+        - tag
+        - workout
+        # keep-sorted end
       # TODO(shared-callback): migrate to the shared /oauth/callback — register
       # https://airlock.allegedly.works/oauth/callback on the Oura OAuth app, then drop
       # this line. Until then the legacy /oauth/callback/<name> route serves it.
@@ -35,16 +37,18 @@ oauth:
       authorize_url: https://accounts.google.com/o/oauth2/v2/auth
       token_url: https://oauth2.googleapis.com/token
       scopes:
-        - https://www.googleapis.com/auth/gmail.readonly
-        - https://www.googleapis.com/auth/drive.readonly
-        - https://www.googleapis.com/auth/drive.activity.readonly
+        # keep-sorted start
         - https://www.googleapis.com/auth/calendar.readonly
-        - https://www.googleapis.com/auth/tasks.readonly
         - https://www.googleapis.com/auth/contacts.readonly
         - https://www.googleapis.com/auth/documents.readonly
-        - https://www.googleapis.com/auth/spreadsheets.readonly
+        - https://www.googleapis.com/auth/drive.activity.readonly
+        - https://www.googleapis.com/auth/drive.readonly
+        - https://www.googleapis.com/auth/gmail.readonly
         - https://www.googleapis.com/auth/presentations.readonly
+        - https://www.googleapis.com/auth/spreadsheets.readonly
+        - https://www.googleapis.com/auth/tasks.readonly
         - https://www.googleapis.com/auth/youtube.readonly
+        # keep-sorted end
       refresh_secret:
         name: google-tokens
       access_secret:

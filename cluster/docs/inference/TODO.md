@@ -5,9 +5,9 @@ signal toward the goal in <README.md#goal> per unit of effort. Re-rank
 freely as we run things and learn what surprises us.
 
 > **Note:** this is the older signal-ranked backlog. The initial E1–E5
-> resident-runtime screen is complete; the remaining work here is model/task
-> benchmarking plus follow-on runtime investigations. Keep result details in
-> <PLAN.md> and <results.md>, and check items off against immutable runs.
+> resident-runtime screen is complete. <PLAN.md> owns the current capability-first
+> queue and September model refresh; this backlog does not set execution order.
+> Keep measurements in <results.md> and source-linked run records.
 
 ## P0 — high signal, low cost, hits the main use case
 

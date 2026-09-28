@@ -122,8 +122,9 @@ bazelisk test //agentplane/acceptance:test_egress --test_output=streamed --test_
 Run the other live scenarios by their explicit targets: `:test_launch_presets`,
 `:test_instructions`, `:test_mcp`, and `:test_thread_latency`.
 
-`//agentplane/acceptance:test_ollama_routes` exercises the twelve configured Ollama chat
-routes on both harnesses, with the 128k cases first. Each cell creates a Sandbox,
+`//agentplane/acceptance:test_ollama_routes` exercises every configured Ollama chat
+route (sourced from `cluster/cdk8s/model_rosters.py`'s `OLLAMA_CHAT_MODELS`) on both
+harnesses, with the 128k cases first. Each cell creates a Sandbox,
 opens a real session, and requires recorded shell-tool output. It has an absolute
 300-second turn limit; a backend that never completes still leaves an interrupted
 turn rather than a model verdict. To run just one cell, set `OLLAMA_SMOKE_CASE` to
@@ -131,6 +132,10 @@ its pytest id, for example
 `harness_codex-ollama-oai-chat-gpt-oss-20b-128k`. Each cell writes a small JSON
 result under the target's `test.outputs/` directory. A Bazel rerun of this target
 replaces local test outputs, so save any evidence needed across runs first.
+Results include context windows reported by the native harness (Codex token-usage
+notifications and Claude result model usage). These can differ from server context:
+for example, Codex may report its usable budget after reserving headroom. An empty
+list means the harness did not report a window in the observed turn.
 For transient sidecar diagnosis, `--test_env=OLLAMA_SMOKE_HOLD_SECONDS=30` retains
 the isolated Sandbox for at most 30 seconds after the turn result is written, before
 normal fixture cleanup.

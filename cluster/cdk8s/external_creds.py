@@ -3,23 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.external_secrets.external_secret import cluster_secret_store
-from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
-from cluster.cdk8s.generation import sops_decryption, write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import SecretStoreRef
 
 NAMESPACE = "ducktape-flux"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/external-creds"
 _READER_SERVICE_ACCOUNT = "external-creds-reader"
-STORE = cluster_secret_store("kubernetes-external-creds-secret-store")
+STORE = SecretStoreRef.cluster("kubernetes-external-creds-secret-store")
 
 
 @dataclass(frozen=True)
@@ -87,6 +82,10 @@ CREDENTIALS = (
             ApprovedConsumer("claude-sandbox", "buildbuddy-api-key-claude-sandbox-reader"),
             ApprovedConsumer("public-coder-agent", "buildbuddy-api-key-public-coder-agent-reader"),
             ApprovedConsumer("flux-system", "buildbuddy-api-key-flux-system-reader"),
+            ApprovedConsumer(
+                "agentplane-staging-egress-credentials",
+                "buildbuddy-api-key-agentplane-staging-egress-credentials-reader",
+            ),
         ),
     ),
     Credential(
@@ -158,11 +157,6 @@ CREDENTIALS = (
 )
 
 
-def kustomize_resources() -> list[str]:
-    """Return generated source-side RBAC and canonical SOPS files."""
-    return ["external-creds.k8s.yaml", *(credential.secret_file for credential in CREDENTIALS)]
-
-
 def chart(app: App) -> Chart:
     """Build exact-name, get-only credential reader Roles and RoleBindings in one chart."""
     chart = Chart(app, "external-creds", disable_resource_name_hashes=True)
@@ -172,7 +166,7 @@ def chart(app: App) -> Chart:
             Role(
                 chart,
                 f"role-{credential.secret_name}",
-                metadata=metadata(role_name, credential.namespace),
+                metadata=ApiObjectMetadata(name=role_name, namespace=credential.namespace),
                 rules=[
                     RolePolicyRule(
                         resources=[
@@ -188,7 +182,7 @@ def chart(app: App) -> Chart:
                 RoleBinding(
                     chart,
                     f"binding-{credential.secret_name}-{index}",
-                    metadata=metadata(consumer.binding_name, credential.namespace),
+                    metadata=ApiObjectMetadata(name=consumer.binding_name, namespace=credential.namespace),
                     role=Role.from_role_name(chart, f"role-ref-{credential.secret_name}-{index}", role_name),
                 ).add_subjects(
                     ServiceAccount.from_service_account_name(
@@ -201,24 +195,5 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def external_creds(
-    flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path, claude_rbac: Kustomization
-) -> Kustomization:
-    """Generate credential grants and Kustomize wiring; source manifests stay hand-written."""
-    resources = kustomize_resources()
-    write_charts(root, OUTPUT_DIR, chart)
-
-    out_dir = root / OUTPUT_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    kustomization = flux_kustomization(
-        flux_chart,
-        "external-creds",
-        artifact,
-        retry_interval=None,
-        wait=None,
-        decryption=sops_decryption(resources),
-        depends_on=[flux_kustomization_depends_on(claude_rbac)],
-        timeout="5m",
-    )
-    write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=resources))
-    return kustomization
+def external_creds(flux_chart: Chart, directory: RenderedDirectory) -> Kustomization:
+    return flux_kustomization(flux_chart, "external-creds", directory, retry_interval=None, wait=None, timeout="5m")

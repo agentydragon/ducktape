@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 
@@ -23,7 +23,7 @@ from cluster.cdk8s import cilium
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 
 NAME = "public-coder-agent-sshpiper"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/sshpiper"
@@ -163,9 +163,7 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=NAME, namespace=_NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=_NAMESPACE, labels=LABELS),
         spec=k8s.DeploymentSpec(
             # One replica, and not only because the recordings PVC is RWO: two pipers would each
             # need the host key, and a client reconnecting to the other one is indistinguishable
@@ -248,13 +246,13 @@ def _network_policies(scope: Construct, app_namespace: str, app_labels: dict[str
     #
     # This is a fence, not the credential boundary. Reaching the listener is worth nothing without
     # a key the Pipe's authorized_keys_data accepts.
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "ingress",
-        metadata=metadata("allow-public-coder-agent-sshpiper-ingress", _NAMESPACE),
-        selector=LABELS,
+        metadata=ApiObjectMetadata(name="allow-public-coder-agent-sshpiper-ingress", namespace=_NAMESPACE),
+        endpoint_selector=LABELS,
         ingress=[
-            cilium.ingress_from(
+            IngressRule.from_endpoints(
                 {
                     "k8s:io.kubernetes.pod.namespace": app_namespace,
                     **{f"k8s:{key}": value for key, value in app_labels.items()},
@@ -266,19 +264,19 @@ def _network_policies(scope: Construct, app_namespace: str, app_labels: dict[str
     # Confined, unlike the proxy's egress. The proxy's waiver exists because that Agent reads
     # arbitrary public repositories; the piper has exactly one upstream and no reason to reach
     # anything else, so this stays an allowlist and every widening is a diff here.
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "egress",
-        metadata=metadata("allow-public-coder-agent-sshpiper-egress", _NAMESPACE),
-        selector=LABELS,
+        metadata=ApiObjectMetadata(name="allow-public-coder-agent-sshpiper-egress", namespace=_NAMESPACE),
+        endpoint_selector=LABELS,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
             # The kubernetes plugin watches Pipes and resolves the upstream key Secret through the
             # API server; without this the piper starts and then refuses every connection.
-            cilium.egress_to_entities("kube-apiserver"),
+            EgressRule.to_entities(Entity.KUBE_APISERVER),
             # The one upstream. KubeVirt gives the VM an ordinary Pod identity, so the guest's sshd
             # is selectable by the VM's domain label.
-            cilium.egress_to(
+            EgressRule.to_endpoints(
                 {"k8s:io.kubernetes.pod.namespace": _NAMESPACE, "k8s:kubevirt.io/domain": "public-coder-devbox"}, 22
             ),
         ],

@@ -30,14 +30,6 @@ from finance.augur.api.deployment import DeploymentInfo, build_deployment_info
 from finance.augur.api.portfolio_sources import resolve_portfolio_sources
 from finance.augur.api.product_service import build_product_service
 from finance.augur.api.wire import CalibrationInfo, CatalogResponse, SettingsResponse
-from finance.augur.budget.service import BudgetService
-from finance.augur.budget.wire import (
-    BudgetSnapshotRequest,
-    BudgetSnapshotResponse,
-    BudgetSummaryCsvRequest,
-    BudgetTransactionsRequest,
-    BudgetTransactionsResponse,
-)
 from finance.augur.calibration.calibration import build_anchored_level_paths, mark_fan, run_calibration
 from finance.augur.calibration.catalog import MarketCatalog
 from finance.augur.calibration.default_clients import default_price_clients
@@ -45,7 +37,6 @@ from finance.augur.calibration.macro_anchors import resolve_anchors
 from finance.augur.calibration.platform import PriceClient
 from finance.augur.model.exogenous import ExogenousSamplingRequest, Sampler, level_series_request_channels
 from finance.augur.model.private_equity_bundle import PrivateEquityFloatChannel
-from finance.augur.model.sample_sanity import SampleSanitySpec, evaluate_sample_checks, partition_spec_coverage
 from finance.augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key
 from finance.augur.product.portfolio import ProductPortfolioResponse, product_portfolio_response
 from finance.augur.product.wire import (
@@ -56,6 +47,16 @@ from finance.augur.product.wire import (
     RolloutRequest,
     RolloutResponse,
     TerminalDistributionResponse,
+)
+from finance.augur.sim.money import USD
+from finance.augur.x.models.sample_sanity import SampleSanitySpec, evaluate_sample_checks, partition_spec_coverage
+from finance.budget.service import BudgetService
+from finance.budget.wire import (
+    BudgetSnapshotRequest,
+    BudgetSnapshotResponse,
+    BudgetSummaryCsvRequest,
+    BudgetTransactionsRequest,
+    BudgetTransactionsResponse,
 )
 from finance.evidence.markets import Platform
 from finance.plaid.db.schema import async_session_factory
@@ -163,7 +164,12 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     @app.get("/api/product/portfolio", response_model=ProductPortfolioResponse)
     def product_portfolio_snapshot() -> JSONResponse:
         return payload(
-            product_portfolio_response(snapshot=resolved_portfolio.snapshot, portfolio=resolved_portfolio.portfolio)
+            product_portfolio_response(
+                snapshot=resolved_portfolio.snapshot,
+                portfolio=resolved_portfolio.portfolio,
+                tlh_portfolios=resolved_portfolio.tlh_portfolios,
+                currency=USD,
+            )
         )
 
     @app.post("/api/product/projections/metric_fan", response_model=MetricFanResponse)

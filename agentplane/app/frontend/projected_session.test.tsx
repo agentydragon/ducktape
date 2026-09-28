@@ -9,11 +9,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommandSchema, type Command } from "../../protocol/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
 import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
-import { api, command, getThread, models, type ThreadView } from "./client";
+import { command, getThread, models, type ThreadView } from "./client";
 import { historyRows, rowKey } from "./history_rows";
 import { LocalCommands } from "./local_commands";
 import { EntityCard, HistoryRowView, ProjectedSession, pruneCommandErrors } from "./projected_session";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
+import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "./stream_status";
 import { testItem } from "./thread_entity_fixture";
 import {
   ThreadSyncContext,
@@ -22,6 +23,7 @@ import {
   type ThreadState,
   type ThreadSync,
 } from "./thread_sync";
+import { TopbarContext } from "./topbar";
 
 vi.mock("./client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./client")>()),
@@ -61,13 +63,16 @@ beforeEach(() => {
   inventoryFresh = true;
   inventoryDrops = false;
   vi.mocked(getThread).mockResolvedValue(THREAD);
-  vi.mocked(models).mockResolvedValue({ HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] });
+  vi.mocked(models).mockResolvedValue({
+    models: [{ model: "test-model", display_name: "Test Model" }],
+    harnesses: { HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] },
+  });
   vi.mocked(command).mockReturnValue(new Promise(() => {}));
-  // A dropped stream probes the session once; the probe's answer is not what these tests are about.
-  vi.spyOn(api, "GET").mockReturnValue(new Promise<never>(() => {}));
   vi.stubGlobal(
     "EventSource",
     class extends EventTarget {
+      // A drop is the network's, which the browser retries: the source stays CONNECTING.
+      readyState = 0;
       constructor() {
         super();
         queueMicrotask(() => {
@@ -97,6 +102,7 @@ afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
   }
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.resetAllMocks();
 });
@@ -134,13 +140,14 @@ function viewState({
 function threadState({
   rows = [viewState()],
   caughtUp = true,
-  reconnecting = false,
+  reconnectingFor = null,
   windowError = null,
   error = null,
 }: {
   rows?: ThreadEntity[];
   caughtUp?: boolean;
-  reconnecting?: boolean;
+  /** How long the thread's reads have been failing, if they are. */
+  reconnectingFor?: number | null;
   windowError?: string | null;
   error?: string | null;
 } = {}): ThreadState {
@@ -151,7 +158,10 @@ function threadState({
       olderAvailable: false,
       loadingOlder: false,
       loadOlder: () => {},
-      reconnecting,
+      connection:
+        reconnectingFor === null
+          ? { phase: "live", since: Date.now() }
+          : { phase: "reconnecting", since: Date.now() - reconnectingFor, attempt: 1, lastError: "HTTP 503" },
       error: windowError,
       refresh: () => {},
     },
@@ -168,17 +178,25 @@ async function render(state: ThreadState = threadState()): Promise<HTMLDivElemen
   };
   const container = document.createElement("div");
   document.body.append(container);
+  // The real shell topbar (app.tsx) isn't mounted here, so ProjectedSession's title/menu need
+  // somewhere to portal into. Left unattached until after the initial render: createRoot's first
+  // commit clears container's pre-existing children, which would tear these back out.
+  const topbarTitle = document.createElement("div");
+  const topbarActions = document.createElement("div");
   const root = createRoot(container);
   mounted.push({ root, container });
   await act(async () => {
     root.render(
       <MantineProvider env="test">
         <ThreadSyncContext.Provider value={sync}>
-          <ProjectedSession threadId={THREAD.id} onBack={() => {}} />
+          <TopbarContext.Provider value={{ title: topbarTitle, actions: topbarActions }}>
+            <ProjectedSession threadId={THREAD.id} />
+          </TopbarContext.Provider>
         </ThreadSyncContext.Provider>
       </MantineProvider>
     );
   });
+  container.append(topbarTitle, topbarActions);
   return container;
 }
 
@@ -230,7 +248,7 @@ it("drops request errors after their local commands are dismissed", () => {
   expect(pruneCommandErrors(errors, new Set(errors.keys()))).toBe(errors);
 });
 
-it.each<KeyboardEventInit>([{ ctrlKey: true }, { metaKey: true }])(
+it.each<KeyboardEventInit>([{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }])(
   "inserts a newline at the caret on Enter with %o, without sending",
   async (modifier) => {
     const field = composer(await render());
@@ -278,6 +296,13 @@ it("sends the draft from the Send button, which an empty draft disables", async 
   expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
 });
 
+it("shows the thread id in the More menu, not inline once a name is set", async () => {
+  const container = await render();
+  expect(document.body.textContent).not.toContain(THREAD.id);
+  await act(async () => button(container, "More").click());
+  expect(document.body.textContent).toContain(THREAD.id);
+});
+
 it("shuts the harness down from the More menu, not a control on the row", async () => {
   const container = await render();
   expect(document.body.textContent).not.toContain("Shut down harness");
@@ -294,13 +319,20 @@ it("disables shutdown while the harness is not running", async () => {
 // still settling breathes.
 it.each([
   [
-    { windowError: "test shape gone", error: "test fetch failed", reconnecting: true },
+    { windowError: "test shape gone", error: "test fetch failed", reconnectingFor: DEGRADED_AFTER_MS },
     "red",
     false,
     "Thread sync stopped: test shape gone",
   ],
   [{ error: "test fetch failed", rows: [viewState({ harness: "lost" })] }, "yellow", true, "Reconnecting…"],
-  [{ reconnecting: true, caughtUp: false, rows: [viewState({ harness: "lost" })] }, "yellow", true, "Reconnecting…"],
+  [
+    { reconnectingFor: DEGRADED_AFTER_MS, caughtUp: false, rows: [viewState({ harness: "lost" })] },
+    "yellow",
+    true,
+    "Reconnecting…",
+  ],
+  // Reads failing for less than the grace are a blip, not a state.
+  [{ reconnectingFor: 1_000, rows: [viewState()] }, "green", false, "Runner feed active · harness running"],
   [{ caughtUp: false, rows: [viewState({ status: "failed" })] }, "yellow", true, "Catching up…"],
   [{ rows: [viewState({ status: "failed", harness: "lost" })] }, "red", false, "Runner feed failed"],
   [{ rows: [viewState({ status: "ended", harness: "lost" })] }, "red", false, "Harness lost"],
@@ -333,30 +365,45 @@ it.each([
 const RUNNING = { name: THREAD.sandbox, state: "running" };
 const SUSPENDED = { name: THREAD.sandbox, state: "suspended" };
 const STALE = "sandboxes last updated 40 minutes ago";
-const DROPPED = "Not connected to the live stream";
 const ABSENT = "Sandbox absent from last inventory snapshot. Current availability unknown";
+const OUT_OF_DATE = /^What's on screen may be out of date; last update \d{2}:\d{2}:\d{2}$/;
+
+function matching(text: string | RegExp): unknown {
+  return typeof text === "string" ? expect.stringContaining(text) : expect.stringMatching(text);
+}
 
 // Each of these but the first disables the controls, which the composer's dot reports only as
 // "Sandbox unavailable"; the header says why: the state the inventory last reported, or that the
-// stream behind it has dropped or stalled.
-it.each<[string, Inventory, { fresh?: boolean; drops?: boolean }, string | null, string | null]>([
+// watch behind it has stalled or the stream been down a minute. A drop within the grace is a blip,
+// on which the last inventory still stands.
+it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | null, string | RegExp | null]>([
   ["a running sandbox", [RUNNING], {}, null, null],
   ["an inventory not yet heard from", null, {}, null, null],
   ["a suspended sandbox", [SUSPENDED], {}, "Last observed Sandbox state: suspended.", null],
   ["a deleted sandbox", [], {}, "Sandbox no longer exists.", null],
   ["a running sandbox on a stale inventory", [RUNNING], { fresh: false }, null, STALE],
   ["an absence from a stale inventory", [], { fresh: false }, ABSENT, STALE],
-  ["a running sandbox on a dropped stream", [RUNNING], { drops: true }, null, DROPPED],
-  ["an absence from a dropped stream", [], { drops: true }, ABSENT, DROPPED],
-  ["a suspended sandbox on a dropped stream", [SUSPENDED], { drops: true }, "state: suspended.", DROPPED],
-])("explains %s in the header", async (_, inventory, { fresh = true, drops = false }, status, alert) => {
+  ["a running sandbox on a stream that just dropped", [RUNNING], { droppedFor: 0 }, null, null],
+  ["an absence from a stream that just dropped", [], { droppedFor: 0 }, "Sandbox no longer exists.", null],
+  ["an absence from a stream down past the grace", [], { droppedFor: DEGRADED_AFTER_MS }, ABSENT, null],
+  ["a running sandbox on a stream down a minute", [RUNNING], { droppedFor: STALE_AFTER_MS }, null, OUT_OF_DATE],
+  [
+    "a suspended sandbox on a stream down a minute",
+    [SUSPENDED],
+    { droppedFor: STALE_AFTER_MS },
+    "state: suspended.",
+    OUT_OF_DATE,
+  ],
+])("explains %s in the header", async (_, inventory, { fresh = true, droppedFor }, status, alert) => {
+  vi.useFakeTimers();
   sandboxes = inventory;
   inventoryFresh = fresh;
-  inventoryDrops = drops;
+  inventoryDrops = droppedFor !== undefined;
   const container = await render();
+  await act(async () => vi.advanceTimersByTime(droppedFor ?? 0));
   const texts = (role: string) => [...container.querySelectorAll(`[role="${role}"]`)].map((node) => node.textContent);
   expect(texts("status")).toEqual(status === null ? [] : [expect.stringContaining(status)]);
-  expect(texts("alert")).toEqual(alert === null ? [] : [expect.stringContaining(alert)]);
+  expect(texts("alert")).toEqual(alert === null ? [] : [matching(alert)]);
 });
 
 it.each([
@@ -369,14 +416,19 @@ it.each([
   expect(picker?.placeholder).toBe(placeholder);
 });
 
-// A stopped window shows its alert and refresh instead.
-it.each([
-  [{ reconnecting: true }, ["Reconnecting to the thread. What is on screen may be out of date."]],
-  [{ reconnecting: true, windowError: "test shape gone" }, []],
-])("shows the thread's status for %o: %o", async (state, statuses) => {
-  const container = await render(threadState(state));
-  expect([...container.querySelectorAll('[role="status"]')].map((node) => node.textContent)).toEqual(statuses);
-});
+// A stopped window says so in its own alert, and is not following the thread to be out of date.
+it.each<[{ reconnectingFor: number; windowError?: string }, (string | RegExp)[]]>([
+  [{ reconnectingFor: DEGRADED_AFTER_MS }, []],
+  [{ reconnectingFor: STALE_AFTER_MS }, [OUT_OF_DATE]],
+  [{ reconnectingFor: STALE_AFTER_MS, windowError: "test shape gone" }, ["Thread synchronization stopped"]],
+])(
+  "tells the reader the thread may be out of date only once its reads have failed a minute: %o",
+  async (state, alerts) => {
+    const container = await render(threadState(state));
+    const shown = [...container.querySelectorAll('[role="alert"]')].map((node) => node.textContent);
+    expect(shown).toEqual(alerts.map(matching));
+  }
+);
 
 function message(commandId: string): Command {
   return create(CommandSchema, {

@@ -231,7 +231,7 @@ class MonthBand(BaseModel):
 class MarkFan(BaseModel):
     """Per-month percentile bands of a float channel (default the per-unit mark)."""
 
-    issuer: str
+    issuer: IssuerId
     channel: str
     percentiles: list[float]
     months: list[MonthBand]
@@ -299,7 +299,7 @@ def _resolve_pe(traj: RolloutTrajectory, mapping: PeEventMapping) -> Resolution:
 def _exact_market_counts(
     market: ExactMarket,
     *,
-    trajectories_by_issuer: Mapping[str, list[RolloutTrajectory]],
+    trajectories_by_issuer: Mapping[IssuerId, list[RolloutTrajectory]],
     level_paths: Mapping[LevelSeriesKey, npt.NDArray[np.float64]],
     inflation_history: npt.NDArray[np.float64] | None,
     as_of: date,
@@ -489,7 +489,7 @@ def _threshold_ladder_row(
 def _date_ladder_row(
     family: DateLadderFamily,
     *,
-    trajectories_by_issuer: Mapping[str, list[RolloutTrajectory]],
+    trajectories_by_issuer: Mapping[IssuerId, list[RolloutTrajectory]],
     live_markets: list[Market | None],
 ) -> CategoricalRow | None:
     """Convert cumulative event-by-date contracts into one timing distribution row.
@@ -750,7 +750,7 @@ def build_anchored_level_paths(
 
 
 def _augur_context(
-    market: SurfacedMarket, trajectories_by_issuer: Mapping[str, list[RolloutTrajectory]]
+    market: SurfacedMarket, trajectories_by_issuer: Mapping[IssuerId, list[RolloutTrajectory]]
 ) -> AugurContext | None:
     """The nearest clean augur signal for a surfaced market, where one exists.
 
@@ -778,7 +778,7 @@ def _augur_context(
 
 
 def _surfaced_row(
-    market: SurfacedMarket, trajectories_by_issuer: Mapping[str, list[RolloutTrajectory]], live: Market
+    market: SurfacedMarket, trajectories_by_issuer: Mapping[IssuerId, list[RolloutTrajectory]], live: Market
 ) -> SurfacedRow:
     return SurfacedRow(
         market_id=market.market_id,
@@ -798,7 +798,7 @@ def _surfaced_row(
 def mark_fan(
     bundle: PrivateEquityBundle,
     *,
-    issuer: IssuerId | str,
+    issuer: IssuerId,
     rollout_count: int,
     horizon_months: int,
     percentiles: tuple[float, ...],
@@ -815,11 +815,11 @@ def mark_fan(
         MonthBand(month_index=month, values={str(p): float(bands[i, month]) for i, p in enumerate(percentiles)})
         for month in range(horizon_months + 1)
     ]
-    return MarkFan(issuer=str(issuer), channel=channel, percentiles=list(percentiles), months=months)
+    return MarkFan(issuer=issuer, channel=channel, percentiles=list(percentiles), months=months)
 
 
 def sample_private_equity_bundle(
-    model: Sampler, *, issuer: str, horizon_months: int, rollout_seeds: tuple[int, ...]
+    model: Sampler, *, issuer: IssuerId, horizon_months: int, rollout_seeds: tuple[int, ...]
 ) -> PrivateEquityBundle:
     """Sample `model`'s private-equity bundle for one issuer over a horizon.
 

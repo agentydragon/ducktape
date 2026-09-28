@@ -33,3 +33,9 @@ replace the server-stamped object.
 The workload bearer is sent only to Kubernetes TokenReview. The LiteLLM virtual key is sent only on
 the internal LiteLLM hop. Neither credential is logged, placed in errors, returned to callers, or
 mounted into a runner or harness container.
+
+For targeted debugging, set `log_llm_requests: true` in the ingress settings (or
+`AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=true`). The ingress logs each request body and every raw
+response chunk with a per-request ID and chunk number, plus whether the stream completed. This can
+include prompts, reasoning, generated text, and tool arguments; keep it disabled by default and
+restrict access and retention while enabled. Authorization and other request headers are not logged.

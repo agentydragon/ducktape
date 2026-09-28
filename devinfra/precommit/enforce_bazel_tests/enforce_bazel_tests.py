@@ -24,14 +24,16 @@ from util.bazel.workspace import BazelLabel, BazelWorkspace
 
 # Infrastructure files that affect too many targets — CI catches these.
 _INFRA_PATTERNS = (
-    "MODULE.bazel",
-    "MODULE.bazel.lock",
-    "requirements_bazel.txt",
+    # keep-sorted start
     ".bazelrc",
     ".bazelversion",
+    "MODULE.bazel",
+    "MODULE.bazel.lock",
     "WORKSPACE",
     "WORKSPACE.bazel",
     "WORKSPACE.bzlmod",
+    "requirements_bazel.txt",
+    # keep-sorted end
 )
 _INFRA_GLOBS = ("devinfra/bazel*",)
 

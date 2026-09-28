@@ -1,8 +1,8 @@
 """Backend fallback for operator-login callback failures.
 
-Account-link callbacks hand their results to the SPA; operator login cannot assume that the SPA
-has a working authenticated session, so its failure and retry page remains backend-rendered. See
-``docs/oauth_browser_surfaces.md`` for the ownership boundary and consolidation plan.
+Operator login cannot assume that the SPA has a working authenticated session, so its failure and
+retry page remains backend-rendered. See ``docs/oauth_browser_surfaces.md`` for the ownership
+boundary and consolidation plan.
 """
 
 from __future__ import annotations

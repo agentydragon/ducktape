@@ -17,10 +17,8 @@ import numpy as np
 from finance.augur.fit.evidence_data import (
     ZILLOW_HOME_VALUE_REGIONS,
     ExogenousEvidence,
-    PeriodReturns,
     _align_inner,
     _monthly_latest,
-    calibrate_series_path_priors,
     load_exogenous_evidence,
 )
 from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment, ObservationUnits
@@ -103,12 +101,6 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
     return_months = tuple(aligned["month"].dt.strftime("%Y-%m").to_list()[1:])
     historical = _historical_from_log_returns(series_names, monthly_log_returns, return_months)
 
-    durations = np.ones_like(monthly_log_returns[:, 0])
-    marginal: dict[LevelSeriesKey, PeriodReturns] = {
-        key: PeriodReturns(log_returns=monthly_log_returns[:, idx], duration_months=durations)
-        for idx, key in enumerate(series_names)
-    }
-    series_path_calibration, calibrated_series_path_priors = calibrate_series_path_priors(series_names, marginal)
     latest_observations: dict[LevelSeriesKey, ExogenousObservedPoint] = {
         SP500_KEY: _monthly_latest(sp500, FRED_SP500, units=ObservationUnits.INDEX_POINTS),
         **{key: _monthly_latest(home, FRED_SFXRSA, units=ObservationUnits.INDEX_POINTS) for key in home_series_keys},
@@ -137,9 +129,6 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
         series_names=series_names,
         monthly_log_returns=monthly_log_returns,
         monthly_return_months=return_months,
-        marginal_returns=marginal,
-        series_path_calibration=series_path_calibration,
-        calibrated_series_path_priors=calibrated_series_path_priors,
         current_mortgage30_rate_pct=float(mortgage["value"].to_list()[-1]),
         latest_observations=latest_observations,
         metadata=metadata,

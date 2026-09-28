@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from cdk8s import Chart, JsonPatch
+from cdk8s import ApiObjectMetadata, Chart, JsonPatch
 from constructs import Construct
 from seaweed_bucket_crds.com.seaweedfs.seaweed import (
     Bucket as BucketResource,  # The construct below takes the concept's name.
@@ -30,8 +30,6 @@ from seaweed_bucket_crds.com.seaweedfs.seaweed import (
     BucketSpecReclaimPolicy,
 )
 from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
     ResourceReferenceGrantSpecFrom,
     ResourceReferenceGrantSpecTo,
 )
@@ -50,7 +48,7 @@ from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
     S3IdentitySpecSeaweedRef,
 )
 
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.seaweedfs.resource_reference_grant import ResourceReferenceGrant
 
 # Aliased: the constructs' own `namespace` parameter is the tenant's.
 from cluster.cdk8s.seaweedfs import cluster, namespace as seaweedfs_namespace
@@ -89,11 +87,9 @@ class _ClusterGrant(Construct):
         self._resource = ResourceReferenceGrant(
             self,
             "Resource",
-            metadata=metadata(name, seaweedfs_namespace.NAME),
-            spec=ResourceReferenceGrantSpec(
-                from_=[ResourceReferenceGrantSpecFrom(group=_GROUP, kind=kind, namespace=namespace)],
-                to=[ResourceReferenceGrantSpecTo(group=_GROUP, kind="Seaweed", name=cluster.NAME)],
-            ),
+            metadata=ApiObjectMetadata(name=name, namespace=seaweedfs_namespace.NAME),
+            from_=[ResourceReferenceGrantSpecFrom(group=_GROUP, kind=kind, namespace=namespace)],
+            to=[ResourceReferenceGrantSpecTo(group=_GROUP, kind="Seaweed", name=cluster.NAME)],
         )
 
     @staticmethod
@@ -147,7 +143,7 @@ class IdentityRef(Construct):
         return S3Credentials(
             self._scope,
             f"{self.node.id}-credentials-{namespace}",
-            metadata=metadata(self.name, namespace, annotations=_description(description)),
+            metadata=ApiObjectMetadata(name=self.name, namespace=namespace, annotations=_description(description)),
             spec=S3CredentialsSpec(
                 seaweed_ref=S3CredentialsSpecSeaweedRef(name=cluster.NAME, namespace=_seaweed_ref_namespace(namespace)),
                 identity_ref=S3CredentialsSpecIdentityRef(name=self.name),
@@ -178,7 +174,7 @@ class Identity(IdentityRef):
         S3Identity(
             self,
             "Resource",
-            metadata=metadata(name, namespace, annotations=_description(description)),
+            metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=_description(description)),
             spec=S3IdentitySpec(
                 seaweed_ref=S3IdentitySpecSeaweedRef(name=cluster.NAME, namespace=_seaweed_ref_namespace(namespace)),
                 reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN,
@@ -211,7 +207,7 @@ class Bucket(Construct):
         self._resource = BucketResource(
             self,
             "Resource",
-            metadata=metadata(name, namespace, annotations=_description(description)),
+            metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=_description(description)),
             spec=BucketSpec(
                 name=name,
                 adopt_existing=adopt_existing or None,
@@ -248,11 +244,7 @@ def secret_grant(scope: Construct, *, secret: str, namespace: str) -> ResourceRe
     return ResourceReferenceGrant(
         scope,
         f"secret-grant-{namespace}-{secret}",
-        metadata=metadata(secret, namespace),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=_GROUP, kind="S3Credentials", namespace=seaweedfs_namespace.NAME)
-            ],
-            to=[ResourceReferenceGrantSpecTo(group="", kind="Secret", name=secret)],
-        ),
+        metadata=ApiObjectMetadata(name=secret, namespace=namespace),
+        from_=[ResourceReferenceGrantSpecFrom(group=_GROUP, kind="S3Credentials", namespace=seaweedfs_namespace.NAME)],
+        to=[ResourceReferenceGrantSpecTo(group="", kind="Secret", name=secret)],
     )

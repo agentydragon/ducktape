@@ -120,6 +120,10 @@ intact. Keep that property when adding shell packages or environment settings.
 
 On `public-coder-devbox`, the NixOS host definition owns the generated runtime
 PEM bundle and client environment, plus the separate JKS used by Bazel's JVM.
+In an Agentplane sandbox box the Pod owns them: the egress proxy's bundle over
+the image's own and as a PKCS12 trust store, and a system rc that points Bazel's
+JVM at that store and passes the proxy and CA variables to tests
+(`cluster/cdk8s/agentplane/sandbox_pod.py`).
 The generic repository shell must not replace that bundle or hardcode its path.
 These settings govern client-local repository fetches, not remote build actions.
 

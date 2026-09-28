@@ -163,7 +163,7 @@ cluster/
 ## Let's Encrypt Rate Limits
 
 5 duplicate certs/week per domain (rolling 7-day window). Each destroy→bootstrap cycle
-requests fresh certificates. Controlled by `LETSENCRYPT_ISSUER` in `cdk8s/cert_manager/issuer_config.py`.
+requests fresh certificates. Controlled by `LETSENCRYPT_ISSUER` in `cdk8s/cert_manager/config.py`.
 
 **Note:** The legacy VPS at `agentydragon.com` is separate infrastructure not involved in
 this cluster (see <docs/plan.md>).

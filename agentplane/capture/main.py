@@ -28,20 +28,22 @@ from agentplane.native.codex import scenarios as codex
 from agentplane.native.process import NativeProcess, serve, write_jsonl
 
 SCENARIOS = (
-    "launch",
+    # keep-sorted start
     "baseline",
-    "shell",
-    "file_edits",
-    "steering",
-    "second_input",
-    "interrupt",
-    "idle_resume",
-    "connection_retry",
     "connection_exhaustion",
-    "post_failure_follow_up",
-    "post_exhaustion_follow_up",
+    "connection_retry",
+    "file_edits",
     "hooks",
     "hooks_deny",
+    "idle_resume",
+    "interrupt",
+    "launch",
+    "post_exhaustion_follow_up",
+    "post_failure_follow_up",
+    "second_input",
+    "shell",
+    "steering",
+    # keep-sorted end
 )
 # Hooks registered on every event in the scenarios' HOOK_EVENTS; the shell prompt makes PreToolUse
 # fire, answered allow or, in `hooks_deny`, deny with a reason.

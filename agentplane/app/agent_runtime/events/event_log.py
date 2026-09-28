@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.app.agent_runtime.events.debug import ArchivedObservation, ArchivedObservationEntry, ObservationPage
 from agentplane.app.agent_runtime.models import Event, EventLog, FeedState
-from agentplane.app.agent_runtime.updates import notify
+from agentplane.app.database_updates import Channel, notify
 from agentplane.app.presets import Harness
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
@@ -89,7 +89,7 @@ class EventLogStore:
                 .returning(EventLog.id)
             )
             if created is not None:
-                await notify(session)
+                await notify(session, Channel.THREADS)
                 return created
             return (
                 await session.scalars(

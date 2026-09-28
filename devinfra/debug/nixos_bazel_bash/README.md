@@ -175,8 +175,11 @@ mechanism.
 
 **The rule**: when porting NixOS behaviour anywhere actions run with a scrubbed environment,
 **port the filesystem defaults, not the env vars.** Concretely, build nixpkgs'
-`nix-ld-libraries` buildEnv and place it where nix-ld's compiled-in default points, and give
-Bazel a `--shell_executable` wrapper that restores `/bin` on PATH when it is missing.
+`nix-ld-libraries` buildEnv and place it where nix-ld's compiled-in default points, and make
+`/bin/bash` and `/bin/sh` nixpkgs' `bashInteractiveFHS`, whose PATH fallback is an FHS one.
+A `--shell_executable` wrapper that puts `/bin` back on PATH is not enough: it reaches only
+`run_shell` actions, while a tool run by its own shebang, such as rules_python's `#!/bin/sh`
+venv shebang rewriter, still starts on `/no-such-path` (`head: command not found`).
 
 Chasing the same failures with `--action_env`/`--test_env` passthroughs is whack-a-mole: each
 ruleset scrubs differently (`rules_python`'s `env -`, `rules_js`'s `js_binary` wrapper,
@@ -203,12 +206,12 @@ interpreter, verified live on wyrm2).
 
 ## Status
 
-| Issue              | Symptom                                                          | Fix                                                                              | Status      |
-| ------------------ | ---------------------------------------------------------------- | -------------------------------------------------------------------------------- | ----------- |
-| `/bin/bash`        | Ruff lint fails                                                  | nixpkgs `bazel_8` already patched                                                | Resolved    |
-| Empty PATH         | Mypy lint fails (`env` not found)                                | `--action_env=PATH` in `~/.bazelrc`                                              | Applied     |
-| `/usr/bin/ld.gold` | BuildBuddy toolchain fetch fails                                 | Patch `toolchains_buildbuddy` repo rule                                          | Not started |
-| Scrubbed env (#4)  | `[nix-ld] FATAL: panicked … Posix(2)`; `sort: command not found` | Filesystem defaults: nix-ld fallback dir + a PATH-restoring `--shell_executable` | Resolved    |
+| Issue              | Symptom                                                          | Fix                                                                           | Status      |
+| ------------------ | ---------------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------- |
+| `/bin/bash`        | Ruff lint fails                                                  | nixpkgs `bazel_8` already patched                                             | Resolved    |
+| Empty PATH         | Mypy lint fails (`env` not found)                                | `--action_env=PATH` in `~/.bazelrc`                                           | Applied     |
+| `/usr/bin/ld.gold` | BuildBuddy toolchain fetch fails                                 | Patch `toolchains_buildbuddy` repo rule                                       | Not started |
+| Scrubbed env (#4)  | `[nix-ld] FATAL: panicked … Posix(2)`; `sort: command not found` | Filesystem defaults: nix-ld fallback dir + FHS bash as `/bin/bash`, `/bin/sh` | Resolved    |
 
 Docker container test setup for reproducing these issues is at `devinfra/nixos_bazel_test/`.
 

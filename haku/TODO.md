@@ -132,6 +132,15 @@ doctrine change, not just a config line.
   for attribution / budget / kill-switch, if routing model calls through LiteLLM.
 - **Tighten egress** — narrow the `haku-sandbox` CCNP `toEntities: cluster` to
   only Haku's named in-cluster sources (the gap `claude-sandbox` also accepts).
+- **Haku's agentplane principal is named `claude-ai`.** With haku-console being decommissioned,
+  Haku runs as a claude.ai/code agent whose agentplane-staging MCP connection authenticates as the
+  `claude-ai` ServiceAccount, so Haku's credentials (`forgejo-haku`, `haku-mailbox`) and the reads
+  it relies on are bound there (`cluster/cdk8s/agentplane/actions_staging_policies.py`). The name
+  describes the client connection, not the agent: any other claude.ai/code agent run through the
+  same connection is Haku as far as agentplane can tell. Not pressing while Haku is the only agent
+  on that connection. When it matters: connect the same MCP server again as a separate claude.ai
+  connection bound to its own ServiceAccount, one per agent, and move the Haku-owned bindings to
+  Haku's.
 
 ## Console — operator-facing dashboard
 

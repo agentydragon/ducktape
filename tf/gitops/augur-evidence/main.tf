@@ -8,10 +8,12 @@
 # respective git credentials. Auth is HTTPS Basic over the in-cluster Forgejo
 # service (no SSH endpoint needed). Mirrors tf/gitops/budget-ledger.
 #
-# The Secrets land in the ducktape-owned `budget` namespace and are reflected
-# (emberstack) into `augur` -- the augur namespace is reconciled from
-# gaffer-private, so creating the Secret there directly would need a cross-repo
-# Flux dependency. budget-ledger delivers its git creds the same way.
+# The Secrets land in the `forgejo` namespace. The parked unit copies them into
+# the ducktape-owned `budget` namespace through ESO
+# (cluster/cdk8s/parked/augur_evidence.py), and Reflector mirrors those copies
+# into `augur` -- the augur namespace is reconciled from gaffer-private, so
+# copying there directly would need a cross-repo object. budget-ledger delivers
+# its git creds the same way.
 
 data "kubernetes_secret" "forgejo_admin" {
   metadata {
@@ -79,18 +81,11 @@ resource "forgejo_collaborator" "claude" {
   permission    = "read"
 }
 
-# Write credentials for the scraper CronJob, in the budget namespace, reflected
-# into augur (where the CronJob runs alongside the augur app).
-resource "kubernetes_secret" "augur_evidence_git_write" {
+# Write credentials for the scraper CronJob, which runs alongside the augur app.
+resource "kubernetes_secret" "augur_evidence_git_write_source" {
   metadata {
     name      = "augur-evidence-git-write"
-    namespace = "budget"
-    annotations = {
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "augur"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "augur"
-    }
+    namespace = "forgejo"
   }
 
   data = {
@@ -100,22 +95,34 @@ resource "kubernetes_secret" "augur_evidence_git_write" {
   }
 }
 
-# Read credentials for the git-sync sidecar, reflected into augur.
-resource "kubernetes_secret" "augur_evidence_git_read" {
+# Read credentials for the git-sync sidecar.
+resource "kubernetes_secret" "augur_evidence_git_read_source" {
   metadata {
     name      = "augur-evidence-git-read"
-    namespace = "budget"
-    annotations = {
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "augur"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "augur"
-    }
+    namespace = "forgejo"
   }
 
   data = {
     username = forgejo_user.reader.login
     password = random_password.reader.result
     repo_url = "http://forgejo-http.forgejo:3000/${forgejo_user.writer.login}/${forgejo_repository.evidence.name}.git"
+  }
+}
+
+# The budget ExternalSecrets adopt the Secrets these addresses created there.
+# CLEANUP(added 2026-09-28): Remove once the augur_evidence state has forgotten
+# both addresses, which happens on the first apply after the unit is revived.
+# Never destroy the ESO-owned Secrets.
+removed {
+  from = kubernetes_secret.augur_evidence_git_write
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = kubernetes_secret.augur_evidence_git_read
+  lifecycle {
+    destroy = false
   }
 }

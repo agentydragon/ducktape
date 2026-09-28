@@ -79,8 +79,9 @@ Flux image scan are retired.
      `{"$imagepolicy": "flux-system:<name>"}` marker on the image field. The
      cluster-wide `all-images` `ImageUpdateAutomation` updates it.
 4. **Consume** — image `git.allegedly.works/ducktape-ci/<image>` +
-   `imagePullSecrets: [{name: forgejo-images-creds}]`; the app's Flux Kustomization
-   `dependsOn: forgejo-images`.
+   `imagePullSecrets: [{name: forgejo-images-creds}]`. The app's Flux Kustomization
+   does not depend on `forgejo-images`: kubelet retries the pull until the
+   credential lands.
 
 **Tradeoff**: unlike GHCR (external), a Forgejo outage means these pods can't pull.
 Fine for non-critical workloads (agent pods); weigh per-image before moving

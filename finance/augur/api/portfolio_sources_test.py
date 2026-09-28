@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 import pytest_bazel
@@ -9,8 +10,10 @@ from pydantic import ValidationError
 from finance.augur.api.conftest import MinimalConfig
 from finance.augur.api.finance import FinanceSnapshot
 from finance.augur.api.portfolio import (
+    HoldingKind,
     HoldingTaxLotConfig,
     PortfolioAccountConfig,
+    PortfolioAccountType,
     PortfolioConfig,
     SecurityHoldingConfig,
 )
@@ -22,9 +25,13 @@ from finance.augur.api.portfolio_source_config import (
     PortfolioSourcesConfig,
 )
 from finance.augur.api.portfolio_sources import resolve_portfolio_sources
-from finance.augur.model.series import SP500_SYMBOL
+from finance.augur.model.series import SP500_SYMBOL, SecurityKey
+from finance.augur.sim.ids import AccountId, AgentId, LotId
 from finance.augur.sim.tlh import TlhAssumptions
 from finance.plaid.db.read_model import CurrentCashBalance, CurrentHolding
+
+WEALTHFRONT_TAXABLE = AccountId("wealthfront_taxable")
+OWNER = AgentId("owner")
 
 
 def test_disabled_plaid_source_resolves_fixed_source(minimal_config: MinimalConfig) -> None:
@@ -108,26 +115,26 @@ def test_plaid_source_adds_cash_and_sp500_proxy_position(
     assert resolved.snapshot.as_of_date == "2026-06-01"
     assert resolved.portfolio.accounts == (
         PortfolioAccountConfig(
-            account_id="wealthfront_taxable",
-            owner_agent_id="owner",
-            account_type="taxable_brokerage",
+            account_id=WEALTHFRONT_TAXABLE,
+            owner_agent_id=OWNER,
+            account_type=PortfolioAccountType.TAXABLE_BROKERAGE,
             label="Wealthfront",
         ),
     )
     [holding] = resolved.portfolio.holdings
     assert holding == SecurityHoldingConfig(
         position_id="wealthfront_sp500",
-        account_id="wealthfront_taxable",
+        account_id=WEALTHFRONT_TAXABLE,
         label="SP500 proxy",
         symbol=SP500_SYMBOL,
-        security_kind="other",
-        unit_value=1000,
+        security_kind=HoldingKind.OTHER,
+        unit_value=Decimal(1000),
         lots=(
             HoldingTaxLotConfig(
-                lot_id="wealthfront_sp500_plaid_aggregate",
+                lot_id=LotId("wealthfront_sp500_plaid_aggregate"),
                 holding_period_months_at_start=24,
                 quantity=1.3,
-                cost_basis=900,
+                cost_basis=Decimal(900),
             ),
         ),
     )
@@ -173,7 +180,7 @@ def test_plaid_source_reuses_existing_portfolio_account(
                 "fixed": FixedPortfolioSourceConfig(
                     snapshot=FinanceSnapshot(as_of_date="2026-05-01"),
                     portfolio=PortfolioConfig(
-                        accounts=(PortfolioAccountConfig(account_id="wealthfront_taxable", owner_agent_id="owner"),)
+                        accounts=(PortfolioAccountConfig(account_id=WEALTHFRONT_TAXABLE, owner_agent_id=OWNER),)
                     ),
                 )
             }
@@ -253,36 +260,54 @@ def test_plaid_source_expands_holding_period_buckets(
 
     resolved = resolve_portfolio_sources(minimal_config(portfolio_sources=source))
 
-    [holding] = resolved.portfolio.holdings
-    assert holding.lots == (
-        HoldingTaxLotConfig(
-            lot_id="wealthfront_sp500_plaid_lt12", holding_period_months_at_start=4, quantity=0.25, cost_basis=300
-        ),
-        HoldingTaxLotConfig(
-            lot_id="wealthfront_sp500_plaid_ltcore", holding_period_months_at_start=16, quantity=0.75, cost_basis=300
-        ),
-    )
-    # The split preserves the live Plaid aggregate exactly.
-    assert holding.total_quantity == 1.0
-    assert holding.total_cost_basis == 600.0
+    # Either way the group's account is on the portfolio: it names where the sleeve is held.
+    assert [account.account_id for account in resolved.portfolio.accounts] == ["wealthfront_taxable"]
     if managed:
-        [portfolio] = resolved.tlh_portfolios
-        assert portfolio.portfolio_id == "wealthfront_sp500"
-        assert [lot.quantity for lot in portfolio.initial_lots] == [0.25, 0.75]
-        assert [lot.cost_basis for lot in portfolio.initial_lots] == [300, 300]
-        assert [lot.purchase_month_index for lot in portfolio.initial_lots] == [-4, -16]
+        # The managed portfolio owns the sleeve outright; no proxy holding shadows it.
+        assert resolved.portfolio.holdings == ()
+        [labeled] = resolved.tlh_portfolios
+        assert labeled.label == "SP500 proxy"
+        portfolio = labeled.spec
+        assert (portfolio.portfolio_id, portfolio.owner_agent_id, portfolio.account_id) == (
+            "wealthfront_sp500",
+            "owner",
+            "wealthfront_taxable",
+        )
+        assert portfolio.asset == SecurityKey(symbol=SP500_SYMBOL)
+        # The cohorts carry the statement's own value, split as the lots below are.
+        assert [
+            (cohort.value, cohort.cost_basis, cohort.purchase_month_index) for cohort in portfolio.initial_cohorts
+        ] == [(Decimal(250), Decimal(300), -4), (Decimal(750), Decimal(300), -16)]
         # Loss character is an explicit model assumption, not inferred from opening cohort weights.
         assert portfolio.assumptions.short_term_fraction == 0.75
     else:
         assert resolved.tlh_portfolios == ()
+        [holding] = resolved.portfolio.holdings
+        assert holding.lots == (
+            HoldingTaxLotConfig(
+                lot_id=LotId("wealthfront_sp500_plaid_lt12"),
+                holding_period_months_at_start=4,
+                quantity=0.25,
+                cost_basis=Decimal(300),
+            ),
+            HoldingTaxLotConfig(
+                lot_id=LotId("wealthfront_sp500_plaid_ltcore"),
+                holding_period_months_at_start=16,
+                quantity=0.75,
+                cost_basis=Decimal(300),
+            ),
+        )
+        # The split preserves the live Plaid aggregate exactly.
+        assert holding.total_quantity == 1.0
+        assert holding.total_cost_basis == 600.0
 
 
 def test_holding_period_buckets_market_value_fractions_must_sum_to_one() -> None:
     with pytest.raises(ValidationError, match="market_value_fraction must sum"):
         PlaidSp500ProxyGroupConfig(
             position_id="wealthfront_sp500",
-            portfolio_account_id="wealthfront_taxable",
-            owner_agent_id="owner",
+            portfolio_account_id=WEALTHFRONT_TAXABLE,
+            owner_agent_id=OWNER,
             plaid_account_ids=("wealthfront_account",),
             holding_period_buckets=(
                 PlaidProxyHoldingPeriodBucket(key="lt12", holding_period_months_at_start=4, market_value_fraction=0.25),
@@ -297,8 +322,8 @@ def test_holding_period_buckets_cost_basis_fraction_all_or_none() -> None:
     with pytest.raises(ValidationError, match="cost_basis_fraction must be set on all buckets or none"):
         PlaidSp500ProxyGroupConfig(
             position_id="wealthfront_sp500",
-            portfolio_account_id="wealthfront_taxable",
-            owner_agent_id="owner",
+            portfolio_account_id=WEALTHFRONT_TAXABLE,
+            owner_agent_id=OWNER,
             plaid_account_ids=("wealthfront_account",),
             holding_period_buckets=(
                 PlaidProxyHoldingPeriodBucket(

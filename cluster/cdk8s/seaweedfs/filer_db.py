@@ -12,9 +12,8 @@ pg_basebackup stanzas were dropped once the promotion was durable.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import App, Chart, Size
+from cdk8s_plus_34 import Cpu
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecBootstrapInitdb,
     ClusterSpecBootstrapInitdbSecret,
@@ -22,17 +21,9 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecResourcesLimits,
     ClusterSpecResourcesRequests,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cnpg
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s import cnpg, node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.seaweedfs import namespace
 
@@ -42,7 +33,6 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/db"
 # name deliberately avoids CNPG's reserved <cluster>-app: CNPG auto-generates a bogus one
 # (default user "app") for this cluster.
 CREDENTIALS_SECRET = "seaweedfs-filer-db-ssd-creds"
-_CREDENTIALS_FILE = "seaweedfs-filer-db-ssd-creds.sops.yaml"
 
 
 def chart(app: App) -> Chart:
@@ -60,7 +50,7 @@ def chart(app: App) -> Chart:
         },
         # Existing SSD-local replicas remain pinned by their PVs. Prefer a worker for
         # any future placement that is not constrained by an existing claim.
-        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh-ssd",
         size="2Gi",
         # QoS / eviction protection. Without these the instance pods are BestEffort -- the
@@ -75,10 +65,10 @@ def chart(app: App) -> Chart:
         # cap Postgres can trip over.
         resources=ClusterSpecResources(
             requests={
-                "cpu": ClusterSpecResourcesRequests.from_string("100m"),
-                "memory": ClusterSpecResourcesRequests.from_string("512Mi"),
+                "cpu": ClusterSpecResourcesRequests.from_string(Cpu.millis(100).amount),
+                "memory": ClusterSpecResourcesRequests.from_string(Size.mebibytes(512).as_string()),
             },
-            limits={"memory": ClusterSpecResourcesLimits.from_string("1Gi")},
+            limits={"memory": ClusterSpecResourcesLimits.from_string(Size.gibibytes(1).as_string())},
         ),
         # Application-user identity for CNPG's ongoing reconcile. NOT a re-initialization:
         # CNPG runs bootstrap exactly once, at cluster creation on empty PGDATA (this
@@ -96,25 +86,10 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml", _CREDENTIALS_FILE]),
-    )
-
-
 def seaweedfs_filer_db(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_namespace: Kustomization, cnpg: Kustomization
+    chart: Chart, directory: RenderedDirectory, seaweedfs_namespace: Kustomization, cnpg: Kustomization
 ) -> Kustomization:
     name = "seaweedfs-filer-db"
     return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        timeout="5m",
-        # Required to apply seaweedfs-filer-db-ssd-creds.sops.yaml (the filer DB app creds
-        # CNPG syncs onto the -ssd seaweedfs role); without it Flux applies the ciphertext.
-        decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(seaweedfs_namespace, cnpg),
+        chart, name, directory, timeout="5m", depends_on=flux_kustomization_depends_on_many(seaweedfs_namespace, cnpg)
     )

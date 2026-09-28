@@ -43,9 +43,9 @@ spec:
   secretTemplate:
     annotations:
       reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: cert-manager,haku-console
+      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: cert-manager
       reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: cert-manager,haku-console
+      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: cert-manager
 ---
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
@@ -74,13 +74,10 @@ spec:
             - haku-sandbox
             - haku-openclaw-spike
             - haku-ci
-            - public-coder-agent
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: haku-egress-proxy
   name: haku-egress-proxy
@@ -253,33 +250,33 @@ data:
         config:
           domains:
             - api.anthropic.com
-            - haku.allegedly.works
-            - kubeapi.allegedly.works
-            - forgejo-http.forgejo
-            - pypi.org
-            - files.pythonhosted.org
-            - registry.npmjs.org
-            - cache.nixos.org
-            - nixos.org
-            - channels.nixos.org
-            - releases.bazel.build
-            - bcr.bazel.build
             - api.github.com
-            - github.com
-            - codeload.github.com
-            - objects.githubusercontent.com
-            - release-assets.githubusercontent.com
-            - raw.githubusercontent.com
-            - ftp.gnu.org
-            - static.rust-lang.org
-            - index.crates.io
-            - static.crates.io
-            - nodejs.org
-            - snapshot.debian.org
+            - bcr.bazel.build
+            - cache.nixos.org
+            - channels.nixos.org
             - code.forgejo.org
+            - codeload.github.com
             - data.forgejo.org
+            - files.pythonhosted.org
+            - forgejo-http.forgejo
+            - ftp.gnu.org
             - ghcr.io
+            - github.com
+            - haku.allegedly.works
+            - index.crates.io
+            - kubeapi.allegedly.works
+            - nixos.org
+            - nodejs.org
+            - objects.githubusercontent.com
             - pkg-containers.githubusercontent.com
+            - pypi.org
+            - raw.githubusercontent.com
+            - registry.npmjs.org
+            - release-assets.githubusercontent.com
+            - releases.bazel.build
+            - snapshot.debian.org
+            - static.crates.io
+            - static.rust-lang.org
       - name: secrets
         config:
           secrets:
@@ -338,7 +335,6 @@ kind: Deployment
 metadata:
   annotations:
     description: Holds Haku OpenClaw spike credentials and substitutes placeholders only for exact destination hosts.
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: haku-openclaw-spike-proxy
   name: haku-openclaw-spike-proxy
@@ -525,14 +521,6 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            k8s:app.kubernetes.io/name: haku-console
-            k8s:io.kubernetes.pod.namespace: haku-console
-      toPorts:
-        - ports:
-            - port: "8888"
               protocol: TCP
   endpointSelector:
     matchExpressions:

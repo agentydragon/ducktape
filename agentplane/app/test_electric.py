@@ -28,9 +28,9 @@ from testcontainers.postgres import PostgresContainer
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
 from agentplane.app.agent_runtime.ingestion import Ingestion
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore, ThreadScope
 from agentplane.app.conftest import migrated_database
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.electric import SUBSET_BODY_LIMIT, SUBSET_ROW_LIMIT, ElectricProxy, router
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.protocol import event_pb2
@@ -101,10 +101,12 @@ MakeApp = Callable[[httpx.MockTransport], tuple[FastAPI, httpx.AsyncClient]]
 
 
 @pytest.fixture
-def make_app(content: ContentStore, event_logs: EventLogStore, thread_updates: ThreadUpdates) -> MakeApp:
+def make_app(content: ContentStore, event_logs: EventLogStore, database_updates: DatabaseUpdates) -> MakeApp:
     def make(upstream: httpx.MockTransport) -> tuple[FastAPI, httpx.AsyncClient]:
         electric = httpx.AsyncClient(transport=upstream, base_url="http://electric")
-        proxy = ElectricProxy(electric, content, event_logs=event_logs, thread_changes=thread_updates.changes)
+        proxy = ElectricProxy(
+            electric, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]
+        )
         return serving(proxy), electric
 
     return make
@@ -154,11 +156,15 @@ async def test_a_scope_read_before_the_first_fold_answers_once_it_is_recorded(
     engine: AsyncEngine,
     event_logs: EventLogStore,
     ingestion: Ingestion,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
 ) -> None:
     content = ScopeReads(engine)
     electric = httpx.AsyncClient(transport=httpx.MockTransport(_unexpected), base_url="http://electric")
-    app = serving(ElectricProxy(electric, content, event_logs=event_logs, thread_changes=thread_updates.changes))
+    app = serving(
+        ElectricProxy(
+            electric, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]
+        )
+    )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         read = asyncio.create_task(client.get(f"/threads/{unfolded.thread}/sync/scope"))
         await content.unfolded.wait()
@@ -174,11 +180,15 @@ async def test_a_scope_read_before_the_first_fold_answers_once_it_is_recorded(
 
 
 async def test_a_thread_still_without_a_fold_at_the_end_of_the_hold_is_answered_empty(
-    unfolded: Unfolded, content: ContentStore, event_logs: EventLogStore, thread_updates: ThreadUpdates
+    unfolded: Unfolded, content: ContentStore, event_logs: EventLogStore, database_updates: DatabaseUpdates
 ) -> None:
     electric = httpx.AsyncClient(transport=httpx.MockTransport(_unexpected), base_url="http://electric")
     proxy = ElectricProxy(
-        electric, content, event_logs=event_logs, thread_changes=thread_updates.changes, scope_hold_seconds=0.1
+        electric,
+        content,
+        event_logs=event_logs,
+        thread_changes=database_updates.changes[Channel.THREADS],
+        scope_hold_seconds=0.1,
     )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=serving(proxy)), base_url="http://app") as client:
         response = await client.get(f"/threads/{unfolded.thread}/sync/scope")

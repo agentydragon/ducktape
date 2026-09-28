@@ -1,0 +1,3 @@
+FROM ghcr.io/ggml-org/llama.cpp@sha256:014f721265464f38ccb247c1338d07d852c4bae7509a4b4734d07a2bbadc765c
+ADD --checksum=sha256:d7a85feba08b953c7ac21944c845653e82f117b0fc7e4ca5582cf892e5f64f29 https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/libnccl2_2.27.7-1+cuda12.9_amd64.deb /tmp/libnccl2.deb
+RUN dpkg -i /tmp/libnccl2.deb && rm /tmp/libnccl2.deb

@@ -56,44 +56,99 @@ metadata:
 data:
   config.yaml: |
     models:
-      HARNESS_CLAUDE:
-        - anthropic-max20/ant-messages/claude-opus-5
-        - anthropic-max20/ant-messages/claude-sonnet-5
-        - anthropic-max20/ant-messages/claude-fable-5
-        - anthropic-max20/ant-messages/claude-haiku-4-5-20251001
-        - ollama/oai-chat/gpt-oss-20b-128k
-        - ollama/olm-chat/gpt-oss-20b-128k
-        - ollama/oai-chat/gpt-oss-20b-256k
-        - ollama/olm-chat/gpt-oss-20b-256k
-        - ollama/oai-chat/gpt-oss-20b-512k
-        - ollama/olm-chat/gpt-oss-20b-512k
-        - ollama/oai-chat/gpt-oss-20b-1m
-        - ollama/olm-chat/gpt-oss-20b-1m
-        - ollama/oai-chat/gpt-oss-120b-128k
-        - ollama/olm-chat/gpt-oss-120b-128k
-        - ollama/oai-chat/gemma4-31b-it-q8_0-128k
-        - ollama/olm-chat/gemma4-31b-it-q8_0-128k
-      HARNESS_CODEX:
-        - chatgpt/oai-responses/gpt-6-astra
-        - chatgpt/oai-responses/gpt-6-sol
-        - chatgpt/oai-responses/gpt-6-luna
-        - chatgpt/oai-responses/gpt-5.4
-        - chatgpt/oai-responses/gpt-5.5
-        - chatgpt/oai-responses/gpt-5.6-sol
-        - chatgpt/oai-responses/gpt-5.6-terra
-        - chatgpt/oai-responses/gpt-5.6-luna
-        - ollama/oai-chat/gpt-oss-20b-128k
-        - ollama/olm-chat/gpt-oss-20b-128k
-        - ollama/oai-chat/gpt-oss-20b-256k
-        - ollama/olm-chat/gpt-oss-20b-256k
-        - ollama/oai-chat/gpt-oss-20b-512k
-        - ollama/olm-chat/gpt-oss-20b-512k
-        - ollama/oai-chat/gpt-oss-20b-1m
-        - ollama/olm-chat/gpt-oss-20b-1m
-        - ollama/oai-chat/gpt-oss-120b-128k
-        - ollama/olm-chat/gpt-oss-120b-128k
-        - ollama/oai-chat/gemma4-31b-it-q8_0-128k
-        - ollama/olm-chat/gemma4-31b-it-q8_0-128k
+      models:
+        - model: anthropic-max20/ant-messages/claude-opus-5
+          display_name: Opus 5
+        - model: anthropic-max20/ant-messages/claude-sonnet-5
+          display_name: Sonnet 5
+        - model: anthropic-max20/ant-messages/claude-fable-5
+          display_name: Fable 5
+        - model: anthropic-max20/ant-messages/claude-haiku-4-5-20251001
+          display_name: Haiku 4.5
+        - model: antigravity/ant-messages/claude-opus-4-6-thinking
+          display_name: Claude Opus 4.6 (Thinking)
+        - model: antigravity/ant-messages/claude-sonnet-4-6
+          display_name: Claude Sonnet 4.6 (Thinking)
+        - model: antigravity/ant-messages/gemini-3.6-flash-high
+          display_name: Gemini 3.6 Flash
+        - model: antigravity/ant-messages/gemini-3.7-flash-high
+          display_name: Gemini 3.7 Flash
+        - model: antigravity/ant-messages/gemini-3.8-flash-high
+          display_name: Gemini 3.8 Flash
+        - model: antigravity/ant-messages/gemini-3-flash
+          display_name: Gemini 3 Flash
+        - model: antigravity/ant-messages/gemini-3.1-flash-image
+          display_name: Gemini 3.1 Flash Image
+        - model: antigravity/ant-messages/gemini-pro-agent
+          display_name: Gemini 3.1 Pro (High)
+        - model: antigravity/ant-messages/gemini-3.1-pro-low
+          display_name: Gemini 3.1 Pro (Low)
+        - model: antigravity/ant-messages/gpt-oss-120b-medium
+          display_name: GPT-OSS 120B (Medium)
+        - model: antigravity/ant-messages/gemini-3.1-flash-lite
+          display_name: Gemini 3.1 Flash Lite
+        - model: antigravity/ant-messages/gemini-3.5-flash-lite
+          display_name: Gemini 3.5 Flash Lite
+        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          display_name: Qwen3.8 Flash Next IQ4_XS (128K)
+        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          display_name: Qwen3.8 Flash Next IQ4_XS (256K)
+        - model: ollama/oai-chat/gpt-oss-20b-128k
+          display_name: GPT-OSS 20B (128K)
+        - model: ollama/oai-chat/gpt-oss-20b-256k
+          display_name: GPT-OSS 20B (256K)
+        - model: ollama/oai-chat/gpt-oss-20b-512k
+          display_name: GPT-OSS 20B (512K)
+        - model: ollama/oai-chat/gpt-oss-20b-1m
+          display_name: GPT-OSS 20B (1M)
+        - model: ollama/oai-chat/gpt-oss-120b-128k
+          display_name: GPT-OSS 120B (128K)
+        - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
+          display_name: Gemma 4 31B (128K)
+        - model: chatgpt/oai-responses/gpt-6-astra
+          display_name: GPT-6 Astra
+        - model: chatgpt/oai-responses/gpt-6-luna
+          display_name: GPT-6 Luna
+        - model: chatgpt/oai-responses/gpt-6-sol
+          display_name: GPT-6 Sol
+      harnesses:
+        HARNESS_CLAUDE:
+          - anthropic-max20/ant-messages/claude-opus-5
+          - anthropic-max20/ant-messages/claude-sonnet-5
+          - anthropic-max20/ant-messages/claude-fable-5
+          - anthropic-max20/ant-messages/claude-haiku-4-5-20251001
+          - antigravity/ant-messages/claude-opus-4-6-thinking
+          - antigravity/ant-messages/claude-sonnet-4-6
+          - antigravity/ant-messages/gemini-3.6-flash-high
+          - antigravity/ant-messages/gemini-3.7-flash-high
+          - antigravity/ant-messages/gemini-3.8-flash-high
+          - antigravity/ant-messages/gemini-3-flash
+          - antigravity/ant-messages/gemini-3.1-flash-image
+          - antigravity/ant-messages/gemini-pro-agent
+          - antigravity/ant-messages/gemini-3.1-pro-low
+          - antigravity/ant-messages/gpt-oss-120b-medium
+          - antigravity/ant-messages/gemini-3.1-flash-lite
+          - antigravity/ant-messages/gemini-3.5-flash-lite
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          - ollama/oai-chat/gpt-oss-20b-128k
+          - ollama/oai-chat/gpt-oss-20b-256k
+          - ollama/oai-chat/gpt-oss-20b-512k
+          - ollama/oai-chat/gpt-oss-20b-1m
+          - ollama/oai-chat/gpt-oss-120b-128k
+          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+        HARNESS_CODEX:
+          - chatgpt/oai-responses/gpt-6-astra
+          - chatgpt/oai-responses/gpt-6-luna
+          - chatgpt/oai-responses/gpt-6-sol
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          - ollama/oai-chat/gpt-oss-20b-128k
+          - ollama/oai-chat/gpt-oss-20b-256k
+          - ollama/oai-chat/gpt-oss-20b-512k
+          - ollama/oai-chat/gpt-oss-20b-1m
+          - ollama/oai-chat/gpt-oss-120b-128k
+          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
     agent_egress_api_url: http://agentplane-egress.agentplane-staging.svc.cluster.local
     agent_actions_service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
     thread_presets:
@@ -104,13 +159,22 @@ data:
         cwd: /state/workspaces/{session_id}
         reasoning_effort: medium
         instructions: Work as a public-repository coding agent. Keep private cluster data out of the workspace and outputs.
+      haku-claude:
+        title: Haku
+        harness: HARNESS_CLAUDE
+        model: anthropic-max20/ant-messages/claude-sonnet-5
+        cwd: /state/workspaces/{session_id}
+        reasoning_effort: medium
+        instructions: "You are Haku, the operator's tireless background executive assistant. Your haku-state checkout -- your memory, your method, and your only write surface -- is at haku-state, with git auth already in place. It also holds who you are: read AGENTS.md, SOUL.md and MEMORY.md at its root, then your run procedure at memory/procedures/run.md. Read those, then execute the run procedure end to end. Commit and push haku-state as you go."
     sandbox_presets:
       public-coder:
         title: Public coder
         template: agentplane-runner
         policies:
           - basic
-          - github-public
+          - github-agentydragon-agent
+          - github-clone
+          - github-actions-logs
         action_policy_sets:
           - public-github-reads
           - public-ducktape-reads
@@ -123,6 +187,33 @@ data:
           if [ ! -f "$marker" ]; then
             printf '%s\n' 'public-coder workspace initialized' > "$marker"
           fi
+      haku:
+        title: Haku
+        template: agentplane-runner
+        policies:
+          - basic
+          - kubernetes
+          - forgejo-haku
+          - packages
+          - google-readonly
+          - grocy-sf-readonly
+          - home-assistant-readonly
+          - activitywatch-read
+          - aiquota-read
+          - haku-mailbox
+          - coinbase
+          - github-clone
+          - github-agentydragon-agent
+          - github-actions-logs
+        thread_preset: haku-claude
+        bootstrap: |
+          marker=/state/workspaces/.agentplane-haku-ready
+          mkdir -p /state/workspaces
+          if [ ! -f "$marker" ]; then
+            git clone --depth 1 --branch main --single-branch http://haku:agentplane-credential-forgejo-haku@forgejo-http.forgejo.svc.cluster.local:3000/haku/haku-state.git /state/workspaces/haku-state
+            git clone --depth 1 --branch devel --single-branch https://github.com/agentydragon/ducktape.git /state/workspaces/ducktape
+            printf '%s\n' 'haku workspace initialized' > "$marker"
+          fi
     default_policies:
       - basic
     egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081
@@ -130,11 +221,11 @@ data:
       mode: exchange
       service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
       token_endpoint: https://auth.allegedly.works/application/o/token/
-      login_jwks_uri: https://auth.allegedly.works/application/o/agentplane/jwks/
+      login_jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging/jwks/
       target:
-        issuer: https://auth.allegedly.works/application/o/agentplane-actions/
-        audience: agentplane-actions
-        jwks_uri: https://auth.allegedly.works/application/o/agentplane-actions/jwks/
+        issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
+        audience: agentplane-staging-actions
+        jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
       scope: openid
 immutable: false
 ---
@@ -159,6 +250,7 @@ spec:
   dataFrom:
     - sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: postgres-actions-generator
   refreshInterval: 8760h
@@ -195,6 +287,7 @@ spec:
   dataFrom:
     - sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: postgres-egress-generator
   refreshInterval: 8760h
@@ -231,6 +324,7 @@ spec:
   dataFrom:
     - sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: postgres-electric-generator
   refreshInterval: 8760h
@@ -345,15 +439,6 @@ spec:
         app.kubernetes.io/name: agentplane-electric
         cdk8s.io/metadata.addr: agentplane-electric-deployment-c86a4b11
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: false
       containers:
         - env:
@@ -442,6 +527,8 @@ spec:
               name: storage
       dnsPolicy: ClusterFirst
       hostNetwork: false
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 65534
@@ -557,6 +644,7 @@ data:
   settings.yaml: |
     allowed_service_account_namespaces:
       - agentplane-staging
+    log_llm_requests: true
 immutable: false
 ---
 apiVersion: apps/v1
@@ -587,15 +675,6 @@ spec:
         app.kubernetes.io/name: agentplane-llm-ingress
         cdk8s.io/metadata.addr: agentplane-llm-ingress-deployment-c81387cd
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -657,6 +736,8 @@ spec:
       hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -852,6 +933,9 @@ spec:
         key: tls.crt
         name: agentplane-egress-ca
   target:
+    additionalFormats:
+      pkcs12:
+        key: ca-certificates.p12
     configMap:
       key: ca-certificates.crt
       metadata:
@@ -903,8 +987,6 @@ immutable: false
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: agentplane-egress
   name: agentplane-egress
@@ -928,15 +1010,6 @@ spec:
         app.kubernetes.io/name: agentplane-egress
         cdk8s.io/metadata.addr: agentplane-egress-deployment-c84e690f
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -1042,6 +1115,8 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -1338,24 +1413,24 @@ metadata:
 spec:
   rules:
     - hosts:
-        - pypi.org
-        - files.pythonhosted.org
-        - registry.npmjs.org
-        - nodejs.org
-        - index.crates.io
-        - static.crates.io
-        - static.rust-lang.org
-        - releases.bazel.build
         - bcr.bazel.build
         - cache.nixos.org
-        - nixos.org
         - channels.nixos.org
-        - ftp.gnu.org
-        - snapshot.debian.org
         - code.forgejo.org
         - data.forgejo.org
+        - files.pythonhosted.org
+        - ftp.gnu.org
         - ghcr.io
+        - index.crates.io
+        - nixos.org
+        - nodejs.org
         - pkg-containers.githubusercontent.com
+        - pypi.org
+        - registry.npmjs.org
+        - releases.bazel.build
+        - snapshot.debian.org
+        - static.crates.io
+        - static.rust-lang.org
       methods:
         - GET
         - HEAD
@@ -1363,7 +1438,7 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
-  name: github-public
+  name: github-agentydragon-agent
   namespace: agentplane-staging
 spec:
   rules:
@@ -1377,6 +1452,65 @@ spec:
         - POST
       credentialRef:
         name: github-pat
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: github-actions-logs
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - "*.blob.core.windows.net"
+      methods:
+        - GET
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: github-clone
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - github.com
+      methods:
+        - GET
+        - POST
+      paths:
+        - /*/*.git/info/refs
+        - /*/*.git/git-upload-pack
+        - /*/*/info/refs
+        - /*/*/git-upload-pack
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-sandbox-tool-config
+  namespace: agentplane-staging
+data:
+  bazel.bazelrc: |
+    startup --host_jvm_args=-Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
+    common --test_env=HTTP_PROXY --test_env=HTTPS_PROXY --test_env=http_proxy --test_env=https_proxy --test_env=NO_PROXY --test_env=no_proxy --test_env=SSL_CERT_FILE --test_env=NODE_EXTRA_CA_CERTS --test_env=CURL_CA_BUNDLE --test_env=GIT_SSL_CAINFO --test_env=REQUESTS_CA_BUNDLE --test_env=KUBECONFIG
+  kubeconfig: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: in-cluster
+        cluster:
+          server: https://kubernetes.default.svc.cluster.local
+          certificate-authority: /etc/ssl/certs/ca-certificates.crt
+    users:
+      - name: workload
+        user:
+          token: agentplane-credential-kubernetes-workload
+    contexts:
+      - name: in-cluster
+        context:
+          cluster: in-cluster
+          user: workload
+    current-context: in-cluster
+immutable: false
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -1583,15 +1717,6 @@ spec:
         app.kubernetes.io/name: agentplane-app
         cdk8s.io/metadata.addr: agentplane-app-deployment-c8d92233
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -1633,7 +1758,7 @@ spec:
             - name: AGENTPLANE_ELECTRIC_URL
               value: http://agentplane-electric.agentplane-staging.svc.cluster.local:3000
             - name: AGENTPLANE_OIDC_ISSUER
-              value: https://auth.allegedly.works/application/o/agentplane/
+              value: https://auth.allegedly.works/application/o/agentplane-staging/
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
               value: https://agentplane-staging.allegedly.works
             - name: AGENTPLANE_OIDC_CLIENT_ID
@@ -1732,7 +1857,7 @@ spec:
             - name: AGENTPLANE_ELECTRIC_URL
               value: http://agentplane-electric.agentplane-staging.svc.cluster.local:3000
             - name: AGENTPLANE_OIDC_ISSUER
-              value: https://auth.allegedly.works/application/o/agentplane/
+              value: https://auth.allegedly.works/application/o/agentplane-staging/
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
               value: https://agentplane-staging.allegedly.works
             - name: AGENTPLANE_OIDC_CLIENT_ID
@@ -1769,6 +1894,8 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -1973,6 +2100,8 @@ spec:
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
+  annotations:
+    sandbox-actions.agentplane.allegedly.works/description: "The shared runner image, built to host an agent harness: the sandbox tools (git, curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
   name: agentplane-runner
   namespace: agentplane-staging
 spec:
@@ -2023,9 +2152,13 @@ spec:
             - GIT_SSL_CAINFO
             - --harness-env
             - REQUESTS_CA_BUNDLE
+            - --harness-env
+            - KUBECONFIG
           env:
             - name: LITELLM_URL
               value: http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080
+            - name: AGENTPLANE_MODEL_CONTEXT_WINDOWS
+              value: '{"ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k":262144,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k":262144}'
             - name: HTTP_PROXY
               value: http://127.0.0.1:3128
             - name: HTTPS_PROXY
@@ -2048,6 +2181,8 @@ spec:
               value: /etc/ssl/certs/ca-certificates.crt
             - name: REQUESTS_CA_BUNDLE
               value: /etc/ssl/certs/ca-certificates.crt
+            - name: KUBECONFIG
+              value: /etc/kubernetes/kubeconfig
             - name: ANTHROPIC_AUTH_TOKEN
               value: agentplane-credential-agentplane-workload
             - name: OPENAI_API_KEY
@@ -2076,6 +2211,15 @@ spec:
               name: egress-ca
               readOnly: true
               subPath: ca-certificates.crt
+            - mountPath: /etc/ssl/certs/java/cacerts
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.p12
+            - mountPath: /etc/kubernetes/kubeconfig
+              name: tool-config
+              readOnly: true
+              subPath: kubeconfig
+          workingDir: /state
         - env:
             - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
               value: agentplane-egress.agentplane-staging.svc.cluster.local
@@ -2132,6 +2276,9 @@ spec:
         - configMap:
             name: agentplane-egress-ca
           name: egress-ca
+        - configMap:
+            name: agentplane-sandbox-tool-config
+          name: tool-config
         - name: egress-token
           projected:
             sources:
@@ -2283,9 +2430,9 @@ metadata:
 data:
   settings.yaml: |
     operator_oidc:
-      issuer: https://auth.allegedly.works/application/o/agentplane-actions/
-      audience: agentplane-actions
-      jwks_uri: https://auth.allegedly.works/application/o/agentplane-actions/jwks/
+      issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
+      audience: agentplane-staging-actions
+      jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
     allowed_service_account_namespaces:
       - agentplane-staging
     web_push:
@@ -2323,6 +2470,8 @@ data:
             url: https://api.githubcopilot.com/mcp/
             server_id: github
             auth: oauth
+            headers:
+              X-MCP-Toolsets: default,actions
       kubernetes_admin:
         title: Kubernetes admin
         description: The Kubernetes API with the linked operator's own permissions. Use it only for what your own Kubernetes identity cannot do; each call waits for the operator's approval.
@@ -2352,18 +2501,17 @@ data:
           kind: sandbox
           description: Stamped and exec'd by this service, as the caller, in its own namespace.
           namespace: agentplane-staging
-          environments:
-            sandbox:
-              template: agentplane-sandbox
-              container: sandbox
-              default_cwd: /home/runner
-              description: "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, kubectl and python3 (install packages into a `python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
-            runner:
-              template: agentplane-runner
-              container: runner
-              default_cwd: /state
-              description: "The shared runner image, built to host an agent harness: the sandbox tools (git, curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
-          default_environment: sandbox
+          templates:
+            - agentplane-sandbox
+            - agentplane-sandbox-build
+            - agentplane-runner
+        direct_tools:
+          - create
+          - dispose
+          - exec
+          - get
+          - get_template
+          - list
       ssh:
         title: SSH
         description: SSH commands on configured targets; every Action remains subject to operator approval.
@@ -2450,15 +2598,6 @@ spec:
         app.kubernetes.io/name: agentplane-actions
         cdk8s.io/metadata.addr: agentplane-actions-deployment-c8d4c10b
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -2638,6 +2777,8 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -2944,6 +3085,8 @@ spec:
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
+  annotations:
+    sandbox-actions.agentplane.allegedly.works/description: "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, kubectl (configured as the caller's ServiceAccount) and python3 (install packages into a `python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
   name: agentplane-sandbox
   namespace: agentplane-staging
 spec:
@@ -2982,6 +3125,8 @@ spec:
               value: /etc/ssl/certs/ca-certificates.crt
             - name: REQUESTS_CA_BUNDLE
               value: /etc/ssl/certs/ca-certificates.crt
+            - name: KUBECONFIG
+              value: /etc/kubernetes/kubeconfig
           image: git.allegedly.works/ducktape-ci/agentplane-sandbox:unset
           name: sandbox
           resources:
@@ -3001,6 +3146,18 @@ spec:
               name: egress-ca
               readOnly: true
               subPath: ca-certificates.crt
+            - mountPath: /etc/ssl/certs/java/cacerts
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.p12
+            - mountPath: /etc/kubernetes/kubeconfig
+              name: tool-config
+              readOnly: true
+              subPath: kubeconfig
+            - mountPath: /etc/bazel.bazelrc
+              name: tool-config
+              readOnly: true
+              subPath: bazel.bazelrc
         - env:
             - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
               value: agentplane-egress.agentplane-staging.svc.cluster.local
@@ -3056,6 +3213,9 @@ spec:
         - configMap:
             name: agentplane-egress-ca
           name: egress-ca
+        - configMap:
+            name: agentplane-sandbox-tool-config
+          name: tool-config
         - name: egress-token
           projected:
             sources:
@@ -3067,6 +3227,157 @@ spec:
                   audience: https://localhost:7445
                   expirationSeconds: 600
                   path: kubernetes-token
+---
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  annotations:
+    sandbox-actions.agentplane.allegedly.works/description: "The sandbox box sized for a build: the same tools plus bazel (bazelisk, which runs the version a workspace's `.bazelversion` names) and gcc, 2 cores and 4Gi, and a home directory that survives the container being killed for running out of memory, though not the box's Pod."
+  name: agentplane-sandbox-build
+  namespace: agentplane-staging
+spec:
+  networkPolicyManagement: Unmanaged
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-sandbox
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - command:
+            - bash
+            - -c
+            - trap 'exit 0' TERM; sleep infinity & wait
+          env:
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:3128
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:3128
+            - name: http_proxy
+              value: http://127.0.0.1:3128
+            - name: https_proxy
+              value: http://127.0.0.1:3128
+            - name: NO_PROXY
+              value: 127.0.0.1,localhost
+            - name: no_proxy
+              value: 127.0.0.1,localhost
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: CURL_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: GIT_SSL_CAINFO
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: KUBECONFIG
+              value: /etc/kubernetes/kubeconfig
+          image: git.allegedly.works/ducktape-ci/agentplane-sandbox-build:unset
+          name: sandbox
+          resources:
+            limits:
+              cpu: "2"
+              memory: 4Gi
+            requests:
+              cpu: 500m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /etc/ssl/certs/ca-certificates.crt
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.crt
+            - mountPath: /etc/ssl/certs/java/cacerts
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.p12
+            - mountPath: /etc/kubernetes/kubeconfig
+              name: tool-config
+              readOnly: true
+              subPath: kubeconfig
+            - mountPath: /etc/bazel.bazelrc
+              name: tool-config
+              readOnly: true
+              subPath: bazel.bazelrc
+            - mountPath: /home/runner
+              name: home
+        - env:
+            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
+              value: agentplane-egress.agentplane-staging.svc.cluster.local
+            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
+              value: "8888"
+            - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
+              value: "3128"
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
+              value: 0.0.0.0
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
+              value: "3129"
+            - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
+              value: /var/run/agentplane-egress/token
+            - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token"}'
+          image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
+          name: egress-sidecar
+          readinessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /readyz
+              port: 3129
+            periodSeconds: 2
+            timeoutSeconds: 1
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /var/run/agentplane-egress
+              name: egress-token
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - configMap:
+            name: agentplane-egress-ca
+          name: egress-ca
+        - configMap:
+            name: agentplane-sandbox-tool-config
+          name: tool-config
+        - name: egress-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-egress
+                  expirationSeconds: 600
+                  path: token
+              - serviceAccountToken:
+                  audience: https://localhost:7445
+                  expirationSeconds: 600
+                  path: kubernetes-token
+        - emptyDir:
+            sizeLimit: 20Gi
+          name: home
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -3464,6 +3775,17 @@ metadata:
   namespace: agentplane-staging
 automountServiceAccountToken: false
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: "The principal for the 'haku' sandbox preset: agents that clone haku-state and work from it, the way Haku itself does."
+  labels:
+    agentplane.allegedly.works/use-action-service: "true"
+  name: haku-agent
+  namespace: agentplane-staging
+automountServiceAccountToken: false
+---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
 metadata:
@@ -3476,36 +3798,36 @@ spec:
     - type: exact_actions
       actions:
         github:
-          - get_me
-          - get_team_members
-          - get_teams
-          - ui_get
           - find_duplicate
-          - get_label
-          - issue_dependency_read
-          - issue_read
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - search_issues
-          - list_pull_requests
-          - pull_request_read
-          - search_pull_requests
           - get_commit
           - get_file_blame
           - get_file_contents
+          - get_label
           - get_latest_release
+          - get_me
           - get_release_by_tag
           - get_tag
+          - get_team_members
+          - get_teams
+          - issue_dependency_read
+          - issue_read
           - list_branches
           - list_commits
+          - list_issue_fields
+          - list_issue_types
+          - list_issues
+          - list_pull_requests
           - list_releases
           - list_repository_collaborators
           - list_tags
+          - pull_request_read
           - search_code
           - search_commits
+          - search_issues
+          - search_pull_requests
           - search_repositories
           - search_users
+          - ui_get
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
@@ -3556,9 +3878,9 @@ spec:
           - list_repository_collaborators
           - list_tags
           - pull_request_read
+          - search_code
           - search_issues
           - search_pull_requests
-          - search_code
       owner: agentydragon-agent
       repository: ducktape
 ---
@@ -3597,9 +3919,9 @@ spec:
           - list_repository_collaborators
           - list_tags
           - pull_request_read
+          - search_code
           - search_issues
           - search_pull_requests
-          - search_code
       owner: agentydragon
       repository: ducktape
 ---
@@ -3638,9 +3960,9 @@ spec:
           - list_repository_collaborators
           - list_tags
           - pull_request_read
+          - search_code
           - search_issues
           - search_pull_requests
-          - search_code
       owner: agentydragon
       repository: gaffer-private
 ---
@@ -3679,9 +4001,9 @@ spec:
           - list_repository_collaborators
           - list_tags
           - pull_request_read
+          - search_code
           - search_issues
           - search_pull_requests
-          - search_code
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -3738,6 +4060,10 @@ subjects:
     kind: ServiceAccount
     name: claude-ai
     namespace: agentplane-staging
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: haku-agent
+    namespace: agentplane-staging
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
@@ -3759,7 +4085,27 @@ metadata:
 spec:
   rules:
     - hosts:
-        - agentplane-testing.allegedly.works
+        - agentplane-app.agentplane-testing.svc.cluster.local
+      clusterInternal: true
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-egress-to-testing-app
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-app
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
@@ -3773,6 +4119,7 @@ spec:
         - codeload.github.com
         - objects.githubusercontent.com
         - release-assets.githubusercontent.com
+        - raw.githubusercontent.com
       methods:
         - GET
         - HEAD
@@ -3796,15 +4143,51 @@ spec:
     - google-readonly
     - grocy-sf-readonly
     - home-assistant-readonly
+    - activitywatch-read
+    - aiquota-read
+    - haku-mailbox
     - coinbase
     - agentplane-testing
     - github-downloads
+    - github-clone
+    - github-agentydragon-agent
+    - github-actions-logs
+    - buildbuddy
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressBinding
+metadata:
+  annotations:
+    description: What sandboxes running as the haku-agent ServiceAccount may reach.
+  name: haku-agent
+  namespace: agentplane-staging
+spec:
+  subjects:
+    - namespace: agentplane-staging
+      name: haku-agent
+  policies:
+    - basic
+    - kubernetes
+    - forgejo-haku
+    - packages
+    - google-readonly
+    - grocy-sf-readonly
+    - home-assistant-readonly
+    - activitywatch-read
+    - aiquota-read
+    - haku-mailbox
+    - coinbase
+    - agentplane-testing
+    - github-downloads
+    - github-clone
+    - github-agentydragon-agent
+    - github-actions-logs
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
 metadata:
   annotations:
-    description: Auto-approves sandbox lifecycle and exec for a caller, which act only as that caller.
+    description: "Auto-approves every sandbox Action: a caller's own boxes, which act only as that caller, and reads of the templates they are made from."
   name: sandbox-self
   namespace: agentplane-staging
 spec:
@@ -3815,7 +4198,8 @@ spec:
           - create
           - dispose
           - exec
-          - info
+          - get
+          - get_template
           - list
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
@@ -3952,16 +4336,52 @@ spec:
           - stock_get
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: Auto-approves the SSH MCP backend's list_targets, which only names configured targets and key availability; every other SSH Action stays on the human path.
+  name: ssh-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        ssh:
+          - list_targets
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicyBinding
 metadata:
   annotations:
-    description: Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF reads and sandbox use for Connections acting as the claude-ai ServiceAccount.
+    description: Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF/SSH reads and sandbox use for Connections acting as the claude-ai ServiceAccount.
   name: claude-ai-reads
   namespace: agentplane-staging
 spec:
   subject:
     namespace: agentplane-staging
     name: claude-ai
+  policySets:
+    - github-reads
+    - github-identity-reads
+    - sandbox-self
+    - home-assistant-reads
+    - gmail-reads
+    - google-calendar-reads
+    - tana-reads
+    - grocy-sf-reads
+    - ssh-reads
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicyBinding
+metadata:
+  annotations:
+    description: Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF reads and sandbox use for the haku-agent ServiceAccount.
+  name: haku-agent-reads
+  namespace: agentplane-staging
+spec:
+  subject:
+    namespace: agentplane-staging
+    name: haku-agent
   policySets:
     - github-reads
     - github-identity-reads
@@ -4160,12 +4580,12 @@ metadata:
 spec:
   rules:
     - hosts:
-        - gmail.googleapis.com
-        - tasks.googleapis.com
-        - people.googleapis.com
         - docs.googleapis.com
+        - gmail.googleapis.com
+        - people.googleapis.com
         - sheets.googleapis.com
         - slides.googleapis.com
+        - tasks.googleapis.com
         - youtube.googleapis.com
       methods:
         - GET
@@ -4288,13 +4708,13 @@ spec:
       methods:
         - GET
       paths:
+        - /api/files/**
         - /api/objects/**
         - /api/stock
         - /api/stock/**
-        - /api/user
-        - /api/system/info
         - /api/system/db-changed-time
-        - /api/files/**
+        - /api/system/info
+        - /api/user
       credentialRef:
         name: grocy-sf-readonly
 ---
@@ -4403,3 +4823,306 @@ spec:
       clusterInternal: true
       credentialRef:
         name: home-assistant-readonly
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-activitywatch-reader
+  namespace: activitywatch
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - activitywatch-read-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-activitywatch-reader
+  namespace: activitywatch
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-activitywatch-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-activitywatch-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: activitywatch
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: activitywatch-read-token
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: activitywatch-read-token
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-activitywatch-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: activitywatch-read-token
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: activitywatch-read
+  namespace: agentplane-staging
+spec:
+  description: The static bearer of the central ActivityWatch server's read route (cluster/docs/activitywatch/README.md), copied into this namespace by ESO. The route's own proxy admits it on GETs and on POST /api/0/query/ only, so it cannot write; what it reads is every device's window titles, URLs and AFK history.
+  source:
+    secretRef:
+      name: activitywatch-read-token
+      key: token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: activitywatch-read
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - activitywatch-read.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /api/0/**
+      credentialRef:
+        name: activitywatch-read
+    - hosts:
+        - activitywatch-read.allegedly.works
+      methods:
+        - POST
+      paths:
+        - /api/0/query/
+      credentialRef:
+        name: activitywatch-read
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: aiquota-read
+  namespace: agentplane-staging
+spec:
+  description: aiquota's shared API bearer (aiquota.py), mirrored into this namespace by reflector. The API behind it serves only reads -- the Claude and Codex subscription quotas and each provider's raw usage response -- and `aiquota-read`'s rule presents it only on GETs under /v1/.
+  source:
+    secretRef:
+      name: aiquota-api-bearer-agentplane-staging
+      key: bearer-token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: aiquota-read
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - aiquota.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /v1/**
+      credentialRef:
+        name: aiquota-read
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-haku-mail-reader
+  namespace: flux-system
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-mail-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-haku-mail-reader
+  namespace: flux-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-haku-mail-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-haku-mail-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: flux-system
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: haku-mail-token
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: haku-mail-token
+        property: jwt
+      secretKey: jwt
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-haku-mail-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: haku-mail-token
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: haku-mailbox
+  namespace: agentplane-staging
+spec:
+  description: The Authentik JWT of Haku's mailbox account (haku@allegedly.works on the Stalwart server, cluster/k8s/haku/mailbox), rotated by authentik-jwt-rotation and copied into this namespace by ESO. It reads and changes the contents of that one mailbox over JMAP; it cannot send mail or administer the server (haku/docs/security.md).
+  source:
+    secretRef:
+      name: haku-mail-token
+      key: jwt
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: haku-mailbox
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - haku-mailbox.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /.well-known/jmap
+        - /jmap/**
+      credentialRef:
+        name: haku-mailbox
+    - hosts:
+        - haku-mailbox.allegedly.works
+      methods:
+        - POST
+      paths:
+        - /jmap/**
+      credentialRef:
+        name: haku-mailbox
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: buildbuddy-api-key
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: buildbuddy-api-key
+        property: api-key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: buildbuddy-api-key
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: buildbuddy
+  namespace: agentplane-staging
+spec:
+  description: "The shared BuildBuddy API key (cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml), the same one CI's BUILDBUDDY_API_KEY carries, copied into this namespace by ESO. BuildBuddy uses this one key for its JSON-over-HTTP API and its gRPC services alike, presented as the literal value of the `x-buildbuddy-api-key` header/metadata entry -- this is a local-Bazel-client credential only: `bb remote`'s hosted runner copies the same value into the Bazel command it executes, which this proxy cannot see or protect (agentplane/docs/buildbuddy_remote_auth.md)."
+  source:
+    secretRef:
+      name: buildbuddy-api-key
+      key: api-key
+  targets:
+    - header: x-buildbuddy-api-key
+      method: wholeValue
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: buildbuddy
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - app.buildbuddy.io
+        - remote.buildbuddy.io
+      credentialRef:
+        name: buildbuddy

@@ -27,22 +27,12 @@ describe("generated MCP tool result schemas", () => {
     expect(keys).toContain("haku-console.get_mcp_server_status");
   });
 
-  it("parses an unprovisioned connected-account status", () => {
+  it("parses a configured server's connection status", () => {
     const result: McpToolResultFor<"haku-console", "list_mcp_servers"> = {
       servers: [
         {
-          server_id: "google_calendar",
-          backend: {
-            kind: "in_process",
-            credential: { kind: "operator_connection", connection: "google_calendar" },
-          },
-          connection: {
-            connection: "google_calendar",
-            display_name: "Google Calendar",
-            provider: "google",
-            status: "unprovisioned",
-            detail: "OAuth client not provisioned on this console; see the console deployment README.",
-          },
+          server_id: "grants",
+          backend: { kind: "in_process", credential: { kind: "none" } },
         },
       ],
     };

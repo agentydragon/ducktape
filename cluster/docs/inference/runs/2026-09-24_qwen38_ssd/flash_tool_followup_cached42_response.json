@@ -1,0 +1,35 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "The verification code from sanity.txt is: **SSD-5090-7C2E**",
+        "reasoning_content": "The user wants the verification code exactly as it appears.\n"
+      }
+    }
+  ],
+  "created": 1790298231,
+  "model": "qwen3.8-flash-next-q4",
+  "system_fingerprint": "b11151-bd4f514db",
+  "object": "chat.completion",
+  "usage": {
+    "completion_tokens": 37,
+    "prompt_tokens": 373,
+    "total_tokens": 410,
+    "prompt_tokens_details": { "cached_tokens": 369 }
+  },
+  "id": "chatcmpl-UU2tcl6gkdjVF1DeL7tTdcWoQOb84mJM",
+  "timings": {
+    "cache_n": 369,
+    "prompt_n": 4,
+    "prompt_ms": 142.413,
+    "prompt_per_token_ms": 35.60325,
+    "prompt_per_second": 28.087323488726447,
+    "predicted_n": 37,
+    "predicted_ms": 971.081,
+    "predicted_per_token_ms": 26.97447222222222,
+    "predicted_per_second": 37.07208770432126
+  }
+}

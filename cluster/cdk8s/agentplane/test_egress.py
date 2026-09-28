@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -11,11 +12,14 @@ from more_itertools import one
 from agentplane.egress import sidecar
 from cluster.cdk8s.agentplane import testing
 from cluster.cdk8s.agentplane.app_settings import (
+    ACTIVITYWATCH_READ_POLICY,
+    AIQUOTA_READ_POLICY,
     BASIC_POLICY,
     FORGEJO_HAKU_POLICY,
-    GITHUB_PUBLIC_POLICY,
+    GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
+    HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
 )
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
@@ -46,7 +50,9 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
 ) -> None:
     manifests = agentplane_manifests[testing.ENV.namespace]
     github = one(
-        doc for doc in manifests if doc["kind"] == "EgressPolicy" and doc["metadata"]["name"] == GITHUB_PUBLIC_POLICY
+        doc
+        for doc in manifests
+        if doc["kind"] == "EgressPolicy" and doc["metadata"]["name"] == GITHUB_AGENTYDRAGON_AGENT_POLICY
     )
     github_rule = one(github["spec"]["rules"])
     assert "codeload.github.com" in github_rule["hosts"]
@@ -58,7 +64,15 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
     assert not any(
         doc["kind"] in {"EgressCredential", "EgressPolicy"}
         and doc["metadata"]["name"]
-        in {FORGEJO_HAKU_POLICY, GOOGLE_READONLY_POLICY, GROCY_SF_READONLY_POLICY, HOME_ASSISTANT_READONLY_POLICY}
+        in {
+            FORGEJO_HAKU_POLICY,
+            GOOGLE_READONLY_POLICY,
+            GROCY_SF_READONLY_POLICY,
+            HOME_ASSISTANT_READONLY_POLICY,
+            ACTIVITYWATCH_READ_POLICY,
+            AIQUOTA_READ_POLICY,
+            HAKU_MAILBOX_POLICY,
+        }
         for doc in manifests
     )
 
@@ -114,6 +128,29 @@ def test_sandbox_sidecars_gate_readiness_on_the_loopback_listener(
         assert probe["port"] == readiness_port == sidecar.READINESS_PORT
         assert probe["path"] == sidecar.READINESS_PATH
         assert "livenessProbe" not in egress_sidecar
+
+
+def test_runner_context_configuration_matches_the_verified_qwen_roster(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    expected = {
+        "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k": 128 * 1024,
+        "ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k": 128 * 1024,
+        "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k": 256 * 1024,
+        "ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k": 256 * 1024,
+    }
+    for namespace, manifests in agentplane_manifests.items():
+        templates = [doc for doc in manifests if doc["kind"] == "SandboxTemplate"]
+        runner_containers = [
+            container
+            for template in templates
+            for container in template["spec"]["podTemplate"]["spec"]["containers"]
+            if container["name"] == "runner"
+        ]
+        assert runner_containers, namespace
+        for container in runner_containers:
+            environment = {variable["name"]: variable.get("value") for variable in container.get("env", [])}
+            assert json.loads(environment["AGENTPLANE_MODEL_CONTEXT_WINDOWS"]) == expected
 
 
 if __name__ == "__main__":

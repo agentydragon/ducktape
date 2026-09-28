@@ -1,51 +1,54 @@
-# Build and push the OpenClaw derivative to GHCR with Nix.
+# Build and push the public-coder-agent OpenClaw image with Nix.
 #
 # This is a dockerTools archive rather than a Dockerfile build. The gateway is
 # packaged by nix-openclaw and openclaw/default.nix adds the proxy preload plus
-# the small public-coder command-line toolset. Keeping the existing image name
-# lets Flux roll public-coder-agent without a registry migration.
+# the small public-coder command-line toolset.
 name: OpenClaw Image
 
 on:
   pull_request:
     paths:
+      # keep-sorted start
       - ".bazelversion"
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/scripts/smoke-openclaw-image.sh"
+      - ".github/workflows/nix-image.yml"
+      - ".github/workflows/openclaw-image.yml"
+      - "cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/artifact-pins.json"
+      - "nix/flake/packages.nix"
+      - "nix/packages/**"
+      - "openclaw/bundle-runtime-plugin.sh"
       - "openclaw/default.nix"
       - "openclaw/gateway.nix"
-      - "openclaw/bundle-runtime-plugin.sh"
-      - "openclaw/proxy-setup.mjs"
       - "openclaw/npm_wrapper/**"
       - "openclaw/patches/**"
-      - "flake.nix"
-      - "flake.lock"
-      - "nix/flake/packages.nix"
-      - "nix/artifact-pins.json"
-      - "nix/packages/**"
-      - "cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml"
-      - ".github/scripts/smoke-openclaw-image.sh"
-      - ".github/workflows/openclaw-image.yml"
-      - ".github/workflows/nix-image.yml"
-      - ".github/actions/setup-nix-attic/action.yml"
+      - "openclaw/proxy-setup.mjs"
+      # keep-sorted end
   push:
     branches: [devel]
     paths:
+      # keep-sorted start
       - ".bazelversion"
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/scripts/smoke-openclaw-image.sh"
+      - ".github/workflows/nix-image.yml"
+      - ".github/workflows/openclaw-image.yml"
+      - "cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/artifact-pins.json"
+      - "nix/flake/packages.nix"
+      - "nix/packages/**"
+      - "openclaw/bundle-runtime-plugin.sh"
       - "openclaw/default.nix"
       - "openclaw/gateway.nix"
-      - "openclaw/bundle-runtime-plugin.sh"
-      - "openclaw/proxy-setup.mjs"
       - "openclaw/npm_wrapper/**"
       - "openclaw/patches/**"
-      - "flake.nix"
-      - "flake.lock"
-      - "nix/flake/packages.nix"
-      - "nix/artifact-pins.json"
-      - "nix/packages/**"
-      - "cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml"
-      - ".github/scripts/smoke-openclaw-image.sh"
-      - ".github/workflows/openclaw-image.yml"
-      - ".github/workflows/nix-image.yml"
-      - ".github/actions/setup-nix-attic/action.yml"
+      - "openclaw/proxy-setup.mjs"
+      # keep-sorted end
   workflow_dispatch:
 
 concurrency:
@@ -54,15 +57,14 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   image:
     uses: ./.github/workflows/nix-image.yml
     with:
       attr: openclaw-image
-      image: ghcr.io/${{ github.repository_owner }}/openclaw
-      registry: ghcr
+      image: git.allegedly.works/ducktape-ci/public-coder-agent
+      registry: forgejo
       smoke: |
         pip install --quiet pyyaml
         python3 -c '

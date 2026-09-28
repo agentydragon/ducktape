@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Pods, Protocol, Service, ServicePort, ServiceType, k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -18,40 +18,24 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 from kubevirt_virtualmachine_crds.io.kubevirt import (
-    VirtualMachine,
-    VirtualMachineSpec,
-    VirtualMachineSpecTemplate,
-    VirtualMachineSpecTemplateSpec,
     VirtualMachineSpecTemplateSpecAffinity,
     VirtualMachineSpecTemplateSpecAffinityNodeAffinity,
     VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
     VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
     VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
-    VirtualMachineSpecTemplateSpecDomain,
     VirtualMachineSpecTemplateSpecDomainCpu,
-    VirtualMachineSpecTemplateSpecDomainDevices,
-    VirtualMachineSpecTemplateSpecDomainDevicesDisks,
-    VirtualMachineSpecTemplateSpecDomainDevicesDisksDisk,
-    VirtualMachineSpecTemplateSpecDomainDevicesInterfaces,
     VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts,
-    VirtualMachineSpecTemplateSpecDomainFirmware,
-    VirtualMachineSpecTemplateSpecDomainFirmwareBootloader,
-    VirtualMachineSpecTemplateSpecDomainFirmwareBootloaderEfi,
     VirtualMachineSpecTemplateSpecDomainResources,
     VirtualMachineSpecTemplateSpecDomainResourcesLimits,
     VirtualMachineSpecTemplateSpecDomainResourcesRequests,
-    VirtualMachineSpecTemplateSpecNetworks,
-    VirtualMachineSpecTemplateSpecNetworksPod,
     VirtualMachineSpecTemplateSpecVolumes,
     VirtualMachineSpecTemplateSpecVolumesConfigMap,
-    VirtualMachineSpecTemplateSpecVolumesContainerDisk,
     VirtualMachineSpecTemplateSpecVolumesPersistentVolumeClaim,
     VirtualMachineSpecTemplateSpecVolumesSecret,
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import external_creds
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
+from cluster.cdk8s import external_creds, node_scheduling
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -60,8 +44,10 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_labels
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.providers.kubevirt.virtual_machine import VirtualMachine
 
 NAMESPACE = "public-coder-agent"
 SERVICE_NAME = "public-coder-devbox-ssh"
@@ -69,7 +55,7 @@ VM_NAME = "public-coder-devbox"
 SSH_PORT = 22
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/devbox"
 _SERVICE_LABELS = {"app.kubernetes.io/name": VM_NAME}
-POD_LABELS = {"kubevirt.io/domain": VM_NAME}
+POD_LABELS = domain_labels(VM_NAME)
 _BAZEL_CACHE_CLAIM = "public-coder-devbox-bazel-cache"
 _BUILDBUDDY_API_KEY = "buildbuddy-api-key"
 # The tag comes from image-pins/kustomization.yaml.
@@ -82,9 +68,9 @@ def ssh_service(scope: Construct) -> Service:
     return Service(
         scope,
         "ssh-service",
-        metadata=metadata(
-            SERVICE_NAME,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=SERVICE_NAME,
+            namespace=NAMESPACE,
             labels=_SERVICE_LABELS,
             annotations={
                 "description": (
@@ -126,13 +112,12 @@ def _bazel_cache_claim(scope: Construct) -> None:
 
 def _buildbuddy_api_key(scope: Construct) -> None:
     name = _BUILDBUDDY_API_KEY
-    add_external_secret(
+    ExternalSecret(
         scope,
         "buildbuddy-api-key",
-        name=name,
-        namespace=NAMESPACE,
-        refresh="1h",
-        store=external_creds.STORE,
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data(name, "api-key")],
         # Reuse the existing Reflector mirror during the staged ownership handoff.
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
@@ -140,136 +125,78 @@ def _buildbuddy_api_key(scope: Construct) -> None:
     )
 
 
-def _disk(
-    name: str, serial: str | None = None, boot_order: int | None = None
-) -> VirtualMachineSpecTemplateSpecDomainDevicesDisks:
-    return VirtualMachineSpecTemplateSpecDomainDevicesDisks(
-        name=name,
-        boot_order=boot_order,
-        serial=serial,
-        disk=VirtualMachineSpecTemplateSpecDomainDevicesDisksDisk(bus="virtio"),
-    )
-
-
 def virtual_machine(scope: Construct) -> VirtualMachine:
     """The devbox VM, booting the ephemeral containerDisk image with its cache, CA and keys attached."""
-    return VirtualMachine(
+    return container_disk_vm(
         scope,
         "virtual-machine",
-        metadata=metadata(VM_NAME, NAMESPACE, labels=_SERVICE_LABELS),
-        spec=VirtualMachineSpec(
-            run_strategy="Always",
-            template=VirtualMachineSpecTemplate(
-                metadata=k8s.ObjectMeta(labels=POD_LABELS | _SERVICE_LABELS),
-                spec=VirtualMachineSpecTemplateSpec(
-                    node_selector={
-                        # The local LVM cache PVC is available only on Proxmox nodes. Its
-                        # WaitForFirstConsumer binding then keeps this VM colocated with it.
-                        "topology.kubernetes.io/region": "proxmox",
-                        "kubevirt.io/schedulable": "true",
-                    },
-                    affinity=VirtualMachineSpecTemplateSpecAffinity(
-                        node_affinity=VirtualMachineSpecTemplateSpecAffinityNodeAffinity(
-                            required_during_scheduling_ignored_during_execution=VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                                node_selector_terms=[
-                                    VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                                        match_expressions=[
-                                            VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                                key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
-                                            )
-                                        ]
-                                    )
-                                ]
-                            )
-                        )
-                    ),
-                    domain=VirtualMachineSpecTemplateSpecDomain(
-                        # 4 cores / 8Gi limit, 2 cores / 4Gi request: the two hil, kubevirt.io/schedulable=true
-                        # nodes (ovh-ns102453, ovh-ns103711) are 8-core/32Gi OVH KS-5 boxes already carrying the
-                        # rest of the cluster -- the original 8-core/8Gi *request* never fit either node's free
-                        # capacity (one short on CPU, the other on memory), which is why this VM's virt-launcher
-                        # pod sat Pending/Unschedulable. Heavy compute already runs on BuildBuddy RBE, not this
-                        # box, so it doesn't need to request that much locally.
-                        cpu=VirtualMachineSpecTemplateSpecDomainCpu(cores=4),
-                        resources=VirtualMachineSpecTemplateSpecDomainResources(
-                            limits={
-                                "cpu": VirtualMachineSpecTemplateSpecDomainResourcesLimits.from_string("4"),
-                                "memory": VirtualMachineSpecTemplateSpecDomainResourcesLimits.from_string("8Gi"),
-                            },
-                            requests={
-                                "cpu": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string("2"),
-                                "memory": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string("4Gi"),
-                            },
-                        ),
-                        firmware=VirtualMachineSpecTemplateSpecDomainFirmware(
-                            bootloader=VirtualMachineSpecTemplateSpecDomainFirmwareBootloader(
-                                efi=VirtualMachineSpecTemplateSpecDomainFirmwareBootloaderEfi(secure_boot=False)
-                            )
-                        ),
-                        devices=VirtualMachineSpecTemplateSpecDomainDevices(
-                            disks=[
-                                _disk("rootdisk", boot_order=1),
-                                _disk("bazel-cache", serial="pcbazelcache"),
-                                _disk("proxy-ca", serial="pcproxyca"),
-                                _disk("buildbuddy-api-key", serial="pcbuildbuddy"),
-                                _disk("ssh-host-key", serial="pchostkey"),
-                            ],
-                            interfaces=[
-                                VirtualMachineSpecTemplateSpecDomainDevicesInterfaces(
-                                    name="default",
-                                    masquerade={},
-                                    ports=[
-                                        VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(
-                                            name="ssh", port=SSH_PORT
-                                        )
-                                    ],
+        name=VM_NAME,
+        namespace=NAMESPACE,
+        # This is an ephemeral VM disk (accepted tradeoff: no checkout or other local
+        # state survives an image update or VM restart). Flux ImageUpdateAutomation
+        # sets the tag in image-pins/ after .github/workflows/public-coder-devbox-image.yml
+        # publishes a new one -- see the public-coder-devbox ImagePolicy in
+        # forgejo_image_automation.py.
+        image=_IMAGE,
+        # 4 cores / 8Gi limit, 2 cores / 4Gi request: the two hil, kubevirt.io/schedulable=true
+        # nodes (ovh-ns102453, ovh-ns103711) are 8-core/32Gi OVH KS-5 boxes already carrying the
+        # rest of the cluster -- the original 8-core/8Gi *request* never fit either node's free
+        # capacity (one short on CPU, the other on memory), which is why this VM's virt-launcher
+        # pod sat Pending/Unschedulable. Heavy compute already runs on BuildBuddy RBE, not this
+        # box, so it doesn't need to request that much locally.
+        cpu=VirtualMachineSpecTemplateSpecDomainCpu(cores=4),
+        resources=VirtualMachineSpecTemplateSpecDomainResources(
+            limits={
+                "cpu": VirtualMachineSpecTemplateSpecDomainResourcesLimits.from_string("4"),
+                "memory": VirtualMachineSpecTemplateSpecDomainResourcesLimits.from_string("8Gi"),
+            },
+            requests={
+                "cpu": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string("2"),
+                "memory": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string("4Gi"),
+            },
+        ),
+        node_selector={
+            # The local LVM cache PVC is available only on Proxmox nodes. Its
+            # WaitForFirstConsumer binding then keeps this VM colocated with it.
+            "topology.kubernetes.io/region": "proxmox",
+            "kubevirt.io/schedulable": "true",
+        },
+        affinity=VirtualMachineSpecTemplateSpecAffinity(
+            node_affinity=VirtualMachineSpecTemplateSpecAffinityNodeAffinity(
+                required_during_scheduling_ignored_during_execution=VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                    node_selector_terms=[
+                        VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
+                            match_expressions=[
+                                VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
+                                    key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="DoesNotExist"
                                 )
-                            ],
-                        ),
-                    ),
-                    networks=[
-                        VirtualMachineSpecTemplateSpecNetworks(
-                            name="default", pod=VirtualMachineSpecTemplateSpecNetworksPod()
+                            ]
                         )
-                    ],
-                    volumes=[
-                        VirtualMachineSpecTemplateSpecVolumes(
-                            name="rootdisk",
-                            # This is an ephemeral VM disk (accepted tradeoff: no checkout or other local
-                            # state survives an image update or VM restart). Flux ImageUpdateAutomation
-                            # sets the tag in image-pins/ after .github/workflows/public-coder-devbox-image.yml
-                            # publishes a new one -- see the public-coder-devbox ImagePolicy in
-                            # forgejo_image_automation.py.
-                            container_disk=VirtualMachineSpecTemplateSpecVolumesContainerDisk(
-                                image=_IMAGE, image_pull_policy="IfNotPresent"
-                            ),
-                        ),
-                        VirtualMachineSpecTemplateSpecVolumes(
-                            name="bazel-cache",
-                            persistent_volume_claim=VirtualMachineSpecTemplateSpecVolumesPersistentVolumeClaim(
-                                claim_name=_BAZEL_CACHE_CLAIM
-                            ),
-                        ),
-                        VirtualMachineSpecTemplateSpecVolumes(
-                            name="proxy-ca",
-                            config_map=VirtualMachineSpecTemplateSpecVolumesConfigMap(
-                                name="public-coder-agent-proxy-ca-cert"
-                            ),
-                        ),
-                        VirtualMachineSpecTemplateSpecVolumes(
-                            name="buildbuddy-api-key",
-                            secret=VirtualMachineSpecTemplateSpecVolumesSecret(secret_name=_BUILDBUDDY_API_KEY),
-                        ),
-                        VirtualMachineSpecTemplateSpecVolumes(
-                            name="ssh-host-key",
-                            secret=VirtualMachineSpecTemplateSpecVolumesSecret(
-                                secret_name="public-coder-devbox-ssh-host-key"
-                            ),
-                        ),
-                    ],
+                    ]
+                )
+            )
+        ),
+        ports=[VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(name="ssh", port=SSH_PORT)],
+        disks={
+            "pcbazelcache": VirtualMachineSpecTemplateSpecVolumes(
+                name="bazel-cache",
+                persistent_volume_claim=VirtualMachineSpecTemplateSpecVolumesPersistentVolumeClaim(
+                    claim_name=_BAZEL_CACHE_CLAIM
                 ),
             ),
-        ),
+            "pcproxyca": VirtualMachineSpecTemplateSpecVolumes(
+                name="proxy-ca",
+                config_map=VirtualMachineSpecTemplateSpecVolumesConfigMap(name="public-coder-agent-proxy-ca-cert"),
+            ),
+            "pcbuildbuddy": VirtualMachineSpecTemplateSpecVolumes(
+                name="buildbuddy-api-key",
+                secret=VirtualMachineSpecTemplateSpecVolumesSecret(secret_name=_BUILDBUDDY_API_KEY),
+            ),
+            "pchostkey": VirtualMachineSpecTemplateSpecVolumes(
+                name="ssh-host-key",
+                secret=VirtualMachineSpecTemplateSpecVolumesSecret(secret_name="public-coder-devbox-ssh-host-key"),
+            ),
+        },
     )
 
 
@@ -295,11 +222,7 @@ def public_coder_agent_devbox(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     kubevirt: Kustomization,
-    forgejo_images: Kustomization,
-    external_creds: Kustomization,
-    external_secrets_config: Kustomization,
-    agent_shared_secrets: Kustomization,
-    public_coder_agent_app_kustomization: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     name = "public-coder-agent-devbox"
     return flux_kustomization(
@@ -308,14 +231,7 @@ def public_coder_agent_devbox(
         artifact,
         timeout="30m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(
-            kubevirt,
-            forgejo_images,
-            external_creds,
-            external_secrets_config,
-            agent_shared_secrets,
-            public_coder_agent_app_kustomization,
-        ),
+        depends_on=flux_kustomization_depends_on_many(kubevirt, external_secrets_operator),
         description=(
             "KubeVirt build/test devbox for public-coder-agent "
             "(Bazel/BuildBuddy/direnv), with an ephemeral containerDisk root "

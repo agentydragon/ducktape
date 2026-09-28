@@ -28,6 +28,7 @@ from openai.types.responses import (
     ResponseFunctionToolCall,
     ResponseOutputMessage,
     ResponseOutputText,
+    response_usage,
 )
 from openai.types.responses.response_reasoning_item import ResponseReasoningItem
 from pydantic import ValidationError
@@ -72,7 +73,9 @@ def _to_sdk_output_item(item: ResponseOutItem) -> _SDKOutputItem:
             id=item.id or "msg_test",
             status="completed",
             content=[
-                ResponseOutputText(type="output_text", text=part.text, annotations=part.annotations or [])
+                ResponseOutputText.model_validate(
+                    {"type": "output_text", "text": part.text, "annotations": part.annotations or []}
+                )
                 for part in item.content
             ],
         )
@@ -101,7 +104,7 @@ def result_to_sdk_response(result: ResponsesResult, *, model: str = DEFAULT_TEST
         parallel_tool_calls=True,
         tool_choice="auto",
         tools=[],
-        usage=usage.model_dump(),
+        usage=response_usage.ResponseUsage.model_validate(usage.model_dump()),
     )
 
 

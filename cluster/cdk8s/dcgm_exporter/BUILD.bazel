@@ -9,7 +9,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
-        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -21,8 +21,9 @@ py_library(
     deps = [
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/prometheus_operator:podmonitor",
+        "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
+        "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

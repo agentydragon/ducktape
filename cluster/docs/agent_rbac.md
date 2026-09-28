@@ -30,7 +30,7 @@ Contains:
 
 ### 2. `shared-rbac` — cluster-scoped bindings
 
-Depends on: `agent-rbac-base`, `kyverno-policies`.
+Depends on: `agent-rbac-base`.
 
 Contains:
 
@@ -130,7 +130,7 @@ namespace or the separate `logs-configmaps-reader` class.
 The `claude-ai` ServiceAccount in `agentplane-staging` is the principal for Connections
 enrolled from the Claude.ai MCP connector (`cluster/cdk8s/agentplane/actions_staging_policies.py`);
 every sandbox it stamps through the sandbox Action group runs as it
-(`agentplane/docs/sandbox_actions.md`). Its access is the secret-free
+(`agentplane/action_service/sandbox/README.md`). Its access is the secret-free
 `cluster-diagnostics-reader` binding plus the metadata and pod-log readers of the
 `agent-readable-*` namespaces (section 4), and `get` on exactly one Secret,
 `agentplane-staging/coinbase-api-credentials`: the view-only Coinbase CDP key, which its
@@ -183,8 +183,8 @@ agentplane-staging's `claude-ai` ServiceAccount. The Kyverno policy
 corresponding namespaced RoleBindings. Sensitive or identity-specific access remains explicit
 service RBAC.
 
-Augur is reconciled from `gaffer-private`, so its agent RBAC lives cross-repo at
-`gaffer-private/k8s/parked/augur/agent-rbac/`. That directory also defines an
+Augur is parked in `gaffer-private` and has no namespace in the cluster. Its agent RBAC
+is parked with it at `gaffer-private/k8s/parked/augur/agent-rbac/`, including an
 in-namespace Role granting `pods/exec`, `pods/attach`, and `pods/portforward` for
 debugging the single-replica augur deployment.
 

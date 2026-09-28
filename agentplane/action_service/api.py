@@ -394,9 +394,9 @@ def create_app(
         action_service: Annotated[ActionService, Depends(_service)],
     ) -> CallerActionPolicyView:
         """The caller's own effective policy, from the resolution admission uses: the bindings on it, the
-        sets that resolved, and the auto_approve_if / auto_deny_if / auto_deny_unless entries in evaluation
-        order. This surface only ever sees a Sandbox principal; an external grant reaches the service
-        through `/mcp`, whose tool reads the grant `CallerTokenVerifier` verified."""
+        sets that resolved, and the auto_approve_if entries in evaluation order. This surface only
+        ever sees a Sandbox principal; an external grant reaches the service through `/mcp`, whose
+        tool reads the grant `CallerTokenVerifier` verified."""
         return action_service.caller_action_policy(principal, external_grant=None)
 
     # Operator/BFF surface: deliberately different paths and authenticator. A workload bearer can

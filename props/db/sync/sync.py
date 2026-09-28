@@ -8,6 +8,7 @@ import logging
 import tarfile
 from collections.abc import Callable, Set as AbstractSet
 from dataclasses import dataclass
+from itertools import groupby
 from pathlib import Path
 
 import yaml
@@ -74,6 +75,19 @@ def _add_ranges_to_occurrence(
     fp_id = orm_occ.fp_id if isinstance(orm_occ, FalsePositiveOccurrenceORM) else None
     for file_path, ranges in files.items():
         if ranges is None:
+            orm_occ.ranges.append(
+                OccurrenceRangeORM(
+                    snapshot_slug=orm_occ.snapshot_slug,
+                    tp_id=tp_id,
+                    fp_id=fp_id,
+                    occurrence_id=orm_occ.occurrence_id,
+                    file_path=file_path,
+                    range_id=0,
+                    start_line=None,
+                    end_line=None,
+                    note=None,
+                )
+            )
             continue
         for range_id, line_range in enumerate(ranges):
             orm_occ.ranges.append(
@@ -85,7 +99,7 @@ def _add_ranges_to_occurrence(
                     file_path=file_path,
                     range_id=range_id,
                     start_line=line_range.start_line,
-                    end_line=line_range.end_line if line_range.end_line is not None else line_range.start_line,
+                    end_line=line_range.end_line,
                     note=line_range.note,
                 )
             )
@@ -152,13 +166,22 @@ def sync_snapshot_files_to_db(session: Session, slug: SnapshotSlug, archive_byte
 
 def _reconstruct_occ_common(
     db_occ: TruePositiveOccurrenceORM | FalsePositiveOccurrenceORM,
-) -> tuple[dict[Path, list[LineRange]], set[Path] | None]:
+) -> tuple[dict[Path, list[LineRange] | None], set[Path] | None]:
     """Reconstruct files dict and match_file_restriction from an ORM occurrence."""
-    files: dict[Path, list[LineRange]] = {}
-    for r in sorted(db_occ.ranges, key=lambda r: (str(r.file_path), r.range_id)):
-        files.setdefault(Path(str(r.file_path)), []).append(
-            LineRange(start_line=r.start_line, end_line=r.end_line, note=r.note)
-        )
+    files: dict[Path, list[LineRange] | None] = {}
+    for file_path_str, group in groupby(
+        sorted(db_occ.ranges, key=lambda r: (str(r.file_path), r.range_id)), key=lambda r: str(r.file_path)
+    ):
+        file_path = Path(file_path_str)
+        ranges = list(group)
+        if len(ranges) == 1 and ranges[0].start_line is None:
+            files[file_path] = None
+        else:
+            file_ranges: list[LineRange] = []
+            for r in ranges:
+                assert r.start_line is not None, f"Unexpected None start_line in range {r.range_id} of {file_path}"
+                file_ranges.append(LineRange(start_line=r.start_line, end_line=r.end_line, note=r.note))
+            files[file_path] = file_ranges
 
     restriction: set[Path] | None = None
     if db_occ.match_file_restriction is not None:

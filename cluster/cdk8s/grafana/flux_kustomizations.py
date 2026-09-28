@@ -9,9 +9,14 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 
 
 def clickhouse_grafana(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, clickhouse: Kustomization, grafana_instance: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, grafana_operator: Kustomization
 ) -> Kustomization:
     name = "clickhouse-grafana"
     return flux_kustomization(
-        chart, name, artifact, timeout="5m", depends_on=flux_kustomization_depends_on_many(clickhouse, grafana_instance)
+        chart,
+        name,
+        artifact,
+        timeout="5m",
+        # The GrafanaDashboard and GrafanaDatasource CRDs.
+        depends_on=flux_kustomization_depends_on_many(grafana_operator),
     )

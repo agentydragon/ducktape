@@ -16,13 +16,15 @@ on:
   push:
     branches: [devel]
     paths:
-      - "cluster/k8s/haku/workspaces/image/**"
-      - "nix/lib/nix-ld-image.nix"
-      - "flake.lock"
-      - "nix/flake/packages.nix"
+      # keep-sorted start
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/haku-sandbox-image-nix.yml"
       - ".github/workflows/nix-image.yml"
+      - "cluster/k8s/haku/workspaces/image/**"
+      - "flake.lock"
+      - "nix/flake/packages.nix"
+      - "nix/lib/nix-ld-image.nix"
+      # keep-sorted end
   # Also on PRs, which the other image workflows deliberately don't do. The cutover
   # checklist needs a *pullable tag* to point a throwaway Pod at, and the image's whole
   # open question is a runtime one a build can't answer — so it has to be testable before
@@ -32,13 +34,15 @@ on:
   # workflow is in.
   pull_request:
     paths:
-      - "cluster/k8s/haku/workspaces/image/**"
-      - "nix/lib/nix-ld-image.nix"
-      - "flake.lock"
-      - "nix/flake/packages.nix"
+      # keep-sorted start
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/haku-sandbox-image-nix.yml"
       - ".github/workflows/nix-image.yml"
+      - "cluster/k8s/haku/workspaces/image/**"
+      - "flake.lock"
+      - "nix/flake/packages.nix"
+      - "nix/lib/nix-ld-image.nix"
+      # keep-sorted end
   workflow_dispatch:
 
 concurrency:

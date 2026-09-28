@@ -7,14 +7,16 @@ on:
   push:
     branches: [devel]
     paths:
-      - "flake.nix"
-      - "flake.lock"
-      - "nix/flake/packages.nix"
-      - "cpap/gateway/**"
-      - "nix/nixos/modules/vm-hardware.nix"
+      # keep-sorted start
       - ".github/actions/setup-nix-attic/action.yml"
-      - ".github/workflows/nix-containerdisk-publish.yml"
       - ".github/workflows/cpap-gateway-image.yml"
+      - ".github/workflows/nix-containerdisk-publish.yml"
+      - "cpap/gateway/**"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/flake/packages.nix"
+      - "nix/nixos/modules/vm-hardware.nix"
+      # keep-sorted end
   workflow_dispatch:
 
 permissions:

@@ -14,6 +14,7 @@
     ../modules/kubeconfig.nix
     ../modules/talosconfig.nix
     ../modules/discord-minimized-autostart.nix
+    ./rugged-opencode.nix
   ];
 
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/rugged-forgejo.sops.key;
@@ -101,10 +102,6 @@
 
   ducktape.aiquota.enable = true;
   ducktape.aiquota.remoteApi.enable = true;
-
-  # TODO: expose this through an authenticated in-cluster route if rugged's
-  # local LLM becomes useful beyond the tablet itself.
-  ducktape.opencode.ruggedLocalLlm.enable = true;
 
   home.packages = [
     ducktapePackages.bebas-neue-font

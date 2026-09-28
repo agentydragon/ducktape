@@ -1,7 +1,8 @@
 # What a `dockerTools` image needs for an FHS binary to run in it: a dynamically linked ELF
 # that hard-codes `/lib64/ld-linux-x86-64.so.2` and looks for libstdc++ and libz where an FHS
 # distro keeps them. rules_python's hermetic CPython, the agent harness CLIs and every toolchain
-# Bazel downloads are such binaries. The rule behind this file (port FILESYSTEM defaults, not
+# Bazel downloads are such binaries. It also gives a shell started without an environment the
+# PATH an FHS distro's would have. The rule behind this file (port FILESYSTEM defaults, not
 # environment variables) and every measured dead end are recorded once, in
 # <../../devinfra/debug/nixos_bazel_bash/README.md> "Two substrates" and "Issue 4".
 #
@@ -68,9 +69,13 @@ in
     # FUSE mount needing systemd activation, and an unprivileged pod cannot boot systemd
     # (<../../haku/runtime/managed_agent/self_hosted/README.md> — "booting systemd PID 1 in an
     # unprivileged container can't mount the API filesystems"). Static symlinks cover what
-    # actually gets used: `/usr/bin/env` for shebangs and `/bin/bash` for Bazel's shell.
+    # actually gets used: `/usr/bin/env` for shebangs, and `/bin/bash` and `/bin/sh` for Bazel's
+    # shell and every `#!/bin/sh` or `#!/bin/bash` tool. Both are nixpkgs' FHS build of bash:
+    # started without PATH, as Bazel starts every action whose rule declares no environment, it
+    # searches `/usr/bin` and `/bin`, where the default build searches `/no-such-path`.
     ln -sf ${pkgs.coreutils}/bin/env usr/bin/env
-    ln -sf ${pkgs.bashInteractive}/bin/bash bin/bash
+    ln -sf ${pkgs.bashInteractiveFHS}/bin/bash bin/bash
+    ln -sf ${pkgs.bashInteractiveFHS}/bin/sh bin/sh
   '';
 
   env = [

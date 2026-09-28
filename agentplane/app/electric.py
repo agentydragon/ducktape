@@ -63,12 +63,13 @@ _ENTITY_SUBSETS = {
 _BODY = re.compile(r"\(owner_id = \$\d+ AND generation = \$\d+\)")
 _RESPONSE_HEADERS = frozenset(
     {
+        # keep-sorted start
         "cache-control",
         "content-encoding",
         "content-type",
         "electric-cursor",
-        "electric-has-data",
         "electric-handle",
+        "electric-has-data",
         "electric-internal-known-error",
         "electric-offset",
         "electric-schema",
@@ -77,6 +78,7 @@ _RESPONSE_HEADERS = frozenset(
         "etag",
         "retry-after",
         "vary",
+        # keep-sorted end
     }
 )
 

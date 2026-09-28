@@ -27,20 +27,3 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
-
-py_test(
-    name = "test_drop_mcp_operator_oauth",
-    size = "medium",
-    srcs = ["test_drop_mcp_operator_oauth.py"],
-    requires_docker = True,
-    deps = [
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console:database_migrate",
-        "//haku/console:database_schema",
-        "//haku/console/oauth:provider_connection_registry",
-        "//haku/console/oauth:token_state",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)

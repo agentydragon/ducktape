@@ -10,12 +10,14 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
-from agentplane.sandbox_actions.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 
 _KEY = r"^[a-z][a-z0-9_-]*$"
 Key = Annotated[str, StringConstraints(pattern=_KEY, min_length=1, max_length=200)]
+DIRECT_TOOL_SEPARATOR = "__"
 
 
 class ActionIdentity(BaseModel):
@@ -37,6 +39,12 @@ class ActionDefinition(BaseModel):
         default_factory=dict,
         description="A small JSON-Schema-shaped parameter contract, opaque to this catalog. Submission "
         "validates against this advertised schema; execution re-checks the current backend schema.",
+    )
+    title: str | None = Field(default=None, description="Human-readable display name, as MCP tools carry one.")
+    annotations: ToolAnnotations | None = Field(
+        default=None,
+        description="MCP behavior hints (read-only, destructive, idempotent, open-world). Advisory: they "
+        "shape how a client presents the Action as a direct tool, never what the service allows.",
     )
 
 
@@ -114,6 +122,12 @@ class ActionGroup(BaseModel):
     available: bool = Field(default=True, description="Whether this group is currently offered to Agents.")
     health: McpHealth | None = Field(default=None, exclude=True)
     actions: dict[Key, ActionDefinition] = Field(default_factory=dict)
+    direct_tools: frozenset[Key] | None = Field(
+        default=None,
+        min_length=1,
+        description="Actions of this group external Connections also see as MCP tools of their own, named "
+        f"`<group>{DIRECT_TOOL_SEPARATOR}<action>`. Only these: a new upstream tool is never exposed unreviewed.",
+    )
 
 
 class ActionView(BaseModel):
@@ -155,6 +169,16 @@ class ActionCatalog(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     groups: dict[Key, ActionGroup] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _direct_tool_names_split_at_the_group(self) -> ActionCatalog:
+        for key, group in self.groups.items():
+            if group.direct_tools is not None and DIRECT_TOOL_SEPARATOR in key:
+                raise ValueError(
+                    f"ActionGroup {key!r} offers direct tools, so its key must not contain {DIRECT_TOOL_SEPARATOR!r}: "
+                    "a direct tool's name is split at the first one"
+                )
+        return self
 
     # Lets the operator settings page join an ActionGroupView back to its McpLinkageView by
     # matching `key` against `server_id` directly, with no separate wire-carried join key needed.

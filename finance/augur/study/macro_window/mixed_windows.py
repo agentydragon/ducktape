@@ -17,7 +17,7 @@ covariance estimated on the overlap has to sit well with rows estimated on diffe
 What the sweep in `covariance_span_test.py` actually established is a level up from that. The
 covariance span moves the first scorable origin, the origin set moves the ranking, and at ten
 years it moves it far enough to reverse which single window wins — so a result from here is a
-statement about a scoring period, not about a window. `model/SPEC.md` carries the numbers.
+statement about a scoring period, not about a window. `x/models/structural_macro.md` carries the numbers.
 
 Deliberately an experiment rather than a fitter: nothing here changes the shipped
 `fit_macro_var` surface, and the provenance question a mixed fit raises — `MacroVarFit`'s
@@ -33,8 +33,6 @@ from datetime import date
 
 import numpy as np
 
-from finance.augur.fit.macro_var import MACRO_STATE_DIM, MacroStatePath, MacroVarFit, as_state_matrix, as_state_vector
-from finance.augur.model.structural_macro import MINIMUM_MONTHS
 from finance.augur.study.macro_window.holdout import (
     FRED_WINDOW_START,
     LONG_ARM,
@@ -44,6 +42,14 @@ from finance.augur.study.macro_window.holdout import (
     score_arms,
     single_window,
 )
+from finance.augur.x.models.macro_var import (
+    MACRO_STATE_DIM,
+    MacroStatePath,
+    MacroVarFit,
+    as_state_matrix,
+    as_state_vector,
+)
+from finance.augur.x.models.structural_macro import MINIMUM_MONTHS
 
 logger = logging.getLogger(__name__)
 

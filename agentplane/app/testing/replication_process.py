@@ -36,10 +36,10 @@ from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.api import create_app
+from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.database import connect
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
@@ -252,7 +252,7 @@ async def _serve(
     engine = connect(database_url)
     store, event_logs, content = ThreadStore(engine), EventLogStore(engine), ContentStore(engine)
     ingestion = Ingestion(engine) if boundary is None else GatedIngestion(engine, Gate(boundary, connection), cursor)
-    thread_updates = ThreadUpdates(engine.url)
+    database_updates = DatabaseUpdates(engine.url)
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
     index = LiveIndex(stale_after_seconds=90, refreshed={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)})
     if sandbox_state is not None:
@@ -273,7 +273,7 @@ async def _serve(
         event_logs=event_logs,
         content=content,
         ingester=ingester,
-        thread_changes=thread_updates.changes,
+        thread_changes=database_updates.changes[Channel.THREADS],
     )
     async with (
         httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,
@@ -283,19 +283,30 @@ async def _serve(
             SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core),
             bridge,
             store,
-            {harness: ["test-model-before", "test-model-after"] for harness in Harness},
+            ModelCatalog(
+                models=[
+                    ModelOption(model="test-model-before", display_name="Test Model Before"),
+                    ModelOption(model="test-model-after", display_name="Test Model After"),
+                ],
+                harnesses={harness: ["test-model-before", "test-model-after"] for harness in Harness},
+            ),
             EgressInventory(namespace=NAMESPACE, custom_objects=custom, default_policies=[]),
             DecisionsClient(decisions_http),
             index,
             ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom),
             electric=(
-                ElectricProxy(electric_http, content, event_logs=event_logs, thread_changes=thread_updates.changes)
+                ElectricProxy(
+                    electric_http,
+                    content,
+                    event_logs=event_logs,
+                    thread_changes=database_updates.changes[Channel.THREADS],
+                )
                 if electric_url is not None
                 else None
             ),
             event_logs=event_logs,
             content=content,
-            thread_updates=thread_updates,
+            database_updates=database_updates,
             operator_sessions=OperatorSessionStore(engine),
         )
         # Authentication is tested separately; the production routes, HTTP transport, ingestion,
@@ -307,7 +318,7 @@ async def _serve(
             )
         if frontend_directory is not None:
             app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
-        await thread_updates.start()
+        await database_updates.start()
         await ingester.start()
         try:
             with socket.socket() as listener:
@@ -317,7 +328,7 @@ async def _serve(
         finally:
             await ingester.close()
             await runners.close()
-            await thread_updates.close()
+            await database_updates.close()
             await engine.dispose()
 
 

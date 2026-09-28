@@ -74,6 +74,15 @@ def _exit_code(status_frame: bytes) -> int:
     raise PodExecError(f"Kubernetes could not run the command: {status.get('message')}")
 
 
+def _command(script: str, *, cwd: str | None, timeout_seconds: int) -> list[str]:
+    """`script` under a remote timeout, from `cwd` when one is named. Without one it starts where the
+    runtime starts every exec: the container's working directory."""
+    shell_script = script if cwd is None else f"cd -- {shlex.quote(cwd)}\n{script}"
+    # `timeout` and `bash` resolve on the container's PATH: the Nix-built sandbox and runner
+    # images keep coreutils in /bin and have no /usr/bin/timeout.
+    return ["timeout", "--signal=TERM", "--kill-after=5s", f"{timeout_seconds}s", "bash", "-lc", shell_script]
+
+
 @dataclass(frozen=True, slots=True)
 class CommandResult:
     exit: Exited | TimedOut | Killed
@@ -90,7 +99,7 @@ class ExecRunner(Protocol):
         namespace: str,
         container: str,
         script: str,
-        cwd: str,
+        cwd: str | None,
         max_output_bytes: int,
         timeout_seconds: int,
     ) -> CommandResult: ...
@@ -158,17 +167,14 @@ class KubernetesWebSocketExecRunner:
         namespace: str,
         container: str,
         script: str,
-        cwd: str,
+        cwd: str | None,
         max_output_bytes: int,
         timeout_seconds: int,
     ) -> CommandResult:
         stdout = _Capture(max_output_bytes)
         stderr = _Capture(max_output_bytes)
         error_data = bytearray()
-        shell_script = f"cd -- {shlex.quote(cwd)}\n{script}"
-        # `timeout` and `bash` resolve on the container's PATH: the Nix-built sandbox and runner
-        # images keep coreutils in /bin and have no /usr/bin/timeout.
-        command = ["timeout", "--signal=TERM", "--kill-after=5s", f"{timeout_seconds}s", "bash", "-lc", shell_script]
+        command = _command(script, cwd=cwd, timeout_seconds=timeout_seconds)
         loop = asyncio.get_running_loop()
         started = loop.time()
 

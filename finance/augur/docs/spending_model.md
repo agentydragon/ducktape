@@ -43,10 +43,10 @@ spending cut, payment priority or retry is supplied by the executor. Zero chosen
 consumption is represented by omitting the action, not a zero-valued payment.
 
 Existing configured full-run consumers are a separate migration boundary: they
-raise cash for their assembled claims, settle same-source groups all-or-none, then
+raise cash for their assembled claims, pay each in full in observed order, then
 invest surplus and run configured strategies. They have no callable spending API.
-Their cash-band/drift controls and grouped-funding semantics remain until those
-consumers move to explicit actions; do not mistake them for the action contract.
+Their cash-band/drift controls remain until those consumers move to explicit
+actions; do not mistake them for the action contract.
 
 ## Reporting and scope
 

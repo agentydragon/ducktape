@@ -33,8 +33,8 @@ const live = vi.hoisted(
         action_policy: null,
         watch: { fresh: true, stale_after_seconds: 60, refreshed_seconds_ago: {} },
       },
-      connection: "connected",
       health: null,
+      stream: { name: "Sandbox startup-test", connection: { phase: "live", since: 0 }, standing: "current" },
     }) satisfies Live<SandboxSnapshot>
 );
 vi.mock("./live", async (importOriginal) => ({
@@ -75,7 +75,12 @@ async function render(
   fetchMock.mockImplementation((request: Request) => {
     const path = new URL(request.url).pathname;
     if (path === "/models") {
-      return Promise.resolve(Response.json({ HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] }));
+      return Promise.resolve(
+        Response.json({
+          models: [{ model: "test-model", display_name: "Test Model" }],
+          harnesses: { HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] },
+        })
+      );
     }
     if (path === "/egress/policies" || path === "/sandboxes/startup-test/egress/decisions") {
       return Promise.resolve(Response.json([]));
@@ -188,4 +193,30 @@ it("hides an archived thread's session by default, reveals it via Show archived,
   expect(archiveRequests.map((request) => [request.method, new URL(request.url).pathname])).toEqual([
     ["POST", "/threads/test-thread-1/unarchive"],
   ]);
+});
+
+it("disables archiving a thread while its harness is running", async () => {
+  live.snapshot.threads = [thread({ id: "test-thread-1", session_id: "existing-session" })];
+  await render(async () =>
+    Response.json([
+      {
+        sessionId: "existing-session",
+        spec: {},
+        lastCursor: "0",
+        harnessState: "HARNESS_STATE_RUNNING",
+      },
+    ])
+  );
+  const menuButton = [...container.querySelectorAll("button")].find(
+    (node) => node.getAttribute("aria-label") === "More actions for existing-session"
+  );
+  if (!menuButton) throw new Error("Missing per-session actions menu");
+  await act(async () => menuButton.click());
+  const archiveItem = menuItem("Stop harness before archiving");
+  expect(archiveItem).toBeInstanceOf(HTMLButtonElement);
+  expect((archiveItem as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => archiveItem.click());
+  expect(
+    fetchMock.mock.calls.some(([request]) => new URL((request as Request).url).pathname.endsWith("/archive"))
+  ).toBe(false);
 });

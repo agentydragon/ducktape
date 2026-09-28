@@ -25,6 +25,7 @@ _STALE_BASE_ERROR_THRESHOLD = 30
 # Bazel commands recognized by bb remote (from BuildBuddy cli/parser/bazelrc).
 _BAZEL_COMMANDS = frozenset(
     {
+        # keep-sorted start
         "analyze-profile",
         "aquery",
         "build",
@@ -45,6 +46,7 @@ _BAZEL_COMMANDS = frozenset(
         "sync",
         "test",
         "version",
+        # keep-sorted end
     }
 )
 

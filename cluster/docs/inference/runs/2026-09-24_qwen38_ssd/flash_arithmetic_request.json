@@ -1,0 +1,14 @@
+{
+  "model": "qwen3.8-flash-next-q4",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is 17 * 19? Reply with only the number."
+    }
+  ],
+  "max_tokens": 128,
+  "temperature": 0,
+  "chat_template_kwargs": {
+    "enable_thinking": false
+  }
+}

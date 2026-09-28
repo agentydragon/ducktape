@@ -1,0 +1,15 @@
+{
+  "model": "qwen3.8-flash-next-q4",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Implement a Python function stable_toposort(nodes, edges) that returns a topological ordering. nodes is a list of distinct hashable values; edges is an iterable of (source, destination) pairs. Whenever multiple nodes are available, choose the one earliest in the original nodes list. Duplicate edges should not change the result. Raise ValueError for a cycle or any endpoint not present in nodes. Return code and a brief explanation. Do not use third-party packages."
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0,
+  "chat_template_kwargs": {
+    "enable_thinking": true,
+    "reasoning_effort": "medium"
+  }
+}

@@ -1,9 +1,9 @@
 # cdk8s adoption: remaining work
 
-Review baseline: `origin/devel` at `eec338cb4e` (2026-09-24). This is a source
+Review baseline: `origin/devel` at `f84301e72c` (2026-09-28). This is a source
 audit, not a fresh synthesis, CI result, or live-cluster health report.
 
-The central chart contains 180 Flux Kustomizations. The broad resource conversion,
+The central chart contains 171 Flux Kustomizations. The broad resource conversion,
 ArtifactGenerator wiring, two output roots, and removal of redundant single-file
 Kustomize wrappers are implemented. They are no longer migration waves.
 
@@ -19,7 +19,7 @@ live in [the design](../docs/cdk8s.md) and [AGENTS.md](AGENTS.md).
 These are recommendations for subsequent implementation PRs. Updating this plan does
 not approve a new abstraction, resource owner, authorization grant, or deployment.
 
-### A. Restore dependency-update ownership
+### B. Restore dependency-update ownership
 
 `renovate.json5` scans both `cluster/k8s` and `cluster/generated` for Flux and
 Kubernetes YAML. Its custom manager covers Terraform provider pins, not cdk8s Python.
@@ -35,11 +35,10 @@ coordinated updates where they describe the same deployed API.
 Done: an actual dependency update changes the Python source and its generated output,
 passes the generation gate, and leaves no independently editable duplicate pin.
 
-### B. Convert useful YAML seams
+### C. Convert useful YAML seams
 
 Start with Grocy's household overlays, then Airlock's typed configuration and the
-rotator rosters; Haku CI's shared runner/Pod values is another independent slice.
-The remainder backlog names the existing models, semantic hazards, and acceptance
+rotator rosters. The remainder backlog names the existing models, semantic hazards, and acceptance
 conditions. Authentik blueprints need a separate ownership decision consistent with
 `cluster/docs/sso.md`; embedding their text in Python is not completion.
 
@@ -52,9 +51,9 @@ Done per slice: one source supplies the duplicated values, the YAML overlay or d
 roster is removed, and the final resource/config semantics are checked. Preserve
 ConfigMap rollout behavior; serialization changes can change hashes and restart Pods.
 
-### C. Close validation gaps before moving checks
+### D. Close validation gaps before moving checks
 
-`fleet_rules.add_fleet_rules` has 11 production registration sites, not universal
+`fleet_rules.add_fleet_rules` has 12 production registration sites, not universal
 coverage. `resolved_references` only rejects a reference when the same name exists as
 the other kind in that chart. Unknown names pass; namespace is not part of its lookup.
 It does not establish that every Secret or ConfigMap reference resolves.
@@ -79,7 +78,7 @@ unrepresentable, not because its inputs became generated.
 Done: the declared validation scope matches its behavior, and the known ESO wiring
 failures are caught without maintaining a second provider inventory.
 
-### D. Reduce raw construction where it buys relationships
+### E. Reduce raw construction where it buys relationships
 
 No production `ApiObject(...)` constructors were found in `cluster/cdk8s`; the
 remaining low-level code is mostly typed `k8s.Kube*` bindings, Helm values and a small
@@ -89,35 +88,23 @@ Prefer fluent constructs when they remove independent selectors, names, ports or
 references. Preserve exact behavior with typed core/CRD bindings when the fluent layer
 would require several compensating patches. Treat these as targeted improvements:
 
-- `forgejo/cache.py`: expose the used toleration through `valkey_instance` using the
-  imported CRD's type instead of a raw `/spec/tolerations` patch.
 - `seaweedfs/s3.py`: use generated structs for grant/access patch values; keep the
   useful Bucket/Identity API and assess its chart-local grant mutation separately.
-- `haku/{console,migration}.py`: check the pinned fluent container API before retaining
-  positional `containers/0/terminationMessagePolicy` patches.
 - Keep the shared typed pod-seccomp patch while the pinned API requires it. Review
-  Kyverno's schema-gap patches and Helm's explicit-null patch against their actual
-  schemas; do not erase them merely to reduce a count.
-- Try one ServiceMonitor helper that takes the actual Service/selector and typed
-  endpoints. Preserve differences in auth, labels and timeouts across ntfy, aiquota and
-  LiteLLM. A helper earns its place by owning that relationship, not just shortening
-  constructor syntax.
+  Helm's explicit-null patch against its actual schema; do not erase it merely to reduce
+  a count.
 
 Done per slice: fewer separately authored facts or untyped values, no loss of expressible
 Kubernetes fields, and a reviewed rendered diff.
 
-### E. Make chart composition consistent in small steps
+### F. Make chart composition consistent in small steps
 
 The existing target is `chart(app, ...values) -> Chart`, with synthesis/writing outside
 resource construction and Flux nodes receiving already-built dependencies and values.
-`litellm/proxy.py:litellm` still accepts `root`, constructs and writes its workload,
-then returns its Flux node. Separate that concrete exception first.
 
-Keep the explicit forward Flux graph. Its 1,648-line entry point is a navigation cost,
-not proof that a registry or graph framework is needed. Extract an area only when its
-inputs/outputs form a clear boundary. Keep the current small `write_charts` helper
-unless a concrete composition/validation requirement justifies a different writer;
-callables used immediately by this helper do not by themselves justify a fleet rewrite.
+Keep the explicit forward Flux graph. Its long entry point is a navigation cost, not
+proof that a registry or graph framework is needed. Extract an area only when its
+inputs/outputs form a clear boundary.
 
 Use an Environment object for repeated deployments (Agentplane, Grocy); constants and
 direct parameters remain suitable for a singleton. Use a function for a repeated
@@ -128,7 +115,7 @@ class or a parallel deployment specification.
 Done: a workload can be synthesized without building its Flux node or writing to a real
 checkout, and new abstractions demonstrate their value on actual callers.
 
-### F. Finish layout only where it simplifies ownership
+### G. Finish layout only where it simplifies ownership
 
 Keep mixed directories colocated under `cluster/k8s` under the current rule. Move a
 whole directory to `cluster/generated` when all its files are generator-owned.
@@ -138,11 +125,6 @@ Cross-root Components remain an open design option, not an approved migration.
 The preserved mechanism findings and alternatives are in the remainder backlog.
 Do not create per-app Secret Kustomizations, copy ciphertext, change image automation,
 or change resource ownership merely to make a directory qualify as generated.
-
-The `gaffer-private-source/bridge.yaml` Flux object is a small, separate conversion:
-it can use a typed explicit GitRepository source without importing the private
-repository's resources into our graph. Bootstrap and parked packages retain their
-distinct owners.
 
 ## Gates and completion
 

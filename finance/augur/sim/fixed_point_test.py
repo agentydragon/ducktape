@@ -12,13 +12,10 @@ from finance.augur.sim.fixed_point import (
     DEFAULT_UNIT_QUANTA,
     ETH_GWEI,
     currency_amount_to_quanta,
-    quanta_array_to_quantity,
-    quantity_array_to_quanta,
     quantity_for_value,
     quantity_scale_for_asset,
     quantity_to_quanta,
     rate_to_ppb,
-    ratio_to_money_factor,
     round_ppb,
     sampled_array_to_quanta,
     validate_currency_quantum,
@@ -45,37 +42,32 @@ def test_model_boundary_quantization_is_exact() -> None:
     )
 
 
-def test_dimensionless_rates_and_levels_use_half_away_rounding() -> None:
+def test_sampled_levels_use_half_away_rounding() -> None:
     values = np.array([-0.0000000005, 0.0, 0.0000000005, 0.1000000005])
-    expected = [-1, 0, 1, 100_000_001]
-    assert round_ppb(values).tolist() == expected
-    assert [rate_to_ppb(float(value)) for value in values] == expected
+    assert round_ppb(values).tolist() == [-1, 0, 1, 100_000_001]
 
 
-def test_exact_ratio_compiles_to_integer_money_factor() -> None:
-    assert ratio_to_money_factor(1, 3) == np.int64(333_333_333)
-    assert ratio_to_money_factor(2, 3) == np.int64(666_666_667)
-    assert ratio_to_money_factor(1, 2) == np.int64(500_000_000)
-    assert ratio_to_money_factor(-1, 2) == np.int64(-500_000_000)
-
-    with pytest.raises(ValueError, match="denominator must be positive"):
-        ratio_to_money_factor(1, 0)
-    with pytest.raises(ValueError, match="does not fit in int64"):
-        ratio_to_money_factor(np.iinfo(np.int64).max, 1)
+def test_authored_rates_convert_exactly_or_refuse() -> None:
+    assert rate_to_ppb(Decimal("0.1000000005") * 2) == 200_000_001
+    assert rate_to_ppb(Decimal("-0.06")) == -60_000_000
+    assert rate_to_ppb(1) == 1_000_000_000
+    with pytest.raises(ValueError, match="not a whole number"):
+        rate_to_ppb(Decimal("0.1000000005"))
 
 
 def test_asset_quantity_scales_include_crypto_quanta() -> None:
     assert quantity_scale_for_asset(SecurityKey(symbol=SecuritySymbol("btc"))) == BTC_SATOSHIS
     assert quantity_scale_for_asset(SecurityKey(symbol=SecuritySymbol("eth"))) == ETH_GWEI
     assert quantity_scale_for_asset(SecurityKey(symbol=SP500_SYMBOL)) == DEFAULT_UNIT_QUANTA
-    assert quantity_to_quanta("2.46761356", scale=BTC_SATOSHIS) == np.int64(246_761_356)
-    assert quantity_to_quanta("43.31454407", scale=ETH_GWEI) == np.int64(43_314_544_070)
+    assert quantity_to_quanta(Decimal("2.46761356"), scale=BTC_SATOSHIS) == 246_761_356
+    assert quantity_to_quanta(Decimal("43.31454407"), scale=ETH_GWEI) == 43_314_544_070
 
 
-def test_quantity_array_converts_at_configured_scale() -> None:
-    quanta = quantity_array_to_quanta(np.array([1.25, 2.0]), scale=DEFAULT_UNIT_QUANTA)
-    np.testing.assert_array_equal(quanta, np.array([1_250_000, 2_000_000], dtype=np.int64))
-    np.testing.assert_allclose(quanta_array_to_quantity(quanta, scale=DEFAULT_UNIT_QUANTA), np.array([1.25, 2.0]))
+def test_authored_quantities_convert_exactly_or_refuse() -> None:
+    with pytest.raises(ValueError, match="not a whole number"):
+        quantity_to_quanta(Decimal("0.0000005"), scale=DEFAULT_UNIT_QUANTA)
+    with pytest.raises(ValueError, match="int64"):
+        quantity_to_quanta(1 << 63, scale=1)
 
 
 @pytest.mark.parametrize(

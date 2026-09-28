@@ -42,15 +42,3 @@ def coupon_amount_quanta(*, face_quanta: int, annual_coupon_rate_ppb: int, coupo
     if coupon >= 1 << 63:
         raise OverflowError("coupon does not fit signed 64-bit money")
     return coupon
-
-
-def is_on_books(*, month_index: int, purchase_month_index: int, maturity_month_index: int) -> bool:
-    """Whether the bond is still an asset at the END of `month_index`.
-
-    Maturity is EXCLUSIVE. The face is redeemed into cash during the maturity month, so by
-    the time that month's balance sheet is struck the position is cash, not a bond. Counting
-    the maturity month as held would double-count the face — once as the bond and once as
-    the cash it just became.
-    """
-
-    return purchase_month_index <= month_index < maturity_month_index

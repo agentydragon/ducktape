@@ -48,9 +48,9 @@ live Secret existence or service readiness.
 ## Lightweight settings imports
 
 Agentplane constructs import Settings from `agentplane/{app,egress,llm_ingress,
-action_service}/main.py`; aiquota imports `aiquota/api.py`. Move schema definitions
-and their required submodels into application-owned modules, updating all callers.
-Use the same approach for Airlock/rotators when converting their config.
+action_service,indexing}/main.py`; aiquota imports `aiquota/api.py`. Move schema
+definitions and their required submodels into application-owned modules, updating all
+callers. Use the same approach for Airlock/rotators when converting their config.
 
 Done: synthesis imports the deployment contract without importing service runtimes.
 Measure before changing Bazel test sizes; removing an import is not timing evidence.
@@ -65,6 +65,23 @@ that policy permits traffic.
 Done per neighborhood: producer and consumers share labels without import cycles or a
 new peer registry.
 
+## Kyverno preconditions typed schema (v2beta1)
+
+`providers/kyverno/cluster_policy.py`'s `Validate.deny(conditions=...)` takes
+`preconditions`/`deny.conditions` as a raw dict because `ClusterPolicy`'s `v1` schema --
+the version `cdk8s_import` names plainly, and what this repo's `ClusterPolicySpecRules`
+types come from -- declares `preconditions` as `x-kubernetes-preserve-unknown-fields:
+true`, with no structure at all.
+
+The CRD's `v2beta1` schema (served, not storage; generated as suffixed
+`ClusterPolicyV2Beta1Spec*` types) has a real typed shape instead: `any`/`all` arrays of
+`{key, operator, value, message}`, with `operator` a genuine 14-value enum. Migrating
+the wrapper to `v2beta1` would let `Validate.deny()` grow a typed `preconditions`
+factory instead of a raw-dict escape hatch -- worth doing sometime, not urgent.
+
+Done: `providers/kyverno` targets `v2beta1` (or offers it alongside `v1`), and
+`preconditions` has a typed factory built from the real `any`/`all` shape.
+
 ## Haku setup-script contract
 
 `test_haku_sandbox_setup.py` checks the generated SandboxTemplate's environment against
@@ -77,13 +94,9 @@ retiring this real cross-artifact test. Keep the image/runtime package independe
 
 ## Extract only when another caller needs it
 
-The Agentplane sandbox egress fence combines sidecar, token volume, CA mount, routing
-environment and policy labels. Extract their composition when a second exec-target
-template needs it; do not build a generic workload framework for the existing caller.
-
 A second Haku deployment may justify Environment props. Namespace-default charts may
 help a purely namespaced component, but splitting mixed-scope charts solely to omit
-`metadata(..., namespace)` is not scheduled.
+`namespace=` from each object's `ApiObjectMetadata` is not scheduled.
 
 ## Parked
 

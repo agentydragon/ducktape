@@ -30,8 +30,12 @@ transaction costs, defaults, inflation, and interest on cash are absent.
   set to zero to match the experiment's start-before-first-coupon convention.
   Comparison with a dated arm therefore changes coupon timing and rollover
   frequency as well as valuation. It does not isolate one source of disagreement.
-- `run.py` gives those paths to `compile_run`, then drives `ActionSession` from
-  Python. The shared <../../policy/funding.py> batch policy receives current
+- `run.py` composes each spending cell straight onto `World`s, one per path: a
+  `Situation` holds the compiled unit-price and coupon series
+  every path shares, and `compose(case, rollout_id)` declares the checking
+  accounts, the strategy lot, its coupon distribution and the annual claims.
+  `ActionSession` then drives those worlds from Python. The shared
+  <../../policy/funding.py> batch policy receives current
   observations, proposes sales to cover due claims, then full claim payments.
   Coupons already received in checking reduce the required sale; no purchases,
   rebalancing, tax gross-up or retry occurs. Surplus coupons accumulate in
@@ -41,7 +45,7 @@ transaction costs, defaults, inflation, and interest on cash are absent.
   idle cash **inside the investment**, or use proceeds to buy replacement bonds
   when rolling. Principal is not labeled coupon income.
 
-This is a unitized investment model, not tradable `BondHolding` support or
+This is a unitized investment model, not tradable held-bond (`World.hold_bond`) support or
 a model of an actual ETF. Redeeming units before maturity liquidates a proportional
 part of the investment exposure. Only the zero-withdrawal `hold` control literally
 retains every initial bond to maturity; the spending cells test that construction
@@ -61,8 +65,9 @@ contains the supplied discount factors. Each construction directory contains
 sales, purchases, and redemption. The proxy exposes only prices and coupons;
 its unobserved internal flows are not reported as zero events.
 
-Each spending cell saves its complete `execution_input.json`, canonical compact
-results in `rollouts.json`, and selected forensic replays in `traces.json`.
+Each spending cell saves canonical compact results in `rollouts.json` and
+selected forensic replays in `traces.json`; there is no input artifact, since a
+cell is re-composed from `config.json`'s spending amount and the construction.
 Both result files use `sim.results.Finished`; read them with
 `Finished.model_validate_json(path.read_text())` and access `.rollouts`.
 `--trace-rollouts` selects original zero-based path IDs, in the supplied order;

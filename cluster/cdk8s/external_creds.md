@@ -22,10 +22,12 @@ contract.
   `namespace` field.
 - The consumer owns its `external-creds-reader` ServiceAccount and
   ExternalSecret.
-- The consumer Flux Kustomization depends on both `external-creds` and
-  `external-secrets-config`. Static suppliers do not depend on ESO or consumer
-  namespaces: a RoleBinding may name a ServiceAccount before that namespace or
-  identity exists.
+- The consumer Flux Kustomization depends on `external-secrets-operator`, which
+  serves the ExternalSecret CRD and ESO's admission webhook, and on neither
+  `external-secrets-config` nor `external-creds`: its ExternalSecret retries
+  until the store, the source Secret and its RoleBinding exist. Static suppliers
+  do not depend on ESO or consumer namespaces: a RoleBinding may name a
+  ServiceAccount before that namespace or identity exists.
 
 Approval stays at the source. Referencing the shared ClusterSecretStore does
 not grant access: the Kubernetes provider cannot read a canonical Secret

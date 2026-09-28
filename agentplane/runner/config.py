@@ -38,6 +38,10 @@ class RunnerConfig:
     # Base environment of every harness child, as --harness-env gave it; native credentials are
     # added per launch.
     environment: Mapping[str, str] = field(default_factory=dict)
+    # Per-route context windows for harness models with verified non-default limits. These apply to
+    # each harness process selected for that session; model changes across different limits are
+    # refused because neither harness can safely update its compaction window mid-thread.
+    model_context_windows: Mapping[str, int] = field(default_factory=dict)
     claude: ClaudeLaunch | None = None
     codex: CodexLaunch | None = None
     # A hidden test-only process-integration seam. Deployments never set it. Once the runner

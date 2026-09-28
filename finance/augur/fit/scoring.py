@@ -85,19 +85,5 @@ def _marginal_mean_sd(pred: dist.Distribution) -> tuple[jnp.ndarray, jnp.ndarray
         sd = jnp.sqrt(jnp.diagonal(cov, axis1=-2, axis2=-1))
         return mean, sd
     raise TypeError(
-        f"predictive distribution type {type(pred).__name__!r} has no closed-form marginals; "
-        "scorer should sample and fit Gaussian via empirical_marginal_mean_sd(...) or skip."
+        f"predictive distribution type {type(pred).__name__!r} has no closed-form marginals; scorer should skip it."
     )
-
-
-def empirical_marginal_mean_sd(samples: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Fit per-series (mean, sd) to a (N, F) cloud of samples. Used as a
-    fallback for predictives that aren't analytically MultivariateNormal
-    (the closed-form scorers above then operate on these moments)."""
-
-    arr = np.asarray(samples)
-    if arr.ndim != 2:
-        raise ValueError(f"samples must be 2-D (N, F); got shape {arr.shape}")
-    mean = arr.mean(axis=0)
-    sd = arr.std(axis=0, ddof=1)
-    return mean, sd

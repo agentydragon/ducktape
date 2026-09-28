@@ -33,47 +33,51 @@ def _git_output(*args: str) -> str:
 def graph_wide_change_reason(paths: list[str]) -> str | None:
     """Return the first reason a changed path requires a graph-wide sweep."""
     exact_paths = {
+        # keep-sorted start
+        ".bazelignore",
         ".bazelrc",
         ".bazelversion",
-        ".bazelignore",
-        "MODULE.bazel",
-        "MODULE.bazel.lock",
-        "WORKSPACE",
-        "WORKSPACE.bazel",
-        "WORKSPACE.bzlmod",
-        "WORKSPACE.bzlmod.lock",
         ".github/workflows/bazel-ci.yml",
         ".github/workflows/ci.yml",
-        "devinfra/ci/bazel_ci.sh",
-        "devinfra/ci/bazel_ci.py",
-        "Cargo.toml",
         "Cargo.lock",
-        "go.mod",
-        "go.sum",
-        "package.json",
-        "pnpm-lock.yaml",
-        "pyproject.toml",
-        "uv.lock",
-        "poetry.lock",
-        "Pipfile.lock",
-    }
-    manifest_basenames = {
+        "Cargo.toml",
         "MODULE.bazel",
         "MODULE.bazel.lock",
+        "Pipfile.lock",
         "WORKSPACE",
         "WORKSPACE.bazel",
         "WORKSPACE.bzlmod",
         "WORKSPACE.bzlmod.lock",
-        "Cargo.toml",
-        "Cargo.lock",
+        "devinfra/ci/bazel_ci.py",
+        "devinfra/ci/bazel_ci.sh",
         "go.mod",
         "go.sum",
         "package.json",
         "pnpm-lock.yaml",
+        "poetry.lock",
         "pyproject.toml",
         "uv.lock",
-        "poetry.lock",
+        # keep-sorted end
+    }
+    manifest_basenames = {
+        # keep-sorted start
+        "Cargo.lock",
+        "Cargo.toml",
+        "MODULE.bazel",
+        "MODULE.bazel.lock",
         "Pipfile.lock",
+        "WORKSPACE",
+        "WORKSPACE.bazel",
+        "WORKSPACE.bzlmod",
+        "WORKSPACE.bzlmod.lock",
+        "go.mod",
+        "go.sum",
+        "package.json",
+        "pnpm-lock.yaml",
+        "poetry.lock",
+        "pyproject.toml",
+        "uv.lock",
+        # keep-sorted end
     }
 
     for path in paths:

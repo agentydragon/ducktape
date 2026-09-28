@@ -9,8 +9,7 @@ import pstats
 import resource
 from pathlib import Path
 
-from finance.augur.sim.artifacts import write_prepared_input
-from finance.augur.x.monthly_actions.run import execute, prepare
+from finance.augur.x.monthly_actions.run import execute, situation
 
 
 def main() -> None:
@@ -25,14 +24,11 @@ def main() -> None:
         raise ValueError("native threads must be positive")
     os.environ["RAYON_NUM_THREADS"] = str(args.native_threads)
     args.output_dir.mkdir(parents=True, exist_ok=False)
-    input_path = args.output_dir / "execution-input.json"
     output_path = args.output_dir / "outcomes.json"
-    write_prepared_input(prepare(args.rollouts, args.horizon_months), input_path)
-    with input_path.open("rb") as stream:
-        input_digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    case = situation(args.rollouts, args.horizon_months)
     ids = range(args.rollouts)
     profiler = cProfile.Profile()
-    output = profiler.runcall(execute, input_path, output_path, ids, args.capture)
+    output = profiler.runcall(execute, case, output_path, ids, args.capture)
     profiler.dump_stats(args.output_dir / "execution.prof")
     # Record high-water marks before verification/hash construction adds allocations.
     self_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
@@ -49,16 +45,14 @@ def main() -> None:
         "profiled_seconds": seconds,
         "profiled_path_months_per_second": observed_months / seconds,
         "peak_self_rss_kib": self_rss,
-        "input_sha256": input_digest,
-        "input_bytes": input_path.stat().st_size,
         "output_bytes": output_path.stat().st_size,
         "compact_sha256": compact_hash.hexdigest(),
         "logical_cpu_count": os.cpu_count(),
         "rayon_num_threads": args.native_threads,
         "paths": "alternating fixed $100/$50 quotes; repeated paths, not probability samples",
         "financial_scope": "two-share liquidation, one $150 bill, synthetic 10% LTCG tax; poor-price paths stop month 0; surviving paths pay tax month 12; subsequent decisions are empty",
-        "timing_scope": "cProfile-instrumented Python-owned action session; includes prepared input reading/parsing, monthly Python policy/binding/native work, terminal JSON decoding and output file writing; excludes input compilation and file creation, not isolated native evaluation",
-        "memory_scope": "one process high-water mark includes input preparation, Python policy/observations/results and retained native state; no child executor, not isolated Rust heap",
+        "timing_scope": "cProfile-instrumented Python-owned action session; includes per-path world composition, monthly Python policy/binding/native work, terminal JSON decoding and output file writing; excludes price-path preparation and file creation, not isolated native evaluation",
+        "memory_scope": "one process high-water mark includes path preparation, composed worlds, Python policy/observations/results and retained native state; no child executor, not isolated Rust heap",
     }
     (args.output_dir / "report.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(report, sort_keys=True))

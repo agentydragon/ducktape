@@ -11,13 +11,14 @@ from collections.abc import Sequence
 import numpy as np
 from numpy.typing import NDArray
 
-from finance.augur.sim.metric_composition import BASE_METRIC_NAMES
-from finance.augur.sim.prepared import CompiledRun
-from finance.augur.sim.product_metrics import ProductMetricArrays
+from finance.augur.product.metric_composition import BASE_METRIC_NAMES
+from finance.augur.product.metrics import ProductMetricArrays
+from finance.augur.sim.holdings import private_issuer
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.results import CashSeries, ConsumptionTarget, InsufficientCash, PaymentRejected, Rollout, Summary
 
 
-def _total_series(rows: Sequence[CashSeries], actor_id: str, snapshots: int) -> NDArray[np.int64]:
+def _total_series(rows: Sequence[CashSeries], actor_id: AgentId, snapshots: int) -> NDArray[np.int64]:
     for row in rows:
         if row.account.agent_id != actor_id or len(row.values) != snapshots:
             raise ValueError("captured series must belong to the selected actor and cover its observed prefix")
@@ -45,25 +46,24 @@ def _shortfall(summary: Summary) -> int:
     return total
 
 
-def metric_arrays(run: CompiledRun, rollouts: Sequence[Rollout], *, primary_agent_id: str) -> ProductMetricArrays:
-    """Use finished results from this prepared run, in their supplied selection order.
+def metric_arrays(
+    rollouts: Sequence[Rollout],
+    *,
+    primary_agent_id: AgentId,
+    horizon_months: int,
+    currency_code: str,
+    currency_quantum: str,
+) -> ProductMetricArrays:
+    """Use finished results over a `horizon_months` horizon, in their supplied selection order.
 
     Cash, public securities, opaque TLH value and held-bond principal are supported here. Historical property
     and private-equity values must be captured before those portfolios can use this adapter;
     the configured app retains those capabilities. Masked padding is not observed money.
     """
-    scenario = run.scenario
-    if scenario.has_property_purchases:
-        raise ValueError("property and mortgage histories are not captured for product action projection")
-    if any(pool.asset_id.startswith("private_equity:") for pool in scenario.holding_pools):
-        raise ValueError("private-equity histories are not captured for product action projection")
-    bond_accounts = {
-        bond.bond_id: bond.account_id for bond in scenario.initial_bonds if bond.agent_id == primary_agent_id
-    }
     ids = [rollout.rollout_id for rollout in rollouts]
-    if not ids or len(set(ids)) != len(ids) or any(not 0 <= id_ < run.rollout_count for id_ in ids):
+    if not ids or len(set(ids)) != len(ids):
         raise ValueError("product projection needs a nonempty unique selection of original rollout IDs")
-    snapshot_count = scenario.horizon_months + 1
+    snapshot_count = horizon_months + 1
     series = {name: np.zeros((snapshot_count, len(rollouts)), dtype=np.int64) for name in BASE_METRIC_NAMES}
     failed_month = np.full(len(rollouts), -1, dtype=np.int64)
     for column, rollout in enumerate(rollouts):
@@ -79,13 +79,16 @@ def metric_arrays(run: CompiledRun, rollouts: Sequence[Rollout], *, primary_agen
             raise ValueError("finished result does not cover its declared completed or stopped prefix")
         if ending.properties or ending.mortgages:
             raise ValueError("ending book contains a domain without captured historical product values")
+        if any(private_issuer(lot.asset_id) is not None for lot in ending.lots):
+            raise ValueError("private-equity histories are not captured for product action projection")
+        # The ending book lists every bond the world holds, redeemed ones included.
         captured_bonds = {row.bond_id: row.account.account_id for row in summary.bond_principal}
-        ending_bonds = {bond.bond_id: bond.account_id for bond in ending.bonds if bond.agent_id == primary_agent_id}
-        if (
-            len(captured_bonds) != len(summary.bond_principal)
-            or captured_bonds != bond_accounts
-            or ending_bonds != bond_accounts
-        ):
+        ending_bonds = (
+            {}
+            if ending.bonds is None
+            else {bond.bond_id: bond.account_id for bond in ending.bonds if bond.agent_id == primary_agent_id}
+        )
+        if len(captured_bonds) != len(summary.bond_principal) or captured_bonds != ending_bonds:
             raise ValueError("held-bond principal history must cover each declared actor bond/account exactly once")
         series["cash_quanta"][:observed, column] = _total_series(summary.cash, primary_agent_id, observed)
         series["holding_value_quanta"][:observed, column] = _total_series(
@@ -99,7 +102,7 @@ def metric_arrays(run: CompiledRun, rollouts: Sequence[Rollout], *, primary_agen
         rollout_ids=tuple(ids),
         month_index=np.arange(snapshot_count, dtype=np.int64),
         failed_month=failed_month,
-        currency_code=run.currency_code,
-        currency_quantum=run.currency_quantum,
+        currency_code=currency_code,
+        currency_quantum=currency_quantum,
         base_series=tuple(series[name] for name in BASE_METRIC_NAMES),
     )

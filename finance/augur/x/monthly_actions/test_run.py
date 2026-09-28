@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.artifacts import read_prepared_input
 from finance.augur.sim.books import AccountRef
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.results import (
     Executed,
     Finished,
@@ -18,7 +18,7 @@ from finance.augur.sim.results import (
     Rejected,
     RejectedAction,
 )
-from finance.augur.x.monthly_actions.run import run_example
+from finance.augur.x.monthly_actions.run import compose, run_example, situation
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
@@ -55,7 +55,7 @@ def test_bill_and_later_tax_are_paid_from_actual_sale_proceeds(example: Finished
     assert [
         row.balance
         for row in closing.balances
-        if row.account == AccountRef(agent_id="example-household", account_id="checking")
+        if row.account == AccountRef(agent_id=AgentId("example-household"), account_id=AccountId("checking"))
     ] == [3_800]
     assert [(lot.units_remaining, lot.basis_remaining) for lot in closing.lots] == [(0, 0)]
     for entry in financial.journal:
@@ -80,7 +80,7 @@ def test_unfunded_bill_preserves_sale_and_stops_without_later_actions(example: F
     assert [
         row.balance
         for row in stopped_book.balances
-        if row.account == AccountRef(agent_id="example-household", account_id="checking")
+        if row.account == AccountRef(agent_id=AgentId("example-household"), account_id=AccountId("checking"))
     ] == [10_000]
     assert [(lot.units_remaining, lot.basis_remaining) for lot in stopped_book.lots] == [(0, 0)]
 
@@ -151,9 +151,9 @@ def test_cash_only_cli_buys_unheld_asset_then_sells_and_pays_tax(tmp_path: Path)
         ],
         check=True,
     )
-    prepared = read_prepared_input(output_dir / "execution-input.json").scenario
-    assert not prepared.initial_lots
-    assert [(pool.agent_id, pool.account_id, pool.asset_id) for pool in prepared.holding_pools] == [
+    composed = compose(situation(cash_only_start=True), 0)
+    assert not composed.holdings.lots
+    assert [(pool.agent_id, pool.account_id, pool.asset_id) for pool in composed.holdings.pools] == [
         ("example-household", "brokerage", "example-stock")
     ]
     rollouts = Finished.model_validate_json((output_dir / "outcomes.json").read_text()).rollouts
@@ -175,7 +175,7 @@ def test_cash_only_cli_buys_unheld_asset_then_sells_and_pays_tax(tmp_path: Path)
         ending_cash = next(
             row.balance
             for row in financial.books[-1].balances
-            if row.account == AccountRef(agent_id="example-household", account_id="checking")
+            if row.account == AccountRef(agent_id=AgentId("example-household"), account_id=AccountId("checking"))
         )
         assert ending_cash == 8_200
 
@@ -183,7 +183,7 @@ def test_cash_only_cli_buys_unheld_asset_then_sells_and_pays_tax(tmp_path: Path)
     for summary, detailed in zip(compact, rollouts, strict=True):
         assert summary.summary == detailed.summary
         holding = summary.summary.public_holdings[0]
-        assert holding.account == AccountRef(agent_id="example-household", account_id="brokerage")
+        assert holding.account == AccountRef(agent_id=AgentId("example-household"), account_id=AccountId("brokerage"))
         assert holding.values[:3] == [0, 24_000, 0]
 
 
@@ -210,7 +210,6 @@ def test_profile_entrypoint_compares_matching_capture_workloads(tmp_path: Path) 
         reports.append(json.loads((output / "report.json").read_text()))
         assert (output / "execution.prof").stat().st_size > 0
     compact, detailed = reports
-    assert compact["input_sha256"] == detailed["input_sha256"]
     assert compact["compact_sha256"] == detailed["compact_sha256"]
     assert compact["observed_path_months"] == detailed["observed_path_months"] == 28
     assert compact["output_bytes"] < detailed["output_bytes"]

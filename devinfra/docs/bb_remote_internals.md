@@ -343,6 +343,11 @@ recognized — use `--script`:
 bb remote --script 'bazel mod explain protobuf'
 ```
 
+**Gotcha: `git` can page inside `--script`.** A `git diff` there stopped at `less`'s `:` prompt
+and hung the run until the client's 28-minute timeout (2026-09-26); the same script with
+`git --no-pager` finished in about a minute. Use `git --no-pager`, or `export GIT_PAGER=cat` at
+the top of the script.
+
 ### Output stream separation
 
 Source: `cli/remotebazel/remotebazel.go` (`streamLogs`, `printLogs`),

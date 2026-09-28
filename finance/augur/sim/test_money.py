@@ -18,7 +18,6 @@ from finance.augur.sim.money import (
     mul_div_wide,
     position_value,
     scaled,
-    trunc_div,
 )
 
 COUNTS = st.integers(MIN_COUNT, MAX_COUNT)
@@ -172,11 +171,6 @@ def test_the_product_is_formed_before_either_scale_divides_out(rate: int, expect
 
 def test_a_gwei_scaled_position_does_not_overflow_the_denominator() -> None:
     assert distribution_value(7 * MONEY_FACTOR_SCALE, 3 * 1_000_000_000, 1_000_000_000) == 21
-
-
-@pytest.mark.parametrize(("numerator", "denominator", "expected"), [(-5, 2, -2), (5, -2, -2), (-5, -2, 2)])
-def test_truncating_division_does_not_floor_negative_values(numerator: int, denominator: int, expected: int) -> None:
-    assert trunc_div(numerator, denominator) == expected
 
 
 def test_explicit_count_and_intermediate_overflows() -> None:

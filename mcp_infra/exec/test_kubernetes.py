@@ -1,4 +1,4 @@
-"""The Kubernetes exec backend's diagnosis of a failed `pods/exec`.
+"""The Kubernetes exec backend: the command it sends, and its diagnosis of a failed `pods/exec`.
 
 Both ends are where a library says least. aiohttp reports a rejected handshake as a bare
 ``WSServerHandshakeError`` reading "invalid response status", with the API server's own reason
@@ -14,7 +14,20 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from mcp_infra.exec.kubernetes import PodExecError, _exit_code, _handshake_error
+from mcp_infra.exec.kubernetes import PodExecError, _command, _exit_code, _handshake_error
+
+
+@pytest.mark.parametrize(
+    ("cwd", "shell_script"),
+    [
+        # No directory of its own: the script starts where the runtime starts every exec, which
+        # is the working directory the container's template or image sets.
+        (None, "pwd"),
+        ("/srv/work dir", "cd -- '/srv/work dir'\npwd"),
+    ],
+)
+def test_a_script_changes_directory_only_when_asked(cwd: str | None, shell_script: str) -> None:
+    assert _command("pwd", cwd=cwd, timeout_seconds=5)[-3:] == ["bash", "-lc", shell_script]
 
 
 @pytest.mark.parametrize(

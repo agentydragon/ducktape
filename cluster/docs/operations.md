@@ -66,9 +66,9 @@ qm terminal <vmid>
 
 See <bootstrap.md> for the issuer toggle mechanism. To switch:
 
-1. Edit `LETSENCRYPT_ISSUER` in `cdk8s/cert_manager/issuer_config.py` and regenerate
+1. Edit `LETSENCRYPT_ISSUER` in `cdk8s/cert_manager/config.py` and regenerate
 2. Commit and push
-3. Flux re-renders all Ingresses and cert-manager re-issues certificates automatically
+3. Flux applies the regenerated manifests and cert-manager re-issues certificates automatically
 
 **Rate limit warning:** Each switch re-issues all certificates. Avoid rapid toggling
 (5 duplicate certs/domain/week on production LE).

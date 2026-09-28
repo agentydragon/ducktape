@@ -94,6 +94,10 @@ curl -H "Authorization: Bearer $AW_READ_TOKEN" \
   https://activitywatch-read.allegedly.works/api/0/buckets/
 ```
 
+agentplane-staging sandboxes hold no copy: their egress proxy substitutes the token for the
+`agentplane-credential-activitywatch-read` placeholder on the read route's API
+(`cluster/cdk8s/agentplane/egress_staging_credentials.py`).
+
 ## Storage Debt
 
 The durable store is one SQLite file on Proxmox-pinned node-local storage — an accepted

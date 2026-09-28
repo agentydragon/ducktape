@@ -18,11 +18,11 @@ from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.recording import THREAD_FOLD_EPOCH
-from agentplane.app.api import create_app, upstream_http_error
+from agentplane.app.api import ModelCatalog, ModelOption, create_app, upstream_http_error
 from agentplane.app.conftest import AGENT_AUTH
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
@@ -53,7 +53,13 @@ from agentplane.runner.testing.unanswering_runner import UnansweringRunner
 # gazelle:include_dep @pypi//protobuf
 
 
-TEST_MODELS = {Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]}
+TEST_MODELS = ModelCatalog(
+    models=[
+        ModelOption(model="test-claude-model", display_name="Test Claude Model"),
+        ModelOption(model="test-codex-model", display_name="Test Codex Model"),
+    ],
+    harnesses={Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]},
+)
 
 
 @pytest.mark.parametrize("host", ["identity-provider.invalid", "actions.invalid"])
@@ -107,13 +113,15 @@ TEST_PRESETS = PresetCatalog(
 
 @pytest.fixture
 async def electric(
-    content: ContentStore, event_logs: EventLogStore, thread_updates: ThreadUpdates
+    content: ContentStore, event_logs: EventLogStore, database_updates: DatabaseUpdates
 ) -> AsyncIterator[ElectricProxy]:
     async def unexpected(request: httpx.Request) -> httpx.Response:
         raise AssertionError(f"API contract tests must not dispatch Electric requests: {request.url}")
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(unexpected), base_url="http://electric") as client:
-        yield ElectricProxy(client, content, event_logs=event_logs, thread_changes=thread_updates.changes)
+        yield ElectricProxy(
+            client, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]
+        )
 
 
 @pytest.fixture
@@ -121,7 +129,7 @@ def client(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: ThreadStore,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
@@ -172,7 +180,7 @@ def client(
         electric=electric,
         event_logs=event_logs,
         content=content,
-        thread_updates=thread_updates,
+        database_updates=database_updates,
         operator_sessions=operator_sessions,
     )
     with TestClient(app, headers=AGENT_AUTH) as test_client:
@@ -499,7 +507,7 @@ def test_shared_instructions_are_also_added_to_direct_session_launches(
 def test_a_runner_that_does_not_answer_is_a_503(
     inventory: SandboxInventory,
     store: ThreadStore,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
@@ -525,7 +533,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
                 event_logs=event_logs,
                 content=content,
                 ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion),
-                thread_changes=thread_updates.changes,
+                thread_changes=database_updates.changes[Channel.THREADS],
             ),
             store,
             TEST_MODELS,
@@ -536,7 +544,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
             reviewer=reviewer,
             event_logs=event_logs,
             content=content,
-            thread_updates=thread_updates,
+            database_updates=database_updates,
             operator_sessions=operator_sessions,
         )
         with TestClient(app, headers=AGENT_AUTH) as client:
@@ -549,7 +557,7 @@ async def test_a_runner_that_never_answers_open_is_a_504_naming_the_session(
     monkeypatch: pytest.MonkeyPatch,
     inventory: SandboxInventory,
     store: ThreadStore,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
@@ -578,7 +586,7 @@ async def test_a_runner_that_never_answers_open_is_a_504_naming_the_session(
                 event_logs=event_logs,
                 content=content,
                 ingester=ingester,
-                thread_changes=thread_updates.changes,
+                thread_changes=database_updates.changes[Channel.THREADS],
             ),
             store,
             TEST_MODELS,
@@ -589,7 +597,7 @@ async def test_a_runner_that_never_answers_open_is_a_504_naming_the_session(
             reviewer=reviewer,
             event_logs=event_logs,
             content=content,
-            thread_updates=thread_updates,
+            database_updates=database_updates,
             operator_sessions=operator_sessions,
         )
         try:
@@ -765,8 +773,11 @@ def test_presets_publish_editable_sandbox_and_thread_defaults(client: TestClient
 def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
     """The catalog the session form offers; a thread carries its model, a sandbox does not."""
     assert client.get("/models").json() == {
-        "HARNESS_CLAUDE": ["test-claude-model"],
-        "HARNESS_CODEX": ["test-codex-model"],
+        "models": [
+            {"model": "test-claude-model", "display_name": "Test Claude Model"},
+            {"model": "test-codex-model", "display_name": "Test Codex Model"},
+        ],
+        "harnesses": {"HARNESS_CLAUDE": ["test-claude-model"], "HARNESS_CODEX": ["test-codex-model"]},
     }
 
 
@@ -775,7 +786,7 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: EventLogStore,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
@@ -801,7 +812,7 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
         reviewer=reviewer,
         event_logs=event_logs,
         content=content,
-        thread_updates=thread_updates,
+        database_updates=database_updates,
         operator_sessions=operator_sessions,
     )
     async with httpx.AsyncClient(
@@ -829,7 +840,7 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
     store: ThreadStore,
     event_logs: EventLogStore,
     ingestion: Ingestion,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
@@ -878,7 +889,7 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
         reviewer=reviewer,
         event_logs=event_logs,
         content=content,
-        thread_updates=thread_updates,
+        database_updates=database_updates,
         operator_sessions=operator_sessions,
     )
     body = {"projection_epoch": THREAD_FOLD_EPOCH, "command_ids": ["failed", "pending", "absent", "failed"]}
@@ -912,7 +923,7 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: EventLogStore,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
@@ -935,7 +946,7 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
         reviewer=reviewer,
         event_logs=event_logs,
         content=content,
-        thread_updates=thread_updates,
+        database_updates=database_updates,
         operator_sessions=operator_sessions,
     )
     async with httpx.AsyncClient(
@@ -955,12 +966,67 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
         assert (await http.post("/threads/00000000-0000-0000-0000-000000000000/unarchive")).status_code == 404
 
 
+async def test_a_running_thread_cannot_be_archived(
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: ThreadStore,
+    event_logs: EventLogStore,
+    database_updates: DatabaseUpdates,
+    operator_sessions: OperatorSessionStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    reviewer: TokenReviewer,
+    content: ContentStore,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    custom_objects.objects[("sandboxes", "live")] = sandbox("live")
+    core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
+    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
+    thread_id = await event_logs.open("live", "s-1", spec)
+
+    async def running_sessions(_sandbox: str) -> list[protocol_pb2.SessionSummary]:
+        return [
+            protocol_pb2.SessionSummary(session_id="s-1", spec=spec, harness_state=protocol_pb2.HARNESS_STATE_RUNNING)
+        ]
+
+    monkeypatch.setattr(bridge, "list_sessions", running_sessions)
+    app = create_app(
+        inventory,
+        bridge,
+        store,
+        TEST_MODELS,
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+        event_logs=event_logs,
+        content=content,
+        database_updates=database_updates,
+        operator_sessions=operator_sessions,
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+    ) as http:
+        response = await http.post(f"/threads/{thread_id}/archive")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "stop the harness before archiving this thread"
+    thread = await store.get_thread(thread_id)
+    assert thread is not None
+    assert thread.archived is False
+
+
 async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: EventLogStore,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
@@ -993,7 +1059,7 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
         reviewer=reviewer,
         event_logs=event_logs,
         content=content,
-        thread_updates=thread_updates,
+        database_updates=database_updates,
         operator_sessions=operator_sessions,
     )
     async with httpx.AsyncClient(

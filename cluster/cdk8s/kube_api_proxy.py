@@ -8,18 +8,13 @@ proxies to the apiserver over HTTPS, preserving the Authorization header.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "kube-api-proxy"
 NAMESPACE = "default"
@@ -76,13 +71,11 @@ def _deployment(chart: Chart) -> None:
             name=_PROXY,
             namespace=NAMESPACE,
             annotations={
-                # Restart pods when the config changes (subPath mounts don't hot-reload).
-                "reloader.stakater.com/auto": "true",
                 "description": (
                     "nginx reverse proxy: HTTP 8080 → HTTPS kubernetes.default.svc:443.\n"
                     "Bridges the gap between Cilium Gateway (TLS terminate) and the\n"
                     "apiserver (requires HTTPS). Used by kubeapi.allegedly.works route.\n"
-                ),
+                )
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -98,6 +91,8 @@ def _deployment(chart: Chart) -> None:
                             image="nginxinc/nginx-unprivileged:1.31-alpine",
                             ports=[k8s.ContainerPort(container_port=_PORT)],
                             volume_mounts=[
+                                # A subPath mount doesn't hot-reload: Reloader's `autoReloadAll`
+                                # rolls the pods when the config changes.
                                 k8s.VolumeMount(
                                     name="config",
                                     mount_path="/etc/nginx/nginx.conf",
@@ -149,9 +144,9 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(
-            _ROUTE,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_ROUTE,
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "HTTPRoute for the Kubernetes API at kubeapi.allegedly.works. The Cilium\n"
@@ -167,7 +162,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        hostname="kubeapi.allegedly.works",
+        hostnames=["kubeapi.allegedly.works"],
         backend=_PROXY,
         port=_PORT,
         hsts=False,
@@ -193,15 +188,11 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def kube_api_proxy(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
+def kube_api_proxy(chart: Chart, directory: RenderedDirectory) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         wait=None,
         health_checks=[
             KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=_PROXY, namespace=NAMESPACE),

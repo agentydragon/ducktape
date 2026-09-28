@@ -29,14 +29,10 @@ from cdk8s_plus_34 import (
     Volume,
 )
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecDataFrom,
     ExternalSecretSpecDataFromRewrite,
     ExternalSecretSpecDataFromRewriteRegexp,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
@@ -44,13 +40,13 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateMetadata,
 )
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, pod_policy
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret
+from cluster.cdk8s.external_secrets.minted_secret import password_generator
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy, deny_all_egress
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 
 _NAMESPACE = "agentplane-testing"
 _NAME = "agentplane-testing-dex"
@@ -63,15 +59,6 @@ _ISSUER = "https://agentplane-dex-testing.allegedly.works/dex"
 _ACCEPTANCE_EMAIL = "test-user@agentplane-testing.invalid"
 _ACCEPTANCE_USERNAME = "test-user"
 _CONFIG_DIR = "/etc/dex"
-
-
-def _password_generator(scope: Construct, id: str, *, name: str, length: int, digits: int) -> None:
-    Password(
-        scope,
-        id,
-        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
-        spec=PasswordSpec(length=length, digits=digits, symbols=0, no_upper=False, allow_repeat=True),
-    )
 
 
 def _dex_config_yaml() -> str:
@@ -113,26 +100,42 @@ def _dex_config_yaml() -> str:
 
 
 def _add_credentials(scope: Construct) -> None:
-    _password_generator(
-        scope, "dex-operator-password-generator", name="agentplane-testing-dex-operator-password", length=48, digits=12
+    operator_password = password_generator(
+        scope,
+        "dex-operator-password-generator",
+        name="agentplane-testing-dex-operator-password",
+        namespace=_NAMESPACE,
+        length=48,
+        digits=12,
     )
-    _password_generator(
-        scope, "dex-client-secret-generator", name="agentplane-testing-dex-client-secret", length=48, digits=12
+    client_secret = password_generator(
+        scope,
+        "dex-client-secret-generator",
+        name="agentplane-testing-dex-client-secret",
+        namespace=_NAMESPACE,
+        length=48,
+        digits=12,
     )
-    _password_generator(
-        scope, "mcp-client-secret-generator", name="agentplane-testing-mcp-client-secret", length=48, digits=12
+    mcp_client_secret = password_generator(
+        scope,
+        "mcp-client-secret-generator",
+        name="agentplane-testing-mcp-client-secret",
+        namespace=_NAMESPACE,
+        length=48,
+        digits=12,
     )
-    _password_generator(
-        scope, "session-secret-generator", name="agentplane-testing-agentplane-session-secret", length=64, digits=16
+    session_secret = password_generator(
+        scope,
+        "session-secret-generator",
+        name="agentplane-testing-agentplane-session-secret",
+        namespace=_NAMESPACE,
+        length=64,
+        digits=16,
     )
 
     def rewrite(source: str, target: str) -> ExternalSecretSpecDataFrom:
-        return ExternalSecretSpecDataFrom(
-            source_ref=ExternalSecretSpecDataFromSourceRef(
-                generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                    kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD, name=source
-                )
-            ),
+        return DataFrom.from_password_generator(
+            source,
             rewrite=[
                 ExternalSecretSpecDataFromRewrite(
                     regexp=ExternalSecretSpecDataFromRewriteRegexp(source="password", target=target)
@@ -140,16 +143,16 @@ def _add_credentials(scope: Construct) -> None:
             ],
         )
 
-    add_external_secret(
+    ExternalSecret(
         scope,
         "oidc-credentials",
-        name="agentplane-oidc",
-        namespace=_NAMESPACE,
-        refresh="8760h",
-        data_from=[
-            rewrite("agentplane-testing-dex-client-secret", "client-secret"),
-            rewrite("agentplane-testing-agentplane-session-secret", "session-secret"),
-        ],
+        metadata=ApiObjectMetadata(
+            name="agentplane-oidc",
+            namespace=_NAMESPACE,
+            annotations={"description": "ESO-generated Dex client credentials and Agentplane session signing key."},
+        ),
+        refresh_interval="8760h",
+        data_from=[rewrite(client_secret, "client-secret"), rewrite(session_secret, "session-secret")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
         template=ExternalSecretSpecTargetTemplate(
@@ -160,44 +163,41 @@ def _add_credentials(scope: Construct) -> None:
                 "session-secret": '{{ index . "session-secret" }}',
             },
         ),
-        annotations={"description": "ESO-generated Dex client credentials and Agentplane session signing key."},
     )
 
-    add_external_secret(
+    ExternalSecret(
         scope,
         "mcp-oauth-credentials",
-        name="agentplane-mcp-oauth",
-        namespace=_NAMESPACE,
-        refresh="8760h",
-        data_from=[rewrite("agentplane-testing-mcp-client-secret", "client-secret")],
+        metadata=ApiObjectMetadata(
+            name="agentplane-mcp-oauth",
+            namespace=_NAMESPACE,
+            annotations={"description": "ESO-generated credentials for the testing MCP client registered in Dex."},
+        ),
+        refresh_interval="8760h",
+        data_from=[rewrite(mcp_client_secret, "client-secret")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
         template=ExternalSecretSpecTargetTemplate(
             type="Opaque",
             data={"client-id": "agentplane-testing-mcp", "client-secret": '{{ index . "client-secret" }}'},
         ),
-        annotations={"description": "ESO-generated credentials for the testing MCP client registered in Dex."},
     )
 
-    add_external_secret(
+    ExternalSecret(
         scope,
         "acceptance-operator-credentials",
-        name="agentplane-testing-acceptance-operator",
-        namespace=_NAMESPACE,
-        refresh="8760h",
+        metadata=ApiObjectMetadata(
+            name="agentplane-testing-acceptance-operator",
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "Generates the acceptance password and Dex config together from one password value."
+            },
+        ),
+        refresh_interval="8760h",
         # Dex's config and the acceptance client's password both come from this one
         # dataFrom entry: two ExternalSecrets naming the same Password generator get two
         # independent values (#7042).
-        data_from=[
-            ExternalSecretSpecDataFrom(
-                source_ref=ExternalSecretSpecDataFromSourceRef(
-                    generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                        kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                        name="agentplane-testing-dex-operator-password",
-                    )
-                )
-            )
-        ],
+        data_from=[DataFrom.from_password_generator(operator_password)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
         template=ExternalSecretSpecTargetTemplate(
@@ -224,9 +224,6 @@ def _add_credentials(scope: Construct) -> None:
                 "config.yaml": _dex_config_yaml(),
             },
         ),
-        annotations={
-            "description": "Generates the acceptance password and Dex config together from one password value."
-        },
     )
 
 
@@ -234,9 +231,9 @@ def _add_deployment(scope: Construct) -> Deployment:
     deployment = Deployment(
         scope,
         "deployment",
-        metadata=metadata(
-            _NAME,
-            _NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_NAME,
+            namespace=_NAMESPACE,
             labels=_LABELS,
             annotations={
                 # Dex reads its generated config and client secret only at startup.
@@ -269,9 +266,7 @@ def _add_deployment(scope: Construct) -> Deployment:
             memory=MemoryResources(request=Size.mebibytes(64), limit=Size.mebibytes(128)),
         ),
         security_context=ContainerSecurityContextProps(
-            allow_privilege_escalation=False,
-            read_only_root_filesystem=True,
-            capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
+            read_only_root_filesystem=True, capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL])
         ),
     )
     config_secret = Secret.from_secret_name(scope, "config-secret", "agentplane-testing-acceptance-operator")
@@ -282,7 +277,7 @@ def _add_deployment(scope: Construct) -> Deployment:
     deployment.containers[0].mount(_CONFIG_DIR, config_volume, read_only=True)
     deployment.containers[0].mount("/tmp", tmp_volume)
 
-    apply_pod_spec_patches(deployment)
+    pod_policy.harden(deployment)
     return deployment
 
 
@@ -290,7 +285,7 @@ def _add_service(scope: Construct, deployment: Deployment) -> None:
     Service(
         scope,
         "service",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         selector=deployment,
         ports=[ServicePort(name="http", port=_PORT, target_port=_PORT, protocol=Protocol.TCP)],
     )
@@ -300,26 +295,26 @@ def _add_http_route(scope: Construct) -> None:
     https_route(
         scope,
         "httproute",
-        metadata=metadata(_NAME, _NAMESPACE),
-        hostname="agentplane-dex-testing.allegedly.works",
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        hostnames=["agentplane-dex-testing.allegedly.works"],
         backend=_NAME,
         port=_PORT,
     )
 
 
 def _add_network_policy(scope: Construct) -> None:
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "networkpolicy",
-        metadata=metadata(_NAME, _NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        endpoint_selector=_LABELS,
         ingress=[
-            cilium.ingress_from_gateway(_PORT),
-            cilium.ingress_from(cilium.endpoint_labels(_NAMESPACE, "agentplane-app"), ports=[_PORT]),
-            cilium.ingress_from(cilium.endpoint_labels(_NAMESPACE, "agentplane-oauth-fixture"), ports=[_PORT]),
+            IngressRule.from_gateway(_PORT),
+            IngressRule.from_endpoints(cilium.endpoint_labels(_NAMESPACE, "agentplane-app"), ports=[_PORT]),
+            IngressRule.from_endpoints(cilium.endpoint_labels(_NAMESPACE, "agentplane-oauth-fixture"), ports=[_PORT]),
         ],
         egress=[cilium.dns_egress()],
-        egress_deny=cilium.deny_all_egress(),
+        egress_deny=deny_all_egress(),
     )
 
 

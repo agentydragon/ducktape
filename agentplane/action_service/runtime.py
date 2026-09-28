@@ -17,9 +17,10 @@ from agentplane.action_service.catalog import ActionCatalog, McpExecutorBinding
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from agentplane.action_service.mcp_linkage import McpLinkageAuthority
 from agentplane.action_service.models import Executor
-from agentplane.action_service.sandbox_executor import SandboxExecutor, actions
-from agentplane.sandbox_actions.binding import SandboxExecutorBinding
-from agentplane.sandbox_actions.inventory import SandboxClients
+from agentplane.action_service.sandbox.actions import actions
+from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.executor import SandboxExecutor
+from agentplane.action_service.sandbox.inventory import SandboxClients
 
 
 @asynccontextmanager
@@ -34,10 +35,16 @@ async def running_executor(
             case SandboxExecutorBinding() as binding:
                 if sandboxes is None:
                     raise ValueError(f"ActionGroup {key!r} is a sandbox group and no Kubernetes access was supplied")
-                # Declared, not discovered: a code-owned group's roster is its own models, so it is
-                # offered from the moment configuration validates rather than after a handshake.
-                group.actions = actions(binding)
-                executors[key] = SandboxExecutor(binding, sandboxes.inventory(binding))
+                # Declared, not discovered: a code-owned group's roster is its own models. Only what
+                # its offered templates say of themselves is read from the cluster, once, here.
+                inventory = sandboxes.inventory(binding)
+                group.actions = actions(binding, await inventory.template_descriptions())
+                # A discovered catalog can only show a missing name later; a declared roster shows a typo now.
+                if group.direct_tools is not None and (unoffered := group.direct_tools - group.actions.keys()):
+                    raise ValueError(
+                        f"ActionGroup {key!r} direct_tools names Actions it does not offer: {sorted(unoffered)}"
+                    )
+                executors[key] = SandboxExecutor(binding, inventory)
             case McpExecutorBinding():
                 try:
                     supervised[key] = (
