@@ -276,7 +276,7 @@ it("opens the details of a provisioning Sandbox with no Threads", async () => {
 it.each([false, true])(
   "links a Sandbox name to its details without changing Thread navigation (open=%s)",
   async (open) => {
-    const { onClose } = await render(
+    await render(
       [thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" })],
       { "demo-a1b2": sandbox("demo-a1b2") },
       { initialPath: "/threads/t-1", open }
@@ -287,7 +287,6 @@ it.each([false, true])(
 
     await act(async () => link.click());
     expect(location()).toBe("/sandboxes/demo-a1b2");
-    expect(onClose).toHaveBeenCalledOnce();
 
     await act(async () => row("First thread").click());
     expect(location()).toBe("/threads/t-1");
@@ -435,6 +434,22 @@ function closeButton(): HTMLElement {
   return found;
 }
 
+/** `Sidebar` reads the phone breakpoint itself via `matchMedia`, independent of the fixed 1024px
+ * width happy-dom reports for `window.innerWidth` -- so a test picks phone-vs-desktop behavior by
+ * stubbing this, not by resizing anything. */
+function stubPhoneWidth(phone: boolean): void {
+  vi.stubGlobal(
+    "matchMedia",
+    (query: string) =>
+      ({
+        matches: phone,
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }) as unknown as MediaQueryList
+  );
+}
+
 it("applies the open class only while open is true", async () => {
   await render([], {}, { open: false });
   expect(container.querySelector("nav.agentplane-sidebar")?.className).not.toContain("agentplane-sidebar-open");
@@ -445,28 +460,40 @@ it("applies the open class only while open is true", async () => {
   expect(container.querySelector("nav.agentplane-sidebar")?.className).toContain("agentplane-sidebar-open");
 });
 
-it("closes on its own close button and on Escape, only while open", async () => {
-  const { onClose } = await render([], {}, { open: true });
-
+it("closes on its own close button regardless of width, but on Escape only at phone width", async () => {
+  stubPhoneWidth(false);
+  const { onClose: desktopClose } = await render([], {}, { open: true });
   await act(async () => closeButton().click());
-  expect(onClose).toHaveBeenCalledOnce();
-
+  expect(desktopClose).toHaveBeenCalledOnce();
   await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
-  expect(onClose).toHaveBeenCalledTimes(2);
-});
-
-it("closes when opening a thread, the Sandboxes stub, or a footer icon", async () => {
-  const { onClose: closeOnOpenThread } = await render(
-    [thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" })],
-    { "demo-a1b2": sandbox("demo-a1b2") },
-    { open: true }
-  );
-  await act(async () => row("First thread").click());
-  expect(closeOnOpenThread).toHaveBeenCalledOnce();
+  expect(desktopClose).toHaveBeenCalledOnce();
 
   await act(async () => root.unmount());
   container.remove();
-  const { onClose: closeOnFooter } = await render([], {}, { open: true });
-  await act(async () => footerButton("Sandboxes").click());
-  expect(closeOnFooter).toHaveBeenCalledOnce();
+  stubPhoneWidth(true);
+  const { onClose: phoneClose } = await render([], {}, { open: true });
+  await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+  expect(phoneClose).toHaveBeenCalledOnce();
+});
+
+it("closes the phone-width overlay, but leaves the desktop column open, on opening a thread, the Sandboxes stub, or a footer icon", async () => {
+  for (const phone of [true, false]) {
+    stubPhoneWidth(phone);
+    const { onClose: closeOnOpenThread } = await render(
+      [thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" })],
+      { "demo-a1b2": sandbox("demo-a1b2") },
+      { open: true }
+    );
+    await act(async () => row("First thread").click());
+    expect(closeOnOpenThread).toHaveBeenCalledTimes(phone ? 1 : 0);
+
+    await act(async () => root.unmount());
+    container.remove();
+    const { onClose: closeOnFooter } = await render([], {}, { open: true });
+    await act(async () => footerButton("Sandboxes").click());
+    expect(closeOnFooter).toHaveBeenCalledTimes(phone ? 1 : 0);
+
+    await act(async () => root.unmount());
+    container.remove();
+  }
 });

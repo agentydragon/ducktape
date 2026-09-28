@@ -135,6 +135,22 @@ function SidebarResizeHandle({
   );
 }
 
+// Matches sidebar.css's own phone breakpoint.
+const PHONE_QUERY = "(max-width: 560px)";
+
+/** Whether the sidebar is currently rendering as the phone-width full-screen overlay rather than a
+ * docked desktop column -- the two need different close-on-navigate behavior below. */
+function usePhoneWidth(): boolean {
+  const [phone, setPhone] = useState(() => window.matchMedia(PHONE_QUERY).matches);
+  useEffect(() => {
+    const query = window.matchMedia(PHONE_QUERY);
+    const onChange = (event: MediaQueryListEvent): void => setPhone(event.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  return phone;
+}
+
 function GroupStateIcon({ sandbox }: { sandbox: SandboxView | null }): JSX.Element {
   if (sandbox === null) {
     return (
@@ -301,15 +317,19 @@ export function Sidebar({
   const data = live.snapshot;
   const fresh = live.stream.standing === "current" && live.health?.fresh === true && data?.updates_connected === true;
   const [error, setError] = useState<string | null>(null);
+  const phone = usePhoneWidth();
 
   useEffect(() => {
-    if (!open) return;
+    // Escape dismisses the phone-width overlay, the way it would any other full-screen modal.
+    // At desktop width there's nothing modal to dismiss -- collapsing the persistent column would
+    // just be a surprising side effect of a keypress unrelated to the sidebar.
+    if (!open || !phone) return;
     function onKeyDown(event: KeyboardEvent): void {
       if (event.key === "Escape") onClose();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
+  }, [open, phone, onClose]);
 
   const threads = data?.threads ?? [];
   const groups = groupThreads(
@@ -329,10 +349,16 @@ export function Sidebar({
     }
   }
 
-  /** Every navigation out of the sidebar also closes it -- harmless at desktop width, where it just
-   * collapses a column that's one click from reopening. */
+  /** Every navigation out of the sidebar also closes it, but only at phone width, where it's a
+   * full-screen overlay standing in the way of the page it just navigated to. At desktop width
+   * this is a no-op: collapsing the persistent column on every click would undo the reader's own
+   * choice to keep it open just because they used it. */
+  function closeIfPhone(): void {
+    if (phone) onClose();
+  }
+
   function goTo(path: string): void {
-    onClose();
+    closeIfPhone();
     void navigate(path);
   }
 
@@ -400,7 +426,7 @@ export function Sidebar({
             group={group}
             fresh={fresh}
             current={current}
-            onNavigate={onClose}
+            onNavigate={closeIfPhone}
             onOpen={openThread}
             onToggleArchived={(thread) => void toggleArchived(thread)}
           />
@@ -451,7 +477,7 @@ export function Sidebar({
             variant={settingsOpen ? "light" : "subtle"}
             aria-label="Settings"
             onClick={() => {
-              onClose();
+              closeIfPhone();
               onOpenSettings();
             }}
           >
