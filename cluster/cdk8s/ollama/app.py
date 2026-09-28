@@ -326,8 +326,11 @@ def _setup_job(scope: Construct) -> None:
     k8s.KubeJob(
         scope,
         "setup-gpt-oss",
-        # Versioned so changed model registration creates a fresh Job.
-        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v7", namespace=_NAMESPACE),
+        # Explicit version bumps own reruns; Reloader would delete a running Job
+        # when the scripts ConfigMap changes.
+        metadata=k8s.ObjectMeta(
+            name="setup-gpt-oss-v8", namespace=_NAMESPACE, annotations={"reloader.stakater.com/auto": "false"}
+        ),
         spec=k8s.JobSpec(
             ttl_seconds_after_finished=86400,
             template=k8s.PodTemplateSpec(

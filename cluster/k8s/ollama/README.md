@@ -95,7 +95,7 @@ turn. The original template SHA256 is pinned in
 `../../cdk8s/ollama/patch_qwen38_template.py`.
 
 The first GGUF shard is 10.9 MB and holds this metadata. On wyrm2, generate
-its derived copy **before** deploying the `setup-gpt-oss-v7` Job. The two large
+its derived copy **before** deploying the `setup-gpt-oss-v8` Job. The two large
 weight shards and all source files remain untouched:
 
 ```bash
@@ -112,3 +112,5 @@ template edit, and derived hash. It refuses to replace a different output.
 The Job links the derived shard as a new Ollama blob and passes its digest
 under the original first split filename; the other two split filenames and
 digests stay fixed. The 256K alias inherits the 128K model's template.
+The setup Job opts out of Reloader because a scripts ConfigMap update would
+delete its running Pod. Change the Job's explicit version to rerun registration.
