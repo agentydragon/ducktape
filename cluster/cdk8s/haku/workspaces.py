@@ -44,21 +44,12 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMergePolicy,
 )
-from kyverno_cleanuppolicy_crds.io.kyverno import (
-    CleanupPolicy,
-    CleanupPolicySpec,
-    CleanupPolicySpecConditions,
-    CleanupPolicySpecConditionsAll,
-    CleanupPolicySpecConditionsAllOperator,
-    CleanupPolicySpecMatch,
-    CleanupPolicySpecMatchAny,
-    CleanupPolicySpecMatchAnyResources,
-)
 
 from cluster.cdk8s import external_creds, forgejo_images
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.haku.namespace import NAMESPACE
+from cluster.cdk8s.kyverno.janitor import SANDBOX_KINDS, janitor
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.external_secrets.external_secret import (
@@ -337,36 +328,8 @@ def chart(app: App) -> Chart:
             sandbox_template_ref=SandboxWarmPoolSpecSandboxTemplateRef(name=sandbox_template.name),
         ),
     )
-    # Same 7-day backstop as the agent-workspaces janitor: a Sandbox/SandboxClaim whose owner
-    # forgot shutdownTime would otherwise pin quota forever. Reaping is at the CR level (the
-    # controller recreates a Sandbox's pod, so a pod-level janitor just churns). Warm-pool
-    # sandboxes reaped at 7d are recreated by the pool -- a harmless periodic refresh. Delete RBAC
-    # is the shared kyverno/policies/clusterrole-cleanup-controller-sandboxes.yaml (cluster-wide).
-    CleanupPolicy(
-        chart,
-        "janitor",
-        metadata=ApiObjectMetadata(name="haku-workspace-janitor", namespace=NAMESPACE),
-        spec=CleanupPolicySpec(
-            schedule="45 * * * *",
-            match=CleanupPolicySpecMatch(
-                any=[
-                    CleanupPolicySpecMatchAny(
-                        resources=CleanupPolicySpecMatchAnyResources(
-                            kinds=["agents.x-k8s.io/v1beta1/Sandbox", "extensions.agents.x-k8s.io/v1beta1/SandboxClaim"]
-                        )
-                    )
-                ]
-            ),
-            conditions=CleanupPolicySpecConditions(
-                all=[
-                    CleanupPolicySpecConditionsAll(
-                        key="{{ time_since('', '{{ target.metadata.creationTimestamp }}', '') }}",
-                        operator=CleanupPolicySpecConditionsAllOperator.GREATER_THAN,
-                        value="168h",
-                    )
-                ]
-            ),
-        ),
+    janitor(
+        chart, "janitor", name="haku-workspace-janitor", namespace=NAMESPACE, schedule="45 * * * *", kinds=SANDBOX_KINDS
     )
     _console_rbac(chart)
     return chart
