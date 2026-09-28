@@ -24,8 +24,7 @@ In priority order; their items are under § Work.
   the fitted models through a tombstoned visibility exception. That union is the pattern
   the conventions rule out. Deciding the app's model selection is part of deciding the app's
   future, which is not decided.
-- **Held feature PRs.** #8142 (block bootstrap, BOOT) would land in `x/models/`; #8143 is
-  trading costs. Each waits on the owner's go.
+- **Held feature PRs.** #8143 (trading costs) waits on the owner's go.
 - **Integer money.** Integer quanta were chosen for speed at large rollout counts, a gain
   never measured. If a measurement shows it does not pay, `World` may instead know its
   currency and take and return exact fixed-point `Decimal` money.
@@ -55,8 +54,10 @@ and no parameter uncertainty, and historical replay has only US history.
 - **SANITY:** a check any caller can run on sampled trajectories that rejects absurd output: an
   economy growing 10,000× in two years, a material chance of prices rising tenfold in a year.
   Starts from `x/models/sample_sanity.py`, which only the app calls today.
-- **BOOT:** vet the US stationary block bootstrap (held #8142; #5510). It keeps joint crashes
-  and stagflation, but recombines only US history.
+- **BOOT:** vet the US stationary block bootstrap (`x/models/stationary_bootstrap.py`; #5510):
+  its card argues the choices, SANITY passes, and its withdrawal and ruin numbers sit plausibly
+  beside Trinity and Anarkulova–Cederburg–O'Doherty. It keeps joint crashes and stagflation,
+  but recombines only US history.
 - **PANEL** (after BOOT): a multi-country block bootstrap on the Jordà–Schularick–Taylor
   macrohistory panel, which partly corrects US survivorship and gives an ex-US equity leg.
 - **REGIME:** regime-switching lognormal equity (RSLN2) with the macro VAR, under parameter
