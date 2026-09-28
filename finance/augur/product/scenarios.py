@@ -50,6 +50,7 @@ from finance.augur.product.wire import (
     SetRentedFractionEventWire,
     SpendIndex,
 )
+from finance.augur.sim import tax
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
@@ -78,7 +79,6 @@ from finance.augur.sim.private_equity_series import compile_private_equity_serie
 from finance.augur.sim.property import Housing
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.schedule import Once, Recurring, Schedule
-from finance.augur.sim.tax import PreparedTaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_income_sources, compile_profile
@@ -211,7 +211,7 @@ class Situation:
     income_sources: tuple[TransferIncomeCategory, ...]
     # Each declared account with its opening balance.
     accounts: tuple[tuple[AccountRef, int], ...]
-    tax_profile: PreparedTaxProfile
+    tax_profile: tax.TaxProfile
     pools: tuple[Pool, ...]
     lots: tuple[Lot, ...]
     tlh_portfolios: tuple[ManagedPortfolio, ...]

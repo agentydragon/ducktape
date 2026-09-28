@@ -13,14 +13,7 @@ from finance.augur.sim.market_path import MarketStatement
 from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
 from finance.augur.sim.mortgage import Mortgage
 from finance.augur.sim.prepared import _MortgageInterestDeduction, _SaltDeduction
-from finance.augur.sim.tax import (
-    PreparedTaxProfile,
-    PreparedTaxRules,
-    TaxFacts,
-    assess,
-    is_investment_income,
-    taxes_interest_from,
-)
+from finance.augur.sim.tax import TaxFacts, TaxProfile, TaxRules, assess, is_investment_income, taxes_interest_from
 from finance.augur.sim.tax_indexation import CpiIndexedLaw, FixedNominalLaw, TaxIndexation, rules_for_year
 from finance.augur.sim.tax_year import TaxBook
 
@@ -39,13 +32,13 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement | MarketStatement, 
     Under `CpiIndexedLaw` a year's rules are set by its January `MarketStatement`.
     """
 
-    def __init__(self, profile: PreparedTaxProfile, *, indexation: TaxIndexation) -> None:
+    def __init__(self, profile: TaxProfile, *, indexation: TaxIndexation) -> None:
         if isinstance(indexation, CpiIndexedLaw):
             indexation.check(profile.jurisdictions)
         self.profile = profile
         self.indexation = indexation
         # The open tax year and its indexed rules, under `CpiIndexedLaw`.
-        self.indexed_year: tuple[int, tuple[PreparedTaxRules, ...]] | None = None
+        self.indexed_year: tuple[int, tuple[TaxRules, ...]] | None = None
         self.liabilities: TaxLiabilityStatement | None = None
         self.salt_policies: tuple[_SaltDeduction, ...] = ()
         self.mortgage_interest_policies: tuple[_MortgageInterestDeduction, ...] = ()
@@ -60,7 +53,7 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement | MarketStatement, 
         else:
             self.salt_policies = (*self.salt_policies, policy)
 
-    def rules(self, tax_year: int) -> tuple[PreparedTaxRules, ...]:
+    def rules(self, tax_year: int) -> tuple[TaxRules, ...]:
         """The profile's jurisdiction rules as they stand in `tax_year`."""
         if isinstance(self.indexation, FixedNominalLaw):
             return self.profile.jurisdictions

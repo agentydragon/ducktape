@@ -24,7 +24,7 @@ from finance.augur.sim.observations import Observation
 from finance.augur.sim.results import ConsumptionTarget, Executed, Finished, Rejected, RejectedAction, UnpaidClaims
 from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.tax import PreparedTaxBracket, PreparedTaxProfile
+from finance.augur.sim.tax import TaxBracket, TaxProfile
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, opening, taxpayer, world_on
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import Capture, World
@@ -61,7 +61,7 @@ class Situation:
     accounts: Mapping[AccountRef, int]
     holding_pools: tuple[Pool, ...]
     initial_lots: tuple[Lot, ...]
-    tax_profiles: tuple[PreparedTaxProfile, ...] = ()
+    tax_profiles: tuple[TaxProfile, ...] = ()
     obligations: tuple[Bill, ...] = ()
     scheduled_transfers: tuple[Contribution, ...] = ()
 
@@ -287,8 +287,8 @@ def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> No
     profile = taxpayer(HOUSEHOLD)
     rules = replace(
         profile.jurisdictions[0],
-        ordinary_brackets=(PreparedTaxBracket(None, 200_000_000),),
-        long_term_capital_gain_brackets=(PreparedTaxBracket(None, 100_000_000),),
+        ordinary_brackets=(TaxBracket(None, 200_000_000),),
+        long_term_capital_gain_brackets=(TaxBracket(None, 100_000_000),),
         max_capital_loss_ordinary_offset=0,
     )
     run = replace(
@@ -472,8 +472,8 @@ def year_situation() -> Situation:
     profile = taxpayer(HOUSEHOLD)
     rules = replace(
         profile.jurisdictions[0],
-        ordinary_brackets=(PreparedTaxBracket(None, 200_000_000),),
-        long_term_capital_gain_brackets=(PreparedTaxBracket(None, 100_000_000),),
+        ordinary_brackets=(TaxBracket(None, 200_000_000),),
+        long_term_capital_gain_brackets=(TaxBracket(None, 100_000_000),),
         max_capital_loss_ordinary_offset=0,
     )
     return replace(
