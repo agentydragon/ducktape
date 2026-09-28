@@ -139,6 +139,7 @@ def _readonly_provisioner(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels={"app": "study-casino-db-readonly-provisioner"}),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     restart_policy="Never",
                     node_selector={"topology.kubernetes.io/region": _REGION},
                     containers=[
@@ -224,6 +225,7 @@ def _deployment(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     node_selector={"topology.kubernetes.io/region": _REGION},
                     # Stateless: all state is in study-casino-db (CNPG), no local storage. Allow

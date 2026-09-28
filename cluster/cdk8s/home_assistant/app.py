@@ -217,6 +217,7 @@ def _deployment(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     host_network=True,
                     dns_policy="ClusterFirstWithHostNet",
@@ -373,6 +374,7 @@ def _onboarding_job(scope: Construct) -> None:
                     labels={"app.kubernetes.io/name": _ONBOARDING},
                 ),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     restart_policy="OnFailure",
                     containers=[

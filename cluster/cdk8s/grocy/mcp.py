@@ -68,6 +68,7 @@ def base_chart(app: App) -> Chart:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     # The OAuth state Valkey instances use local-path-ovh and are pinned to
                     # hil-ovh. Keep the MCP client in the same site: valkey-glide's default

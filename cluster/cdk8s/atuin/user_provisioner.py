@@ -113,6 +113,7 @@ def chart(app: App) -> Chart:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels={"app": NAME}),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     restart_policy="OnFailure",
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     containers=[
