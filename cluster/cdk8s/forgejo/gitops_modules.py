@@ -106,10 +106,7 @@ def haku_state(
 
 
 def budget_ledger(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    tofu_controller: Kustomization,
-    budget_namespace: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -118,11 +115,7 @@ def budget_ledger(
         # budget-ledger-git-creds Secret) so the exporter/Fava can depend on it.
         artifact,
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(
-            tofu_controller,
-            # the git-creds Secret lands in the budget namespace
-            budget_namespace,
-        ),
+        depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )
 
 

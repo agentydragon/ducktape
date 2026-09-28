@@ -1142,6 +1142,7 @@ py_library(
 py_library(
     name = "reflector",
     srcs = ["reflector.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":artifact_generators",
         ":flux",

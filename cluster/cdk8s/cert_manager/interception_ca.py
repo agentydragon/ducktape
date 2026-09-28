@@ -29,20 +29,11 @@ from trust_manager_crds.io.cert_manager.trust import (
 
 from cluster.cdk8s.cert_manager.cluster_ca import LONG_LIVED_CA
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
+from cluster.cdk8s.reflector import mirror_annotations
 
 _ROOT_CA_ISSUER = "cluster-ca-bootstrap"
 _CLUSTER_ROOT_CA_SECRET = "cluster-root-ca-secret"
 BUNDLE_KEY = "ca-certificates.crt"
-
-
-def _reflector_annotations(namespaces: Sequence[str]) -> dict[str, str]:
-    value = ",".join(namespaces)
-    return {
-        "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-        "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": value,
-        "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-        "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": value,
-    }
 
 
 def interception_root_ca(
@@ -73,7 +64,7 @@ def interception_root_ca(
         **LONG_LIVED_CA,
         private_key=CertificatePrivateKey.ecdsa_p256(),
         # trust-manager reads Bundle sources from its own namespace.
-        secret_template=CertificateSpecSecretTemplate(annotations=_reflector_annotations(reflection_namespaces)),
+        secret_template=CertificateSpecSecretTemplate(annotations=mirror_annotations(reflection_namespaces)),
         issuer_ref=CertificateSpecIssuerRef(name=_ROOT_CA_ISSUER, kind="ClusterIssuer"),
     )
     Bundle(

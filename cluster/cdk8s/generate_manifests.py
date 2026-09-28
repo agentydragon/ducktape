@@ -350,10 +350,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         write_directory(root, flux_image_automation_ghcr_artifact, flux_image_automation_ghcr.automation_chart),
     )
-    budget_namespace_artifact = artifact("budget-namespace", forgejo_budget_namespace.OUTPUT_DIR)
-    budget_namespace_kustomization = forgejo_budget_namespace.budget_namespace(
-        flux_chart, write_directory(root, budget_namespace_artifact, forgejo_budget_namespace.chart)
-    )
     haku_namespace_artifact = artifact(haku_namespace.NAME, haku_namespace.OUTPUT_DIR)
     haku_namespace_kustomization = haku_namespace.haku_namespace(
         flux_chart, write_directory(root, haku_namespace_artifact, haku_namespace.chart)
@@ -568,6 +564,17 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, external_secrets_operator_artifact, external_secrets_operator.chart),
         external_secrets_crds_kustomization,
         cert_manager_kustomization,
+    )
+    budget_namespace_artifact = artifact("budget-namespace", forgejo_budget_namespace.OUTPUT_DIR)
+    forgejo_budget_namespace.budget_namespace(
+        flux_chart,
+        write_directory(
+            root,
+            budget_namespace_artifact,
+            forgejo_budget_namespace.chart,
+            forgejo_budget_namespace.git_credentials_chart,
+        ),
+        external_secrets_operator_kustomization,
     )
     external_secrets_config_artifact = artifact("external-secrets-config", external_secrets_config.OUTPUT_DIR)
     external_secrets_config.external_secrets_config(
@@ -1009,9 +1016,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, forgejo_agentydragon_repos_artifact, tofu_controller_kustomization
     )
     budget_ledger_artifact = artifact("budget-ledger", forgejo_gitops_modules.BUDGET_LEDGER_DIR)
-    forgejo_gitops_modules.budget_ledger(
-        flux_chart, budget_ledger_artifact, tofu_controller_kustomization, budget_namespace_kustomization
-    )
+    forgejo_gitops_modules.budget_ledger(flux_chart, budget_ledger_artifact, tofu_controller_kustomization)
     forgejo_claude_artifact = artifact("forgejo-claude", forgejo_gitops_modules.CLAUDE_DIR)
     forgejo_gitops_modules.forgejo_claude(
         flux_chart, forgejo_claude_artifact, tofu_controller_kustomization, claude_rbac_kustomization

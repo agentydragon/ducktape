@@ -52,6 +52,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":cluster_ca",
+        "//cluster/cdk8s:reflector",
         "//cluster/cdk8s/providers/cert_manager:bundle",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
         "//cluster/cdk8s/providers/cert_manager:certificate",
