@@ -131,7 +131,6 @@ class StationaryBootstrapModel:
                 YieldCurve.CORPORATE_AAA: record.corporate_aaa_yield[months],
                 YieldCurve.CORPORATE_BAA: record.corporate_baa_yield[months],
             },
-            model_id=self.label,
             provenance={
                 "exogenous_provider_label": self.label,
                 "record_digest": record.identity_digest(),
