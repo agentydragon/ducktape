@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from decimal import Decimal
 from fractions import Fraction
 
-import numpy as np
 import pytest_bazel
 
 from finance.augur.model.gbm import GeometricBrownian
@@ -15,7 +14,7 @@ from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.policy import sleeves
 from finance.augur.sim.actions import Action, DecisionActions, LotSale, Sell
 from finance.augur.sim.books import AccountRef, SecurityLotState
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series, materialize_external_series
+from finance.augur.sim.external_series import compile_series, materialize_external_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
@@ -28,6 +27,7 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.world import World
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
@@ -103,16 +103,12 @@ def _situation(
 ) -> Situation:
     """One stipulated price path per asset, repeated across every rollout that shares it."""
     horizon = len(next(iter(prices.values()))) - 1
-    paths = ExternalSeriesContext.from_level_blocks(
-        [
-            (asset, np.asarray([[float(value) for value in path]] * rollouts, dtype=np.float64))
-            for asset, path in prices.items()
-        ],
-        rollout_count=rollouts,
-        horizon_months=horizon,
-    )
     return Situation(
-        series=compile_series(paths, rollout_count=rollouts, horizon_months=horizon, currency=USD),
+        series=level_series(
+            {asset: [[float(value) for value in path]] * rollouts for asset, path in prices.items()},
+            rollout_count=rollouts,
+            horizon_months=horizon,
+        ),
         rollout_count=rollouts,
         horizon_months=horizon,
         lots=tuple(lots),

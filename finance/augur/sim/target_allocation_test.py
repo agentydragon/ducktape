@@ -17,13 +17,12 @@ from finance.augur.policy.cash_band_household import CashBandHousehold, Reinvest
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.holdings import Disposition
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.money import USD
 from finance.augur.sim.schedule import Recurring
+from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.world import World
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
@@ -90,15 +89,12 @@ def hold(world: World, lot_id: LotId, asset: SecurityKey, quantity: Decimal | in
 
 
 def compose(case: Situation) -> World:
-    paths = ExternalSeriesContext.from_level_blocks(
-        [(asset, np.full((1, HORIZON + 1), float(PRICE))) for asset in (VTI, BND)],
+    series = level_series(
+        {asset: np.full((1, HORIZON + 1), float(PRICE)) for asset in (VTI, BND)},
         rollout_count=1,
         horizon_months=HORIZON,
     )
-    world = World(
-        MarketPath(compile_series(paths, rollout_count=1, horizon_months=HORIZON, currency=USD), 0, rollout_count=1),
-        horizon_months=HORIZON,
-    )
+    world = World(MarketPath(series, 0, rollout_count=1), horizon_months=HORIZON)
     world.declare_account(account=ref(ALICE), opening_balance=money(case.opening_cash))
     # Funded only for what it owes, so an unfunded counterparty can never fail a rollout.
     world.declare_account(account=ref(LANDLORD), opening_balance=money(Decimal(case.income) * (HORIZON + 1)))

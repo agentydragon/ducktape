@@ -15,7 +15,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-import numpy as np
 import polars as pl
 import pytest
 import pytest_bazel
@@ -25,7 +24,6 @@ from finance.augur.model.series import HomeValueKey, LocationId
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef, Book, PropertyState
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
@@ -48,6 +46,7 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, flat_parcel
 from finance.augur.sim.world import World
 
@@ -178,21 +177,13 @@ class Situation:
 
 
 def compose(case: Situation, rollout_id: int) -> World:
-    series = compile_series(
-        ExternalSeriesContext.from_level_blocks(
-            [
-                (
-                    HomeValueKey(location_id=LocationId(location_id)),
-                    np.asarray([levels] * case.rollout_count, dtype=np.float64),
-                )
-                for location_id, levels in case.home_values.items()
-            ],
-            rollout_count=case.rollout_count,
-            horizon_months=case.horizon_months,
-        ),
+    series = level_series(
+        {
+            HomeValueKey(location_id=LocationId(location_id)): [levels] * case.rollout_count
+            for location_id, levels in case.home_values.items()
+        },
         rollout_count=case.rollout_count,
         horizon_months=case.horizon_months,
-        currency=USD,
     )
     jurisdictions = {id_: load_jurisdiction(id_) for id_ in case.jurisdiction_ids}
     world = World(

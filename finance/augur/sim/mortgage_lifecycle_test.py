@@ -9,7 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-import numpy as np
 import pytest
 import pytest_bazel
 
@@ -18,15 +17,14 @@ from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import ClaimId, PayClaim
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, JournalEntry
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.market_path import MarketPath, Series
-from finance.augur.sim.money import USD
 from finance.augur.sim.property import Housing, MortgageFinancing, Purchase, Sale, ScheduledPurchase, ScheduledSale
 from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rejected
 from finance.augur.sim.schedule import Once
+from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
 from finance.augur.sim.world import World
 
@@ -53,15 +51,10 @@ def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, 
 
 
 def home_value(*paths: list[Decimal | int], horizon_months: int) -> tuple[Series, ...]:
-    return compile_series(
-        ExternalSeriesContext.from_level_blocks(
-            [(SF_HOME, np.asarray([[float(level) for level in path] for path in paths], dtype=np.float64))],
-            rollout_count=len(paths),
-            horizon_months=horizon_months,
-        ),
+    return level_series(
+        {SF_HOME: [[float(level) for level in path] for path in paths]},
         rollout_count=len(paths),
         horizon_months=horizon_months,
-        currency=USD,
     )
 
 
