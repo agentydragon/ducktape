@@ -9,6 +9,7 @@ metadata:
     pod-security.kubernetes.io/warn: privileged
     rbac.ducktape.io/agent-readable-logs: "true"
   name: haku-ci
+spec: {}
 ---
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy

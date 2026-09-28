@@ -1138,17 +1138,23 @@ async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(t
     assert json_format.Parse(redelivery.post_data, command_pb2.Command()) == command
     async with asyncio.timeout(15):
         assert await source.commands.get() == command
-    await expect(page.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
-    await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
+    await expect_pending_message_bubble(page, command.submit_input.text)
     await expect(page.get_by_text("Saved locally · awaiting admission", exact=True)).to_have_count(0)
     await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
-    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
     admissions = [
         entry.event.command_admitted.command
         for entry in await thread_browser.event_logs.events(thread.id, limit=100)
         if entry.event.HasField("command_admitted")
     ]
     assert admissions == [command]
+
+
+async def expect_pending_message_bubble(page: Page, text: str) -> None:
+    """A submitInput command the server has admitted and is still working on renders inline as the
+    same bubble a confirmed message gets, marked pending (italic) until the harness effects it."""
+    bubble = page.locator(".agentplane-user-bubble")
+    await expect(bubble.locator(".agentplane-verbatim")).to_have_text(text)
+    await expect(bubble).to_have_css("font-style", "italic")
 
 
 async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_browser: ThreadBrowser) -> None:
@@ -1184,18 +1190,15 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
         assert admission.event.command_admitted.command == command
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
         assert admission in await thread_browser.event_logs.events(thread.id, limit=100)
-        await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
-        await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+        await expect_pending_message_bubble(page, command.submit_input.text)
 
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
             drop_reply.set()
-        await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
+        await expect_pending_message_bubble(page, command.submit_input.text)
         await expect(page.get_by_text("Saved locally · awaiting admission", exact=True)).to_have_count(0)
         await page.reload()
-        await expect(page.get_by_text(command.submit_input.text, exact=True)).to_have_count(1)
-        await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
+        await expect_pending_message_bubble(page, command.submit_input.text)
         await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
-        await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
     finally:
         drop_reply.set()
         if reply_started.is_set():
@@ -1326,7 +1329,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
     await expect(
         page.get_by_text("Test retained prefix and preceding delta A and preceding delta B", exact=True)
     ).to_have_count(1)
-    await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+    await expect_pending_message_bubble(page, command.submit_input.text)
     source.append(
         event_pb2.Event(
             harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
@@ -1403,7 +1406,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         await expect(
             page.get_by_text("Test retained prefix and disconnected delta A and disconnected delta B", exact=True)
         ).to_have_count(1)
-        await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+        await expect_pending_message_bubble(page, command.submit_input.text)
         source.append(
             event_pb2.Event(
                 harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
@@ -1441,8 +1444,7 @@ async def test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_wind
     async with asyncio.timeout(15):
         command = await source.commands.get()
     pending = page.get_by_role("region", name="Pending commands")
-    await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
-    await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+    await expect_pending_message_bubble(page, command.submit_input.text)
 
     async def terminal_shape_error(route: Route) -> None:
         await route.fulfill(status=400, content_type="text/plain", body="shape rejected")
@@ -1456,12 +1458,12 @@ async def test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_wind
         stopped = page.get_by_role("alert").filter(has_text="Thread synchronization stopped:")
         await expect(stopped).to_be_visible()
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
-        await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
+        await expect_pending_message_bubble(page, command.submit_input.text)
 
         async with page.expect_response(lambda response: "/sync/scope" in response.url and response.status == 200):
             await stopped.get_by_role("button", name="Refresh thread", exact=True).click()
         await expect(page.get_by_text("Thread synchronization stopped:", exact=False)).to_have_count(0)
-        await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+        await expect_pending_message_bubble(page, command.submit_input.text)
         source.append(
             event_pb2.Event(
                 harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(

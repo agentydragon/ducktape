@@ -228,6 +228,9 @@ repos:
         entry: ducktape-pytest-main-check
         language: system
         pass_filenames: true
+        # Every invocation queries the whole repo's py_test srcs; parallel filename batches would
+        # repeat those queries as concurrent Bazel clients against one cold output base.
+        require_serial: true
         always_run: true
         stages: [pre-commit]
 

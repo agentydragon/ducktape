@@ -12,6 +12,7 @@ from cluster.validation.checks import (
     check_egress_bindings_resolve_policies,
     check_external_credential_ownership,
     check_forgejo_image_namespace_reflection,
+    check_goldilocks_namespace_labels,
 )
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.flux import FluxKustomizationSpec
@@ -221,6 +222,26 @@ def test_external_credential_namespace_store_is_rejected(tmp_path: Path) -> None
     cluster = _external_creds_cluster(tmp_path, [_source_binding()], [_consumer_store()])
     errors = check_external_credential_ownership(cluster, tmp_path)
     assert any("use external-secrets-config's shared ClusterSecretStore" in error for error in errors)
+
+
+_VPA_UPDATE_MODE = "goldilocks.fairwinds.com/vpa-update-mode"
+_GOLDILOCKS_ENABLED = "goldilocks.fairwinds.com/enabled"
+
+
+def _namespace(labels: dict[str, str]) -> dict:
+    return {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "test-ns", "labels": labels}}
+
+
+@pytest.mark.parametrize(
+    ("labels", "flagged"),
+    [
+        ({_VPA_UPDATE_MODE: "auto"}, False),
+        ({_VPA_UPDATE_MODE: "auto", _GOLDILOCKS_ENABLED: "true"}, False),
+        ({_VPA_UPDATE_MODE: "auto", _GOLDILOCKS_ENABLED: "false"}, True),
+    ],
+)
+def test_update_mode_contradicts_only_an_opt_out(labels: dict[str, str], flagged: bool) -> None:
+    assert bool(check_goldilocks_namespace_labels(_cluster_with(_namespace(labels)))) is flagged
 
 
 if __name__ == "__main__":

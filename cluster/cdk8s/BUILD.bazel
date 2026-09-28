@@ -150,6 +150,7 @@ py_library(
     deps = [
         ":flux",
         ":manifest_roots",
+        ":namespaces",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
@@ -217,6 +218,7 @@ py_library(
     srcs = ["namespaces.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
@@ -1235,6 +1237,7 @@ py_library(
         ":cilium",
         ":flux",
         ":manifest_roots",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
