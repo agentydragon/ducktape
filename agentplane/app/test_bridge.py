@@ -312,6 +312,48 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         (summary,) = (await http.get(SESSIONS)).json()
         assert summary["harnessState"] == "HARNESS_STATE_STOPPED"
 
+        resumed = await http.post(f"/threads/{thread_id}/resume")
+        assert resumed.status_code == 200, resumed.text
+        assert resumed.json()["sessionId"] == SESSION
+        assert resumed.json()["spec"]["harness"] == protocol_pb2.Harness.Name(spec.harness)
+        assert resumed.json()["harnessState"] == "HARNESS_STATE_RUNNING"
+        assert (await http.get("/threads")).json()[0]["id"] == thread_id
+
+        # The Thread route resumes the session from the runner-owned stored spec. The event stream
+        # continues after the previous shutdown and the native request still has both completed
+        # turns in context.
+        previous_cursor = int(stored[-1]["cursor"])
+        async with http.stream(
+            "GET",
+            f"/threads/{thread_id}/events/stream",
+            headers={"Last-Event-ID": str(previous_cursor)},
+        ) as resumed_stream:
+            resumed_lines = resumed_stream.aiter_lines()
+            await next_message(resumed_lines)
+            started = await read_until(resumed_lines, "harnessStarted")
+            assert started[-1].data["event"]["harnessStarted"]["resumed"] is True
+            accepted = await http.post(
+                _commands(thread_id),
+                json={
+                    "commandId": "input-after-resume",
+                    "submitInput": {"text": "Reply with exactly: BRIDGE_RESUMED"},
+                },
+            )
+            assert accepted.status_code == 200, accepted.text
+            request = await model.request()
+            assert request.user_texts == [
+                "Reply with exactly: BRIDGE_OK",
+                "Reply with exactly: BRIDGE_TWO",
+                "Reply with exactly: BRIDGE_RESUMED",
+            ]
+            assert request.assistant_texts == ["BRIDGE_OK", "BRIDGE_TWO"]
+            await model.reply(request, Text("BRIDGE_RESUMED"))
+            continued = await read_until(resumed_lines, "turnCompleted")
+            assert [message.id for message in [*started, *continued]] == list(
+                range(previous_cursor + 1, previous_cursor + len(started) + len(continued) + 1)
+            )
+            assert continued[-1].data["event"]["turnCompleted"]["status"] == "TURN_STATUS_COMPLETED"
+
 
 async def _stored_events(http: httpx.AsyncClient, thread_id: str, *, until: str) -> list[dict[str, Any]]:
     """The thread's stored entries once one carrying `until` has landed; the feed writes them as
@@ -325,6 +367,16 @@ async def _stored_events(http: httpx.AsyncClient, thread_id: str, *, until: str)
             entries: list[dict[str, Any]] = response.json()
             assert any(until in entry["event"] for entry in entries), f"no {until} stored yet"
     return entries
+
+
+async def test_thread_resume_reports_missing_runner_recovery_state(
+    app_url: str, event_logs: EventLogStore, spec: protocol_pb2.SessionSpec
+) -> None:
+    thread_id = await event_logs.open(SANDBOX, "missing-runner-session", spec)
+    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
+        response = await http.post(f"/threads/{thread_id}/resume")
+    assert response.status_code == 409
+    assert "no retained session 'missing-runner-session'" in response.json()["detail"]
 
 
 async def test_the_feed_records_a_turn_nobody_is_watching(

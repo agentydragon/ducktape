@@ -1025,6 +1025,15 @@ function interleavedRows(threadId: string): Record<string, unknown>[] {
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
+function endedAttachmentRows(threadId: string): Record<string, unknown>[] {
+  return interleavedRows(threadId).map((row) => {
+    if (row.entity_kind !== "view_state") return row;
+    const state = row.state as Record<string, unknown>;
+    const operational = state.operational as Record<string, unknown>;
+    return { ...row, state: { ...state, operational: { ...operational, status: "ended" } } };
+  });
+}
+
 function statesRows(threadId: string): Record<string, unknown>[] {
   const rows = [
     viewState(23, "t2"),
@@ -1143,6 +1152,7 @@ function standaloneReasoningRows(threadId: string): Record<string, unknown>[] {
 }
 
 function threadEntityRows(threadId: string): Record<string, unknown>[] {
+  if (scenario.endedAttachment) return endedAttachmentRows(threadId);
   if (scenario.failedTurn) return failedRows(threadId, scenario.failedTurn === "after-content");
   if (scenario.interleavedEvents) return interleavedRows(threadId);
   if (scenario.lifecycleGroup) return lifecycleGroupRows(threadId);

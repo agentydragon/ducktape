@@ -289,6 +289,14 @@ export async function openSession(sandbox: string, sessionId: string, spec: Sess
   return fromJson(AttachedSchema, data as JsonValue);
 }
 
+export async function resumeThread(threadId: string): Promise<Attached> {
+  const { data, error } = await api.POST("/threads/{thread_id}/resume", {
+    params: { path: { thread_id: threadId } },
+  });
+  if (error) throw new Error(displayableError(error));
+  return fromJson(AttachedSchema, data as JsonValue);
+}
+
 export async function models(): Promise<ModelCatalog> {
   const { data, error } = await api.GET("/models");
   if (error) throw new Error(displayableError(error));

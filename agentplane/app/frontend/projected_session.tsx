@@ -46,6 +46,7 @@ import {
   getThread,
   models,
   modelsForHarness,
+  resumeThread,
   type EvidencePage,
   type ModelOption,
   type NativeFramePage,
@@ -1297,7 +1298,14 @@ function ProjectedSessionBody({
   const controls = view && "controls" in view.state ? view.state.controls : null;
   const operational = view && "controls" in view.state ? view.state.operational : null;
   const running =
-    available && !thread.archived && operational?.status !== "failed" && controls?.harness_state === "running";
+    available && !thread.archived && operational?.status === "active" && controls?.harness_state === "running";
+  const canResume =
+    available &&
+    !thread.archived &&
+    operational?.status !== "failed" &&
+    (operational?.status !== "active" || controls?.harness_state !== "running");
+  const [resuming, setResuming] = useState(false);
+  const [resumeError, setResumeError] = useState<string | null>(null);
   const activeTurn = controls?.active_turn_id ?? null;
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
@@ -1353,6 +1361,19 @@ function ProjectedSessionBody({
     });
     if (commands.submit(value)) setDraft("");
     else submitting.current = false;
+  }
+
+  async function resume(): Promise<void> {
+    if (!canResume || resuming) return;
+    setResuming(true);
+    setResumeError(null);
+    try {
+      await resumeThread(threadId);
+    } catch (reason: unknown) {
+      setResumeError(displayableError(reason));
+    } finally {
+      setResuming(false);
+    }
   }
 
   function composerKey(event: KeyboardEvent<HTMLTextAreaElement>): void {
@@ -1432,6 +1453,11 @@ function ProjectedSessionBody({
             {commands.submissionError}
           </Text>
         )}
+        {resumeError && (
+          <Text role="alert" c="red">
+            Could not resume harness: {resumeError}
+          </Text>
+        )}
         <Textarea
           value={draft}
           onChange={(event) => setDraft(event.currentTarget.value)}
@@ -1454,6 +1480,16 @@ function ProjectedSessionBody({
                 harness: controls?.harness_state ?? null,
               })}
             />
+            {canResume && (
+              <Button
+                size="xs"
+                aria-label="Resume harness"
+                loading={resuming}
+                onClick={() => void resume()}
+              >
+                Resume harness
+              </Button>
+            )}
             <Select
               aria-label="Model"
               data={modelOptions.map((option) => ({ value: option.model, label: option.display_name }))}
