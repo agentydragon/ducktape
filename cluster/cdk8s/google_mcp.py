@@ -38,7 +38,6 @@ from cdk8s_plus_34 import (
     ImagePullPolicy,
     LabelSelector,
     MemoryResources,
-    Namespace,
     PodSecurityContextProps,
     Protocol,
     Secret,
@@ -50,12 +49,13 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
-from cluster.cdk8s import cilium, pod_policy
+from cluster.cdk8s import cilium, namespaces, pod_policy
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 
@@ -185,14 +185,14 @@ class GoogleMcp(Construct):
 
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
-        Namespace(
+        namespaces.namespace(
             self,
             "namespace",
-            metadata=ApiObjectMetadata(
-                name=_NAME,
-                labels={"name": _NAME, "goldilocks.fairwinds.com/enabled": "false"},
-                annotations={"description": "Holds the write-scoped Google OAuth token; never mirrored elsewhere."},
-            ),
+            name=_NAME,
+            vpa=Vpa.DISABLED,
+            agent_readable=None,
+            labels={"name": _NAME},
+            annotations={"description": "Holds the write-scoped Google OAuth token; never mirrored elsewhere."},
         )
         GoogleMcpApp(self, "app")
 

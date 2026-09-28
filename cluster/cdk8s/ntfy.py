@@ -21,7 +21,6 @@ from cdk8s_plus_34 import (
     ImagePullPolicy,
     LabelSelector,
     MemoryResources,
-    Namespace,
     PodSecurityContextProps,
     Secret,
     SecretValue,
@@ -37,11 +36,12 @@ from external_secrets_crds.io.external_secrets import (
 )
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import cnpg, fleet_rules, node_scheduling, pod_policy
+from cluster.cdk8s import cnpg, fleet_rules, namespaces, node_scheduling, pod_policy
 from cluster.cdk8s.external_secrets.kubernetes_store import ESO_SERVICE_ACCOUNT, cluster_secret_store
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -169,12 +169,13 @@ class Ntfy(Construct):
 
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
-        Namespace(
+        namespaces.namespace(
             self,
             "namespace",
-            metadata=ApiObjectMetadata(
-                name=NAMESPACE, labels={"app.kubernetes.io/name": NAMESPACE, "goldilocks.fairwinds.com/enabled": "true"}
-            ),
+            name=NAMESPACE,
+            vpa=Vpa.RECOMMEND,
+            agent_readable=None,
+            labels={"app.kubernetes.io/name": NAMESPACE},
         )
         _secret_store(self)
         _database(self)

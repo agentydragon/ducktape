@@ -124,6 +124,7 @@ py_library(
     deps = [
         ":cluster",
         ":k8s",
+        "//cluster/cdk8s:manifest_roots",
     ],
 )
 
