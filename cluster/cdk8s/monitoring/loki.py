@@ -29,7 +29,7 @@ from cilium_crds.io.cilium import (
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
-from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s import cilium, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -542,8 +542,7 @@ def _network_policy(chart: Chart) -> None:
             ),
             # Gatus → Loki (health checks)
             CiliumNetworkPolicySpecIngress(
-                from_endpoints=_from_pods({"app.kubernetes.io/name": "gatus", namespace_label: "gatus"}),
-                to_ports=_ingress_tcp("3100"),
+                from_endpoints=_from_pods(cilium.PROBER.cilium), to_ports=_ingress_tcp("3100")
             ),
             # Authentik proxy outpost → Loki (SSO-protected external access)
             CiliumNetworkPolicySpecIngress(

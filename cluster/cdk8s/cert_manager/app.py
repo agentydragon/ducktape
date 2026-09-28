@@ -7,14 +7,14 @@ ServiceMonitors for the controller and webhook metrics Services the chart create
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
 NAME = "cert-manager"
@@ -101,11 +101,7 @@ def _service_monitor(chart: Chart, name: str, *, component: str, port: str) -> N
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
-        chart,
-        "namespace",
-        metadata=k8s.ObjectMeta(name=NAMESPACE, labels={"rbac.ducktape.io/agent-readable-logs": "true"}),
-    )
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, agent_readable=AgentReadable.LOGS)
     helm_release(
         chart,
         NAME,

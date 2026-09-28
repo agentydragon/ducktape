@@ -12,6 +12,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/website"
 _NAME = "website"
@@ -19,6 +20,12 @@ _NAMESPACE = "website"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _CONTENT_CONFIG_MAP = "website-content"
 _PORT = 8080
+_SERVICE = ServiceRef(
+    name=_NAME,
+    port=Port(name="http", number=80),
+    pods=Pods(namespace=_NAMESPACE, labels=tuple(_LABELS.items())),
+    target_port=_PORT,
+)
 
 _INDEX_HTML = textwrap.dedent(
     """\
@@ -208,8 +215,7 @@ def chart(app: App) -> Chart:
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["www.allegedly.works", "allegedly.works"],
-        backend=_NAME,
-        port=80,
+        backend=_SERVICE,
         hsts=False,
         listener=None,
     )

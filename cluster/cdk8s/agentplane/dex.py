@@ -47,6 +47,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy, deny_all_egress
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAMESPACE = "agentplane-testing"
 _NAME = "agentplane-testing-dex"
@@ -54,6 +55,9 @@ _NAME = "agentplane-testing-dex"
 _IMAGE = "ghcr.io/dexidp/dex:v2.45.1"
 _PORT = 5556
 _LABELS = {"app.kubernetes.io/name": _NAME}
+_SERVICE = ServiceRef(
+    name=_NAME, port=Port(name="http", number=_PORT), pods=Pods(namespace=_NAMESPACE, labels=tuple(_LABELS.items()))
+)
 _ISSUER = "https://agentplane-dex-testing.allegedly.works/dex"
 # Shared between Dex's own staticPasswords entry and the ExternalSecret template the
 # acceptance suite reads, so the two can't name different identities.
@@ -298,8 +302,7 @@ def _add_http_route(scope: Construct) -> None:
         "httproute",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["agentplane-dex-testing.allegedly.works"],
-        backend=_NAME,
-        port=_PORT,
+        backend=_SERVICE,
     )
 
 

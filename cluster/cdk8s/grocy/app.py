@@ -9,6 +9,7 @@ patch moves the Deployment onto the hil-ovh zone.
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
@@ -38,12 +39,14 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
-from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s import cilium, namespaces, node_scheduling
+from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.volsync.replication_destination import ReplicationDestination
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAME = "grocy"
 _LABELS = {"app.kubernetes.io/name": _NAME}
@@ -51,7 +54,15 @@ _LABELS = {"app.kubernetes.io/name": _NAME}
 _IMAGE = "lscr.io/linuxserver/grocy:v4.6.0-ls318"
 _CONFIG_CLAIM = "grocy-config-ovh"
 _BACKUP = "grocy-config-ovh-backup"
-_HTTP_PORT = 80
+_HTTP = Port(name="http", number=80)
+# The households; grocy/mcp.py renders one MCP server per entry too.
+HOUSEHOLDS = (("sf", "SF"), ("vallejo", "Vallejo"))
+_BACKUP_SCHEDULE = "23 */6 * * *"
+
+
+def service(household: str) -> ServiceRef:
+    """The Service base_chart renders, as the household overlay places it."""
+    return ServiceRef(name=_NAME, port=_HTTP, pods=Pods(namespace=f"grocy-{household}", labels=tuple(_LABELS.items())))
 
 
 def _from_namespace_pod(namespace: str, pod_labels: dict[str, str]) -> k8s.NetworkPolicyIngressRule:
@@ -62,14 +73,14 @@ def _from_namespace_pod(namespace: str, pod_labels: dict[str, str]) -> k8s.Netwo
                 pod_selector=k8s.LabelSelector(match_labels=pod_labels),
             )
         ],
-        ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_HTTP_PORT), protocol="TCP")],
+        ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_HTTP.number), protocol="TCP")],
     )
 
 
 def base_chart(app: App) -> Chart:
     """The objects every household runs; the household overlay supplies the namespace."""
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    login_probe = k8s.HttpGetAction(path="/login", port=k8s.IntOrString.from_number(_HTTP_PORT))
+    login_probe = k8s.HttpGetAction(path="/login", port=k8s.IntOrString.from_number(_HTTP.number))
     k8s.KubeDeployment(
         chart,
         "deployment",
@@ -86,7 +97,7 @@ def base_chart(app: App) -> Chart:
                         k8s.Container(
                             name=_NAME,
                             image=_IMAGE,
-                            ports=[k8s.ContainerPort(container_port=_HTTP_PORT, name="http")],
+                            ports=[_HTTP.k8s_container_port()],
                             env=[
                                 k8s.EnvVar(name="PUID", value="1000"),
                                 k8s.EnvVar(name="PGID", value="1000"),
@@ -145,15 +156,7 @@ def base_chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=_NAME),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name="http", port=_HTTP_PORT, target_port=k8s.IntOrString.from_number(_HTTP_PORT), protocol="TCP"
-                )
-            ],
-            type="ClusterIP",
-        ),
+        spec=k8s.ServiceSpec(selector=_LABELS, ports=[_HTTP.k8s_service_port()], type="ClusterIP"),
     )
     k8s.KubeConfigMap(
         chart,
@@ -184,11 +187,9 @@ def base_chart(app: App) -> Chart:
             pod_selector=k8s.LabelSelector(match_labels=_LABELS),
             policy_types=["Ingress"],
             ingress=[
-                _from_namespace_pod(
-                    "authentik", {"app.kubernetes.io/component": "server", "app.kubernetes.io/name": "authentik"}
-                ),
+                _from_namespace_pod(authentik.SERVER.pods.namespace, authentik.SERVER.pods.selector),
                 # Gatus: health check probes
-                _from_namespace_pod("gatus", {"app.kubernetes.io/name": "gatus"}),
+                _from_namespace_pod(cilium.PROBER.namespace, cilium.PROBER.selector),
             ],
         ),
     )
@@ -252,8 +253,8 @@ def _source_mover_zone_affinity() -> ReplicationSourceSpecRsyncTlsMoverAffinity:
     )
 
 
-def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
-    namespace = f"grocy-{household}"
+def household_chart(app: App, *, household: str) -> Chart:
+    namespace = service(household).pods.namespace
     chart = Chart(app, namespace, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=namespace, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
     k8s.KubePersistentVolumeClaim(
@@ -348,7 +349,7 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
         "backup-source",
         metadata=ApiObjectMetadata(name=_BACKUP, namespace=namespace),
         source_pvc=_CONFIG_CLAIM,
-        trigger=ReplicationSourceSpecTrigger(schedule=backup_schedule),
+        trigger=ReplicationSourceSpecTrigger(schedule=_BACKUP_SCHEDULE),
         mover=ReplicationSourceSpecRsyncTls(
             copy_method=ReplicationSourceSpecRsyncTlsCopyMethod.DIRECT,
             key_secret=f"volsync-rsync-tls-{_BACKUP}",
@@ -362,15 +363,10 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(
-        root,
-        f"{HAND_WRITTEN_ROOT}/grocy/sf/app",
-        base_chart,
-        lambda app: household_chart(app, household="sf", backup_schedule="23 */6 * * *"),
-    )
-    write_charts(
-        root,
-        f"{HAND_WRITTEN_ROOT}/grocy/vallejo/app",
-        base_chart,
-        lambda app: household_chart(app, household="vallejo", backup_schedule="29 */6 * * *"),
-    )
+    for household, _display in HOUSEHOLDS:
+        write_charts(
+            root,
+            f"{HAND_WRITTEN_ROOT}/grocy/{household}/app",
+            base_chart,
+            partial(household_chart, household=household),
+        )

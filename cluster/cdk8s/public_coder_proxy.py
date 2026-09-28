@@ -37,13 +37,13 @@ from cluster.cdk8s import cilium, external_creds, public_coder_devbox
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 
 NAME = "public-coder-agent-proxy"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/proxy"
@@ -56,6 +56,8 @@ LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/iron-proxy:unset"
 PROXY_PORT = 8080
 _METRICS_PORT = 9090
+# public_coder_agent_config's ExternalSecret writes it; here, because that module imports this one.
+GITHUB_TOKEN = SecretRef(namespace=NAMESPACE, name="public-coder-agent-github-token").key("GITHUB_TOKEN")
 # Each credential iron's `secrets` transform reads from the proxy container's env, and the
 # non-secret placeholder the app presents in its place.
 _GITHUB_TOKEN_ENV = "GITHUB_TOKEN"
@@ -246,7 +248,7 @@ def _config_map(scope: Construct) -> k8s.KubeConfigMap:
     )
 
 
-def _container(aiquota_bearer: k8s.SecretKeySelector) -> k8s.Container:
+def _container(aiquota_bearer: SecretKey) -> k8s.Container:
     return k8s.Container(
         name="iron-proxy",
         # Bootstrap on upstream 0.49.0. Once CI publishes the commit-pinned Forgejo image, Flux
@@ -258,27 +260,33 @@ def _container(aiquota_bearer: k8s.SecretKeySelector) -> k8s.Container:
         env=[
             # The real GitHub credential lives here and nowhere else. It reaches the agent's
             # traffic only as a substitution performed here.
-            secret_env_var(_GITHUB_TOKEN_ENV, "public-coder-agent-github-token", "GITHUB_TOKEN"),
+            GITHUB_TOKEN.env_var(_GITHUB_TOKEN_ENV),
             # Dedicated Haku Console bearer, held by the proxy rather than the agent. iron.yaml
             # substitutes it only for the exact public Haku host's Authorization header.
-            secret_env_var(_HAKU_CONSOLE_TOKEN_ENV, "haku-console-public-coder-agent", "token"),
+            SecretRef(namespace=NAMESPACE, name="haku-console-public-coder-agent")
+            .key("token")
+            .env_var(_HAKU_CONSOLE_TOKEN_ENV),
             # The agent sees only the corresponding placeholder. This password is valid solely for
             # the native read-only public_coder_analytics ClickHouse account and is substituted by
             # iron.yaml on the private ClusterIP host.
-            secret_env_var(_CLICKHOUSE_PASSWORD_ENV, client.PUBLIC_CODER_CREDENTIALS, client.PASSWORD_KEY),
+            SecretRef(namespace=NAMESPACE, name=client.PUBLIC_CODER_CREDENTIALS)
+            .key(client.PASSWORD_KEY)
+            .env_var(_CLICKHOUSE_PASSWORD_ENV),
             # The same bearer used by aiquota-api. It is reflected here solely for iron-proxy to
             # substitute into the agent's placeholder on the two read endpoints; the OpenClaw
             # workload never receives it.
-            k8s.EnvVar(name=_AIQUOTA_BEARER_ENV, value_from=k8s.EnvVarSource(secret_key_ref=aiquota_bearer)),
+            aiquota_bearer.env_var(_AIQUOTA_BEARER_ENV),
             # The Brave Search API key is consumed only by iron-proxy. The OpenClaw Pod gets a
             # non-secret placeholder that is swapped only for Brave's X-Subscription-Token header
             # on its API host. Synced into this namespace from the external-creds source at
             # cluster/k8s/external-creds/brave-search-api-key.sops.yaml.
-            secret_env_var(_BRAVE_API_KEY_ENV, "brave-search-api-key", "api-key"),
+            SecretRef(namespace=NAMESPACE, name="brave-search-api-key").key("api-key").env_var(_BRAVE_API_KEY_ENV),
             # Matrix password login is the one credential that lives in a JSON body rather than
             # Authorization. iron.yaml swaps the app's placeholder only on the Matrix login
             # endpoint.
-            secret_env_var(_MATRIX_PASSWORD_ENV, "public-coder-agent-matrix-bot-password", "password"),
+            SecretRef(namespace=NAMESPACE, name="public-coder-agent-matrix-bot-password")
+            .key("password")
+            .env_var(_MATRIX_PASSWORD_ENV),
         ],
         ports=[
             k8s.ContainerPort(name="proxy", container_port=PROXY_PORT),
@@ -298,7 +306,7 @@ def _container(aiquota_bearer: k8s.SecretKeySelector) -> k8s.Container:
     )
 
 
-def _deployment(scope: Construct, config_map: k8s.KubeConfigMap, aiquota_bearer: k8s.SecretKeySelector) -> None:
+def _deployment(scope: Construct, config_map: k8s.KubeConfigMap, aiquota_bearer: SecretKey) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
@@ -435,7 +443,7 @@ def _egress_policy(scope: Construct) -> None:
     )
 
 
-def chart(app: App, *, app_namespace: str, app_labels: dict[str, str], aiquota_bearer: k8s.SecretKeySelector) -> Chart:
+def chart(app: App, *, app_namespace: str, app_labels: dict[str, str], aiquota_bearer: SecretKey) -> Chart:
     """`app_namespace` and `app_labels` are the OpenClaw Agent pod's: public_coder_agent_config
     exports them, and imports this module for the proxy's address. `aiquota_bearer` is the
     mirror aiquota writes into this namespace."""
@@ -449,9 +457,7 @@ def chart(app: App, *, app_namespace: str, app_labels: dict[str, str], aiquota_b
     return chart
 
 
-def write_manifests(
-    root: Path, *, app_namespace: str, app_labels: dict[str, str], aiquota_bearer: k8s.SecretKeySelector
-) -> None:
+def write_manifests(root: Path, *, app_namespace: str, app_labels: dict[str, str], aiquota_bearer: SecretKey) -> None:
     write_charts(
         root,
         OUTPUT_DIR,

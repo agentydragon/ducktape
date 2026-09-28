@@ -7,10 +7,14 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
 
 - **The vocabulary is Kubernetes, cdk8s, Flux and Kustomize objects, plus plain Python
   values.** Nothing here introduces a concept those do not have: no marker annotation,
-  no "provides" declaration, no record type standing in for an object, no registry, no
-  convention a reader must learn on top of the objects' own fields. When a change seems
-  to need one, stop and ask; the operator approves the design before it is built. The
-  same applies to a rule or check that would only work with such a marker.
+  no "provides" declaration, no registry, no convention a reader must learn on top of the
+  objects' own fields. When a change seems to need one, stop and ask; the operator
+  approves the design before it is built. The same applies to a rule or check that would
+  only work with such a marker. An identity-only reference is allowed: a frozen dataclass
+  of names, keys, ports and labels plus the addresses derived from them, declared once by
+  the producing module and projected into each dialect by methods. A record describing
+  what to build is not. A map that checks hand-written wiring (`crd_layering.OPERATOR_CRDS`)
+  is allowed; a map that chooses wiring is a registry.
 - **Construction runs forward** (§ The Flux graph): inputs are values or constructs
   built earlier, and every fact a node depends on is in its signature.
 - **Stateful data is never destroyed by a change here.** Databases, PersistentVolumes

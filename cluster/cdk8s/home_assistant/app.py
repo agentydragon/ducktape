@@ -47,6 +47,8 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import HostNetworkServiceRef, Pods, Port
 
 # Aliased: each provisioner names its model `Settings`, in a module named `settings`.
 from homeassistant.provisioner.components import settings as components
@@ -60,9 +62,15 @@ _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/home-assistant/app"
 _NAME = "home-assistant"
 _NAMESPACE = "home-assistant"
 _HOSTNAME = "home.allegedly.works"
-_LABELS = {"app.kubernetes.io/name": _NAME}
+# Caddy in the hostNetwork Pod answers on the node, so clients use an entity rule on `SERVICE.port`.
+SERVICE = HostNetworkServiceRef(
+    name=_NAME,
+    port=Port(name="http", number=8123),
+    pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
+)
 _CONFIG_CLAIM = "home-assistant-config"
-_METRICS_TOKEN = "home-assistant-metrics-token"
+# `password` is the ESO Password generator's own field, which `_metrics_token` copies verbatim.
+_METRICS_TOKEN = SecretRef(namespace=_NAMESPACE, name="home-assistant-metrics-token").key("password")
 _BACKUP = "home-assistant-config-restic"
 _BACKUP_LABELS = {"app.kubernetes.io/name": _BACKUP}
 _STORAGE_CLASS = "local-path-home-ssd"
@@ -92,9 +100,7 @@ _CADDY_CONFIG_MAP = ConfigMapArgs(
 
 # The local owner the provisioners log in as, through the in-cluster Service.
 _ENDPOINT = HomeAssistantEndpoint(
-    url=f"http://{_NAME}.{_NAMESPACE}.svc.cluster.local:8123",
-    client_id=f"https://{_HOSTNAME}/",
-    redirect_uri=f"https://{_HOSTNAME}/",
+    url=SERVICE.url, client_id=f"https://{_HOSTNAME}/", redirect_uri=f"https://{_HOSTNAME}/"
 )
 _OWNER_USERNAME = "ha-local-admin"
 
@@ -209,13 +215,13 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=SERVICE.pods.selector),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     host_network=True,
@@ -267,17 +273,12 @@ def _deployment(scope: Construct) -> None:
                             name="caddy",
                             # renovate: datasource=docker
                             image="caddy:2.11.4-alpine",
-                            env=[
-                                k8s.EnvVar(
-                                    name="METRICS_TOKEN",
-                                    value_from=k8s.EnvVarSource(
-                                        secret_key_ref=k8s.SecretKeySelector(name=_METRICS_TOKEN, key="password")
-                                    ),
-                                )
-                            ],
-                            ports=[k8s.ContainerPort(name="http", container_port=8123)],
+                            env=[_METRICS_TOKEN.env_var("METRICS_TOKEN")],
+                            ports=[SERVICE.port.k8s_container_port()],
                             readiness_probe=k8s.Probe(
-                                http_get=k8s.HttpGetAction(port=k8s.IntOrString.from_string("http"), path="/"),
+                                http_get=k8s.HttpGetAction(
+                                    port=k8s.IntOrString.from_string(SERVICE.port.name), path="/"
+                                ),
                                 period_seconds=10,
                             ),
                             resources=k8s.ResourceRequirements(
@@ -309,11 +310,8 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[k8s.ServicePort(name="http", port=8123, target_port=k8s.IntOrString.from_string("http"))],
-        ),
+        metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=_NAMESPACE, labels=SERVICE.labels),
+        spec=k8s.ServiceSpec(selector=SERVICE.pods.selector, ports=[SERVICE.port.k8s_service_port()]),
     )
 
 
@@ -517,8 +515,8 @@ def _metrics_token(scope: Construct) -> None:
     mint_bearer_secret(
         scope,
         "metrics-token",
-        name=_METRICS_TOKEN,
-        namespace=_NAMESPACE,
+        name=_METRICS_TOKEN.secret.name,
+        namespace=_METRICS_TOKEN.secret.namespace,
         key=None,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
     )
@@ -529,10 +527,13 @@ def _monitoring(scope: Construct) -> None:
         scope,
         "service-monitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
+        selector=ServiceMonitorSpecSelector(match_labels=SERVICE.labels),
         endpoints=[
             Endpoint.bearer_authorization(
-                port="http", path="/api/prometheus", secret_name=_METRICS_TOKEN, key="password"
+                port=SERVICE.port.name,
+                path="/api/prometheus",
+                secret_name=_METRICS_TOKEN.secret.name,
+                key=_METRICS_TOKEN.key,
             )
         ],
     )
@@ -676,8 +677,7 @@ def chart(app: App) -> Chart:
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=[_HOSTNAME],
-        backend=_NAME,
-        port=8123,
+        backend=SERVICE,
         hsts=False,
         listener=None,
     )

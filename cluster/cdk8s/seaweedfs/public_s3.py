@@ -47,6 +47,7 @@ from cluster.cdk8s.seaweedfs import (
     namespace,
     s3,
 )
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "public-s3"
 OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs/public-s3"
@@ -57,6 +58,11 @@ _CONFIG_KEY = "seaweedfs_s3_config.json"
 _CONFIG_DIR = "/etc/sw"
 _SELECTOR = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "s3"}
 _LABELS = {**_SELECTOR, "app.kubernetes.io/part-of": "seaweedfs"}
+_S3 = ServiceRef(
+    name=NAME,
+    port=Port(name="s3-http", number=_PORT),
+    pods=Pods(namespace=namespace.NAME, labels=tuple(_SELECTOR.items())),
+)
 _CLAUDE_READER = "claude-reader"
 _CLAUDE_READER_POLICY = "claude-reader-buckets"
 # Buckets claude-reader may list and read.
@@ -255,8 +261,7 @@ def _gateway(scope: Construct) -> None:
         "route",
         metadata=ApiObjectMetadata(name=NAME, namespace=namespace.NAME),
         hostnames=["s3.allegedly.works"],
-        backend=NAME,
-        port=_PORT,
+        backend=_S3,
         timeout="3600s",
         hsts=False,
         listener=None,

@@ -7,6 +7,7 @@ metadata:
     goldilocks.fairwinds.com/enabled: "false"
     name: ssh-mcp
   name: ssh-mcp
+spec: {}
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password

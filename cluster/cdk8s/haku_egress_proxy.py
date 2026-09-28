@@ -27,6 +27,7 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 
 NAME = "haku-egress-proxy"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/haku-egress-proxy"
@@ -39,13 +40,6 @@ _PUBLISHED_SECRETS_READER = "authentik-jwt-rotation-published-secrets-reader"
 
 def _quantities(**values: str) -> dict[str, k8s.Quantity]:
     return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
-
-
-def _secret_env(name: str, secret: str, key: str, *, optional: bool | None = None) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name,
-        value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key, optional=optional)),
-    )
 
 
 def _ca(chart: Chart) -> None:
@@ -320,17 +314,17 @@ def _iron_proxy(chart: Chart, name: str, *, description: str, config: dict, port
     )
 
 
-def _github_token(chart: Chart, name: str) -> None:
+def _github_token(chart: Chart, token: SecretKey) -> None:
     """The agentydragon-agent GitHub PAT, consumed only by one iron-proxy here; its sandbox
     receives a non-secret placeholder that the proxy replaces in Authorization headers for
     exact GitHub hosts."""
     ExternalSecret(
         chart,
-        name,
-        metadata=ApiObjectMetadata(name=name, namespace=NAME),
+        token.secret.name,
+        metadata=ApiObjectMetadata(name=token.secret.name, namespace=token.secret.namespace),
         refresh_interval="1h",
         secret_store_ref=external_creds.STORE,
-        data=[remote_data("github-agentydragon-agent", "token", secret_key="GITHUB_TOKEN")],
+        data=[remote_data("github-agentydragon-agent", "token", secret_key=token.key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
@@ -395,8 +389,8 @@ def _openclaw_spike_iron_config() -> dict:
 
 def _openclaw_spike_proxy(chart: Chart) -> None:
     # Shared with public-coder-agent's copy of the same PAT.
-    github_token = "haku-openclaw-spike-github-token"
-    kube_token = "haku-openclaw-spike-kube-token"
+    github_token = SecretRef(namespace=NAME, name="haku-openclaw-spike-github-token").key("GITHUB_TOKEN")
+    kube_token = SecretRef(namespace=NAME, name="haku-openclaw-spike-kube-token")
     _github_token(chart, github_token)
     _iron_proxy(
         chart,
@@ -407,10 +401,12 @@ def _openclaw_spike_proxy(chart: Chart) -> None:
         config=_openclaw_spike_iron_config(),
         port=8181,
         env=[
-            _secret_env("CLAUDE_CODE_OAUTH_TOKEN", "haku-claude-oauth-token", "CLAUDE_CODE_OAUTH_TOKEN"),
-            _secret_env("HAKU_GIT_PASSWORD", "haku-forgejo-git", "password"),
-            _secret_env("HAKU_CONSOLE_TOKEN", "haku-console-agent-api", "token"),
-            _secret_env("GITHUB_TOKEN", github_token, "GITHUB_TOKEN"),
+            SecretRef(namespace=NAME, name="haku-claude-oauth-token")
+            .key("CLAUDE_CODE_OAUTH_TOKEN")
+            .env_var("CLAUDE_CODE_OAUTH_TOKEN"),
+            SecretRef(namespace=NAME, name="haku-forgejo-git").key("password").env_var("HAKU_GIT_PASSWORD"),
+            SecretRef(namespace=NAME, name="haku-console-agent-api").key("token").env_var("HAKU_CONSOLE_TOKEN"),
+            github_token.env_var("GITHUB_TOKEN"),
             # Rotated roughly every 44 days by agents/authentik-jwt-rotation, which commits the
             # Secret SOPS-encrypted straight into THIS namespace -- deliberately not via the
             # shared claude-sandbox store that carries GITHUB_TOKEN above. That store is
@@ -422,7 +418,7 @@ def _openclaw_spike_proxy(chart: Chart) -> None:
             # Optional: this proxy is the ONLY egress path for the spike, so a missing kube
             # token must not take out Anthropic, Forgejo and GitHub too. Unset simply means no
             # substitution: kubectl 401s, everything else is untouched.
-            _secret_env("HAKU_KUBE_JWT", kube_token, "jwt", optional=True),
+            kube_token.key("jwt").env_var("HAKU_KUBE_JWT", optional=True),
         ],
     )
     k8s.KubeNetworkPolicy(
@@ -464,7 +460,7 @@ def _openclaw_spike_proxy(chart: Chart) -> None:
                 )
             },
         ),
-        rules=[k8s.PolicyRule(api_groups=[""], resources=["secrets"], verbs=["get"], resource_names=[kube_token])],
+        rules=[k8s.PolicyRule(api_groups=[""], resources=["secrets"], verbs=["get"], resource_names=[kube_token.name])],
     )
     k8s.KubeRoleBinding(
         chart,

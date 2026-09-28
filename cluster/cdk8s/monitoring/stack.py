@@ -18,7 +18,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -434,12 +434,12 @@ def _values() -> dict[str, object]:
     }
 
 
-def _prometheus_ingress_rule(namespace: str, app: str) -> k8s.NetworkPolicyIngressRule:
+def _prometheus_ingress_rule(namespace: str, pod_labels: dict[str, str]) -> k8s.NetworkPolicyIngressRule:
     return k8s.NetworkPolicyIngressRule(
         from_=[
             k8s.NetworkPolicyPeer(
                 namespace_selector=k8s.LabelSelector(match_labels={"kubernetes.io/metadata.name": namespace}),
-                pod_selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": app}),
+                pod_selector=k8s.LabelSelector(match_labels=pod_labels),
             )
         ],
         ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_PROMETHEUS_PORT), protocol="TCP")],
@@ -516,11 +516,11 @@ def chart(app: App) -> Chart:
             policy_types=["Ingress"],
             ingress=[
                 # Grafana: datasource queries for dashboards
-                _prometheus_ingress_rule(_NAMESPACE, "grafana"),
+                _prometheus_ingress_rule(_NAMESPACE, {"app.kubernetes.io/name": "grafana"}),
                 # Alertmanager: Prometheus pushes alerts to Alertmanager; allow return traffic
-                _prometheus_ingress_rule(_NAMESPACE, "alertmanager"),
+                _prometheus_ingress_rule(_NAMESPACE, {"app.kubernetes.io/name": "alertmanager"}),
                 # Gatus: health check probes
-                _prometheus_ingress_rule("gatus", "gatus"),
+                _prometheus_ingress_rule(cilium.PROBER.namespace, cilium.PROBER.selector),
             ],
         ),
     )

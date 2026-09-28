@@ -214,14 +214,14 @@ def test_flux_kustomizations_under_parked_path_are_annotated(k8s_dir: Path) -> N
 
 
 def test_goldilocks_namespace_labels(cluster: ParsedCluster) -> None:
-    """Namespaces with goldilocks vpa-update-mode must also have goldilocks enabled."""
+    """A namespace with a goldilocks vpa-update-mode is not opted out of goldilocks."""
     errors = check_goldilocks_namespace_labels(cluster)
     assert not errors, "\n".join(errors)
 
 
-def test_goldilocks_explicit_decision(cluster: ParsedCluster) -> None:
-    """Namespaces with workloads must explicitly set goldilocks enabled label."""
-    errors = check_goldilocks_explicit_decision(cluster)
+def test_goldilocks_explicit_decision(cluster: ParsedCluster, repo_root: Path) -> None:
+    """Every generated Namespace labels its goldilocks decision."""
+    errors = check_goldilocks_explicit_decision(cluster, repo_root)
     assert not errors, "\n".join(errors)
 
 

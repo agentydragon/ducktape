@@ -21,6 +21,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/oci-cache"
@@ -28,6 +29,12 @@ _NAMESPACE = "oci-cache"
 _NAME = "zot"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _PUBLIC_AUTH_PORT = 8080
+# The nginx sidecar's authenticated port on the `oci-cache` Service.
+_PUBLIC_AUTH = ServiceRef(
+    name=_NAMESPACE,
+    port=Port(name="public-auth", number=_PUBLIC_AUTH_PORT),
+    pods=Pods(namespace=_NAMESPACE, labels=tuple(_LABELS.items())),
+)
 _VALKEY = "oci-cache-valkey"
 
 
@@ -221,8 +228,7 @@ def chart(app: App) -> Chart:
             },
         ),
         hostnames=["oci-cache.allegedly.works"],
-        backend=_NAMESPACE,
-        port=_PUBLIC_AUTH_PORT,
+        backend=_PUBLIC_AUTH,
         hsts=False,
         listener=None,
     )

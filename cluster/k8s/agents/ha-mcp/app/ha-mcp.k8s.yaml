@@ -153,7 +153,7 @@ data:
   HAMCP_ENABLE_DEV_MODE: "false"
   HAMCP_ENABLE_FILESYSTEM_TOOLS: "false"
   HA_MCP_CONFIG_DIR: /data
-  HOMEASSISTANT_URL: http://home-assistant.home-assistant.svc.cluster.local:8123
+  HOMEASSISTANT_URL: http://home-assistant.home-assistant.svc:8123
   LOG_LEVEL: INFO
   MCP_FACADE_FACADE_NAME: Home Assistant MCP Facade
   MCP_FACADE_UPSTREAM__KIND: http
@@ -377,7 +377,8 @@ metadata:
   namespace: ha-mcp
 spec:
   endpoints:
-    - port: metrics
+    - path: /metrics
+      port: metrics
   selector:
     matchLabels:
       app.kubernetes.io/name: ha-mcp

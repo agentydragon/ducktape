@@ -8,6 +8,7 @@ metadata:
     name: agentplane-index
     rbac.ducktape.io/agent-readable-logs: "true"
   name: agentplane-index
+spec: {}
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password

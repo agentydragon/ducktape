@@ -35,6 +35,8 @@ def chart(app: App) -> Chart:
         values={
             "vpa": {"enabled": False},
             "controller": {
+                # Manages a namespace unless it is labeled `enabled: "false"`, so `namespaces.namespace`
+                # labels an update mode alone.
                 "flags": {"on-by-default": "true"},
                 "resources": {
                     "requests": {"cpu": "25m", "memory": "256Mi"},

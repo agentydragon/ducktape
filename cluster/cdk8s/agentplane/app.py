@@ -34,7 +34,6 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
-    ConfigMap,
     ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
@@ -55,7 +54,6 @@ from cdk8s_plus_34 import (
     Service,
     ServiceAccount,
     ServicePort,
-    Volume,
 )
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
@@ -75,6 +73,8 @@ from cluster.cdk8s.model_rosters import OLLAMA_CHAT_MODELS, ApiShape, Provider, 
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name
 
@@ -87,12 +87,20 @@ CONTAINER_PORT = 8080
 _RUNNER_PORT = 7000
 _LABELS = {"app.kubernetes.io/name": NAME}
 _RUNNER_LABELS = {"app.kubernetes.io/name": "agentplane-runner"}
-_CONFIG_DIR = "/etc/agentplane"
 # Shared by the runner's --state-dir flag, its container volumeMount, and the
 # SandboxTemplate's own VolumeClaimTemplate -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
 _STATE_DIR = "/state"
 _QWEN_IQ4XS = "qwen3.8-flash-next-iq4xs"
+
+
+def service(namespace: str) -> ServiceRef:
+    """The app's Service in one environment's namespace."""
+    return ServiceRef(
+        name=NAME,
+        port=Port(name="http", number=CONTAINER_PORT),
+        pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())),
+    )
 
 
 def _runner_model_context_windows() -> dict[str, int]:
@@ -111,7 +119,7 @@ def _runner_model_context_windows() -> dict[str, int]:
 
 
 class App(Construct):
-    """ServiceAccounts, RBAC, Deployment (+ migrate initContainer), Service,
+    """ServiceAccounts, RBAC, the config ConfigMap, Deployment (+ migrate initContainer), Service,
     HTTPRoute, NetworkPolicy, optional PodDisruptionBudget, and the runner
     SandboxTemplate.
     """
@@ -123,7 +131,15 @@ class App(Construct):
         forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=env.namespace)
         app_service_account = self._add_service_accounts()
         self._add_rbac(app_service_account)
-        deployment = self._add_deployment(app_service_account)
+        config = SettingsFile(
+            self,
+            "config",
+            metadata=ApiObjectMetadata(name="agentplane-app-config", namespace=env.namespace),
+            model=Settings,
+            content=env.app_config,
+            path="/etc/agentplane/config.yaml",
+        )
+        deployment = self._add_deployment(app_service_account, config)
         self._add_service(deployment)
         self._add_http_route()
         self._add_network_policy()
@@ -226,7 +242,6 @@ class App(Construct):
         )
         token_subjects = json.dumps([f"system:serviceaccount:{namespace}:agentplane-agent"])
         return {
-            CONFIG_FILE_ENV: EnvValue.from_value(f"{_CONFIG_DIR}/config.yaml"),
             "AGENTPLANE_DB_USER": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="username")),
             "AGENTPLANE_DB_PASSWORD": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="password")),
             "AGENTPLANE_DB_HOST": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="host")),
@@ -253,7 +268,7 @@ class App(Construct):
             env_name(Settings, "token_subjects"): EnvValue.from_value(token_subjects),
         }
 
-    def _add_deployment(self, app_service_account: ServiceAccount) -> Deployment:
+    def _add_deployment(self, app_service_account: ServiceAccount, config: SettingsFile) -> Deployment:
         namespace = self.env.namespace
         env = self._container_env()
         oidc_secret_reload = "agentplane-oidc"
@@ -270,7 +285,7 @@ class App(Construct):
                     # A re-minted client secret otherwise leaves the pod on the old
                     # one, and every login 401s.
                     "secret.reloader.stakater.com/reload": oidc_secret_reload,
-                    "configmap.reloader.stakater.com/reload": "agentplane-app-config",
+                    "configmap.reloader.stakater.com/reload": config.config_map.name,
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
@@ -316,9 +331,7 @@ class App(Construct):
             # Writable: its root filesystem writes are unaudited.
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
-        config = ConfigMap.from_config_map_name(self, "app-config-ref", "agentplane-app-config")
-        volume = Volume.from_config_map(self, "config-volume", config)
-        deployment.containers[0].mount(_CONFIG_DIR, volume, read_only=True)
+        config.mount_into(deployment.containers[0], env=CONFIG_FILE_ENV)
 
         # With the database (cnpg_conventions R5). Unlike llm-ingress/egress, the app
         # carries no control-plane toleration.
@@ -342,8 +355,7 @@ class App(Construct):
             "httproute",
             metadata=ApiObjectMetadata(name=namespace, namespace=namespace),
             hostnames=[self.env.app.hostname],
-            backend=NAME,
-            port=CONTAINER_PORT,
+            backend=service(namespace),
             # A session stream stays attached for as long as the tab is open.
             timeout="3600s",
         )

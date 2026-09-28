@@ -24,7 +24,7 @@ configMapGenerator:
     literals:
       - |
         settings.yaml=endpoint:
-          url: http://home-assistant.home-assistant.svc.cluster.local:8123
+          url: http://home-assistant.home-assistant.svc:8123
           client_id: https://home.allegedly.works/
           redirect_uri: https://home.allegedly.works/
         owner_username: ha-local-admin

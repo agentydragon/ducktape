@@ -12,6 +12,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "atuin"
 NAMESPACE = "atuin"
@@ -19,9 +20,13 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/atuin"
 # CNPG generates the application credentials in `<cluster>-app`.
 DB_APP_SECRET = "atuin-db-app"
 _DB_CLUSTER = "atuin-db"
-_SERVER = "atuin-server"
 _PORT = 8888
 _LABELS = {"app.kubernetes.io/name": NAME}
+SERVER = ServiceRef(
+    name="atuin-server",
+    port=Port(name="http", number=_PORT),
+    pods=Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items())),
+)
 
 
 def _database(chart: Chart) -> None:
@@ -49,7 +54,7 @@ def _server(chart: Chart) -> None:
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(name=_SERVER, namespace=NAMESPACE, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=SERVER.name, namespace=NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -97,7 +102,7 @@ def _server(chart: Chart) -> None:
     k8s.KubeService(
         chart,
         "service",
-        metadata=k8s.ObjectMeta(name=_SERVER, namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name=SERVER.name, namespace=NAMESPACE),
         spec=k8s.ServiceSpec(
             selector=_LABELS,
             ports=[
@@ -111,8 +116,7 @@ def _server(chart: Chart) -> None:
         "route",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         hostnames=["atuin.allegedly.works"],
-        backend=_SERVER,
-        port=_PORT,
+        backend=SERVER,
         hsts=False,
         listener=None,
     )
