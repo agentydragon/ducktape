@@ -159,9 +159,7 @@ class _FakePlaidApi:
             "y": encode(numbers.y),
             "expired_at": None,
         }
-        return SimpleNamespace(
-            key=SimpleNamespace(**key_data, to_dict=lambda: key_data),
-        )
+        return SimpleNamespace(key=SimpleNamespace(**key_data, to_dict=lambda: key_data))
 
     def transactions_sync(self, request: object) -> SimpleNamespace:
         raise AssertionError("unexpected transaction sync in this app test")
