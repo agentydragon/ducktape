@@ -1,6 +1,5 @@
-"""The oci-cache registry's `registry-cache` bucket: a tenant-local Bucket and S3Credentials
-in `oci-cache`, the cluster-global identity, and the grant letting them reference the
-SeaweedFS cluster."""
+"""The oci-cache registry's `registry-cache` bucket: a tenant-local Bucket, S3Identity and
+S3Credentials in `oci-cache`, and the grant letting them reference the SeaweedFS cluster."""
 
 from __future__ import annotations
 
@@ -20,7 +19,7 @@ def chart(app: App) -> Chart:
     chart = Chart(app, _CHART, disable_resource_name_hashes=True)
     # The existing cache bucket was handed to the tenant-local CR.
     bucket = s3.Bucket(chart, "bucket", name=NAME, namespace=_TENANT, adopt_existing=True)
-    identity = s3.Identity(chart, "identity", name=NAME)
+    identity = s3.Identity(chart, "identity", name=NAME, namespace=_TENANT)
     bucket.grant_read_write(identity)
     identity.credentials(namespace=_TENANT, secret="registry-cache-s3-credentials", key_fields=None)
     return chart
