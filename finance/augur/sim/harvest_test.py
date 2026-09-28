@@ -100,7 +100,8 @@ def situation(
     rollouts = len(next(iter(levels.values())))
     horizon = len(next(iter(levels.values()))[0]) - 1
     return Situation(
-        series=level_series(levels, rollout_count=rollouts, horizon_months=horizon),
+        # A fresh dict takes `level_series`'s key union; the `SecurityKey` mapping would not (keys are invariant).
+        series=level_series(dict(levels.items()), rollout_count=rollouts, horizon_months=horizon),
         rollout_count=rollouts,
         horizon_months=horizon,
         sleeve=_lot(
