@@ -169,6 +169,24 @@ path since purchase. Pre-purchase index changes do not alter the purchase anchor
 Sale costs, loan payoff and tax basis are separate; no property sale is implied
 merely by reaching the horizon.
 
+Property tax follows the parcel's situs, a tax rate area in the jurisdiction tree. Its assessed
+value is the price at purchase, grown on each January lien date by the Board of Equalization's
+inflation factor, or for a lien year it has not published by the modeled CPI's change capped at
+2%, and raised by completed construction at its cost. A fiscal year's secured bill is the 1% base
+plus the rate area's voter-approved debt rate on the value enrolled on its lien date, less the
+homeowners' exemption when the owner lived there then, paid in monthly twelfths; a fiscal year
+after the rate area's last published one keeps that year's debt rate. San Francisco and mainland
+Vallejo (Solano County rate area 007000) are the rate areas shipped. Where a purchase names the
+seller's assessed value, its fiscal year is billed on that value plus a supplemental bill on the
+increase, prorated by R&TC 75.41's factor. Supplemental bills on new construction, Proposition 8
+reductions, special districts and the two installment dates are not modeled.
+
+A purchase or sale pays each level's transfer tax on the whole consideration, seller-paid unless
+the caller gives the buyer a share; the owner's share is billed by the parcel's authority. A
+property's basis is its price plus the buyer's closing costs and share of transfer tax, divided
+between land and building by the declared land fraction; a sale's amount realized is its value
+less commissions, escrow and title, and the seller's share of transfer tax.
+
 PE paths distinguish marks, voluntary opportunities, eligibility/capacity,
 liquidity blocks and forced sale/recovery. A stated recovery cashout is a total
 for the remaining position, not a per-unit quote; proceeds and disposed basis
@@ -185,21 +203,26 @@ validated fidelity. Adding a jurisdiction can require mechanics, not merely data
 The supported tax scope is US federal plus California for a single filer resident
 in the US, holding equity funds, US Treasury and municipal bond funds, municipal
 and direct bonds and managed tax-loss-harvesting portfolios in taxable accounts. Qualified-dividend character, the net
-investment income tax and the mortgage-interest deduction (itemized against the
-standard deduction, with the SALT cap) belong to it; charitable deductions do not.
+investment income tax, the mortgage-interest deduction and the owner's ad-valorem property tax
+(itemized against the standard deduction: federally within the SALT cap, in California
+uncapped; a rented share is a rental expense, and transfer tax is never itemized) belong to it;
+charitable deductions do not.
 Future years hold current law flat, either in nominal dollars or with the amounts
 statute indexes following the modeled CPI, as the composition declares, and estimated
 tax and the true-up are paid on schedule without penalties: explicit assumptions, not
 forecasts. A distribution declared as qualified dividends is
 taxed at the federal long-term capital-gain rates and as ordinary income in California;
-the declaration is trusted without a holding-period test. The code does not yet cover
+the declaration is trusted without a holding-period test. Interest has one of three tax
+characters: Treasury, municipal (naming the state whose obligation it is) or taxable. Each
+jurisdiction's rules list the characters it exempts: federally every state's municipal
+interest, in California Treasury and California municipal interest. A fund's declared split
+of its payout across these characters is trusted the same way. The code does not yet cover
 this scope: NIIT's net investment income leaves out net rental income and the investment
 deductions IRS Form 8960 allows; the bundled tables are 2024 law; a taxpayer starts with no
 year-to-date income, gains or payments; the SALT cap has no income phase-out; estimated payments are equal quarters of one
 aggregate prior-year amount rather than per-jurisdiction schedules; fund capital-gain and
-return-of-capital distributions are not processed; one capital-loss carryforward serves every
-jurisdiction; and a property sale's gain basis leaves out the buyer's closing costs that its
-purchase capitalized.
+return-of-capital distributions are not processed; and one capital-loss carryforward serves
+every jurisdiction.
 
 ## Outputs and observation boundaries
 

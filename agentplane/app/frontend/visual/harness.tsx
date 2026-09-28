@@ -277,15 +277,6 @@ const ACTION_POLICY: ActionPolicyView = {
       },
     },
   ],
-  auto_deny_if: [
-    {
-      binding: "demo-a1b2-push-afternoon",
-      policy_set: "harness-push",
-      index: 0,
-      policy: { type: "exact_actions", actions: { kubernetes: ["pods_delete", "resources_delete"] } },
-    },
-  ],
-  auto_deny_unless: [],
 };
 
 const DECISIONS: Decision[] = [
@@ -1095,10 +1086,64 @@ function lifecycleGroupRows(threadId: string): Record<string, unknown>[] {
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
+/** One user turn answered with a fenced Python code block, so Markdown's syntax highlighting of a
+ * registered language renders the way tool-call Arguments/Output already do. */
+function codeFenceRows(threadId: string): Record<string, unknown>[] {
+  const rows = [
+    viewState(20, null),
+    entity(
+      "confirmed_input",
+      "user-1",
+      4,
+      { harness_message_id: "user-1", origin_command_ids: ["input-1"] },
+      {
+        thread_id: threadId,
+        turn_id: "turn-visual",
+        input_ref: payload(4, "user-1", "confirmed_input", "Add type hints to the greet function."),
+      }
+    ),
+    item(
+      20,
+      "m-code",
+      ItemKind.ASSISTANT_TEXT,
+      'Done. The signature now declares its types explicitly:\n\n```python\ndef greet(name: str) -> str:\n    return f"Hello, {name}!"\n```\n',
+      { threadId }
+    ),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
+/** A reasoning step with no neighboring tool call, so `historyRows` never folds it into a run and
+ * `EntityCard` renders it directly -- the standalone case, distinct from `standardRows`'s reasoning
+ * step, which sits right after a tool call and so is always part of a run. */
+function standaloneReasoningRows(threadId: string): Record<string, unknown>[] {
+  const rows = [
+    viewState(24, null),
+    entity(
+      "confirmed_input",
+      "user-1",
+      4,
+      { harness_message_id: "user-1", origin_command_ids: ["input-1"] },
+      {
+        thread_id: threadId,
+        turn_id: "turn-visual",
+        input_ref: payload(4, "user-1", "confirmed_input", "What should we try next?"),
+      }
+    ),
+    item(20, "r-solo", ItemKind.REASONING, "Weighing whether to add a retry or fix the root cause first.", {
+      threadId,
+    }),
+    item(24, "m-1", ItemKind.ASSISTANT_TEXT, "Let's fix the root cause.", { threadId }),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
 function threadEntityRows(threadId: string): Record<string, unknown>[] {
   if (scenario.failedTurn) return failedRows(threadId, scenario.failedTurn === "after-content");
   if (scenario.interleavedEvents) return interleavedRows(threadId);
   if (scenario.lifecycleGroup) return lifecycleGroupRows(threadId);
+  if (scenario.markdownCodeFence) return codeFenceRows(threadId);
+  if (scenario.standaloneReasoning) return standaloneReasoningRows(threadId);
   if (threadId === THREADS[2].id || scenario.pendingCommands) return statesRows(threadId);
   return standardRows(threadId);
 }
@@ -1878,7 +1923,7 @@ if (scenario.openMobileSidebar) {
   // The drawer has no route of its own; open it the way an operator would, by tapping the
   // phone-width hamburger.
   const openMobileSidebar = new MutationObserver(() => {
-    const button = document.querySelector('button[aria-label="Open navigation"]');
+    const button = document.querySelector('button[aria-label="Toggle navigation"]');
     if (!button) return;
     openMobileSidebar.disconnect();
     (button as HTMLButtonElement).click();

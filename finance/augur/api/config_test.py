@@ -24,7 +24,6 @@ from finance.augur.api.config import (
 )
 from finance.augur.api.conftest import MinimalConfig
 from finance.augur.api.finance import FinanceSnapshot
-from finance.augur.api.local_regulation import LocalRegulation
 from finance.augur.api.portfolio import (
     HoldingKind,
     HoldingTaxLotConfig,
@@ -42,6 +41,7 @@ from finance.augur.api.portfolio_source_config import (
 from finance.augur.api.wire import ActorRole
 from finance.augur.model.series import IssuerId, LocationId, SecuritySymbol
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId, PropertyId
+from finance.augur.sim.income import Taxable, Treasury
 from finance.augur.x.models.independent import IndependentProviderConfig
 from finance.augur.x.models.private_equity_risk import PrivateEquityRiskProviderConfig
 from finance.augur.x.models.provider_config import CompositeProviderConfig
@@ -178,9 +178,7 @@ def test_location_selection_accepts_location_strings(minimal_config: MinimalConf
     assert config.location_selection == ("san_francisco_ca", "vallejo_ca")
 
 
-def test_config_can_define_deployment_owned_locations(
-    minimal_config: MinimalConfig, fixture_regulation: LocalRegulation
-) -> None:
+def test_config_can_define_deployment_owned_locations(minimal_config: MinimalConfig) -> None:
     config = minimal_config(
         locations=(
             LocationConfig(
@@ -188,7 +186,7 @@ def test_config_can_define_deployment_owned_locations(
                 label="Location A",
                 city="Location A",
                 state="Fixture",
-                local_regulation=fixture_regulation,
+                situs=JurisdictionId("san_francisco"),
             ),
         ),
         location_selection=("location_a",),
@@ -414,9 +412,7 @@ def test_a_security_distribution_must_allocate_its_whole_payout(minimal_config: 
             security_distributions=(
                 SecurityDistributionConfig(
                     symbol=SecuritySymbol("bnd"),
-                    tax_character=(
-                        DistributionTaxShareConfig(fraction=0.4, issuer_jurisdiction_id=JurisdictionId("federal_us")),
-                    ),
+                    tax_character=(DistributionTaxShareConfig(fraction=0.4, character=Treasury()),),
                 ),
             )
         )
@@ -426,7 +422,7 @@ def test_a_security_distribution_is_declared_once_per_symbol(minimal_config: Min
     """Two declarations for one fund cannot both be what it holds, and the pool would pay twice."""
 
     declaration = SecurityDistributionConfig(
-        symbol=SecuritySymbol("bnd"), tax_character=(DistributionTaxShareConfig(fraction=1.0),)
+        symbol=SecuritySymbol("bnd"), tax_character=(DistributionTaxShareConfig(fraction=1.0, character=Taxable()),)
     )
 
     with pytest.raises(ValidationError, match="name each symbol once"):

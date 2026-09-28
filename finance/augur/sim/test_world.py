@@ -18,14 +18,13 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput, event_log
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, LotId, PropertyId
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.mortgage import Mortgage, MortgageTerms
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import ConsumptionTarget, Executed, Finished, Rejected, RejectedAction, UnpaidClaims
 from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.tax import PreparedTaxBracket, PreparedTaxProfile
+from finance.augur.sim.tax import TaxBracket, TaxProfile
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, opening, taxpayer, world_on
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import Capture, World
@@ -55,14 +54,14 @@ class Lot:
 class Situation:
     """What every path shares: the household's books, what it holds, and what it is billed or paid."""
 
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     rollout_count: int
     horizon_months: int
     # Each account with its opening balance.
     accounts: Mapping[AccountRef, int]
     holding_pools: tuple[Pool, ...]
     initial_lots: tuple[Lot, ...]
-    tax_profiles: tuple[PreparedTaxProfile, ...] = ()
+    tax_profiles: tuple[TaxProfile, ...] = ()
     obligations: tuple[Bill, ...] = ()
     scheduled_transfers: tuple[Contribution, ...] = ()
 
@@ -71,9 +70,7 @@ def situation(horizon: int = 2, paths: int = 1) -> Situation:
     """10,000 in checking and 100 units of stock at 1000 bought for 50,000, on flat paths."""
     return Situation(
         series=(
-            PreparedSeries(
-                series_id="security:test_stock", snapshots=horizon + 1, values=(1000,) * ((horizon + 1) * paths)
-            ),
+            Series(series_id="security:test_stock", snapshots=horizon + 1, values=(1000,) * ((horizon + 1) * paths)),
         ),
         rollout_count=paths,
         horizon_months=horizon,
@@ -290,8 +287,8 @@ def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> No
     profile = taxpayer(HOUSEHOLD)
     rules = replace(
         profile.jurisdictions[0],
-        ordinary_brackets=(PreparedTaxBracket(None, 200_000_000),),
-        long_term_capital_gain_brackets=(PreparedTaxBracket(None, 100_000_000),),
+        ordinary_brackets=(TaxBracket(None, 200_000_000),),
+        long_term_capital_gain_brackets=(TaxBracket(None, 100_000_000),),
         max_capital_loss_ordinary_offset=0,
     )
     run = replace(
@@ -475,8 +472,8 @@ def year_situation() -> Situation:
     profile = taxpayer(HOUSEHOLD)
     rules = replace(
         profile.jurisdictions[0],
-        ordinary_brackets=(PreparedTaxBracket(None, 200_000_000),),
-        long_term_capital_gain_brackets=(PreparedTaxBracket(None, 100_000_000),),
+        ordinary_brackets=(TaxBracket(None, 200_000_000),),
+        long_term_capital_gain_brackets=(TaxBracket(None, 100_000_000),),
         max_capital_loss_ordinary_offset=0,
     )
     return replace(

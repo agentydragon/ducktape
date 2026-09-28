@@ -14,8 +14,8 @@ from jaxtyping import Int64
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode
 from finance.augur.sim.fixed_point import round_ppb, sampled_array_to_quanta
+from finance.augur.sim.market_path import Series
 from finance.augur.sim.money import Currency
-from finance.augur.sim.prepared import PreparedSeries
 
 # Sentinel for absent sampled private-equity regimes.
 NO_CODE = -1
@@ -142,7 +142,7 @@ def compile_private_equity_series(
     rollout_count: int,
     horizon_months: int,
     currency: Currency,
-) -> tuple[PreparedSeries, ...]:
+) -> tuple[Series, ...]:
     """The ten per-issuer private-equity channels, in the execution input's typed integer units.
 
     `compile_pe_channels` validates raw values and quantizes money; company valuation crosses
@@ -176,7 +176,7 @@ def compile_private_equity_series(
             ("company_valuation", sampled_array_to_quanta(valuation, quantum=currency.quantum)),
         ):
             series.append(
-                PreparedSeries(
+                Series(
                     series_id=f"private_equity_{channel}:{issuer_id}",
                     snapshots=snapshots,
                     values=tuple(int(value) for value in np.asarray(values, dtype=np.int64).reshape(-1)),

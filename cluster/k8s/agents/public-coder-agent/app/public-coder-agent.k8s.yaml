@@ -175,7 +175,7 @@ spec:
               value: /etc/ssl/certs/ca-certificates.crt
             - name: PIP_CERT
               value: /etc/ssl/certs/ca-certificates.crt
-          image: ghcr.io/agentydragon/openclaw:unset
+          image: git.allegedly.works/ducktape-ci/public-coder-agent:unset
           name: openclaw
           ports:
             - containerPort: 18789
@@ -205,9 +205,6 @@ spec:
               name: trust
               readOnly: true
               subPath: ca-certificates.crt
-            - mountPath: /egress-proxy-ca
-              name: haku-egress-proxy-ca-cert
-              readOnly: true
             - mountPath: /home/openclaw/.ssh
               name: ssh
               readOnly: true
@@ -215,6 +212,8 @@ spec:
               name: tmp
             - mountPath: /diag
               name: diagnostics
+      imagePullSecrets:
+        - name: forgejo-images-creds
       initContainers:
         - command:
             - sh
@@ -222,7 +221,7 @@ spec:
             - |
               cp /cfg/openclaw.json5 /state/openclaw.json5
               rm -f /state/openclaw.json5.last-good /state/openclaw.json5.bak*
-          image: ghcr.io/agentydragon/openclaw:unset
+          image: git.allegedly.works/ducktape-ci/public-coder-agent:unset
           name: seed-config
           volumeMounts:
             - mountPath: /cfg
@@ -244,9 +243,6 @@ spec:
         - configMap:
             name: public-coder-agent-proxy-ca-cert
           name: trust
-        - configMap:
-            name: haku-egress-proxy-ca-cert
-          name: haku-egress-proxy-ca-cert
         - name: ssh
           projected:
             defaultMode: 288

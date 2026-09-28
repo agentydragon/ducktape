@@ -20,6 +20,7 @@ from cluster.cdk8s.model_rosters import (
     GEMINI_EMBEDDING_COMPAT_ALIAS,
     GEMINI_EMBEDDING_MODELS,
     GEMINI_MODELS,
+    GPT6_CODEX_MODELS,
     MISTRAL_MODELS,
     OLLAMA_CHAT_MODELS,
     OLLAMA_EMBEDDING_MODEL,
@@ -34,12 +35,11 @@ from cluster.cdk8s.model_rosters import (
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/keys-tf"
 
-# The Codex-subscription models on LiteLLM's Responses surface, for Codex CLI clients
-# (codex-pod, agent-workspaces-codex, the agentplane staging session form) -- served
-# by CLIProxyAPI.
-OAI_LANE_MODELS = [codex_responses_name(model) for model in CLIPROXY_MODELS]
-# The same models on the Anthropic Messages surface -- Claude Code clients
-# (laptop codex-claude, agent-box, codex-pod).
+# GPT-6 Codex-subscription models on LiteLLM's Responses and Anthropic Messages surfaces.
+GPT6_OAI_LANE_MODELS = [codex_responses_name(model.id) for model in GPT6_CODEX_MODELS]
+GPT6_CODEX_CLIENT_MODELS = [codex_messages_name(model.id) for model in GPT6_CODEX_MODELS]
+# The same models on the Anthropic Messages surface -- laptop and agent-box Claude Code
+# clients. Codex pod has a separate GPT-6-only key.
 CODEX_CLIENT_MODELS = [codex_messages_name(model) for model in CLIPROXY_MODELS]
 # Claude-subscription models on the Anthropic Messages surface, fronted through
 # CLIProxyAPI's Claude OAuth session -- the laptop litellm-claude wrapper and the
@@ -115,7 +115,8 @@ def model_allowlists() -> dict[str, list[str]]:
     """The lanes keyed as main.tf's `var.model_allowlists` reads them."""
     served = {entry["model_name"] for entry in main_proxy_config()["model_list"]}
     lanes = {
-        "oai_lane_models": OAI_LANE_MODELS,
+        "gpt6_oai_lane_models": GPT6_OAI_LANE_MODELS,
+        "gpt6_codex_client_models": GPT6_CODEX_CLIENT_MODELS,
         "tana_client_models": TANA_CLIENT_MODELS,
         "codex_client_models": CODEX_CLIENT_MODELS,
         "claude_client_models": CLAUDE_CLIENT_MODELS,

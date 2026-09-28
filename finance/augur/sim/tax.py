@@ -10,17 +10,21 @@ from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
 from finance.augur.sim.income import (
     ORDINARY_INCOME,
+    InterestCharacter,
     InterestIncome,
+    Municipal,
     OrdinaryIncome,
     QualifiedDividendIncome,
+    Taxable,
     TransferIncomeCategory,
+    Treasury,
 )
-from finance.augur.sim.jurisdictions import JurisdictionLevel, StatutoryAmount
+from finance.augur.sim.jurisdictions import InterestExemptions, StatutoryAmount
 from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
 
 
 @dataclass(frozen=True)
-class PreparedTaxBracket:
+class TaxBracket:
     """One marginal slice: inclusive upper edge in currency quanta, or no upper bound."""
 
     upper: int | None
@@ -28,7 +32,7 @@ class PreparedTaxBracket:
 
 
 @dataclass(frozen=True)
-class PreparedThresholdTax:
+class ThresholdTax:
     """A flat rate on the part of an income measure above `threshold` quanta."""
 
     rate_ppb: int
@@ -36,14 +40,13 @@ class PreparedThresholdTax:
 
 
 @dataclass(frozen=True)
-class PreparedTaxRules:
+class TaxRules:
     """One jurisdiction's rules resolved for a taxpayer's filing status; money is integer quanta."""
 
     jurisdiction_id: JurisdictionId
-    exempt_interest_from_levels: tuple[JurisdictionLevel, ...]
-    exempts_own_issue: bool
-    ordinary_brackets: tuple[PreparedTaxBracket, ...]
-    long_term_capital_gain_brackets: tuple[PreparedTaxBracket, ...]
+    exempt_interest: InterestExemptions
+    ordinary_brackets: tuple[TaxBracket, ...]
+    long_term_capital_gain_brackets: tuple[TaxBracket, ...]
     standard_deduction: int
     max_capital_loss_ordinary_offset: int
     # Positive caps federal-style unrecaptured depreciation; zero uses ordinary brackets.
@@ -51,14 +54,16 @@ class PreparedTaxRules:
     # The tax year the amounts are law for, and those of them statute adjusts for inflation.
     law_year: int
     indexed: frozenset[StatutoryAmount]
+    # Whether the owner's ad-valorem real property tax is itemized here without a cap.
+    itemizes_real_property_tax: bool
     # Over modified adjusted gross income, on the lesser of the excess and net investment income.
-    net_investment_income_tax: PreparedThresholdTax | None = None
+    net_investment_income_tax: ThresholdTax | None = None
     # Over taxable income.
-    taxable_income_surtax: PreparedThresholdTax | None = None
+    taxable_income_surtax: ThresholdTax | None = None
 
 
 @dataclass(frozen=True)
-class PreparedTaxProfile:
+class TaxProfile:
     """A taxpayer's payment routing, quantized allowances and ordered jurisdiction rules."""
 
     agent_id: AgentId
@@ -67,7 +72,7 @@ class PreparedTaxProfile:
     tax_authority_account_id: AccountId
     prior_year_tax: int
     section_121_exclusion: int
-    jurisdictions: tuple[PreparedTaxRules, ...]
+    jurisdictions: tuple[TaxRules, ...]
 
 
 @dataclass
@@ -150,14 +155,17 @@ class IncomeLedger:
         return clone
 
 
-def taxes_interest_from(
-    rules: PreparedTaxRules, issuer_jurisdiction_id: JurisdictionId | None, issuer_level: JurisdictionLevel | None
-) -> bool:
-    if issuer_jurisdiction_id is None or issuer_level is None:
-        return True
-    if issuer_jurisdiction_id == rules.jurisdiction_id:
-        return not rules.exempts_own_issue
-    return issuer_level not in rules.exempt_interest_from_levels
+def taxes_interest_from(rules: TaxRules, character: InterestCharacter) -> bool:
+    exempt = rules.exempt_interest
+    match character:
+        case Treasury():
+            return not exempt.treasury
+        case Municipal(state=state):
+            return exempt.municipal != "all" and state not in exempt.municipal
+        case Taxable():
+            return True
+        case _:
+            assert_never(character)
 
 
 def is_investment_income(source: TransferIncomeCategory) -> bool:
@@ -176,7 +184,7 @@ def is_investment_income(source: TransferIncomeCategory) -> bool:
     assert_never(source)
 
 
-def validate_brackets(brackets: Sequence[PreparedTaxBracket]) -> None:
+def validate_brackets(brackets: Sequence[TaxBracket]) -> None:
     if not brackets:
         raise ValueError("tax brackets are empty")
     previous = -1
@@ -194,7 +202,7 @@ def validate_brackets(brackets: Sequence[PreparedTaxBracket]) -> None:
         raise ValueError("tax bracket upper edges are not strictly increasing")
 
 
-def validate_rules(rules: PreparedTaxRules) -> None:
+def validate_rules(rules: TaxRules) -> None:
     if rules.standard_deduction < 0:
         raise ValueError("standard_deduction must be nonnegative")
     if rules.max_capital_loss_ordinary_offset < 0:
@@ -212,11 +220,11 @@ def validate_rules(rules: PreparedTaxRules) -> None:
                 raise ValueError("an additional tax's threshold must be nonnegative")
 
 
-def apply_brackets(amount: int, brackets: Sequence[PreparedTaxBracket]) -> int:
+def apply_brackets(amount: int, brackets: Sequence[TaxBracket]) -> int:
     return apply_stacked_brackets(amount, 0, brackets)
 
 
-def apply_stacked_brackets(amount: int, lower_stack: int, brackets: Sequence[PreparedTaxBracket]) -> int:
+def apply_stacked_brackets(amount: int, lower_stack: int, brackets: Sequence[TaxBracket]) -> int:
     validate_brackets(brackets)
     total = checked_count(lower_stack + amount, "money addition")
     previous = 0
@@ -258,7 +266,7 @@ def _taxable(ordinary: int, short: int, long: int, offset: int, deduction: int) 
     return max(0, checked_count(total - deduction, "money subtraction"))
 
 
-def assess(facts: TaxFacts, rules: PreparedTaxRules) -> TaxAssessment:
+def assess(facts: TaxFacts, rules: TaxRules) -> TaxAssessment:
     validate_rules(rules)
     gains = net_capital_gains(
         facts.short_term_gain,

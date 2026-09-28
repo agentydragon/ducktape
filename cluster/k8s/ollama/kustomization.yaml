@@ -16,6 +16,7 @@ configMapGenerator:
       - setup-gpt-oss-v2.sh
       - link-ssd-models.sh
       - qwen38-ssd-shards.tsv
+      - qwen38-ssd-derived-shards.tsv
   - name: ollama-auth-proxy
     namespace: ollama
     options:

@@ -30,10 +30,9 @@ from finance.augur.sim.fixed_point import (
     rate_to_ppb,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Finished, Rollout, Stop, UnpaidClaim
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
@@ -59,7 +58,7 @@ INITIAL_UNIT_PRICE = Decimal(100)
 class Situation:
     """What every path of a spending cell shares; `compose` declares it onto one World per path."""
 
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     rollout_count: int
     horizon_months: int
     annual_spending: int  # currency quanta, claimed at months 12, 24, ... inside the horizon; zero claims nothing
@@ -101,7 +100,7 @@ def compose(case: Situation, rollout_id: int) -> World:
     world = World(
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
-        income_sources=(ORDINARY_INCOME, InterestIncome(issuer_jurisdiction_id=None)),
+        income_sources=(ORDINARY_INCOME, InterestIncome(character=Taxable())),
     )
     for agent_id in (HOUSEHOLD, WORLD):
         world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
@@ -122,7 +121,7 @@ def compose(case: Situation, rollout_id: int) -> World:
         holding_account_id=BROKERAGE,
         asset_id=AssetId(STRATEGY),
         to_account_id=CHECKING,
-        tax_character={InterestIncome(): rate_to_ppb(1)},
+        tax_character={InterestIncome(character=Taxable()): rate_to_ppb(1)},
     )
     if case.annual_spending > 0:
         for month in range(12, case.horizon_months, 12):

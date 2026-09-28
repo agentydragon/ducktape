@@ -10,16 +10,16 @@ from finance.augur.sim.actions import Withdraw
 from finance.augur.sim.books import EXTERNAL_BOUNDARY
 from finance.augur.sim.holdings import gain_account
 from finance.augur.sim.ids import AccountId, AssetId, JurisdictionId, PortfolioId
-from finance.augur.sim.income import InterestIncome
+from finance.augur.sim.income import InterestIncome, Municipal, Taxable
 from finance.augur.sim.managed import ComponentEffects, IncomeCredit, ManagedPortfolios, Portfolio, basis_account
+from finance.augur.sim.market_path import Series
 from finance.augur.sim.money import MIN_COUNT
 from finance.augur.sim.observations import TlhPortfolioObservation
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, INCOME_SOURCES, accounting, world_on
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
-PRICES = PreparedSeries(series_id="security:test_fund", snapshots=3, values=(100, 110, 120) * 2)
+PRICES = Series(series_id="security:test_fund", snapshots=3, values=(100, 110, 120) * 2)
 
 
 # No modeled harvest: the portfolio's value moves only with the index and its own actions.
@@ -139,7 +139,10 @@ def test_invalid_effects_and_overflow_leave_every_financial_book_unchanged(
             0,
             (
                 IncomeCredit(
-                    InterestIncome(issuer_jurisdiction_id=JurisdictionId("undeclared") if case == 6 else None), amount
+                    InterestIncome(
+                        character=Municipal(state=JurisdictionId("test_undeclared")) if case == 6 else Taxable()
+                    ),
+                    amount,
                 ),
             ),
         )
@@ -156,7 +159,9 @@ def test_invalid_effects_and_overflow_leave_every_financial_book_unchanged(
 def test_distribution_cash_uses_interest_source_not_capital_gain_journal_account(
     world: World, opening: TlhPortfolioObservation
 ) -> None:
-    effects = ComponentEffects(opening, AccountId("checking"), 5, 0, 0, (IncomeCredit(InterestIncome(), 5),))
+    effects = ComponentEffects(
+        opening, AccountId("checking"), 5, 0, 0, (IncomeCredit(InterestIncome(character=Taxable()), 5),)
+    )
     world.managed_portfolios().settle(world.accounting, 0, HOUSEHOLD, "distribution", effects, operation="distribution")
     assert world.accounting.ledger.balance(CASH) == 105
     assert world.accounting.ledger.balance(gain_account(HOUSEHOLD)) == 0
@@ -172,7 +177,7 @@ def test_withdrawal_receipt_does_not_recalculate_component_rounded_value(
     spec: Portfolio, opening: TlhPortfolioObservation
 ) -> None:
     books = accounting()
-    managed = ManagedPortfolios(INCOME_SOURCES, {})
+    managed = ManagedPortfolios(INCOME_SOURCES)
     managed.open(books, spec, opening.model_copy(update={"value": 2, "reported_tax_basis": 2}))
     effects = ComponentEffects(
         opening.model_copy(update={"value": 0, "reported_tax_basis": 0}), AccountId("checking"), 1, 0, -1
@@ -226,7 +231,7 @@ def test_opening_a_component_requires_one_matching_observation_per_declared_port
     spec: Portfolio, opening: TlhPortfolioObservation, case: str
 ) -> None:
     books = accounting()
-    managed = ManagedPortfolios(INCOME_SOURCES, {})
+    managed = ManagedPortfolios(INCOME_SOURCES)
     if case == "duplicate":
         managed.open(books, spec, opening)
         with pytest.raises(ValueError, match="already open"):

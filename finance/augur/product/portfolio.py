@@ -18,7 +18,8 @@ from finance.augur.api.portfolio import (
 from finance.augur.api.schemas import ApiModel
 from finance.augur.model.asset_key import AssetKey
 from finance.augur.product.wire import CurrencyQuanta
-from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId, LotId, PortfolioId
+from finance.augur.sim.ids import AccountId, AgentId, BondId, LotId, PortfolioId
+from finance.augur.sim.income import InterestCharacter
 from finance.augur.sim.money import Currency
 
 
@@ -57,7 +58,7 @@ class ProductBondPosition(ApiModel):
     account_id: AccountId
     account_label: str | None = None
     label: str | None = None
-    issuer_jurisdiction_id: JurisdictionId | None = None
+    character: InterestCharacter
     face_value_quanta: CurrencyQuanta
     annual_coupon_rate: NonNegativeFloat
     coupon_period_months: NonNegativeInt
@@ -173,7 +174,7 @@ def _bond_position(bond: BondHoldingConfig, *, account_label: str | None, curren
         account_id=bond.account_id,
         account_label=account_label,
         label=bond.label,
-        issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
+        character=bond.character,
         face_value_quanta=_quanta(bond.face_value, currency=currency),
         annual_coupon_rate=float(bond.annual_coupon_rate),
         coupon_period_months=int(bond.coupon_period_months),

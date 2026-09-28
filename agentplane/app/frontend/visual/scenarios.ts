@@ -62,6 +62,13 @@ export interface Scenario extends ScenarioOptions {
   /** Click the Evidence icon of the row at this thread anchor once it mounts: which rows show
    * their evidence is not in the URL. */
   openEvidence?: string;
+  /** One assistant message containing a fenced code block, to exercise Markdown's syntax
+   * highlighting of a registered language (`markdown.tsx`'s `Renderer.code` override). */
+  markdownCodeFence?: boolean;
+  /** A reasoning step with no neighboring tool call, so `historyRows` never folds it into a run and
+   * `EntityCard` renders it directly -- the standalone case, distinct from `openReasoning`'s
+   * reasoning-nested-inside-a-run-card one. */
+  standaloneReasoning?: boolean;
   pendingCommands?: "mixed" | "controls" | "outcomes";
   /** Answer a command POST as the app does when a runner misses its admission deadline. Without
    * this it stays unanswered, like one queued behind the browser's connection limit. */
@@ -172,14 +179,14 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ["a.agentplane-sidebar-group-name"],
   },
   threads_phone: { element: "#app", route: "/", viewport: PHONE, outputName: "threads-phone" },
-  // The phone-width sidebar drawer opened over the landing view: the hamburger,
-  // the backdrop, and the same group/thread list the desktop sidebar shows.
+  // The phone-width sidebar drawer opened full-screen over the landing view: the same
+  // group/thread list the desktop sidebar shows.
   threads_phone_drawer: {
     element: "#app",
     route: "/",
     viewport: PHONE,
     outputName: "threads-phone-drawer",
-    readySelectors: [".agentplane-sidebar-backdrop", "a.agentplane-sidebar-group-name"],
+    readySelectors: [".agentplane-sidebar-open", "a.agentplane-sidebar-group-name"],
     openMobileSidebar: true,
   },
   threads_provisioning: {
@@ -195,7 +202,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: PHONE,
     threadlessSandbox: true,
     openMobileSidebar: true,
-    readySelectors: ['a[href="#/sandboxes/test-provisioning"]', ".agentplane-sidebar-backdrop"],
+    readySelectors: ['a[href="#/sandboxes/test-provisioning"]', ".agentplane-sidebar-open"],
   },
   threads_updates_disconnected: {
     element: "#app",
@@ -222,7 +229,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     sidebarSource: "disconnected",
     outageAge: 10_000,
     openMobileSidebar: true,
-    readySelectors: [".agentplane-sidebar-backdrop", '[data-connection="degraded"]'],
+    readySelectors: [".agentplane-sidebar-open", '[data-connection="degraded"]'],
   },
   threads_watch_stale: {
     element: "#app",
@@ -387,7 +394,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: [".agentplane-hljs"],
     openRaw: true,
   },
-  // The read-only action policy: both bindings, every set state, and the three lists.
+  // The read-only action policy: both bindings, every set state, and the auto-approval list.
   sandbox_policy: {
     element: "#app",
     route: `${SANDBOX_ROUTE}?tab=policy`,
@@ -531,6 +538,39 @@ export const SCENARIOS: Record<string, Scenario> = {
     outputName: "session-reasoning-phone",
     openReasoning: true,
     readySelectors: ["details[open] details[open] .agentplane-markdown"],
+  },
+  // A fenced code block in a registered language, syntax-highlighted in prose the way tool-call
+  // Arguments/Output already are -- distinct from session_tool_payloads below, which is the
+  // structured JSON/output view, not free-form Markdown.
+  session_markdown_code_fence: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 700 },
+    outputName: "session-markdown-code-fence",
+    markdownCodeFence: true,
+    readySelectors: [".agentplane-hljs"],
+  },
+  // A standalone reasoning step (no neighboring tool call, so it's never folded into a run) at
+  // rest: collapsed, it should read as one plain dimmed line, no card chrome around it -- like a
+  // collapsed run, unlike the always-boxed tool call beside it in session_reasoning above.
+  session_standalone_reasoning: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 700 },
+    outputName: "session-standalone-reasoning",
+    standaloneReasoning: true,
+    readySelectors: ['[data-thread-anchor="20"]'],
+  },
+  // The same standalone reasoning step, opened: now it gets the card chrome (padding, border) the
+  // collapsed row above deliberately lacks.
+  session_standalone_reasoning_open: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 700 },
+    outputName: "session-standalone-reasoning-open",
+    standaloneReasoning: true,
+    openReasoning: true,
+    readySelectors: ['[data-thread-anchor="20"] details[open] .agentplane-markdown'],
   },
   // JSON arguments highlighted, and a non-JSON output in the same code block, uninterpreted. The
   // history follows its bottom, so the viewports are tall enough to keep the tool call, and the

@@ -16,7 +16,7 @@ actors never affect the exogenous paths.
 Callers declare month-0 facts on a world as keyword arguments, converting exact decimals
 through a `Currency` (<money.py>) and the helpers in <fixed_point.py>, which are exact or
 raise; preparation does not fetch market evidence, fit a model or load tax law
-independently. Prepared values own exact monetary terms, quantized market paths and
+independently. Declared values own exact monetary terms, quantized market paths and
 variable-length resolved tax rules; a world keeps no authoring objects. A caller that
 declares one situation onto many worlds keeps its own records of it.
 
@@ -60,7 +60,7 @@ Each actor's messages are a closed typed union defined beside it, not a generic 
 subscription protocol or global event registry.
 When a month opens the counterparties act first: each `Biller`, `Mortgage`,
 `PropertyTaxAuthority` and `TaxAuthority` is posted the statement it reads
-(`PropertyStatement`, `ServicingStatement`, `TaxLiabilityStatement`) and
+(`PropertyStatement` and `MarketStatement`, `ServicingStatement`, `TaxLiabilityStatement`) and
 `MonthOpened`, and the demand it returns is registered as this month's claim on its
 payer, in that tier order. Then the world posts each agent's mail — every emitter's
 statement (`MarketStatement`, `AccountStatement`, `PositionStatement`,
@@ -149,7 +149,7 @@ comparing stopped books with completed horizons.
 
 ## The app
 
-`ProductService` prepares each request once into a `Situation` of prepared declarations
+`ProductService` prepares each request once into a `Situation` of declarations
 (<../product/scenarios.py>, over the portfolio <../product/holdings.py> checked at startup), samples the series it reads, and composes one world per
 path with the app household (<../policy/cash_band_household.py>) tracked on it;
 <../product/simulation.py> steps each to the horizon. The household proposes its funding

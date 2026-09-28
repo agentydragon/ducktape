@@ -8,7 +8,14 @@ from decimal import Decimal
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import JurisdictionId
-from finance.augur.sim.income import InterestIncome, QualifiedDividendIncome, TransferIncomeCategory
+from finance.augur.sim.income import (
+    InterestIncome,
+    Municipal,
+    QualifiedDividendIncome,
+    Taxable,
+    TransferIncomeCategory,
+    Treasury,
+)
 
 HORIZON = 13
 SYMBOL = SecuritySymbol("bnd")
@@ -32,17 +39,15 @@ def payout_quanta(per_unit: Decimal) -> int:
 MONTHLY_PAYOUT_QUANTA = payout_quanta(PER_UNIT)
 
 # Each fund's split of a payout by income category, in parts per billion.
-TREASURY: Mapping[TransferIncomeCategory, int] = {
-    InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us")): MONEY_FACTOR_SCALE
-}
+TREASURY: Mapping[TransferIncomeCategory, int] = {InterestIncome(character=Treasury()): MONEY_FACTOR_SCALE}
 CALIFORNIA_MUNI: Mapping[TransferIncomeCategory, int] = {
-    InterestIncome(issuer_jurisdiction_id=JurisdictionId("california")): MONEY_FACTOR_SCALE
+    InterestIncome(character=Municipal(state=JurisdictionId("california"))): MONEY_FACTOR_SCALE
 }
-CORPORATE: Mapping[TransferIncomeCategory, int] = {InterestIncome(): MONEY_FACTOR_SCALE}
+TAXABLE: Mapping[TransferIncomeCategory, int] = {InterestIncome(character=Taxable()): MONEY_FACTOR_SCALE}
 # An aggregate fund: part Treasury, part corporate. The case a single tag cannot express.
 AGGREGATE: Mapping[TransferIncomeCategory, int] = {
-    InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us")): 400_000_000,
-    InterestIncome(): 600_000_000,
+    InterestIncome(character=Treasury()): 400_000_000,
+    InterestIncome(character=Taxable()): 600_000_000,
 }
 TREASURY_SHARE, CORPORATE_SHARE = Decimal("0.4"), Decimal("0.6")
 QUALIFIED_DIVIDENDS: Mapping[TransferIncomeCategory, int] = {QualifiedDividendIncome(): MONEY_FACTOR_SCALE}

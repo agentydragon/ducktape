@@ -109,12 +109,6 @@ class _EffectivePolicy(_View):
         "lists below are empty."
     )
     auto_approve_if: list[EffectivePolicyView] = Field(description="In evaluation order; the first match approves.")
-    auto_deny_if: list[EffectivePolicyView] = Field(
-        description="In evaluation order. Accepted and reported; this version decides nothing from it."
-    )
-    auto_deny_unless: list[EffectivePolicyView] = Field(
-        description="In evaluation order. Accepted and reported; this version decides nothing from it."
-    )
 
 
 class CallerBindingView(_View):
@@ -187,36 +181,27 @@ def _policy_view(
             return GitHubPublicRepositoryView(type=PolicyKind.GITHUB_PUBLIC_REPOSITORY, actions=actions)
 
 
-def _effective(
-    bindings: tuple[ResolvedBinding, ...],
-) -> tuple[list[EffectivePolicyView], list[EffectivePolicyView], list[EffectivePolicyView]]:
-    """The three lists in the order `PolicySetDecisionProvider` walks them: binding, then set, then entry."""
+def _effective(bindings: tuple[ResolvedBinding, ...]) -> list[EffectivePolicyView]:
+    """`autoApproveIf` in the order `PolicySetDecisionProvider` walks it: binding, then set, then entry."""
     auto_approve_if: list[EffectivePolicyView] = []
-    auto_deny_if: list[EffectivePolicyView] = []
-    auto_deny_unless: list[EffectivePolicyView] = []
     for resolved in bindings:
         for policy_set in resolved.policy_sets:
-            for source, target in (
-                (policy_set.spec.auto_approve_if, auto_approve_if),
-                (policy_set.spec.auto_deny_if, auto_deny_if),
-                (policy_set.spec.auto_deny_unless, auto_deny_unless),
-            ):
-                target.extend(
-                    EffectivePolicyView(
-                        binding=resolved.binding.metadata.name,
-                        policy_set=policy_set.metadata.name,
-                        index=index,
-                        policy=_policy_view(policy),
-                    )
-                    for index, policy in enumerate(source)
+            auto_approve_if.extend(
+                EffectivePolicyView(
+                    binding=resolved.binding.metadata.name,
+                    policy_set=policy_set.metadata.name,
+                    index=index,
+                    policy=_policy_view(policy),
                 )
-    return auto_approve_if, auto_deny_if, auto_deny_unless
+                for index, policy in enumerate(policy_set.spec.auto_approve_if)
+            )
+    return auto_approve_if
 
 
 def caller_view(index: PolicyIndex, subject: ServiceAccountRef, now: datetime) -> CallerActionPolicyView:
     """The caller-facing view of a subject, from the same bindings admission resolves."""
     bindings = resolve_bindings(index, subject, now)
-    auto_approve_if, auto_deny_if, auto_deny_unless = _effective(bindings)
+    auto_approve_if = _effective(bindings)
     return CallerActionPolicyView(
         subject=subject,
         synced=index.synced,
@@ -229,21 +214,17 @@ def caller_view(index: PolicyIndex, subject: ServiceAccountRef, now: datetime) -
             for resolved in bindings
         ],
         auto_approve_if=auto_approve_if,
-        auto_deny_if=auto_deny_if,
-        auto_deny_unless=auto_deny_unless,
     )
 
 
 def subject_view(index: PolicyIndex, subject: ServiceAccountRef, now: datetime) -> SubjectActionPolicyView:
     """The operator's view of one subject: the same resolution, with each named set's standing."""
     bindings = resolve_bindings(index, subject, now)
-    auto_approve_if, auto_deny_if, auto_deny_unless = _effective(bindings)
+    auto_approve_if = _effective(bindings)
     return SubjectActionPolicyView(
         synced=index.synced,
         bindings=[_subject_binding(index, resolved.binding) for resolved in bindings],
         auto_approve_if=auto_approve_if,
-        auto_deny_if=auto_deny_if,
-        auto_deny_unless=auto_deny_unless,
     )
 
 

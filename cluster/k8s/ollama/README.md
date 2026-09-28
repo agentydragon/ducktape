@@ -20,8 +20,9 @@ and does not use OpenEBS. The advertised 90Gi capacity is not an enforced quota.
 Node affinity pins the consumer to wyrm2. The model-specific path and startup file
 checks cause a missing SSD/model to fail rather than silently use an empty directory.
 
-The init container creates three digest-named symlinks in `/models/blobs` to the
-SSD shards. `qwen38-ssd-shards.tsv` pins their SHA256 digests and lengths from the
+The init container creates digest-named symlinks in `/models/blobs` to the
+three original SSD shards and the derived template shard. `qwen38-ssd-shards.tsv`
+pins the original SHA256 digests and lengths from the
 [verified download recipe](../../docs/inference/runs/2026-09-26_qwen38_capacity/README.md).
 Startup checks lengths and refuses to replace an existing file or a different link;
 it does not rehash 94 GB on every Pod restart. The setup Job calls `/api/create` to
@@ -31,9 +32,16 @@ the read-only mount. The short-lived setup Job therefore runs its own loopback-o
 Ollama API as a native sidecar, with the same HDD registry and a writable mount of
 only the IQ4 directory. It requests no GPUs and performs no inference. Once setup
 finishes Kubernetes stops that sidecar; the serving Deployment stays read-only.
-Small manifests
-and other models stay on HDD. Ollama has one model root; this is filesystem-managed
-placement, not a native per-model storage tier setting.
+Small manifests and other models stay on HDD. Ollama has one model root; this is
+filesystem-managed placement, not a native per-model storage tier setting.
+
+The `lvm-proxmox-hdd` CSI rejects simultaneous mounts of the writable
+`llm-models` registry PVC by the serving Pod and registration Job with
+`verifyMount: device already mounted`. Pause the serving Deployment through
+GitOps, wait for its Pod to terminate and the versioned Job to complete, then
+restore one serving replica. This restriction is on the HDD registry PVC, not
+the static SSD model PV. The completed Job has no TTL: Flux retains it until
+an explicit Job version bump and cannot recreate the same registration daily.
 
 `OLLAMA_NOPRUNE=true` prevents startup garbage collection from unlinking the external
 blobs before registration. Unused blobs therefore require deliberate cleanup; do not
@@ -47,10 +55,17 @@ was physical pool exhaustion despite VG free space. Nix now declares auto-extens
 mitigations; their live coverage of new pools is not established by this change.
 
 One loaded model and one inference slot avoid concurrent KV-cache growth.
-`LLAMA_ARG_FIT_TARGET=2048,0` requests the operator-approved 2 GiB desktop-GPU
-headroom and no additional placement margin on GPU1. These are placement targets,
-not exclusive reservations. This differs from the host experiments' 8/2 GiB targets;
-record actual placement and headroom when comparing throughput. Ollama retains
+`LLAMA_ARG_FIT_TARGET=4096,2048` leaves runtime allocation room on both GPUs and
+additional desktop-GPU headroom. The tested 2/0 GiB setting passed short requests
+but hit CUDA OOM on GPU1 during a 145K-token prompt at 256K context. These are
+placement targets, not exclusive reservations. The 4/2 GiB configuration passed a
+145K-token prompt and a 1,024-token continuation at 256K context; see the
+[serving acceptance results](../../docs/inference/runs/2026-09-27_ollama_ssd/README.md).
+This differs from the host experiments' 8/2 GiB targets;
+record actual placement and headroom when comparing throughput. Vulkan discovery is
+disabled and CUDA uses PCI bus ordering. Startup logs sort GPUs by free memory and
+do not establish runner order: inspect the runner's `CUDA_VISIBLE_DEVICES` and
+physical GPU headroom after loading. Ollama retains
 its 40Gi RAM limit, Q8 KV and 128K context. Stop exclusive host experiments before
 resuming this Deployment.
 
@@ -75,3 +90,34 @@ round trip. The earlier IQ4 llama.cpp run averaged 40.79 decode tokens/s; the ea
 HDD Ollama path was 0.056–1.44 tokens/s. This storage change is not yet evidence that
 Ollama reaches the SSD reference speed; record the live measurements before claiming
 that acceptance criterion is met.
+
+## Claude system reminders in Qwen3.8
+
+Claude Code can send a system reminder after a user message. The pinned
+Unsloth GGUF template rejects that sequence. `qwen38-chat-template.jinja` is
+the model's original `tokenizer.chat_template` with one branch changed: a
+later `system` or `developer` message becomes a ChatML system turn at the same
+position. Qwen's template already maps leading developer content into a system
+turn. The original template SHA256 is pinned in
+`../../cdk8s/ollama/patch_qwen38_template.py`.
+
+The first GGUF shard is 10.9 MB and holds this metadata. On wyrm2, generate
+its derived copy **before** deploying the `setup-gpt-oss-v8` Job. The two large
+weight shards and all source files remain untouched:
+
+```bash
+ssd=/var/lib/llm-models-ssd/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS
+bb run //cluster/cdk8s/ollama:derive_qwen38_template -- \
+  "$ssd/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf" \
+  "$PWD/cluster/k8s/ollama/qwen38-chat-template.jinja" \
+  "$ssd/agentplane-midturn/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf" \
+  8681e217aad3be934fd9542709bf44123c4b569cb7906c01a2a383ac79c7c05f
+```
+
+The patcher verifies the source hash, exact original template, sole intended
+template edit, and derived hash. It refuses to replace a different output.
+The Job links the derived shard as a new Ollama blob and passes its digest
+under the original first split filename; the other two split filenames and
+digests stay fixed. The 256K alias inherits the 128K model's template.
+The setup Job opts out of Reloader because a scripts ConfigMap update would
+delete its running Pod. Change the Job's explicit version to rerun registration.

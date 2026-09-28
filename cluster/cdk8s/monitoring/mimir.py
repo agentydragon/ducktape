@@ -1,5 +1,5 @@
-"""Mimir (metrics storage and the ruler) with its tenant-local SeaweedFS buckets and
-credentials."""
+"""Mimir (metrics storage and the ruler) with its tenant-local SeaweedFS buckets, identity
+and credentials."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def _storage(chart: Chart) -> None:
     # Tenant-local ownership for Mimir's existing Seaweed buckets and credentials.
     # The old seaweedfs-namespace resources remain until the consumer cutover and
     # data-path verification are complete.
-    identity = s3.Identity(chart, "identity", name=NAME)
+    identity = s3.Identity(chart, "identity", name=NAME, namespace=_NAMESPACE)
     for bucket, description in (("mimir-blocks", "Mimir blocks."), ("mimir-ruler", "Mimir ruler state.")):
         s3.Bucket(
             chart,

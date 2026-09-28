@@ -7,12 +7,12 @@ image tag here is a placeholder the Component overrides.
 
 from __future__ import annotations
 
+import textwrap
+
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from cnpg_database_crds.io.cnpg.postgresql import (
-    Database,
-    DatabaseSpec,
     DatabaseSpecCluster,
     DatabaseSpecDatabaseReclaimPolicy,
     DatabaseSpecExtensions,
@@ -27,6 +27,7 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.providers.cnpg.database import Database
 from util.settings_contract import env_name
 
 NAME = "agentplane-index"
@@ -105,13 +106,11 @@ def _worker(
         chart,
         f"{instance}-database",
         metadata=ApiObjectMetadata(name=f"{NAME}-{instance}", namespace=NAME),
-        spec=DatabaseSpec(
-            cluster=DatabaseSpecCluster(name=_DB_CLUSTER),
-            name=database,
-            owner=_DB_OWNER,
-            database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
-            extensions=[DatabaseSpecExtensions(name="vector", ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
-        ),
+        cluster=DatabaseSpecCluster(name=_DB_CLUSTER),
+        name=database,
+        owner=_DB_OWNER,
+        database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
+        extensions=[DatabaseSpecExtensions(name="vector", ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
     )
 
     labels = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/instance": instance}
@@ -218,7 +217,17 @@ def chart(app: App) -> Chart:
         branch="devel",
         # gitignore syntax. Specimens duplicate code indexed at its real path; the .gz
         # reference blobs are not text and would only cost the clone read.
-        env=(k8s.EnvVar(name=env_name(Settings, "ignore"), value="props/specimens/\n*.gz\n"),),
+        env=(
+            k8s.EnvVar(
+                name=env_name(Settings, "ignore"),
+                value=textwrap.dedent(
+                    """\
+                    props/specimens/
+                    *.gz
+                    """
+                ),
+            ),
+        ),
         # CLEANUP(added 2026-09-27): pause both workers while Ollama model setup and API
         # smoke tests run. Their continuous /v1/embeddings traffic evicts the loaded chat
         # model; restore replicas=1 for both workers when indexing resumes.

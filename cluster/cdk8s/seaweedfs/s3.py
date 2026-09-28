@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from constructs import Construct
 from seaweed_bucket_crds.com.seaweedfs.seaweed import BucketSpecReclaimPolicy
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import ResourceReferenceGrant
 
 from cluster.cdk8s.providers.seaweedfs import s3 as _s3
+from cluster.cdk8s.providers.seaweedfs.resource_reference_grant import ResourceReferenceGrant
 from cluster.cdk8s.seaweedfs import cluster, namespace as seaweedfs_namespace
 
 

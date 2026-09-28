@@ -19,19 +19,12 @@ from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, SecurityLotState
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
-from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, currency_amount_to_quanta, quantity_scale_for_asset
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
-from finance.augur.sim.jurisdictions import (
-    Jurisdiction,
-    JurisdictionLevel,
-    StatutoryAmount,
-    StatutoryIndexation,
-    TaxBracket,
-)
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, quantity_scale_for_asset
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable
+from finance.augur.sim.jurisdictions import HYPOTHETICAL_FLAT_TAX, flat_income_tax
+from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
 from finance.augur.sim.money import MAX_COUNT, USD
-from finance.augur.sim.prepared import PreparedAmount, PreparedIndexedAmount, PreparedSeries
 from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -39,7 +32,6 @@ from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import World
 
-QUANTUM = Decimal("0.01")
 STOCK = SecurityKey(symbol=SecuritySymbol("stock"))
 SECOND = SecurityKey(symbol=SecuritySymbol("second"))
 SCALE = quantity_scale_for_asset(STOCK)
@@ -47,29 +39,7 @@ ALICE = AgentId("alice")
 WORLD = AgentId("world")
 CHECKING = AccountId("checking")
 BROKERAGE = AccountId("brokerage")
-SYNTHETIC = JurisdictionId("synthetic")
-TAX = Jurisdiction(
-    jurisdiction_id=SYNTHETIC,
-    level=JurisdictionLevel.FEDERAL,
-    ordinary_income_brackets={"single": [TaxBracket(upper="Infinity", rate=Decimal("0.2"))]},
-    ltcg_brackets={"single": [TaxBracket(upper="Infinity", rate=Decimal("0.1"))]},
-    standard_deduction={"single": Decimal(0)},
-    max_capital_loss_ordinary_offset={"single": Decimal(0)},
-    law_year=2024,
-    indexation=dict.fromkeys(
-        (
-            StatutoryAmount.ORDINARY_INCOME_BRACKETS,
-            StatutoryAmount.LTCG_BRACKETS,
-            StatutoryAmount.STANDARD_DEDUCTION,
-            StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET,
-        ),
-        StatutoryIndexation.FIXED,
-    ),
-)
-
-
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
+TAX = flat_income_tax(HYPOTHETICAL_FLAT_TAX, ordinary_rate=Decimal("0.20"), ltcg_rate=Decimal("0.10"))
 
 
 def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
@@ -78,19 +48,19 @@ def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
 
 def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
     """An account and its opening balance."""
-    return ref(agent_id, account_id), money(balance)
+    return ref(agent_id, account_id), USD.quanta(balance)
 
 
-def flat(asset: SecurityKey, price: Decimal | int, *, snapshots: int) -> PreparedSeries:
-    return PreparedSeries(series_id=f"security:{asset.symbol}", snapshots=snapshots, values=(money(price),) * snapshots)
+def flat(asset: SecurityKey, price: Decimal | int, *, snapshots: int) -> Series:
+    return Series(series_id=f"security:{asset.symbol}", snapshots=snapshots, values=(USD.quanta(price),) * snapshots)
 
 
-def distribution_rate(asset: SecurityKey, amount: Decimal | int, *, snapshots: int) -> PreparedSeries:
+def distribution_rate(asset: SecurityKey, amount: Decimal | int, *, snapshots: int) -> Series:
     """A per-unit payout, in the prepared rate units: money quanta on the money-factor grid."""
-    return PreparedSeries(
+    return Series(
         series_id=f"security_distribution:{asset.symbol}",
         snapshots=snapshots,
-        values=(money(amount) * MONEY_FACTOR_SCALE,) * snapshots,
+        values=(USD.quanta(amount) * MONEY_FACTOR_SCALE,) * snapshots,
     )
 
 
@@ -109,11 +79,11 @@ class Spending:
 
     obligation_id: str
     schedule: Schedule
-    amount_due: PreparedAmount
+    amount_due: Amount
 
 
 def claim(month: int, amount: Decimal | int, identifier: str = "spending") -> Spending:
-    return Spending(identifier, Once(month=month), money(amount))
+    return Spending(identifier, Once(month=month), USD.quanta(amount))
 
 
 @dataclass(frozen=True)
@@ -150,7 +120,7 @@ class Situation:
     """The books, counterparties and funding household every path declares."""
 
     horizon_months: int
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     accounts: tuple[tuple[AccountRef, int], ...]
     # A fresh household per path: it keeps the path's CPI history and purchase identities.
     funding: partial[CashBandHousehold]
@@ -172,7 +142,6 @@ def compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME, *case.interest_sources),
-        jurisdictions={SYNTHETIC: TAX.level} if case.taxed else {},
     )
     for opened, balance in case.accounts:
         world.declare_account(account=opened, opening_balance=balance)
@@ -180,8 +149,8 @@ def compose(case: Situation, rollout_id: int) -> World:
         world.track(
             TaxAuthority(
                 compile_profile(
-                    TaxProfile(agent_id=ALICE, jurisdiction_ids=[SYNTHETIC], tax_authority_agent_id=WORLD),
-                    {SYNTHETIC: TAX},
+                    TaxProfile(agent_id=ALICE, jurisdiction_ids=[HYPOTHETICAL_FLAT_TAX], tax_authority_agent_id=WORLD),
+                    {HYPOTHETICAL_FLAT_TAX: TAX},
                     currency=USD,
                 ),
                 indexation=FixedNominalLaw(),
@@ -198,7 +167,7 @@ def compose(case: Situation, rollout_id: int) -> World:
             purchase_month=-24,
             quantity_scale=SCALE,
             units=held.shares * SCALE,
-            basis=money(held.basis),
+            basis=USD.quanta(held.basis),
         )
     for asset in case.distributions:
         world.declare_distribution(
@@ -206,7 +175,7 @@ def compose(case: Situation, rollout_id: int) -> World:
             holding_account_id=BROKERAGE,
             asset_id=AssetId(asset.symbol),
             to_account_id=CHECKING,
-            tax_character={InterestIncome(): 1_000_000_000},
+            tax_character={InterestIncome(character=Taxable()): 1_000_000_000},
         )
     for contribution in case.transfers:
         world.declare_flow(
@@ -214,7 +183,7 @@ def compose(case: Situation, rollout_id: int) -> World:
             cause_id=contribution.cause_id,
             from_account=ref(WORLD),
             to_account=ref(ALICE),
-            amount=money(contribution.amount),
+            amount=USD.quanta(contribution.amount),
             income_category=None,
             deduction_category=None,
         )
@@ -341,15 +310,18 @@ def test_indexed_monthly_claims_keep_sales_and_next_year_tax_events() -> None:
     [output] = run(
         replace(
             case,
-            series=(*case.series, PreparedSeries(series_id="inflation", snapshots=14, values=(1,) * 12 + (2,) * 2)),
+            series=(*case.series, Series(series_id="inflation", snapshots=14, values=(1,) * 12 + (2,) * 2)),
             accounts=(account(ALICE), account(WORLD)),
             transfers=(),
             claims=(
                 Spending(
                     "indexed",
                     Recurring(start_month=0, end_month=None),
-                    PreparedIndexedAmount(
-                        base_amount=money(10), series_id="inflation", base_month_index=0, adjustment_period_months=1
+                    IndexedAmount(
+                        base_amount=USD.quanta(10),
+                        series_id="inflation",
+                        base_month_index=0,
+                        adjustment_period_months=1,
                     ),
                 ),
             ),
@@ -375,7 +347,7 @@ def test_empty_buyable_pool_pays_coupon_only_after_first_purchase() -> None:
             claims=(),
             taxed=False,
             distributions=(STOCK,),
-            interest_sources=(InterestIncome(issuer_jurisdiction_id=None),),
+            interest_sources=(InterestIncome(character=Taxable()),),
         )
     )
     first = lots(output, 1)
@@ -391,10 +363,10 @@ def test_fifo_across_two_purchase_dates_preserves_basis_and_tax_character() -> N
         replace(
             case,
             series=(
-                PreparedSeries(
+                Series(
                     series_id=f"security:{STOCK.symbol}",
                     snapshots=14,
-                    values=(money(100), money(150)) + (money(200),) * 12,
+                    values=(USD.quanta(100), USD.quanta(150)) + (USD.quanta(200),) * 12,
                 ),
             ),
             accounts=(account(ALICE, balance=200), account(WORLD, balance=300), account(ALICE, AccountId("proceeds"))),
@@ -433,8 +405,8 @@ def indexed_bounds() -> Situation:
         horizon_months=6,
         rollout_count=2,
         series=(
-            PreparedSeries(series_id=f"security:{STOCK.symbol}", snapshots=7, values=(1,) * 14),
-            PreparedSeries(series_id="inflation", snapshots=7, values=(2, 3, 5, 7, 11, 13, 19, 4, 1, 2, 99, 6, 88, 40)),
+            Series(series_id=f"security:{STOCK.symbol}", snapshots=7, values=(1,) * 14),
+            Series(series_id="inflation", snapshots=7, values=(2, 3, 5, 7, 11, 13, 19, 4, 1, 2, 99, 6, 88, 40)),
         ),
         accounts=(account(ALICE), account(WORLD)),
         lots=(OpeningLot(STOCK, shares=100, basis=1),),

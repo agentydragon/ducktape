@@ -6,7 +6,7 @@ Hand-written beside the generated output: `grafana-admin-password.sops.yaml`.
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart, JsonPatch
+from cdk8s import App, Chart, JsonPatch
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -17,11 +17,10 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeRemediation,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "monitoring-stack"
@@ -462,17 +461,17 @@ def chart(app: App) -> Chart:
         ),
         type="kubernetes.io/service-account-token",
     )
-    repository = HelmRepository(
-        chart,
-        "helm-repository",
-        metadata=ApiObjectMetadata(name=_HELM_REPOSITORY, namespace="flux-system"),
-        spec=HelmRepositorySpec(interval="12h", url="https://prometheus-community.github.io/helm-charts"),
-    )
     release = helm_release(
         chart,
         "kube-prometheus-stack",
         _NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(
+            chart,
+            _HELM_REPOSITORY,
+            "flux-system",
+            url="https://prometheus-community.github.io/helm-charts",
+            interval="12h",
+        ),
         chart="kube-prometheus-stack",
         version="91.3.0",
         interval="30m",

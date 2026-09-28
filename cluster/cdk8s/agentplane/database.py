@@ -14,17 +14,13 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRolesPasswordSecret,
     ClusterSpecPostgresql,
 )
-from cnpg_database_crds.io.cnpg.postgresql import (
-    Database,
-    DatabaseSpec,
-    DatabaseSpecCluster,
-    DatabaseSpecDatabaseReclaimPolicy,
-)
+from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecCluster, DatabaseSpecDatabaseReclaimPolicy
 from constructs import Construct
 
 from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
+from cluster.cdk8s.providers.cnpg.database import Database
 
 _CLUSTER_NAME = "postgres"
 _STORAGE_CLASS = "local-path-ovh-ssd"
@@ -114,10 +110,8 @@ class Db(Construct):
                 self,
                 f"database-{role}",
                 metadata=ApiObjectMetadata(name=role, namespace=env.namespace),
-                spec=DatabaseSpec(
-                    cluster=DatabaseSpecCluster(name=_CLUSTER_NAME),
-                    name=role,
-                    owner=role,
-                    database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.DELETE,
-                ),
+                cluster=DatabaseSpecCluster(name=_CLUSTER_NAME),
+                name=role,
+                owner=role,
+                database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.DELETE,
             )

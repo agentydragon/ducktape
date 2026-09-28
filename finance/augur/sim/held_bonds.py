@@ -8,12 +8,11 @@ from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, BondCashflowOutcome, BondState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
-from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId
-from finance.augur.sim.income import InterestIncome
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.ids import AccountId, AgentId, BondId
+from finance.augur.sim.income import InterestCharacter, InterestIncome
+from finance.augur.sim.market_path import INFLATION, MarketPath
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.observations import FixedCoupon, HeldBond, IndexedCoupon
-from finance.augur.sim.prepared import PreparedFixedAmount, PreparedIndexedCoupon
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -23,10 +22,10 @@ class Bond:
     bond_id: BondId
     agent_id: AgentId
     account_id: AccountId
-    issuer_jurisdiction_id: JurisdictionId | None
+    character: InterestCharacter
     face_value: int
     purchase_price: int
-    coupon: PreparedFixedAmount | PreparedIndexedCoupon
+    coupon: FixedCoupon | IndexedCoupon
     coupon_period_months: int
     purchase_month_index: int
     maturity_month_index: int
@@ -52,12 +51,12 @@ class HeldBonds:
         self.cashflows.clear()
 
     def principal(self, bond: Bond, month: int) -> int:
-        if not isinstance(bond.coupon, PreparedIndexedCoupon):
+        if not isinstance(bond.coupon, IndexedCoupon):
             return bond.face_value
         return mul_div(
             bond.face_value,
-            self.market.value("inflation", month),
-            self.market.value("inflation", max(0, bond.purchase_month_index)),
+            self.market.value(INFLATION, month),
+            self.market.value(INFLATION, max(0, bond.purchase_month_index)),
             "bond indexed principal",
         )
 
@@ -74,19 +73,14 @@ class HeldBonds:
             carrying = self.held_principal(bond, month + 1, month)
             if carrying is None:
                 continue
-            coupon = (
-                FixedCoupon(amount=bond.coupon.amount)
-                if isinstance(bond.coupon, PreparedFixedAmount)
-                else IndexedCoupon(annual_rate_ppb=bond.coupon.annual_rate_ppb)
-            )
             bonds.append(
                 HeldBond(
                     bond_id=bond.bond_id,
                     account_id=bond.account_id,
-                    issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
+                    character=bond.character,
                     face_value=bond.face_value,
                     purchase_price=bond.purchase_price,
-                    coupon=coupon,
+                    coupon=bond.coupon,
                     coupon_period_months=bond.coupon_period_months,
                     purchase_month=bond.purchase_month_index,
                     maturity_month=bond.maturity_month_index,
@@ -116,14 +110,14 @@ class HeldBonds:
             elapsed = month - bond.purchase_month_index
             coupon = 0
             if elapsed > 0 and month <= bond.maturity_month_index and elapsed % bond.coupon_period_months == 0:
-                if isinstance(bond.coupon, PreparedFixedAmount):
+                if isinstance(bond.coupon, FixedCoupon):
                     coupon = bond.coupon.amount
                 else:
                     period_rate = mul_div(
                         bond.coupon.annual_rate_ppb, bond.coupon_period_months, 12, "bond period rate"
                     )
                     coupon = mul_div(principal, period_rate, MONEY_FACTOR_SCALE, "indexed bond coupon")
-            indexed = isinstance(bond.coupon, PreparedIndexedCoupon)
+            indexed = isinstance(bond.coupon, IndexedCoupon)
             redemption = max(principal, bond.face_value) if indexed else bond.face_value
             if month != bond.maturity_month_index:
                 redemption = 0
@@ -134,9 +128,7 @@ class HeldBonds:
             income = checked_count(coupon + accretion, "money addition")
             tax = deepcopy(accounting.tax)
             if income:
-                tax.income.accrue(
-                    bond.agent_id, InterestIncome(issuer_jurisdiction_id=bond.issuer_jurisdiction_id), income
-                )
+                tax.income.accrue(bond.agent_id, InterestIncome(character=bond.character), income)
             changed = coupon != 0 or accretion != 0 or redemption != 0
             cause = f"bond:{bond.bond_id}:m{month}"
             if paid:
@@ -156,7 +148,7 @@ class HeldBonds:
                         bond_id=bond.bond_id,
                         agent_id=bond.agent_id,
                         account_id=bond.account_id,
-                        issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
+                        character=bond.character,
                         coupon=coupon,
                         accretion=accretion,
                         redemption=redemption,

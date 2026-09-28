@@ -53,19 +53,9 @@ py_library(
 )
 
 py_library(
-    name = "local_regulation",
-    srcs = ["local_regulation.py"],
-    deps = [
-        ":schemas",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "wire",
     srcs = ["wire.py"],
     deps = [
-        ":local_regulation",
         ":schemas",
         "//finance/augur/model:series",
         "//finance/augur/product:wire",
@@ -78,13 +68,13 @@ py_library(
     name = "config",
     srcs = ["config.py"],
     deps = [
-        ":local_regulation",
         ":portfolio_source_config",
         ":schemas",
         ":wire",
         "//finance/augur/model:series",
         "//finance/augur/product:wire",
         "//finance/augur/sim:ids",
+        "//finance/augur/sim:income",
         "//finance/augur/x/models:provider_config",
         "//finance/augur/x/models:state_space",
         "//finance/augur/x/models:trained_private_equity",
@@ -130,7 +120,6 @@ py_test(
         ":config",
         ":conftest",
         ":finance",
-        ":local_regulation",
         ":portfolio",
         ":portfolio_source_config",
         ":wire",
@@ -138,6 +127,7 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/model:series",
         "//finance/augur/sim:ids",
+        "//finance/augur/sim:income",
         "//finance/augur/x/models:independent",
         "//finance/augur/x/models:private_equity_risk",
         "//finance/augur/x/models:provider_config",
@@ -171,19 +161,6 @@ py_test(
     ],
 )
 
-py_test(
-    name = "local_regulation_test",
-    size = "medium",
-    srcs = ["local_regulation_test.py"],
-    deps = [
-        ":conftest",
-        ":local_regulation",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "portfolio",
     srcs = ["portfolio.py"],
@@ -192,6 +169,7 @@ py_library(
         "//finance/augur/model:asset_key",
         "//finance/augur/model:series",
         "//finance/augur/sim:ids",
+        "//finance/augur/sim:income",
         "//finance/augur/sim:tlh",
         "@pypi//pydantic",
     ],
@@ -208,6 +186,7 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/model:series",
         "//finance/augur/sim:ids",
+        "//finance/augur/sim:income",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -245,7 +224,6 @@ py_test(
         ":catalog",
         ":config",
         ":conftest",
-        ":local_regulation",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/sim:ids",
@@ -263,7 +241,6 @@ py_library(
     deps = [
         ":config",
         ":finance",
-        ":local_regulation",
         ":portfolio_source_config",
         ":server",
         ":wire",
@@ -481,7 +458,6 @@ py_library(
     deps = [
         ":config",
         ":finance",
-        ":local_regulation",
         ":portfolio_source_config",
         ":server",
         ":wire",

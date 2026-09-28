@@ -30,13 +30,6 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpecVolumesEmptyDir,
     SandboxTemplateSpecPodTemplateSpecVolumesEmptyDirSizeLimit,
 )
-from agent_sandbox_sandboxwarmpool_crds.io.x_k8s.agents.extensions import (
-    SandboxWarmPool,
-    SandboxWarmPoolSpec,
-    SandboxWarmPoolSpecSandboxTemplateRef,
-    SandboxWarmPoolSpecUpdateStrategy,
-    SandboxWarmPoolSpecUpdateStrategyType,
-)
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
@@ -44,21 +37,13 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMergePolicy,
 )
-from kyverno_cleanuppolicy_crds.io.kyverno import (
-    CleanupPolicy,
-    CleanupPolicySpec,
-    CleanupPolicySpecConditions,
-    CleanupPolicySpecConditionsAll,
-    CleanupPolicySpecConditionsAllOperator,
-    CleanupPolicySpecMatch,
-    CleanupPolicySpecMatchAny,
-    CleanupPolicySpecMatchAnyResources,
-)
 
-from cluster.cdk8s import external_creds, forgejo_images
+from cluster.cdk8s import agent_sandbox, external_creds, forgejo_images
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.haku.namespace import NAMESPACE
+from cluster.cdk8s.kyverno.janitor import SANDBOX_KINDS, janitor
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.external_secrets.external_secret import (
@@ -119,6 +104,18 @@ def _external_secrets(chart: Chart) -> None:
         data=[remote_data("coinbase-api-credentials", key) for key in ("api_key", "api_secret")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         target_name="haku-sandbox-coinbase-api-credentials",
+    )
+    # tf/gitops/haku-state's `haku` account: its git credentials, which Reflector mirrors on to
+    # the other haku-state git consumers, and the pull secret for Haku's own UI image.
+    reader = secret_copy.reader(chart, NAMESPACE)
+    secret_copy.secret_copy(
+        chart,
+        "haku-forgejo-git",
+        reader=reader,
+        mirror_namespaces=["haku-egress-proxy", "flux-system", "agentplane-index"],
+    )
+    secret_copy.secret_copy(
+        chart, "haku-forgejo-registry-pull", reader=reader, secret_type="kubernetes.io/dockerconfigjson"
     )
 
 
@@ -323,50 +320,12 @@ def chart(app: App) -> Chart:
     k8s.KubeServiceAccount(
         chart, "external-creds-reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=NAMESPACE)
     )
-    sandbox_template = _sandbox_template(chart)
     # One pre-warmed Haku sandbox so a SandboxClaim (from the sandbox-provisioning MCP) is ready
     # in seconds instead of a cold image pull + PVC bind. Costs one idle pod (1 cpu / 2Gi
     # requests) inside the namespace quota; bump replicas only if claims routinely outpace warmup.
-    SandboxWarmPool(
-        chart,
-        "warm-pool",
-        metadata=ApiObjectMetadata(name="haku", namespace=NAMESPACE),
-        spec=SandboxWarmPoolSpec(
-            replicas=1,
-            update_strategy=SandboxWarmPoolSpecUpdateStrategy(type=SandboxWarmPoolSpecUpdateStrategyType.RECREATE),
-            sandbox_template_ref=SandboxWarmPoolSpecSandboxTemplateRef(name=sandbox_template.name),
-        ),
-    )
-    # Same 7-day backstop as the agent-workspaces janitor: a Sandbox/SandboxClaim whose owner
-    # forgot shutdownTime would otherwise pin quota forever. Reaping is at the CR level (the
-    # controller recreates a Sandbox's pod, so a pod-level janitor just churns). Warm-pool
-    # sandboxes reaped at 7d are recreated by the pool -- a harmless periodic refresh. Delete RBAC
-    # is the shared kyverno/policies/clusterrole-cleanup-controller-sandboxes.yaml (cluster-wide).
-    CleanupPolicy(
-        chart,
-        "janitor",
-        metadata=ApiObjectMetadata(name="haku-workspace-janitor", namespace=NAMESPACE),
-        spec=CleanupPolicySpec(
-            schedule="45 * * * *",
-            match=CleanupPolicySpecMatch(
-                any=[
-                    CleanupPolicySpecMatchAny(
-                        resources=CleanupPolicySpecMatchAnyResources(
-                            kinds=["agents.x-k8s.io/v1beta1/Sandbox", "extensions.agents.x-k8s.io/v1beta1/SandboxClaim"]
-                        )
-                    )
-                ]
-            ),
-            conditions=CleanupPolicySpecConditions(
-                all=[
-                    CleanupPolicySpecConditionsAll(
-                        key="{{ time_since('', '{{ target.metadata.creationTimestamp }}', '') }}",
-                        operator=CleanupPolicySpecConditionsAllOperator.GREATER_THAN,
-                        value="168h",
-                    )
-                ]
-            ),
-        ),
+    agent_sandbox.warm_pool(chart, "warm-pool", template=_sandbox_template(chart))
+    janitor(
+        chart, "janitor", name="haku-workspace-janitor", namespace=NAMESPACE, schedule="45 * * * *", kinds=SANDBOX_KINDS
     )
     _console_rbac(chart)
     return chart

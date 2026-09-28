@@ -19,24 +19,17 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
-from finance.augur.sim.jurisdictions import (
-    Jurisdiction,
-    JurisdictionLevel,
-    StatutoryAmount,
-    StatutoryIndexation,
-    TaxBracket,
-)
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.jurisdictions import HYPOTHETICAL_FLAT_TAX, flat_income_tax
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Finished
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.world import World
 from finance.augur.x.monthly_actions.policy import decide
 
@@ -44,31 +37,14 @@ HOUSEHOLD = AgentId("example-household")
 CREDITOR = AgentId("example-creditor")
 TAX_AUTHORITY = AgentId("example-tax")
 STOCK = SecurityKey(symbol=SecuritySymbol("example-stock"))
-_FLAT_TAX = Jurisdiction(
-    jurisdiction_id=JurisdictionId("example-flat-tax"),
-    level=JurisdictionLevel.FEDERAL,
-    ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
-    ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
-    standard_deduction={FilingStatus.SINGLE: Decimal(0)},
-    max_capital_loss_ordinary_offset={FilingStatus.SINGLE: Decimal(0)},
-    law_year=2024,
-    indexation=dict.fromkeys(
-        (
-            StatutoryAmount.ORDINARY_INCOME_BRACKETS,
-            StatutoryAmount.LTCG_BRACKETS,
-            StatutoryAmount.STANDARD_DEDUCTION,
-            StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET,
-        ),
-        StatutoryIndexation.FIXED,
-    ),
-)
+_FLAT_TAX = flat_income_tax(HYPOTHETICAL_FLAT_TAX, ordinary_rate=Decimal("0.20"), ltcg_rate=Decimal("0.10"))
 
 
 @dataclass(frozen=True)
 class Situation:
     """What every path shares; `compose` declares it onto one World per path."""
 
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     rollout_count: int
     horizon_months: int
     cash_only_start: bool
@@ -102,7 +78,6 @@ def compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions={_FLAT_TAX.jurisdiction_id: _FLAT_TAX.level},
     )
     for name in (HOUSEHOLD, CREDITOR, TAX_AUTHORITY):
         world.declare_account(

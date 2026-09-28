@@ -32,6 +32,9 @@ spec:
       kind: Bucket
       namespace: flux-system
     - group: seaweed.seaweedfs.com
+      kind: S3Identity
+      namespace: flux-system
+    - group: seaweed.seaweedfs.com
       kind: S3Credentials
       namespace: flux-system
   to:
@@ -43,11 +46,12 @@ apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
   name: pr-visuals-writer
-  namespace: seaweedfs
+  namespace: flux-system
 spec:
   reclaimPolicy: Retain
   seaweedRef:
     name: seaweedfs
+    namespace: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials

@@ -21,7 +21,6 @@ class CompositeModel:
 
     macro: Sampler
     private_equity: Sampler
-    label: str = "composite"
 
     def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
         return self.macro.emittable_level_keys() | self.private_equity.emittable_level_keys()
@@ -46,7 +45,6 @@ class CompositeModel:
         sampled = SampledExogenousBundle(
             levels=merge_level_frames(macro_bundle.levels, pe_bundle.levels),
             private_equity=PrivateEquityBundle.combine([macro_bundle.private_equity, pe_bundle.private_equity]),
-            model_id=self.label,
             provenance={
                 "macro_provenance": dict(macro_bundle.provenance),
                 "private_equity_provenance": dict(pe_bundle.provenance),

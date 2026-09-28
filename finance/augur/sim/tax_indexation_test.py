@@ -6,13 +6,14 @@ from fractions import Fraction
 import pytest
 import pytest_bazel
 
+from finance.augur.sim import tax
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import AgentId, JurisdictionId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, MarketStatement
 from finance.augur.sim.money import USD
-from finance.augur.sim.tax import PreparedTaxProfile, TaxFacts, assess
+from finance.augur.sim.tax import TaxFacts, assess
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw, rules_for_year
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
@@ -29,7 +30,7 @@ def dollars(amount: Fraction | int) -> int:
 
 
 @pytest.fixture
-def profile() -> PreparedTaxProfile:
+def profile() -> tax.TaxProfile:
     return compile_profile(
         TaxProfile(agent_id=FILER, jurisdiction_ids=[FEDERAL, CALIFORNIA], tax_authority_agent_id=AgentId("test_irs")),
         {id_: load_jurisdiction(id_) for id_ in (FEDERAL, CALIFORNIA)},
@@ -48,7 +49,7 @@ def year(*, wages: int, short_term: int = 0, long_term: int = 0, dividends: int 
     )
 
 
-def test_a_hand_worked_year_at_index_one_and_a_half(profile: PreparedTaxProfile) -> None:
+def test_a_hand_worked_year_at_index_one_and_a_half(profile: tax.TaxProfile) -> None:
     """Starting two years after the law year with CPI 5/4 of the law year's, and year 1's January
     CPI 6/5 of month 0's: index 3/2. $150,000 of wages and a $30,000 long-term gain.
 
@@ -66,7 +67,7 @@ def test_a_hand_worked_year_at_index_one_and_a_half(profile: PreparedTaxProfile)
     book.enroll(FILER)
     book.income.accrue(FILER, ORDINARY_INCOME, dollars(150_000))
     book.gain(FILER, dollars(30_000), long_term=True)
-    federal, california = authority.assessments(book, 23, [], {})
+    federal, california = authority.assessments(book, 23, [])
     assert (federal.ordinary_tax, federal.capital_gain_tax, federal.net_investment_income_tax) == (
         dollars(Fraction(2_076_150, 100)),
         dollars(4_500),
@@ -89,7 +90,7 @@ def test_a_hand_worked_year_at_index_one_and_a_half(profile: PreparedTaxProfile)
     ],
 )
 def test_indexed_only_liabilities_scale_with_income_and_index(
-    profile: PreparedTaxProfile, facts: dict[str, int], k: Fraction
+    profile: tax.TaxProfile, facts: dict[str, int], k: Fraction
 ) -> None:
     for rules in profile.jurisdictions:
         base = assess(year(**facts, k=Fraction(1)), rules).total_tax
@@ -98,7 +99,7 @@ def test_indexed_only_liabilities_scale_with_income_and_index(
         assert abs(indexed - k * base) <= 1
 
 
-def test_the_fixed_niit_threshold_does_not_scale(profile: PreparedTaxProfile) -> None:
+def test_the_fixed_niit_threshold_does_not_scale(profile: tax.TaxProfile) -> None:
     """$190,000 of wages and a $30,000 long-term gain: MAGI 220,000 is 20,000 over the fixed
     threshold, so NIIT is 3.8% × 20,000 = 760.00. Doubled with the index, MAGI 440,000 is 240,000
     over and the 60,000 gain binds: 2,280.00, three times the base rather than two."""
@@ -115,7 +116,7 @@ def test_the_fixed_niit_threshold_does_not_scale(profile: PreparedTaxProfile) ->
     )
 
 
-def test_cpi_indexing_without_a_modeled_cpi_is_refused(profile: PreparedTaxProfile) -> None:
+def test_cpi_indexing_without_a_modeled_cpi_is_refused(profile: tax.TaxProfile) -> None:
     world = World(MarketPath((), 0, rollout_count=1), horizon_months=12, income_sources=(ORDINARY_INCOME,))
     authority = TaxAuthority(profile, indexation=CpiIndexedLaw(start_year=2024, law_year_to_start=Fraction(1)))
     with pytest.raises(ValueError, match="needs a modeled inflation path"):
@@ -124,7 +125,7 @@ def test_cpi_indexing_without_a_modeled_cpi_is_refused(profile: PreparedTaxProfi
         authority.rules(0)
 
 
-def test_a_start_before_the_law_year_deflates_the_indexed_amounts(profile: PreparedTaxProfile) -> None:
+def test_a_start_before_the_law_year_deflates_the_indexed_amounts(profile: tax.TaxProfile) -> None:
     """A 2019 start at CPI 4/5 of 2024's: standard deductions 14,600 × 4/5 = 11,680 and
     5,363 × 4/5 = 4,290.40; the fixed $200,000 NIIT threshold stays put."""
     authority = TaxAuthority(profile, indexation=CpiIndexedLaw(start_year=2019, law_year_to_start=Fraction(4, 5)))
@@ -143,7 +144,7 @@ def test_a_start_before_the_law_year_deflates_the_indexed_amounts(profile: Prepa
     [(2024, Fraction(11, 10), "is 1, not 11/10"), (2026, Fraction(0), "must be positive")],
 )
 def test_an_anchor_inconsistent_with_the_law_year_is_refused(
-    profile: PreparedTaxProfile, start_year: int, law_year_to_start: Fraction, match: str
+    profile: tax.TaxProfile, start_year: int, law_year_to_start: Fraction, match: str
 ) -> None:
     with pytest.raises(ValueError, match=match):
         TaxAuthority(profile, indexation=CpiIndexedLaw(start_year=start_year, law_year_to_start=law_year_to_start))

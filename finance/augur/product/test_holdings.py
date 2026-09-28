@@ -67,7 +67,7 @@ def _bond_portfolio(**overrides: object) -> PortfolioConfig:
     bond = {
         "bond_id": "tips_rung",
         "account_id": "brokerage",
-        "issuer_jurisdiction_id": "federal_us",
+        "character": {"kind": "treasury"},
         "face_value": 100_000,
         "purchase_price": 100_000,
         "annual_coupon_rate": 0.02,

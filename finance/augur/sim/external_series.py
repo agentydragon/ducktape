@@ -34,7 +34,6 @@ from finance.augur.model.series import (
     HomeValueKey,
     InflationKey,
     LevelSeriesKey,
-    LocationId,
     RentKey,
     SecurityDistributionKey,
     SecurityKey,
@@ -44,23 +43,18 @@ from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.sim.fixed_point import round_ppb, sampled_array_to_per_unit_rate, sampled_array_to_quanta
 from finance.augur.sim.holdings import asset_key
 from finance.augur.sim.ids import AssetId
+from finance.augur.sim.market_path import Amount, IndexedAmount, Series
 from finance.augur.sim.money import Currency
-from finance.augur.sim.prepared import (
-    PreparedAmount,
-    PreparedFixedAmount,
-    PreparedIndexedAmount,
-    PreparedIndexedCoupon,
-    PreparedSeries,
-    _PropertyPurchase,
-    _TenderPolicy,
-)
+from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
+from finance.augur.sim.private_equity import TenderPolicy
+from finance.augur.sim.property import ScheduledPurchase
 
 _MONEY_SERIES_KINDS = (SecurityKey, SecurityDistributionKey, HomeValueKey)
 _INDEX_SERIES_KINDS = (InflationKey, RentKey)
 
 
 class UnsupportedScenarioError(ValueError):
-    """An authored input the prepared records have no representation for.
+    """An authored input the sim's records have no representation for.
 
     Raised rather than dropped: dropping a feature changes the answer without changing its shape.
     """
@@ -115,11 +109,11 @@ def materialize_sampled_exogenous(bundle: SampledExogenousBundle) -> ExternalSer
 def level_series_demand(
     *,
     held_assets: Iterable[AssetId],
-    bond_coupons: Iterable[PreparedFixedAmount | PreparedIndexedCoupon],
+    bond_coupons: Iterable[FixedCoupon | IndexedCoupon],
     distributing_assets: Iterable[AssetId],
-    amounts: Iterable[PreparedAmount],
-    tender_policies: Iterable[_TenderPolicy],
-    purchases: Iterable[_PropertyPurchase],
+    amounts: Iterable[Amount],
+    tender_policies: Iterable[TenderPolicy],
+    purchases: Iterable[ScheduledPurchase],
 ) -> tuple[LevelSeriesKey, ...]:
     """Every level series these declarations REFERENCE — their exogenous demand.
 
@@ -151,7 +145,7 @@ def level_series_demand(
     #
     # Demand side only: `compile_series` carries only what was SAMPLED, so a TIPS whose inflation
     # nobody sampled is refused where it is held rather than priced off an all-NaN row.
-    if any(isinstance(coupon, PreparedIndexedCoupon) for coupon in bond_coupons):
+    if any(isinstance(coupon, IndexedCoupon) for coupon in bond_coupons):
         add(InflationKey())
     # A distributing security demands TWO series: its price (already demanded by the lots that
     # hold it) and its dollars-per-unit payout, which nothing else references.
@@ -161,9 +155,11 @@ def level_series_demand(
         _add_amount_series_key(amount, add)
     for pe_policy in tender_policies:
         _add_amount_series_key(pe_policy.liquid_net_worth_floor, add)
-    # A property is valued at sale off its location's home-value series.
+    # A property is valued at sale off its market's home-value series, and its parcel's assessed
+    # value grows on a simulated lien date by the modeled CPI.
     for purchase in purchases:
-        add(HomeValueKey(location_id=LocationId(purchase.location_id)))
+        add(HomeValueKey(location_id=purchase.market))
+        add(InflationKey())
     return tuple(keys)
 
 
@@ -199,8 +195,8 @@ def materialize_level_rows(
     return tuple(rows)
 
 
-def _add_amount_series_key(amount: PreparedAmount, add: Callable[[LevelSeriesKey], None]) -> None:
-    if isinstance(amount, PreparedIndexedAmount):
+def _add_amount_series_key(amount: Amount, add: Callable[[LevelSeriesKey], None]) -> None:
+    if isinstance(amount, IndexedAmount):
         add(parse_level_series_key(amount.series_id))
 
 
@@ -305,9 +301,9 @@ def _level_series(
     keys: tuple[LevelSeriesKey, ...],
     levels: Float64[np.ndarray, " series rollout snapshot"],
     money: Int64[np.ndarray, " series rollout snapshot"],
-) -> tuple[PreparedSeries, ...]:
+) -> tuple[Series, ...]:
     return tuple(
-        PreparedSeries(
+        Series(
             series_id=key.wire_id,
             snapshots=levels.shape[2],
             values=tuple(int(value) for value in _series_values(key, levels[row], money[row]).reshape(-1)),
@@ -318,7 +314,7 @@ def _level_series(
 
 def compile_series(
     external_series: ExternalSeriesContext, *, rollout_count: int, horizon_months: int, currency: Currency
-) -> tuple[PreparedSeries, ...]:
+) -> tuple[Series, ...]:
     """The sampled level series as integer paths.
 
     Only sampled keys are carried; a composed world checks at `declare_pool` that the

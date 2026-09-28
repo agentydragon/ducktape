@@ -88,7 +88,13 @@ class LlmIngress(Construct):
             metadata=ApiObjectMetadata(name=f"{_NAME}-settings", namespace=self.env.namespace),
             data={
                 "settings.yaml": yaml_config(
-                    settings_file(Settings, {"allowed_service_account_namespaces": [self.env.namespace]})
+                    settings_file(
+                        Settings,
+                        {
+                            "allowed_service_account_namespaces": [self.env.namespace],
+                            "log_llm_requests": self.env.llm_ingress.log_llm_requests,
+                        },
+                    )
                 )
             },
         )

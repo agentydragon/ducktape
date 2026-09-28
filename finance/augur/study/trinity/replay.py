@@ -152,10 +152,9 @@ from finance.augur.sim.fixed_point import (
     rate_to_ppb,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable
+from finance.augur.sim.market_path import IndexedAmount, MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedIndexedAmount, PreparedSeries
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
@@ -272,7 +271,7 @@ class Situation:
     in what it declares, never in the paths underneath.
     """
 
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     rollout_count: int
     horizon_months: int
 
@@ -360,9 +359,7 @@ def compose(case: Situation, rollout_id: int, *, lots: Sequence[OpeningLot], ann
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         # The bond payout names its (corporate) interest source; nothing here is taxed.
-        income_sources=(ORDINARY_INCOME, InterestIncome(issuer_jurisdiction_id=None))
-        if holds_bonds
-        else (ORDINARY_INCOME,),
+        income_sources=(ORDINARY_INCOME, InterestIncome(character=Taxable())) if holds_bonds else (ORDINARY_INCOME,),
     )
     for agent_id in (RETIREE, WORLD):
         world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
@@ -375,7 +372,7 @@ def compose(case: Situation, rollout_id: int, *, lots: Sequence[OpeningLot], ann
                 obligation_type=ObligationType.CASH_SPEND,
                 from_account=AccountRef(agent_id=RETIREE, account_id=CHECKING),
                 to_account=AccountRef(agent_id=WORLD, account_id=CHECKING),
-                amount_due=PreparedIndexedAmount(
+                amount_due=IndexedAmount(
                     base_amount=int(currency_amount_to_quanta(annual_withdrawal, quantum=QUANTUM)),
                     series_id=InflationKey().wire_id,
                     base_month_index=0,
@@ -395,7 +392,7 @@ def compose(case: Situation, rollout_id: int, *, lots: Sequence[OpeningLot], ann
             # Nobody is taxed here, so the character is inert; it is required because a
             # payout that allocates less than all of itself would pay out less than the
             # fund distributes.
-            tax_character={InterestIncome(): rate_to_ppb(1)},
+            tax_character={InterestIncome(character=Taxable()): rate_to_ppb(1)},
         )
     return world
 

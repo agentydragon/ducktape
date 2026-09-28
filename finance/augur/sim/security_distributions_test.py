@@ -9,11 +9,10 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import LevelSeriesKey, SecurityDistributionKey
-from finance.augur.sim.actions import DecisionActions, PayClaim
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import (
     currency_amount_to_quanta,
     quantity_scale_for_asset,
@@ -21,21 +20,20 @@ from finance.augur.sim.fixed_point import (
     rate_to_ppb,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferIncomeCategory, income_source_sort_key
+from finance.augur.sim.income import ORDINARY_INCOME, TransferIncomeCategory, income_source_sort_key
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Finished, Paid, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.rollouts import tax_by_jurisdiction
 from finance.augur.sim.testing.security_distributions import (
     AGGREGATE,
     CALIFORNIA_MUNI,
-    CORPORATE,
     CORPORATE_SHARE,
     FUND,
     HORIZON,
@@ -47,12 +45,15 @@ from finance.augur.sim.testing.security_distributions import (
     QUALIFIED_DIVIDENDS,
     SUB_QUANTUM_PER_UNIT,
     SYMBOL,
+    TAXABLE,
     TREASURY,
     TREASURY_SHARE,
     UNITS,
     YEAR_END,
     payout_quanta,
 )
+from finance.augur.sim.testing.series import level_series
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -73,22 +74,17 @@ def payout_levels(per_unit: Decimal) -> np.ndarray:
 PAYOUT = payout_levels(PER_UNIT)
 
 
-def _paths(payout: np.ndarray | None) -> tuple[PreparedSeries, ...]:
+def _paths(payout: np.ndarray | None) -> tuple[Series, ...]:
     """The fund's price and, unless it declares none, its per-unit payout.
 
     The two series have the same shape and units, which is the point of the payout being a
     primitive rather than a rate.
     """
 
-    blocks: list[tuple[LevelSeriesKey, np.ndarray]] = [(FUND, np.full((1, HORIZON + 1), float(PRICE)))]
+    blocks: dict[LevelSeriesKey, np.ndarray] = {FUND: np.full((1, HORIZON + 1), float(PRICE))}
     if payout is not None:
-        blocks.append((SecurityDistributionKey(symbol=SYMBOL), payout))
-    return compile_series(
-        ExternalSeriesContext.from_level_blocks(blocks, rollout_count=1, horizon_months=HORIZON),
-        rollout_count=1,
-        horizon_months=HORIZON,
-        currency=USD,
-    )
+        blocks[SecurityDistributionKey(symbol=SYMBOL)] = payout
+    return level_series(blocks, rollout_count=1, horizon_months=HORIZON)
 
 
 def _account(world: World, agent_id: AgentId, balance: Decimal) -> None:
@@ -115,20 +111,12 @@ def compose(
     cashflow cases want: with a tax authority the year-end settlement lands in the same months.
     """
 
+    # The vocabulary a taxpayer shares: what the fund's slices name.
     categories = tuple(tax_character) if distributes else ()
-    # The vocabulary a taxpayer shares: what the fund's slices name, plus where alice files.
-    issuers = {
-        category.issuer_jurisdiction_id
-        for category in categories
-        if isinstance(category, InterestIncome) and category.issuer_jurisdiction_id is not None
-    }
     world = World(
         MarketPath(_paths(payout), 0, rollout_count=1),
         horizon_months=HORIZON,
         income_sources=tuple(sorted({ORDINARY_INCOME, *categories}, key=income_source_sort_key)),
-        jurisdictions={
-            id_: load_jurisdiction(id_).level for id_ in sorted(issuers | (set(FILED_IN) if is_taxed else set()))
-        },
     )
     _account(world, ALICE, opening_cash)
     _account(world, IRS, Decimal(0))
@@ -184,47 +172,15 @@ def compose(
 
 def _run(world: World) -> Rollout:
     """Receive modeled payouts and explicitly pay observed claims; never trade or retry."""
-    session = ActionSession({0: world}, ALICE, capture="forensic")
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id,
-                        decision.observation.month,
-                        [
-                            PayClaim(
-                                request_id=index,
-                                cause_id=claim.cause_id,
-                                claim=claim,
-                                from_account=claim.from_account,
-                                amount=claim.amount_due,
-                            )
-                            for index, claim in enumerate(decision.observation.claims)
-                        ],
-                    )
-                    for decision in batch
-                ]
-            )
-        [result] = batch.rollouts
-        assert result.stop is None
-        return result
-    finally:
-        session.close()
+    [result] = finish(ActionSession({0: world}, ALICE, capture="forensic"), each(ClaimPayer(ALICE).decide)).rollouts
+    assert result.stop is None
+    return result
 
 
 def _cash_by_month(result: Rollout) -> dict[int, int]:
     [cash] = result.summary.cash
     assert (cash.account.agent_id, cash.account.account_id) == (ALICE, CHECKING)
     return {month: after - before for month, (before, after) in enumerate(pairwise(cash.values))}
-
-
-def _tax_by_jurisdiction(result: Rollout) -> dict[str, int]:
-    taxes: dict[str, int] = {}
-    for accrual in result.summary.tax_accruals:
-        taxes[accrual.jurisdiction_id] = taxes.get(accrual.jurisdiction_id, 0) + accrual.total_tax
-    return taxes
 
 
 def test_the_payout_is_units_times_dollars_per_unit_every_month() -> None:
@@ -290,14 +246,14 @@ def test_a_holding_with_no_declared_distribution_pays_nothing() -> None:
 
 
 def test_a_treasury_funds_distribution_is_federally_taxed_and_california_exempt() -> None:
-    tax = _tax_by_jurisdiction(_run(compose(tax_character=TREASURY)))
+    tax = tax_by_jurisdiction(_run(compose(tax_character=TREASURY)))
 
     assert tax["federal_us"] > 0
     assert tax["california"] == 0
 
 
 def test_an_in_state_muni_funds_distribution_is_exempt_everywhere() -> None:
-    tax = _tax_by_jurisdiction(_run(compose(tax_character=CALIFORNIA_MUNI)))
+    tax = tax_by_jurisdiction(_run(compose(tax_character=CALIFORNIA_MUNI)))
 
     assert tax["federal_us"] == 0
     assert tax["california"] == 0
@@ -306,18 +262,18 @@ def test_an_in_state_muni_funds_distribution_is_exempt_everywhere() -> None:
 def test_a_mixed_fund_is_exempt_only_on_its_treasury_slice() -> None:
     """The reason the tax character is a vector. California taxes the corporate 60% and
     not the Treasury 40%, so a mixed fund owes strictly between the all-Treasury and
-    all-corporate cases — a number neither single tag can produce."""
+    all-taxable cases — a number neither single tag can produce."""
 
-    mixed = _tax_by_jurisdiction(_run(compose(tax_character=AGGREGATE)))
-    treasury = _tax_by_jurisdiction(_run(compose(tax_character=TREASURY)))
-    corporate = _tax_by_jurisdiction(_run(compose(tax_character=CORPORATE)))
+    mixed = tax_by_jurisdiction(_run(compose(tax_character=AGGREGATE)))
+    treasury = tax_by_jurisdiction(_run(compose(tax_character=TREASURY)))
+    taxable = tax_by_jurisdiction(_run(compose(tax_character=TAXABLE)))
 
-    assert treasury["california"] < mixed["california"] < corporate["california"]
+    assert treasury["california"] < mixed["california"] < taxable["california"]
     # Federal taxes both slices, so the split changes nothing there.
-    assert mixed["federal_us"] == treasury["federal_us"] == corporate["federal_us"]
+    assert mixed["federal_us"] == treasury["federal_us"] == taxable["federal_us"]
 
 
-def test_the_payout_accrues_as_interest_per_issuer_and_not_as_one_lump() -> None:
+def test_the_payout_accrues_as_interest_per_character_and_not_as_one_lump() -> None:
     """The slices land in their own income rows rather than summing into one, which is
     what makes the per-jurisdiction exemption computable at all."""
 
@@ -335,7 +291,7 @@ def test_the_payout_accrues_as_interest_per_issuer_and_not_as_one_lump() -> None
     )
     paid = PAYOUTS_BY_YEAR_END * MONTHLY_PAYOUT_QUANTA
 
-    assert [row.income_source for row in december] == ["interest:corporate", "interest:federal_us"]
+    assert [row.income_source for row in december] == ["interest:taxable", "interest:treasury"]
     assert [row.income for row in december] == [int(CORPORATE_SHARE * paid), int(TREASURY_SHARE * paid)]
 
 
@@ -344,11 +300,11 @@ def test_qualified_dividends_take_federal_preferential_rates_and_california_ordi
     the 0% long-term band, where the same payout as corporate interest owes 940.00 at 10%.
     California: 24,000 - 5,363 = 18,637 at 1% to 10,412 and 2% above: 104.12 + 164.50."""
 
-    assert _tax_by_jurisdiction(_run(compose(tax_character=QUALIFIED_DIVIDENDS))) == {
+    assert tax_by_jurisdiction(_run(compose(tax_character=QUALIFIED_DIVIDENDS))) == {
         "federal_us": 0,
         "california": 26_862,
     }
-    assert _tax_by_jurisdiction(_run(compose(tax_character=CORPORATE)))["federal_us"] == 94_000
+    assert tax_by_jurisdiction(_run(compose(tax_character=TAXABLE)))["federal_us"] == 94_000
 
 
 def test_qualified_dividends_are_their_own_row_in_the_holders_tax_records() -> None:
@@ -382,7 +338,7 @@ def test_current_payout_funds_an_explicit_same_month_claim() -> None:
     assert result.trace is not None
     assert result.trace.distributions is not None
     [payout] = [row for row in result.trace.distributions if row.month == 0]
-    assert (payout.asset_id, payout.amount, payout.income_source) == ("bnd", 200_000, "interest:federal_us")
+    assert (payout.asset_id, payout.amount, payout.income_source) == ("bnd", 200_000, "interest:treasury")
 
 
 if __name__ == "__main__":

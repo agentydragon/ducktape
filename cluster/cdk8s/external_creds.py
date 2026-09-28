@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import SecretStoreRef
 
@@ -82,6 +82,10 @@ CREDENTIALS = (
             ApprovedConsumer("claude-sandbox", "buildbuddy-api-key-claude-sandbox-reader"),
             ApprovedConsumer("public-coder-agent", "buildbuddy-api-key-public-coder-agent-reader"),
             ApprovedConsumer("flux-system", "buildbuddy-api-key-flux-system-reader"),
+            ApprovedConsumer(
+                "agentplane-staging-egress-credentials",
+                "buildbuddy-api-key-agentplane-staging-egress-credentials-reader",
+            ),
         ),
     ),
     Credential(
@@ -191,13 +195,5 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def external_creds(flux_chart: Chart, directory: RenderedDirectory, claude_rbac: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        "external-creds",
-        directory,
-        retry_interval=None,
-        wait=None,
-        depends_on=[flux_kustomization_depends_on(claude_rbac)],
-        timeout="5m",
-    )
+def external_creds(flux_chart: Chart, directory: RenderedDirectory) -> Kustomization:
+    return flux_kustomization(flux_chart, "external-creds", directory, retry_interval=None, wait=None, timeout="5m")

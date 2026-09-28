@@ -146,9 +146,13 @@ def _ollama_container() -> k8s.Container:
             k8s.EnvVar(name="OLLAMA_NOPRUNE", value="true"),
             k8s.EnvVar(name="OLLAMA_NUM_PARALLEL", value="1"),
             k8s.EnvVar(name="OLLAMA_MAX_LOADED_MODELS", value="1"),
-            # Operator-approved desktop headroom: 2 GiB on GPU0, no extra
-            # placement margin on GPU1. Verify actual free VRAM after loading.
-            k8s.EnvVar(name="LLAMA_ARG_FIT_TARGET", value="2048,0"),
+            # This NVIDIA-only service uses CUDA in PCI bus order. Verify the
+            # child runner's CUDA_VISIBLE_DEVICES before interpreting fit margins.
+            k8s.EnvVar(name="OLLAMA_VULKAN", value="false"),
+            k8s.EnvVar(name="CUDA_DEVICE_ORDER", value="PCI_BUS_ID"),
+            # 2/0 GiB passed short requests but GPU1 OOMed during 145K prefill.
+            # Leave runtime allocation room on both GPUs plus desktop headroom.
+            k8s.EnvVar(name="LLAMA_ARG_FIT_TARGET", value="4096,2048"),
             k8s.EnvVar(name="OLLAMA_HOST", value=f"0.0.0.0:{_OLLAMA_PORT}"),
             k8s.EnvVar(name="NVIDIA_VISIBLE_DEVICES", value="all"),
             k8s.EnvVar(name="OLLAMA_KV_CACHE_TYPE", value="q8_0"),
@@ -322,10 +326,12 @@ def _setup_job(scope: Construct) -> None:
     k8s.KubeJob(
         scope,
         "setup-gpt-oss",
-        # Versioned so changed model registration creates a fresh Job.
-        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v6", namespace=_NAMESPACE),
+        # Explicit version bumps own reruns; Reloader would delete a running Job
+        # when the scripts ConfigMap changes.
+        metadata=k8s.ObjectMeta(
+            name="setup-gpt-oss-v8", namespace=_NAMESPACE, annotations={"reloader.stakater.com/auto": "false"}
+        ),
         spec=k8s.JobSpec(
-            ttl_seconds_after_finished=86400,
             template=k8s.PodTemplateSpec(
                 spec=k8s.PodSpec(
                     restart_policy="OnFailure",
@@ -393,7 +399,7 @@ def _setup_job(scope: Construct) -> None:
                         )
                     ],
                 )
-            ),
+            )
         ),
     )
 

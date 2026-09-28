@@ -1,4 +1,4 @@
-"""The deployment's opening positions as the prepared facts a world declares.
+"""The deployment's opening positions as the exact facts a world declares.
 
 The records here are the app's own: each is what one path's world is told, in quanta.
 `scenarios.compose` declares them onto that world.
@@ -25,10 +25,10 @@ from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.sim.bonds import coupon_amount_quanta
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, round_ppb
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, JurisdictionId, LotId, PortfolioId
-from finance.augur.sim.income import InterestIncome, TransferIncomeCategory
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, LotId, PortfolioId
+from finance.augur.sim.income import InterestCharacter, InterestIncome, TransferIncomeCategory
 from finance.augur.sim.money import Currency
-from finance.augur.sim.prepared import PreparedFixedAmount, PreparedIndexedCoupon
+from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 
 
@@ -57,10 +57,10 @@ class Bond:
     bond_id: BondId
     agent_id: AgentId
     account_id: AccountId
-    issuer_jurisdiction_id: JurisdictionId | None
+    character: InterestCharacter
     face_value: int
     purchase_price: int
-    coupon: PreparedFixedAmount | PreparedIndexedCoupon
+    coupon: FixedCoupon | IndexedCoupon
     coupon_period_months: int
     purchase_month_index: int
     maturity_month_index: int
@@ -259,13 +259,13 @@ def _prepared_bond(
         bond_id=bond.bond_id,
         agent_id=owner,
         account_id=coupon_account_id,
-        issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
+        character=bond.character,
         face_value=face,
         purchase_price=currency.quanta(bond.purchase_price),
         coupon=(
-            PreparedIndexedCoupon(annual_rate_ppb=rate_ppb)
+            IndexedCoupon(annual_rate_ppb=rate_ppb)
             if bond.inflation_indexed
-            else PreparedFixedAmount(
+            else FixedCoupon(
                 amount=coupon_amount_quanta(
                     face_quanta=face, annual_coupon_rate_ppb=rate_ppb, coupon_period_months=bond.coupon_period_months
                 )
@@ -328,7 +328,7 @@ def _distribution(
     holding_account_id: AccountId,
     payout_account_id: AccountId,
 ) -> Distribution:
-    """One pool's payout. The split must allocate the whole payout; shares naming one issuer add, and the wire's float
+    """One pool's payout. The split must allocate the whole payout; shares of one character add, and the wire's float
     fractions round onto the ppb grid."""
 
     total = sum(share.fraction for share in declaration.tax_character)
@@ -339,16 +339,15 @@ def _distribution(
             f"security distribution on {asset.wire_id!r} allocates {total} of its payout; "
             "the tax-character fractions must sum to 1"
         )
-    fractions: dict[JurisdictionId | None, float] = {}
+    fractions: dict[InterestCharacter, float] = {}
     for share in declaration.tax_character:
-        fractions[share.issuer_jurisdiction_id] = fractions.get(share.issuer_jurisdiction_id, 0.0) + share.fraction
+        fractions[share.character] = fractions.get(share.character, 0.0) + share.fraction
     return Distribution(
         agent_id=agent_id,
         holding_account_id=holding_account_id,
         asset_id=_asset_id(asset),
         to_account_id=payout_account_id,
         tax_character={
-            InterestIncome(issuer_jurisdiction_id=issuer): int(round_ppb(fraction))
-            for issuer, fraction in fractions.items()
+            InterestIncome(character=character): int(round_ppb(fraction)) for character, fraction in fractions.items()
         },
     )

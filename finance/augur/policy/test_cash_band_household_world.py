@@ -26,8 +26,7 @@ from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, SecurityLotState
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
-from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedSeries
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
@@ -95,7 +94,7 @@ def run(case: Situation) -> FinancialOutput:
     world = World(
         MarketPath(
             [
-                PreparedSeries(series_id=f"security:{asset_id}", snapshots=snapshots, values=(price,) * snapshots)
+                Series(series_id=f"security:{asset_id}", snapshots=snapshots, values=(price,) * snapshots)
                 for asset_id, price in case.prices.items()
             ],
             0,
@@ -259,9 +258,9 @@ def stock_world(
 
     With `second_grid`, a second brokerage account declares a pool of the same stock on that grid.
     """
-    series = [PreparedSeries(series_id=f"security:{STOCK}", snapshots=HORIZON + 1, values=(1_000,) * (HORIZON + 1))]
+    series = [Series(series_id=f"security:{STOCK}", snapshots=HORIZON + 1, values=(1_000,) * (HORIZON + 1))]
     if inflation is not None:
-        series.append(PreparedSeries(series_id="inflation", snapshots=HORIZON + 1, values=inflation))
+        series.append(Series(series_id="inflation", snapshots=HORIZON + 1, values=inflation))
     world = World(MarketPath(series, 0, rollout_count=1), horizon_months=HORIZON)
     world.declare_account(account=AccountRef(agent_id=GUARDED, account_id=CHECKING), opening_balance=10_000)
     world.declare_pool(agent_id=GUARDED, account_id=BROKERAGE, asset_id=STOCK, quantity_scale=SCALE)

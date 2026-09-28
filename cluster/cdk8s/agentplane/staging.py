@@ -292,7 +292,7 @@ ENV = Environment(
     ),
     app_config={**staging_config.config(), "action_federation": _ACTION_FEDERATION},
     db=DbProps(instances=2),
-    llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
+    llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET, log_llm_requests=True),
     egress=EgressProps(ca_secret_name="agentplane-egress-ca", credentials_namespace=STAGING_NAMESPACE),
     app=AppProps(
         hostname=_HOSTNAME,
@@ -456,7 +456,6 @@ def agentplane_staging(
     agentplane_crds: Kustomization,
     agent_sandbox_controller: Kustomization,
     cert_manager_trust: Kustomization,
-    claude_rbac: Kustomization,
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
 ) -> Kustomization:
@@ -486,6 +485,6 @@ def agentplane_staging(
         ],
         decryption=sops_decryption(ENV.extra_resources),
         depends_on=flux_kustomization_depends_on_many(
-            agentplane_crds, agent_sandbox_controller, cert_manager_trust, claude_rbac, cnpg, external_secrets_operator
+            agentplane_crds, agent_sandbox_controller, cert_manager_trust, cnpg, external_secrets_operator
         ),
     )

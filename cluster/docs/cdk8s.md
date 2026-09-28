@@ -48,8 +48,9 @@ imports the deployed source-watcher CRD; `generate_manifests.py` builds each con
 artifact before its Kustomization node, writes the directory with
 `generation.write_directory` as the node's `RenderedDirectory` argument, and hands every
 artifact to `artifact_generators.write_artifact_generators` last. A tofu-controller
-`Terraform` CR is built through `terraform.gitops_terraform`, and a Namespace written into
-the directory of the Kustomization that owns it through `generation.write_namespace`.
+`Terraform` CR is built through `terraform.tofu_state_terraform` (a `tf/gitops` module's
+through `terraform.gitops_terraform`), and a Namespace written into the directory of the
+Kustomization that owns it through `generation.write_namespace`.
 
 ### What stays hand-written
 
@@ -151,10 +152,12 @@ Flux-vs-Argo question in neither direction.
 an `http_file` in `MODULE.bazel` pinned by sha256 to the version the cluster deploys
 (the same tag as the operator's `GitRepository` or Terraform install). The jsii-backed
 Python bindings are build-time output, never committed. Put each import declaration and
-its optional smoke test in `cluster/cdk8s/crd_bindings/<provider>/BUILD.bazel`; keep
-upstream CRD source pins in `MODULE.bazel`. Current providers are
-`//cluster/cdk8s/crd_bindings/{flux,prometheus_operator,gateway_api,external_secrets,cilium,cert_manager,cnpg,agent_sandbox,tofu_controller,source_watcher,seaweedfs,kyverno,volsync,kubevirt,keda,clickhouse,external_snapshotter}`.
-`//agentplane/crds` owns its CRD constructs directly and is a separate case.
+its optional smoke test in `cluster/cdk8s/providers/<provider>/BUILD.bazel`, beside the
+CRD's generic wrapper modules; keep upstream CRD source pins in `MODULE.bazel`. Current
+providers are
+`//cluster/cdk8s/providers/{agent_sandbox,cert_manager,cilium,clickhouse,cnpg,external_secrets,external_snapshotter,flux,gateway_api,grafana_operator,keda,kubevirt,kyverno,prometheus_operator,redis_operator,seaweedfs,source_watcher,tofu_controller,volsync}`.
+`//agentplane/crds` declares the imports of Agentplane's first-party CRDs beside their
+YAML; `providers/agentplane` holds only their wrappers.
 
 The `source_watcher` import extracts `ArtifactGenerator` from the CRD bundle in
 `cluster/k8s/flux/flux-system/gotk-components.yaml`, keeping the binding aligned with the

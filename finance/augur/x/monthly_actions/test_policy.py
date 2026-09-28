@@ -9,9 +9,8 @@ from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.fixed_point import quantity_scale_for_asset
 from finance.augur.sim.ids import AccountId, AssetId
 from finance.augur.sim.income import ORDINARY_INCOME
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Finished, RejectedAction
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
@@ -25,9 +24,7 @@ def opening(bill_dollars: int) -> World:
     """USD 200 in checking, an empty brokerage pool of a USD 100 stock, and a bill due at month 0."""
     world = World(
         MarketPath(
-            (PreparedSeries(series_id=f"security:{STOCK.symbol}", snapshots=2, values=(10_000, 10_000)),),
-            0,
-            rollout_count=1,
+            (Series(series_id=f"security:{STOCK.symbol}", snapshots=2, values=(10_000, 10_000)),), 0, rollout_count=1
         ),
         horizon_months=1,
         income_sources=(ORDINARY_INCOME,),

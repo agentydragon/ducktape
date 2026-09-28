@@ -19,17 +19,16 @@ import pytest_bazel
 from finance.augur.sim.actions import Action, Buy, Consume, LotSale, PayClaim, Sell, Transfer
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AssetId, LotId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
-from finance.augur.sim.jurisdictions import JurisdictionLevel
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Treasury
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import Currency
-from finance.augur.sim.prepared import PreparedSeries
-from finance.augur.sim.results import Executed, Finished, Receipt, Rejected, RejectedAction, Rollout
+from finance.augur.sim.results import Executed, Receipt, Rejected, RejectedAction, Rollout
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.session import finish
 from finance.augur.sim.world import World
 from finance.augur.study.guyton_klinger.panel import Sleeve
 from finance.augur.study.guyton_klinger.paths import (
@@ -94,7 +93,7 @@ def world(paths: list[Path], rollout_id: int) -> World:
         f"security:{Sleeve.EQUITY}": [path.equity for path in paths],
     }
     series = [
-        PreparedSeries(
+        Series(
             series_id=series_id,
             snapshots=12 * years + 1,
             values=tuple(chain.from_iterable(monthly(row) for row in rows)),
@@ -104,7 +103,7 @@ def world(paths: list[Path], rollout_id: int) -> World:
     path = paths[rollout_id]
     if path.taxed:
         series.append(
-            PreparedSeries(
+            Series(
                 series_id=f"security_distribution:{Sleeve.BONDS}",
                 snapshots=12 * years + 1,
                 values=tuple(
@@ -117,8 +116,7 @@ def world(paths: list[Path], rollout_id: int) -> World:
     result = World(
         MarketPath(series, rollout_id, rollout_count=len(paths)),
         horizon_months=12 * years,
-        income_sources=(ORDINARY_INCOME, InterestIncome(issuer_jurisdiction_id=FEDERAL)) if path.taxed else (),
-        jurisdictions={FEDERAL: JurisdictionLevel.FEDERAL, CALIFORNIA: JurisdictionLevel.STATE} if path.taxed else {},
+        income_sources=(ORDINARY_INCOME, InterestIncome(character=Treasury())) if path.taxed else (),
     )
     accounts = [
         AccountRef(agent_id=RETIREE, account_id=CHECKING),
@@ -159,7 +157,7 @@ def world(paths: list[Path], rollout_id: int) -> World:
             holding_account_id=BROKERAGE,
             asset_id=AssetId(Sleeve.BONDS),
             to_account_id=INCOME[Sleeve.BONDS],
-            tax_character={InterestIncome(issuer_jurisdiction_id=FEDERAL): 10**9},
+            tax_character={InterestIncome(character=Treasury()): 10**9},
         )
     lots = [
         (Sleeve.CASH, "cash", OPENING_UNITS[Sleeve.CASH]),
@@ -183,13 +181,7 @@ def world(paths: list[Path], rollout_id: int) -> World:
 def run(paths: list[Path], rollout_ids: list[int]) -> tuple[list[Rollout], Policy]:
     policy = Policy(cell(len(paths[0].cpi) - 1))
     session = ActionSession({id_: world(paths, id_) for id_ in rollout_ids}, RETIREE, capture="forensic")
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(policy(batch))
-        return batch.rollouts, policy
-    finally:
-        session.close()
+    return finish(session, policy).rollouts, policy
 
 
 def settle(path: Path) -> tuple[Rollout, list[YearRecord]]:

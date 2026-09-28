@@ -1,4 +1,4 @@
-"""Tempo (traces) with its tenant-local SeaweedFS bucket and credentials."""
+"""Tempo (traces) with its tenant-local SeaweedFS bucket, identity and credentials."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def _storage(chart: Chart) -> None:
         adopt_existing=True,
         description="Tempo's tenant-local SeaweedFS trace bucket.",
     )
-    identity = s3.Identity(chart, "identity", name=NAME)
+    identity = s3.Identity(chart, "identity", name=NAME, namespace=_NAMESPACE)
     bucket.grant_read_write(identity)
     identity.credentials(
         namespace=_NAMESPACE,

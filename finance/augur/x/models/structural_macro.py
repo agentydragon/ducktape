@@ -61,9 +61,9 @@ from finance.augur.model.equity import EquitySpec
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from finance.augur.model.float64 import LEVEL_DTYPE
 from finance.augur.model.market_paths import MarketPaths
-from finance.augur.model.product_paths import construct_products, validate_product_symbols
+from finance.augur.model.product_paths import construct_products, product_level_keys, validate_product_symbols
 from finance.augur.model.schemas import FrozenModel
-from finance.augur.model.series import InflationKey, IssuerId, LevelSeriesKey, SecurityDistributionKey, SecurityKey
+from finance.augur.model.series import IssuerId, LevelSeriesKey
 from finance.augur.model.series_model import derive_stream_rollout_seeds
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
@@ -233,16 +233,10 @@ class StructuralMacroModel:
         )
 
     def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
-        keys: set[LevelSeriesKey] = {InflationKey()}
-        for spec in self._config.instruments:
-            keys.add(SecurityKey(symbol=spec.symbol))
-            keys.add(SecurityDistributionKey(symbol=spec.symbol))
-        if self._config.equity is not None:
-            # Equity emits a PRICE only. It pays dividends in reality, but its price is total
-            # return: a payout beside it would count the dividends twice until the path is
-            # split into price return plus payout.
-            keys.add(SecurityKey(symbol=self._config.equity.instrument.symbol))
-        return frozenset(keys)
+        return product_level_keys(
+            equity=self._config.equity.instrument if self._config.equity is not None else None,
+            instruments=self._config.instruments,
+        )
 
     def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
         # This provider models public markets only. A scenario needing PE composes it with a
@@ -272,7 +266,6 @@ class StructuralMacroModel:
             if config.equity is not None
             else None,
             corporate_yields={},
-            model_id=self.label,
             provenance={
                 "exogenous_provider_label": self.label,
                 "rollout_seeds": request.rollout_seeds,

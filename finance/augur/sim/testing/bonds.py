@@ -11,17 +11,25 @@ import numpy as np
 from finance.augur.model.series import InflationKey
 from finance.augur.sim.bonds import coupon_amount_quanta
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, income_source_sort_key
+from finance.augur.sim.income import (
+    ORDINARY_INCOME,
+    InterestCharacter,
+    InterestIncome,
+    Municipal,
+    Taxable,
+    Treasury,
+    income_source_sort_key,
+)
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedFixedAmount, PreparedIndexedCoupon, PreparedSeries
+from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -42,7 +50,7 @@ CPI_DOUBLING = [100.0] * 6 + [200.0] * (HORIZON + 1 - 6)
 CPI_FLAT = [100.0] * (HORIZON + 1)
 CPI_DEFLATING = [100.0] * 6 + [80.0] * (HORIZON + 1 - 6)
 
-TREASURY, MUNI, CORPORATE = JurisdictionId("federal_us"), JurisdictionId("california"), None
+TREASURY, MUNI, TAXABLE = Treasury(), Municipal(state=JurisdictionId("california")), Taxable()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -52,9 +60,9 @@ class DatedBond:
     bond_id: BondId
     agent_id: AgentId
     account_id: AccountId
-    issuer_jurisdiction_id: JurisdictionId | None
+    character: InterestCharacter
     face_value: int
-    coupon: PreparedFixedAmount | PreparedIndexedCoupon
+    coupon: FixedCoupon | IndexedCoupon
     coupon_period_months: int
     purchase_month_index: int
     maturity_month_index: int
@@ -70,7 +78,7 @@ def dated(
     period: int,
     purchase: int = 0,
     maturity: int,
-    issuer: JurisdictionId | None = None,
+    character: InterestCharacter = TAXABLE,
     indexed: bool = False,
 ) -> DatedBond:
     """A bond bought at par; a nominal coupon is the annual rate's share of the face, rounded once."""
@@ -80,11 +88,11 @@ def dated(
         bond_id=bond_id,
         agent_id=agent_id,
         account_id=account_id,
-        issuer_jurisdiction_id=issuer,
+        character=character,
         face_value=face_quanta,
-        coupon=PreparedIndexedCoupon(annual_rate_ppb=rate_ppb)
+        coupon=IndexedCoupon(annual_rate_ppb=rate_ppb)
         if indexed
-        else PreparedFixedAmount(
+        else FixedCoupon(
             amount=coupon_amount_quanta(
                 face_quanta=face_quanta, annual_coupon_rate_ppb=rate_ppb, coupon_period_months=period
             )
@@ -95,18 +103,11 @@ def dated(
     )
 
 
-def cpi_series(paths: Sequence[Sequence[float]]) -> tuple[PreparedSeries, ...]:
+def cpi_series(paths: Sequence[Sequence[float]]) -> tuple[Series, ...]:
     """One CPI level path per rollout, as the world reads it."""
     levels = np.asarray(paths, dtype=np.float64)
     rollouts, snapshots = levels.shape
-    return compile_series(
-        ExternalSeriesContext.from_level_blocks(
-            [(InflationKey(), levels)], rollout_count=rollouts, horizon_months=snapshots - 1
-        ),
-        rollout_count=rollouts,
-        horizon_months=snapshots - 1,
-        currency=USD,
-    )
+    return level_series({InflationKey(): levels}, rollout_count=rollouts, horizon_months=snapshots - 1)
 
 
 def checking(*balances: tuple[AgentId, Decimal]) -> tuple[tuple[AccountRef, int], ...]:
@@ -128,27 +129,24 @@ class Situation:
     accounts: tuple[tuple[AccountRef, int], ...]
     bonds: tuple[DatedBond, ...]
     horizon_months: int
-    series: tuple[PreparedSeries, ...] = ()
+    series: tuple[Series, ...] = ()
     rollout_count: int = 1
     # Filed in the shipped federal and California law, paying `irs`.
     taxpayers: tuple[AgentId, ...] = ()
 
 
 def compose(case: Situation, rollout_id: int = 0) -> World:
-    """Each issuer a bond names is a jurisdiction the world knows, whether or not anyone files in it."""
     filed_in = (JurisdictionId("federal_us"), JurisdictionId("california")) if case.taxpayers else ()
-    issuers = {bond.issuer_jurisdiction_id for bond in case.bonds}
-    rules = {id_: load_jurisdiction(id_) for id_ in {*filed_in, *issuers} if id_ is not None}
+    rules = {id_: load_jurisdiction(id_) for id_ in filed_in}
     world = World(
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=tuple(
             sorted(
-                {ORDINARY_INCOME, *(InterestIncome(issuer_jurisdiction_id=issuer) for issuer in issuers)},
+                {ORDINARY_INCOME, *(InterestIncome(character=bond.character) for bond in case.bonds)},
                 key=income_source_sort_key,
             )
         ),
-        jurisdictions={id_: rules[id_].level for id_ in sorted(rules)},
     )
     for account, balance in case.accounts:
         world.declare_account(account=account, opening_balance=balance)
@@ -160,7 +158,7 @@ def compose(case: Situation, rollout_id: int = 0) -> World:
             bond_id=bond.bond_id,
             agent_id=bond.agent_id,
             account_id=bond.account_id,
-            issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
+            character=bond.character,
             face_value=bond.face_value,
             purchase_price=bond.face_value,
             coupon=bond.coupon,
@@ -173,7 +171,7 @@ def compose(case: Situation, rollout_id: int = 0) -> World:
 
 def bond_case(
     *,
-    issuer: JurisdictionId | None = TREASURY,
+    character: InterestCharacter = TREASURY,
     indexed: bool = False,
     cpi: list[float] | None = None,
     is_taxed: bool = True,
@@ -197,7 +195,7 @@ def bond_case(
                 annual_rate=NOMINAL_RATE,
                 period=6,
                 maturity=maturity,
-                issuer=issuer,
+                character=character,
                 indexed=indexed,
             ),
         ),

@@ -15,25 +15,18 @@ from finance.augur.sim.actions import Action, DecisionActions, LotSale, PayClaim
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
-from finance.augur.sim.jurisdictions import (
-    Jurisdiction,
-    JurisdictionLevel,
-    StatutoryAmount,
-    StatutoryIndexation,
-    TaxBracket,
-)
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.jurisdictions import HYPOTHETICAL_FLAT_TAX, flat_income_tax
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.world import World
 
 # Reaches the month-12 payment of the tax on the month-0 sale.
@@ -43,42 +36,22 @@ HOUSEHOLD = AgentId("example-household")
 CREDITOR = AgentId("example-creditor")
 TAX_AUTHORITY = AgentId("example-tax")
 STOCK = SecurityKey(symbol=SecuritySymbol("example-stock"))
-_FLAT_TAX = Jurisdiction(
-    jurisdiction_id=JurisdictionId("example-flat-tax"),
-    level=JurisdictionLevel.FEDERAL,
-    ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
-    ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
-    standard_deduction={FilingStatus.SINGLE: Decimal(0)},
-    max_capital_loss_ordinary_offset={FilingStatus.SINGLE: Decimal(0)},
-    law_year=2024,
-    indexation=dict.fromkeys(
-        (
-            StatutoryAmount.ORDINARY_INCOME_BRACKETS,
-            StatutoryAmount.LTCG_BRACKETS,
-            StatutoryAmount.STANDARD_DEDUCTION,
-            StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET,
-        ),
-        StatutoryIndexation.FIXED,
-    ),
-)
+_FLAT_TAX = flat_income_tax(HYPOTHETICAL_FLAT_TAX, ordinary_rate=Decimal("0.20"), ltcg_rate=Decimal("0.10"))
 
 
 @dataclass(frozen=True)
 class Situation:
     """The stipulated price paths every composed world shares."""
 
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     rollout_count: int
 
 
 def situation(rollout_count: int = 2) -> Situation:
     """USD 100 on even paths and USD 50 on odd ones, flat throughout: repeated stipulations, not market samples."""
     prices = np.repeat(np.resize([100.0, 50.0], rollout_count)[:, None], HORIZON + 1, axis=1)
-    paths = ExternalSeriesContext.from_level_blocks(
-        [(STOCK, prices)], rollout_count=rollout_count, horizon_months=HORIZON
-    )
     return Situation(
-        series=compile_series(paths, rollout_count=rollout_count, horizon_months=HORIZON, currency=USD),
+        series=level_series({STOCK: prices}, rollout_count=rollout_count, horizon_months=HORIZON),
         rollout_count=rollout_count,
     )
 
@@ -92,7 +65,6 @@ def compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=HORIZON,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions={_FLAT_TAX.jurisdiction_id: _FLAT_TAX.level},
     )
     for agent_id in (HOUSEHOLD, CREDITOR, TAX_AUTHORITY):
         world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)

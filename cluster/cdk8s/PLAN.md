@@ -1,9 +1,9 @@
 # cdk8s adoption: remaining work
 
-Review baseline: `origin/devel` at `90125370b0` (2026-09-27). This is a source
+Review baseline: `origin/devel` at `f84301e72c` (2026-09-28). This is a source
 audit, not a fresh synthesis, CI result, or live-cluster health report.
 
-The central chart contains 181 Flux Kustomizations. The broad resource conversion,
+The central chart contains 171 Flux Kustomizations. The broad resource conversion,
 ArtifactGenerator wiring, two output roots, and removal of redundant single-file
 Kustomize wrappers are implemented. They are no longer migration waves.
 
@@ -18,18 +18,6 @@ live in [the design](../docs/cdk8s.md) and [AGENTS.md](AGENTS.md).
 
 These are recommendations for subsequent implementation PRs. Updating this plan does
 not approve a new abstraction, resource owner, authorization grant, or deployment.
-
-### A. Split generic cdk8s builders from ducktape's cluster-specific wiring
-
-Each CRD family's `cdk8s_import` bindings and generic constructors live in
-`cluster/cdk8s/providers/<name>/`, in the shape
-[the builder-authoring skill](../skills/cdk8s_builders/SKILL.md) states. Kinds still
-built raw at several call sites, each its own call: Flux `HelmRepository` (about 31
-sites) and `GitRepository` (8), then `CiliumClusterwideNetworkPolicy`, `CleanupPolicy`,
-`SandboxWarmPool`, Terraform and `VirtualMachine` (2 or 3 each).
-
-Done: no ducktape-specific module builds a CRD's generated dataclasses raw at more than
-one call site, with no rendered-output diff from `//cluster/cdk8s:test_generate_manifests`.
 
 ### B. Restore dependency-update ownership
 
@@ -103,8 +91,8 @@ would require several compensating patches. Treat these as targeted improvements
 - `seaweedfs/s3.py`: use generated structs for grant/access patch values; keep the
   useful Bucket/Identity API and assess its chart-local grant mutation separately.
 - Keep the shared typed pod-seccomp patch while the pinned API requires it. Review
-  Kyverno's schema-gap patches and Helm's explicit-null patch against their actual
-  schemas; do not erase them merely to reduce a count.
+  Helm's explicit-null patch against its actual schema; do not erase it merely to reduce
+  a count.
 
 Done per slice: fewer separately authored facts or untyped values, no loss of expressible
 Kubernetes fields, and a reviewed rendered diff.

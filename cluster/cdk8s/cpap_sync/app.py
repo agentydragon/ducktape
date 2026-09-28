@@ -1,6 +1,7 @@
 """cpap-sync: the daily CronJob that copies the CPAP card's EDF files into the cpap-data
-Forgejo repo, the KubeVirt gateway VM that exposes the card, the Service fronting the card's
-HTTP API, and the Job's egress policy.
+Forgejo repo, the repo's git credentials copied from the forgejo namespace, the KubeVirt
+gateway VM that exposes the card, the Service fronting the card's HTTP API, and the Job's
+egress policy.
 
 Hand-written beside the generated output: the card's SOPS Secret, and `image-pins/`, whose
 image-automation markers override this chart's placeholder image tags
@@ -20,35 +21,23 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEgressToServicesK8SService,
 )
 from kubevirt_virtualmachine_crds.io.kubevirt import (
-    VirtualMachine,
-    VirtualMachineSpec,
-    VirtualMachineSpecTemplate,
-    VirtualMachineSpecTemplateSpec,
-    VirtualMachineSpecTemplateSpecDomain,
     VirtualMachineSpecTemplateSpecDomainCpu,
-    VirtualMachineSpecTemplateSpecDomainDevices,
-    VirtualMachineSpecTemplateSpecDomainDevicesDisks,
-    VirtualMachineSpecTemplateSpecDomainDevicesDisksDisk,
     VirtualMachineSpecTemplateSpecDomainDevicesHostDevices,
-    VirtualMachineSpecTemplateSpecDomainDevicesInterfaces,
     VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts,
-    VirtualMachineSpecTemplateSpecDomainFirmware,
-    VirtualMachineSpecTemplateSpecDomainFirmwareBootloader,
-    VirtualMachineSpecTemplateSpecDomainFirmwareBootloaderEfi,
     VirtualMachineSpecTemplateSpecDomainResources,
     VirtualMachineSpecTemplateSpecDomainResourcesRequests,
-    VirtualMachineSpecTemplateSpecNetworks,
-    VirtualMachineSpecTemplateSpecNetworksPod,
     VirtualMachineSpecTemplateSpecVolumes,
-    VirtualMachineSpecTemplateSpecVolumesContainerDisk,
     VirtualMachineSpecTemplateSpecVolumesSecret,
 )
 
 from cluster.cdk8s import cilium, forgejo_images, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.forgejo import secret_copy
+from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_labels
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
+from cluster.cdk8s.providers.kubevirt.virtual_machine import VirtualMachine
 
 NAME = "cpap-sync"
 NAMESPACE = "cpap-sync"
@@ -61,6 +50,7 @@ _CARD_SERVICE = "cpap-card"
 _GATEWAY = "cpap-gateway"
 _GATEWAY_PORT = 18080
 _GIT_CREDENTIALS = "cpap-data-git-write"
+_GIT_READ_CREDENTIALS = "cpap-data-git-read"
 _WORKDIR = "/workdir"
 _CARD_SECRET = "cpap-ezshare"
 CARD_SECRET_FILE = f"{_CARD_SECRET}.sops.yaml"
@@ -72,99 +62,45 @@ def _git_env(name: str, key: str) -> k8s.EnvVar:
     )
 
 
-def _gateway_vm(chart: Chart) -> None:
-    labels = {"app.kubernetes.io/name": _GATEWAY}
-    VirtualMachine(
+def _gateway_vm(chart: Chart) -> VirtualMachine:
+    return container_disk_vm(
         chart,
         "gateway-vm",
-        metadata=ApiObjectMetadata(
-            name=_GATEWAY,
-            namespace=NAMESPACE,
-            labels=labels,
-            annotations={
-                "description": (
-                    "Always-on KubeVirt gateway for the CPAP ez Share WiFi card. The USB adapter stays physically "
-                    "attached to OptiPlex and is passed through to this VM; the VM exposes only the card's HTTP API "
-                    "to the sync Service."
-                )
-            },
+        name=_GATEWAY,
+        namespace=NAMESPACE,
+        annotations={
+            "description": (
+                "Always-on KubeVirt gateway for the CPAP ez Share WiFi card. The USB adapter stays physically "
+                "attached to OptiPlex and is passed through to this VM; the VM exposes only the card's HTTP API "
+                "to the sync Service."
+            )
+        },
+        # A stateless VM disk.
+        image=_GATEWAY_IMAGE,
+        cpu=VirtualMachineSpecTemplateSpecDomainCpu(cores=2),
+        resources=VirtualMachineSpecTemplateSpecDomainResources(
+            requests={
+                # The guest currently has substantial headroom at this size. Keep
+                # the appliance small while KubeVirt over-reserves USB host devices
+                # as VFIO memory overhead.
+                "memory": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string("768Mi")
+            }
         ),
-        spec=VirtualMachineSpec(
-            run_strategy="Always",
-            template=VirtualMachineSpecTemplate(
-                metadata=k8s.ObjectMeta(labels={"kubevirt.io/domain": _GATEWAY} | labels),
-                spec=VirtualMachineSpecTemplateSpec(
-                    # The host the CPAP card's USB WiFi adapter is attached to.
-                    node_selector=node_scheduling.OPTIPLEX.node_selector,
-                    domain=VirtualMachineSpecTemplateSpecDomain(
-                        cpu=VirtualMachineSpecTemplateSpecDomainCpu(cores=2),
-                        resources=VirtualMachineSpecTemplateSpecDomainResources(
-                            requests={
-                                # The guest currently has substantial headroom at this size. Keep
-                                # the appliance small while KubeVirt over-reserves USB host devices
-                                # as VFIO memory overhead.
-                                "memory": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string("768Mi")
-                            }
-                        ),
-                        firmware=VirtualMachineSpecTemplateSpecDomainFirmware(
-                            bootloader=VirtualMachineSpecTemplateSpecDomainFirmwareBootloader(
-                                efi=VirtualMachineSpecTemplateSpecDomainFirmwareBootloaderEfi(secure_boot=False)
-                            )
-                        ),
-                        devices=VirtualMachineSpecTemplateSpecDomainDevices(
-                            # This appliance has no graphical console.
-                            autoattach_graphics_device=False,
-                            disks=[
-                                VirtualMachineSpecTemplateSpecDomainDevicesDisks(
-                                    name="rootdisk",
-                                    boot_order=1,
-                                    disk=VirtualMachineSpecTemplateSpecDomainDevicesDisksDisk(bus="virtio"),
-                                ),
-                                VirtualMachineSpecTemplateSpecDomainDevicesDisks(
-                                    name="cpap-secret",
-                                    serial="cpapsecret",
-                                    disk=VirtualMachineSpecTemplateSpecDomainDevicesDisksDisk(bus="virtio"),
-                                ),
-                            ],
-                            interfaces=[
-                                VirtualMachineSpecTemplateSpecDomainDevicesInterfaces(
-                                    name="default",
-                                    masquerade={},
-                                    ports=[
-                                        VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(
-                                            name="http", port=_GATEWAY_PORT
-                                        )
-                                    ],
-                                )
-                            ],
-                            host_devices=[
-                                VirtualMachineSpecTemplateSpecDomainDevicesHostDevices(
-                                    name="cpap-wifi", device_name="kubevirt.io/cpap-wifi"
-                                )
-                            ],
-                        ),
-                    ),
-                    networks=[
-                        VirtualMachineSpecTemplateSpecNetworks(
-                            name="default", pod=VirtualMachineSpecTemplateSpecNetworksPod()
-                        )
-                    ],
-                    volumes=[
-                        # A stateless VM disk.
-                        VirtualMachineSpecTemplateSpecVolumes(
-                            name="rootdisk",
-                            container_disk=VirtualMachineSpecTemplateSpecVolumesContainerDisk(
-                                image=_GATEWAY_IMAGE, image_pull_policy="IfNotPresent"
-                            ),
-                        ),
-                        VirtualMachineSpecTemplateSpecVolumes(
-                            name="cpap-secret",
-                            secret=VirtualMachineSpecTemplateSpecVolumesSecret(secret_name=_CARD_SECRET),
-                        ),
-                    ],
-                ),
-            ),
-        ),
+        # The host the CPAP card's USB WiFi adapter is attached to.
+        node_selector=node_scheduling.OPTIPLEX.node_selector,
+        ports=[VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(name="http", port=_GATEWAY_PORT)],
+        disks={
+            "cpapsecret": VirtualMachineSpecTemplateSpecVolumes(
+                name="cpap-secret", secret=VirtualMachineSpecTemplateSpecVolumesSecret(secret_name=_CARD_SECRET)
+            )
+        },
+        host_devices=[
+            VirtualMachineSpecTemplateSpecDomainDevicesHostDevices(
+                name="cpap-wifi", device_name="kubevirt.io/cpap-wifi"
+            )
+        ],
+        # This appliance has no graphical console.
+        autoattach_graphics_device=False,
     )
 
 
@@ -184,6 +120,11 @@ def namespace_chart(app: App) -> Chart:
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
+    # tf/gitops/cpap-data's service-user credentials: the writer's for the CronJob, and the
+    # reader's for analysis, mirrored into claude-sandbox for Claude Code sessions.
+    reader = secret_copy.reader(chart, NAMESPACE)
+    secret_copy.secret_copy(chart, _GIT_CREDENTIALS, reader=reader)
+    secret_copy.secret_copy(chart, _GIT_READ_CREDENTIALS, reader=reader, mirror_namespaces=["claude-sandbox"])
     k8s.KubeServiceAccount(
         chart,
         "default-service-account",
@@ -278,7 +219,7 @@ def chart(app: App) -> Chart:
         ),
         spec=k8s.ServiceSpec(
             type="ClusterIP",
-            selector={"kubevirt.io/domain": _GATEWAY},
+            selector=domain_labels(_GATEWAY),
             ports=[
                 k8s.ServicePort(
                     name="http", port=80, protocol="TCP", target_port=k8s.IntOrString.from_number(_GATEWAY_PORT)

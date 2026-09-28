@@ -15,21 +15,21 @@ import pytest_bazel
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.sim.actions import Action, DecisionActions, LotSale, PayClaim, Sell, Transfer
 from finance.augur.sim.books import AccountRef, TaxAccrual
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.series import level_series
+from finance.augur.sim.testing.session import finish
 from finance.augur.sim.world import World
 
 ALICE = AgentId("alice")
@@ -53,7 +53,7 @@ FEDERAL = JurisdictionId("federal_us")
 class Situation:
     """The compiled paths, the one VTI lot Alice opens holding, and the month-zero wages she is paid."""
 
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     rollout_count: int
     horizon_months: int
     lot_units: int
@@ -65,11 +65,8 @@ def _situation(prices: np.ndarray, *, quantity: Decimal | int, cost_basis: Decim
     """One stipulated `(rollout, month)` price block; the horizon is the snapshots it carries."""
     rollout_count, snapshots = prices.shape
     horizon = snapshots - 1
-    paths = ExternalSeriesContext.from_level_blocks(
-        [(VTI, prices)], rollout_count=rollout_count, horizon_months=horizon
-    )
     return Situation(
-        series=compile_series(paths, rollout_count=rollout_count, horizon_months=horizon, currency=USD),
+        series=level_series({VTI: prices}, rollout_count=rollout_count, horizon_months=horizon),
         rollout_count=rollout_count,
         horizon_months=horizon,
         lot_units=quantity_to_quanta(quantity, scale=VTI_SCALE),
@@ -85,7 +82,6 @@ def _compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions={FEDERAL: federal.level},
     )
     openings = [(ALICE, Decimal(0)), (IRS, Decimal(0))]
     if case.wages:
@@ -162,14 +158,10 @@ def _sell_and_pay(decisions: list[Decision], sale_month: int) -> list[DecisionAc
 
 
 def _run(case: Situation, *, sale_month: int, rollout_ids: list[int]) -> Finished:
-    session = ActionSession({id_: _compose(case, id_) for id_ in rollout_ids}, ALICE)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(_sell_and_pay(batch, sale_month))
-        return batch
-    finally:
-        session.close()
+    return finish(
+        ActionSession({id_: _compose(case, id_) for id_ in rollout_ids}, ALICE),
+        lambda batch: _sell_and_pay(batch, sale_month),
+    )
 
 
 def test_sale_receipt_cannot_be_rewritten_through_policy_memory() -> None:

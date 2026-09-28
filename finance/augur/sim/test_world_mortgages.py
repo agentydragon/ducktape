@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from decimal import Decimal
 
 import pytest
 import pytest_bazel
@@ -12,48 +13,36 @@ from finance.augur.sim.agent import assemble
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.capture import FinancialCapture
 from finance.augur.sim.ids import AccountId, LiabilityId, PropertyId
+from finance.augur.sim.market_path import Series
 from finance.augur.sim.mortgage import Mortgage, MortgagePayment, MortgageTerms
-from finance.augur.sim.prepared import (
-    PreparedLocation,
-    PreparedSeries,
-    _MortgageFinancing,
-    _PropertyPurchase,
-    _PropertySale,
-    _PropertyTax,
-)
-from finance.augur.sim.property import Housing
+from finance.augur.sim.property import Housing, MortgageFinancing, ScheduledPurchase, ScheduledSale
+from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Executed
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, opening, world_on
+from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, flat_parcel
 from finance.augur.sim.world import World
-
-LOCATION = PreparedLocation(
-    location_id=LocationId("test-market"),
-    display_name="Test market",
-    jurisdiction_ids=(),
-    annual_property_tax_rate_ppb=0,
-    annual_special_assessment=0,
-)
 
 
 @dataclass(frozen=True)
 class Situation:
     """A financed month-2 purchase sold in month 5, an ordinary bill and a property tax, on the market's paths."""
 
-    purchase: _PropertyPurchase
-    sale: _PropertySale
-    home_values: PreparedSeries
+    purchase: ScheduledPurchase
+    sale: ScheduledSale
+    home_values: Series
     rollout_count: int = 1
 
 
 @pytest.fixture
 def case() -> Situation:
     return Situation(
-        purchase=_PropertyPurchase(
+        purchase=ScheduledPurchase(
             month=2,
             cause_id="test-purchase",
             property_id=PropertyId("test-home"),
-            location_id=LocationId("test-market"),
+            parcel=flat_parcel(Decimal("0.012")),
+            market=LocationId("test-market"),
             buyer_agent_id=HOUSEHOLD,
             buyer_account_id=AccountId("checking"),
             seller_agent_id=WORLD,
@@ -63,7 +52,7 @@ def case() -> Situation:
             buyer_closing_cost=0,
             rented_fraction_ppb=0,
             land_value_fraction_ppb=200_000_000,
-            mortgage=_MortgageFinancing(
+            mortgage=MortgageFinancing(
                 liability_id=LiabilityId("test-mortgage"),
                 lender_agent_id=WORLD,
                 lender_account_id=AccountId("cash"),
@@ -72,10 +61,8 @@ def case() -> Situation:
                 term_months=60,
             ),
         ),
-        sale=_PropertySale(month=5, property_id=PropertyId("test-home"), closing_cost_ppb=0),
-        home_values=PreparedSeries(
-            series_id="home_value:test-market", snapshots=7, values=(50, 100, 200, 240, 300, 360, 800)
-        ),
+        sale=ScheduledSale(month=5, property_id=PropertyId("test-home"), commission_ppb=0, escrow_title_ppb=0),
+        home_values=Series(series_id="home_value:test-market", snapshots=7, values=(50, 100, 200, 240, 300, 360, 800)),
     )
 
 
@@ -121,18 +108,17 @@ def composed(case: Situation, rollout: int = 0) -> World:
     world.declare_housing(
         Housing(purchases=(case.purchase,), sales=(case.sale,)),
         (
-            _PropertyTax(
+            PropertyTaxPolicy(
                 property_id=PropertyId("test-home"),
                 owner_agent_id=HOUSEHOLD,
                 from_account_id=AccountId("checking"),
                 tax_authority_agent_id=WORLD,
                 tax_authority_account_id=AccountId("cash"),
-                annual_tax_rate_ppb=12_000_000,
+                start_year=START_YEAR,
                 start_month=3,
                 end_month=None,
             ),
         ),
-        (LOCATION,),
     )
     return world
 
@@ -292,7 +278,7 @@ def test_invalid_mortgage_effects_do_not_change_cash_or_principal(
 def test_a_building_basis_rounds_in_the_engine_not_in_the_authoring() -> None:
     """Authored money is exact; the land share multiplies it here, rounding to the quantum once."""
     world = world_on(
-        (PreparedSeries(series_id="home_value:test-market", snapshots=2, values=(10_001, 10_001)),),
+        (Series(series_id="home_value:test-market", snapshots=2, values=(10_001, 10_001)),),
         horizon_months=1,
         accounts=opening({CASH: 200_00}),
         taxpayers=(),
@@ -300,11 +286,12 @@ def test_a_building_basis_rounds_in_the_engine_not_in_the_authoring() -> None:
     world.declare_housing(
         Housing(
             purchases=(
-                _PropertyPurchase(
+                ScheduledPurchase(
                     month=0,
                     cause_id="test-purchase",
                     property_id=PropertyId("test-home"),
-                    location_id=LocationId("test-market"),
+                    parcel=UNTAXED,
+                    market=LocationId("test-market"),
                     buyer_agent_id=HOUSEHOLD,
                     buyer_account_id=AccountId("checking"),
                     seller_agent_id=WORLD,
@@ -317,8 +304,7 @@ def test_a_building_basis_rounds_in_the_engine_not_in_the_authoring() -> None:
                     mortgage=None,
                 ),
             )
-        ),
-        locations=(LOCATION,),
+        )
     )
     world.prepare_month(0, {}, {})
     properties = world.properties

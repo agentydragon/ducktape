@@ -24,17 +24,21 @@ from finance.augur.model.series import (
     SecurityKey,
     SecuritySymbol,
 )
+from finance.augur.sim import tax
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import quantity_to_quanta, rate_to_ppb, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, QualifiedDividendIncome, TransferIncomeCategory
-from finance.augur.sim.jurisdictions import JurisdictionLevel
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.income import (
+    ORDINARY_INCOME,
+    InterestIncome,
+    QualifiedDividendIncome,
+    TransferIncomeCategory,
+    Treasury,
+)
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import Currency
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.runtime import load_jurisdictions_for
-from finance.augur.sim.tax import PreparedTaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw, FixedNominalLaw, TaxIndexation
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
@@ -71,8 +75,8 @@ class TaxLaw(StrEnum):
 
 
 PAYOUT_INCOME: dict[Sleeve, TransferIncomeCategory] = {
-    Sleeve.CASH: InterestIncome(issuer_jurisdiction_id=FEDERAL),
-    Sleeve.BONDS: InterestIncome(issuer_jurisdiction_id=FEDERAL),
+    Sleeve.CASH: InterestIncome(character=Treasury()),
+    Sleeve.BONDS: InterestIncome(character=Treasury()),
     Sleeve.EQUITY: QualifiedDividendIncome(),
 }
 """Treasury bills and bonds pay interest the federal government issued: federally taxable,
@@ -83,7 +87,7 @@ California-exempt. S&P dividends are declared qualified; their holding period is
 class FederalCaTaxes:
     """A single California resident's compiled federal and state tax, and the law window `i` applies it under."""
 
-    profile: PreparedTaxProfile
+    profile: tax.TaxProfile
     laws: tuple[TaxIndexation, ...]
 
 
@@ -94,7 +98,7 @@ class AnnualWindows:
     start_years: tuple[int, ...]
     years: int
     taxes: FederalCaTaxes | None
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
 
     @property
     def horizon_months(self) -> int:
@@ -211,7 +215,7 @@ def _federal_ca_taxes(panel: AnnualPanel, start_years: Sequence[int], tax_law: T
 
 
 def _declare_taxes(world: World, taxes: FederalCaTaxes, rollout_id: int) -> None:
-    """The window's tax authority, with sleeve payouts characterized by issuer."""
+    """The window's tax authority, with sleeve payouts characterized by tax character."""
     world.declare_account(account=AccountRef(agent_id=TAX_AUTHORITY, account_id=CHECKING), opening_balance=0)
     world.track(TaxAuthority(taxes.profile, indexation=taxes.laws[rollout_id]))
     for sleeve in Sleeve:
@@ -240,7 +244,6 @@ def compose_world(windows: AnnualWindows, rollout_id: int, *, wealth: Decimal, w
         MarketPath(windows.series, rollout_id, rollout_count=len(windows.start_years)),
         horizon_months=windows.horizon_months,
         income_sources=(ORDINARY_INCOME, *dict.fromkeys(PAYOUT_INCOME.values())) if taxed else (),
-        jurisdictions={FEDERAL: JurisdictionLevel.FEDERAL, CALIFORNIA: JurisdictionLevel.STATE} if taxed else {},
     )
     retiree_accounts = [CHECKING, *([TAX_RESERVE, *INCOME.values()] if taxed else [])]
     for account in (

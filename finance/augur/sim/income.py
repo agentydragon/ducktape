@@ -1,5 +1,6 @@
 """Typed income and deduction categories: what kind of taxable dollar a transfer carries."""
 
+from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,25 +21,57 @@ class OrdinaryIncome(BaseModel):
     category: Literal[IncomeCategory.ORDINARY] = IncomeCategory.ORDINARY
 
 
-class InterestIncome(BaseModel):
-    """Interest, tagged with WHO ISSUED the debt — never with whether it is "in-state".
+class InterestCharacterKind(StrEnum):
+    TREASURY = "treasury"
+    MUNICIPAL = "municipal"
+    TAXABLE = "taxable"
 
-    Whether a jurisdiction taxes this dollar is a relation between the issuer and that
-    jurisdiction (`Jurisdiction.taxes_interest_from`), so the same California muni coupon is
-    exempt for a Californian and taxable for a New Yorker without the instrument changing.
+
+class Treasury(BaseModel):
+    """US Treasury bills, notes, bonds and TIPS."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[InterestCharacterKind.TREASURY] = InterestCharacterKind.TREASURY
+
+
+class Municipal(BaseModel):
+    """A tax-exempt obligation of a state or its political subdivisions."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[InterestCharacterKind.MUNICIPAL] = InterestCharacterKind.MUNICIPAL
+    state: JurisdictionId = Field(
+        description=(
+            "The state whose obligation this is, directly or through a political subdivision. Only "
+            "the taxing jurisdictions' own rules read it; it need not name a declared jurisdiction."
+        )
+    )
+
+
+class Taxable(BaseModel):
+    """Interest no jurisdiction exempts: corporate bonds, bank deposits, ..."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[InterestCharacterKind.TAXABLE] = InterestCharacterKind.TAXABLE
+
+
+type InterestCharacter = Annotated[Treasury | Municipal | Taxable, Field(discriminator="kind")]
+
+
+class InterestIncome(BaseModel):
+    """Interest, tagged with the legal regime of the obligation that pays it.
+
+    Whether a jurisdiction taxes this dollar is that jurisdiction's rule for the character
+    (`sim.tax.taxes_interest_from`), so the same California muni coupon is exempt for a
+    Californian and taxable for a New Yorker without the instrument changing.
     """
 
     model_config = ConfigDict(frozen=True)
 
     category: Literal[IncomeCategory.INTEREST] = IncomeCategory.INTEREST
-    issuer_jurisdiction_id: JurisdictionId | None = Field(
-        default=None,
-        description=(
-            "The taxing authority that issued the debt — `federal_us` for a Treasury, "
-            "`california` for a CA muni. `None` means a non-governmental issuer (a corporate "
-            "bond), which no jurisdiction exempts."
-        ),
-    )
+    character: InterestCharacter
 
 
 # TODO: apply the holding-period test (IRC 1(h)(11)(B)(iii)) to the holder's lots rather than
@@ -63,12 +96,18 @@ ORDINARY_INCOME = OrdinaryIncome()
 type TransferDeductionCategory = Literal["ordinary"]
 
 
+def _interest_label(character: InterestCharacter) -> str:
+    if isinstance(character, Municipal):
+        return f"{character.kind}:{character.state}"
+    return character.kind
+
+
 def income_source_sort_key(category: TransferIncomeCategory) -> tuple[int, str]:
-    """Ordinary first, then qualified dividends, then interest by issuer, corporate last."""
+    """Ordinary first, then qualified dividends, then interest by character, taxable last."""
 
     if isinstance(category, InterestIncome):
-        issuer = category.issuer_jurisdiction_id
-        return (2, issuer) if issuer is not None else (3, "")
+        character = category.character
+        return (3, "") if isinstance(character, Taxable) else (2, _interest_label(character))
     if isinstance(category, QualifiedDividendIncome):
         return (1, "")
     return (0, "")
@@ -78,8 +117,7 @@ def income_source_wire_id(category: TransferIncomeCategory) -> str:
     """The financial income ledger's label for one prepared category."""
 
     if isinstance(category, InterestIncome):
-        issuer = category.issuer_jurisdiction_id
-        return f"interest:{issuer if issuer is not None else 'corporate'}"
+        return f"interest:{_interest_label(category.character)}"
     if isinstance(category, QualifiedDividendIncome):
         return "qualified_dividend"
     return "ordinary"

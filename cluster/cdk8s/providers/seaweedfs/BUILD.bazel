@@ -79,6 +79,7 @@ py_library(
     srcs = ["s3.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":resource_reference_grant",
         "//cluster/cdk8s/providers/seaweedfs:bucket",
         "//cluster/cdk8s/providers/seaweedfs:resourcereferencegrant",
         "//cluster/cdk8s/providers/seaweedfs:s3credentials",
@@ -98,5 +99,16 @@ py_test(
         "//:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "resource_reference_grant",
+    srcs = ["resource_reference_grant.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/seaweedfs:resourcereferencegrant",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
     ],
 )

@@ -76,6 +76,7 @@ import { Markdown } from "./markdown";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 import { ChronologicalDebugIcon, ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
+import { TopbarActions, TopbarTitle } from "./topbar";
 import "./projected_session.css";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
@@ -131,8 +132,12 @@ function VerbatimText({ text }: { text: string }): JSX.Element {
   );
 }
 
+function payloadDisclosureId(reference: PayloadRef): string {
+  return `${reference.projection_epoch}:${reference.owner_id}:${reference.field}`;
+}
+
 function LazyBody({ label, ...body }: { label: string; reference: PayloadRef; format: BodyFormat }): JSX.Element {
-  const id = `${body.reference.projection_epoch}:${body.reference.owner_id}:${body.reference.field}`;
+  const id = payloadDisclosureId(body.reference);
   return (
     <RetainedDisclosure id={id} summary={label}>
       <Body {...body} />
@@ -349,6 +354,10 @@ export function EntityCard({
   entity: ThreadEntity;
   live: boolean;
 }): JSX.Element {
+  // Computed unconditionally (hooks can't follow the entity-kind branches below): null, and so
+  // always closed, for anything but a reasoning step with a body to disclose.
+  const reasoningTextRef = "kind" in entity.state && entity.state.kind === ItemKind.REASONING ? entity.textRef : null;
+  const [reasoningOpen] = useRetainedDisclosure(reasoningTextRef && payloadDisclosureId(reasoningTextRef));
   if (entity.entityKind === "confirmed_input") {
     return (
       <Group justify="flex-end" align="flex-start" gap="xs" wrap="nowrap">
@@ -368,12 +377,10 @@ export function EntityCard({
     if (!prominent) {
       return (
         <Stack gap={0} style={{ position: "relative" }}>
-          <Text size="xs" c="dimmed">
-            {label}
-          </Text>
+          <Text c="dimmed">{label}</Text>
           <EvidenceToggle entity={entity} style={{ position: "absolute", top: 0, right: 0 }} />
           {diagnostic && (
-            <Text size="xs" c="dimmed" style={wrapped}>
+            <Text c="dimmed" style={wrapped}>
               {diagnostic}
             </Text>
           )}
@@ -425,15 +432,17 @@ export function EntityCard({
     </>
   );
   // Assistant text carries no role label and no card: it reads as the reply by position, across
-  // from the user's right-aligned bubble. A tool call is boxed and labelled by its tool, reasoning
-  // by its disclosure.
-  if (tool || reasoning) {
+  // from the user's right-aligned bubble. A tool call is boxed unconditionally, labelled by its
+  // tool; a standalone reasoning step is boxed only once its own disclosure opens, like a
+  // collapsed run -- collapsed, it is already just the one "Reasoning" line.
+  if (tool) {
     return (
       <Paper p="sm" withBorder style={{ position: "relative" }}>
         {body}
       </Paper>
     );
   }
+  if (reasoning) return <CollapsibleCard open={reasoningOpen}>{body}</CollapsibleCard>;
   return <Box style={{ position: "relative" }}>{body}</Box>;
 }
 
@@ -458,10 +467,19 @@ function ItemStatus({ items, live }: { items: ThreadEntity[]; live: boolean }): 
   );
 }
 
-/** A run of tool calls and reasoning steps, folded behind its summary until opened. */
-/** The collapsible shell a run or a lifecycle group shares: collapsed, it shows nothing but
- * `summary`, so the full card padding and border its opened entities warrant would only pad out
+/** The collapsible shell a run, a lifecycle group, or a standalone reasoning step shares: collapsed,
+ * it shows nothing but its one line -- a run/group's `summary`, or reasoning's own "Reasoning"
+ * disclosure -- so the full card padding and border its opened content warrants would only pad out
  * that one line. */
+function CollapsibleCard({ open, children }: { open: boolean; children: ReactNode }): JSX.Element {
+  return (
+    <Paper p={open ? "sm" : "xs"} withBorder={open} style={{ position: "relative" }}>
+      {children}
+    </Paper>
+  );
+}
+
+/** A run of tool calls and reasoning steps, folded behind its summary until opened. */
 function CollapsibleRows({
   id,
   summary,
@@ -477,7 +495,7 @@ function CollapsibleRows({
 }): JSX.Element {
   const [open] = useRetainedDisclosure(id);
   return (
-    <Paper p={open ? "sm" : "xs"} withBorder={open}>
+    <CollapsibleCard open={open}>
       <RetainedDisclosure id={id} summary={summary}>
         <Stack gap="xs" mt="xs">
           {entities.map((entity) => (
@@ -485,7 +503,7 @@ function CollapsibleRows({
           ))}
         </Stack>
       </RetainedDisclosure>
-    </Paper>
+    </CollapsibleCard>
   );
 }
 
@@ -1307,12 +1325,13 @@ function ProjectedSessionBody({
   function composerKey(event: KeyboardEvent<HTMLTextAreaElement>): void {
     if (event.key !== "Enter") return;
     event.preventDefault();
-    if (!(event.ctrlKey || event.metaKey)) {
+    if (!(event.ctrlKey || event.metaKey || event.shiftKey)) {
       submit();
       return;
     }
-    // Insert the newline by hand: a textarea ignores Ctrl+Enter, and setting a controlled value
-    // leaves the caret at the end, so put it back where the newline went.
+    // Insert the newline by hand: the preventDefault above already swallowed whatever the browser
+    // would otherwise have done for Ctrl/Cmd/Shift+Enter, and setting a controlled value leaves the
+    // caret at the end, so put it back where the newline went.
     const field = event.currentTarget;
     const at = field.selectionStart;
     setDraft(`${draft.slice(0, at)}\n${draft.slice(field.selectionEnd)}`);
@@ -1383,7 +1402,7 @@ function ProjectedSessionBody({
         <Textarea
           value={draft}
           onChange={(event) => setDraft(event.currentTarget.value)}
-          placeholder="Enter sends, Ctrl+Enter for a new line"
+          placeholder="Enter sends, Shift+Enter or Ctrl+Enter for a new line"
           autosize
           minRows={2}
           maxRows={12}
@@ -1426,11 +1445,10 @@ function ProjectedSessionBody({
               }
             />
           </Group>
-          <Group gap="xs" wrap="nowrap">
-            {/* Opens upward: the composer sits at the bottom of the viewport. */}
-            <Menu position="top-end" withArrow shadow="md">
+          <TopbarActions>
+            <Menu position="bottom-end" withArrow shadow="md">
               <Menu.Target>
-                <ActionIcon size="lg" variant="light" aria-label="More">
+                <ActionIcon size="sm" variant="subtle" color="gray" aria-label="More">
                   <IconDotsVertical size={16} />
                 </ActionIcon>
               </Menu.Target>
@@ -1458,6 +1476,8 @@ function ProjectedSessionBody({
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
+          </TopbarActions>
+          <Group gap="xs" wrap="nowrap">
             <ActionIcon
               size="lg"
               variant="light"
@@ -1557,8 +1577,19 @@ export function ProjectedSession({ threadId }: { threadId: string }): JSX.Elemen
   }, [threadId]);
   return (
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
+      <TopbarTitle>
+        <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+          <Box style={{ flex: 1, minWidth: 0 }}>
+            <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
+          </Box>
+          {thread && (
+            <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+              {thread.sandbox}
+            </Text>
+          )}
+        </Group>
+      </TopbarTitle>
       <Stack style={{ flex: 1, minHeight: 0 }}>
-        <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
         {/* The controls wait on this stream's word that the sandbox runs, so one down past a blip, or
             whose watch has stalled, disables them as surely as a stopped sandbox. The sidebar's
             connection indicator says the first; this says the second. */}
@@ -1567,11 +1598,6 @@ export function ProjectedSession({ threadId }: { threadId: string }): JSX.Elemen
         {error && (
           <Text role="alert" c="red">
             {error}
-          </Text>
-        )}
-        {thread && (
-          <Text size="xs" c="dimmed">
-            {thread.sandbox}
           </Text>
         )}
         {thread?.archived && (

@@ -80,7 +80,6 @@ function deferred<T>() {
 function projection(request) {
   const seed = Number(request.scenario.monthlySpend) / 100;
   const common = {
-    modelId: "example-model",
     currencyCode: "USD",
     currencyQuantum: "0.01",
     metric: request.metric,

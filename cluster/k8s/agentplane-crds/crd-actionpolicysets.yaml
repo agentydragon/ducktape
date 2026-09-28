@@ -40,7 +40,7 @@ spec:
                 autoApproveIf:
                   description: A request matching any policy here is auto-approved.
                   type: array
-                  items: &policy
+                  items:
                     description: >-
                       One typed evaluator: `type` selects the kind, and each kind admits exactly
                       the fields its `oneOf` branch names.
@@ -114,14 +114,6 @@ spec:
                             - required: [schema]
                             - required: [owner]
                             - required: [repository]
-                autoDenyIf:
-                  description: A request matching any policy here is auto-denied.
-                  type: array
-                  items: *policy
-                autoDenyUnless:
-                  description: A request matching none of the policies here is auto-denied.
-                  type: array
-                  items: *policy
             status:
               type: object
               properties:

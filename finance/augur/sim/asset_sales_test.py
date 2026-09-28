@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from decimal import Decimal
 from fractions import Fraction
 
-import numpy as np
 import pytest_bazel
 
 from finance.augur.model.gbm import GeometricBrownian
@@ -13,22 +12,23 @@ from finance.augur.model.level_series_groups import AssetPriceGroups
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.policy import sleeves
-from finance.augur.sim.actions import Action, DecisionActions, LotSale, Sell
+from finance.augur.sim.actions import Action, LotSale, Sell
 from finance.augur.sim.books import AccountRef, SecurityLotState
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series, materialize_external_series
+from finance.augur.sim.external_series import compile_series, materialize_external_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import PreparedSeries
-from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction, Rollout
+from finance.augur.sim.results import Executed, Rejected, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.series import level_series
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
@@ -57,7 +57,7 @@ class Lot:
 class Situation:
     """What every path shares: the compiled paths, the lots each world opens holding, and who files tax."""
 
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     rollout_count: int
     horizon_months: int
     lots: tuple[Lot, ...]
@@ -104,16 +104,12 @@ def _situation(
 ) -> Situation:
     """One stipulated price path per asset, repeated across every rollout that shares it."""
     horizon = len(next(iter(prices.values()))) - 1
-    paths = ExternalSeriesContext.from_level_blocks(
-        [
-            (asset, np.asarray([[float(value) for value in path]] * rollouts, dtype=np.float64))
-            for asset, path in prices.items()
-        ],
-        rollout_count=rollouts,
-        horizon_months=horizon,
-    )
     return Situation(
-        series=compile_series(paths, rollout_count=rollouts, horizon_months=horizon, currency=USD),
+        series=level_series(
+            {asset: [[float(value) for value in path]] * rollouts for asset, path in prices.items()},
+            rollout_count=rollouts,
+            horizon_months=horizon,
+        ),
         rollout_count=rollouts,
         horizon_months=horizon,
         lots=tuple(lots),
@@ -132,9 +128,6 @@ def _compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions={
-            jurisdiction_id: jurisdiction.level for jurisdiction_id, jurisdiction in sorted(jurisdictions.items())
-        },
     )
     for agent_id in (ALICE, *(("irs",) if case.tax_profiles else ())):
         world.declare_account(
@@ -182,19 +175,9 @@ def _sale(
 
 
 def _run(case: Situation, propose: Callable[[Observation], list[Action]]) -> list[Rollout]:
-    session = ActionSession({id_: _compose(case, id_) for id_ in range(case.rollout_count)}, ALICE)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(decision.rollout_id, decision.observation.month, propose(decision.observation))
-                    for decision in batch
-                ]
-            )
-        return batch.rollouts
-    finally:
-        session.close()
+    return finish(
+        ActionSession({id_: _compose(case, id_) for id_ in range(case.rollout_count)}, ALICE), each(propose)
+    ).rollouts
 
 
 def _remaining(lot: SecurityLotState) -> Fraction:

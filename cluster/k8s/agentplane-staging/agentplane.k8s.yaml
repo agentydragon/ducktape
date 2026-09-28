@@ -91,52 +91,26 @@ data:
           display_name: Gemini 3.5 Flash Lite
         - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
           display_name: Qwen3.8 Flash Next IQ4_XS (128K)
-        - model: ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
-          display_name: Qwen3.8 Flash Next IQ4_XS (128K)
         - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          display_name: Qwen3.8 Flash Next IQ4_XS (256K)
-        - model: ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
           display_name: Qwen3.8 Flash Next IQ4_XS (256K)
         - model: ollama/oai-chat/gpt-oss-20b-128k
           display_name: GPT-OSS 20B (128K)
-        - model: ollama/olm-chat/gpt-oss-20b-128k
-          display_name: GPT-OSS 20B (128K)
         - model: ollama/oai-chat/gpt-oss-20b-256k
-          display_name: GPT-OSS 20B (256K)
-        - model: ollama/olm-chat/gpt-oss-20b-256k
           display_name: GPT-OSS 20B (256K)
         - model: ollama/oai-chat/gpt-oss-20b-512k
           display_name: GPT-OSS 20B (512K)
-        - model: ollama/olm-chat/gpt-oss-20b-512k
-          display_name: GPT-OSS 20B (512K)
         - model: ollama/oai-chat/gpt-oss-20b-1m
-          display_name: GPT-OSS 20B (1M)
-        - model: ollama/olm-chat/gpt-oss-20b-1m
           display_name: GPT-OSS 20B (1M)
         - model: ollama/oai-chat/gpt-oss-120b-128k
           display_name: GPT-OSS 120B (128K)
-        - model: ollama/olm-chat/gpt-oss-120b-128k
-          display_name: GPT-OSS 120B (128K)
         - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
-          display_name: Gemma 4 31B (128K)
-        - model: ollama/olm-chat/gemma4-31b-it-q8_0-128k
           display_name: Gemma 4 31B (128K)
         - model: chatgpt/oai-responses/gpt-6-astra
           display_name: GPT-6 Astra
-        - model: chatgpt/oai-responses/gpt-6-sol
-          display_name: GPT-6 Sol
         - model: chatgpt/oai-responses/gpt-6-luna
           display_name: GPT-6 Luna
-        - model: chatgpt/oai-responses/gpt-5.4
-          display_name: GPT-5.4
-        - model: chatgpt/oai-responses/gpt-5.5
-          display_name: GPT-5.5
-        - model: chatgpt/oai-responses/gpt-5.6-sol
-          display_name: GPT-5.6 Sol
-        - model: chatgpt/oai-responses/gpt-5.6-terra
-          display_name: GPT-5.6 Terra
-        - model: chatgpt/oai-responses/gpt-5.6-luna
-          display_name: GPT-5.6 Luna
+        - model: chatgpt/oai-responses/gpt-6-sol
+          display_name: GPT-6 Sol
       harnesses:
         HARNESS_CLAUDE:
           - anthropic-max20/ant-messages/claude-opus-5
@@ -156,46 +130,25 @@ data:
           - antigravity/ant-messages/gemini-3.1-flash-lite
           - antigravity/ant-messages/gemini-3.5-flash-lite
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
           - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/olm-chat/gpt-oss-20b-128k
           - ollama/oai-chat/gpt-oss-20b-256k
-          - ollama/olm-chat/gpt-oss-20b-256k
           - ollama/oai-chat/gpt-oss-20b-512k
-          - ollama/olm-chat/gpt-oss-20b-512k
           - ollama/oai-chat/gpt-oss-20b-1m
-          - ollama/olm-chat/gpt-oss-20b-1m
           - ollama/oai-chat/gpt-oss-120b-128k
-          - ollama/olm-chat/gpt-oss-120b-128k
           - ollama/oai-chat/gemma4-31b-it-q8_0-128k
-          - ollama/olm-chat/gemma4-31b-it-q8_0-128k
         HARNESS_CODEX:
           - chatgpt/oai-responses/gpt-6-astra
-          - chatgpt/oai-responses/gpt-6-sol
           - chatgpt/oai-responses/gpt-6-luna
-          - chatgpt/oai-responses/gpt-5.4
-          - chatgpt/oai-responses/gpt-5.5
-          - chatgpt/oai-responses/gpt-5.6-sol
-          - chatgpt/oai-responses/gpt-5.6-terra
-          - chatgpt/oai-responses/gpt-5.6-luna
+          - chatgpt/oai-responses/gpt-6-sol
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
           - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/olm-chat/gpt-oss-20b-128k
           - ollama/oai-chat/gpt-oss-20b-256k
-          - ollama/olm-chat/gpt-oss-20b-256k
           - ollama/oai-chat/gpt-oss-20b-512k
-          - ollama/olm-chat/gpt-oss-20b-512k
           - ollama/oai-chat/gpt-oss-20b-1m
-          - ollama/olm-chat/gpt-oss-20b-1m
           - ollama/oai-chat/gpt-oss-120b-128k
-          - ollama/olm-chat/gpt-oss-120b-128k
           - ollama/oai-chat/gemma4-31b-it-q8_0-128k
-          - ollama/olm-chat/gemma4-31b-it-q8_0-128k
     agent_egress_api_url: http://agentplane-egress.agentplane-staging.svc.cluster.local
     agent_actions_service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
     thread_presets:
@@ -486,15 +439,6 @@ spec:
         app.kubernetes.io/name: agentplane-electric
         cdk8s.io/metadata.addr: agentplane-electric-deployment-c86a4b11
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: false
       containers:
         - env:
@@ -583,6 +527,8 @@ spec:
               name: storage
       dnsPolicy: ClusterFirst
       hostNetwork: false
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 65534
@@ -698,6 +644,7 @@ data:
   settings.yaml: |
     allowed_service_account_namespaces:
       - agentplane-staging
+    log_llm_requests: true
 immutable: false
 ---
 apiVersion: apps/v1
@@ -728,15 +675,6 @@ spec:
         app.kubernetes.io/name: agentplane-llm-ingress
         cdk8s.io/metadata.addr: agentplane-llm-ingress-deployment-c81387cd
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -798,6 +736,8 @@ spec:
       hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -1070,15 +1010,6 @@ spec:
         app.kubernetes.io/name: agentplane-egress
         cdk8s.io/metadata.addr: agentplane-egress-deployment-c84e690f
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -1184,6 +1115,8 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -1784,15 +1717,6 @@ spec:
         app.kubernetes.io/name: agentplane-app
         cdk8s.io/metadata.addr: agentplane-app-deployment-c8d92233
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -1970,6 +1894,8 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -2231,6 +2157,8 @@ spec:
           env:
             - name: LITELLM_URL
               value: http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080
+            - name: AGENTPLANE_MODEL_CONTEXT_WINDOWS
+              value: '{"ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k":262144,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k":262144}'
             - name: HTTP_PROXY
               value: http://127.0.0.1:3128
             - name: HTTPS_PROXY
@@ -2670,15 +2598,6 @@ spec:
         app.kubernetes.io/name: agentplane-actions
         cdk8s.io/metadata.addr: agentplane-actions-deployment-c8d4c10b
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -2858,6 +2777,8 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -4231,6 +4152,7 @@ spec:
     - github-clone
     - github-agentydragon-agent
     - github-actions-logs
+    - buildbuddy
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressBinding
@@ -5156,3 +5078,51 @@ spec:
         - /jmap/**
       credentialRef:
         name: haku-mailbox
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: buildbuddy-api-key
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: buildbuddy-api-key
+        property: api-key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: buildbuddy-api-key
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: buildbuddy
+  namespace: agentplane-staging
+spec:
+  description: "The shared BuildBuddy API key (cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml), the same one CI's BUILDBUDDY_API_KEY carries, copied into this namespace by ESO. BuildBuddy uses this one key for its JSON-over-HTTP API and its gRPC services alike, presented as the literal value of the `x-buildbuddy-api-key` header/metadata entry -- this is a local-Bazel-client credential only: `bb remote`'s hosted runner copies the same value into the Bazel command it executes, which this proxy cannot see or protect (agentplane/docs/buildbuddy_remote_auth.md)."
+  source:
+    secretRef:
+      name: buildbuddy-api-key
+      key: api-key
+  targets:
+    - header: x-buildbuddy-api-key
+      method: wholeValue
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: buildbuddy
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - app.buildbuddy.io
+        - remote.buildbuddy.io
+      credentialRef:
+        name: buildbuddy

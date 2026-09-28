@@ -1,6 +1,32 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "patch_qwen38_template",
+    srcs = ["patch_qwen38_template.py"],
+)
+
+py_binary(
+    name = "derive_qwen38_template",
+    srcs = ["derive_qwen38_template_cli.py"],
+    main = "derive_qwen38_template_cli.py",
+    deps = [":patch_qwen38_template"],
+)
+
+py_test(
+    name = "test_patch_qwen38_template",
+    srcs = ["test_patch_qwen38_template.py"],
+    data = ["//cluster/k8s:qwen38_chat_template"],
+    deps = [
+        ":patch_qwen38_template",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//jinja2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
 
 py_library(
     name = "flux_kustomizations",

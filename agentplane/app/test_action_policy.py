@@ -130,8 +130,6 @@ ANSWER = SubjectActionPolicyView(
             policy=ExactActionsView(type=PolicyKind.EXACT_ACTIONS, actions={"github": ["search_code"]}),
         )
     ],
-    auto_deny_if=[],
-    auto_deny_unless=[],
 )
 
 
@@ -166,7 +164,7 @@ async def test_for_subject_asks_the_service_and_adds_only_who_wrote_each_binding
         ["vanished"],
     )
     assert app_written.policy_sets == ANSWER.bindings[1].policy_sets
-    assert (view.synced, view.auto_approve_if, view.auto_deny_if) == (True, ANSWER.auto_approve_if, [])
+    assert (view.synced, view.auto_approve_if) == (True, ANSWER.auto_approve_if)
 
 
 if __name__ == "__main__":

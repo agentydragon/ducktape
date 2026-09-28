@@ -1,15 +1,21 @@
-"""Ergonomic building blocks for Gateway API's `HTTPRoute` rules, following
-cdk8s-plus's own construction pattern: named `@staticmethod` factories grouping a spec
-fragment's real variant shapes under one type, each returning the generated struct. No
-shared-Gateway, hostname, or backend fact lives here -- those are this cluster's own values,
-built in `cluster.cdk8s.gateway`.
+"""Ergonomic wrapper for Gateway API's `HTTPRoute`, following cdk8s-plus's own construction
+pattern: a class named after the kind, constructed as `HttpRoute(scope, id, ...)`, and named
+`@staticmethod` factories grouping a rule fragment's real variant shapes under one type, each
+returning the generated struct. No shared-Gateway, hostname, or backend fact lives here -- those
+are this cluster's own values, built in `cluster.cdk8s.gateway`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
+from cdk8s import ApiObjectMetadata
+from constructs import Construct
 from gateway_api_crds.io.k8s.networking.gateway import (
+    HttpRoute as _HttpRoute,
+    HttpRouteSpec,
+    HttpRouteSpecParentRefs,
+    HttpRouteSpecRules,
     HttpRouteSpecRulesFilters,
     HttpRouteSpecRulesFiltersRequestRedirect,
     HttpRouteSpecRulesFiltersRequestRedirectPath,
@@ -22,6 +28,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesMatches,
     HttpRouteSpecRulesMatchesPath,
     HttpRouteSpecRulesMatchesPathType,
+    HttpRouteSpecUseDefaultGateways,
 )
 
 
@@ -78,5 +85,33 @@ class RouteFilter:
             type=HttpRouteSpecRulesFiltersType.REQUEST_REDIRECT,
             request_redirect=HttpRouteSpecRulesFiltersRequestRedirect(
                 scheme=scheme, status_code=status_code, hostname=hostname, path=path, port=port
+            ),
+        )
+
+
+class HttpRoute(_HttpRoute):
+    """Gateway API's `HTTPRoute`. Every keyword is an `HTTPRouteSpec` field under its own name and
+    type; `None` leaves it unset, so the CRD's own default applies."""
+
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        *,
+        metadata: ApiObjectMetadata,
+        parent_refs: Sequence[HttpRouteSpecParentRefs] | None = None,
+        hostnames: Sequence[str] | None = None,
+        rules: Sequence[HttpRouteSpecRules] | None = None,
+        use_default_gateways: HttpRouteSpecUseDefaultGateways | None = None,
+    ) -> None:
+        super().__init__(
+            scope,
+            id,
+            metadata=metadata,
+            spec=HttpRouteSpec(
+                parent_refs=list(parent_refs) if parent_refs is not None else None,
+                hostnames=list(hostnames) if hostnames is not None else None,
+                rules=list(rules) if rules is not None else None,
+                use_default_gateways=use_default_gateways,
             ),
         )

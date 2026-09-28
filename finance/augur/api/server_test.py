@@ -121,7 +121,6 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         {"scenario": scenario, "first_seed": 7, "rollout_count": 2, "metric": "cash", "percentiles": [0, 50, 100]},
     )
 
-    assert fan["model_id"] == "composite"
     assert "horizon_months" not in fan
     assert fan["currency_code"] == "USD"
     assert fan["currency_quantum"] == "0.01"
@@ -167,7 +166,6 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         },
     )
 
-    assert terminal_distribution["model_id"] == "composite"
     assert terminal_distribution["currency_code"] == "USD"
     assert terminal_distribution["currency_quantum"] == "0.01"
     assert terminal_distribution["metric"] == "cash"
@@ -213,7 +211,6 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
 
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
 
-    assert detail["model_id"] == "composite"
     assert "horizon_months" not in detail
     assert detail["rollout"]["seed"] == 7
     assert detail["rollout"]["failed"] is False
@@ -477,7 +474,6 @@ def test_api_product_rollout_includes_private_equity_protocol_event_and_forced_s
 
     assert response.status_code == 200
     detail = response.json()
-    assert detail["model_id"] == "forced_pe_fixture"
 
     [pe_event] = [event for event in detail["rollout"]["events"] if event["kind"] == "private_equity_event"]
     assert pe_event["month_index"] == 1
@@ -517,7 +513,6 @@ def test_api_product_metric_fan_respects_private_equity_tender_capacity(
 
     assert fan_response.status_code == 200
     fan = fan_response.json()
-    assert fan["model_id"] == "capacity_limited_pe_fixture"
     assert fan["terminal_metric_percentiles"] == {"percentile": [50.0], "value_quanta": [_usd_quanta(256_125.0)]}
     assert "rollout_summaries" not in fan
 

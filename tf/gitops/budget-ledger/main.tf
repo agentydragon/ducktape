@@ -3,10 +3,10 @@
 # Provisions a private `budget-ledger/ledger` repo owned by a dedicated
 # `budget-ledger` service user (so the user has full read/write on it without a
 # separate collaborator grant), read-only collaborator grants for agent users,
-# plus a Kubernetes Secret carrying that user's git credentials in the `budget`
-# namespace -- consumed by the exporter CronJob
-# (push) and the Fava git-sync sidecar (pull). Auth is HTTPS Basic over the
-# in-cluster Forgejo service (no SSH endpoint needed).
+# plus a Kubernetes Secret carrying that user's git credentials in the `forgejo`
+# namespace -- copied into `budget` by ESO for the exporter CronJob (push) and the
+# Fava git-sync sidecar (pull). Auth is HTTPS Basic over the in-cluster Forgejo
+# service (no SSH endpoint needed).
 
 data "kubernetes_secret" "forgejo_admin" {
   metadata {
@@ -62,24 +62,29 @@ resource "forgejo_collaborator" "haku" {
   permission    = "read"
 }
 
-# Git credentials for the exporter + Fava, in the budget namespace. Reflected into
-# the augur namespace (emberstack reflector) so the exporter CronJob -- which runs
-# alongside augur to reuse its config ConfigMap + plaid DB creds -- can read them.
-resource "kubernetes_secret" "budget_ledger_git_creds" {
+# Git credentials for the exporter + Fava. The budget namespace copies them in
+# through ESO and Reflector mirrors that copy into augur, where the exporter
+# CronJob runs alongside augur to reuse its config ConfigMap + plaid DB creds
+# (cluster/cdk8s/forgejo/budget_namespace.py).
+resource "kubernetes_secret" "budget_ledger_git_creds_source" {
   metadata {
     name      = "budget-ledger-git-creds"
-    namespace = "budget"
-    annotations = {
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "augur"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "augur"
-    }
+    namespace = "forgejo"
   }
 
   data = {
     username = forgejo_user.budget_ledger.login
     password = random_password.budget_ledger.result
     repo_url = "http://forgejo-http.forgejo:3000/${forgejo_user.budget_ledger.login}/${forgejo_repository.ledger.name}.git"
+  }
+}
+
+# The budget ExternalSecret adopts the Secret this address created there.
+# CLEANUP(added 2026-09-28): Remove once the budget_ledger state has forgotten
+# kubernetes_secret.budget_ledger_git_creds. Never destroy the ESO-owned Secret.
+removed {
+  from = kubernetes_secret.budget_ledger_git_creds
+  lifecycle {
+    destroy = false
   }
 }
