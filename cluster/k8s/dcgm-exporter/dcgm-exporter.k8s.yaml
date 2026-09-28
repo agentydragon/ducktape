@@ -24,6 +24,7 @@ spec:
       labels:
         app: dcgm-exporter
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - -f

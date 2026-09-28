@@ -24,6 +24,7 @@ spec:
       labels:
         app: vector-talos-logs
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - --config

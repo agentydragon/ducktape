@@ -26,6 +26,7 @@ spec:
       labels:
         app.kubernetes.io/name: proxmox-proxy
     spec:
+      automountServiceAccountToken: false
       containers:
         - image: docker.io/library/nginx:alpine
           livenessProbe:
