@@ -19,7 +19,6 @@ from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     Capability,
     ConfigMap,
-    ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
     ContainerSecutiryContextCapabilities,
@@ -31,10 +30,8 @@ from cdk8s_plus_34 import (
     LabelSelector,
     MemoryResources,
     PodSecurityContextProps,
-    Protocol,
     Secret,
     Service,
-    ServicePort,
     Volume,
     VolumeMount,
 )
@@ -88,12 +85,7 @@ _CONFIG_HEADER = textwrap.dedent(
 _CONFIG = settings_file(
     Config,
     {
-        "cli_proxy_api": {
-            "url": (
-                f"http://{cli_proxy_api_app.NAME}.{cli_proxy_api_app.NAMESPACE}.svc.cluster.local:"
-                f"{cli_proxy_api_app.PORT}/v0/management"
-            )
-        },
+        "cli_proxy_api": {"url": f"{cli_proxy_api_app.SERVICE.url}/v0/management"},
         "claude": {"enabled": True},
         "codex": {"enabled": True},
         "zai": {"enabled": False},
@@ -110,10 +102,10 @@ _API_NAME = "aiquota-api"
 _IMAGE_NAME = "git.allegedly.works/ducktape-ci/aiquota-api"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _HOSTNAME = "aiquota.allegedly.works"
-_PORT = 8080
-_LABELS = {"app.kubernetes.io/name": NAME}
 SERVICE = ServiceRef(
-    name=_API_NAME, port=Port(name="http", number=_PORT), pods=Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items()))
+    name=_API_NAME,
+    port=Port(name="http", number=8080),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
 )
 _BEARER_KEY = "bearer-token"
 _BEARER = SecretRef(namespace=NAMESPACE, name=BEARER_SECRET_NAME).key(_BEARER_KEY)
@@ -218,10 +210,10 @@ class Aiquota(Construct):
             metadata=ApiObjectMetadata(
                 name=_API_NAME,
                 namespace=NAMESPACE,
-                labels=_LABELS,
+                labels=SERVICE.pods.selector,
                 annotations={"description": "Claude and Codex subscription quota API via the CLIProxyAPI integration."},
             ),
-            pod_metadata=ApiObjectMetadata(labels=_LABELS),
+            pod_metadata=ApiObjectMetadata(labels=SERVICE.pods.selector),
             replicas=1,
             # A Deployment's selector is immutable: keeping the hand-written one lets Flux
             # adopt the live object instead of failing the apply.
@@ -244,13 +236,13 @@ class Aiquota(Construct):
                 )
             ],
         )
-        deployment.select(LabelSelector.of(labels=_LABELS))
+        deployment.select(LabelSelector.of(labels=SERVICE.pods.selector))
 
         deployment.add_container(
             name=_API_NAME,
             image=f"{_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
-            ports=[ContainerPort(name="http", number=_PORT, protocol=Protocol.TCP)],
+            ports=[SERVICE.port.container_port()],
             env_variables={
                 env_name(Settings, "api_bearer_token"): _BEARER.env_value(self, "bearer-ref"),
                 env_name(Settings, "cli_proxy_api_key"): cli_proxy_api_app.MANAGEMENT_PASSWORD.env_value(
@@ -289,8 +281,8 @@ class Aiquota(Construct):
                 cpu=CpuResources(request=Cpu.millis(25), limit=Cpu.millis(250)),
                 memory=MemoryResources(request=Size.mebibytes(64), limit=Size.mebibytes(256)),
             ),
-            readiness=http_probe("/readyz", port=_PORT, initial_delay_seconds=5, failure_threshold=12),
-            liveness=http_probe("/healthz", port=_PORT, initial_delay_seconds=10, period_seconds=20),
+            readiness=http_probe("/readyz", port=SERVICE.pod_port, initial_delay_seconds=5, failure_threshold=12),
+            liveness=http_probe("/healthz", port=SERVICE.pod_port, initial_delay_seconds=10, period_seconds=20),
             security_context=ContainerSecurityContextProps(
                 capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
                 read_only_root_filesystem=False,
@@ -316,9 +308,9 @@ class Aiquota(Construct):
             self,
             "service",
             metadata=ApiObjectMetadata(
-                name=_API_NAME,
+                name=SERVICE.name,
                 namespace=NAMESPACE,
-                labels=_LABELS,
+                labels=SERVICE.labels,
                 annotations={
                     "description": (
                         "Internal bearer-authenticated API for normalized and raw Claude and Codex "
@@ -327,7 +319,7 @@ class Aiquota(Construct):
                 },
             ),
             selector=deployment,
-            ports=[ServicePort(name="http", port=_PORT, target_port=_PORT, protocol=Protocol.TCP)],
+            ports=[SERVICE.port.service_port()],
         )
 
     def _add_service_monitor(self) -> None:
@@ -335,8 +327,8 @@ class Aiquota(Construct):
             self,
             "servicemonitor",
             metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-            endpoints=[Endpoint.plain(port="http", scrape_timeout="15s")],
+            selector=ServiceMonitorSpecSelector(match_labels=SERVICE.labels),
+            endpoints=[Endpoint.plain(port=SERVICE.port.name, scrape_timeout="15s")],
         )
 
 
