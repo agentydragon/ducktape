@@ -10,13 +10,18 @@ import pytest
 import pytest_bazel
 from jinja2 import Environment
 
-from cluster.k8s.ollama.patch_qwen38_template import (
+from cluster.cdk8s.ollama.patch_qwen38_template import (
     NEW_BRANCH,
     OLD_BRANCH,
     ORIGINAL_TEMPLATE_SHA256,
     Reader,
     replace_template,
 )
+from util.bazel.runfiles import get_required_path
+
+
+def _template_path() -> Path:
+    return get_required_path("_main/cluster/k8s/ollama/qwen38-chat-template.jinja")
 
 
 def _string(value: bytes) -> bytes:
@@ -50,7 +55,7 @@ def _gguf(original_template: bytes) -> tuple[bytes, bytes]:
 
 
 def test_changes_only_chat_template_and_realigns_tensor_data() -> None:
-    replacement = (Path(__file__).parent / "qwen38-chat-template.jinja").read_bytes()
+    replacement = _template_path().read_bytes()
     source, payload = _gguf(_source_template(replacement))
     patched = replace_template(source, replacement)
     assert patched.endswith(payload)
@@ -62,7 +67,7 @@ def test_changes_only_chat_template_and_realigns_tensor_data() -> None:
 
 
 def test_refuses_any_other_template_change() -> None:
-    replacement = (Path(__file__).parent / "qwen38-chat-template.jinja").read_bytes()
+    replacement = _template_path().read_bytes()
     source, _ = _gguf(_source_template(replacement))
     with pytest.raises(ValueError, match="replacement changes more"):
         replace_template(source, replacement + b"extra")
@@ -82,7 +87,7 @@ def test_rejects_truncated_metadata() -> None:
     ],
 )
 def test_template_preserves_instruction_position(roles: list[str]) -> None:
-    template = (Path(__file__).parent / "qwen38-chat-template.jinja").read_text()
+    template = _template_path().read_text()
     messages = [{"role": role, "content": f"part-{index}"} for index, role in enumerate(roles)]
     rendered = Environment().from_string(template).render(
         messages=messages,

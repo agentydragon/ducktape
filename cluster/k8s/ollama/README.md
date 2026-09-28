@@ -91,7 +91,8 @@ Unsloth GGUF template rejects that sequence. `qwen38-chat-template.jinja` is
 the model's original `tokenizer.chat_template` with one branch changed: a
 later `system` or `developer` message becomes a ChatML system turn at the same
 position. Qwen's template already maps leading developer content into a system
-turn. The original template SHA256 is pinned in `patch_qwen38_template.py`.
+turn. The original template SHA256 is pinned in
+`../../cdk8s/ollama/patch_qwen38_template.py`.
 
 The first GGUF shard is 10.9 MB and holds this metadata. On wyrm2, generate
 its derived copy **before** deploying the `setup-gpt-oss-v7` Job. The two large
@@ -99,7 +100,7 @@ weight shards and all source files remain untouched:
 
 ```bash
 ssd=/var/lib/llm-models-ssd/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS
-bb run //cluster/k8s/ollama:derive_qwen38_template -- \
+bb run //cluster/cdk8s/ollama:derive_qwen38_template -- \
   "$ssd/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf" \
   "$PWD/cluster/k8s/ollama/qwen38-chat-template.jinja" \
   "$ssd/agentplane-midturn/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf" \
