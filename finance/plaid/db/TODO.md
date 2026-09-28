@@ -1,7 +1,7 @@
 # plaid TODO
 
 - [ ] **Implement Plaid v1 transaction sync.** Production currently uses the
-      12-hour `plaid-mcp-sync` full-refresh CronJob. Live state checked
+      hourly `plaid-mcp-sync` full-refresh CronJob. Live state checked
       2026-06-12 showed `sync_runs.mode = v0_full_refresh`, null
       `links.transactions_cursor`, and recent Plaid API events on
       `/transactions/get` rather than `/transactions/sync`. The v1 shape should:

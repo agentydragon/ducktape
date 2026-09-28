@@ -153,13 +153,13 @@ def _sync_cronjob(chart: Chart) -> None:
             namespace=NAMESPACE,
             annotations={
                 "description": (
-                    "v0 synchronous full-refresh Plaid sync. Keeps Postgres fresh within 12 hours; no real-time"
-                    " balance endpoint calls."
+                    "v0 synchronous full-refresh Plaid sync. Keeps Postgres fresh within an hour of Plaid's own"
+                    " data; no real-time balance endpoint calls."
                 )
             },
         ),
         spec=k8s.CronJobSpec(
-            schedule="17 */12 * * *",
+            schedule="17 * * * *",
             concurrency_policy="Forbid",
             successful_jobs_history_limit=3,
             failed_jobs_history_limit=3,

@@ -44,7 +44,7 @@ in the typeahead; the UI looks up what that institution supports and offers exac
 products this app can mirror, so Link is never opened requesting a product the bank
 lacks — which would fail the whole session.
 
-`plaid-mcp-sync` runs every 12 hours and performs the full-refresh mirror. It
+`plaid-mcp-sync` runs hourly and performs the full-refresh mirror. It
 uses date-window `/transactions/get` and `/investments/transactions/get`, not
 stateful `/transactions/sync` cursors yet. It does not call real-time balance
 endpoints; cached balances from product responses are snapshotted into Postgres.

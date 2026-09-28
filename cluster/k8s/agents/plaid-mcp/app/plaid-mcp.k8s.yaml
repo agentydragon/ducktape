@@ -169,7 +169,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   annotations:
-    description: v0 synchronous full-refresh Plaid sync. Keeps Postgres fresh within 12 hours; no real-time balance endpoint calls.
+    description: v0 synchronous full-refresh Plaid sync. Keeps Postgres fresh within an hour of Plaid's own data; no real-time balance endpoint calls.
   name: plaid-mcp-sync
   namespace: plaid-mcp
 spec:
@@ -243,7 +243,7 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           serviceAccountName: plaid-mcp
-  schedule: 17 */12 * * *
+  schedule: 17 * * * *
   successfulJobsHistoryLimit: 3
 ---
 apiVersion: v1
