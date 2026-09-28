@@ -196,6 +196,7 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement | MarketStatement, 
             mortgage_deduction = mortgage_interest_deduction(
                 self.mortgage_interest_policies, mortgages, rules.jurisdiction_id
             )
+            property_tax = year.property_tax_paid if rules.itemizes_real_property_tax else 0
             facts = TaxFacts(
                 taxable_ordinary_income=taxable,
                 qualified_dividends=qualified_dividends,
@@ -204,7 +205,7 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement | MarketStatement, 
                 long_term_gain=year.long_term_gain,
                 capital_loss_carryforward=year.capital_loss_carryforward,
                 section_1250_recapture=year.section_1250_recapture,
-                itemized_deduction=mortgage_deduction,
+                itemized_deduction=checked_count(mortgage_deduction + property_tax, "money addition"),
                 mortgage_interest_deduction=mortgage_deduction,
                 rental_interest_deduction=year.rental_interest_deduction,
                 depreciation_deduction=year.depreciation_deduction,

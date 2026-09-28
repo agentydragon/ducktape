@@ -47,6 +47,12 @@ income_tax:
     treasury: true
     municipal: [california]
 
+  # FTB 2025 Schedule CA (540) instructions, line 5a: California allows no deduction for state
+  # income tax; line 5e: "The federal deduction for state and local tax is limited to $40,000 ...
+  # California does not conform." Real property tax is itemized in full.
+  # https://www.ftb.ca.gov/forms/2025/2025-540-ca-instructions.html
+  itemizes_real_property_tax: true
+
   # R&TC 17043's 1% Behavioral Health Services Tax (formerly Mental Health Services Tax):
   # FTB 2025 Form 540 instructions, line 62: 1% of taxable income (Form 540 line 19) over
   # $1,000,000.

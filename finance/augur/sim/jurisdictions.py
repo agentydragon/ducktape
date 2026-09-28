@@ -137,6 +137,12 @@ class IncomeTax(BaseModel):
         )
     )
     exempt_interest: InterestExemptions
+    itemizes_real_property_tax: bool = Field(
+        description=(
+            "Whether the ad-valorem real property tax an owner pays is an itemized deduction here without "
+            "a cap. Where it is not, a caller's `SaltDeduction` may claim it under the SALT cap."
+        )
+    )
     net_investment_income_tax: ThresholdTax | None = Field(
         default=None,
         description=(
@@ -287,5 +293,6 @@ def flat_income_tax(jurisdiction_id: JurisdictionId, *, ordinary_rate: Decimal, 
             standard_deduction={"single": Decimal(0)},
             max_capital_loss_ordinary_offset={"single": Decimal(0)},
             exempt_interest=InterestExemptions(treasury=False, municipal=set()),
+            itemizes_real_property_tax=False,
         ),
     )
