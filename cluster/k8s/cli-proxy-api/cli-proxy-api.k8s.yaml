@@ -177,7 +177,7 @@ spec:
     - name: http
       port: 8317
       protocol: TCP
-      targetPort: http
+      targetPort: 8317
   selector:
     app.kubernetes.io/name: cli-proxy-api
 ---
