@@ -8,7 +8,7 @@ from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "kyverno"
@@ -127,7 +127,7 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         _FLUX_NAMESPACE,
-        repository=helm_repository(chart, NAME, _FLUX_NAMESPACE, url="https://kyverno.github.io/kyverno/"),
+        repository=https_helm_repository(chart, NAME, _FLUX_NAMESPACE, url="https://kyverno.github.io/kyverno/"),
         chart="kyverno",
         # MODULE.bazel pins the kyverno.io CRD bindings to this chart's appVersion.
         version="3.9.1",

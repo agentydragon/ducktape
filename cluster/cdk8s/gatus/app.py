@@ -26,7 +26,7 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSel
 from cluster.cdk8s import cilium, cnpg, namespaces, node_scheduling
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.helm import helm_release, helm_repository
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
@@ -60,7 +60,7 @@ def _database(scope: Construct) -> None:
 
 
 def _helm_release(scope: Construct) -> None:
-    repository = helm_repository(scope, _HELM_REPOSITORY, _NAMESPACE, url="https://twin.github.io/helm-charts")
+    repository = https_helm_repository(scope, _HELM_REPOSITORY, _NAMESPACE, url="https://twin.github.io/helm-charts")
     # Empty ConfigMap required by the gatus Helm chart. The chart hardcodes
     # envFrom.configMapRef with the release name but skips creating it when
     # externalConfigMap is set (chart bug).

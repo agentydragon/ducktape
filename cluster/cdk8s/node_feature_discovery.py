@@ -8,7 +8,7 @@ from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "node-feature-discovery"
@@ -30,7 +30,7 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        repository=helm_repository(
+        repository=https_helm_repository(
             chart, "nfd", NAMESPACE, url="https://kubernetes-sigs.github.io/node-feature-discovery/charts"
         ),
         chart=NAME,

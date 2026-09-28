@@ -390,7 +390,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: [".agentplane-hljs"],
     openRaw: true,
   },
-  // The read-only action policy: both bindings, every set state, and the three lists.
+  // The read-only action policy: both bindings, every set state, and the auto-approval list.
   sandbox_policy: {
     element: "#app",
     route: `${SANDBOX_ROUTE}?tab=policy`,

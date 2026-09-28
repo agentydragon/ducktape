@@ -6,7 +6,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "reflector"
@@ -22,7 +22,9 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        repository=helm_repository(chart, "emberstack", NAMESPACE, url="https://emberstack.github.io/helm-charts"),
+        repository=https_helm_repository(
+            chart, "emberstack", NAMESPACE, url="https://emberstack.github.io/helm-charts"
+        ),
         chart="reflector",
         version=_VERSION,
         interval="15m",

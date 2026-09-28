@@ -6,7 +6,7 @@ from __future__ import annotations
 from cdk8s import App, Chart
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository, helm_repository_source_ref
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "vpa"
@@ -35,7 +35,7 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        repository=helm_repository(
+        repository=https_helm_repository(
             chart, _REPOSITORY_NAME, _REPOSITORY_NAMESPACE, url="https://charts.fairwinds.com/stable"
         ),
         chart=NAME,

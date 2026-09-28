@@ -1,3 +1,4 @@
+import { Text } from "@mantine/core";
 import DOMPurify from "dompurify";
 import { Marked } from "marked";
 import { type JSX, useMemo } from "react";
@@ -63,7 +64,11 @@ const ALLOWED_TAGS = [
 
 /**
  * Markdown as HTML. The local class supplies the small amount of prose styling this transcript
- * needs; Mantine 9 removed the old `TypographyStylesProvider` wrapper.
+ * needs; Mantine 9 removed the old `TypographyStylesProvider` wrapper. Renders through `Text` (at
+ * its default `md` size, matching `VerbatimText`) rather than a bare `div`, so this reads
+ * `theme.fontSizes`/`lineHeights` like the rest of the app; `component="div"` because the sanitized
+ * HTML can contain block-level tags (headings, lists, `pre`, `table`) that a `Text`'s default `<p>`
+ * can't legally contain.
  */
 export function Markdown({ source }: { source: string }): JSX.Element {
   const html = useMemo(() => {
@@ -79,5 +84,5 @@ export function Markdown({ source }: { source: string }): JSX.Element {
       ALLOW_DATA_ATTR: false,
     });
   }, [source]);
-  return <div className="agentplane-markdown" dangerouslySetInnerHTML={{ __html: html }} />;
+  return <Text component="div" className="agentplane-markdown" dangerouslySetInnerHTML={{ __html: html }} />;
 }

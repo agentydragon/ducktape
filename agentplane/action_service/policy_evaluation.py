@@ -106,8 +106,8 @@ def _evidence(context: DecisionContext, matched: MatchedPolicy) -> PolicyEvidenc
 class PolicySetDecisionProvider:
     """Allows a request the caller's bindings auto-approve; anything else is no opinion.
 
-    Only `autoApproveIf` decides here. `autoDenyIf` and `autoDenyUnless` are parsed, validated and
-    reported Ready like the rest of a set, and produce no vote in this version.
+    `autoApproveIf` is the only list an `ActionPolicySet` carries, and the only one anything decides
+    from; a set has no deny form, so what does not match waits for a human.
     """
 
     name = PROVIDER_NAME

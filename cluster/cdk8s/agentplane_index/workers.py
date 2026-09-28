@@ -7,6 +7,8 @@ image tag here is a placeholder the Component overrides.
 
 from __future__ import annotations
 
+import textwrap
+
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
@@ -218,7 +220,17 @@ def chart(app: App) -> Chart:
         branch="devel",
         # gitignore syntax. Specimens duplicate code indexed at its real path; the .gz
         # reference blobs are not text and would only cost the clone read.
-        env=(k8s.EnvVar(name=env_name(Settings, "ignore"), value="props/specimens/\n*.gz\n"),),
+        env=(
+            k8s.EnvVar(
+                name=env_name(Settings, "ignore"),
+                value=textwrap.dedent(
+                    """\
+                    props/specimens/
+                    *.gz
+                    """
+                ),
+            ),
+        ),
         # CLEANUP(added 2026-09-27): pause both workers while Ollama model setup and API
         # smoke tests run. Their continuous /v1/embeddings traffic evicts the loaded chat
         # model; restore replicas=1 for both workers when indexing resumes.

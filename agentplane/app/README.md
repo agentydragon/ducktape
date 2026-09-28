@@ -414,9 +414,8 @@ federation (`/v1/operator/action-policy/service-accounts/{namespace}/{name}`, so
 is required as for the Actions page): the unexpired `ActionPolicyBinding`s naming that account, each
 with expiry
 and the service's `Ready` verdict; every `ActionPolicySet` those name, as present, edited since the
-service judged it, refused with the validation report, or missing; the resulting `autoApproveIf`,
-`autoDenyIf` and `autoDenyUnless` lists in the order the service walks them, each entry naming the
-binding, set and index a Decision's evidence names; and `synced`, false while the service's watch
+service judged it, refused with the validation report, or missing; the resulting `autoApproveIf` list in the order the service walks it, each entry naming the binding,
+set and index a Decision's evidence names; and `synced`, false while the service's watch
 has not synced and nothing auto-decides. It is the resolution an admission would use now, from the
 service that would use it, and says nothing about past Decisions; the Actions page holds those. The
 app adds only each binding's provenance (git, this app at launch, or the operator with kubectl),
