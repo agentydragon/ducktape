@@ -68,6 +68,7 @@ from cluster.cdk8s.litellm.config import ConfigMapSpec, proxy_configs
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 APP_DIR = f"{HAND_WRITTEN_ROOT}/litellm/app"
@@ -135,6 +136,14 @@ class ProxySpec:
     @property
     def namespace(self) -> str:
         return self.config.namespace
+
+
+def service(spec: ProxySpec) -> ServiceRef:
+    return ServiceRef(
+        name=spec.name,
+        port=Port(name="http", number=_CONTAINER_PORT),
+        pods=Pods(namespace=spec.namespace, labels=(("app.kubernetes.io/name", spec.name),)),
+    )
 
 
 def _base_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
@@ -279,7 +288,7 @@ class LiteLLMProxy(Construct):
         return result
 
     def _add_deployment(self, config_map: ConfigMap, service_account: ServiceAccount | None) -> Deployment:
-        labels = {"app.kubernetes.io/name": self.spec.name}
+        labels = service(self.spec).pods.selector
         deployment = Deployment(
             self,
             "deployment",
@@ -371,8 +380,7 @@ class LiteLLMProxy(Construct):
             "httproute",
             metadata=ApiObjectMetadata(name=self.spec.name, namespace=self.spec.namespace),
             hostnames=[hostname],
-            backend=self.spec.name,
-            port=4000,
+            backend=service(self.spec),
             timeout="600s",
             hsts=False,
             listener=None,

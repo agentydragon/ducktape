@@ -562,6 +562,22 @@ function entity(
   };
 }
 
+it("keeps a still-pending sent message out of the pending-commands box, since it renders inline instead", async () => {
+  const container = await render(
+    threadState({
+      rows: [
+        viewState(),
+        entity(
+          "command",
+          { operation: "submit_input", outcome: "pending", outcome_cursor: null, outcome_reason: null },
+          { inputRef: reference("test-message", "command_input") }
+        ),
+      ],
+    })
+  );
+  expect(container.querySelector('[aria-label="Pending commands"]')).toBeNull();
+});
+
 /** Serves every body at once; a card reads nothing else from the thread. */
 function serving(bodies: ReadonlyMap<string, string>): ThreadSync {
   const unread = (): never => {
@@ -750,6 +766,20 @@ describe("EntityCard", () => {
     );
     expect(container.querySelector(".agentplane-user-bubble .agentplane-verbatim")?.textContent).toBe(PROSE);
     expect(container.querySelector(".agentplane-markdown, strong, li")).toBeNull();
+  });
+
+  it("renders a still-pending sent message as the same bubble, marked pending", async () => {
+    const container = await renderCard(
+      entity(
+        "command",
+        { operation: "submit_input", outcome: "pending", outcome_cursor: null, outcome_reason: null },
+        { inputRef: reference("test-message", "command_input") }
+      ),
+      { "test-message:command_input": PROSE }
+    );
+    const bubble = container.querySelector<HTMLElement>(".agentplane-user-bubble");
+    expect(bubble?.querySelector(".agentplane-verbatim")?.textContent).toBe(PROSE);
+    expect(bubble?.style.fontStyle).toBe("italic");
   });
 
   it.each<[string, Observation, string]>([

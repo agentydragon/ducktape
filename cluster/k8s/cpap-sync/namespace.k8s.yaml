@@ -6,3 +6,4 @@ metadata:
     name: cpap-sync
     pod-security.kubernetes.io/enforce: baseline
   name: cpap-sync
+spec: {}

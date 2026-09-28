@@ -22,21 +22,22 @@ from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCr
 
 from agentplane.indexing.main import Settings
 from cluster.cdk8s import cnpg, forgejo_images, namespaces, node_scheduling
-from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cnpg.database import Database
+from cluster.cdk8s.secret_ref import SecretRef
 from util.settings_contract import env_name
 
 NAME = "agentplane-index"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agentplane-index"
 _DB_CLUSTER = f"{NAME}-db"
 # CNPG owns this Secret (username/password).
-_DB_APP_SECRET = f"{_DB_CLUSTER}-app"
+_DB_APP = SecretRef(namespace=NAME, name=f"{_DB_CLUSTER}-app")
 _DB_OWNER = "indexer"
-_READ_TOKEN = f"{NAME}-read-token"
+_READ_TOKEN = SecretRef(namespace=NAME, name=f"{NAME}-read-token").key("token")
+_HAKU_FORGEJO_GIT = SecretRef(namespace=NAME, name="haku-forgejo-git")
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-index:unset"
 # The worker listens on its Settings default; nothing passes `--port`.
 _PORT = Settings.model_fields["port"].default
@@ -69,9 +70,9 @@ def _read_token(chart: Chart) -> None:
     mint_bearer_secret(
         chart,
         "read-token",
-        name=_READ_TOKEN,
-        namespace=NAME,
-        key="token",
+        name=_READ_TOKEN.secret.name,
+        namespace=_READ_TOKEN.secret.namespace,
+        key=_READ_TOKEN.key,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
     )
 
@@ -145,8 +146,8 @@ def _worker(
                             ),
                             env_from=[k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=CONFIG_MAP.name))],
                             env=[
-                                secret_env_var("DB_USERNAME", _DB_APP_SECRET, "username"),
-                                secret_env_var("DB_PASSWORD", _DB_APP_SECRET, "password"),
+                                _DB_APP.key("username").env_var("DB_USERNAME"),
+                                _DB_APP.key("password").env_var("DB_PASSWORD"),
                                 k8s.EnvVar(
                                     name=env_name(Settings, "database_url"),
                                     value=(
@@ -157,7 +158,7 @@ def _worker(
                                 k8s.EnvVar(name=env_name(Settings, "repository_url"), value=url),
                                 k8s.EnvVar(name=env_name(Settings, "branch"), value=branch),
                                 *env,
-                                secret_env_var(env_name(Settings, "read_token"), _READ_TOKEN, "token"),
+                                _READ_TOKEN.env_var(env_name(Settings, "read_token")),
                             ],
                             ports=[k8s.ContainerPort(name="http", container_port=_PORT)],
                             volume_mounts=[k8s.VolumeMount(name="repository", mount_path=_REPOSITORY_MOUNT)],
@@ -240,8 +241,8 @@ def chart(app: App) -> Chart:
         url="http://forgejo-http.forgejo:3000/haku/haku-state.git",
         branch="main",
         env=(
-            secret_env_var(env_name(Settings, "git_username"), "haku-forgejo-git", "username"),
-            secret_env_var(env_name(Settings, "git_password"), "haku-forgejo-git", "password"),
+            _HAKU_FORGEJO_GIT.key("username").env_var(env_name(Settings, "git_username")),
+            _HAKU_FORGEJO_GIT.key("password").env_var(env_name(Settings, "git_password")),
         ),
         replicas=0,
     )

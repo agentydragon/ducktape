@@ -4,6 +4,6 @@ metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
-    goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: auto
   name: budget
+spec: {}

@@ -38,7 +38,7 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
-from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s import cilium, namespaces, node_scheduling
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
@@ -187,7 +187,7 @@ def base_chart(app: App) -> Chart:
                     "authentik", {"app.kubernetes.io/component": "server", "app.kubernetes.io/name": "authentik"}
                 ),
                 # Gatus: health check probes
-                _from_namespace_pod("gatus", {"app.kubernetes.io/name": "gatus"}),
+                _from_namespace_pod(cilium.PROBER.namespace, cilium.PROBER.selector),
             ],
         ),
     )
