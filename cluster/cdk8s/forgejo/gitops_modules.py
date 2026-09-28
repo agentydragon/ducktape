@@ -70,7 +70,7 @@ def write_manifests(root: Path) -> None:
 
 
 def forgejo_claude(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization, claude_rbac: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -80,11 +80,20 @@ def forgejo_claude(
         # tf/thrive-scrape) and agent sessions can depend on it.
         artifact,
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(tofu_controller),
+        depends_on=flux_kustomization_depends_on_many(
+            tofu_controller,
+            # the credentials Secret lands in claude-sandbox
+            claude_rbac,
+        ),
     )
 
 
-def haku_state(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization) -> Kustomization:
+def haku_state(
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    tofu_controller: Kustomization,
+    haku_namespace: Kustomization,
+) -> Kustomization:
     return flux_kustomization(
         chart,
         HAKU_STATE,
@@ -92,12 +101,15 @@ def haku_state(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_cont
         # haku-forgejo-git Secret) so scan runs can depend on it.
         artifact,
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(tofu_controller),
+        depends_on=flux_kustomization_depends_on_many(tofu_controller, haku_namespace),
     )
 
 
 def budget_ledger(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    tofu_controller: Kustomization,
+    budget_namespace: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -106,11 +118,17 @@ def budget_ledger(
         # budget-ledger-git-creds Secret) so the exporter/Fava can depend on it.
         artifact,
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(tofu_controller),
+        depends_on=flux_kustomization_depends_on_many(
+            tofu_controller,
+            # the git-creds Secret lands in the budget namespace
+            budget_namespace,
+        ),
     )
 
 
-def cpap_data(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization) -> Kustomization:
+def cpap_data(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization, cpap_sync: Kustomization
+) -> Kustomization:
     return flux_kustomization(
         chart,
         CPAP_DATA,
@@ -118,7 +136,11 @@ def cpap_data(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_contr
         # cpap-data-git-{write,read} Secrets) so the sync CronJob can depend on it.
         artifact,
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(tofu_controller),
+        depends_on=flux_kustomization_depends_on_many(
+            tofu_controller,
+            # the git-creds Secrets land in the cpap-sync namespace
+            cpap_sync,
+        ),
     )
 
 

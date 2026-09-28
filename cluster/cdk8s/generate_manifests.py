@@ -356,11 +356,13 @@ def generate_manifests(root: Path) -> None:
         ),
     )
     budget_namespace_artifact = artifact("budget-namespace", forgejo_budget_namespace.OUTPUT_DIR)
-    forgejo_budget_namespace.budget_namespace(
+    budget_namespace_kustomization = forgejo_budget_namespace.budget_namespace(
         flux_chart, write_directory(root, budget_namespace_artifact, forgejo_budget_namespace.chart)
     )
     haku_namespace_artifact = artifact(haku_namespace.NAME, haku_namespace.OUTPUT_DIR)
-    haku_namespace.haku_namespace(flux_chart, write_directory(root, haku_namespace_artifact, haku_namespace.chart))
+    haku_namespace_kustomization = haku_namespace.haku_namespace(
+        flux_chart, write_directory(root, haku_namespace_artifact, haku_namespace.chart)
+    )
     hubble_ui_artifact = artifact("hubble-ui", hubble_ui.OUTPUT_DIR)
     hubble_ui.hubble_ui(flux_chart, write_directory(root, hubble_ui_artifact, hubble_ui.chart))
     kube_api_proxy_artifact = artifact("kube-api-proxy", kube_api_proxy.OUTPUT_DIR)
@@ -531,7 +533,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, write_directory(root, haku_forgejo_tea_artifact, siblings=["haku-forgejo-tea.sops.yaml"])
     )
     claude_rbac_artifact = artifact("claude-rbac", agent_rbac_base.OUTPUT_DIR)
-    agent_rbac_base.claude_rbac(
+    claude_rbac_kustomization = agent_rbac_base.claude_rbac(
         flux_chart, write_directory(root, claude_rbac_artifact, agent_rbac_base.chart), kyverno_policies_kustomization
     )
     clickhouse_artifact = artifact("clickhouse", clickhouse_installation.OUTPUT_DIR)
@@ -995,9 +997,13 @@ def generate_manifests(root: Path) -> None:
         flux_chart, forgejo_agentydragon_repos_artifact, tofu_controller_kustomization
     )
     budget_ledger_artifact = artifact("budget-ledger", forgejo_gitops_modules.BUDGET_LEDGER_DIR)
-    forgejo_gitops_modules.budget_ledger(flux_chart, budget_ledger_artifact, tofu_controller_kustomization)
+    forgejo_gitops_modules.budget_ledger(
+        flux_chart, budget_ledger_artifact, tofu_controller_kustomization, budget_namespace_kustomization
+    )
     forgejo_claude_artifact = artifact("forgejo-claude", forgejo_gitops_modules.CLAUDE_DIR)
-    forgejo_gitops_modules.forgejo_claude(flux_chart, forgejo_claude_artifact, tofu_controller_kustomization)
+    forgejo_gitops_modules.forgejo_claude(
+        flux_chart, forgejo_claude_artifact, tofu_controller_kustomization, claude_rbac_kustomization
+    )
     forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
     forgejo_images.forgejo_images(
         flux_chart,
@@ -1093,7 +1099,7 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     cpap_sync_artifact = artifact("cpap-sync", cpap_sync_app.OUTPUT_DIR)
-    cpap_sync_app.cpap_sync(
+    cpap_sync_kustomization = cpap_sync_app.cpap_sync(
         flux_chart,
         write_directory(
             root,
@@ -1205,7 +1211,9 @@ def generate_manifests(root: Path) -> None:
         flux_chart, study_casino_artifact, cnpg_kustomization, external_secrets_operator_kustomization
     )
     haku_state_artifact = artifact("haku-state", forgejo_gitops_modules.HAKU_STATE_DIR)
-    forgejo_gitops_modules.haku_state(flux_chart, haku_state_artifact, tofu_controller_kustomization)
+    forgejo_gitops_modules.haku_state(
+        flux_chart, haku_state_artifact, tofu_controller_kustomization, haku_namespace_kustomization
+    )
     litellm_artifact = artifact("litellm", litellm_namespace.OUTPUT_DIR)
     litellm_proxy.litellm(
         flux_chart,
@@ -1229,7 +1237,9 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     cpap_data_artifact = artifact("cpap-data", forgejo_gitops_modules.CPAP_DATA_DIR)
-    forgejo_gitops_modules.cpap_data(flux_chart, cpap_data_artifact, tofu_controller_kustomization)
+    forgejo_gitops_modules.cpap_data(
+        flux_chart, cpap_data_artifact, tofu_controller_kustomization, cpap_sync_kustomization
+    )
     grocy_mcp_sf_artifact = artifact("grocy-mcp-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", grocy_mcp.BASE_DIR)
     grocy_flux_kustomizations.grocy_mcp_sf(
         flux_chart,
