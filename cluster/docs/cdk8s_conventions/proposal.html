@@ -1157,14 +1157,13 @@
             units down to 171), and the cleanups (the cores of pod policy and the namespace helper, the scheduling
             constants, eight more writer conversions and the ResticBackup dedupe) have landed. Ready without a decision:
             the namespace edges (#8316 and #8185; #8309 landed), moving the Forgejo users&#39; Terraform-written Secrets
-            into <code>forgejo</code> behind ESO, <code>PREFER_WORKERS</code> on the two Agentplane services that
-            tolerate the control plane (#8244), provider classes for the 14 CRD kinds still built raw at more than one
+            into <code>forgejo</code> behind ESO, provider classes for the 14 CRD kinds still built raw at more than one
             site (#8293 and #8315, in review), the per-area <code>harden()</code> and <code>place()</code> PRs on the
             raw and CRD-embedded workloads, and moving the 12 SeaweedFS identities that serve another namespace into
             their tenants&#39; namespaces (decision 10, step 19). The edge check you deferred behind the cleanups is
             unblocked. The fleet rules, graph checks, health-check derivation and glue absorption are deferred. The
-            <code>wait</code> default and derived Orphan are postponed, and C4 and the steps built on it wait on your
-            decision.
+            <code>wait</code> default and derived Orphan are postponed, <code>PREFER_WORKERS</code> (#8244) waits on
+            your rethink of what runs where, and C4 and the steps built on it wait on your decision.
           </p>
         </div>
       </div>
@@ -11255,8 +11254,8 @@ CONFIG = {
                 <code>harden()</code>, 8 of them <code>place()</code>, the mutators and <code>WRITABLE_ROOT</code> are
                 gone, and <code>fleet_rules</code> reads the shared table, ScaledJob included.
                 <code>place()</code> still renders the required zone affinity. Left: <code>PREFER_WORKERS</code> on the
-                two Agentplane services that tolerate the control plane (#8244, open); decision 8 then flips one line in
-                <code>place()</code>.
+                two Agentplane services that tolerate the control plane (#8244, a draft), postponed by you while you
+                rethink what runs where; decision 8 then flips one line in <code>place()</code>.
               </p>
             </div>
           </div>
