@@ -131,6 +131,17 @@ py_test(
 )
 
 py_library(
+    name = "helm_repository",
+    srcs = ["helm_repository.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/flux:helmrepository",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "git_repository",
     srcs = ["git_repository.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],

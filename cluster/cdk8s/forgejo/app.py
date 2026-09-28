@@ -29,7 +29,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecValuesFrom,
     HelmReleaseSpecValuesFromKind,
 )
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import node_scheduling
@@ -37,7 +36,7 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.seaweedfs import s3
@@ -313,19 +312,11 @@ def _values() -> dict[str, object]:
 
 
 def _helm_release(scope: Construct) -> None:
-    repository = HelmRepository(
-        scope,
-        "helm-repository",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        spec=HelmRepositorySpec(
-            type=HelmRepositorySpecType.OCI, interval="24h", url="oci://code.forgejo.org/forgejo-helm"
-        ),
-    )
     helm_release(
         scope,
         _NAME,
         _NAMESPACE,
-        repository=repository,
+        repository=helm_repository(scope, _NAME, _NAMESPACE, url="oci://code.forgejo.org/forgejo-helm"),
         chart=_NAME,
         version="17.1.6",
         interval="15m",
