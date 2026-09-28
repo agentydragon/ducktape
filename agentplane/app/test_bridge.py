@@ -376,9 +376,7 @@ async def _stored_events(
     return entries
 
 
-async def _folded_items(
-    store: ThreadStore, thread_id: str
-) -> tuple[dict[str, ThreadEntity], list[ThreadPayloadChunk]]:
+async def _folded_items(store: ThreadStore, thread_id: str) -> tuple[dict[str, ThreadEntity], list[ThreadPayloadChunk]]:
     """The current item rows and payload chunks from the app's materialized thread fold."""
     async with store._sessions() as session:
         checkpoint = await session.get(ThreadCheckpoint, UUID(thread_id))
@@ -416,9 +414,7 @@ def _folded_body(chunks: list[ThreadPayloadChunk], reference: dict[str, Any] | N
 
 
 async def _wait_for_folded_items(
-    store: ThreadStore,
-    thread_id: str,
-    matches: Callable[[dict[str, ThreadEntity], list[ThreadPayloadChunk]], bool],
+    store: ThreadStore, thread_id: str, matches: Callable[[dict[str, ThreadEntity], list[ThreadPayloadChunk]], bool]
 ) -> tuple[dict[str, ThreadEntity], list[ThreadPayloadChunk]]:
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(10), wait=wait_fixed(0.2), retry=retry_if_exception_type(AssertionError)
@@ -453,7 +449,9 @@ async def _open_thread_with_seed(
     seed_prompt: str,
     seed_answer: str,
 ) -> str:
-    opened = await http.post(f"/sandboxes/{SANDBOX}/sessions", json={"session_id": session_id, "spec": MessageToDict(spec)})
+    opened = await http.post(
+        f"/sandboxes/{SANDBOX}/sessions", json={"session_id": session_id, "spec": MessageToDict(spec)}
+    )
     assert opened.status_code == 201, opened.text
     thread_id = await _thread_id(http, session_id)
     accepted = await http.post(
@@ -472,27 +470,17 @@ def _has_turn_status(entries: list[dict[str, Any]], status: str) -> bool:
 
 
 async def test_resume_after_suspending_during_a_stream_keeps_only_the_partial_folded_item(
-    app_url: str,
-    model: ScriptedModel,
-    store: ThreadStore,
-    spec: protocol_pb2.SessionSpec,
-    failed_native_journal: None,
+    app_url: str, model: ScriptedModel, store: ThreadStore, spec: protocol_pb2.SessionSpec, failed_native_journal: None
 ) -> None:
     seed_prompt, seed_answer = "Remember the seed prompt", "SEED_ANSWER_FOR_STREAM_RECOVERY"
     partial = "PARTIAL_STREAM_MUST_STAY_UNFINISHED"
     recovery_prompt = "Continue with a fresh answer after resume"
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         thread_id = await _open_thread_with_seed(
-            http,
-            model,
-            spec,
-            session_id=SESSION,
-            seed_prompt=seed_prompt,
-            seed_answer=seed_answer,
+            http, model, spec, session_id=SESSION, seed_prompt=seed_prompt, seed_answer=seed_answer
         )
         accepted = await http.post(
-            _commands(thread_id),
-            json={"commandId": "streaming-input", "submitInput": {"text": "Start a long answer"}},
+            _commands(thread_id), json={"commandId": "streaming-input", "submitInput": {"text": "Start a long answer"}}
         )
         assert accepted.status_code == 200, accepted.text
         request = await _next_model_request(model)
@@ -531,9 +519,7 @@ async def test_resume_after_suspending_during_a_stream_keeps_only_the_partial_fo
         items, chunks = await _folded_items(store, thread_id)
         partial_items = [row for row in items.values() if _folded_body(chunks, row.text_ref) == partial]
         assert len(partial_items) == 1
-        assert partial_items[0].state["completion"] == (
-            "text" if spec.harness == protocol_pb2.HARNESS_CLAUDE else None
-        )
+        assert partial_items[0].state["completion"] == ("text" if spec.harness == protocol_pb2.HARNESS_CLAUDE else None)
 
         resumed = await http.post(f"/threads/{thread_id}/resume")
         assert resumed.status_code == 200, resumed.text
@@ -541,8 +527,7 @@ async def test_resume_after_suspending_during_a_stream_keeps_only_the_partial_fo
         assert resumed.json()["spec"]["harness"] == protocol_pb2.Harness.Name(spec.harness)
         assert await _thread_id(http) == thread_id
         accepted = await http.post(
-            _commands(thread_id),
-            json={"commandId": "stream-recovery-input", "submitInput": {"text": recovery_prompt}},
+            _commands(thread_id), json={"commandId": "stream-recovery-input", "submitInput": {"text": recovery_prompt}}
         )
         assert accepted.status_code == 200, accepted.text
         request = await _next_model_request(model)
@@ -581,12 +566,7 @@ async def test_resume_after_hard_kill_during_tool_execution_keeps_the_outcome_un
     )
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         thread_id = await _open_thread_with_seed(
-            http,
-            model,
-            spec,
-            session_id=SESSION,
-            seed_prompt=seed_prompt,
-            seed_answer=seed_answer,
+            http, model, spec, session_id=SESSION, seed_prompt=seed_prompt, seed_answer=seed_answer
         )
         accepted = await http.post(
             _commands(thread_id),
@@ -605,8 +585,7 @@ async def test_resume_after_hard_kill_during_tool_execution_keeps_the_outcome_un
             store,
             thread_id,
             lambda rows, payloads: any(
-                row.state["completion"] is None
-                and token in _folded_body(payloads, row.arguments_ref)
+                row.state["completion"] is None and token in _folded_body(payloads, row.arguments_ref)
                 for row in rows.values()
             ),
         )
@@ -643,8 +622,7 @@ async def test_resume_after_hard_kill_during_tool_execution_keeps_the_outcome_un
         assert resumed.json()["sessionId"] == SESSION
         assert await _thread_id(http) == thread_id
         accepted = await http.post(
-            _commands(thread_id),
-            json={"commandId": "tool-recovery-input", "submitInput": {"text": recovery_prompt}},
+            _commands(thread_id), json={"commandId": "tool-recovery-input", "submitInput": {"text": recovery_prompt}}
         )
         assert accepted.status_code == 200, accepted.text
         request = await _next_model_request(model)
@@ -675,18 +653,12 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
     token = "COMPLETED_TOOL_SIDE_EFFECT"
     tool_output = "COMPLETED_TOOL_OUTPUT"
     command = (
-        f"printf '%s\\n' {shlex.quote(token)} >> {shlex.quote(str(marker))}; "
-        f"printf '%s' {shlex.quote(tool_output)}"
+        f"printf '%s\\n' {shlex.quote(token)} >> {shlex.quote(str(marker))}; printf '%s' {shlex.quote(tool_output)}"
     )
     partial = "PARTIAL_AFTER_COMPLETED_TOOL"
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         thread_id = await _open_thread_with_seed(
-            http,
-            model,
-            spec,
-            session_id=SESSION,
-            seed_prompt=seed_prompt,
-            seed_answer=seed_answer,
+            http, model, spec, session_id=SESSION, seed_prompt=seed_prompt, seed_answer=seed_answer
         )
         accepted = await http.post(
             _commands(thread_id),
@@ -710,21 +682,21 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         await _wait_for_folded_items(
             store,
             thread_id,
-            lambda rows, payloads: any(
-                row.state["completion"] == "tool"
-                and row.state["tool_succeeded"] is True
-                and tool_output in _folded_body(payloads, row.output_ref)
-                for row in rows.values()
-            )
-            and any(
-                row.state["completion"] is None and _folded_body(payloads, row.text_ref) == partial
-                for row in rows.values()
+            lambda rows, payloads: (
+                any(
+                    row.state["completion"] == "tool"
+                    and row.state["tool_succeeded"] is True
+                    and tool_output in _folded_body(payloads, row.output_ref)
+                    for row in rows.values()
+                )
+                and any(
+                    row.state["completion"] is None and _folded_body(payloads, row.text_ref) == partial
+                    for row in rows.values()
+                )
             ),
         )
 
-        stopped = await http.post(
-            _commands(thread_id), json={"commandId": "stop-after-tool", "stopRunnerSession": {}}
-        )
+        stopped = await http.post(_commands(thread_id), json={"commandId": "stop-after-tool", "stopRunnerSession": {}})
         assert stopped.status_code == 200, stopped.text
         await _stored_events(
             http,
@@ -742,9 +714,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         assert completed_tools[0].state["tool_succeeded"] is True
         partial_items = [row for row in items.values() if _folded_body(chunks, row.text_ref) == partial]
         assert len(partial_items) == 1
-        assert partial_items[0].state["completion"] == (
-            "text" if spec.harness == protocol_pb2.HARNESS_CLAUDE else None
-        )
+        assert partial_items[0].state["completion"] == ("text" if spec.harness == protocol_pb2.HARNESS_CLAUDE else None)
 
         resumed = await http.post(f"/threads/{thread_id}/resume")
         assert resumed.status_code == 200, resumed.text
