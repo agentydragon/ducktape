@@ -80,6 +80,7 @@ from agentplane.app.oidc import OIDCSettings, build_oauth
 from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore, operator_session_row
 from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
+from agentplane.runner import protocol_pb2
 from agentplane.runner.client import OpenTimeoutError, RunnerError
 from agentplane.subjects import ServiceAccountRef
 
@@ -691,9 +692,7 @@ async def rename_thread(store: Store, thread_id: UUID, body: ThreadRename) -> Th
 
 
 @threads.post("/{thread_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
-async def archive_thread(
-    store: Store, bridge: runner_bridge.Bridge, inventory: Inventory, thread_id: UUID
-) -> Response:
+async def archive_thread(store: Store, bridge: runner_bridge.Bridge, inventory: Inventory, thread_id: UUID) -> Response:
     thread = await store.get_thread(thread_id)
     if thread is None:
         raise ThreadNotFoundError(thread_id)
@@ -706,8 +705,7 @@ async def archive_thread(
         if sandbox.state == "running":
             sessions = await bridge.list_sessions(thread.sandbox)
             if any(
-                session.session_id == thread.session_id
-                and session.harness_state == runner_bridge.protocol_pb2.HARNESS_STATE_RUNNING
+                session.session_id == thread.session_id and session.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
                 for session in sessions
             ):
                 raise HTTPException(status.HTTP_409_CONFLICT, "stop the harness before archiving this thread")

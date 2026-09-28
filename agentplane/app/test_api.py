@@ -990,9 +990,7 @@ async def test_a_running_thread_cannot_be_archived(
 
     async def running_sessions(_sandbox: str) -> list[protocol_pb2.SessionSummary]:
         return [
-            protocol_pb2.SessionSummary(
-                session_id="s-1", spec=spec, harness_state=protocol_pb2.HARNESS_STATE_RUNNING
-            )
+            protocol_pb2.SessionSummary(session_id="s-1", spec=spec, harness_state=protocol_pb2.HARNESS_STATE_RUNNING)
         ]
 
     monkeypatch.setattr(bridge, "list_sessions", running_sessions)
@@ -1019,7 +1017,8 @@ async def test_a_running_thread_cannot_be_archived(
     assert response.status_code == 409
     assert response.json()["detail"] == "stop the harness before archiving this thread"
     thread = await store.get_thread(thread_id)
-    assert thread is not None and thread.archived is False
+    assert thread is not None
+    assert thread.archived is False
 
 
 async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none(
