@@ -1,6 +1,7 @@
 """cpap-sync: the daily CronJob that copies the CPAP card's EDF files into the cpap-data
-Forgejo repo, the KubeVirt gateway VM that exposes the card, the Service fronting the card's
-HTTP API, and the Job's egress policy.
+Forgejo repo, the repo's git credentials copied from the forgejo namespace, the KubeVirt
+gateway VM that exposes the card, the Service fronting the card's HTTP API, and the Job's
+egress policy.
 
 Hand-written beside the generated output: the card's SOPS Secret, and `image-pins/`, whose
 image-automation markers override this chart's placeholder image tags
@@ -31,6 +32,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 
 from cluster.cdk8s import cilium, forgejo_images, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_labels
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -48,6 +50,7 @@ _CARD_SERVICE = "cpap-card"
 _GATEWAY = "cpap-gateway"
 _GATEWAY_PORT = 18080
 _GIT_CREDENTIALS = "cpap-data-git-write"
+_GIT_READ_CREDENTIALS = "cpap-data-git-read"
 _WORKDIR = "/workdir"
 _CARD_SECRET = "cpap-ezshare"
 CARD_SECRET_FILE = f"{_CARD_SECRET}.sops.yaml"
@@ -117,6 +120,11 @@ def namespace_chart(app: App) -> Chart:
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
+    # tf/gitops/cpap-data's service-user credentials: the writer's for the CronJob, and the
+    # reader's for analysis, mirrored into claude-sandbox for Claude Code sessions.
+    reader = secret_copy.reader(chart, NAMESPACE)
+    secret_copy.secret_copy(chart, _GIT_CREDENTIALS, reader=reader)
+    secret_copy.secret_copy(chart, _GIT_READ_CREDENTIALS, reader=reader, mirror_namespaces=["claude-sandbox"])
     k8s.KubeServiceAccount(
         chart,
         "default-service-account",

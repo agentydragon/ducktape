@@ -70,28 +70,13 @@ def harden(workload: Construct) -> None:
 
 
 def place(workload: Construct, placement: Placement, *, tolerate_control_plane: bool = False) -> None:
-    """Requires the nodes `placement` selects, as a required node affinity; with
+    """Requires the nodes `placement` selects, as the pod's `nodeSelector`; with
     `tolerate_control_plane`, control-plane nodes among them qualify too. Raises on a pod spec
     that already states a node affinity or selector."""
     obj, path, pod = _workload(workload)
     if "nodeSelector" in pod or "affinity" in pod:
         raise ValueError(f"{obj.kind}/{obj.name}: already placed")
-    required = k8s.NodeSelectorTerm(
-        match_expressions=[
-            k8s.NodeSelectorRequirement(key=label, operator="In", values=[value])
-            for label, value in placement.node_selector.items()
-        ]
-    )
-    obj.add_json_patch(
-        JsonPatch.add(
-            f"{path}/affinity",
-            k8s.Affinity(
-                node_affinity=k8s.NodeAffinity(
-                    required_during_scheduling_ignored_during_execution=k8s.NodeSelector(node_selector_terms=[required])
-                )
-            ),
-        )
-    )
+    obj.add_json_patch(JsonPatch.add(f"{path}/nodeSelector", dict(placement.node_selector)))
     if tolerate_control_plane:
         obj.add_json_patch(
             JsonPatch.add(f"{path}/tolerations/-", CONTROL_PLANE_TOLERATION)

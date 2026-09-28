@@ -31,9 +31,9 @@ def _credentials_secret(identity: str) -> str:
 
 
 def _identity(scope: Construct, name: str) -> s3.Identity:
-    """A cluster-global S3Identity plus the publisher-local S3Credentials the operator mints
-    its key pair into (Secret `<name>-s3-credentials` in this namespace)."""
-    identity = s3.Identity(scope, name, name=name)
+    """A publisher-local S3Identity plus the S3Credentials the operator mints its key pair
+    into (Secret `<name>-s3-credentials` in this namespace)."""
+    identity = s3.Identity(scope, name, name=name, namespace=NAME)
     identity.credentials(namespace=NAME, secret=_credentials_secret(name), key_fields=None)
     return identity
 

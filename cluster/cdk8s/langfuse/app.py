@@ -1,4 +1,4 @@
-"""Langfuse: its namespace, Postgres, S3 bucket and credentials, route, log-reader RBAC,
+"""Langfuse: its namespace, Postgres, S3 bucket, identity and credentials, route, log-reader RBAC,
 queue/cache Valkey and Helm release, and the `langfuse` Flux Kustomization owning them.
 
 Hand-written beside the generated output: `langfuse-secrets.sops.yaml`.
@@ -75,7 +75,7 @@ def _storage(scope: Construct) -> None:
         adopt_existing=True,
         description="Langfuse event, export, and media objects.",
     )
-    identity = s3.Identity(scope, "identity", name=_NAME)
+    identity = s3.Identity(scope, "identity", name=_NAME, namespace=_NAMESPACE)
     bucket.grant_read_write(identity)
     identity.credentials(
         namespace=_NAMESPACE,
