@@ -201,6 +201,7 @@ py_library(
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:model_rosters",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:probes",

@@ -65,6 +65,20 @@ async def test_ollama_tool_call(client: Client, sandbox: Sandboxes, harness: pro
         evidence["tool_outputs"] = [output[:300] for output in turn.tool_outputs]
         evidence["answer"] = turn.answer[:300]
         native = [json.loads(line) for line in turn.native]
+        codex_windows = [
+            frame["params"]["tokenUsage"]["modelContextWindow"]
+            for frame in native
+            if frame.get("method") == "thread/tokenUsage/updated"
+        ]
+        claude_windows = [
+            usage["contextWindow"]
+            for frame in native
+            if frame.get("type") == "result"
+            for usage in frame.get("modelUsage", {}).values()
+        ]
+        evidence["context_windows"] = sorted(
+            {value for value in (*codex_windows, *claude_windows) if isinstance(value, int)}
+        )
         evidence["native_methods"] = sorted(
             {frame["method"] for frame in native if isinstance(frame.get("method"), str)}
         )

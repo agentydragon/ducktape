@@ -2231,6 +2231,8 @@ spec:
           env:
             - name: LITELLM_URL
               value: http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080
+            - name: AGENTPLANE_MODEL_CONTEXT_WINDOWS
+              value: '{"ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k":262144,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k":262144}'
             - name: HTTP_PROXY
               value: http://127.0.0.1:3128
             - name: HTTPS_PROXY
