@@ -8,8 +8,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
 
-import pytest_bazel
 import pytest
+import pytest_bazel
 
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.runner.adapter import HarnessAdapter
