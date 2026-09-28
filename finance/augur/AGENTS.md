@@ -26,7 +26,9 @@ adding parallel read-model tables over the captured long-form polars frames.
 - **Strategies stay with their caller.** A rule specific to one study (Guyton–Klinger, a
   glide, a spending ladder) lives in that study under `study/` or `x/`; core does not grow
   options to configure it.
-- **A model identifies itself with a `model_id` string, and results display that string.**
+- **The caller names its model.** Whoever instantiates a model and runs the loop reports which
+  model and assumptions produced its numbers; Augur does not stamp trajectories or results
+  with a model identity. A model's card is prose beside its code, not a structured type.
 - **Core never depends on `study/` or `x/`:** add no visibility exception for it. A model
   moves from `x/models/` into core only on evidence that it is good enough.
 - **Money conversions are exact or raise.** Never convert through floats or ad-hoc rounding

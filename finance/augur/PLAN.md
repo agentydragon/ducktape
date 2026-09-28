@@ -5,6 +5,18 @@ The conventions this plan's work follows are in `README.md` § Using Augur and `
 are in <SPEC.md>; capability requirements every item below must meet are in
 <sim/REQUIREMENTS.md>.
 
+## Tracks
+
+In priority order; their items are under § Work.
+
+1. **Trust in the economy model** (§ Economy model trust): no model other than historical
+   replay is vetted, and every projection inherits that.
+2. **A correct answer for a liquid FIRE portfolio:** BIND and EXUS, MIDYEAR, the Distributions
+   and Payments tax slices, MA3 and STUDY, then RUN and ROBUST.
+3. **Backstops:** GX (moving to Europe) and housing (§ Property taxes, Housing basis, GHOUSE).
+4. **Consolidation:** TLHCOHORT and the app's future (§ Open questions).
+5. **Deferred:** private equity (GPE; the stake is valued at $0) and performance.
+
 ## Open questions
 
 - **The app's model selection.** The app picks its economy model through
@@ -13,7 +25,7 @@ are in <SPEC.md>; capability requirements every item below must meet are in
   the conventions rule out. Deciding the app's model selection is part of deciding the app's
   future, which is not decided.
 - **Held feature PRs.** #8139 (uncertain equity mean), #8141 (pinned equity mean) and #8142
-  (block bootstrap) would land in `x/models/`; #8143 is trading costs. Each waits on the
+  (block bootstrap, BOOT) would land in `x/models/`; #8143 is trading costs. Each waits on the
   owner's go.
 - **Integer money.** Integer quanta were chosen for speed at large rollout counts, a gain
   never measured. If a measurement shows it does not pay, `World` may instead know its
@@ -23,6 +35,38 @@ are in <SPEC.md>; capability requirements every item below must meet are in
 
 Each item is its own reviewable change; "after X" is a content prerequisite, nothing else.
 Every change is checked against an independent calculation, never a copy of the engine's.
+
+### Economy model trust
+
+Goal: at least one economy model other than historical replay that can defensibly answer a
+30–60 year FIRE question. None is calibrated in any sense today: no economy model has a PIT,
+coverage or held-out test. `x/models/structural_macro.py` is Gaussian and US-only, with equity
+independent of inflation and no parameter uncertainty; historical replay has about three
+independent 30-year windows and only US history.
+
+- **CARDS:** each model in `x/models/` says in prose beside its code what it assumes, what it
+  leaves out, its data window and the evidence behind it.
+- **SANITY:** a check any caller can run on sampled trajectories that rejects absurd output
+  (an economy growing 10,000× in two years). Starts from `x/models/sample_sanity.py`, which
+  only the app calls today.
+- **BOOT:** vet the US stationary block bootstrap (held #8142). It keeps joint crashes and
+  stagflation, but recombines only US history.
+- **PANEL** (after BOOT): a multi-country block bootstrap on the Jordà–Schularick–Taylor
+  macrohistory panel, which partly corrects US survivorship and gives an ex-US equity leg.
+- **REGIME:** regime-switching lognormal equity (RSLN2) with the macro VAR, under parameter
+  uncertainty: the first model with tails beyond history.
+- **SCORE:** a model leaves `x/` only after pre-registered checks: 1–5 year PIT and coverage
+  on held-out origins with dependence-aware uncertainty; 5–10 year plausibility against
+  published tables (the American Academy of Actuaries' wealth factors,
+  Anarkulova–Cederburg–O'Doherty's developed-market results); and at 30–60 years, results
+  reported as a bracket across the vetted models and named stresses, saying whether a
+  decision survives it. Existing fits and simple controls are compared on the same
+  observables, origins and held-out periods, or ranking is explicitly refused.
+- **READY** (after ROBUST and any adopted model change): review held-out multi-horizon joint
+  equity/rates/inflation behavior against agreed tolerances before claiming forecast fidelity.
+  Candidates: #5487 (joint fit), #5488 (regimes), #5510 (resampling), #5835 (muni curve); the
+  two-point Treasury curve beyond ten years (`model/bond_fund.py`, #5834 closed without a
+  recorded reason) needs a decision whether to pursue it.
 
 ### Taxes (closing the gaps SPEC lists in its supported tax scope)
 
@@ -107,6 +151,8 @@ per location over a purchase, hold, rent-out and sale horizon.
   partially sell the existing nominal-bond slice, then off-par acquisition. Hold-to-maturity
   becomes a policy, not the instrument's illiquidity. Then a native-position version of
   <x/bond_policies/README.md>'s supplied-curve control.
+- **EXUS** (with PANEL or a fitted ex-US series): VT's and VSUX's ex-US holdings follow an
+  ex-US equity path, not US returns.
 - **Trading costs:** a proportional cost per trade, readable in the trace (#5486, held #8143).
 - **Fund expense ratios:** a fund's annual expense ratio accrues as a drag on its value,
   readable in the trace; model them before comparing products whose costs differ materially.
@@ -142,15 +188,8 @@ per location over a purchase, hold, rent-out and sale horizon.
   conventions before its result is labeled a reproduction.
 - **RUN** (after BIND, the tax slices and MIDYEAR): public synthetic-lot household example of
   a spending-flex × allocation grid on shared paths, extending `x/joint_spending_allocation`.
-- **SCORE:** compare existing fits and simple controls on the same observables, origins and
-  held-out periods, with dependence-aware uncertainty or an explicit refusal to rank.
 - **ROBUST** (after RUN and SCORE): select RUN's policies under each model, evaluate them on
   fresh draws under the others.
-- **READY** (after ROBUST and any adopted model change): review held-out multi-horizon joint
-  equity/rates/inflation behavior against agreed tolerances before claiming forecast fidelity.
-  Candidates: #5487 (joint fit), #5488 (regimes), #5510 (resampling), #5835 (muni curve); the
-  two-point Treasury curve beyond ten years (`model/bond_fund.py`, #5834 closed without a
-  recorded reason) needs a decision whether to pursue it.
 
 ### Gated on an owner decision
 
