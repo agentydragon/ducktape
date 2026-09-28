@@ -229,6 +229,7 @@ class PlaidClient:
         redirect_uri: str,
         client_user_id: str,
         transaction_days_requested: int = 730,
+        webhook_url: str | None = None,
         client_name: str = "Plaid MCP",
     ) -> LinkTokenResult:
         """Create a Link token for an explicit product set.
@@ -254,6 +255,8 @@ class PlaidClient:
             language="en",
             redirect_uri=redirect_uri,
         )
+        if webhook_url is not None:
+            request.webhook = webhook_url
         if conditional:
             request.required_if_supported_products = [Products(product) for product in conditional]
         if Product.TRANSACTIONS.value in products:

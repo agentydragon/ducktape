@@ -499,10 +499,12 @@ class PlaidLinkStorage:
                 await session.execute(statement)
 
             for removed_value in removed:
-                txn = _validated_payload(PlaidRemovedTransaction, removed_value)
+                removed_txn = _validated_payload(PlaidRemovedTransaction, removed_value)
                 await session.execute(
                     update(TransactionRow)
-                    .where(TransactionRow.item_id == item_id, TransactionRow.transaction_id == txn.transaction_id)
+                    .where(
+                        TransactionRow.item_id == item_id, TransactionRow.transaction_id == removed_txn.transaction_id
+                    )
                     .values(removed=True, removed_at=captured_at, updated_at=captured_at)
                 )
 

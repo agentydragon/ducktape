@@ -17,6 +17,7 @@ import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Path as ApiPath, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from plaid.model.webhook_verification_key_get_request import WebhookVerificationKeyGetRequest
+from plaid.model.webhook_verification_key_get_response import WebhookVerificationKeyGetResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from finance.plaid.db.client import (
@@ -177,7 +178,9 @@ class PlaidWebClient(PlaidApiLike, Protocol):
     ) -> LinkTokenResult: ...
     def exchange_public_token(self, public_token: str) -> PublicTokenExchange: ...
     def remove_item(self, access_token: str) -> None: ...
-    def webhook_verification_key_get(self, request: WebhookVerificationKeyGetRequest, /) -> dict[str, object]: ...
+    def webhook_verification_key_get(
+        self, request: WebhookVerificationKeyGetRequest, /
+    ) -> WebhookVerificationKeyGetResponse: ...
 
 
 class AppState:
