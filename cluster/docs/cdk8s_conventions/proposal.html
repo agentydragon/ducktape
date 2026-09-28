@@ -1053,14 +1053,16 @@
     <div class="eyebrow">cluster/cdk8s · design proposal · draft</div>
     <h1>Ducktape cdk8s Conventions</h1>
     <p class="lede">
-      Nine conventions to replace the 38 mechanism combinations that the generator&#39;s 198 shared helpers use today.
+      Nine conventions to replace the 39 mechanism combinations that the generator&#39;s 215 shared helpers use today.
       Each was chosen against the jobs the cluster does often or will need soon, checked against what cdk8s can and
       cannot do from Python, and aligned with the move to admission-only Flux dependencies.
     </p>
     <div class="meta">
       <span
         >baseline
-        <b>origin/devel f84301e72c; examples synthesized there, E4, E5, E7 and E2&#39;s node at 85fb8d0d</b></span
+        <b
+          >origin/devel b1475d0514; examples synthesized at f84301e72c, E4, E5, E7 and E2&#39;s node at 85fb8d0d</b
+        ></span
       ><span>date <b>2026-09-28</b></span
       ><span>branch <b>claude/jolly-darwin-al6qse</b></span
       ><span>status <b>awaiting your decisions</b></span>
@@ -1150,16 +1152,19 @@
           </p>
           <p>
             None of this is a big-bang rewrite. Each convention lands as a series of small PRs you can review as
-            rendered diffs. The provider cleanup, the edge trim (426 edges down to 249, and 222 once #8185 lands), the
-            writer, now writing 108 directories, three stateless folds (181 units down to 171), and the cleanups (the
-            cores of pod policy and the namespace helper, the scheduling constants, eight more writer conversions and
-            the ResticBackup dedupe) have landed. Ready without a decision: #8185&#39;s namespace edges,
-            <code>PREFER_WORKERS</code> on the two Agentplane services that tolerate the control plane (#8244), the
-            per-area <code>harden()</code> and <code>place()</code> PRs on the raw and CRD-embedded workloads, and
-            moving the 12 SeaweedFS identities that serve another namespace into their tenants&#39; namespaces (decision
-            10, step 19). The edge check you deferred behind the cleanups is unblocked. The fleet rules, graph checks,
-            health-check derivation and glue absorption are deferred. The <code>wait</code> default and derived Orphan
-            are postponed, and C4 and the steps built on it wait on your decision.
+            rendered diffs. The provider cleanup, provider classes for nine more CRD kinds, the edge trim (426 edges
+            down to 249, and 222 once #8185 lands), the writer, now writing 108 directories, three stateless folds (181
+            units down to 171), and the cleanups (the cores of pod policy and the namespace helper, the scheduling
+            constants, eight more writer conversions and the ResticBackup dedupe) have landed. Ready without a decision:
+            the namespace edges (#8316 and #8185; #8309 landed), moving the Forgejo users&#39; Terraform-written Secrets
+            into <code>forgejo</code> behind ESO, <code>PREFER_WORKERS</code> on the two Agentplane services that
+            tolerate the control plane (#8244), provider classes for the 14 CRD kinds still built raw at more than one
+            site (#8293 and #8315, in review), the per-area <code>harden()</code> and <code>place()</code> PRs on the
+            raw and CRD-embedded workloads, and moving the 12 SeaweedFS identities that serve another namespace into
+            their tenants&#39; namespaces (decision 10, step 19). The edge check you deferred behind the cleanups is
+            unblocked. The fleet rules, graph checks, health-check derivation and glue absorption are deferred. The
+            <code>wait</code> default and derived Orphan are postponed, and C4 and the steps built on it wait on your
+            decision.
           </p>
         </div>
       </div>
@@ -1536,7 +1541,7 @@
                     </li>
                   </ul>
                   <p>
-                    Reloader runs with <code>autoReloadAll</code> (<code>reloader.py:42</code>): a workload opts out
+                    Reloader runs with <code>autoReloadAll</code> (<code>reloader.py:41</code>): a workload opts out
                     with <code>&#34;false&#34;</code>, and no object carries <code>&#34;true&#34;</code> (#8108, #8157;
                     <code>cluster/cdk8s/AGENTS.md:75-81</code>).
                   </p>
@@ -1559,7 +1564,7 @@
           <div class="sub">
             <div class="rich">
               <p>
-                Root causes 1 and 8: 198 shared helpers use 38 mechanism combinations, and each dedup PR proposed one
+                Root causes 1 and 8: 215 shared helpers use 39 mechanism combinations, and each dedup PR proposed one
                 more; #8113 and #8114 landed theirs. The rule landed in
                 <code>cluster/cdk8s/AGENTS.md:82-86</code> (#8167). Choosing among shapes the tree already has keeps the
                 learning cost and the migration diff small.
@@ -1579,7 +1584,7 @@
             <div class="rich">
               <p>
                 The owner&#39;s first cdk8s review steered a hand-rolled spec record toward generated bindings (#7109),
-                and PLAN.md F forbids a parallel deployment specification (<code>cluster/cdk8s/PLAN.md:124-125</code>).
+                and PLAN.md F forbids a parallel deployment specification (<code>cluster/cdk8s/PLAN.md:133-134</code>).
               </p>
             </div>
           </div>
@@ -1670,7 +1675,7 @@
             <div class="rich">
               <p>
                 The owner&#39;s layering rule (#5099), confirmed by the KEDA incident (#7952) and written down at
-                <code>cluster/cdk8s/AGENTS.md:345-355</code>.
+                <code>cluster/cdk8s/AGENTS.md:344-354</code>.
               </p>
             </div>
           </div>
@@ -1694,7 +1699,7 @@
               <p>
                 Readiness edges turn a fault that heals by retry into a gate that propagates, and the tiny units they
                 produced cost reconcile time and I/O, which is the owner&#39;s reason for the change (#7094). On devel
-                f84301e72c, 35 of 249 edges are not admission edges (62 if the 27 direct <code>kyverno</code> edges
+                b1475d0514, 35 of 249 edges are not admission edges (62 if the 27 direct <code>kyverno</code> edges
                 count as runtime, as decision 13 recommends), 94 of the 123 <code>wait: true</code> nodes are
                 unsuspended and gate nothing admission needs, and 59 of 165 measurable units render 3 objects or fewer.
               </p>
@@ -3058,11 +3063,11 @@
       <h2><span class="sec-no">03</span>Why it feels wrong</h2>
       <div class="stats">
         <div class="stat">
-          <span class="n">198</span
+          <span class="n">215</span
           ><span class="l">shared helpers in <code>cluster/cdk8s</code>, each classified by mechanism</span>
         </div>
         <div class="stat">
-          <span class="n">38</span><span class="l">distinct mechanism combinations among them</span>
+          <span class="n">39</span><span class="l">distinct mechanism combinations among them</span>
         </div>
         <div class="stat">
           <span class="n">12 / 191</span><span class="l">charts that register fleet rules today</span>
@@ -3096,15 +3101,15 @@
             </div>
             <div class="bar">
               <span class="k">construct class</span
-              ><span class="track"><span class="fill" style="width: 80%"></span></span><span class="v">40</span>
+              ><span class="track"><span class="fill" style="width: 100%"></span></span><span class="v">50</span>
             </div>
             <div class="bar">
-              <span class="k">constant</span><span class="track"><span class="fill" style="width: 70%"></span></span
-              ><span class="v">35</span>
+              <span class="k">constant</span><span class="track"><span class="fill" style="width: 74%"></span></span
+              ><span class="v">37</span>
             </div>
             <div class="bar">
               <span class="k">resource function</span
-              ><span class="track"><span class="fill" style="width: 58%"></span></span><span class="v">29</span>
+              ><span class="track"><span class="fill" style="width: 70%"></span></span><span class="v">35</span>
             </div>
             <div class="bar">
               <span class="k">composite function</span
@@ -3115,12 +3120,12 @@
               ><span class="track"><span class="fill" style="width: 36%"></span></span><span class="v">18</span>
             </div>
             <div class="bar">
-              <span class="k">other</span><span class="track"><span class="fill" style="width: 26%"></span></span
+              <span class="k">validation</span><span class="track"><span class="fill" style="width: 26%"></span></span
               ><span class="v">13</span>
             </div>
             <div class="bar">
-              <span class="k">validation</span><span class="track"><span class="fill" style="width: 22%"></span></span
-              ><span class="v">11</span>
+              <span class="k">other</span><span class="track"><span class="fill" style="width: 26%"></span></span
+              ><span class="v">13</span>
             </div>
             <div class="bar">
               <span class="k">JSON patch</span><span class="track"><span class="fill" style="width: 18%"></span></span
@@ -3157,7 +3162,7 @@
                 A helper counts once for each mechanism it uses, so a construct class that also patches and mutates
                 appears in three rows. The counts come from the inventory step, which classified every shared helper
                 from its source; each helper a later commit added, removed or re-shaped was re-classified, through
-                <code>f84301e72c</code>.
+                <code>b1475d0514</code>.
               </p>
             </div>
           </div>
@@ -3197,10 +3202,10 @@
         <li>
           <div class="rich">
             <p>
-              No target shape per job, so each helper author chose one. 198 shared helpers use 38 mechanism
+              No target shape per job, so each helper author chose one. 215 shared helpers use 39 mechanism
               combinations. <code>providers/</code> is uniform apart from seaweedfs: its <code>Identity</code> and
               <code>Bucket</code> are plain Constructs taking
-              <code>name=, namespace=</code> (<code>providers/seaweedfs/s3.py:59-73,89-108</code>), while the other 21
+              <code>name=, namespace=</code> (<code>providers/seaweedfs/s3.py:59-73,89-108</code>), while the other 30
               kind constructors take <code>metadata=</code>. The layer above it is not:
             </p>
             <ul>
@@ -3209,15 +3214,15 @@
                 <code>cnpg.cluster(scope, id, *, name=, namespace=)</code> (<code>cnpg.py:59-64</code>),
                 <code>gitops_terraform(scope, id, *, name=)</code> (<code>terraform.py:51-55</code>),
                 <code>https_route(scope, id, *, metadata=)</code> (<code>gateway.py:51-55</code>),
-                <code>helm_release(scope, name, namespace)</code> with a derived id (<code>helm.py:36-39,73</code>),
+                <code>helm_release(scope, name, namespace)</code> with a derived id (<code>helm.py:69-72,106</code>),
                 <code>valkey_instance(scope, *, name=, namespace=)</code> with <code>name</code> as the id
-                (<code>valkey.py:75-79,96</code>), and
+                (<code>valkey.py:70-74,91</code>), and
                 <code>flux_kustomization(chart, name, source)</code> (<code>flux.py:132-135</code>);
               </li>
               <li>
                 reading a Secret key into env has the shared <code>env_helpers</code> pair
                 (<code>env_helpers.py:8-17</code>, 50 calls) and 11 module-local copies, 10 raw and one fluent (for
-                example <code>haku_egress_proxy.py:57</code>, <code>ntfy.py:77</code>).
+                example <code>haku_egress_proxy.py:44</code>, <code>ntfy.py:77</code>).
               </li>
             </ul>
             <p>
@@ -3292,7 +3297,7 @@
               <li>constructor keywords;</li>
               <li><code>harden()</code>;</li>
               <li>
-                literal structs (<code>nix_cache/attic.py:263-276</code>, <code>agent_workspaces.py:91-113</code>).
+                literal structs (<code>nix_cache/attic.py:263-276</code>, <code>agent_workspaces.py:75-97</code>).
               </li>
             </ul>
             <p>
@@ -3393,7 +3398,7 @@
           <div class="rich">
             <p>
               The Flux graph was built for readiness, so it grew tiny units and <code>wait</code> everywhere; its edges
-              are mostly admission edges. On devel f84301e72c there are 171 Kustomizations and 249
+              are mostly admission edges. On devel b1475d0514 there are 171 Kustomizations and 249
               <code>dependsOn</code> edges:
             </p>
             <ul>
@@ -3542,7 +3547,7 @@
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
             >Settings contract at 7 sites; the ConfigMap key, mount directory and <code>CONFIG_FILE_ENV</code> path are
-            spelled separately; rollout is Reloader&#39;s <code>autoReloadAll</code> (<code>reloader.py:42</code>), with
+            spelled separately; rollout is Reloader&#39;s <code>autoReloadAll</code> (<code>reloader.py:41</code>), with
             no per-workload <code>&#34;true&#34;</code> annotation.</span
           >
         </div>
@@ -6109,8 +6114,8 @@ def service(household: str) -&gt; ServiceRef:  # household_chart() builds its Se
                   <li>The consumer re-declaring bearer names (<code>agentplane/staging.py:75-78</code>).</li>
                   <li>
                     <code>env_helpers.secret_env_var</code>/<code>secret_env_value</code> (#8113, 11 modules on devel)
-                    and the 7 local <code>_secret_env</code> variants left beside them (<code>forgejo/app.py:119</code>,
-                    <code>haku_egress_proxy.py:57</code>, <code>ntfy.py:77</code>, ...).
+                    and the 7 local <code>_secret_env</code> variants left beside them (<code>forgejo/app.py:118</code>,
+                    <code>haku_egress_proxy.py:44</code>, <code>ntfy.py:77</code>, ...).
                   </li>
                   <li>
                     Hand-typed probe URLs (<code>cluster/k8s/gatus/config.yaml:194-206</code>) and household literals in
@@ -6128,7 +6133,7 @@ def service(household: str) -&gt; ServiceRef:  # household_chart() builds its Se
                   This is the root-cause fix for re-spelled strings, and &#39;identity-only&#39; is the guard that keeps
                   a reference from growing into the spec record PLAN.md F forbids. <code>target_port</code> exists
                   because Cilium egress must name the Pods&#39; port
-                  (<code>cluster/docs/cilium_network_policy.md</code>, <code>gatus/app.py:149-151</code>) while 5 routes
+                  (<code>cluster/docs/cilium_network_policy.md</code>, <code>gatus/app.py:143-145</code>) while 5 routes
                   target port 80 on Pods that listen elsewhere. Checked in a scratch environment: references are
                   hashable; <code>SecretKey</code> renders the same secretKeyRef through <code>k8s.EnvVar</code> and
                   cdk8s-plus <code>EnvValue</code>; <code>Port</code> renders a matching ContainerPort and ServicePort;
@@ -6356,7 +6361,7 @@ def place(workload: Construct, placement: Placement, *, tolerate_control_plane: 
                 <ul>
                   <li>
                     The literal hardening structs on raw and CRD pods (<code>attic.py:103-110, 263-276</code>;
-                    <code>agent_workspaces.py:91-113</code>).
+                    <code>agent_workspaces.py:75-97</code>).
                   </li>
                   <li>
                     Placement stated in raw pod specs: <code>node_selector=HIL_OVH_NODE_SELECTOR</code> in 9 of them,
@@ -6804,7 +6809,7 @@ flux_chart.node.add_validation(AdmissionGraph(flux_chart, directories))</code></
                     The writers the nodes held, and <code>kustomization.yaml</code> resources listed by hand in the
                     directories <code>write_directory</code> writes: landed in #8192 and the conversion PRs. The 18
                     <code>.k8s.yaml</code> literals are in the directories a module&#39;s own
-                    <code>write_manifests</code> still writes (<code>forgejo/app.py:454</code>,
+                    <code>write_manifests</code> still writes (<code>forgejo/app.py:445</code>,
                     <code>home_assistant/app.py:692</code>, ...).
                   </li>
                   <li>
@@ -7072,7 +7077,7 @@ def copy(scope: Construct, id: str, *, credential: Credential, target: SecretRef
               </li>
             </ul>
             <p>
-              Reloader runs with <code>autoReloadAll</code> (<code>reloader.py:42</code>): a workload opts out with
+              Reloader runs with <code>autoReloadAll</code> (<code>reloader.py:41</code>): a workload opts out with
               <code>&#34;false&#34;</code>, and no object carries <code>&#34;true&#34;</code> (#8108, #8157;
               <code>cluster/cdk8s/AGENTS.md:75-81</code>).
             </p>
@@ -10514,7 +10519,7 @@ CONFIG = {
                 Merge it after one revision: rebase past #7441, which already removed the three-layer law it replaces;
                 point rule 2&#39;s table at <code>flux.ORDERING_EXCEPTIONS</code>, checked at synth; note that derived
                 Orphan covers the delete-or-rename case rule 3b keeps a narrow unit for; and refresh its numbers from
-                devel f84301e72c. Folding only rules 1, 2 and 4 into AGENTS.md would drop rule 3&#39;s unit boundaries
+                devel b1475d0514. Folding only rules 1, 2 and 4 into AGENTS.md would drop rule 3&#39;s unit boundaries
                 and rule 6&#39;s shared-artifact ordering, which the folds and exceptions rely on.
               </p>
             </div>
@@ -10904,7 +10909,7 @@ CONFIG = {
                     already removed the three-layer law it replaces; point rule 2&#39;s
                     <code>_ORDERING_EXCEPTIONS</code> at <code>flux.ORDERING_EXCEPTIONS</code>, checked at synth; note
                     that derived Orphan covers the rename case rule 3b&#39;s narrow unit exists for; and refresh its
-                    2026-09-16 numbers (713 edges, 278 units; 249 and 171 on devel f84301e72c).
+                    2026-09-16 numbers (713 edges, 278 units; 249 and 171 on devel b1475d0514).
                   </p>
                 </div>
               </td>
@@ -11143,8 +11148,15 @@ CONFIG = {
                 credential sources (#8188), <code>seaweedfs-cluster</code> (#8187), the ordering-only edges (#8190),
                 service readiness (#8191: 62 removed, 16 retargets added, 5 kept as registered exceptions) and the two
                 CRD edges that were missing (#8194). The graph is down from 426 edges to 249 (the folds in step 6 took 9
-                more). Open: the namespace units (#8185: 27, green), after which 222 remain. Left for later: the two
-                user-provisioner Job edges, with the Jobs, and the direct <code>kyverno</code> edges (decision 13).
+                more). Namespace units, 27 edges: #8309 landed the 5 you had already cleared
+                (<code>alloy-otlp-bearer</code>, <code>ollama</code>, <code>agentplane-staging</code>,
+                <code>agentplane-testing</code>); #8316 (<code>external-creds</code>) and #8185 (17, stacked on #8316)
+                are open. The four Terraform units that write a Forgejo user&#39;s Secret into their consumer&#39;s
+                namespace (<code>forgejo-claude</code>, <code>haku-state</code>, <code>budget-ledger</code>,
+                <code>cpap-data</code>) keep their edges until those modules write into <code>forgejo</code> and each
+                consumer reads its Secret through ESO, your call; that change removes the last four. Then 222 remain.
+                Left for later: the two user-provisioner Job edges, with the Jobs, and the direct
+                <code>kyverno</code> edges (decision 13).
               </p>
             </div>
           </div>
@@ -11461,12 +11473,17 @@ CONFIG = {
                 (cilium <code>NetworkPolicy</code> against <code>CiliumNetworkPolicy</code>, the
                 <code>flux_</code> prefix in <code>flux_kustomization.py</code>). Not your call: a kind built raw at
                 more than one site gets a provider class (C1), one PR per kind. The audit on devel 9904055a45 found 20
-                (<code>cluster/cdk8s/PLAN.md</code> § A, #8296); 14 remain on devel a26c265931, the most repeated
-                External Secrets <code>ClusterSecretStore</code> and Gateway API <code>HTTPRoute</code> (4 each), and
-                Terraform is in review (#8293). The rest of the step landed in #8168, #8173 to #8175, #8177 to #8180,
-                #8182, #8288 (<code>CiliumClusterwideNetworkPolicy</code>), #8289 (<code>SandboxWarmPool</code>), #8290
-                (<code>CleanupPolicy</code>), #8292 (<code>HelmRepository</code>), #8295 (<code>GitRepository</code>),
-                #8298 (<code>VirtualMachine</code>) and #8302 (the three Flux image-automation kinds).
+                (<code>cluster/cdk8s/PLAN.md</code> § A, #8296); 14 remain on devel b1475d0514, the most repeated
+                External Secrets <code>ClusterSecretStore</code> and Gateway API <code>HTTPRoute</code> (4 each), with
+                Terraform in review (#8293) and the other 13 in one PR (#8315). The rest of the step landed in #8168,
+                #8173 to #8175, #8177 to #8180, #8182, #8288 (<code>CiliumClusterwideNetworkPolicy</code>), #8289
+                (<code>SandboxWarmPool</code>), #8290 (<code>CleanupPolicy</code>), #8292 (<code>HelmRepository</code>),
+                #8295 (<code>GitRepository</code>), #8298 (<code>VirtualMachine</code>) and #8302 (the three Flux
+                image-automation kinds, with <code>image_automation.py</code>&#39;s
+                <code>ImageUpdatePush</code> composite and <code>newest_ci_tag_policy</code>). HelmRepository policy is
+                two functions (#8299): <code>helm.oci_helm_repository</code>, which renders no <code>interval</code>,
+                and <code>helm.https_helm_repository</code>; trust-manager&#39;s release reads cert-manager&#39;s
+                jetstack repository (#8301).
               </p>
             </div>
           </div>
@@ -12121,7 +12138,7 @@ CONFIG = {
                 <div class="rich">
                   <p>
                     It is what the graph grew into, and the owner is moving away from it because the tiny units cost
-                    reconcile time and I/O (#7094). On devel f84301e72c, 35 of 249 edges wait on runtime state that
+                    reconcile time and I/O (#7094). On devel b1475d0514, 35 of 249 edges wait on runtime state that
                     converges by retry (62 counting the 27 direct <code>kyverno</code> edges, decision 13), 94
                     unsuspended <code>wait: true</code> nodes gate nothing admission needs, and 59 of 165 measurable
                     units render 3 objects or fewer.
@@ -12228,7 +12245,7 @@ CONFIG = {
               re-cut.
             </li>
             <li>
-              Sweep, on devel f84301e72c: the counts, the file:line cites and the open PRs&#39; states outside the
+              Sweep, on devel b1475d0514: the counts, the file:line cites and the open PRs&#39; states outside the
               examples were re-measured.
             </li>
           </ul>
@@ -12419,7 +12436,7 @@ CONFIG = {
     },
     {
       "title": "N12 \u00b7 Config via Settings, ConfigMap rollout",
-      "today": "Settings contract at 7 sites; the ConfigMap key, mount directory and `CONFIG_FILE_ENV` path are spelled separately; rollout is Reloader's `autoReloadAll` (`reloader.py:42`), with no per-workload `\"true\"` annotation.",
+      "today": "Settings contract at 7 sites; the ConfigMap key, mount directory and `CONFIG_FILE_ENV` path are spelled separately; rollout is Reloader's `autoReloadAll` (`reloader.py:41`), with no per-workload `\"true\"` annotation.",
       "note": "`settings_file` already renders from the binary's Settings (7 sites), and `SettingsFile` keeps the data key, mount directory and `CONFIG_FILE_ENV` path in agreement (checked in a scratch environment). Secrets ride Settings env names as `SecretKey` projections (#7426), and rollout is Reloader's `autoReloadAll` with no per-workload annotation (landed in #8157 and #8108).",
       "conventions": "C9, C3"
     },
