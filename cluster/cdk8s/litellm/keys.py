@@ -39,9 +39,7 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/keys-tf"
 # intentionally uses only GPT-6 from this roster.
 OAI_LANE_MODELS = [codex_responses_name(model) for model in CLIPROXY_MODELS]
 # Agentplane staging's default Codex harness and server-held key expose GPT-6 only.
-AGENTPLANE_STAGING_OAI_MODELS = [
-    codex_responses_name(model) for model in CLIPROXY_MODELS if model.startswith("gpt-6-")
-]
+AGENTPLANE_STAGING_OAI_MODELS = [codex_responses_name(model) for model in CLIPROXY_MODELS if model.startswith("gpt-6-")]
 # The same models on the Anthropic Messages surface -- Claude Code clients
 # (laptop codex-claude, agent-box, codex-pod).
 CODEX_CLIENT_MODELS = [codex_messages_name(model) for model in CLIPROXY_MODELS]
