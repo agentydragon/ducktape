@@ -130,8 +130,8 @@ py_library(
         ":s3",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:namespaces",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
     ],
 )
 

@@ -15,12 +15,12 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/app"
 NAMESPACE = "plaid-mcp"
@@ -28,6 +28,7 @@ _NAME = "plaid-mcp"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _CONFIG_MAP = "plaid-mcp-config"
 _SECRET_MANAGER = "plaid-mcp-secret-manager"
+_CREDENTIALS = SecretRef(namespace=NAMESPACE, name="plaid-client-credentials")
 _CREDENTIALS_FILE = "plaid-client-credentials.sops.yaml"
 _HTTP_PORT = 8080
 _CONFIG = {
@@ -49,9 +50,9 @@ def _env() -> list[k8s.EnvVar]:
             for key in _CONFIG
         ),
         # CNPG generates this Secret for the plaid-mcp-db Cluster (db.py).
-        secret_env_var("DATABASE_URL", "plaid-mcp-db-app", "uri"),
-        secret_env_var("PLAID_MCP_CLIENT_ID", "plaid-client-credentials", "client_id"),
-        secret_env_var("PLAID_MCP_CLIENT_SECRET", "plaid-client-credentials", "client_secret"),
+        SecretRef(namespace=NAMESPACE, name="plaid-mcp-db-app").key("uri").env_var("DATABASE_URL"),
+        _CREDENTIALS.key("client_id").env_var("PLAID_MCP_CLIENT_ID"),
+        _CREDENTIALS.key("client_secret").env_var("PLAID_MCP_CLIENT_SECRET"),
     ]
 
 

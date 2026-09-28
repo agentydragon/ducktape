@@ -21,8 +21,10 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
     name: agents-infra
   name: agents-infra
+spec: {}
 ---
 apiVersion: v1
 kind: ServiceAccount

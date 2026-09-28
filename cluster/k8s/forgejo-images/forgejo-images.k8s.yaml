@@ -3,7 +3,10 @@ kind: Namespace
 metadata:
   annotations:
     description: Holds the shared credential for the ducktape-ci Forgejo registry tenant (CI-pushed in-cluster images) and its provisioning Terraform.
+  labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
   name: forgejo-images
+spec: {}
 ---
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
 kind: Terraform

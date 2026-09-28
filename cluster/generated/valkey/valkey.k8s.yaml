@@ -3,7 +3,10 @@ kind: Namespace
 metadata:
   annotations:
     description: Redis operator for managing Valkey instances
+  labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
   name: valkey-system
+spec: {}
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository

@@ -104,21 +104,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: hubble-ui
-  namespace: ducktape-flux
-spec:
-  interval: 10m
-  path: ./cluster/generated/hubble-ui
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: hubble-ui
-    namespace: ducktape-flux
-  timeout: 5m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: kube-api-proxy
   namespace: ducktape-flux
 spec:
@@ -1562,26 +1547,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: forgejo-agentydragon
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/forgejo/agentydragon
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: forgejo-agentydragon
-    namespace: ducktape-flux
-  timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: infra-drift
   namespace: ducktape-flux
 spec:
@@ -1807,6 +1772,26 @@ spec:
   sourceRef:
     kind: ExternalArtifact
     name: github-tf
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: forgejo-gitops
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: tofu-controller
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/forgejo/gitops
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: forgejo-gitops
     namespace: ducktape-flux
   timeout: 10m
   wait: true
@@ -2527,66 +2512,6 @@ spec:
     name: haku-cloud-agent
     namespace: ducktape-flux
   suspend: true
-  timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: forgejo-agentydragon-repos
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/forgejo/agentydragon-repos
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: forgejo-agentydragon-repos
-    namespace: ducktape-flux
-  timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: budget-ledger
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/forgejo/budget-ledger
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: budget-ledger
-    namespace: ducktape-flux
-  timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: forgejo-claude
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/forgejo/claude
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: forgejo-claude
-    namespace: ducktape-flux
   timeout: 10m
   wait: true
 ---
@@ -3330,26 +3255,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: haku-state
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/forgejo/haku-state
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-state
-    namespace: ducktape-flux
-  timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: litellm
   namespace: ducktape-flux
 spec:
@@ -3402,26 +3307,6 @@ spec:
     name: aiquota
     namespace: ducktape-flux
   timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: cpap-data
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/forgejo/cpap-data
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: cpap-data
-    namespace: ducktape-flux
-  timeout: 10m
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
