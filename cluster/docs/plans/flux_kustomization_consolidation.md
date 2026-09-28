@@ -64,7 +64,8 @@ finish.
 That is rule 6's first shape — **no ordering between the migration Job and the
 Deployment** — and right only if `aiquota` tolerates starting against the
 un-migrated schema; rule 6's third shape is the fallback if it does not. Same
-trap as <../../k8s/paperless/TODO.md> § "Make bootstrap ordering explicit".
+trap as <../../k8s/parked/paperless/TODO.md> § "Re-establish deployment and
+bootstrap ordering on revival".
 
 ## 5. Validation for the policy
 
