@@ -4,6 +4,7 @@ metadata:
   labels:
     goldilocks.fairwinds.com/enabled: "false"
   name: kubectl-passthrough-mcp
+spec: {}
 ---
 apiVersion: v1
 kind: ServiceAccount
