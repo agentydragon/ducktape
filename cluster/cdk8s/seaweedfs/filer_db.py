@@ -21,6 +21,7 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecResourcesLimits,
     ClusterSpecResourcesRequests,
 )
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -88,4 +89,11 @@ def chart(app: App) -> Chart:
 
 def seaweedfs_filer_db(chart: Chart, directory: RenderedDirectory, cnpg: Kustomization) -> Kustomization:
     name = "seaweedfs-filer-db"
-    return flux_kustomization(chart, name, directory, timeout="5m", depends_on=flux_kustomization_depends_on_many(cnpg))
+    return flux_kustomization(
+        chart,
+        name,
+        directory,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(cnpg),
+    )

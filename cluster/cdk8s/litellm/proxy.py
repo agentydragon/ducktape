@@ -68,11 +68,14 @@ from cluster.cdk8s.litellm.config import ConfigMapSpec, proxy_configs
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 APP_DIR = f"{HAND_WRITTEN_ROOT}/litellm/app"
 _CONTAINER_PORT = 4000
+# The proxy's admin key: its env and its ServiceMonitor's scrape bearer.
+_MASTER_KEY = SecretRef(namespace="litellm", name="litellm-master-key").key("api-key")
 _CONFIG_DIR = "/etc/litellm"
 
 
@@ -168,7 +171,7 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
             image_name="git.allegedly.works/ducktape-ci/tana-litellm-proxy",
             replicas=2,
             env=_langfuse_env(
-                _SecretEnv("LITELLM_MASTER_KEY", "litellm-master-key", "api-key"),
+                _SecretEnv("LITELLM_MASTER_KEY", _MASTER_KEY.secret.name, _MASTER_KEY.key),
                 _SecretEnv("DATABASE_URL", "litellm-db-app", "uri"),
                 _SecretEnv("LITELLM_SALT_KEY", "litellm-salt-key", "key"),
                 _SecretEnv("ANTHROPIC_API_KEY", "litellm-anthropic-key", "api-key"),
@@ -402,7 +405,7 @@ class LiteLLMServiceMonitor(Construct):
             selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": "litellm"}),
             endpoints=[
                 Endpoint.bearer_token_secret(
-                    port="http", secret_name="litellm-master-key", key="api-key", scrape_timeout="10s"
+                    port="http", secret_name=_MASTER_KEY.secret.name, key=_MASTER_KEY.key, scrape_timeout="10s"
                 )
             ],
         )

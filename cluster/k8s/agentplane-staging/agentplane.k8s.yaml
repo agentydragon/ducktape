@@ -48,187 +48,6 @@ spec:
         memory: 8Gi
       type: Pod
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: agentplane-app-config
-  namespace: agentplane-staging
-data:
-  config.yaml: |
-    models:
-      models:
-        - model: anthropic-max20/ant-messages/claude-opus-5
-          display_name: Opus 5
-        - model: anthropic-max20/ant-messages/claude-sonnet-5
-          display_name: Sonnet 5
-        - model: anthropic-max20/ant-messages/claude-fable-5
-          display_name: Fable 5
-        - model: anthropic-max20/ant-messages/claude-haiku-4-5-20251001
-          display_name: Haiku 4.5
-        - model: antigravity/ant-messages/claude-opus-4-6-thinking
-          display_name: Claude Opus 4.6 (Thinking)
-        - model: antigravity/ant-messages/claude-sonnet-4-6
-          display_name: Claude Sonnet 4.6 (Thinking)
-        - model: antigravity/ant-messages/gemini-3.6-flash-high
-          display_name: Gemini 3.6 Flash
-        - model: antigravity/ant-messages/gemini-3.7-flash-high
-          display_name: Gemini 3.7 Flash
-        - model: antigravity/ant-messages/gemini-3.8-flash-high
-          display_name: Gemini 3.8 Flash
-        - model: antigravity/ant-messages/gemini-3-flash
-          display_name: Gemini 3 Flash
-        - model: antigravity/ant-messages/gemini-3.1-flash-image
-          display_name: Gemini 3.1 Flash Image
-        - model: antigravity/ant-messages/gemini-pro-agent
-          display_name: Gemini 3.1 Pro (High)
-        - model: antigravity/ant-messages/gemini-3.1-pro-low
-          display_name: Gemini 3.1 Pro (Low)
-        - model: antigravity/ant-messages/gpt-oss-120b-medium
-          display_name: GPT-OSS 120B (Medium)
-        - model: antigravity/ant-messages/gemini-3.1-flash-lite
-          display_name: Gemini 3.1 Flash Lite
-        - model: antigravity/ant-messages/gemini-3.5-flash-lite
-          display_name: Gemini 3.5 Flash Lite
-        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-          display_name: Qwen3.8 Flash Next IQ4_XS (128K)
-        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          display_name: Qwen3.8 Flash Next IQ4_XS (256K)
-        - model: ollama/oai-chat/gpt-oss-20b-128k
-          display_name: GPT-OSS 20B (128K)
-        - model: ollama/oai-chat/gpt-oss-20b-256k
-          display_name: GPT-OSS 20B (256K)
-        - model: ollama/oai-chat/gpt-oss-20b-512k
-          display_name: GPT-OSS 20B (512K)
-        - model: ollama/oai-chat/gpt-oss-20b-1m
-          display_name: GPT-OSS 20B (1M)
-        - model: ollama/oai-chat/gpt-oss-120b-128k
-          display_name: GPT-OSS 120B (128K)
-        - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
-          display_name: Gemma 4 31B (128K)
-        - model: chatgpt/oai-responses/gpt-6-astra
-          display_name: GPT-6 Astra
-        - model: chatgpt/oai-responses/gpt-6-luna
-          display_name: GPT-6 Luna
-        - model: chatgpt/oai-responses/gpt-6-sol
-          display_name: GPT-6 Sol
-      harnesses:
-        HARNESS_CLAUDE:
-          - anthropic-max20/ant-messages/claude-opus-5
-          - anthropic-max20/ant-messages/claude-sonnet-5
-          - anthropic-max20/ant-messages/claude-fable-5
-          - anthropic-max20/ant-messages/claude-haiku-4-5-20251001
-          - antigravity/ant-messages/claude-opus-4-6-thinking
-          - antigravity/ant-messages/claude-sonnet-4-6
-          - antigravity/ant-messages/gemini-3.6-flash-high
-          - antigravity/ant-messages/gemini-3.7-flash-high
-          - antigravity/ant-messages/gemini-3.8-flash-high
-          - antigravity/ant-messages/gemini-3-flash
-          - antigravity/ant-messages/gemini-3.1-flash-image
-          - antigravity/ant-messages/gemini-pro-agent
-          - antigravity/ant-messages/gemini-3.1-pro-low
-          - antigravity/ant-messages/gpt-oss-120b-medium
-          - antigravity/ant-messages/gemini-3.1-flash-lite
-          - antigravity/ant-messages/gemini-3.5-flash-lite
-          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/oai-chat/gpt-oss-20b-256k
-          - ollama/oai-chat/gpt-oss-20b-512k
-          - ollama/oai-chat/gpt-oss-20b-1m
-          - ollama/oai-chat/gpt-oss-120b-128k
-          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
-        HARNESS_CODEX:
-          - chatgpt/oai-responses/gpt-6-astra
-          - chatgpt/oai-responses/gpt-6-luna
-          - chatgpt/oai-responses/gpt-6-sol
-          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/oai-chat/gpt-oss-20b-256k
-          - ollama/oai-chat/gpt-oss-20b-512k
-          - ollama/oai-chat/gpt-oss-20b-1m
-          - ollama/oai-chat/gpt-oss-120b-128k
-          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
-    agent_egress_api_url: http://agentplane-egress.agentplane-staging.svc.cluster.local
-    agent_actions_service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
-    thread_presets:
-      public-coder-codex:
-        title: Public coder / Codex
-        harness: HARNESS_CODEX
-        model: chatgpt/oai-responses/gpt-6-luna
-        cwd: /state/workspaces/{session_id}
-        reasoning_effort: medium
-        instructions: Work as a public-repository coding agent. Keep private cluster data out of the workspace and outputs.
-      haku-claude:
-        title: Haku
-        harness: HARNESS_CLAUDE
-        model: anthropic-max20/ant-messages/claude-sonnet-5
-        cwd: /state/workspaces/{session_id}
-        reasoning_effort: medium
-        instructions: "You are Haku, the operator's tireless background executive assistant. Your haku-state checkout -- your memory, your method, and your only write surface -- is at haku-state, with git auth already in place. It also holds who you are: read AGENTS.md, SOUL.md and MEMORY.md at its root, then your run procedure at memory/procedures/run.md. Read those, then execute the run procedure end to end. Commit and push haku-state as you go."
-    sandbox_presets:
-      public-coder:
-        title: Public coder
-        template: agentplane-runner
-        policies:
-          - basic
-          - github-agentydragon-agent
-          - github-clone
-          - github-actions-logs
-        action_policy_sets:
-          - public-github-reads
-          - public-ducktape-reads
-          - public-ducktape-fork-reads
-          - public-gaffer-private-reads
-        thread_preset: public-coder-codex
-        bootstrap: |
-          marker=/state/workspaces/.agentplane-public-coder-ready
-          mkdir -p /state/workspaces
-          if [ ! -f "$marker" ]; then
-            printf '%s\n' 'public-coder workspace initialized' > "$marker"
-          fi
-      haku:
-        title: Haku
-        template: agentplane-runner
-        policies:
-          - basic
-          - kubernetes
-          - forgejo-haku
-          - packages
-          - google-readonly
-          - grocy-sf-readonly
-          - home-assistant-readonly
-          - activitywatch-read
-          - aiquota-read
-          - haku-mailbox
-          - coinbase
-          - github-clone
-          - github-agentydragon-agent
-          - github-actions-logs
-        thread_preset: haku-claude
-        bootstrap: |
-          marker=/state/workspaces/.agentplane-haku-ready
-          mkdir -p /state/workspaces
-          if [ ! -f "$marker" ]; then
-            git clone --depth 1 --branch main --single-branch http://haku:agentplane-credential-forgejo-haku@forgejo-http.forgejo.svc.cluster.local:3000/haku/haku-state.git /state/workspaces/haku-state
-            git clone --depth 1 --branch devel --single-branch https://github.com/agentydragon/ducktape.git /state/workspaces/ducktape
-            printf '%s\n' 'haku workspace initialized' > "$marker"
-          fi
-    default_policies:
-      - basic
-    egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081
-    action_federation:
-      mode: exchange
-      service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
-      token_endpoint: https://auth.allegedly.works/application/o/token/
-      login_jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging/jwks/
-      target:
-        issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
-        audience: agentplane-staging-actions
-        jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
-      scope: openid
-immutable: false
----
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
@@ -728,10 +547,9 @@ spec:
             readOnlyRootFilesystem: false
             runAsNonRoot: true
           volumeMounts:
-            - mountPath: /etc/agentplane-llm-ingress/settings.yaml
+            - mountPath: /etc/agentplane-llm-ingress
               name: configmap-agentplane-llm-ingress-settings
               readOnly: true
-              subPath: settings.yaml
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -1030,7 +848,7 @@ spec:
                   key: uri
                   name: postgres-egress
             - name: AGENTPLANE_EGRESS_CONFIG_FILE
-              value: /etc/agentplane-egress/settings.yaml
+              value: /etc/agentplane-egress/settings/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-egress:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
@@ -1083,10 +901,9 @@ spec:
               readOnly: true
             - mountPath: /var/lib/agentplane-egress
               name: confdir
-            - mountPath: /etc/agentplane-egress/settings.yaml
+            - mountPath: /etc/agentplane-egress/settings
               name: configmap-agentplane-egress-settings
               readOnly: true
-              subPath: settings.yaml
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -1688,6 +1505,187 @@ subjects:
     name: agentplane-app
     namespace: agentplane-staging
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-app-config
+  namespace: agentplane-staging
+data:
+  config.yaml: |
+    models:
+      models:
+        - model: anthropic-max20/ant-messages/claude-opus-5
+          display_name: Opus 5
+        - model: anthropic-max20/ant-messages/claude-sonnet-5
+          display_name: Sonnet 5
+        - model: anthropic-max20/ant-messages/claude-fable-5
+          display_name: Fable 5
+        - model: anthropic-max20/ant-messages/claude-haiku-4-5-20251001
+          display_name: Haiku 4.5
+        - model: antigravity/ant-messages/claude-opus-4-6-thinking
+          display_name: Claude Opus 4.6 (Thinking)
+        - model: antigravity/ant-messages/claude-sonnet-4-6
+          display_name: Claude Sonnet 4.6 (Thinking)
+        - model: antigravity/ant-messages/gemini-3.6-flash-high
+          display_name: Gemini 3.6 Flash
+        - model: antigravity/ant-messages/gemini-3.7-flash-high
+          display_name: Gemini 3.7 Flash
+        - model: antigravity/ant-messages/gemini-3.8-flash-high
+          display_name: Gemini 3.8 Flash
+        - model: antigravity/ant-messages/gemini-3-flash
+          display_name: Gemini 3 Flash
+        - model: antigravity/ant-messages/gemini-3.1-flash-image
+          display_name: Gemini 3.1 Flash Image
+        - model: antigravity/ant-messages/gemini-pro-agent
+          display_name: Gemini 3.1 Pro (High)
+        - model: antigravity/ant-messages/gemini-3.1-pro-low
+          display_name: Gemini 3.1 Pro (Low)
+        - model: antigravity/ant-messages/gpt-oss-120b-medium
+          display_name: GPT-OSS 120B (Medium)
+        - model: antigravity/ant-messages/gemini-3.1-flash-lite
+          display_name: Gemini 3.1 Flash Lite
+        - model: antigravity/ant-messages/gemini-3.5-flash-lite
+          display_name: Gemini 3.5 Flash Lite
+        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          display_name: Qwen3.8 Flash Next IQ4_XS (128K)
+        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          display_name: Qwen3.8 Flash Next IQ4_XS (256K)
+        - model: ollama/oai-chat/gpt-oss-20b-128k
+          display_name: GPT-OSS 20B (128K)
+        - model: ollama/oai-chat/gpt-oss-20b-256k
+          display_name: GPT-OSS 20B (256K)
+        - model: ollama/oai-chat/gpt-oss-20b-512k
+          display_name: GPT-OSS 20B (512K)
+        - model: ollama/oai-chat/gpt-oss-20b-1m
+          display_name: GPT-OSS 20B (1M)
+        - model: ollama/oai-chat/gpt-oss-120b-128k
+          display_name: GPT-OSS 120B (128K)
+        - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
+          display_name: Gemma 4 31B (128K)
+        - model: chatgpt/oai-responses/gpt-6-astra
+          display_name: GPT-6 Astra
+        - model: chatgpt/oai-responses/gpt-6-luna
+          display_name: GPT-6 Luna
+        - model: chatgpt/oai-responses/gpt-6-sol
+          display_name: GPT-6 Sol
+      harnesses:
+        HARNESS_CLAUDE:
+          - anthropic-max20/ant-messages/claude-opus-5
+          - anthropic-max20/ant-messages/claude-sonnet-5
+          - anthropic-max20/ant-messages/claude-fable-5
+          - anthropic-max20/ant-messages/claude-haiku-4-5-20251001
+          - antigravity/ant-messages/claude-opus-4-6-thinking
+          - antigravity/ant-messages/claude-sonnet-4-6
+          - antigravity/ant-messages/gemini-3.6-flash-high
+          - antigravity/ant-messages/gemini-3.7-flash-high
+          - antigravity/ant-messages/gemini-3.8-flash-high
+          - antigravity/ant-messages/gemini-3-flash
+          - antigravity/ant-messages/gemini-3.1-flash-image
+          - antigravity/ant-messages/gemini-pro-agent
+          - antigravity/ant-messages/gemini-3.1-pro-low
+          - antigravity/ant-messages/gpt-oss-120b-medium
+          - antigravity/ant-messages/gemini-3.1-flash-lite
+          - antigravity/ant-messages/gemini-3.5-flash-lite
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          - ollama/oai-chat/gpt-oss-20b-128k
+          - ollama/oai-chat/gpt-oss-20b-256k
+          - ollama/oai-chat/gpt-oss-20b-512k
+          - ollama/oai-chat/gpt-oss-20b-1m
+          - ollama/oai-chat/gpt-oss-120b-128k
+          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+        HARNESS_CODEX:
+          - chatgpt/oai-responses/gpt-6-astra
+          - chatgpt/oai-responses/gpt-6-luna
+          - chatgpt/oai-responses/gpt-6-sol
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          - ollama/oai-chat/gpt-oss-20b-128k
+          - ollama/oai-chat/gpt-oss-20b-256k
+          - ollama/oai-chat/gpt-oss-20b-512k
+          - ollama/oai-chat/gpt-oss-20b-1m
+          - ollama/oai-chat/gpt-oss-120b-128k
+          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+    agent_egress_api_url: http://agentplane-egress.agentplane-staging.svc.cluster.local
+    agent_actions_service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
+    thread_presets:
+      public-coder-codex:
+        title: Public coder / Codex
+        harness: HARNESS_CODEX
+        model: chatgpt/oai-responses/gpt-6-luna
+        cwd: /state/workspaces/{session_id}
+        reasoning_effort: medium
+        instructions: Work as a public-repository coding agent. Keep private cluster data out of the workspace and outputs.
+      haku-claude:
+        title: Haku
+        harness: HARNESS_CLAUDE
+        model: anthropic-max20/ant-messages/claude-sonnet-5
+        cwd: /state/workspaces/{session_id}
+        reasoning_effort: medium
+        instructions: "You are Haku, the operator's tireless background executive assistant. Your haku-state checkout -- your memory, your method, and your only write surface -- is at haku-state, with git auth already in place. It also holds who you are: read AGENTS.md, SOUL.md and MEMORY.md at its root, then your run procedure at memory/procedures/run.md. Read those, then execute the run procedure end to end. Commit and push haku-state as you go."
+    sandbox_presets:
+      public-coder:
+        title: Public coder
+        template: agentplane-runner
+        policies:
+          - basic
+          - github-agentydragon-agent
+          - github-clone
+          - github-actions-logs
+        action_policy_sets:
+          - public-github-reads
+          - public-ducktape-reads
+          - public-ducktape-fork-reads
+          - public-gaffer-private-reads
+        thread_preset: public-coder-codex
+        bootstrap: |
+          marker=/state/workspaces/.agentplane-public-coder-ready
+          mkdir -p /state/workspaces
+          if [ ! -f "$marker" ]; then
+            printf '%s\n' 'public-coder workspace initialized' > "$marker"
+          fi
+      haku:
+        title: Haku
+        template: agentplane-runner
+        policies:
+          - basic
+          - kubernetes
+          - forgejo-haku
+          - packages
+          - google-readonly
+          - grocy-sf-readonly
+          - home-assistant-readonly
+          - activitywatch-read
+          - aiquota-read
+          - haku-mailbox
+          - coinbase
+          - github-clone
+          - github-agentydragon-agent
+          - github-actions-logs
+        thread_preset: haku-claude
+        bootstrap: |
+          marker=/state/workspaces/.agentplane-haku-ready
+          mkdir -p /state/workspaces
+          if [ ! -f "$marker" ]; then
+            git clone --depth 1 --branch main --single-branch http://haku:agentplane-credential-forgejo-haku@forgejo-http.forgejo.svc.cluster.local:3000/haku/haku-state.git /state/workspaces/haku-state
+            git clone --depth 1 --branch devel --single-branch https://github.com/agentydragon/ducktape.git /state/workspaces/ducktape
+            printf '%s\n' 'haku workspace initialized' > "$marker"
+          fi
+    default_policies:
+      - basic
+    egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081
+    action_federation:
+      mode: exchange
+      service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
+      token_endpoint: https://auth.allegedly.works/application/o/token/
+      login_jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging/jwks/
+      target:
+        issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
+        audience: agentplane-staging-actions
+        jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
+      scope: openid
+immutable: false
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -1726,8 +1724,6 @@ spec:
             - --host=0.0.0.0
             - --port=8080
           env:
-            - name: AGENTPLANE_CONFIG_FILE
-              value: /etc/agentplane/config.yaml
             - name: AGENTPLANE_DB_USER
               valueFrom:
                 secretKeyRef:
@@ -1778,6 +1774,8 @@ spec:
                   name: agentplane-staging-session-secret
             - name: AGENTPLANE_TOKEN_SUBJECTS
               value: '["system:serviceaccount:agentplane-staging:agentplane-agent"]'
+            - name: AGENTPLANE_CONFIG_FILE
+              value: /etc/agentplane/config.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-app:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
@@ -1825,8 +1823,6 @@ spec:
         - name: forgejo-images-creds
       initContainers:
         - env:
-            - name: AGENTPLANE_CONFIG_FILE
-              value: /etc/agentplane/config.yaml
             - name: AGENTPLANE_DB_USER
               valueFrom:
                 secretKeyRef:
@@ -2632,8 +2628,6 @@ spec:
                   name: postgres-actions
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
               value: postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)
-            - name: AGENTPLANE_ACTIONS_CONFIG_FILE
-              value: /etc/agentplane-actions/settings.yaml
             - name: AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM
               valueFrom:
                 secretKeyRef:
@@ -2649,6 +2643,8 @@ spec:
                 secretKeyRef:
                   key: client_id
                   name: haku-console-github-mcp-client-credentials
+            - name: AGENTPLANE_ACTIONS_CONFIG_FILE
+              value: /etc/agentplane-actions/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-action-service:unset
           imagePullPolicy: Always
           livenessProbe:
@@ -2743,8 +2739,6 @@ spec:
                   name: postgres-actions
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
               value: postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)
-            - name: AGENTPLANE_ACTIONS_CONFIG_FILE
-              value: /etc/agentplane-actions/settings.yaml
             - name: AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM
               valueFrom:
                 secretKeyRef:

@@ -273,7 +273,7 @@ def generate_manifests(root: Path) -> None:
         root,
         app_namespace=public_coder_agent_config.NAMESPACE,
         app_labels=public_coder_agent_config.LABELS,
-        aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key_selector,
+        aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key,
     )
     public_coder_sshpiper.write_manifests(
         root, app_namespace=public_coder_agent_config.NAMESPACE, app_labels=public_coder_agent_config.LABELS
@@ -297,7 +297,6 @@ def generate_manifests(root: Path) -> None:
     forgejo_namespace.write_manifests(root)
     forgejo_db.write_manifests(root)
     home_assistant_namespace.write_manifests(root)
-    forgejo_gitops_modules.write_manifests(root)
     nix_cache_attic.write_manifests(root)
     vm_images_publisher_publisher.write_manifests(root)
     alloy.write_manifests(root)
@@ -705,10 +704,6 @@ def generate_manifests(root: Path) -> None:
         tofu_controller_kustomization,
         external_secrets_operator_kustomization,
     )
-    forgejo_agentydragon_artifact = artifact("forgejo-agentydragon", forgejo_gitops_modules.AGENTYDRAGON_DIR)
-    forgejo_gitops_modules.forgejo_agentydragon(
-        flux_chart, forgejo_agentydragon_artifact, tofu_controller_kustomization
-    )
     infra_drift_artifact = artifact("infra-drift", drift_watch.OUTPUT_DIR)
     drift_watch.infra_drift(
         flux_chart, write_directory(root, infra_drift_artifact, drift_watch.chart), tofu_controller_kustomization
@@ -780,6 +775,12 @@ def generate_manifests(root: Path) -> None:
             github_secrets_sync_gitops_module.chart,
             flux_webhook_token.chart,
         ),
+        tofu_controller_kustomization,
+    )
+    forgejo_gitops_artifact = artifact(forgejo_gitops_modules.NAME, forgejo_gitops_modules.OUTPUT_DIR)
+    forgejo_gitops_modules.forgejo_gitops(
+        flux_chart,
+        write_directory(root, forgejo_gitops_artifact, forgejo_gitops_modules.chart),
         tofu_controller_kustomization,
     )
     monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
@@ -974,16 +975,6 @@ def generate_manifests(root: Path) -> None:
     parked_flux_kustomizations.haku_cloud_agent(
         flux_chart, haku_cloud_agent_artifact, external_secrets_operator_kustomization, tofu_controller_kustomization
     )
-    forgejo_agentydragon_repos_artifact = artifact(
-        "forgejo-agentydragon-repos", forgejo_gitops_modules.AGENTYDRAGON_REPOS_DIR
-    )
-    forgejo_gitops_modules.forgejo_agentydragon_repos(
-        flux_chart, forgejo_agentydragon_repos_artifact, tofu_controller_kustomization
-    )
-    budget_ledger_artifact = artifact("budget-ledger", forgejo_gitops_modules.BUDGET_LEDGER_DIR)
-    forgejo_gitops_modules.budget_ledger(flux_chart, budget_ledger_artifact, tofu_controller_kustomization)
-    forgejo_claude_artifact = artifact("forgejo-claude", forgejo_gitops_modules.CLAUDE_DIR)
-    forgejo_gitops_modules.forgejo_claude(flux_chart, forgejo_claude_artifact, tofu_controller_kustomization)
     forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
     forgejo_images.forgejo_images(
         flux_chart,
@@ -1193,8 +1184,6 @@ def generate_manifests(root: Path) -> None:
     study_casino_flux_kustomizations.study_casino(
         flux_chart, study_casino_artifact, cnpg_kustomization, external_secrets_operator_kustomization
     )
-    haku_state_artifact = artifact("haku-state", forgejo_gitops_modules.HAKU_STATE_DIR)
-    forgejo_gitops_modules.haku_state(flux_chart, haku_state_artifact, tofu_controller_kustomization)
     litellm_artifact = artifact("litellm", litellm_namespace.OUTPUT_DIR)
     litellm_proxy.litellm(
         flux_chart,
@@ -1217,8 +1206,6 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         kyverno_kustomization,
     )
-    cpap_data_artifact = artifact("cpap-data", forgejo_gitops_modules.CPAP_DATA_DIR)
-    forgejo_gitops_modules.cpap_data(flux_chart, cpap_data_artifact, tofu_controller_kustomization)
     grocy_mcp_sf_artifact = artifact("grocy-mcp-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", grocy_mcp.BASE_DIR)
     grocy_flux_kustomizations.grocy_mcp_sf(
         flux_chart,
@@ -1405,7 +1392,6 @@ def generate_manifests(root: Path) -> None:
             tofu_state_db_artifact,
             valkey_artifact,
             kyverno_policies_artifact,
-            haku_state_artifact,
             agentplane_crds_artifact,
             monitoring_namespace_artifact,
             haku_namespace_artifact,
@@ -1468,13 +1454,9 @@ def generate_manifests(root: Path) -> None:
             flux_grafana_secrets_artifact,
             flux_image_automation_forgejo_artifact,
             flux_webhook_artifact,
-            forgejo_agentydragon_artifact,
-            forgejo_agentydragon_repos_artifact,
-            budget_ledger_artifact,
+            forgejo_gitops_artifact,
             budget_namespace_artifact,
             forgejo_cache_artifact,
-            forgejo_claude_artifact,
-            cpap_data_artifact,
             gatus_artifact,
             github_api_proxy_artifact,
             github_tf_artifact,

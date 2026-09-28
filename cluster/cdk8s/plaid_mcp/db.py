@@ -38,6 +38,8 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/db"
 _CLUSTER = "plaid-mcp-db"
 _DATABASE = "plaidmcp"
 _READONLY_ROLE = "plaid_ro"
+# CNPG generates the owner's credentials into `<cluster>-app`.
+_APP = SecretRef(namespace=NAMESPACE, name=f"{_CLUSTER}-app")
 READONLY = SecretRef(namespace=NAMESPACE, name="plaid-mcp-db-readonly")
 # The namespace holding a copy of the read-only credentials, for Haku's ad-hoc queries, and the
 # identity that copy is read with.
@@ -130,12 +132,6 @@ def _readonly_copy(chart: Chart) -> None:
     )
 
 
-def _app_secret_env(name: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=f"{_CLUSTER}-app", key=key))
-    )
-
-
 def _readonly_provisioner(chart: Chart) -> None:
     NetworkPolicy(
         chart,
@@ -185,8 +181,8 @@ def _readonly_provisioner(chart: Chart) -> None:
                             args=[f"set -x\nexec psql \\\n  --set=ON_ERROR_STOP=1 \\\n  -f /sql/{_SQL_FILE}\n"],
                             termination_message_policy="FallbackToLogsOnError",
                             env=[
-                                _app_secret_env("PGUSER", "username"),
-                                _app_secret_env("PGPASSWORD", "password"),
+                                _APP.key("username").env_var("PGUSER"),
+                                _APP.key("password").env_var("PGPASSWORD"),
                                 k8s.EnvVar(name="PGHOST", value=_PRIMARY_HOST),
                                 k8s.EnvVar(name="PGDATABASE", value=_DATABASE),
                             ],

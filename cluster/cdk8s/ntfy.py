@@ -22,8 +22,6 @@ from cdk8s_plus_34 import (
     LabelSelector,
     MemoryResources,
     PodSecurityContextProps,
-    Secret,
-    SecretValue,
     Service,
 )
 from constructs import Construct
@@ -45,6 +43,7 @@ from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "ntfy"
@@ -58,14 +57,10 @@ SERVICE = ServiceRef(
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
 )
 _DATABASE_CLUSTER = "ntfy-db"
-_DATABASE_APP_SECRET = f"{_DATABASE_CLUSTER}-app"
+_DATABASE_APP = SecretRef(namespace=NAMESPACE, name=f"{_DATABASE_CLUSTER}-app")
 _AUTH_SOURCE_SECRET = "ntfy-credentials"
-_AUTH_SECRET = "ntfy-auth"
+_AUTH = SecretRef(namespace=NAMESPACE, name="ntfy-auth")
 SECRET_STORE = "kubernetes-ntfy-secret-store"
-
-
-def _secret_env(scope: Construct, id: str, *, name: str, key: str) -> EnvValue:
-    return EnvValue.from_secret_value(SecretValue(secret=Secret.from_secret_name(scope, f"{id}-ref", name), key=key))
 
 
 def _secret_store(scope: Construct) -> None:
@@ -89,7 +84,7 @@ def _auth_external_secret(scope: Construct) -> None:
         scope,
         "auth-external-secret",
         metadata=ApiObjectMetadata(
-            name=_AUTH_SECRET,
+            name=_AUTH.name,
             namespace=NAMESPACE,
             annotations={
                 "description": "Derives ntfy bcrypt users and declarative tokens from SOPS values.",
@@ -225,9 +220,9 @@ class Ntfy(Construct):
                 "NTFY_AUTH_ACCESS": EnvValue.from_value("alertmanager:alerts:wo,android:alerts:ro"),
                 "NTFY_BEHIND_PROXY": EnvValue.from_value("true"),
                 "NTFY_ENABLE_METRICS": EnvValue.from_value("true"),
-                "NTFY_DATABASE_URL": _secret_env(self, "database-url", name=_DATABASE_APP_SECRET, key="uri"),
-                "NTFY_AUTH_USERS": _secret_env(self, "auth-users", name=_AUTH_SECRET, key="NTFY_AUTH_USERS"),
-                "NTFY_AUTH_TOKENS": _secret_env(self, "auth-tokens", name=_AUTH_SECRET, key="NTFY_AUTH_TOKENS"),
+                "NTFY_DATABASE_URL": _DATABASE_APP.key("uri").env_value(self, "database-url-ref"),
+                "NTFY_AUTH_USERS": _AUTH.key("NTFY_AUTH_USERS").env_value(self, "auth-users-ref"),
+                "NTFY_AUTH_TOKENS": _AUTH.key("NTFY_AUTH_TOKENS").env_value(self, "auth-tokens-ref"),
             },
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(20), limit=Cpu.millis(200)),

@@ -436,6 +436,36 @@ py_library(
 )
 
 py_library(
+    name = "settings_file",
+    srcs = ["settings_file.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":config_format",
+        "//util:settings_contract",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_settings_file",
+    srcs = ["test_settings_file.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":settings_file",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
     name = "probes",
     srcs = ["probes.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -576,6 +606,7 @@ py_library(
         ":namespaces",
         ":pod_policy",
         ":probes",
+        ":service_ref",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/home_assistant:app",
@@ -723,6 +754,7 @@ py_library(
         ":forgejo_images",
         ":generation",
         ":manifest_roots",
+        ":secret_ref",
         "//cluster/cdk8s/cert_manager:interception_ca",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -984,6 +1016,7 @@ py_library(
     deps = [
         ":ducktape_flux",
         ":flux",
+        ":secret_ref",
         "//cluster/cdk8s/providers/tofu_controller:terraform",
         "//cluster/cdk8s/providers/tofu_controller:tofu_controller_terraform",
         "@pypi//cdk8s",
@@ -1152,6 +1185,7 @@ py_library(
         ":node_scheduling",
         ":pod_policy",
         ":probes",
+        ":secret_ref",
         ":service_ref",
         "//cluster/cdk8s/external_secrets:kubernetes_store",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
