@@ -1140,10 +1140,15 @@ function VirtualizedHistory({
           previousScrollTop.current = element.scrollTop;
           return;
         }
-        if (!restoringScroll() && element.scrollHeight - element.scrollTop - element.clientHeight < 24) {
+        const movedUp = element.scrollTop < previousScrollTop.current;
+        const movedDown = element.scrollTop > previousScrollTop.current;
+        const nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 24;
+        if (movedUp) {
+          atBottom.current = false;
+        } else if (!restoringScroll() && nearBottom && (atBottom.current || movedDown)) {
           atBottom.current = true;
           cancelRestoration();
-        } else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
+        }
         previousScrollTop.current = element.scrollTop;
         if (restoringAnchor.current !== null) return;
         if (!captureNextScroll.current && !pointerScrolling.current && touchY.current === null) return;
