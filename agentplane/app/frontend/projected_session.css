@@ -42,6 +42,10 @@
   animation: agentplane-streaming-cursor-blink 1s steps(1, start) infinite;
 }
 
+.agentplane-streaming-cursor::before {
+  content: attr(data-character);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .agentplane-streaming-cursor {
     animation: none;

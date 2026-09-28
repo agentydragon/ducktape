@@ -79,7 +79,7 @@ function appendStreamingCursor(html: string): string {
   cursor.className = "agentplane-streaming-cursor";
   cursor.setAttribute("role", "img");
   cursor.setAttribute("aria-label", "Streaming");
-  cursor.textContent = STREAMING_CURSOR;
+  cursor.setAttribute("data-character", STREAMING_CURSOR);
 
   // Marked leaves whitespace between its top-level blocks. Skip whitespace-only nodes so the
   // cursor becomes part of the last rendered text block (paragraph, list item, code, etc.).

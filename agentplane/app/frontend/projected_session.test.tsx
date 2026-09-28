@@ -766,8 +766,9 @@ it("puts a live assistant-text cursor inline after its Markdown body", async () 
   const cursor = row.querySelector<HTMLElement>(".agentplane-streaming-cursor");
 
   expect(cursor?.getAttribute("aria-label")).toBe("Streaming");
+  expect(cursor?.getAttribute("data-character")).toBe(STREAMING_CURSOR);
   expect(cursor?.closest(".agentplane-markdown")).not.toBeNull();
-  expect(cursor?.parentElement?.textContent?.trimEnd()).toBe(`${body}${STREAMING_CURSOR}`);
+  expect(cursor?.parentElement?.textContent?.trimEnd()).toBe(body);
   expect(row.querySelector(".mantine-Badge-root")).toBeNull();
 });
 

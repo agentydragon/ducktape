@@ -50,8 +50,9 @@ describe("Markdown", () => {
 
     expect(cursor?.getAttribute("role")).toBe("img");
     expect(cursor?.getAttribute("aria-label")).toBe("Streaming");
+    expect(cursor?.getAttribute("data-character")).toBe(STREAMING_CURSOR);
     expect(paragraph?.lastElementChild).toBe(cursor);
-    expect(paragraph?.textContent).toBe(`The answer is still being written.${STREAMING_CURSOR}`);
+    expect(paragraph?.textContent).toBe("The answer is still being written.");
   });
 
   it("syntax-highlights a fenced code block in a registered language", async () => {
