@@ -313,7 +313,6 @@ class StateSpaceModel:
         sampled = SampledExogenousBundle(
             levels=frames,
             private_equity=private_equity,
-            model_id=self.label,
             provenance={
                 "model_version_id": self.model_version_id,
                 "scenario_generator_id": "state_space_numpy",
@@ -463,7 +462,7 @@ class StateSpaceModel:
             {"evidence_source_id": evidence_source_id, "conditioning": self.conditioning}
         )
         self.calibration_artifact_id = "calibration_artifact:" + stable_identity_digest(
-            {"model_id": self.label, "model_version_id": self.model_version_id, "evidence_set_id": self.evidence_set_id}
+            {"model_version_id": self.model_version_id, "evidence_set_id": self.evidence_set_id}
         )
 
 

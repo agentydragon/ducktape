@@ -1,4 +1,5 @@
 import subprocess
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -160,7 +161,16 @@ def test_source_ignore_reincludes_a_single_file(tmp_path: Path) -> None:
     files = dict.fromkeys(
         ("plugin/kubernetes/crd.yaml", "plugin/kubernetes/sample.yaml", "plugin/x.go", "a.yaml"), blob
     )
-    ignore = "/*\n!/plugin\n/plugin/*\n!/plugin/kubernetes\n/plugin/kubernetes/*\n!/plugin/kubernetes/crd.yaml\n"
+    ignore = textwrap.dedent(
+        """\
+        /*
+        !/plugin
+        /plugin/*
+        !/plugin/kubernetes
+        /plugin/kubernetes/*
+        !/plugin/kubernetes/crd.yaml
+        """
+    )
     assert set(flux_ignore(files, ignore, BlobStore(tmp_path))) == {"plugin/kubernetes/crd.yaml"}
 
 

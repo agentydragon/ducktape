@@ -316,7 +316,6 @@ class VecmModel:
         )
         return SampledExogenousBundle(
             levels=frames,
-            model_id=self.label,
             provenance={
                 "model_version_id": self.model_version_id,
                 "scenario_generator_id": "vecm_numpyro",
@@ -466,7 +465,7 @@ class VecmModel:
             }
         )
         self.calibration_artifact_id = "calibration_artifact:" + stable_identity_digest(
-            {"model_id": self.label, "model_version_id": self.model_version_id, "evidence_set_id": self.evidence_set_id}
+            {"model_version_id": self.model_version_id, "evidence_set_id": self.evidence_set_id}
         )
 
 

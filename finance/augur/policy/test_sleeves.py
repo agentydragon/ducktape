@@ -11,8 +11,7 @@ from finance.augur.sim.actions import Consume, DecisionActions, Sell, Transfer
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
-from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedSeries
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.results import Finished, RejectedAction
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
@@ -56,9 +55,7 @@ OWNER = AgentId("test-owner")
 FIRST, SECOND = AssetId("test-first"), AssetId("test-second")
 PORTFOLIO, OUTSIDE = AccountId("portfolio"), AccountId("outside")
 # Both securities stay at USD 0.03 for the whole horizon.
-PRICES = tuple(
-    PreparedSeries(series_id=f"security:{asset}", snapshots=3, values=(3, 3, 3)) for asset in (FIRST, SECOND)
-)
+PRICES = tuple(Series(series_id=f"security:{asset}", snapshots=3, values=(3, 3, 3)) for asset in (FIRST, SECOND))
 # Same economic holdings on different valid grids: tenths in the portfolio, whole units outside.
 POOLS = ((PORTFOLIO, FIRST, 10), (PORTFOLIO, SECOND, 10), (OUTSIDE, FIRST, 1))
 

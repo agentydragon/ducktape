@@ -17,7 +17,7 @@ an inferred history from its ending book. Missing/duplicate bond histories rejec
 Property and private-equity histories remain unsupported and raise explicitly.
 `ProductService` checks the deployment's portfolio once at startup in <holdings.py>
 (`opening_holdings`), then prepares each request once in <scenarios.py> (`build_situation`:
-the household's accounts, holdings, home and counterparties as prepared facts in the
+the household's accounts, holdings, home and counterparties as exact facts in the
 request's currency, and the household the funding policy describes), samples the series that situation reads, and
 composes one world per path (`compose`) with that household tracked on it — a
 <../policy/cash_band_household.py> household over the funding policy's sleeves, or, with

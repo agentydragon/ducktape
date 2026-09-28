@@ -26,7 +26,6 @@ py_library(
         "//finance/augur/sim:income",
         "//finance/augur/sim:market_path",
         "//finance/augur/sim:money",
-        "//finance/augur/sim:prepared",
         "//finance/augur/sim:results",
         "//finance/augur/sim:schedule",
         "//finance/augur/sim:session",

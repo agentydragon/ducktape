@@ -7,17 +7,13 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
-    GitRepository,
-    GitRepositorySpec,
-    GitRepositorySpecRef,
-    GitRepositorySpecSecretRef,
-)
+from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef, GitRepositorySpecSecretRef
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
 NAME = "haku-workloads"
 OUTPUT_DIR = f"{GENERATED_ROOT}/haku/workloads"
@@ -43,12 +39,10 @@ def chart(app: App) -> Chart:
                 "available — Flux never pushes)."
             },
         ),
-        spec=GitRepositorySpec(
-            interval="5m",
-            url="http://forgejo-http.forgejo:3000/haku/haku-state.git",
-            ref=GitRepositorySpecRef(branch="main"),
-            secret_ref=GitRepositorySpecSecretRef(name="haku-forgejo-git"),
-        ),
+        interval="5m",
+        url="http://forgejo-http.forgejo:3000/haku/haku-state.git",
+        ref=GitRepositorySpecRef(branch="main"),
+        secret_ref=GitRepositorySpecSecretRef(name="haku-forgejo-git"),
     )
     k8s.KubeServiceAccount(
         chart,

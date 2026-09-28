@@ -109,8 +109,6 @@ class ActionPolicyView(BaseModel):
         description="The unexpired, valid bindings whose subject is the live Sandbox, in name order."
     )
     auto_approve_if: list[EffectivePolicyView] = Field(description="In evaluation order; the first match approves.")
-    auto_deny_if: list[EffectivePolicyView]
-    auto_deny_unless: list[EffectivePolicyView]
 
 
 class ActionPolicyUnavailable(BaseModel):
@@ -207,8 +205,6 @@ def action_policy_view(view: SubjectActionPolicyView) -> ActionPolicyView:
         synced=view.synced,
         bindings=[_binding_view(binding) for binding in view.bindings],
         auto_approve_if=view.auto_approve_if,
-        auto_deny_if=view.auto_deny_if,
-        auto_deny_unless=view.auto_deny_unless,
     )
 
 

@@ -1,12 +1,8 @@
-"""Location records for the simulation engine.
-
-A `Location` is a place an agent can reside in. Locations carry the tax
-jurisdictions that apply at that address and property-tax / special-assessment
-rates used by the compiler to build per-property cash-flow arrays.
-"""
+"""Where a property is, and the property tax it owes there."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Annotated
 
@@ -19,8 +15,21 @@ from finance.augur.sim.ids import JurisdictionId
 type CurrencyAmount = Annotated[Decimal, BeforeValidator(validate_currency_amount)]
 
 
-class Location(BaseModel):
-    """A residence location with tax + housing-cost configuration.
+@dataclass(frozen=True, kw_only=True)
+class Location:
+    """A place a property can be bought in.
+
+    `annual_property_tax_rate_ppb` is the ad-valorem rate on the purchase price;
+    `annual_special_assessment` a flat annual special tax (e.g. a Mello-Roos assessment) per parcel.
+    """
+
+    location_id: LocationId
+    annual_property_tax_rate_ppb: int
+    annual_special_assessment: int
+
+
+class LocationConfig(BaseModel):
+    """A location as the files under `data/locations/` spell it.
 
     `jurisdiction_ids` are the taxing authorities that apply (used by tax
     profiles). `annual_property_tax_rate` is the ad-valorem base + voter-bond

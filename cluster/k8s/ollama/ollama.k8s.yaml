@@ -310,7 +310,9 @@ subjects:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: setup-gpt-oss-v6
+  annotations:
+    reloader.stakater.com/auto: "false"
+  name: setup-gpt-oss-v8
   namespace: ollama
 spec:
   template:
@@ -382,7 +384,6 @@ spec:
         - name: ssd-models
           persistentVolumeClaim:
             claimName: qwen38-iq4-ssd
-  ttlSecondsAfterFinished: 86400
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password

@@ -220,7 +220,6 @@ class HistoricalWindowsModel:
                 YieldCurve.CORPORATE_AAA: self.history.corporate_aaa_yield[windows],
                 YieldCurve.CORPORATE_BAA: self.history.corporate_baa_yield[windows],
             },
-            model_id=self.label,
             provenance={
                 "exogenous_provider_label": self.label,
                 "window_months": horizon_months,

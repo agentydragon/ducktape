@@ -61,7 +61,10 @@ class CodexAdapter(HarnessAdapter):
         self._turn_starts: dict[wire.RequestId, _TurnStart] = {}
 
     def command(self) -> list[str]:
-        return scenarios.command(str(self.launch.binary), endpoint=self.launch.base_url)
+        context_window = self.session.config.model_context_windows.get(self.session.record.model)
+        return scenarios.command(
+            str(self.launch.binary), endpoint=self.launch.base_url, model_context_window=context_window
+        )
 
     def environment(self) -> Mapping[str, str]:
         # Codex refuses to start without an existing CODEX_HOME.

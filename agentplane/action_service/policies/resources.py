@@ -83,14 +83,6 @@ class PolicySetSpec(Spec):
     auto_approve_if: list[Policy] = Field(
         default_factory=list, alias="autoApproveIf", description="A request matching any policy here is auto-approved."
     )
-    auto_deny_if: list[Policy] = Field(
-        default_factory=list, alias="autoDenyIf", description="A request matching any policy here is auto-denied."
-    )
-    auto_deny_unless: list[Policy] = Field(
-        default_factory=list,
-        alias="autoDenyUnless",
-        description="A request matching none of the policies here is auto-denied.",
-    )
 
 
 class ActionPolicySet(_Namespaced):

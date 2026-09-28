@@ -8,14 +8,13 @@ here names `cluster.local/local-path-provisioner`.
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "local-path-provisioner"
@@ -105,17 +104,11 @@ def chart(app: App) -> Chart:
             },
         ),
     )
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name=NAME, namespace="flux-system"),
-        spec=HelmRepositorySpec(interval="24h", url="https://charts.containeroo.ch"),
-    )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(chart, NAME, "flux-system", url="https://charts.containeroo.ch"),
         chart=NAME,
         version="0.0.38",
         interval="30m",

@@ -21,17 +21,11 @@ from finance.augur.sim.books import AccountRef, Book, JournalEntry
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.locations import Location
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedLocation,
-    PreparedSeries,
-    _MortgageFinancing,
-    _PropertyPurchase,
-    _PropertySale,
-    _PropertyTax,
-)
-from finance.augur.sim.property import Housing, Purchase, Sale
+from finance.augur.sim.property import Housing, MortgageFinancing, Purchase, Sale, ScheduledPurchase, ScheduledSale
+from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rejected
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.world import World
@@ -40,10 +34,8 @@ QUANTUM = Decimal("0.01")
 ALICE = AgentId("alice")
 BOB = AgentId("bob")
 CHECKING = AccountId("checking")
-SF = PreparedLocation(
+SF = Location(
     location_id=LocationId("sf"),
-    display_name="San Francisco",
-    jurisdiction_ids=(),
     annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.0118")),
     annual_special_assessment=0,
 )
@@ -63,7 +55,7 @@ def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, 
     return ref(agent_id), money(balance)
 
 
-def home_value(*paths: list[Decimal | int], horizon_months: int) -> tuple[PreparedSeries, ...]:
+def home_value(*paths: list[Decimal | int], horizon_months: int) -> tuple[Series, ...]:
     return compile_series(
         ExternalSeriesContext.from_level_blocks(
             [(SF_HOME, np.asarray([[float(level) for level in path] for path in paths], dtype=np.float64))],
@@ -78,8 +70,8 @@ def home_value(*paths: list[Decimal | int], horizon_months: int) -> tuple[Prepar
 
 def financing(
     *, borrower: str, principal: Decimal | int, annual_rate: Decimal | int, term_months: int
-) -> _MortgageFinancing:
-    return _MortgageFinancing(
+) -> MortgageFinancing:
+    return MortgageFinancing(
         liability_id=LiabilityId(f"{borrower}-loan"),
         lender_agent_id=AgentId("bank"),
         lender_account_id=CHECKING,
@@ -96,9 +88,9 @@ def home(
     purchase_price: Decimal | int,
     down_payment: Decimal | int,
     buyer_closing_cost: Decimal | int = 0,
-    mortgage: _MortgageFinancing | None,
-) -> _PropertyPurchase:
-    return _PropertyPurchase(
+    mortgage: MortgageFinancing | None,
+) -> ScheduledPurchase:
+    return ScheduledPurchase(
         month=month,
         cause_id=f"{buyer}-buys-home",
         property_id=PropertyId(f"{buyer}-home"),
@@ -120,8 +112,8 @@ def compose(
     *accounts: tuple[AccountRef, int],
     horizon_months: int,
     housing: Housing,
-    tax_policies: tuple[_PropertyTax, ...] = (),
-    series: tuple[PreparedSeries, ...] = (),
+    tax_policies: tuple[PropertyTaxPolicy, ...] = (),
+    series: tuple[Series, ...] = (),
     rollout_id: int = 0,
     rollout_count: int = 1,
 ) -> World:
@@ -246,7 +238,7 @@ def test_financed_purchase_and_first_installment_match_contract() -> None:
             )
         ),
         tax_policies=(
-            _PropertyTax(
+            PropertyTaxPolicy(
                 property_id=PropertyId(f"{ALICE}-home"),
                 owner_agent_id=ALICE,
                 from_account_id=CHECKING,
@@ -292,7 +284,7 @@ def test_sale_pays_off_ledger_principal_before_the_sale_months_installment(
             ),
         ),
         sales=(
-            _PropertySale(
+            ScheduledSale(
                 month=5,
                 property_id=PropertyId(f"{ALICE}-home"),
                 closing_cost_ppb=rate_to_ppb(Decimal(closing_cost_pct) / 100),
