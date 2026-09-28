@@ -310,7 +310,7 @@ subjects:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: setup-gpt-oss-v6
+  name: setup-gpt-oss-v7
   namespace: ollama
 spec:
   template:

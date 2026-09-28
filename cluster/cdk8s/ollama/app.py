@@ -327,7 +327,7 @@ def _setup_job(scope: Construct) -> None:
         scope,
         "setup-gpt-oss",
         # Versioned so changed model registration creates a fresh Job.
-        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v6", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v7", namespace=_NAMESPACE),
         spec=k8s.JobSpec(
             ttl_seconds_after_finished=86400,
             template=k8s.PodTemplateSpec(
