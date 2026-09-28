@@ -139,4 +139,4 @@ spec:
     port: 8000
   sourcePVC: grocy-config-ovh
   trigger:
-    schedule: 29 */6 * * *
+    schedule: 23 */6 * * *
