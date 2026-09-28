@@ -19,18 +19,16 @@ from dataclasses import dataclass, field, replace
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-import numpy as np
 import polars as pl
 import pytest
 import pytest_bazel
 from more_itertools import one
 
-from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId, RentKey
+from finance.augur.model.series import HomeValueKey, LocationId, RentKey
 from finance.augur.sim.actions import Action, ClaimId, DecisionActions, PayClaim
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.claims import ObligationType
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import rate_to_ppb, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import (
@@ -62,6 +60,7 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import MortgageInterestDeduction, SaltCap, SaltDeduction, TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, flat_parcel
 from finance.augur.sim.world import World
 
@@ -104,19 +103,6 @@ def indexed(base_amount: Decimal | int) -> IndexedAmount:
     return IndexedAmount(
         base_amount=USD.quanta(base_amount), series_id=RENT.wire_id, base_month_index=0, adjustment_period_months=12
     )
-
-
-def series(
-    levels: Mapping[LevelSeriesKey, Sequence[Sequence[float]]], *, horizon_months: int, rollout_count: int
-) -> tuple[Series, ...]:
-    """The authored level paths as integer series, one path per rollout and dense to the horizon."""
-
-    paths = ExternalSeriesContext.from_level_blocks(
-        [(key, np.asarray(block, dtype=np.float64)) for key, block in levels.items()],
-        rollout_count=rollout_count,
-        horizon_months=horizon_months,
-    )
-    return compile_series(paths, rollout_count=rollout_count, horizon_months=horizon_months, currency=USD)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -587,7 +573,7 @@ def rental(
     return Situation(
         horizon_months=horizon_months,
         rollout_count=1,
-        series=series({RENT: [levels]}, horizon_months=horizon_months, rollout_count=1),
+        series=level_series({RENT: [levels]}, horizon_months=horizon_months, rollout_count=1),
         accounts=tuple(accounts),
         recurring_transfers=tuple(recurring),
         scheduled_transfers=tuple(scheduled),
@@ -600,7 +586,7 @@ def taxed_rental(*, monthly_rent: Decimal | int, horizon_months: int = 12) -> Si
     return Situation(
         horizon_months=horizon_months,
         rollout_count=1,
-        series=series({RENT: [[1.0] * (horizon_months + 1)]}, horizon_months=horizon_months, rollout_count=1),
+        series=level_series({RENT: [[1.0] * (horizon_months + 1)]}, horizon_months=horizon_months, rollout_count=1),
         accounts=(account(OWNER, 100_000), account(TENANT), account(IRS)),
         tax_profiles=(taxpayer(),),
         recurring_transfers=(
@@ -656,7 +642,9 @@ def sale_situation(
     return Situation(
         horizon_months=horizon,
         rollout_count=1,
-        series=series({RENT: [[1.0] * (horizon + 1)], HOME_VALUE: [levels]}, horizon_months=horizon, rollout_count=1),
+        series=level_series(
+            {RENT: [[1.0] * (horizon + 1)], HOME_VALUE: [levels]}, horizon_months=horizon, rollout_count=1
+        ),
         accounts=tuple(accounts),
         tax_profiles=(taxpayer(),),
         recurring_transfers=tuple(recurring),
@@ -729,7 +717,7 @@ class TestRentalLifecycleCashflows:
         situation = Situation(
             horizon_months=12,
             rollout_count=1,
-            series=series({RENT: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
+            series=level_series({RENT: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
             accounts=(account(OWNER, 700_000), account(TENANT), account(AGENCY)),
             recurring_transfers=(
                 *(
@@ -896,7 +884,7 @@ class TestRentalIncomeTaxation:
         situation = Situation(
             horizon_months=12,
             rollout_count=1,
-            series=series({RENT: [[1.0] * 13], HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
+            series=level_series({RENT: [[1.0] * 13], HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
             accounts=(account(OWNER, 600_000), account(TENANT), account(SELLER), account(IRS)),
             tax_profiles=(taxpayer(),),
             recurring_transfers=(
@@ -930,7 +918,7 @@ class TestRentalIncomeTaxation:
         situation = Situation(
             horizon_months=24,
             rollout_count=1,
-            series=series({RENT: [[1.0] * 25], HOME_VALUE: [[1.0] * 25]}, horizon_months=24, rollout_count=1),
+            series=level_series({RENT: [[1.0] * 25], HOME_VALUE: [[1.0] * 25]}, horizon_months=24, rollout_count=1),
             accounts=(account(OWNER, 600_000), account(TENANT), account(SELLER), account(IRS)),
             tax_profiles=(taxpayer(),),
             recurring_transfers=(
@@ -983,7 +971,7 @@ class TestRentalIncomeTaxation:
         situation = Situation(
             horizon_months=12,
             rollout_count=1,
-            series=series({HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
+            series=level_series({HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
             accounts=(account(OWNER, 700_000), account(TENANT), account(SELLER), account(LENDER), account(IRS)),
             tax_profiles=(taxpayer(),),
             recurring_transfers=(
@@ -1024,7 +1012,7 @@ class TestRentalIncomeTaxation:
         situation = Situation(
             horizon_months=24,
             rollout_count=1,
-            series=series({RENT: [[1.0] * 25], HOME_VALUE: [[1.0] * 25]}, horizon_months=24, rollout_count=1),
+            series=level_series({RENT: [[1.0] * 25], HOME_VALUE: [[1.0] * 25]}, horizon_months=24, rollout_count=1),
             accounts=(account(OWNER, 600_000), account(TENANT), account(SELLER), account(IRS)),
             tax_profiles=(taxpayer(),),
             recurring_transfers=(
@@ -1061,7 +1049,7 @@ class TestRentalIncomeTaxation:
         situation = Situation(
             horizon_months=12,
             rollout_count=1,
-            series=series({HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
+            series=level_series({HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
             accounts=(account(OWNER, 700_000), account(TENANT), account(SELLER), account(IRS)),
             tax_profiles=(taxpayer(),),
             recurring_transfers=(
@@ -1103,7 +1091,7 @@ class TestRentalIncomeTaxation:
         situation = Situation(
             horizon_months=12,
             rollout_count=1,
-            series=series({HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
+            series=level_series({HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
             accounts=(account(OWNER, 700_000), account(EMPLOYER), account(SELLER), account(IRS)),
             tax_profiles=(taxpayer(),),
             recurring_transfers=(
@@ -1154,7 +1142,7 @@ class TestRentalIncomeTaxation:
     def test_property_sale_requires_home_value_series(self) -> None:
         situation = sale_situation(horizon=13, sale_month=12)
         with pytest.raises(ValueError, match='missing series "home_value:san_francisco"'):
-            run(replace(situation, series=series({RENT: [[1.0] * 14]}, horizon_months=13, rollout_count=1)))
+            run(replace(situation, series=level_series({RENT: [[1.0] * 14]}, horizon_months=13, rollout_count=1)))
 
     def test_property_sale_at_gain_routes_recapture_and_ltcg(self) -> None:
         """Sale at month 12 with home-value appreciation, on a 24-month horizon so the sale
@@ -1192,7 +1180,7 @@ class TestRentalIncomeTaxation:
         situation = Situation(
             horizon_months=horizon,
             rollout_count=2,
-            series=series(
+            series=level_series(
                 {RENT: [[1.0] * (horizon + 1)] * 2, HOME_VALUE: [home_values[0], home_values[1]]},
                 horizon_months=horizon,
                 rollout_count=2,
@@ -1286,7 +1274,7 @@ class TestRentalIncomeTaxation:
         situation = Situation(
             horizon_months=horizon,
             rollout_count=1,
-            series=series(
+            series=level_series(
                 {RENT: [[1.0] * (horizon + 1)], HOME_VALUE: [[1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)]},
                 horizon_months=horizon,
                 rollout_count=1,
@@ -1615,7 +1603,7 @@ class TestRentalIncomeTaxation:
         situation = Situation(
             horizon_months=horizon,
             rollout_count=1,
-            series=series(
+            series=level_series(
                 {RENT: [[1.0] * (horizon + 1)], HOME_VALUE: [[1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)]},
                 horizon_months=horizon,
                 rollout_count=1,
@@ -1664,7 +1652,7 @@ class TestRentalIncomeTaxation:
         situation = Situation(
             horizon_months=horizon,
             rollout_count=1,
-            series=series(
+            series=level_series(
                 {RENT: [[1.0] * (horizon + 1)], HOME_VALUE: [[1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)]},
                 horizon_months=horizon,
                 rollout_count=1,
@@ -1703,7 +1691,7 @@ class TestRentalIncomeTaxation:
         situation = Situation(
             horizon_months=horizon,
             rollout_count=1,
-            series=series(
+            series=level_series(
                 {RENT: [[1.0] * (horizon + 1)], HOME_VALUE: [[1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)]},
                 horizon_months=horizon,
                 rollout_count=1,
@@ -1731,7 +1719,7 @@ class TestRentalIncomeTaxation:
         situation = Situation(
             horizon_months=horizon,
             rollout_count=1,
-            series=series(
+            series=level_series(
                 {RENT: [[1.0] * (horizon + 1)], HOME_VALUE: [[1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)]},
                 horizon_months=horizon,
                 rollout_count=1,
@@ -1803,7 +1791,7 @@ class TestRentalIncomeTaxation:
         situation = Situation(
             horizon_months=24,
             rollout_count=1,
-            series=series({RENT: [[1.0] * 25], HOME_VALUE: [[1.0] * 25]}, horizon_months=24, rollout_count=1),
+            series=level_series({RENT: [[1.0] * 25], HOME_VALUE: [[1.0] * 25]}, horizon_months=24, rollout_count=1),
             accounts=(account(OWNER, 800_000), account(SELLER), account(IRS)),
             tax_profiles=(taxpayer(),),
             housing=Housing(
@@ -1869,7 +1857,7 @@ class TestRentalIncomeTaxation:
         situation = Situation(
             horizon_months=12,
             rollout_count=1,
-            series=series({HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
+            series=level_series({HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
             accounts=(account(OWNER, 600_000), account(TENANT), account(SELLER), account(IRS)),
             tax_profiles=(taxpayer(),),
             recurring_transfers=(
@@ -1907,7 +1895,7 @@ class TestRentalIncomeTaxation:
         situation = Situation(
             horizon_months=12,
             rollout_count=1,
-            series=series({RENT: [[1.0] * 13], HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
+            series=level_series({RENT: [[1.0] * 13], HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
             accounts=(account(OWNER, 700_000), account(TENANT), account(SELLER), account(LENDER), account(IRS)),
             tax_profiles=(taxpayer(),),
             recurring_transfers=(
@@ -1950,7 +1938,7 @@ class TestRentalIncomeTaxation:
         situation = Situation(
             horizon_months=12,
             rollout_count=1,
-            series=series({RENT: [[1.0] * 13], HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
+            series=level_series({RENT: [[1.0] * 13], HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
             accounts=(account(OWNER, 700_000), account(TENANT), account(SELLER), account(COUNTY), account(IRS)),
             tax_profiles=(taxpayer(),),
             recurring_transfers=(

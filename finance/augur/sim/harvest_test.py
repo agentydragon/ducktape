@@ -4,7 +4,6 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 
-import numpy as np
 import pytest
 import pytest_bazel
 from more_itertools import one
@@ -12,7 +11,6 @@ from more_itertools import one
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey, SecuritySymbol
 from finance.augur.sim.actions import Action, DecisionActions, Liquidate, LotSale, PayClaim, Sell, Withdraw
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId, PortfolioId
 from finance.augur.sim.income import ORDINARY_INCOME
@@ -25,6 +23,7 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
@@ -100,13 +99,9 @@ def situation(
     """The sleeve is 1000 units at $1 cost basis by default, so its market value is easy to reason about."""
     rollouts = len(next(iter(levels.values())))
     horizon = len(next(iter(levels.values()))[0]) - 1
-    paths = ExternalSeriesContext.from_level_blocks(
-        [(asset, np.asarray(path, dtype=np.float64)) for asset, path in levels.items()],
-        rollout_count=rollouts,
-        horizon_months=horizon,
-    )
     return Situation(
-        series=compile_series(paths, rollout_count=rollouts, horizon_months=horizon, currency=USD),
+        # A fresh dict takes `level_series`'s key union; the `SecurityKey` mapping would not (keys are invariant).
+        series=level_series(dict(levels.items()), rollout_count=rollouts, horizon_months=horizon),
         rollout_count=rollouts,
         horizon_months=horizon,
         sleeve=_lot(

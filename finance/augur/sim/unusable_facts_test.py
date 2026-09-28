@@ -18,12 +18,12 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.private_equity_series import compile_pe_channels
+from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.world import World
 
 ALICE = AgentId("alice")
@@ -56,14 +56,7 @@ def alice_holding(*series: Series) -> World:
 
 
 def vti_series(*levels: float) -> tuple[Series, ...]:
-    return compile_series(
-        ExternalSeriesContext.from_level_blocks(
-            [(VTI, np.asarray([levels], dtype=np.float64))], rollout_count=1, horizon_months=len(levels) - 1
-        ),
-        rollout_count=1,
-        horizon_months=len(levels) - 1,
-        currency=USD,
-    )
+    return level_series({VTI: [levels]}, rollout_count=1, horizon_months=len(levels) - 1)
 
 
 def private_equity_series(**overrides: tuple[int, ...]) -> tuple[Series, ...]:

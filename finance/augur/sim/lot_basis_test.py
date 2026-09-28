@@ -19,7 +19,6 @@ from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.portfolio import product_portfolio_response
 from finance.augur.sim.actions import DecisionActions, LotSale, Sell
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
@@ -27,6 +26,7 @@ from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.results import Finished
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.world import World
 
 CHECKING = AccountId("checking")
@@ -59,12 +59,13 @@ def portfolio() -> PortfolioConfig:
 def _compose(lots: Sequence[HoldingTaxLotConfig], *, horizon_months: int) -> World:
     """The owner's cashless `checking` account over a flat $1 mark, holding the imported lots as the books hold
     them: quantity in unit quanta, basis in exact currency quanta."""
-    paths = ExternalSeriesContext.from_level_blocks(
-        [(ASSET, np.full((1, horizon_months + 1), 1.0))], rollout_count=1, horizon_months=horizon_months
-    )
     world = World(
         MarketPath(
-            compile_series(paths, rollout_count=1, horizon_months=horizon_months, currency=USD), 0, rollout_count=1
+            level_series(
+                {ASSET: np.full((1, horizon_months + 1), 1.0)}, rollout_count=1, horizon_months=horizon_months
+            ),
+            0,
+            rollout_count=1,
         ),
         horizon_months=horizon_months,
         income_sources=(ORDINARY_INCOME,),

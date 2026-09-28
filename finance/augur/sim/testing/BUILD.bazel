@@ -9,10 +9,10 @@ py_library(
     name = "bonds",
     srcs = ["bonds.py"],
     deps = [
+        ":series",
         "//finance/augur/model:series",
         "//finance/augur/sim:bonds",
         "//finance/augur/sim:books",
-        "//finance/augur/sim:external_series",
         "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:income",
@@ -80,12 +80,12 @@ py_library(
     name = "funded_bill",
     srcs = ["funded_bill.py"],
     deps = [
+        ":series",
         "//finance/augur/model:series",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:bills",
         "//finance/augur/sim:books",
         "//finance/augur/sim:claims",
-        "//finance/augur/sim:external_series",
         "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:income",
@@ -111,5 +111,17 @@ py_library(
         "//finance/augur/sim:money",
         "//finance/augur/sim:property",
         "//finance/augur/sim:situs",
+    ],
+)
+
+py_library(
+    name = "series",
+    srcs = ["series.py"],
+    deps = [
+        "//finance/augur/model:series",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:money",
+        "@pypi//numpy",
     ],
 )
