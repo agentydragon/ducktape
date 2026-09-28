@@ -311,6 +311,9 @@ class PlaidClient:
         except PlaidApiException as exc:
             raise _plaid_api_error("/item/remove", exc) from exc
 
+    def item_public_token_exchange(self, request: ItemPublicTokenExchangeRequest, /) -> ItemPublicTokenExchangeResponse:
+        return self._api.item_public_token_exchange(request)
+
     def item_get(self, request: ItemGetRequest, /) -> ItemGetResponse:
         return self._api.item_get(request)
 
