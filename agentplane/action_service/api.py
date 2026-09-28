@@ -603,9 +603,9 @@ def _error(status_code: int, detail: str) -> JSONResponse:
 
 
 def _mcp_linkage_routes(app: FastAPI, authority: McpLinkageAuthority) -> None:
-    @app.get("/oauth/client-metadata/{server_id}.json")
-    async def client_metadata_document(server_id: str) -> JSONResponse:
-        document = authority.client_metadata_document(server_id)
+    @app.get("/oauth/client-metadata.json")
+    async def client_metadata_document() -> JSONResponse:
+        document = authority.client_metadata_document()
         return JSONResponse(
             content=document.model_dump(mode="json", exclude_none=True),
             headers={"Cache-Control": "public, max-age=3600"},

@@ -59,8 +59,7 @@ class McpOAuthServer(BaseModel):
     authorization_endpoint: str | None = None
     token_endpoint: str | None = None
     client_id: str | None = Field(default=None, min_length=1)
-    client_metadata_url: str | None = Field(default=None, min_length=1)
-    client_name: str | None = Field(default=None, min_length=1)
+    use_shared_cimd: bool = False
     client_secret_file: Path | None = None
     redirect_uri: str = Field(min_length=1)
     scopes: list[str] = Field(default_factory=list)
@@ -68,17 +67,24 @@ class McpOAuthServer(BaseModel):
 
     @model_validator(mode="after")
     def validate_client_configuration(self) -> McpOAuthServer:
-        if (self.client_id is None) == (self.client_metadata_url is None):
-            raise ValueError("configure exactly one of client_id or client_metadata_url")
-        if self.client_metadata_url is None:
-            if self.client_name is not None:
-                raise ValueError("client_name is only valid with client_metadata_url")
-            return self
-        if self.client_name is None:
-            raise ValueError("client_name is required with client_metadata_url")
-        if self.client_secret_file is not None:
+        if (self.client_id is None) != self.use_shared_cimd:
+            raise ValueError("configure exactly one of client_id or use_shared_cimd")
+        if self.use_shared_cimd and self.client_secret_file is not None:
             raise ValueError("CIMD clients use public token authentication and cannot have a client secret")
-        parsed = urlsplit(self.client_metadata_url)
+        return self
+
+
+class McpClientMetadataSettings(BaseModel):
+    """The one public OAuth client identity shared by MCP linkages in this deployment."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    url: str = Field(min_length=1)
+    client_name: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_url(self) -> McpClientMetadataSettings:
+        parsed = urlsplit(self.url)
         if (
             parsed.scheme != "https"
             or not parsed.hostname
@@ -87,20 +93,12 @@ class McpOAuthServer(BaseModel):
             or parsed.port is not None
             or parsed.query
             or parsed.fragment
-            or parsed.path != f"/oauth/client-metadata/{self.server_id}.json"
+            or parsed.path != "/oauth/client-metadata.json"
         ):
-            raise ValueError("client_metadata_url must be an HTTPS URL at this server's public metadata path")
-        if str(AnyHttpUrl(self.client_metadata_url)) != self.client_metadata_url:
-            raise ValueError("client_metadata_url must use its canonical URL form")
+            raise ValueError("mcp_client_metadata.url must be an HTTPS URL at /oauth/client-metadata.json")
+        if str(AnyHttpUrl(self.url)) != self.url:
+            raise ValueError("mcp_client_metadata.url must use its canonical URL form")
         return self
-
-    @property
-    def oauth_client_id(self) -> str:
-        """The OAuth client identifier sent to the remote authorization server."""
-        if self.client_metadata_url is not None:
-            return self.client_metadata_url
-        assert self.client_id is not None
-        return self.client_id
 
 
 class McpLinkageStart(BaseModel):
@@ -175,11 +173,16 @@ class McpLinkageAuthority:
         self,
         sessions: SessionMaker,
         servers: dict[str, McpOAuthServer],
+        client_metadata: McpClientMetadataSettings | None = None,
         http: httpx2.AsyncClient | None = None,
         engine: AsyncEngine | None = None,
     ) -> None:
         self._sessions = sessions
         self._servers = dict(servers)
+        uses_shared_cimd = any(server.use_shared_cimd for server in self._servers.values())
+        if uses_shared_cimd != (client_metadata is not None):
+            raise ValueError("configure mcp_client_metadata exactly when an MCP server uses the shared CIMD")
+        self._client_metadata = client_metadata
         self._http = http
         self._engine = engine
         self._stop = asyncio.Event()
@@ -253,7 +256,7 @@ class McpLinkageAuthority:
         authorization_endpoint, token_endpoint, resource, discovered_scopes, cimd_supported = await self._discover(
             server
         )
-        if server.client_metadata_url is not None and not cimd_supported:
+        if server.use_shared_cimd and not cimd_supported:
             raise McpLinkageConflictError("MCP OAuth metadata does not advertise Client ID Metadata Document support")
         scopes = _scopes(request.scopes or server.scopes or discovered_scopes, server.scopes or discovered_scopes)
         now = datetime.now(UTC)
@@ -280,7 +283,7 @@ class McpLinkageAuthority:
             )
         query = {
             "response_type": "code",
-            "client_id": server.oauth_client_id,
+            "client_id": self._oauth_client_id(server),
             "redirect_uri": server.redirect_uri,
             "state": state,
             "code_challenge": _challenge(verifier),
@@ -402,19 +405,25 @@ class McpLinkageAuthority:
             raise McpLinkageConflictError("MCP server is not linked or its token has expired")
         return state.access_token
 
-    def client_metadata_document(self, server_id: str) -> CIMDDocument:
-        """Build the public metadata document for one configured CIMD client."""
-        server = self._server(server_id)
-        if server.client_metadata_url is None or server.client_name is None:
+    def client_metadata_document(self) -> CIMDDocument:
+        """Build the one public metadata document shared by configured CIMD clients."""
+        if self._client_metadata is None:
             raise McpLinkageNotFoundError("unknown MCP client metadata document")
         return CIMDDocument(
-            client_id=AnyHttpUrl(server.client_metadata_url),
-            client_name=server.client_name,
-            redirect_uris=[server.redirect_uri],
+            client_id=AnyHttpUrl(self._client_metadata.url),
+            client_name=self._client_metadata.client_name,
+            redirect_uris=sorted({server.redirect_uri for server in self._servers.values() if server.use_shared_cimd}),
             token_endpoint_auth_method="none",
             grant_types=["authorization_code", "refresh_token"],
             response_types=["code"],
         )
+
+    def _oauth_client_id(self, server: McpOAuthServer) -> str:
+        if server.use_shared_cimd:
+            assert self._client_metadata is not None
+            return self._client_metadata.url
+        assert server.client_id is not None
+        return server.client_id
 
     async def _discover(self, server: McpOAuthServer) -> tuple[str, str, str | None, list[str], bool]:
         """Discover MCP protected-resource and authorization-server metadata before linking."""
@@ -609,7 +618,7 @@ class McpLinkageAuthority:
             "grant_type": "authorization_code",
             "code": code,
             "redirect_uri": server.redirect_uri,
-            "client_id": server.oauth_client_id,
+            "client_id": self._oauth_client_id(server),
             "code_verifier": verifier,
         }
         if scopes:
@@ -626,7 +635,11 @@ class McpLinkageAuthority:
     ) -> dict[str, object]:
         if token_endpoint is None:
             raise _RefreshError("no token endpoint was discovered for this server", action="reconnect")
-        data = {"grant_type": "refresh_token", "refresh_token": refresh_token, "client_id": server.oauth_client_id}
+        data = {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": self._oauth_client_id(server),
+        }
         if scopes:
             data["scope"] = " ".join(scopes)
         return await self._post_token(server, token_endpoint, resource, data, operation="refresh")

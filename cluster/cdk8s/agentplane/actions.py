@@ -324,12 +324,11 @@ class Actions(Construct):
         # The Actions service owns OAuth and bearer verification; no browser forward-auth
         # hop. Keep REST/operator endpoints off this public origin.
         client_metadata_paths = []
-        for server in self.env.actions.settings.mcp_servers.values():
-            if server.client_metadata_url is None:
-                continue
-            metadata_url = urlsplit(server.client_metadata_url)
+        client_metadata = self.env.actions.settings.mcp_client_metadata
+        if client_metadata is not None:
+            metadata_url = urlsplit(client_metadata.url)
             if metadata_url.hostname != self.env.actions.hostname or metadata_url.port is not None:
-                raise ValueError("CIMD client_metadata_url must use this Action Service's HTTPS hostname")
+                raise ValueError("mcp_client_metadata.url must use this Action Service's HTTPS hostname")
             client_metadata_paths.append(metadata_url.path)
         https_route(
             self,

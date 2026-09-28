@@ -33,7 +33,7 @@ from agentplane.action_service.github_policy.visibility import (
     REQUEST_TIMEOUT_SECONDS,
     RepositoryVisibilityService,
 )
-from agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpOAuthServer
+from agentplane.action_service.mcp_linkage import McpClientMetadataSettings, McpLinkageAuthority, McpOAuthServer
 from agentplane.action_service.oauth import OAuthSettings, running_oauth
 from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
 from agentplane.action_service.policy_evaluation import PolicySetDecisionProvider
@@ -52,6 +52,14 @@ from util.kubernetes import CustomObjectsClient
 # gazelle:include_dep @pypi//pyyaml
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_shared_mcp_client_metadata(
+    mcp_servers: dict[Key, McpOAuthServer], client_metadata: McpClientMetadataSettings | None
+) -> None:
+    uses_shared_cimd = any(server.use_shared_cimd for server in mcp_servers.values())
+    if uses_shared_cimd != (client_metadata is not None):
+        raise ValueError("configure mcp_client_metadata exactly when an MCP server uses the shared CIMD")
 
 
 class ActionServer(uvicorn.Server):
@@ -102,8 +110,14 @@ class ActionServiceDeploymentSettings(BaseModel):
     operator_oidc: OperatorOidcSettings
     allowed_service_account_namespaces: frozenset[str]
     web_push: WebPushDeploymentSettings | None = None
+    mcp_client_metadata: McpClientMetadataSettings | None = None
     mcp_servers: dict[Key, McpOAuthServer] = Field(default_factory=dict)
     action_groups: dict[Key, ActionGroup] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_shared_mcp_client_metadata(self) -> ActionServiceDeploymentSettings:
+        _validate_shared_mcp_client_metadata(self.mcp_servers, self.mcp_client_metadata)
+        return self
 
 
 # Names the YAML settings file a deployment mounts; not a field, so not a flag.
@@ -148,12 +162,14 @@ class Settings(BaseSettings):
         default_factory=dict, description="Reviewed ActionGroup catalog, keyed by stable namespaced group key."
     )
     mcp_servers: dict[Key, McpOAuthServer] = Field(default_factory=dict)
+    mcp_client_metadata: McpClientMetadataSettings | None = None
     web_push: WebPushSettings | None = Field(default=None, description="Optional Web Push delivery identity.")
 
     @model_validator(mode="after")
     def one_operator_authority(self) -> Settings:
         if self.operator_oidc is not None and self.operator_bearer_file is not None:
             raise ValueError("configure operator_oidc or legacy operator_bearer_file, never both")
+        _validate_shared_mcp_client_metadata(self.mcp_servers, self.mcp_client_metadata)
         return self
 
     @classmethod
@@ -216,7 +232,12 @@ async def async_main(settings: Settings) -> None:
         stack.push_async_callback(stop_informer)
         connections = ConnectionAuthority(make_sessionmaker(engine), policy_index)
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
-        mcp_linkage = McpLinkageAuthority(make_sessionmaker(engine), settings.mcp_servers, engine=engine)
+        mcp_linkage = McpLinkageAuthority(
+            make_sessionmaker(engine),
+            settings.mcp_servers,
+            client_metadata=settings.mcp_client_metadata,
+            engine=engine,
+        )
         await mcp_linkage.cleanup_removed_servers()
         await mcp_linkage.start_refresh_loop()
         stack.push_async_callback(mcp_linkage.close)

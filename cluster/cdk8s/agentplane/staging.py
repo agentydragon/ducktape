@@ -22,7 +22,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
 from agentplane.action_service.main import ActionServiceDeploymentSettings, WebPushDeploymentSettings
-from agentplane.action_service.mcp_linkage import McpOAuthServer
+from agentplane.action_service.mcp_linkage import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.operator_oidc import OperatorOidcSettings
 from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
@@ -62,7 +62,7 @@ _WEB_PUSH_ALLOWED_HOSTS = ("fcm.googleapis.com", "updates.push.services.mozilla.
 _GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
 _GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
-_GROCY_SF_MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata/grocy_sf.json"
+_MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata.json"
 _HOME_ASSISTANT_MCP_URL = "http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp"
 _TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
 # One google-mcp pod (cluster/cdk8s/google_mcp.py) serves both tool sets at
@@ -104,6 +104,10 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
         public_base_url=f"https://{_HOSTNAME}",
         allowed_push_hosts=list(_WEB_PUSH_ALLOWED_HOSTS),
     ),
+    mcp_client_metadata=McpClientMetadataSettings(
+        url=_MCP_CLIENT_METADATA_URL,
+        client_name="Agentplane staging",
+    ),
     mcp_servers={
         "github": McpOAuthServer(
             server_id="github",
@@ -121,8 +125,7 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
         "grocy_sf": McpOAuthServer(
             server_id="grocy_sf",
             server_url=_GROCY_SF_MCP_URL,
-            client_metadata_url=_GROCY_SF_MCP_CLIENT_METADATA_URL,
-            client_name="Agentplane staging Grocy SF",
+            use_shared_cimd=True,
             redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
         ),
     },

@@ -2428,6 +2428,9 @@ data:
       allowed_push_hosts:
         - fcm.googleapis.com
         - updates.push.services.mozilla.com
+    mcp_client_metadata:
+      url: https://agentplane-actions-staging.allegedly.works/oauth/client-metadata.json
+      client_name: Agentplane staging
     mcp_servers:
       github:
         server_id: github
@@ -2443,8 +2446,7 @@ data:
       grocy_sf:
         server_id: grocy_sf
         server_url: https://grocy-mcp-sf.allegedly.works/mcp
-        client_metadata_url: https://agentplane-actions-staging.allegedly.works/oauth/client-metadata/grocy_sf.json
-        client_name: Agentplane staging Grocy SF
+        use_shared_cimd: true
         redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
     action_groups:
       github:
@@ -2891,7 +2893,7 @@ spec:
             value: /auth/callback
         - path:
             type: Exact
-            value: /oauth/client-metadata/grocy_sf.json
+            value: /oauth/client-metadata.json
       timeouts:
         backendRequest: 3600s
         request: 3600s

@@ -17,6 +17,7 @@ from agentplane.action_service.auth import DisabledOperatorAuthenticator
 from agentplane.action_service.catalog import ActionCatalog
 from agentplane.action_service.db import ActionStore, McpOAuthTokenStateRow, make_sessionmaker
 from agentplane.action_service.mcp_linkage import (
+    McpClientMetadataSettings,
     McpLinkageAuthority,
     McpLinkageConflictError,
     McpLinkageStart,
@@ -33,7 +34,7 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 @pytest.fixture
 async def linkage(engine: AsyncEngine) -> AsyncIterator[McpLinkageAuthority]:
-    cimd_client_id = "https://test-actions.example/oauth/client-metadata/test-cimd.json"
+    cimd_client_id = "https://test-actions.example/oauth/client-metadata.json"
 
     def provider(request: httpx2.Request) -> httpx2.Response:
         if request.method == "POST":
@@ -64,13 +65,25 @@ async def linkage(engine: AsyncEngine) -> AsyncIterator[McpLinkageAuthority]:
     cimd_server = McpOAuthServer(
         server_id="test-cimd",
         server_url="https://test-cimd.example/mcp",
-        client_metadata_url=cimd_client_id,
-        client_name="Test CIMD client",
+        use_shared_cimd=True,
         redirect_uri="https://test-actions.example/mcp-linkage/callback",
+    )
+    other_cimd_server = McpOAuthServer(
+        server_id="test-cimd-other",
+        server_url="https://test-cimd-other.example/mcp",
+        use_shared_cimd=True,
+        redirect_uri="https://test-actions.example/other-mcp-linkage/callback",
     )
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(provider)) as http:
         yield McpLinkageAuthority(
-            make_sessionmaker(engine), {server.server_id: server, cimd_server.server_id: cimd_server}, http=http
+            make_sessionmaker(engine),
+            {
+                server.server_id: server,
+                cimd_server.server_id: cimd_server,
+                other_cimd_server.server_id: other_cimd_server,
+            },
+            client_metadata=McpClientMetadataSettings(url=cimd_client_id, client_name="Test Agentplane application"),
+            http=http,
         )
 
 
@@ -130,20 +143,24 @@ async def test_rejected_code_is_reported_and_leaves_the_server_unlinked(
 
 
 async def test_cimd_document_is_public_and_matches_the_configured_client(callback_client: httpx.AsyncClient) -> None:
-    response = await callback_client.get("/oauth/client-metadata/test-cimd.json")
+    response = await callback_client.get("/oauth/client-metadata.json")
     assert response.status_code == 200
     assert response.headers["cache-control"] == "public, max-age=3600"
     assert response.json() == {
-        "client_id": "https://test-actions.example/oauth/client-metadata/test-cimd.json",
-        "client_name": "Test CIMD client",
-        "redirect_uris": ["https://test-actions.example/mcp-linkage/callback"],
+        "client_id": "https://test-actions.example/oauth/client-metadata.json",
+        "client_name": "Test Agentplane application",
+        "redirect_uris": [
+            "https://test-actions.example/mcp-linkage/callback",
+            "https://test-actions.example/other-mcp-linkage/callback",
+        ],
         "token_endpoint_auth_method": "none",
         "grant_types": ["authorization_code", "refresh_token"],
         "response_types": ["code"],
     }
+    assert (await callback_client.get("/oauth/client-metadata/test-cimd.json")).status_code == 404
 
 
-async def test_cimd_url_is_used_for_authorization_and_token_exchange(
+async def test_shared_cimd_is_used_for_authorization_and_token_exchange(
     linkage: McpLinkageAuthority, callback_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
@@ -157,7 +174,12 @@ async def test_cimd_url_is_used_for_authorization_and_token_exchange(
         "test-cimd", McpLinkageStart(), OperatorPrincipal(issuer="test-issuer", subject="test-operator")
     )
     query = parse_qs(urlsplit(started.authorization_url).query)
-    assert query["client_id"] == ["https://test-actions.example/oauth/client-metadata/test-cimd.json"]
+    assert query["client_id"] == ["https://test-actions.example/oauth/client-metadata.json"]
+    other_started = await linkage.start(
+        "test-cimd-other", McpLinkageStart(), OperatorPrincipal(issuer="test-issuer", subject="test-operator")
+    )
+    other_query = parse_qs(urlsplit(other_started.authorization_url).query)
+    assert other_query["client_id"] == query["client_id"]
     response = await callback_client.get(
         "/v1/mcp-linkage/callback", params={"state": query["state"][0], "code": "test-cimd-code"}
     )
