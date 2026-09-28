@@ -25,7 +25,8 @@ import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import HomeValueKey, LocationId, RentKey
-from finance.augur.sim.actions import Action, ClaimId, DecisionActions, PayClaim
+from finance.augur.policy.funding import ClaimPayer
+from finance.augur.sim.actions import ClaimId, DecisionActions, PayClaim
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
@@ -41,7 +42,7 @@ from finance.augur.sim.income import (
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.observations import Observation
+from finance.augur.sim.observations import Decision
 from finance.augur.sim.property import (
     CapitalImprovement,
     Housing,
@@ -54,7 +55,7 @@ from finance.augur.sim.property import (
     ScheduledSale,
 )
 from finance.augur.sim.property_tax import PropertyTaxPolicy
-from finance.augur.sim.results import Executed, Finished, Rollout, Trace
+from finance.augur.sim.results import Executed, Rollout, Trace
 from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import MortgageInterestDeduction, SaltCap, SaltDeduction, TaxAuthority
@@ -62,6 +63,7 @@ from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
 from finance.augur.sim.testing.rollouts import book, cash
 from finance.augur.sim.testing.series import level_series
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, flat_parcel
 from finance.augur.sim.world import World
 
@@ -392,21 +394,6 @@ def compose(situation: Situation, rollout_id: int) -> World:
     return world
 
 
-def pay_claims(observation: Observation) -> list[Action]:
-    """The landlord pays what it is billed: property tax, mortgage instalments, dues, assessments."""
-
-    return [
-        PayClaim(
-            request_id=index + 1,
-            cause_id=claim.cause_id,
-            claim=claim,
-            from_account=claim.from_account,
-            amount=claim.amount_due,
-        )
-        for index, claim in enumerate(observation.claims)
-    ]
-
-
 def settle(world: World, payers: Sequence[AgentId]) -> None:
     """A co-owner's own claims in the same world.
 
@@ -432,26 +419,23 @@ def settle(world: World, payers: Sequence[AgentId]) -> None:
 
 
 def run(situation: Situation, *, actor: AgentId = OWNER, co_owners: Sequence[AgentId] = ()) -> list[Rollout]:
-    """Every path to the horizon, paying every claim the month raises."""
+    """Every path to the horizon, paying every claim the month raises.
+
+    The landlord pays what it is billed: property tax, mortgage instalments, dues, assessments.
+    """
 
     worlds = {rollout_id: compose(situation, rollout_id) for rollout_id in range(situation.rollout_count)}
-    session = ActionSession(worlds, actor)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            for decision in batch:
-                settle(worlds[decision.rollout_id], co_owners)
-            batch = session.advance(
-                [
-                    DecisionActions(decision.rollout_id, decision.observation.month, pay_claims(decision.observation))
-                    for decision in batch
-                ]
-            )
-    finally:
-        session.close()
-    for rollout in batch.rollouts:
+    pay_claims = each(ClaimPayer(actor).decide)
+
+    def respond(batch: list[Decision]) -> list[DecisionActions]:
+        for decision in batch:
+            settle(worlds[decision.rollout_id], co_owners)
+        return pay_claims(batch)
+
+    rollouts = finish(ActionSession(worlds, actor), respond).rollouts
+    for rollout in rollouts:
         assert rollout.stop is None
-    return batch.rollouts
+    return rollouts
 
 
 def trace(rollout: Rollout) -> Trace:

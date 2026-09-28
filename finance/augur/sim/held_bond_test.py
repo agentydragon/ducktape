@@ -7,12 +7,13 @@ from typing import Literal
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.actions import Action, Consume, DecisionActions, PayClaim
+from finance.augur.policy.funding import ClaimPayer
+from finance.augur.sim.actions import Action, Consume, DecisionActions
 from finance.augur.sim.books import AccountRef, BondState, Book
 from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId
 from finance.augur.sim.income import InterestCharacter, Taxable
 from finance.augur.sim.observations import Decision, FixedCoupon, IndexedCoupon
-from finance.augur.sim.results import BondSeries, Finished, Paid, RejectedAction, Rollout
+from finance.augur.sim.results import BondSeries, Paid, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.bonds import (
     MUNI,
@@ -26,6 +27,7 @@ from finance.augur.sim.testing.bonds import (
     cpi_series,
     dated,
 )
+from finance.augur.sim.testing.session import each, finish
 
 
 def execute(
@@ -34,14 +36,9 @@ def execute(
     capture: Literal["summary", "dense", "forensic"] = "summary",
     ids: list[int] | None = None,
 ) -> list[Rollout]:
-    session = ActionSession({id_: compose(case, id_) for id_ in ids or [0]}, AgentId("alice"), capture=capture)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(policy(batch))
-        return batch.rollouts
-    finally:
-        session.close()
+    return finish(
+        ActionSession({id_: compose(case, id_) for id_ in ids or [0]}, AgentId("alice"), capture=capture), policy
+    ).rollouts
 
 
 def held_bonds(book: Book) -> list[BondState]:
@@ -163,24 +160,7 @@ def test_indexed_principal_stopped_marks_and_replay_exclude_unobserved_cpi() -> 
     assert len(stopped.summary.last_receipts) == 1
 
 
-def pay_claims(batch: list[Decision]) -> list[DecisionActions]:
-    return [
-        DecisionActions(
-            row.rollout_id,
-            row.observation.month,
-            [
-                PayClaim(
-                    request_id=index,
-                    cause_id=claim.cause_id,
-                    claim=claim,
-                    from_account=claim.from_account,
-                    amount=claim.amount_due,
-                )
-                for index, claim in enumerate(row.observation.claims)
-            ],
-        )
-        for row in batch
-    ]
+pay_claims = each(ClaimPayer(AgentId("alice")).decide)
 
 
 @pytest.mark.parametrize(

@@ -14,7 +14,7 @@ from more_itertools import one
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.policy.cash_band_household import CashBandHousehold, SecuritySleeve
 from finance.augur.policy.funding import ClaimPayer
-from finance.augur.sim.actions import DecisionActions, LotSale, Sell
+from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.books import AccountRef, TaxLiabilityState
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
@@ -29,7 +29,7 @@ from finance.augur.sim.income import (
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.results import Finished, RejectedAction, Rollout
+from finance.augur.sim.results import RejectedAction, Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -38,6 +38,7 @@ from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_prof
 from finance.augur.sim.testing.rollouts import book, cash
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.testing.series import level_series
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -231,21 +232,7 @@ def compose(case: Situation, indexation: TaxIndexation) -> World:
 def run(case: Situation, indexation: TaxIndexation) -> Rollout:
     """Alice makes her scripted sales, sells on her band, then pays every due claim in full, in order."""
     household = Scripted(ClaimPayer(ALICE) if case.funded_by is None else sell_into_cash(case.funded_by), case.sales)
-    session = ActionSession({0: compose(case, indexation)}, ALICE)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id, decision.observation.month, household.decide(decision.observation)
-                    )
-                    for decision in batch
-                ]
-            )
-    finally:
-        session.close()
-    return one(batch.rollouts)
+    return one(finish(ActionSession({0: compose(case, indexation)}, ALICE), each(household.decide)).rollouts)
 
 
 def owed(rollout: Rollout, month: int) -> list[TaxLiabilityState]:

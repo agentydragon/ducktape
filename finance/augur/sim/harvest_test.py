@@ -9,7 +9,8 @@ import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey, SecuritySymbol
-from finance.augur.sim.actions import Action, DecisionActions, Liquidate, LotSale, PayClaim, Sell, Withdraw
+from finance.augur.policy.funding import full_payments
+from finance.augur.sim.actions import Action, Liquidate, LotSale, Sell, Withdraw
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId, PortfolioId
@@ -18,12 +19,13 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD, position_value
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.results import Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
 from finance.augur.sim.testing.series import level_series
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
@@ -175,44 +177,25 @@ def compose(case: Situation, rollout_id: int) -> World:
     return world
 
 
-def pay_claims(observation: Observation) -> list[Action]:
-    """Alice pays whatever she is billed: the tax assessment is the only claim these situations raise."""
-    return [
-        PayClaim(
-            request_id=index + 1,
-            cause_id=claim.cause_id,
-            claim=claim,
-            from_account=claim.from_account,
-            amount=claim.amount_due,
-        )
-        for index, claim in enumerate(observation.claims)
-    ]
-
-
 def run(case: Situation, intents: Mapping[int, Sequence[Intent]] = {}) -> list[Rollout]:
-    """Every path to the horizon; the month's intents, then every claim, become alice's ordered actions."""
-    session = ActionSession({rollout_id: compose(case, rollout_id) for rollout_id in range(case.rollout_count)}, ALICE)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id,
-                        decision.observation.month,
-                        [
-                            *(intent(decision.observation) for intent in intents.get(decision.observation.month, ())),
-                            *pay_claims(decision.observation),
-                        ],
-                    )
-                    for decision in batch
-                ]
-            )
-    finally:
-        session.close()
-    for rollout in batch.rollouts:
+    """Every path to the horizon; the month's intents, then every claim, become alice's ordered actions.
+
+    The tax assessment is the only claim these situations raise.
+    """
+
+    def decide(observation: Observation) -> list[Action]:
+        return [
+            *(intent(observation) for intent in intents.get(observation.month, ())),
+            *full_payments(observation.claims),
+        ]
+
+    rollouts = finish(
+        ActionSession({rollout_id: compose(case, rollout_id) for rollout_id in range(case.rollout_count)}, ALICE),
+        each(decide),
+    ).rollouts
+    for rollout in rollouts:
         assert rollout.stop is None
-    return batch.rollouts
+    return rollouts
 
 
 def sell_lots(cause_id: str, asset: SecurityKey) -> Intent:

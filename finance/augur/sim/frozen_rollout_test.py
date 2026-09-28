@@ -11,7 +11,6 @@ import pytest_bazel
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode
 from finance.augur.policy.funding import ClaimPayer
-from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
@@ -22,13 +21,14 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.private_equity import TenderPolicy
-from finance.augur.sim.results import Finished, RejectedAction, Rollout
+from finance.augur.sim.results import RejectedAction, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.issuer_protocol import issuer_protocol
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
 CHECKING = AccountId("checking")
@@ -144,23 +144,8 @@ def private_equity_world(*, freeze: bool) -> World:
 def run(world: World, actor: AgentId) -> Rollout:
     """The household pays an account's claims only when its cash covers all of them."""
 
-    household = ClaimPayer(AgentId(actor))
-    session = ActionSession({0: world}, actor)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id, decision.observation.month, household.decide(decision.observation)
-                    )
-                    for decision in batch
-                ]
-            )
-        [rollout] = batch.rollouts
-        return rollout
-    finally:
-        session.close()
+    [rollout] = finish(ActionSession({0: world}, actor), each(ClaimPayer(AgentId(actor)).decide)).rollouts
+    return rollout
 
 
 def test_the_rollout_really_does_freeze_where_the_case_says() -> None:

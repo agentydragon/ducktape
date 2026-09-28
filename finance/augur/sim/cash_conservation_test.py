@@ -39,7 +39,7 @@ from finance.augur.model.series import (
 )
 from finance.augur.policy.cash_band_household import CashBandHousehold, SecuritySleeve
 from finance.augur.policy.funding import ClaimPayer
-from finance.augur.sim.actions import Action, DecisionActions, LotSale, Sell
+from finance.augur.sim.actions import Action, LotSale, Sell
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
@@ -58,7 +58,7 @@ from finance.augur.sim.property import (
     ScheduledSale,
 )
 from finance.augur.sim.property_tax import PropertyTaxPolicy
-from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.situs import compile_situs
@@ -69,6 +69,7 @@ from finance.augur.sim.testing.issuer_protocol import at_month, issuer_protocol
 from finance.augur.sim.testing.rollouts import book
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.testing.series import level_series
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.testing.situs import START_YEAR
 from finance.augur.sim.world import World
 
@@ -136,23 +137,9 @@ def run(world: World, *, funded_by: SecurityKey | None = None, script: Mapping[i
     """Alice makes her scripted trades, sells `funded_by` as her claims need, then pays every due claim in full, in order."""
 
     household = Scripted(ClaimPayer(ALICE) if funded_by is None else sell_into_cash(funded_by), script)
-    session = ActionSession({0: world}, ALICE)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id, decision.observation.month, household.decide(decision.observation)
-                    )
-                    for decision in batch
-                ]
-            )
-        [rollout] = batch.rollouts
-        assert rollout.stop is None
-        return rollout
-    finally:
-        session.close()
+    [rollout] = finish(ActionSession({0: world}, ALICE), each(household.decide)).rollouts
+    assert rollout.stop is None
+    return rollout
 
 
 def crossed_the_boundary(rollout: Rollout, declared: frozenset[AccountRef], *, month: int) -> int:

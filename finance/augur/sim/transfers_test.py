@@ -7,15 +7,15 @@ from decimal import Decimal
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
 
@@ -87,16 +87,9 @@ def _run(case: Situation, *, rollout_count: int = 1) -> list[Rollout]:
         AgentId("alice"),
         capture="forensic",
     )
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [DecisionActions(decision.rollout_id, decision.observation.month, []) for decision in batch]
-            )
-        assert all(result.stop is None for result in batch.rollouts)
-        return batch.rollouts
-    finally:
-        session.close()
+    rollouts = finish(session, each(lambda _: [])).rollouts
+    assert all(result.stop is None for result in rollouts)
+    return rollouts
 
 
 def _cash(book: Book, agent_id: AgentId) -> int:

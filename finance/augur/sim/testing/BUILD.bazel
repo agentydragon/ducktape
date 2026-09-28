@@ -136,3 +136,14 @@ py_library(
         "@pypi//more_itertools",
     ],
 )
+
+py_library(
+    name = "session",
+    srcs = ["session.py"],
+    deps = [
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:observations",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:session",
+    ],
+)

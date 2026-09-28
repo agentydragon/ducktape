@@ -23,7 +23,7 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.events import EventLog
 from finance.augur.sim.ids import AccountId, AgentId, BondId
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.results import Finished, PaymentRejection, PaymentRequestError, Rejected, Rollout
+from finance.augur.sim.results import PaymentRejection, PaymentRequestError, Rejected, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.bonds import (
     CPI_DOUBLING,
@@ -39,6 +39,7 @@ from finance.augur.sim.testing.bonds import (
 
 # Aliased: the bond situations' `compose` holds the plain name.
 from finance.augur.sim.testing.funded_bill import HOUSEHOLD, STOCK, compose as example_world, sell_then_pay, situation
+from finance.augur.sim.testing.session import finish
 from finance.augur.sim.world import World
 
 type Compose = Callable[[int], World]
@@ -53,14 +54,7 @@ def _run(
     *,
     actor_id: AgentId = HOUSEHOLD,
 ) -> list[Rollout]:
-    session = ActionSession({id_: worlds(id_) for id_ in ids}, actor_id, capture=capture)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(policy(batch))
-        return batch.rollouts
-    finally:
-        session.close()
+    return finish(ActionSession({id_: worlds(id_) for id_ in ids}, actor_id, capture=capture), policy).rollouts
 
 
 def _metrics(

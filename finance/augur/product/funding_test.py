@@ -37,11 +37,12 @@ from finance.augur.sim.ids import AccountId, AgentId, LotId
 from finance.augur.sim.income import Taxable
 from finance.augur.sim.jurisdictions import HYPOTHETICAL_FLAT_TAX, Jurisdiction, flat_income_tax
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
+from finance.augur.sim.results import Paid, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.session import finish
 from finance.augur.sim.world import World
 
 BROKERAGE = AccountId("brokerage")
@@ -202,14 +203,7 @@ def run(
         portfolio=product.portfolio,
         currency=situation.currency,
     )
-    session = ActionSession({0: world}, ACTOR)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(policy(batch))
-        return batch.rollouts[0]
-    finally:
-        session.close()
+    return finish(ActionSession({0: world}, ACTOR), policy).rollouts[0]
 
 
 def test_symbol_weight_is_not_repeated_per_account_and_fifo_is_account_scoped() -> None:
