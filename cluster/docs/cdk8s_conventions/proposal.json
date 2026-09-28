@@ -98,7 +98,7 @@
         {
           "name": "Identity-only references",
           "verdict": "adopt",
-          "note": "A frozen dataclass of names, keys, ports and labels, declared once by the producer and projected into each dialect by methods (C4). It needs the one boundary change in `cluster/cdk8s/AGENTS.md:8-13` (step 7)."
+          "note": "A frozen dataclass of names, keys, ports and labels, declared once by the producer and projected into each dialect by methods (C4). The boundary change it needs is in `cluster/cdk8s/AGENTS.md` § Boundaries on devel."
         },
         {
           "name": "A registry or 'provides' declarations",
@@ -1219,7 +1219,7 @@
         "P18": 0
       },
       "chosen_conventions": ["C2"],
-      "note": "`namespaces.namespace(scope, id, *, name, vpa: Vpa, agent_readable: AgentReadable | None)` renders the labels from StrEnums that `kyverno/policies.py`, the reader of those keys, imports too. Labels are metadata, so no patch or mutator is involved, and the `vpa` keyword carries, for every Namespace the generator writes, the Goldilocks decision that 39 `enabled: \"true\"` labels restate today (step 14).",
+      "note": "`namespaces.namespace(scope, id, *, name, vpa: Vpa, agent_readable: AgentReadable | None)` renders the labels from StrEnums that `kyverno/policies.py`, the reader of those keys, imports too. Labels are metadata, so no patch or mutator is involved, and the `vpa` keyword carries, for every Namespace the generator writes, the Goldilocks decision that 3 `enabled: \"true\"` labels still restate (step 14).",
       "today": "38 sites build their Namespaces through `namespaces.namespace`, whose `Vpa` and `AgentReadable` StrEnums `kyverno/policies.py` reads too; 21 `k8s.KubeNamespace` sites (20 with no Goldilocks label), 6 cdk8s-plus `Namespace` sites and 8 `write_namespace` calls still write label dicts. 39 Namespaces render `goldilocks.fairwinds.com/enabled: \"true\"`."
     },
     {
@@ -2074,22 +2074,22 @@
     },
     {
       "track": "ready now",
-      "step": "References: `secret_ref.py` and `service_ref.py`; `https_route(backend: ServiceRef)`; `cilium.SCRAPERS` and `cilium.PROBER`. Convert `env_helpers` (50 calls in 11 modules) and the 7 module-local `secret_env` variants to `SecretKey` projections, and the per-service port and label constants, area by area; `Endpoint.bearer_authorization` callers pass `SecretKey` fields.",
+      "step": "References, area by area. Convert `env_helpers` (50 calls in 11 modules) and the 7 module-local `secret_env` variants to `SecretKey` projections; `Endpoint.bearer_authorization` callers pass `SecretKey` fields; each producer's Service, container ports, Cilium rules and ServiceMonitor read its `ServiceRef`, and each consumer's URL comes from `ServiceRef.url`. `secret_ref.py`, `service_ref.py`, `https_route(backend: ServiceRef)`, `cilium.SCRAPERS`, `cilium.PROBER` and ntfy's conversion are on devel.",
       "gate": "Ready.",
-      "scope": "Two new modules, then per-area PRs.",
+      "scope": "Per-area PRs: #8360, #8362 and #8363 (Secret keys and bearers); #8369, #8378 and #8379 (home-assistant, gatus, grocy); then the remaining producers.",
       "risk": "Low. Mostly identical render: named targetPorts become numbers, `Port` adds `protocol: TCP` where it was implied, and a URL built from `ServiceRef.url` drops `.cluster.local` (E8, E12)."
     },
     {
       "track": "ready now",
       "step": "cnpg: `PostgresRef` and `cluster(ref=, placement=, wal_archive=)`, with `initdb=cnpg.same_owner_initdb(...)` at the same-owner sites; repoint the 12 hand-written `-app`/`-rw` derivations.",
-      "gate": "After step 7's two reference modules: `PostgresRef` holds a `SecretRef` and returns a `ServiceRef`.",
+      "gate": "Ready.",
       "scope": "The 18 `cnpg.cluster` calls and their consumers.",
       "risk": "Low for DNS clients in ordinary Pods. Not for hosts compared as strings (`agentplane/egress.py:98-109` feeds the egress proxy allowlist) or for hostNetwork Pods; those keep the FQDN through `ServiceRef.fqdn`. A changed URL in a hashed config re-runs its Job."
     },
     {
       "track": "ready now",
       "step": "`PrivateBucket` (C3) in each consumer's own unit, with its Secret name unchanged and its S3Identity in the tenant. Migrate consumers per area; each consumer's hand-listed `seaweedfs.s3.cluster_grant(kinds=...)` call goes into the composite, which builds its grant itself. The four `seaweedfs-*-bucket` units retire here too; their Buckets and S3Credentials move by `cluster/AGENTS.md` § Migrating stateful Flux Kustomizations, never by delete and recreate, because a deleted `Retain` S3Credentials leaves its Secret without an owner and a recreated one then fails with `SecretOwnershipConflict`.",
-      "gate": "After step 5 and step 7's reference modules.",
+      "gate": "After step 5.",
       "scope": "About 10 S3 consumers.",
       "risk": "Medium. Grants are renamed, which Flux handles by applying the new one before pruning the old; no credential Secret is renamed, so no key is re-minted, and the consumers do not restart."
     },
@@ -2110,7 +2110,7 @@
     {
       "track": "ready now",
       "step": "Secrets: `external_secrets/credentials.py` and `MintedSecret`, replacing `mint_bearer_secret` and `mint_db_role_secret`. The external-creds roster moves onto `Credential` (its store moves into external-creds as `credentials-ducktape-flux`, whose node gains an edge to `external-secrets-operator`, and flux-system's reader gets one owner); each consumer namespace's reader becomes `credential-reader`; convert the minted bearers and their consumers; convert each ESO-ServiceAccount store and each source namespace's per-pair stores, one source namespace per PR (`forgejo`'s are the copies `forgejo/secret_copy.py` builds, each read by a `forgejo-secret-reader`), forgejo-images last; delete `single_secret_store` and `forgejo/secret_copy.py`. #7432 rebases onto it.",
-      "gate": "After step 7's reference modules (a `Credential`'s source is a `SecretRef`) and step 11.",
+      "gate": "After step 11.",
       "scope": "Several PRs.",
       "risk": "Medium. ExternalSecrets fail transiently while a store is renamed; check ExternalSecret status on the live cluster after each PR. ServiceAccount conversions: grep each account's pods for `service_account_name` before converting, and state the token on each (step 11's rule catches a miss). Each RoleBinding names both the new and the old reader until its namespace's last old copy moves. The 3 DB-role mints lose their 8760h re-mint."
     },
@@ -2123,10 +2123,10 @@
     },
     {
       "track": "ready now",
-      "step": "Namespaces: `namespaces.namespace` builds a cdk8s-plus `Namespace` and stops rendering `enabled: \"true\"` beside an update mode; the two Goldilocks checks require a decision on every Namespace the generator writes; and the 21 `k8s.KubeNamespace` and 6 cdk8s-plus `Namespace` sites convert to it.",
+      "step": "Namespaces: the 25 remaining `k8s.KubeNamespace` and cdk8s-plus `Namespace` sites convert to `namespaces.namespace` (operators #8372, agents #8373, platform #8375), then `check_goldilocks_explicit_decision` requires a decision on every Namespace the generator writes (#8377). The helper, `write_namespace` and agentplane's Namespaces are on devel.",
       "gate": "Ready.",
-      "scope": "`namespaces.py`, the two checks in `cluster/validation/checks.py`, and 27 sites. The 8 `write_namespace` sites stay with their hand-written directories.",
-      "risk": "Low: labels and an empty `spec`. 39 Namespaces lose `enabled: \"true\"`; the 22 unlabeled ones and the three labeled with no mode (`claude-sandbox`, `home-assistant`, `ntfy`) each gain a mode; the 38 helper-built Namespaces and the 21 `k8s.KubeNamespace` ones gain `spec: {}`, which the API server ignores. The labels rely on Goldilocks' on-by-default flag (`goldilocks.py:37`) staying set."
+      "scope": "25 sites in three PRs, and `check_goldilocks_explicit_decision` in `cluster/validation/checks.py`.",
+      "risk": "Low: labels and an empty `spec`. 23 Namespaces change labels: 22 gain `vpa-update-mode: off`, and claude-sandbox, public-coder-agent and ntfy lose `enabled: \"true\"`. Cilium gives the Pods in each a new identity. The labels rely on Goldilocks' on-by-default flag (`goldilocks.py:39`) staying set."
     },
     {
       "track": "ready now",
@@ -2139,7 +2139,7 @@
       "track": "ready now",
       "step": "Fold `hubble-ui` into the `kube-system` unit.",
       "gate": "Ready.",
-      "scope": "An Orphan PR, then the fold.",
+      "scope": "The fold, #8358. The Orphan handover is live.",
       "risk": "Low: one stateless NetworkPolicy changes owner (`cluster/cdk8s/AGENTS.md` § Restructuring)."
     },
     {
@@ -2193,7 +2193,7 @@
     }
   ],
   "agents_md_changes": [
-    "`cluster/cdk8s/AGENTS.md` § Boundaries, first bullet, with step 7. Keep 'no marker annotation, no provides declaration, no registry'. Replace 'no record type standing in for an object' with: 'An identity-only reference is allowed: a frozen dataclass of names, keys, ports and labels plus the addresses derived from them, declared once by the producing module and projected into each dialect by methods. A record describing what to build is not. A map that checks hand-written wiring (`crd_layering.OPERATOR_CRDS`) is allowed; a map that chooses wiring is a registry.'\nWhy: a fact that crosses objects has no carrier but a re-spelled string today (root cause 3), and the admission checks need the CRD-provider map that already exists.",
+    "`cluster/cdk8s/AGENTS.md` § Boundaries, first bullet: the identity-only reference amendment is on devel. #8357 narrows its checking-map example to `crd_layering.OPERATOR_CRDS`; devel's wording also names `flux.ORDERING_EXCEPTIONS`, which does not exist.",
     "§ Boundaries, with steps 19 and 20: construction runs forward, with no registry, sorter, lazy reference or node class. Stateful data survives, with Orphan derived for every generated directory that renders a stateful kind; a HelmRelease holding state passes it explicitly. Escape hatches stay: an explicit `deletion_policy` on the node wins; a directory needing a decryption the writer cannot derive passes its artifact instead of a `RenderedDirectory`.",
     "§ Shape of a generator, 'One helper per repeated shape' (`cluster/cdk8s/AGENTS.md:87-94`): replace the example list (`node_scheduling.py`, `pod_policy.py`, `api_resource.custom_resource`) with the nine-row convention table; 'One shape per job' (`AGENTS.md:82-86`) already makes a second shape for the same job a review finding.",
     "§ Shape of a generator, 'References, not names' (`AGENTS.md:52-57`): producers export references (`ntfy.SERVICE`, `atuin.DATABASE.rw`, `ha_mcp.BEARER`), a repeated deployment exports a pure function of its instance key (`grocy.app.service(household)`), and consumers project them (`.egress()`, `.env_var(...)`, `Pods.admit(...)`). `cilium.endpoint_labels(namespace, name)` with a string name is retired.",

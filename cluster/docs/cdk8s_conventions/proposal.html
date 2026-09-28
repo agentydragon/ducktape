@@ -2050,8 +2050,8 @@
                   <div class="rich">
                     <p>
                       A frozen dataclass of names, keys, ports and labels, declared once by the producer and projected
-                      into each dialect by methods (C4). It needs the one boundary change in
-                      <code>cluster/cdk8s/AGENTS.md:8-13</code> (step 7).
+                      into each dialect by methods (C4). The boundary change it needs is in
+                      <code>cluster/cdk8s/AGENTS.md</code> § Boundaries on devel.
                     </p>
                   </div>
                 </td>
@@ -5260,8 +5260,8 @@
                 <code>namespaces.namespace(scope, id, *, name, vpa: Vpa, agent_readable: AgentReadable | None)</code>
                 renders the labels from StrEnums that <code>kyverno/policies.py</code>, the reader of those keys,
                 imports too. Labels are metadata, so no patch or mutator is involved, and the <code>vpa</code> keyword
-                carries, for every Namespace the generator writes, the Goldilocks decision that 39
-                <code>enabled: &#34;true&#34;</code> labels restate today (step 14).
+                carries, for every Namespace the generator writes, the Goldilocks decision that 3
+                <code>enabled: &#34;true&#34;</code> labels still restate (step 14).
               </p>
             </div>
           </dd>
@@ -10730,12 +10730,13 @@ CONFIG = {
           <div class="st">
             <div class="rich">
               <p>
-                References: <code>secret_ref.py</code> and <code>service_ref.py</code>;
-                <code>https_route(backend: ServiceRef)</code>; <code>cilium.SCRAPERS</code> and
-                <code>cilium.PROBER</code>. Convert <code>env_helpers</code> (50 calls in 11 modules) and the 7
-                module-local <code>secret_env</code> variants to <code>SecretKey</code> projections, and the per-service
-                port and label constants, area by area; <code>Endpoint.bearer_authorization</code> callers pass
-                <code>SecretKey</code> fields.
+                References, area by area. Convert <code>env_helpers</code> (50 calls in 11 modules) and the 7
+                module-local <code>secret_env</code> variants to <code>SecretKey</code> projections;
+                <code>Endpoint.bearer_authorization</code> callers pass <code>SecretKey</code> fields; each
+                producer&#39;s Service, container ports, Cilium rules and ServiceMonitor read its
+                <code>ServiceRef</code>, and each consumer&#39;s URL comes from <code>ServiceRef.url</code>.
+                <code>secret_ref.py</code>, <code>service_ref.py</code>, <code>https_route(backend: ServiceRef)</code>,
+                <code>cilium.SCRAPERS</code>, <code>cilium.PROBER</code> and ntfy&#39;s conversion are on devel.
               </p>
             </div>
           </div>
@@ -10745,7 +10746,12 @@ CONFIG = {
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
-            <div class="rich"><p>Two new modules, then per-area PRs.</p></div>
+            <div class="rich">
+              <p>
+                Per-area PRs: #8360, #8362 and #8363 (Secret keys and bearers); #8369, #8378 and #8379 (home-assistant,
+                gatus, grocy); then the remaining producers.
+              </p>
+            </div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
@@ -10770,12 +10776,7 @@ CONFIG = {
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich">
-              <p>
-                After step 7&#39;s two reference modules: <code>PostgresRef</code> holds a <code>SecretRef</code> and
-                returns a <code>ServiceRef</code>.
-              </p>
-            </div>
+            <div class="rich"><p>Ready.</p></div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
@@ -10812,7 +10813,7 @@ CONFIG = {
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich"><p>After step 5 and step 7&#39;s reference modules.</p></div>
+            <div class="rich"><p>After step 5.</p></div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
@@ -10922,12 +10923,7 @@ CONFIG = {
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich">
-              <p>
-                After step 7&#39;s reference modules (a <code>Credential</code>&#39;s source is a
-                <code>SecretRef</code>) and step 11.
-              </p>
-            </div>
+            <div class="rich"><p>After step 11.</p></div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
@@ -10974,10 +10970,10 @@ CONFIG = {
           <div class="st">
             <div class="rich">
               <p>
-                Namespaces: <code>namespaces.namespace</code> builds a cdk8s-plus <code>Namespace</code> and stops
-                rendering <code>enabled: &#34;true&#34;</code> beside an update mode; the two Goldilocks checks require
-                a decision on every Namespace the generator writes; and the 21 <code>k8s.KubeNamespace</code> and 6
-                cdk8s-plus <code>Namespace</code> sites convert to it.
+                Namespaces: the 25 remaining <code>k8s.KubeNamespace</code> and cdk8s-plus <code>Namespace</code> sites
+                convert to <code>namespaces.namespace</code> (operators #8372, agents #8373, platform #8375), then
+                <code>check_goldilocks_explicit_decision</code> requires a decision on every Namespace the generator
+                writes (#8377). The helper, <code>write_namespace</code> and agentplane&#39;s Namespaces are on devel.
               </p>
             </div>
           </div>
@@ -10989,8 +10985,8 @@ CONFIG = {
             <span class="lbl">Scope</span>
             <div class="rich">
               <p>
-                <code>namespaces.py</code>, the two checks in <code>cluster/validation/checks.py</code>, and 27 sites.
-                The 8 <code>write_namespace</code> sites stay with their hand-written directories.
+                25 sites in three PRs, and <code>check_goldilocks_explicit_decision</code> in
+                <code>cluster/validation/checks.py</code>.
               </p>
             </div>
           </div>
@@ -10998,11 +10994,10 @@ CONFIG = {
             <span class="lbl">Risk</span>
             <div class="rich">
               <p>
-                Low: labels and an empty <code>spec</code>. 39 Namespaces lose <code>enabled: &#34;true&#34;</code>; the
-                22 unlabeled ones and the three labeled with no mode (<code>claude-sandbox</code>,
-                <code>home-assistant</code>, <code>ntfy</code>) each gain a mode; the 38 helper-built Namespaces and the
-                21 <code>k8s.KubeNamespace</code> ones gain <code>spec: {}</code>, which the API server ignores. The
-                labels rely on Goldilocks&#39; on-by-default flag (<code>goldilocks.py:37</code>) staying set.
+                Low: labels and an empty <code>spec</code>. 23 Namespaces change labels: 22 gain
+                <code>vpa-update-mode: off</code>, and claude-sandbox, public-coder-agent and ntfy lose
+                <code>enabled: &#34;true&#34;</code>. Cilium gives the Pods in each a new identity. The labels rely on
+                Goldilocks&#39; on-by-default flag (<code>goldilocks.py:39</code>) staying set.
               </p>
             </div>
           </div>
@@ -11048,7 +11043,7 @@ CONFIG = {
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
-            <div class="rich"><p>An Orphan PR, then the fold.</p></div>
+            <div class="rich"><p>The fold, #8358. The Orphan handover is live.</p></div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
@@ -11278,16 +11273,9 @@ CONFIG = {
         <li>
           <div class="rich">
             <p>
-              <code>cluster/cdk8s/AGENTS.md</code> § Boundaries, first bullet, with step 7. Keep &#39;no marker
-              annotation, no provides declaration, no registry&#39;. Replace &#39;no record type standing in for an
-              object&#39; with: &#39;An identity-only reference is allowed: a frozen dataclass of names, keys, ports and
-              labels plus the addresses derived from them, declared once by the producing module and projected into each
-              dialect by methods. A record describing what to build is not. A map that checks hand-written wiring
-              (<code>crd_layering.OPERATOR_CRDS</code>) is allowed; a map that chooses wiring is a registry.&#39;
-            </p>
-            <p>
-              Why: a fact that crosses objects has no carrier but a re-spelled string today (root cause 3), and the
-              admission checks need the CRD-provider map that already exists.
+              <code>cluster/cdk8s/AGENTS.md</code> § Boundaries, first bullet: the identity-only reference amendment is
+              on devel. #8357 narrows its checking-map example to <code>crd_layering.OPERATOR_CRDS</code>; devel&#39;s
+              wording also names <code>flux.ORDERING_EXCEPTIONS</code>, which does not exist.
             </p>
           </div>
         </li>
@@ -12052,7 +12040,7 @@ CONFIG = {
     {
       "title": "N18 \u00b7 Namespaces with policy labels",
       "today": "38 sites build their Namespaces through `namespaces.namespace`, whose `Vpa` and `AgentReadable` StrEnums `kyverno/policies.py` reads too; 21 `k8s.KubeNamespace` sites (20 with no Goldilocks label), 6 cdk8s-plus `Namespace` sites and 8 `write_namespace` calls still write label dicts. 39 Namespaces render `goldilocks.fairwinds.com/enabled: \"true\"`.",
-      "note": "`namespaces.namespace(scope, id, *, name, vpa: Vpa, agent_readable: AgentReadable | None)` renders the labels from StrEnums that `kyverno/policies.py`, the reader of those keys, imports too. Labels are metadata, so no patch or mutator is involved, and the `vpa` keyword carries, for every Namespace the generator writes, the Goldilocks decision that 39 `enabled: \"true\"` labels restate today (step 14).",
+      "note": "`namespaces.namespace(scope, id, *, name, vpa: Vpa, agent_readable: AgentReadable | None)` renders the labels from StrEnums that `kyverno/policies.py`, the reader of those keys, imports too. Labels are metadata, so no patch or mutator is involved, and the `vpa` keyword carries, for every Namespace the generator writes, the Goldilocks decision that 3 `enabled: \"true\"` labels still restate (step 14).",
       "conventions": "C2"
     },
     {
