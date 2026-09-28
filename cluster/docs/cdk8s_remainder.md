@@ -23,16 +23,15 @@ configuration typed.
 
 ### Grocy household overlays and policy
 
-`cluster/k8s/grocy/{sf,vallejo}/mcp/{config,kustomization}.yaml` configures two
-instances and patches household-specific OIDC Secret references into the generated
-`mcp-base` Deployment. `cluster/cdk8s/grocy/mcp.py` already has household builders;
-`grocy_mcp/mcp_types.py:ServerSettings` owns the runtime settings contract.
+`cluster/k8s/grocy/{sf,vallejo}/mcp/config.yaml` configures the two MCP server
+instances through a hand-written configMapGenerator; `cluster/cdk8s/grocy/mcp.py`
+builds each household's server directly, and `grocy_mcp/mcp_types.py:ServerSettings`
+owns the runtime settings contract.
 
-Proposed: pass household values into direct per-household resource construction and
-render non-secret settings from that contract. Remove the generated-base/YAML-patch
-round trip. Keep the shared bot-owned image pin until image ownership changes explicitly.
-Use the same treatment for the app/user-perms overlays where they express household
-variation.
+Proposed: render non-secret settings from that contract. Keep the shared bot-owned
+image pin until image ownership changes explicitly. Where the app/user-perms overlays
+express household variation, pass it into per-household construction as the MCP
+server does, instead of a generated base and a YAML patch.
 
 `grocy/user-perms-base/policy.yaml` uses a YAML anchor for the human users' permission
 set and an explicit empty set for Haku. Its consumer already has
@@ -40,9 +39,9 @@ set and an explicit empty set for Haku. Its consumer already has
 can share the human permission set while preserving Haku's empty set. Keep live
 permission-name validation: the installed Grocy API owns that vocabulary.
 
-Done: both households render from parameters without Secret-reference patches; policy
-meaning is unchanged after anchor expansion, serialization is deterministic, and
-ConfigMap name rewriting/rollout behavior is preserved.
+Done: the MCP config renders from `ServerSettings`; policy meaning is unchanged after
+anchor expansion, serialization is deterministic, and ConfigMap name rewriting/rollout
+behavior is preserved.
 
 ### Airlock
 
