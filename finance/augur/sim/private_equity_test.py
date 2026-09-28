@@ -23,12 +23,7 @@ from finance.augur.sim.actions import DecisionActions, PayClaim
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
-from finance.augur.sim.fixed_point import (
-    currency_amount_to_quanta,
-    quantity_scale_for_asset,
-    quantity_to_quanta,
-    rate_to_ppb,
-)
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
@@ -45,7 +40,6 @@ from finance.augur.sim.testing.issuer_protocol import Code, Money, Rate, at_mont
 from finance.augur.sim.testing.rollouts import book
 from finance.augur.sim.world import World
 
-QUANTUM = Decimal("0.01")
 QUANTA_PER_UNIT = 100
 ALICE = AgentId("alice")
 SPEND_SINK = AgentId("spend_sink")
@@ -60,13 +54,9 @@ ACME = PrivateEquityAssetKey(issuer_id=IssuerId(ISSUER))
 SCALE = quantity_scale_for_asset(ACME)
 
 
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
-
-
 def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
     """An account and its opening balance."""
-    return AccountRef(agent_id=agent_id, account_id=account_id), money(balance)
+    return AccountRef(agent_id=agent_id, account_id=account_id), USD.quanta(balance)
 
 
 def protocol(
@@ -144,9 +134,9 @@ def holder(
         accounts=(account(ALICE, balance=initial_cash), account(SPEND_SINK), *((account(IRS),) if taxed else ())),
         lot_purchase_month=-pe_holding_period_months,
         lot_units=quantity_to_quanta(pe_units, scale=SCALE),
-        lot_basis=money(Decimal(pe_units) * pe_cost_basis_per_unit),
-        monthly_spend=money(monthly_spend),
-        floor=None if lnw_floor is None else money(lnw_floor),
+        lot_basis=USD.quanta(Decimal(pe_units) * pe_cost_basis_per_unit),
+        monthly_spend=USD.quanta(monthly_spend),
+        floor=None if lnw_floor is None else USD.quanta(lnw_floor),
         taxed=taxed,
     )
 
