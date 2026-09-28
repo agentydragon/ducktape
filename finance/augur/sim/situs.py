@@ -33,6 +33,8 @@ class SitusLaw:
         Deviation: a fiscal year after the last published one carries that year's rate forward;
         the law sets each year's rate from that year's debt service, which is not known ahead.
         """
+        # TODO: an unpublished fiscal year's debt rate should come from an exogenous series supplied
+        # per rate area, the way CPI is, rather than the last published rate.
         if fiscal_year < min(self.debt_rates):
             raise ValueError(f"{self.situs_id!r} publishes no debt rate as early as fiscal year {fiscal_year}")
         return self.debt_rates[min(fiscal_year, max(self.debt_rates))]

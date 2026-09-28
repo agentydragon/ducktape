@@ -113,6 +113,8 @@ without them.
   taxes.
 - **SUPPLEMENTAL**: the purchase-year supplemental bill on the change in assessed
   value, prorated over the rest of the fiscal year.
+- **DEBTPATH**: a rate area's debt rate for unpublished fiscal years comes from a supplied
+  exogenous series, in place of carrying the last published rate forward.
 - **DECLINE**: a Proposition 8 reduction while the home-value path is below the
   factored base, recovering toward it.
 - **INSTALLMENTS** (after MIDYEAR): the July–June secured bill is paid in its two

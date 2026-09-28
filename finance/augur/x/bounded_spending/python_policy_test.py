@@ -17,16 +17,9 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
-from finance.augur.sim.jurisdictions import (
-    IncomeTax,
-    InterestExemptions,
-    Jurisdiction,
-    StatutoryAmount,
-    StatutoryIndexation,
-    TaxBracket,
-)
+from finance.augur.sim.jurisdictions import HYPOTHETICAL_FLAT_TAX, flat_income_tax
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
@@ -34,7 +27,7 @@ from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.world import World
 from finance.augur.x.bounded_spending.python_policy import (
     BatchPolicy,
@@ -241,26 +234,7 @@ def test_cpi_dependent_rule_does_not_invent_a_flat_missing_index() -> None:
 
 def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> None:
     stock = SecurityKey(symbol=SecuritySymbol("synthetic-tax-stock"))
-    rules = Jurisdiction(
-        jurisdiction_id=JurisdictionId("synthetic-flat-tax"),
-        income_tax=IncomeTax(
-            exempt_interest=InterestExemptions(treasury=False, municipal=set()),
-            ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
-            ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
-            standard_deduction={FilingStatus.SINGLE: Decimal(0)},
-            max_capital_loss_ordinary_offset={FilingStatus.SINGLE: Decimal(0)},
-            law_year=2024,
-            indexation=dict.fromkeys(
-                (
-                    StatutoryAmount.ORDINARY_INCOME_BRACKETS,
-                    StatutoryAmount.LTCG_BRACKETS,
-                    StatutoryAmount.STANDARD_DEDUCTION,
-                    StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET,
-                ),
-                StatutoryIndexation.FIXED,
-            ),
-        ),
-    )
+    rules = flat_income_tax(HYPOTHETICAL_FLAT_TAX, ordinary_rate=Decimal("0.20"), ltcg_rate=Decimal("0.10"))
     series = _series(
         ExternalSeriesContext.from_level_blocks(
             [(stock, np.full((1, 14), 100.0)), (InflationKey(), np.ones((1, 14)))], rollout_count=1, horizon_months=13

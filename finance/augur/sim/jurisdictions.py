@@ -229,3 +229,33 @@ def load_jurisdiction(jurisdiction_id: JurisdictionId) -> Jurisdiction:
     if "parent" in data:
         data["parent"] = load_jurisdiction(JurisdictionId(data["parent"]))
     return Jurisdiction.model_validate(data)
+
+
+# The one hypothetical jurisdiction studies and tests share; no data file carries it.
+HYPOTHETICAL_FLAT_TAX = JurisdictionId("hypothetical-flat-tax")
+
+
+def flat_income_tax(jurisdiction_id: JurisdictionId, *, ordinary_rate: Decimal, ltcg_rate: Decimal) -> Jurisdiction:
+    """Hypothetical law for studies and tests, not a shipped jurisdiction: a single filer's income
+    taxed at `ordinary_rate` and long-term gains at `ltcg_rate`, with no deductions, no capital-loss
+    offset and no exempt interest, fixed in nominal dollars."""
+    return Jurisdiction(
+        jurisdiction_id=jurisdiction_id,
+        income_tax=IncomeTax(
+            law_year=2024,
+            indexation=dict.fromkeys(
+                (
+                    StatutoryAmount.ORDINARY_INCOME_BRACKETS,
+                    StatutoryAmount.LTCG_BRACKETS,
+                    StatutoryAmount.STANDARD_DEDUCTION,
+                    StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET,
+                ),
+                StatutoryIndexation.FIXED,
+            ),
+            ordinary_income_brackets={"single": [TaxBracket(upper="Infinity", rate=ordinary_rate)]},
+            ltcg_brackets={"single": [TaxBracket(upper="Infinity", rate=ltcg_rate)]},
+            standard_deduction={"single": Decimal(0)},
+            max_capital_loss_ordinary_offset={"single": Decimal(0)},
+            exempt_interest=InterestExemptions(treasury=False, municipal=set()),
+        ),
+    )
