@@ -561,6 +561,7 @@ data:
   settings.yaml: |
     allowed_service_account_namespaces:
       - agentplane-testing
+    log_llm_requests: false
 immutable: false
 ---
 apiVersion: apps/v1

@@ -644,6 +644,7 @@ data:
   settings.yaml: |
     allowed_service_account_namespaces:
       - agentplane-staging
+    log_llm_requests: true
 immutable: false
 ---
 apiVersion: apps/v1
