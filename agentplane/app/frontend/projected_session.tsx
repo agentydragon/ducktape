@@ -37,7 +37,7 @@ import {
 } from "react";
 
 import { CommandSchema, type Command } from "../../protocol/command_pb";
-import { ItemKind } from "../../protocol/event_pb";
+import { ItemKind, RecoveryDisposition } from "../../protocol/event_pb";
 import {
   command,
   threadEvidence,
@@ -372,6 +372,11 @@ export function EntityCard({
   // always closed, for anything but a reasoning step with a body to disclose.
   const reasoningTextRef = "kind" in entity.state && entity.state.kind === ItemKind.REASONING ? entity.textRef : null;
   const [reasoningOpen] = useRetainedDisclosure(reasoningTextRef && payloadDisclosureId(reasoningTextRef));
+  const discardedId =
+    "kind" in entity.state && entity.state.recovery === RecoveryDisposition.ABSENT
+      ? `${entity.projectionEpoch}:${entity.entityId}:discarded`
+      : null;
+  const [discardedOpen] = useRetainedDisclosure(discardedId);
   if (entity.entityKind === "confirmed_input" || pendingSentMessage(entity)) {
     const pending = entity.entityKind !== "confirmed_input";
     return (
@@ -425,7 +430,7 @@ export function EntityCard({
   const reasoning = entity.state.kind === ItemKind.REASONING;
   const body = (
     <>
-      {tool || entity.state.completion === null ? (
+      {tool || entity.state.completion === null || entity.state.recovery !== null ? (
         <Group justify="space-between" mb="xs" wrap="nowrap">
           <Group gap="xs">
             {tool && <Badge variant="light">{entity.state.tool_name || "tool"}</Badge>}
@@ -435,6 +440,18 @@ export function EntityCard({
         </Group>
       ) : (
         <EvidenceToggle entity={entity} style={{ position: "absolute", top: 4, right: 4 }} />
+      )}
+      {entity.state.recovery === RecoveryDisposition.UNKNOWN && (
+        <Text size="sm" c="dimmed" mb="xs" style={{ overflowWrap: "anywhere" }}>
+          Whether this content remains in the model's context could not be determined.
+          {entity.state.recovery_reason && ` ${entity.state.recovery_reason}`}
+        </Text>
+      )}
+      {entity.state.recovery === RecoveryDisposition.REVISED && (
+        <Text size="sm" c="dimmed" mb="xs">
+          Showing the content retained for continuation. Earlier observations are available in Evidence.
+          {tool && " Recovery content does not establish a tool execution outcome."}
+        </Text>
       )}
       {reasoning ? (
         entity.textRef ? (
@@ -446,10 +463,40 @@ export function EntityCard({
         entity.textRef && <Body reference={entity.textRef} format="markdown" />
       )}
       {entity.argumentsRef && <LazyBody label="Arguments" reference={entity.argumentsRef} format="code" />}
-      {entity.outputRef && <LazyBody label="Output" reference={entity.outputRef} format="code" />}
+      {entity.outputRef && (
+        <LazyBody
+          label={entity.state.recovery === RecoveryDisposition.REVISED ? "Continuation output" : "Output"}
+          reference={entity.outputRef}
+          format="code"
+        />
+      )}
       <EvidencePanel threadId={threadId} entity={entity} />
     </>
   );
+  if (discardedId !== null) {
+    return (
+      <CollapsibleCard open={discardedOpen}>
+        <RetainedDisclosure
+          id={discardedId}
+          summary={
+            <Text component="span" size="sm" c="dimmed">
+              {tool ? `${entity.state.tool_name || "Tool"}: discarded context` : "Discarded output"}
+              {" (not retained in model context)"}
+            </Text>
+          }
+        >
+          <Stack gap="xs" mt="xs">
+            {tool && (
+              <Text size="sm" c="dimmed">
+                Discarded context does not undo tool side effects or change its recorded execution outcome.
+              </Text>
+            )}
+            {body}
+          </Stack>
+        </RetainedDisclosure>
+      </CollapsibleCard>
+    );
+  }
   // Assistant text carries no role label and no card: it reads as the reply by position, across
   // from the user's right-aligned bubble. A tool call is boxed unconditionally, labelled by its
   // tool; a standalone reasoning step is boxed only once its own disclosure opens, like a
@@ -469,12 +516,32 @@ export function EntityCard({
  * the retained history -- and whether any tool call among them failed. */
 function ItemStatus({ items, live }: { items: ThreadEntity[]; live: boolean }): JSX.Element {
   const states = items.flatMap((item) => ("kind" in item.state ? [item.state] : []));
-  const unfinished = states.some((state) => state.completion === null);
+  const unfinished = states.some((state) => state.completion === null && state.recovery === null);
+  const interrupted = states.some((state) => state.completion === null && state.recovery !== null);
+  const recoveries = [...new Set(states.flatMap((state) => (state.recovery === null ? [] : [state.recovery])))];
   return (
     <>
       {unfinished && (
         <Badge role="img" aria-label={live ? "Streaming" : "Incomplete"}>
           {live ? "Streaming" : "Incomplete"}
+        </Badge>
+      )}
+      {interrupted && (
+        <Badge role="img" aria-label="Interrupted">
+          Interrupted
+        </Badge>
+      )}
+      {recoveries.map((recovery) => {
+        const { label, color } = recoveryPresentation(recovery);
+        return (
+          <Badge key={recovery} color={color} role="img" aria-label={label}>
+            {label}
+          </Badge>
+        );
+      })}
+      {states.some((state) => state.recovery !== null && state.tool_succeeded === true) && (
+        <Badge color="green" role="img" aria-label="Succeeded">
+          Succeeded
         </Badge>
       )}
       {states.some((state) => state.tool_succeeded === false) && (
@@ -484,6 +551,19 @@ function ItemStatus({ items, live }: { items: ThreadEntity[]; live: boolean }): 
       )}
     </>
   );
+}
+
+function recoveryPresentation(recovery: number): { label: string; color: string } {
+  switch (recovery) {
+    case RecoveryDisposition.RETAINED:
+      return { label: "Retained in context", color: "gray" };
+    case RecoveryDisposition.ABSENT:
+      return { label: "Not retained in context", color: "gray" };
+    case RecoveryDisposition.REVISED:
+      return { label: "Revised for continuation", color: "blue" };
+    default:
+      return { label: "Retention unknown", color: "yellow" };
+  }
 }
 
 /** The collapsible shell a run, a lifecycle group, or a standalone reasoning step shares: collapsed,
@@ -540,7 +620,7 @@ function RunView({
     <CollapsibleRows
       id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:run`}
       summary={
-        <Flex component="span" display="inline-flex" gap="xs" align="center">
+        <Flex component="span" display="inline-flex" gap="xs" align="center" wrap="wrap">
           <Text size="xs" c="dimmed">
             {summarizeRun(entities)}
           </Text>
