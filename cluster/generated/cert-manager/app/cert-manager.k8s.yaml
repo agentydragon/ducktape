@@ -100,7 +100,7 @@ metadata:
 spec:
   endpoints:
     - path: /metrics
-      port: http-metrics
+      port: tcp-prometheus-servicemonitor
   selector:
     matchLabels:
       app.kubernetes.io/component: controller

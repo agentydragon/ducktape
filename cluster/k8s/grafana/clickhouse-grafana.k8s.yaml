@@ -10,7 +10,7 @@ spec:
     isDefault: false
     jsonData:
       defaultDatabase: aiquota
-      host: clickhouse.clickhouse.svc.cluster.local
+      host: clickhouse.clickhouse.svc
       port: 8123
       protocol: http
       queryTimeout: 60
