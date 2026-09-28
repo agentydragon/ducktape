@@ -91,35 +91,19 @@ data:
           display_name: Gemini 3.5 Flash Lite
         - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
           display_name: Qwen3.8 Flash Next IQ4_XS (128K)
-        - model: ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
-          display_name: Qwen3.8 Flash Next IQ4_XS (128K)
         - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          display_name: Qwen3.8 Flash Next IQ4_XS (256K)
-        - model: ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
           display_name: Qwen3.8 Flash Next IQ4_XS (256K)
         - model: ollama/oai-chat/gpt-oss-20b-128k
           display_name: GPT-OSS 20B (128K)
-        - model: ollama/olm-chat/gpt-oss-20b-128k
-          display_name: GPT-OSS 20B (128K)
         - model: ollama/oai-chat/gpt-oss-20b-256k
-          display_name: GPT-OSS 20B (256K)
-        - model: ollama/olm-chat/gpt-oss-20b-256k
           display_name: GPT-OSS 20B (256K)
         - model: ollama/oai-chat/gpt-oss-20b-512k
           display_name: GPT-OSS 20B (512K)
-        - model: ollama/olm-chat/gpt-oss-20b-512k
-          display_name: GPT-OSS 20B (512K)
         - model: ollama/oai-chat/gpt-oss-20b-1m
-          display_name: GPT-OSS 20B (1M)
-        - model: ollama/olm-chat/gpt-oss-20b-1m
           display_name: GPT-OSS 20B (1M)
         - model: ollama/oai-chat/gpt-oss-120b-128k
           display_name: GPT-OSS 120B (128K)
-        - model: ollama/olm-chat/gpt-oss-120b-128k
-          display_name: GPT-OSS 120B (128K)
         - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
-          display_name: Gemma 4 31B (128K)
-        - model: ollama/olm-chat/gemma4-31b-it-q8_0-128k
           display_name: Gemma 4 31B (128K)
         - model: chatgpt/oai-responses/gpt-6-astra
           display_name: GPT-6 Astra
@@ -156,21 +140,13 @@ data:
           - antigravity/ant-messages/gemini-3.1-flash-lite
           - antigravity/ant-messages/gemini-3.5-flash-lite
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
           - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/olm-chat/gpt-oss-20b-128k
           - ollama/oai-chat/gpt-oss-20b-256k
-          - ollama/olm-chat/gpt-oss-20b-256k
           - ollama/oai-chat/gpt-oss-20b-512k
-          - ollama/olm-chat/gpt-oss-20b-512k
           - ollama/oai-chat/gpt-oss-20b-1m
-          - ollama/olm-chat/gpt-oss-20b-1m
           - ollama/oai-chat/gpt-oss-120b-128k
-          - ollama/olm-chat/gpt-oss-120b-128k
           - ollama/oai-chat/gemma4-31b-it-q8_0-128k
-          - ollama/olm-chat/gemma4-31b-it-q8_0-128k
         HARNESS_CODEX:
           - chatgpt/oai-responses/gpt-6-astra
           - chatgpt/oai-responses/gpt-6-sol
@@ -181,21 +157,13 @@ data:
           - chatgpt/oai-responses/gpt-5.6-terra
           - chatgpt/oai-responses/gpt-5.6-luna
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
           - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/olm-chat/gpt-oss-20b-128k
           - ollama/oai-chat/gpt-oss-20b-256k
-          - ollama/olm-chat/gpt-oss-20b-256k
           - ollama/oai-chat/gpt-oss-20b-512k
-          - ollama/olm-chat/gpt-oss-20b-512k
           - ollama/oai-chat/gpt-oss-20b-1m
-          - ollama/olm-chat/gpt-oss-20b-1m
           - ollama/oai-chat/gpt-oss-120b-128k
-          - ollama/olm-chat/gpt-oss-120b-128k
           - ollama/oai-chat/gemma4-31b-it-q8_0-128k
-          - ollama/olm-chat/gemma4-31b-it-q8_0-128k
     agent_egress_api_url: http://agentplane-egress.agentplane-staging.svc.cluster.local
     agent_actions_service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
     thread_presets:

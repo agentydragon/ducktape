@@ -6,6 +6,15 @@ routes and policies passed in here.
 from __future__ import annotations
 
 from cluster.cdk8s.agentplane.model_display_names import display_name
+from cluster.cdk8s.model_rosters import OLLAMA_CHAT_MODELS, ApiShape, Provider, exposed_name, ollama_chat_variant
+
+# Offer one route per local model/context, avoiding the native adapter's
+# incompatible handling of Codex's reasoning options.
+OLLAMA_MODELS = [
+    exposed_name(Provider.OLLAMA, ApiShape.OAI_CHAT, ollama_chat_variant(model, context))
+    for model, _, contexts in OLLAMA_CHAT_MODELS
+    for context in contexts
+]
 
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
 _THREAD_PRESET_HAKU_CLAUDE = "haku-claude"

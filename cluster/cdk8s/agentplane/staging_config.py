@@ -5,13 +5,8 @@ model_rosters.py for the model-name scheme.
 
 from __future__ import annotations
 
-from cluster.cdk8s.agentplane.app_settings import settings
-from cluster.cdk8s.litellm.keys import (
-    ANTIGRAVITY_CLIENT_MODELS,
-    CLAUDE_CLIENT_MODELS,
-    OAI_LANE_MODELS,
-    OLLAMA_CHAT_CLIENT_MODELS,
-)
+from cluster.cdk8s.agentplane.app_settings import OLLAMA_MODELS, settings
+from cluster.cdk8s.litellm.keys import ANTIGRAVITY_CLIENT_MODELS, CLAUDE_CLIENT_MODELS, OAI_LANE_MODELS
 from cluster.cdk8s.model_rosters import ApiShape, Provider, codex_responses_name, exposed_name
 
 _NAMESPACE = "agentplane-staging"
@@ -35,8 +30,8 @@ def config() -> dict:
         namespace=_NAMESPACE,
         # The staging key admits the subscription lanes, the full Antigravity lineup,
         # and local Ollama chat routes.
-        harness_claude=[*CLAUDE_CLIENT_MODELS, *ANTIGRAVITY_CLIENT_MODELS, *OLLAMA_CHAT_CLIENT_MODELS],
-        harness_codex=[*OAI_LANE_MODELS, *OLLAMA_CHAT_CLIENT_MODELS],
+        harness_claude=[*CLAUDE_CLIENT_MODELS, *ANTIGRAVITY_CLIENT_MODELS, *OLLAMA_MODELS],
+        harness_codex=[*OAI_LANE_MODELS, *OLLAMA_MODELS],
         thread_preset_codex_model=codex_responses_name("gpt-6-luna"),
         action_policy_sets=list(PUBLIC_CODER_ACTION_POLICY_SETS),
         # The "haku" sandbox preset (app_settings.py) exists only here, not in
