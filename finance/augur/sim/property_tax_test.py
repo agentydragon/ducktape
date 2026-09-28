@@ -27,6 +27,7 @@ OWNER, COUNTY = AgentId("test-owner"), AgentId("test-county")
 CHECKING = AccountId("checking")
 HOME = PropertyId("test-home")
 SAN_FRANCISCO = compile_situs(load_jurisdiction(JurisdictionId("san_francisco")), currency=USD)
+MAINLAND_VALLEJO = compile_situs(load_jurisdiction(JurisdictionId("solano_tra_007000")), currency=USD)
 
 
 def dollars(amount: Decimal | int | str) -> int:
@@ -149,6 +150,28 @@ def test_san_francisco_s_published_comparative_bill() -> None:
     assert assessed.values[12] == dollars(731_646)
     assert assessed.fiscal_year(2023, 2023) == dollars("8365.14")
     assert assessed.fiscal_year(2023, 2024) == dollars("8488.76")
+
+
+def test_a_mainland_vallejo_bill_and_a_debt_rate_carried_past_the_last_published_year() -> None:
+    """Solano TRA 007000, bought on the 2025 lien date for $600,000 and lived in: FY 2025-26 owes
+    (600,000 - 7,000) × 1.119373% = $6,637.88. The 2026 lien date grows it by 1.02 to $612,000,
+    and FY 2026-27, which the county has not published, keeps FY 2025-26's rate:
+    (612,000 - 7,000) × 1.119373% = $6,772.21."""
+    assessed = assess(
+        Holding(
+            start_year=2025,
+            purchase_month=0,
+            price=dollars(600_000),
+            horizon=30,
+            situs=MAINLAND_VALLEJO,
+            occupied=frozenset(range(30)),
+            # The 2027 lien date, which sets no bill here, is simulated.
+            cpi=[100_000] * 30,
+        )
+    )
+
+    assert assessed.fiscal_year(2025, 2025) == dollars("6637.88")
+    assert assessed.fiscal_year(2025, 2026) == dollars("6772.21")
 
 
 @pytest.mark.parametrize(
