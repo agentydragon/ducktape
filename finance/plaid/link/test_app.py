@@ -146,18 +146,24 @@ class _FakePlaidApi:
         return cast(ItemRemoveResponse, ItemRemoveResponse(request_id="req-item-remove"))
 
     def item_webhook_update(self, request: ItemWebhookUpdateRequest) -> ItemWebhookUpdateResponse:
-        return ItemWebhookUpdateResponse(
-            item=Item(
-                item_id="item_123",
-                webhook=request.webhook,
-                error=None,
-                available_products=[Products("transactions")],
-                billed_products=[],
-                consent_expiration_time=None,
-                update_type="background",
-                _check_type=False,
+        return cast(
+            ItemWebhookUpdateResponse,
+            ItemWebhookUpdateResponse(
+                item=cast(
+                    Item,
+                    Item(
+                        item_id="item_123",
+                        webhook=request.webhook,
+                        error=None,
+                        available_products=[Products("transactions")],
+                        billed_products=[],
+                        consent_expiration_time=None,
+                        update_type="background",
+                        _check_type=False,
+                    ),
+                ),
+                request_id="req-webhook-update",
             ),
-            request_id="req-webhook-update",
         )
 
     def webhook_verification_key_get(
@@ -169,18 +175,23 @@ class _FakePlaidApi:
         def encode(value: int) -> str:
             return base64.urlsafe_b64encode(value.to_bytes(32, "big")).rstrip(b"=").decode("ascii")
 
-        key = JWKPublicKey(
-            alg="ES256",
-            crv="P-256",
-            kid="test-key",
-            kty="EC",
-            use="sig",
-            x=encode(numbers.x),
-            y=encode(numbers.y),
-            created_at=0,
-            expired_at=None,
+        key = cast(
+            JWKPublicKey,
+            JWKPublicKey(
+                alg="ES256",
+                crv="P-256",
+                kid="test-key",
+                kty="EC",
+                use="sig",
+                x=encode(numbers.x),
+                y=encode(numbers.y),
+                created_at=0,
+                expired_at=None,
+            ),
         )
-        return WebhookVerificationKeyGetResponse(key=key, request_id="req-webhook-key")
+        return cast(
+            WebhookVerificationKeyGetResponse, WebhookVerificationKeyGetResponse(key=key, request_id="req-webhook-key")
+        )
 
     def transactions_sync(self, request: object) -> TransactionsSyncResponse:
         raise AssertionError("unexpected transaction sync in this app test")
