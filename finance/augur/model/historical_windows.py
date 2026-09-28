@@ -35,7 +35,7 @@ Moody's corporate curves, where the fitted model has only its own three-factor s
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from itertools import pairwise
 from pathlib import Path
@@ -58,7 +58,7 @@ from finance.evidence.loading import MonthlyLevel, evidence_dir_from_env
 class MacroHistory:
     """The aligned monthly record every window is cut from.
 
-    All four series share `months`, so a window is a slice and nothing can drift out of
+    Every series shares `months`, so a window is a slice and nothing can drift out of
     alignment. `short_rate` and `term_spread` are annualized decimals; `equity_level` is a
     total-return index and `cpi_level` a price index, both in arbitrary units because only
     their ratios within a window are ever used.
@@ -79,22 +79,31 @@ class MacroHistory:
     corporate_baa_yield: np.ndarray
     equity_level: np.ndarray
     cpi_level: np.ndarray
+    # Ex-US developed equity total-return index in USD, compounded like `equity_level`; `None` for
+    # a US-only record. Opt-in (`with_ex_us_equity`) because it starts in 1975, and a record
+    # carrying it is cut to that span — half a century shorter for callers that never read it.
+    ex_us_equity_level: np.ndarray | None = None
 
     def __post_init__(self) -> None:
-        lengths = {
-            len(self.months),
-            len(self.short_rate),
-            len(self.term_spread),
-            len(self.corporate_aaa_yield),
-            len(self.corporate_baa_yield),
-            len(self.equity_level),
-            len(self.cpi_level),
-        }
+        series = [
+            self.months,
+            self.short_rate,
+            self.term_spread,
+            self.corporate_aaa_yield,
+            self.corporate_baa_yield,
+            self.equity_level,
+            self.cpi_level,
+        ]
+        indices = [self.equity_level, self.cpi_level]
+        if self.ex_us_equity_level is not None:
+            series.append(self.ex_us_equity_level)
+            indices.append(self.ex_us_equity_level)
+        lengths = {len(values) for values in series}
         if len(lengths) != 1:
             raise ValueError(f"macro history series have different lengths: {sorted(lengths)}")
         if any(later <= earlier for earlier, later in pairwise(self.months)):
             raise ValueError("macro history months must be strictly increasing")
-        if np.any(self.equity_level <= 0.0) or np.any(self.cpi_level <= 0.0):
+        if any(np.any(index <= 0.0) for index in indices):
             raise ValueError("equity and CPI levels must be strictly positive to be rebased")
 
     def restricted_to(self, *, start: date | None, end: date | None) -> MacroHistory:
@@ -112,15 +121,39 @@ class MacroHistory:
         ]
         if not keep:
             raise ValueError(f"no month of the {self.months[0]}..{self.months[-1]} record falls in {start}..{end}")
-        rows = np.asarray(keep)
+        return self._rows(np.asarray(keep))
+
+    def with_ex_us_equity(self, ex_us_equity_level: Sequence[tuple[date, float]]) -> MacroHistory:
+        """The record cut to the months `ex_us_equity_level` covers, carrying it alongside.
+
+        Every other series keeps its values month for month, so a window or bootstrap block
+        draws US and ex-US equity from the same months. The kept months must be a contiguous
+        run of the record: a hole would join two distant months as if consecutive, and both
+        the replay and the bootstrap read growth between neighbouring rows.
+        """
+
+        levels = dict(ex_us_equity_level)
+        keep = [index for index, month in enumerate(self.months) if month in levels]
+        if not keep:
+            raise ValueError("the ex-US equity series shares no month with the record")
+        if keep[-1] - keep[0] + 1 != len(keep):
+            raise ValueError(
+                f"the ex-US equity series covers {len(keep)} of the record's months "
+                f"{self.months[keep[0]]}..{self.months[keep[-1]]}, not all of them"
+            )
+        cut = self._rows(np.asarray(keep))
+        return replace(cut, ex_us_equity_level=np.array([levels[month] for month in cut.months]))
+
+    def _rows(self, rows: np.ndarray) -> MacroHistory:
         return MacroHistory(
-            months=tuple(self.months[index] for index in keep),
+            months=tuple(self.months[index] for index in rows),
             short_rate=self.short_rate[rows],
             term_spread=self.term_spread[rows],
             corporate_aaa_yield=self.corporate_aaa_yield[rows],
             corporate_baa_yield=self.corporate_baa_yield[rows],
             equity_level=self.equity_level[rows],
             cpi_level=self.cpi_level[rows],
+            ex_us_equity_level=None if self.ex_us_equity_level is None else self.ex_us_equity_level[rows],
         )
 
 
@@ -368,6 +401,10 @@ does not keep its own copy of the list. It lives here because adding a series to
 the edit that invalidates one — and a caller that missed the edit fails at load, not at fetch."""
 
 
+MACRO_HISTORY_WITH_EX_US_SOURCES = (*MACRO_HISTORY_SOURCES, sources.FRENCH_INTERNATIONAL_INDICES)
+"""What `load_macro_history_with_ex_us` reads."""
+
+
 def load_macro_history(evidence_dir: Path) -> MacroHistory:
     """Assemble the century-long record the historical-window sampler replays.
 
@@ -417,4 +454,21 @@ def load_macro_history(evidence_dir: Path) -> MacroHistory:
         cpi_level=[
             (level.month, level.value) for level in loading.read_monthly_levels(evidence_dir, sources.FRED_CPI_NSA)
         ],
+    )
+
+
+def load_macro_history_with_ex_us(evidence_dir: Path) -> MacroHistory:
+    """`load_macro_history` cut to the ex-US record and carrying it: Ken French's international
+    index (`sources.FRENCH_INTERNATIONAL_INDICES`), compounded into a level like the US equity.
+
+    Today that runs 1975-01 to the international file's last month, which trails the US
+    factors: French publishes it once a year.
+    """
+
+    ex_us = loading.french_international_market_frame(
+        loading.source_bytes(evidence_dir, sources.FRENCH_INTERNATIONAL_INDICES), sources.FRENCH_INTERNATIONAL_INDICES
+    )
+    levels = np.cumprod(1.0 + ex_us.get_column("market_total_return").to_numpy())
+    return load_macro_history(evidence_dir).with_ex_us_equity(
+        list(zip(ex_us.get_column("month").to_list(), levels.tolist(), strict=True))
     )
