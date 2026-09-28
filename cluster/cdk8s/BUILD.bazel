@@ -65,11 +65,30 @@ py_library(
     srcs = ["helm.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        "//cluster/cdk8s/providers/flux:git_repository",
+        "//cluster/cdk8s/providers/flux:helm_release",
         "//cluster/cdk8s/providers/flux:helm_repository",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "@pypi//cdk8s",
         "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_helm",
+    srcs = ["test_helm.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":helm",
+        "//:conftest",
+        "//cluster/cdk8s/providers/flux:git_repository",
+        "//cluster/cdk8s/providers/flux:helm_repository",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -357,9 +376,9 @@ py_library(
     name = "restic_backup",
     srcs = ["restic_backup.py"],
     deps = [
+        "//cluster/cdk8s/external_secrets:kubernetes_store",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//cluster/cdk8s/providers/external_secrets:secretstore",
         "//cluster/cdk8s/providers/volsync:replication_source",
         "//cluster/cdk8s/providers/volsync:replicationsource",
         "@pypi//cdk8s",
@@ -405,6 +424,7 @@ py_library(
         ":manifest_roots",
         "//cluster/cdk8s/cert_manager:config",
         "//cluster/cdk8s/providers/gateway_api:gateway",
+        "//cluster/cdk8s/providers/gateway_api:gateway_api_gateway",
         "//cluster/cdk8s/providers/gateway_api:http_route",
         "//cluster/cdk8s/providers/gateway_api:httproute",
         "//cluster/cdk8s/providers/gateway_api:listener",
@@ -1069,7 +1089,7 @@ py_library(
         ":node_scheduling",
         ":pod_policy",
         ":probes",
-        "//cluster/cdk8s/providers/external_secrets:clustersecretstore",
+        "//cluster/cdk8s/external_secrets:kubernetes_store",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/flux:kustomization",
@@ -1559,7 +1579,6 @@ py_library(
         "//cluster/cdk8s/seaweedfs:external_credentials",
         "//cluster/cdk8s/seaweedfs:filer_db",
         "//cluster/cdk8s/seaweedfs:flux_kustomizations",
-        "//cluster/cdk8s/seaweedfs:forgejo_bucket",
         "//cluster/cdk8s/seaweedfs:loom_gym_bucket",
         "//cluster/cdk8s/seaweedfs:monitoring",
         "//cluster/cdk8s/seaweedfs:namespace",

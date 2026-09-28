@@ -66,3 +66,14 @@ py_library(
         "@pypi//constructs",
     ],
 )
+
+py_library(
+    name = "cert_manager_bundle",
+    srcs = ["bundle.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":bundle",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)

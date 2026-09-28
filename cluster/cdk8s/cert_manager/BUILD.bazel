@@ -26,6 +26,7 @@ py_library(
     deps = [
         ":config",
         "//cluster/cdk8s/providers/cert_manager:bundle",
+        "//cluster/cdk8s/providers/cert_manager:cert_manager_bundle",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
         "//cluster/cdk8s/providers/cert_manager:certificate",
         "//cluster/cdk8s/providers/cert_manager:cluster_issuer",
@@ -54,6 +55,7 @@ py_library(
         ":cluster_ca",
         "//cluster/cdk8s:reflector",
         "//cluster/cdk8s/providers/cert_manager:bundle",
+        "//cluster/cdk8s/providers/cert_manager:cert_manager_bundle",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
         "//cluster/cdk8s/providers/cert_manager:certificate",
         "@pypi//cdk8s",

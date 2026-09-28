@@ -16,8 +16,6 @@ from cert_manager_crds.io.cert_manager import (
     CertificateSpecPrivateKeyAlgorithm,
 )
 from trust_manager_crds.io.cert_manager.trust import (
-    Bundle,
-    BundleSpec,
     BundleSpecSources,
     BundleSpecSourcesSecret,
     BundleSpecTarget,
@@ -25,11 +23,12 @@ from trust_manager_crds.io.cert_manager.trust import (
 )
 
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
+from cluster.cdk8s.providers.cert_manager.bundle import Bundle
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
 
 NAME = "cluster-ca"
-_ROOT_CA_SECRET = "cluster-root-ca-secret"
+ROOT_CA_SECRET = "cluster-root-ca-secret"
 
 
 class _LongLivedCa(TypedDict):
@@ -55,7 +54,7 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name="cluster-root-ca", namespace="cert-manager"),
         is_ca=True,
         common_name="cluster-root-ca",
-        secret_name=_ROOT_CA_SECRET,
+        secret_name=ROOT_CA_SECRET,
         **LONG_LIVED_CA,
         private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.RSA, size=4096),
         issuer_ref=CertificateSpecIssuerRef(name=bootstrap.name, kind="ClusterIssuer"),
@@ -65,19 +64,17 @@ def chart(app: App) -> Chart:
         chart,
         "internal",
         metadata=ApiObjectMetadata(name="cluster-internal-ca"),
-        ca=ClusterIssuerSpecCa(secret_name=_ROOT_CA_SECRET),
+        ca=ClusterIssuerSpecCa(secret_name=ROOT_CA_SECRET),
     )
     Bundle(
         chart,
         "bundle",
         metadata=ApiObjectMetadata(name="cluster-internal-ca-bundle"),
-        spec=BundleSpec(
-            sources=[
-                BundleSpecSources(secret=BundleSpecSourcesSecret(name=_ROOT_CA_SECRET, key="ca.crt")),
-                # The active issuer's root, from `config`.
-                BundleSpecSources(secret=BundleSpecSourcesSecret(name=f"{LETSENCRYPT_ISSUER}-root-ca", key="ca.crt")),
-            ],
-            target=BundleSpecTarget(config_map=BundleSpecTargetConfigMap(key="ca-certificates.crt")),
-        ),
+        sources=[
+            BundleSpecSources(secret=BundleSpecSourcesSecret(name=ROOT_CA_SECRET, key="ca.crt")),
+            # The active issuer's root, from `config`.
+            BundleSpecSources(secret=BundleSpecSourcesSecret(name=f"{LETSENCRYPT_ISSUER}-root-ca", key="ca.crt")),
+        ],
+        target=BundleSpecTarget(config_map=BundleSpecTargetConfigMap(key="ca-certificates.crt")),
     )
     return chart

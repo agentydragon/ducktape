@@ -24,12 +24,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecValuesFromKind,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-)
+from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRules, HttpRouteSpecRulesBackendRefs
 
 from cluster.cdk8s import cnpg, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -37,7 +32,7 @@ from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.gateway_api.http_route import RouteMatch
+from cluster.cdk8s.providers.gateway_api.http_route import HttpRoute, RouteMatch
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/matrix"
 NAMESPACE = "matrix"
@@ -236,17 +231,15 @@ def _synapse_routes(scope: Construct) -> None:
         scope,
         "federation-route",
         metadata=ApiObjectMetadata(name="matrix-federation", namespace=NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=["allegedly.works"],
-            rules=[
-                HttpRouteSpecRules(
-                    matches=[RouteMatch.path_prefix(prefix)],
-                    backend_refs=[HttpRouteSpecRulesBackendRefs(name=SYNAPSE, port=_SYNAPSE_PORT)],
-                )
-                for prefix in ("/_matrix", "/.well-known/matrix")
-            ],
-        ),
+        parent_refs=[cluster_gateway_parent_ref()],
+        hostnames=["allegedly.works"],
+        rules=[
+            HttpRouteSpecRules(
+                matches=[RouteMatch.path_prefix(prefix)],
+                backend_refs=[HttpRouteSpecRulesBackendRefs(name=SYNAPSE, port=_SYNAPSE_PORT)],
+            )
+            for prefix in ("/_matrix", "/.well-known/matrix")
+        ],
     )
 
 
