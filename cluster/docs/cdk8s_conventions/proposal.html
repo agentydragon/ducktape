@@ -1205,8 +1205,8 @@
             </li>
             <li>
               <strong>Postponed or deferred by you:</strong> the <code>wait</code> default, derived Orphan and the
-              stateful folds that need it, <code>PREFER_WORKERS</code> (#8244), the writer-attached fleet rules and
-              graph checks, and the user-provisioner Jobs.
+              stateful folds that need it, the writer-attached fleet rules and graph checks, and the user-provisioner
+              Jobs.
             </li>
           </ul>
         </div>
@@ -6322,7 +6322,7 @@ OPTIPLEX = Placement(node_selector={&#34;kubernetes.io/hostname&#34;: &#34;optip
 # In Helm values: {&#34;nodeSelector&#34;: HIL_OVH_NODE_SELECTOR, &#34;tolerations&#34;: [CONTROL_PLANE_TOLERATION], &#34;affinity&#34;: PREFER_WORKERS}
 
 
-# pod_policy.py, as on devel apart from the decision 16 comment in place()
+# pod_policy.py, as on devel
 POD_SPEC_PATHS: Mapping[str, str] = MappingProxyType(
     {
         &#34;Deployment&#34;: &#34;/spec/template/spec&#34;,
@@ -6385,7 +6385,6 @@ def place(workload: Construct, placement: Placement, *, tolerate_control_plane: 
         raise ValueError(f&#34;{obj.kind}/{obj.name}: already placed&#34;)
     obj.add_json_patch(JsonPatch.add(f&#34;{path}/nodeSelector&#34;, dict(placement.node_selector)))
     if tolerate_control_plane:
-        # Decision 16 (postponed, #8244) would also set PREFER_WORKERS here, beside the toleration.
         obj.add_json_patch(
             JsonPatch.add(f&#34;{path}/tolerations/-&#34;, CONTROL_PLANE_TOLERATION)
             if &#34;tolerations&#34; in pod
@@ -6453,10 +6452,9 @@ def place(workload: Construct, placement: Placement, *, tolerate_control_plane: 
                   render change (E6).
                 </p>
                 <p>
-                  The two Agentplane services that tolerate the control plane (<code>agentplane/egress.py:555</code>,
-                  <code>agentplane/llm_ingress.py:160</code>) want control-plane nodes only under pressure, which is
-                  what <code>PREFER_WORKERS</code> states (<code>node_scheduling.py:25</code>); whether
-                  <code>place()</code> adds it is decision 16.
+                  <code>tolerate_control_plane=True</code> adds only the toleration: whether a workload also prefers
+                  workers (<code>PREFER_WORKERS</code>) is that workload&#39;s own choice, never something the
+                  toleration implies.
                 </p>
                 <p>
                   Fill-if-absent is chosen over raise-if-set because cdk8s-plus always renders a container
@@ -6503,7 +6501,7 @@ def place(workload: Construct, placement: Placement, *, tolerate_control_plane: 
               On devel, 12 of 190 charts register <code>FleetRules</code> through their own
               <code>add_fleet_rules</code> call, and the Flux graph is checked after the fact over
               <code>kustomize build</code> output. Attaching the rules at the writer is deferred until the shared
-              layer&#39;s scope is agreed (step 24).
+              layer&#39;s scope is agreed (step 23).
             </p>
           </div>
         </div>
@@ -6686,7 +6684,7 @@ class FleetRules:
               edges and <code>artifact-generators</code> to <code>flux-system</code>; decision 8 classifies the 27
               direct <code>kyverno</code> edges. <code>wait</code> still defaults to
               <code>True</code> (<code>flux.py:142</code>), Orphan is passed by hand, and no synth-time check reads the
-              graph: those parts are postponed or deferred (steps 20, 21 and 24).
+              graph: those parts are postponed or deferred (steps 20, 21 and 23).
             </p>
           </div>
         </div>
@@ -10624,37 +10622,6 @@ CONFIG = {
             </div>
           </div>
         </li>
-        <li class="postponed">
-          <div><span class="chip chip-postponed">postponed</span></div>
-          <div class="q">
-            <div class="rich">
-              <p>
-                Should <code>place()</code> add <code>PREFER_WORKERS</code> for a Pod that tolerates the control plane
-                (#8244)?
-              </p>
-            </div>
-          </div>
-          <div>
-            <span class="lbl">Recommendation</span>
-            <div class="rich">
-              <p>
-                Yes, when you settle what runs where. The two Agentplane services that tolerate the control plane
-                (<code>agentplane/egress.py:555</code>, <code>agentplane/llm_ingress.py:160</code>) want control-plane
-                nodes only when the workers are full, which is what the weight-100 preference states; beside the
-                nodeSelector, it would be the whole affinity <code>place()</code> renders.
-              </p>
-            </div>
-          </div>
-          <div class="t">
-            <span class="lbl">Trade-off</span>
-            <div class="rich">
-              <p>
-                Four Deployments (the two services in staging and testing) roll once, and the scheduler&#39;s ranking
-                changes while the set of nodes each Pod may use does not.
-              </p>
-            </div>
-          </div>
-        </li>
       </ol>
     </section>
 
@@ -10698,20 +10665,6 @@ CONFIG = {
                     methods, the JSON patches, the <code>_ClusterGrant</code> chart singleton and the one-line ducktape
                     subclasses. <code>PrivateBucket</code> (step 9) then renders in each consumer&#39;s own unit with
                     its Secret name unchanged and its S3Identity in the tenant.
-                  </p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/agentydragon/ducktape/pull/8244">#8244</a></td>
-              <td>cdk8s: place() prefers workers for a Pod that tolerates the control plane</td>
-              <td><span class="chip chip-hold">hold</span></td>
-              <td>
-                <div class="rich">
-                  <p>
-                    Decision 16, postponed. A draft written against the required-affinity <code>place()</code>; it
-                    rebases onto devel&#39;s nodeSelector form, where <code>PREFER_WORKERS</code> is the whole affinity
-                    <code>place()</code> writes.
                   </p>
                 </div>
               </td>
@@ -10900,7 +10853,7 @@ CONFIG = {
                 <code>kyverno-policies</code> renders exist); the bootstrap edge <code>artifact-generators</code> to
                 <code>flux-system</code>; or a registered exception with one of #7094 rule 2&#39;s two reasons (the five
                 edges that carry one today, moved from comments into the table). Two tables hold what is not settled:
-                the 27 direct <code>kyverno</code> edges (decision 8) and the two user-provisioner Job edges (step 25).
+                the 27 direct <code>kyverno</code> edges (decision 8) and the two user-provisioner Job edges (step 24).
                 <code>external-secrets-operator</code> to <code>external-secrets-crds</code> needs
                 <code>OPERATOR_CRDS</code> to name the CRD unit. Whatever does not fit fails the check, so no new
                 unjustified edge can land.
@@ -10920,7 +10873,7 @@ CONFIG = {
                 <code>cluster/validation/{crd_layering,dependencies}.py</code>, with the tables beside
                 <code>OPERATOR_CRDS</code> so they are checks, not wiring; tests on synthetic graphs, including
                 suspended units, which <code>flux_kust_resources</code> skips today. The check moves to synth with the
-                graph checks (step 24).
+                graph checks (step 23).
               </p>
             </div>
           </div>
@@ -10967,7 +10920,7 @@ CONFIG = {
               <p>
                 <code>harden()</code> and <code>place()</code> on the raw and CRD-embedded workloads, one area per PR
                 (agents, apps, platform, ...), deleting the literal hardening structs and the placement keywords their
-                pod specs state. The provisioner Jobs stay out (step 25), as do required affinities that are not zone
+                pod specs state. The provisioner Jobs stay out (step 24), as do required affinities that are not zone
                 affinities.
               </p>
             </div>
@@ -11207,7 +11160,7 @@ CONFIG = {
             <div class="rich">
               <p>
                 <code>fleet_rules.py</code> plus the raw pod specs that state nothing. Until fleet rules reach every
-                chart (step 24), the rule covers only the 12 charts that call <code>add_fleet_rules</code>.
+                chart (step 23), the rule covers only the 12 charts that call <code>add_fleet_rules</code>.
               </p>
             </div>
           </div>
@@ -11438,7 +11391,7 @@ CONFIG = {
         </li>
       </ol>
       <h3 class="track">
-        <span class="chip chip-postponed-or-deferred">postponed or deferred</span><span>6 steps</span>
+        <span class="chip chip-postponed-or-deferred">postponed or deferred</span><span>5 steps</span>
       </h3>
       <ol class="steps">
         <li>
@@ -11531,29 +11484,6 @@ CONFIG = {
                 (<code>cluster/AGENTS.md:201-215</code>). A CNPG Cluster whose <code>initdb.secret</code> ESO mints
                 stays ordered after that Secret (<code>cnpg_conventions.md</code> R4).
               </p>
-            </div>
-          </div>
-        </li>
-        <li>
-          <div class="st">
-            <div class="rich">
-              <p><code>PREFER_WORKERS</code> on the two Agentplane services that tolerate the control plane (#8244).</p>
-            </div>
-          </div>
-          <div class="sg">
-            <span class="lbl">Gate</span>
-            <div class="rich"><p>Decision 16, postponed while you rethink what runs where.</p></div>
-          </div>
-          <div class="sc">
-            <span class="lbl">Scope</span>
-            <div class="rich">
-              <p>Two <code>place()</code> calls; four rendered Deployments.</p>
-            </div>
-          </div>
-          <div class="sr">
-            <span class="lbl">Risk</span>
-            <div class="rich">
-              <p>Low: the scheduler&#39;s ranking changes, not the nodes a Pod may use; each Deployment rolls once.</p>
             </div>
           </div>
         </li>
@@ -11708,7 +11638,7 @@ CONFIG = {
         <li>
           <div class="rich">
             <p>
-              § Testing a generator and § Adding a fleet rule, with step 24: the writer attaches fleet rules to every
+              § Testing a generator and § Adding a fleet rule, with step 23: the writer attaches fleet rules to every
               chart. <code>add_fleet_rules</code> goes, with the registration-timing note in the environment-chart
               bullet (<code>AGENTS.md:48-50</code>). Exceptions are <code>FleetExceptions</code> fields at the writer
               call. Rules read <code>pod_policy.POD_SPEC_PATHS</code>, and the graph rules run on the kustomizations
@@ -12111,6 +12041,23 @@ CONFIG = {
                   <p>
                     It moves ownership of the module interface into the generator, and a relation test between two live
                     artifacts already catches the drift.
+                  </p>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong
+                  ><code>place()</code> adds <code>PREFER_WORKERS</code> whenever a Pod tolerates the control plane
+                  (#8244)</strong
+                >
+              </td>
+              <td>
+                <div class="rich">
+                  <p>
+                    Tolerating the control plane does not mean avoiding it. The control-plane nodes all have SSDs, so
+                    running there is not a degraded fallback, and preferring workers is a per-workload choice made on
+                    that workload&#39;s own evidence, never a default <code>place()</code> derives from the toleration.
                   </p>
                 </div>
               </td>
