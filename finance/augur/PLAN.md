@@ -24,9 +24,8 @@ In priority order; their items are under § Work.
   the fitted models through a tombstoned visibility exception. That union is the pattern
   the conventions rule out. Deciding the app's model selection is part of deciding the app's
   future, which is not decided.
-- **Held feature PRs.** #8139 (uncertain equity mean), #8141 (pinned equity mean) and #8142
-  (block bootstrap, BOOT) would land in `x/models/`; #8143 is trading costs. Each waits on the
-  owner's go.
+- **Held feature PRs.** #8142 (block bootstrap, BOOT) would land in `x/models/`; #8143 is
+  trading costs. Each waits on the owner's go.
 - **Integer money.** Integer quanta were chosen for speed at large rollout counts, a gain
   never measured. If a measurement shows it does not pay, `World` may instead know its
   currency and take and return exact fixed-point `Decimal` money.
