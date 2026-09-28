@@ -94,6 +94,7 @@ py_library(
     srcs = ["stack.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
@@ -125,6 +126,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":grafana_helmrepository",
+        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
@@ -184,6 +186,7 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/grafana_operator:grafana",
         "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",

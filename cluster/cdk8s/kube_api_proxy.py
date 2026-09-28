@@ -15,6 +15,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCh
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "kube-api-proxy"
 NAMESPACE = "default"
@@ -24,6 +25,9 @@ _CONFIG_MAP = "kubeapi-proxy-config"
 _ROUTE = "kubeapi-allegedly-works"
 _PORT = 8080
 _LABELS = {"app": _PROXY}
+_SERVICE = ServiceRef(
+    name=_PROXY, port=Port(name="http", number=_PORT), pods=Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items()))
+)
 _NGINX_CONF = """\
 pid /tmp/nginx.pid;
 worker_processes 1;
@@ -163,8 +167,7 @@ def chart(app: App) -> Chart:
             },
         ),
         hostnames=["kubeapi.allegedly.works"],
-        backend=_PROXY,
-        port=_PORT,
+        backend=_SERVICE,
         hsts=False,
     )
     k8s.KubeConfigMap(
