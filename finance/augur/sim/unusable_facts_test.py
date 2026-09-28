@@ -4,8 +4,6 @@ Each refusal sits where the fact is declared or lowered, so nothing carries a nu
 price into a month's arithmetic or into the terminal snapshot.
 """
 
-from decimal import Decimal
-
 import numpy as np
 import polars as pl
 import pytest
@@ -20,7 +18,7 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
@@ -28,7 +26,6 @@ from finance.augur.sim.private_equity_series import compile_pe_channels
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.world import World
 
-QUANTUM = Decimal("0.01")
 ALICE = AgentId("alice")
 CHECKING = AccountId("checking")
 ACME = IssuerId("acme")
@@ -48,10 +45,6 @@ QUIET_CHANNELS = {
     "forced_recovery": 0,
     "company_valuation": 1,
 }
-
-
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
 def alice_holding(*series: Series) -> World:
@@ -160,7 +153,7 @@ def test_a_private_equity_mark_is_required_at_the_terminal_snapshot_too() -> Non
             purchase_month=-36,
             quantity_scale=SCALE,
             units=quantity_to_quanta(100, scale=SCALE),
-            basis=money(1000),
+            basis=USD.quanta(1000),
         )
 
     holder(*private_equity_series())
@@ -190,7 +183,7 @@ def test_an_admitted_sleeve_is_priced_at_the_quote_the_pool_carried() -> None:
     """The anchor for the refusal above: a real quote is admitted and is what the sleeve is worth."""
     world = alice_holding(*vti_series(100.0, 110.0, 120.0))
     world.declare_pool(agent_id=ALICE, account_id=CHECKING, asset_id=AssetId(VTI.symbol), quantity_scale=SCALE)
-    assert world.public_price(ALICE, AssetId(VTI.symbol), 1) == money(110)
+    assert world.public_price(ALICE, AssetId(VTI.symbol), 1) == USD.quanta(110)
 
 
 if __name__ == "__main__":

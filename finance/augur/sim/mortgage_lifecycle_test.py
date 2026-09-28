@@ -17,9 +17,10 @@ from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import ClaimId, PayClaim
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, JournalEntry
-from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
+from finance.augur.sim.fixed_point import rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.market_path import MarketPath, Series
+from finance.augur.sim.money import USD
 from finance.augur.sim.property import Housing, MortgageFinancing, Purchase, Sale, ScheduledPurchase, ScheduledSale
 from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rejected
@@ -28,7 +29,6 @@ from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
 from finance.augur.sim.world import World
 
-QUANTUM = Decimal("0.01")
 ALICE = AgentId("alice")
 BOB = AgentId("bob")
 CHECKING = AccountId("checking")
@@ -37,17 +37,13 @@ HOME_PARCEL = flat_parcel(Decimal("0.012"))
 SF_HOME = HomeValueKey(location_id=LocationId("sf"))
 
 
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
-
-
 def ref(agent_id: AgentId) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
 def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
     """An account and its opening balance."""
-    return ref(agent_id), money(balance)
+    return ref(agent_id), USD.quanta(balance)
 
 
 def home_value(*paths: list[Decimal | int], horizon_months: int) -> tuple[Series, ...]:
@@ -65,7 +61,7 @@ def financing(
         liability_id=LiabilityId(f"{borrower}-loan"),
         lender_agent_id=AgentId("bank"),
         lender_account_id=CHECKING,
-        principal=money(principal),
+        principal=USD.quanta(principal),
         annual_interest_rate_ppb=rate_to_ppb(annual_rate),
         term_months=term_months,
     )
@@ -90,9 +86,9 @@ def home(
         buyer_account_id=CHECKING,
         seller_agent_id=AgentId("seller"),
         seller_account_id=CHECKING,
-        purchase_price=money(purchase_price),
-        down_payment=money(down_payment),
-        buyer_closing_cost=money(buyer_closing_cost),
+        purchase_price=USD.quanta(purchase_price),
+        down_payment=USD.quanta(down_payment),
+        buyer_closing_cost=USD.quanta(buyer_closing_cost),
         rented_fraction_ppb=0,
         land_value_fraction_ppb=rate_to_ppb(Decimal("0.2")),
         mortgage=mortgage,
@@ -350,7 +346,7 @@ def test_paid_groups_update_entities_but_a_failed_year_end_does_not_reset_intere
                 obligation_type="cash_spend",
                 from_account=ref(ALICE),
                 to_account=ref(AgentId("seller")),
-                amount_due=money(1_000_000),
+                amount_due=USD.quanta(1_000_000),
                 property_id=None,
                 deduction_category=None,
                 deductible_fraction_ppb=1_000_000_000,

@@ -15,7 +15,7 @@ from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
-from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
@@ -31,7 +31,6 @@ from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.issuer_protocol import issuer_protocol
 from finance.augur.sim.world import World
 
-QUANTUM = Decimal("0.01")
 CHECKING = AccountId("checking")
 PRIVATE = AccountId("private")
 FEDERAL = JurisdictionId("federal_us")
@@ -52,12 +51,10 @@ PE_FREEZE_MONTH = 1
 PE_MARK_MONTHS = 3
 
 
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
-
-
 def account(world: World, agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> None:
-    world.declare_account(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=money(balance))
+    world.declare_account(
+        account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=USD.quanta(balance)
+    )
 
 
 def unfundable(*, month: int, payer: AgentId, amount: Decimal | int) -> Biller:
@@ -69,7 +66,7 @@ def unfundable(*, month: int, payer: AgentId, amount: Decimal | int) -> Biller:
         obligation_type=ObligationType.CASH_SPEND,
         from_account=AccountRef(agent_id=payer, account_id=CHECKING),
         to_account=AccountRef(agent_id=VENDOR, account_id=CHECKING),
-        amount_due=money(amount),
+        amount_due=USD.quanta(amount),
         property_id=None,
         deduction_category=None,
         deductible_fraction_ppb=1_000_000_000,
@@ -134,7 +131,7 @@ def private_equity_world(*, freeze: bool) -> World:
         purchase_month=-12,
         quantity_scale=PE_SCALE,
         units=quantity_to_quanta(10, scale=PE_SCALE),
-        basis=money(100),
+        basis=USD.quanta(100),
     )
     world.declare_tender_policy(
         TenderPolicy(owner_agent_id=PE_OWNER, proceeds_account_id=CHECKING, liquid_net_worth_floor=0)

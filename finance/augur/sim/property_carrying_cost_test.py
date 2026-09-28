@@ -13,10 +13,11 @@ from finance.augur.model.series import LocationId
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
+from finance.augur.sim.fixed_point import rate_to_ppb, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.property import Housing, MortgageFinancing, Parcel, ScheduledPurchase
 from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Finished, Rollout
@@ -27,10 +28,6 @@ from finance.augur.sim.world import World
 QUANTUM = Decimal("0.01")
 ALICE, SELLER, BANK = AgentId("alice"), AgentId("seller"), AgentId("bank")
 CHECKING = AccountId("checking")
-
-
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
 def usd(quanta: Any) -> float:
@@ -45,7 +42,7 @@ def cents(value: float) -> float:
 
 def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
     """An account and its opening balance."""
-    return AccountRef(agent_id=agent_id, account_id=CHECKING), money(balance)
+    return AccountRef(agent_id=agent_id, account_id=CHECKING), USD.quanta(balance)
 
 
 def purchase(
@@ -69,9 +66,9 @@ def purchase(
         buyer_account_id=CHECKING,
         seller_agent_id=SELLER,
         seller_account_id=CHECKING,
-        purchase_price=money(price),
-        down_payment=money(down),
-        buyer_closing_cost=money(closing),
+        purchase_price=USD.quanta(price),
+        down_payment=USD.quanta(down),
+        buyer_closing_cost=USD.quanta(closing),
         rented_fraction_ppb=0,
         land_value_fraction_ppb=rate_to_ppb(Decimal("0.20")),
         mortgage=mortgage,
@@ -85,7 +82,7 @@ def financing(
         liability_id=liability_id,
         lender_agent_id=BANK,
         lender_account_id=CHECKING,
-        principal=money(principal),
+        principal=USD.quanta(principal),
         annual_interest_rate_ppb=rate_to_ppb(annual_rate),
         term_months=term_months,
     )

@@ -15,10 +15,11 @@ from finance.augur.policy.sleeves import withdraw
 from finance.augur.sim.actions import ClaimId, DecisionActions, PayClaim, Transfer
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath, Series
+from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.results import (
     Executed,
@@ -37,7 +38,6 @@ from finance.augur.sim.world import World
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 CHECKING_TARGET = {(AccountId("checking"), AssetId("vti")): 1}
-QUANTUM = Decimal("0.01")
 SCALE = quantity_scale_for_asset(VTI)
 CHECKING = AccountId("checking")
 
@@ -46,13 +46,9 @@ def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=account_id)
 
 
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(amount, quantum=QUANTUM))
-
-
 def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
     """An account and its opening balance."""
-    return ref(agent_id, account_id), money(balance)
+    return ref(agent_id, account_id), USD.quanta(balance)
 
 
 @dataclass(frozen=True)
@@ -130,7 +126,7 @@ def compose(case: Situation, rollout_id: int, *, series: tuple[Series, ...], rol
             purchase_month=held.purchase_month,
             quantity_scale=SCALE,
             units=quantity_to_quanta(held.quantity, scale=SCALE),
-            basis=money(held.cost_basis),
+            basis=USD.quanta(held.cost_basis),
         )
     for pay in case.paychecks:
         world.declare_flow(
@@ -138,7 +134,7 @@ def compose(case: Situation, rollout_id: int, *, series: tuple[Series, ...], rol
             cause_id="future_paycheck",
             from_account=ref(AgentId("employer")),
             to_account=ref(AgentId("alice")),
-            amount=money(pay.amount),
+            amount=USD.quanta(pay.amount),
             income_category=ORDINARY_INCOME,
             deduction_category=None,
         )
@@ -150,7 +146,7 @@ def compose(case: Situation, rollout_id: int, *, series: tuple[Series, ...], rol
                 obligation_type=claim.obligation_type,
                 from_account=claim.payer,
                 to_account=claim.payee,
-                amount_due=money(claim.amount_due),
+                amount_due=USD.quanta(claim.amount_due),
                 property_id=None,
                 deduction_category=None,
                 deductible_fraction_ppb=1_000_000_000,
