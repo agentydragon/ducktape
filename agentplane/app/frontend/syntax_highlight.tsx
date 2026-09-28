@@ -15,6 +15,7 @@ import "./syntax_highlight.css";
 // language it ships, which is most of a megabyte. This is a deliberately curated set for what a
 // coding agent's transcripts actually contain (tool-call JSON/bash, plus the languages this repo
 // is written in) -- add a grammar only when it earns its bundle-size cost.
+// Keep this language list in sync with agentplane/app/agent_instructions.j2's prose list.
 hljs.registerLanguage("bash", bash);
 hljs.registerLanguage("javascript", javascript);
 hljs.registerLanguage("json", json);
