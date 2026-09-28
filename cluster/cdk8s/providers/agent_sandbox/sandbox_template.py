@@ -1,7 +1,6 @@
 """Ergonomic wrapper for agent-sandbox's `SandboxTemplate`, following cdk8s-plus's own
 construction pattern: a class named after the kind, with keyword parameters mirroring
-`SandboxTemplateSpec`'s own fields. `SandboxWarmPool` needs no wrapper this slice: every
-caller constructs it directly, referencing the `SandboxTemplate` it pools by name.
+`SandboxTemplateSpec`'s own fields.
 """
 
 from __future__ import annotations
