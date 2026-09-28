@@ -35,7 +35,7 @@ from finance.augur.model.level_series_groups import SecurityDistributionGroups
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.conftest import MakeProductService
 from finance.augur.product.holdings import Distribution, opening_holdings
-from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, resolve_primary_agent_id, sim_locations_from_config
+from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, locations_by_id, resolve_primary_agent_id
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import RolloutRequest, ScenarioKey, SpendIndex
 from finance.augur.sim.fixed_point import rate_to_ppb
@@ -221,7 +221,7 @@ def test_a_tlh_portfolio_of_a_declared_fund_is_paid_on_its_value(
                 ),
             ),
             known_location_ids=catalog.location_ids,
-            locations=sim_locations_from_config(config.locations),
+            locations=locations_by_id(config.locations),
             properties_by_id=catalog.properties_by_id,
             models={"current_model": config.models[config.default_model_id].realize_model()},
             max_rollout_samples=config.max_rollout_samples,

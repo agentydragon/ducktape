@@ -14,10 +14,11 @@ from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
+from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
+from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedLocation, _MortgageFinancing, _PropertyPurchase, _PropertyTax
+from finance.augur.sim.prepared import _MortgageFinancing, _PropertyPurchase, _PropertyTax
 from finance.augur.sim.property import Housing
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.session import ActionSession
@@ -27,18 +28,14 @@ QUANTUM = Decimal("0.01")
 ALICE, SELLER, BANK = AgentId("alice"), AgentId("seller"), AgentId("bank")
 CHECKING = AccountId("checking")
 
-SAN_FRANCISCO = PreparedLocation(
+SAN_FRANCISCO = Location(
     location_id=LocationId("san_francisco"),
-    display_name="San Francisco, CA",
-    jurisdiction_ids=(JurisdictionId("federal_us"), JurisdictionId("california")),
     annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.01180")),
     annual_special_assessment=0,
 )
 # Mare Island (Vallejo) carries flat-USD CFD special assessments on top of the ad-valorem rate.
-VALLEJO_MARE_ISLAND = PreparedLocation(
+VALLEJO_MARE_ISLAND = Location(
     location_id=LocationId("vallejo_mare_island"),
-    display_name="Vallejo, CA — Mare Island",
-    jurisdiction_ids=(JurisdictionId("federal_us"), JurisdictionId("california")),
     annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.0115")),
     annual_special_assessment=int(currency_amount_to_quanta(Decimal(2300), quantum=QUANTUM)),
 )
@@ -125,7 +122,7 @@ class Situation:
     accounts: tuple[tuple[AccountRef, int], ...]
     purchases: tuple[_PropertyPurchase, ...]
     tax_policies: tuple[_PropertyTax, ...] = ()
-    locations: tuple[PreparedLocation, ...] = (SAN_FRANCISCO,)
+    locations: tuple[Location, ...] = (SAN_FRANCISCO,)
 
 
 def compose(case: Situation) -> World:

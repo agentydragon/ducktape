@@ -55,8 +55,8 @@ from finance.augur.product.scenarios import (
     Home,
     Situation,
     build_situation,
+    locations_by_id,
     resolve_primary_agent_id,
-    sim_locations_from_config,
 )
 from finance.augur.product.simulation import simulate_product_metrics
 from finance.augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS
@@ -1203,7 +1203,7 @@ def test_a_managed_sleeve_weight_lowers_to_its_portfolio_and_draws_on_its_accoun
                 payout_account_id=PRIMARY_ACCOUNT_ID,
             ),
             properties_by_id=catalog.properties_by_id,
-            locations=sim_locations_from_config(augur_config.locations),
+            locations=locations_by_id(augur_config.locations),
         )
 
     situation = lowered(
@@ -1461,7 +1461,7 @@ def test_product_lowers_primary_residence_assignments_to_housing(
             initial_cash=Decimal(1200000),
             holdings=_no_holdings(primary_agent_id),
             properties_by_id=catalog.properties_by_id,
-            locations=sim_locations_from_config(augur_config.locations),
+            locations=locations_by_id(augur_config.locations),
         )
     )
 
@@ -1502,7 +1502,7 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
             initial_cash=Decimal(1200000),
             holdings=_no_holdings(primary_agent_id),
             properties_by_id=catalog.properties_by_id,
-            locations=sim_locations_from_config(augur_config.locations),
+            locations=locations_by_id(augur_config.locations),
         )
     )
 
@@ -1568,7 +1568,7 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
             initial_cash=Decimal(1200000),
             holdings=_no_holdings(primary_agent_id),
             properties_by_id=catalog.properties_by_id,
-            locations=sim_locations_from_config(augur_config.locations),
+            locations=locations_by_id(augur_config.locations),
         )
     )
 
@@ -1657,7 +1657,7 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
             initial_cash=Decimal(1200000),
             holdings=_no_holdings(primary_agent_id),
             properties_by_id=catalog.properties_by_id,
-            locations=sim_locations_from_config(augur_config.locations),
+            locations=locations_by_id(augur_config.locations),
         )
     )
 
@@ -1860,7 +1860,7 @@ def test_build_situation_wires_property_expenses_to_payees(augur_config: Config,
         initial_cash=Decimal(600_000),
         holdings=_no_holdings(primary_agent_id),
         properties_by_id=catalog.properties_by_id,
-        locations=sim_locations_from_config(augur_config.locations),
+        locations=locations_by_id(augur_config.locations),
     )
 
     expense_obligations = [

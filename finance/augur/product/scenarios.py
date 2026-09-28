@@ -62,7 +62,6 @@ from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
 from finance.augur.sim.money import Currency
 from finance.augur.sim.prepared import (
-    PreparedLocation,
     _CapitalImprovement,
     _MortgageFinancing,
     _MortgageInterestDeduction,
@@ -131,17 +130,8 @@ def _amount(value: object) -> Decimal:
     return value if isinstance(value, Decimal) else Decimal(str(value))
 
 
-def sim_locations_from_config(locations: tuple[LocationConfig, ...]) -> dict[LocationId, Location]:
-    return {
-        loc.location_id: Location(
-            location_id=loc.location_id,
-            display_name=loc.label,
-            jurisdiction_ids=[JurisdictionId(r) for r in loc.local_regulation.default_tax_regimes],
-            annual_property_tax_rate=float(loc.local_regulation.property_tax_annual_pct) / 100.0,
-            annual_special_assessment=_amount(loc.local_regulation.special_assessment_annual),
-        )
-        for loc in locations
-    }
+def locations_by_id(locations: tuple[LocationConfig, ...]) -> dict[LocationId, LocationConfig]:
+    return {location.location_id: location for location in locations}
 
 
 def resolve_primary_agent_id(augur_config: Config) -> AgentId:
@@ -191,7 +181,7 @@ class Home:
 
     housing: Housing
     property_tax: _PropertyTax
-    location: PreparedLocation
+    location: Location
     # Claimed only on a financed primary residence.
     interest_deduction: _MortgageInterestDeduction | None
     cashflows: tuple[PropertyCashflow, ...]
@@ -229,7 +219,7 @@ def build_situation(
     initial_cash: Decimal,
     holdings: Holdings,
     properties_by_id: dict[PropertyId, Property],
-    locations: Mapping[LocationId, Location],
+    locations: Mapping[LocationId, LocationConfig],
 ) -> Situation:
     horizon_months = int(scenario_key.horizon_months)
     end_month = horizon_months - 1
@@ -326,7 +316,7 @@ def build_situation(
                 start_month=0,
                 end_month=end_month,
             ),
-            location=_prepared_location(property_, locations, currency=currency),
+            location=_location(property_, locations, currency=currency),
             interest_deduction=interest_deduction,
             cashflows=(*rental_wiring.scheduled_property_cashflows, *rental_wiring.recurring_property_cashflows),
         )
@@ -987,9 +977,7 @@ def _purchase_cause_id(property_: Property) -> str:
     return f"{property_.id}_purchase"
 
 
-def _prepared_location(
-    property_: Property, locations: Mapping[LocationId, Location], *, currency: Currency
-) -> PreparedLocation:
+def _location(property_: Property, locations: Mapping[LocationId, LocationConfig], *, currency: Currency) -> Location:
     """The location the purchase buys in: the one whose rate the property-tax policy reads."""
 
     if property_.location_id not in locations:
@@ -998,14 +986,12 @@ def _prepared_location(
             f"scheduled property purchase {_purchase_cause_id(property_)!r} references unknown location_id "
             f"{property_.location_id!r}; known location ids: {known_location_ids}"
         )
-    location = locations[property_.location_id]
-    return PreparedLocation(
+    regulation = locations[property_.location_id].local_regulation
+    return Location(
         location_id=property_.location_id,
-        display_name=location.display_name,
-        jurisdiction_ids=tuple(location.jurisdiction_ids),
-        # A float rate on the location, rounded onto the ppb grid.
-        annual_property_tax_rate_ppb=int(round_ppb(location.annual_property_tax_rate)),
-        annual_special_assessment=currency.quanta(location.annual_special_assessment),
+        # A float percent on the location, rounded onto the ppb grid.
+        annual_property_tax_rate_ppb=int(round_ppb(float(regulation.property_tax_annual_pct) / 100.0)),
+        annual_special_assessment=currency.quanta(regulation.special_assessment_annual),
     )
 
 

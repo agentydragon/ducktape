@@ -52,10 +52,10 @@ from finance.augur.sim.fixed_point import (
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
+from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
-    PreparedLocation,
     _CapitalImprovement,
     _MortgageFinancing,
     _PropertyPurchase,
@@ -98,12 +98,8 @@ TENDER_PROCEEDS_QUANTA = TENDER_UNITS * int(TENDER_MARK) * QUANTA_PER_UNIT
 
 PROPERTY_HORIZON, PROPERTY_SALE_MONTH, CAPEX_MONTH = 36, 24, 12
 PROPERTY_LOCATION_ID = LocationId("loc")
-PROPERTY_LOCATION = PreparedLocation(
-    location_id=PROPERTY_LOCATION_ID,
-    display_name="Loc",
-    jurisdiction_ids=(FEDERAL,),
-    annual_property_tax_rate_ppb=0,
-    annual_special_assessment=0,
+PROPERTY_LOCATION = Location(
+    location_id=PROPERTY_LOCATION_ID, annual_property_tax_rate_ppb=0, annual_special_assessment=0
 )
 
 

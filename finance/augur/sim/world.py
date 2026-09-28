@@ -49,13 +49,13 @@ from finance.augur.sim.income import (
     TransferIncomeCategory,
     income_source_wire_id,
 )
+from finance.augur.sim.locations import Location
 from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios, Portfolio, TlhStatement
 from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath
 from finance.augur.sim.money import checked_count, is_quantity_scale, position_value
 from finance.augur.sim.mortgage import InstallmentPaid, Mortgage, MortgagePayment, ServicingStatement
 from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
 from finance.augur.sim.prepared import (
-    PreparedLocation,
     _MortgageInterestDeduction,
     _PropertyPurchase,
     _PropertyTax,
@@ -452,7 +452,7 @@ class World:
         return () if self.properties is None else self.properties.housing.purchases
 
     def declare_housing(
-        self, housing: Housing, tax_policies: Sequence[_PropertyTax] = (), locations: Sequence[PreparedLocation] = ()
+        self, housing: Housing, tax_policies: Sequence[_PropertyTax] = (), locations: Sequence[Location] = ()
     ) -> None:
         """Properties bought on a scripted schedule (month zero for one held from the start), their scripted
         lifecycle, and the authorities that tax them. Declared once per world."""

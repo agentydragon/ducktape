@@ -12,28 +12,17 @@ from finance.augur.sim.agent import assemble
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.capture import FinancialCapture
 from finance.augur.sim.ids import AccountId, LiabilityId, PropertyId
+from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import Series
 from finance.augur.sim.mortgage import Mortgage, MortgagePayment, MortgageTerms
-from finance.augur.sim.prepared import (
-    PreparedLocation,
-    _MortgageFinancing,
-    _PropertyPurchase,
-    _PropertySale,
-    _PropertyTax,
-)
+from finance.augur.sim.prepared import _MortgageFinancing, _PropertyPurchase, _PropertySale, _PropertyTax
 from finance.augur.sim.property import Housing
 from finance.augur.sim.results import Executed
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, opening, world_on
 from finance.augur.sim.world import World
 
-LOCATION = PreparedLocation(
-    location_id=LocationId("test-market"),
-    display_name="Test market",
-    jurisdiction_ids=(),
-    annual_property_tax_rate_ppb=0,
-    annual_special_assessment=0,
-)
+LOCATION = Location(location_id=LocationId("test-market"), annual_property_tax_rate_ppb=0, annual_special_assessment=0)
 
 
 @dataclass(frozen=True)

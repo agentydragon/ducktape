@@ -41,11 +41,11 @@ from finance.augur.sim.income import (
     TransferIncomeCategory,
 )
 from finance.augur.sim.jurisdictions import load_jurisdiction
+from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
-    PreparedLocation,
     _CapitalImprovement,
     _MortgageFinancing,
     _MortgageInterestDeduction,
@@ -89,12 +89,8 @@ HOME_VALUE = HomeValueKey(location_id=LocationId(SF))
 # $500k house, 20% land: the building basis §168 depreciates, and the ceiling on the total.
 BUILDING_BASIS_QUANTA = 400_000 * 100
 MUNI_INTEREST = InterestIncome(character=Municipal(state=CALIFORNIA))
-SF_LOCATION = PreparedLocation(
-    location_id=SF,
-    display_name="San Francisco, CA",
-    jurisdiction_ids=(FEDERAL, CALIFORNIA),
-    annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.01180")),
-    annual_special_assessment=0,
+SF_LOCATION = Location(
+    location_id=SF, annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.01180")), annual_special_assessment=0
 )
 
 
@@ -360,7 +356,7 @@ class Situation:
     scheduled_property_cashflows: tuple[Cashflow, ...] = ()
     obligations: tuple[Dues, ...] = ()
     housing: Housing = field(default_factory=Housing)
-    locations: tuple[PreparedLocation, ...] = ()
+    locations: tuple[Location, ...] = ()
     property_tax_policies: tuple[_PropertyTax, ...] = ()
     mortgage_interest_policies: tuple[_MortgageInterestDeduction, ...] = ()
     salt_policies: tuple[_SaltDeduction, ...] = ()

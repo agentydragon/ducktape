@@ -37,10 +37,10 @@ from finance.augur.sim.income import (
     TransferIncomeCategory,
     Treasury,
 )
+from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
 from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
 from finance.augur.sim.prepared import (
-    PreparedLocation,
     _MortgageFinancing,
     _MortgageInterestDeduction,
     _PrimaryResidence,
@@ -63,13 +63,7 @@ STOCK = AssetId("test-stock")
 LOT = LotId("test-lot")
 SCALE = 1000
 HORIZON = 2
-LOCATION = PreparedLocation(
-    location_id=LocationId("test-market"),
-    display_name="Test market",
-    jurisdiction_ids=(),
-    annual_property_tax_rate_ppb=0,
-    annual_special_assessment=0,
-)
+LOCATION = Location(location_id=LocationId("test-market"), annual_property_tax_rate_ppb=0, annual_special_assessment=0)
 TAXABLE = Taxable()
 # A payout that is all taxable interest.
 WHOLLY_INTEREST: Mapping[TransferIncomeCategory, int] = {InterestIncome(character=TAXABLE): 1_000_000_000}
@@ -269,7 +263,7 @@ LOAN = _MortgageFinancing(
 )
 
 
-def housed(purchase: _PropertyPurchase, *locations: PreparedLocation) -> None:
+def housed(purchase: _PropertyPurchase, *locations: Location) -> None:
     composed().declare_housing(Housing(purchases=(purchase,)), (), locations)
 
 

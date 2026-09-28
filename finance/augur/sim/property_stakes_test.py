@@ -30,10 +30,10 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
+from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
-    PreparedLocation,
     _CapitalImprovement,
     _MortgageFinancing,
     _PrimaryResidence,
@@ -84,20 +84,16 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
-def location(location_id: LocationId, display_name: str, *, annual_rate: Decimal | int) -> PreparedLocation:
-    return PreparedLocation(
-        location_id=location_id,
-        display_name=display_name,
-        jurisdiction_ids=(),
-        annual_property_tax_rate_ppb=rate_to_ppb(annual_rate),
-        annual_special_assessment=0,
+def location(location_id: LocationId, *, annual_rate: Decimal | int) -> Location:
+    return Location(
+        location_id=location_id, annual_property_tax_rate_ppb=rate_to_ppb(annual_rate), annual_special_assessment=0
     )
 
 
-LOCATIONS = (location(LOCATION_ID, "Loc", annual_rate=0),)
+LOCATIONS = (location(LOCATION_ID, annual_rate=0),)
 MULTI_PROPERTY_LOCATIONS = (
-    location(HOME_LOCATION_ID, "Primary Home", annual_rate=Decimal("0.012")),
-    location(RENTAL_LOCATION_ID, "Rental", annual_rate=Decimal("0.024")),
+    location(HOME_LOCATION_ID, annual_rate=Decimal("0.012")),
+    location(RENTAL_LOCATION_ID, annual_rate=Decimal("0.024")),
 )
 
 
@@ -180,7 +176,7 @@ class Situation:
     accounts: tuple[tuple[AccountRef, int], ...]
     housing: Housing
     rollout_count: int = 1
-    locations: tuple[PreparedLocation, ...] = LOCATIONS
+    locations: tuple[Location, ...] = LOCATIONS
     tax_policies: tuple[_PropertyTax, ...] = ()
     jurisdiction_ids: tuple[JurisdictionId, ...] = ()
     rent: Rent | None = None

@@ -21,15 +21,10 @@ from finance.augur.sim.books import AccountRef, Book, JournalEntry
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
+from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedLocation,
-    _MortgageFinancing,
-    _PropertyPurchase,
-    _PropertySale,
-    _PropertyTax,
-)
+from finance.augur.sim.prepared import _MortgageFinancing, _PropertyPurchase, _PropertySale, _PropertyTax
 from finance.augur.sim.property import Housing, Purchase, Sale
 from finance.augur.sim.results import Rejected
 from finance.augur.sim.schedule import Once
@@ -39,10 +34,8 @@ QUANTUM = Decimal("0.01")
 ALICE = AgentId("alice")
 BOB = AgentId("bob")
 CHECKING = AccountId("checking")
-SF = PreparedLocation(
+SF = Location(
     location_id=LocationId("sf"),
-    display_name="San Francisco",
-    jurisdiction_ids=(),
     annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.0118")),
     annual_special_assessment=0,
 )

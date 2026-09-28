@@ -29,10 +29,10 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
+from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
-    PreparedLocation,
     _MortgageFinancing,
     _MortgageInterestDeduction,
     _PropertyPurchase,
@@ -87,12 +87,8 @@ def usd(row: dict[str, Any], field: str) -> float:
     return int(row[field]) / 100
 
 
-SAN_FRANCISCO = PreparedLocation(
-    location_id=LOCATION_ID,
-    display_name="San Francisco, CA",
-    jurisdiction_ids=(FEDERAL, CALIFORNIA),
-    annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.01180")),
-    annual_special_assessment=0,
+SAN_FRANCISCO = Location(
+    location_id=LOCATION_ID, annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.01180")), annual_special_assessment=0
 )
 
 DEFAULT_SALT_SCHEDULE = (

@@ -1,8 +1,5 @@
-"""Owned, resolved simulation facts: exact money/quantity counts.
-
-The location a housing declaration takes, and the underscored configured records the housing,
-tender and deduction declarations take until their policies move to the common action session.
-"""
+"""The underscored configured records the housing, tender and deduction declarations take until
+their policies move to the common action session."""
 
 from dataclasses import dataclass
 from typing import Literal
@@ -10,15 +7,6 @@ from typing import Literal
 from finance.augur.model.series import LocationId
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.market_path import Amount
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedLocation:
-    location_id: LocationId
-    display_name: str
-    jurisdiction_ids: tuple[JurisdictionId, ...]
-    annual_property_tax_rate_ppb: int
-    annual_special_assessment: int
 
 
 @dataclass(frozen=True, kw_only=True)

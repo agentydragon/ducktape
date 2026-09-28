@@ -14,7 +14,7 @@ from typing import Any, overload
 
 import numpy as np
 
-from finance.augur.api.config import SecurityDistributionConfig
+from finance.augur.api.config import LocationConfig, SecurityDistributionConfig
 from finance.augur.api.portfolio import PortfolioConfig, TlhPortfolioSpec
 from finance.augur.api.schemas import ApiModel, Frame
 from finance.augur.api.wire import Property
@@ -54,7 +54,6 @@ from finance.augur.product.wire import (
 )
 from finance.augur.sim.external_series import materialize_sampled_exogenous
 from finance.augur.sim.ids import AgentId, PropertyId
-from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.world import World
@@ -70,7 +69,7 @@ class ProductService:
         security_distributions: tuple[SecurityDistributionConfig, ...] = (),
         tlh_portfolios: tuple[TlhPortfolioSpec, ...] = (),
         known_location_ids: Collection[LocationId],
-        locations: dict[LocationId, Location],
+        locations: dict[LocationId, LocationConfig],
         properties_by_id: dict[PropertyId, Property],
         models: dict[str, Sampler],
         max_rollout_samples: int,

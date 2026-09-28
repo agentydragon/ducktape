@@ -26,9 +26,10 @@ from finance.augur.sim.fixed_point import (
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
+from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedLocation, _MortgageFinancing, _PropertyPurchase, _PropertyTax
+from finance.augur.sim.prepared import _MortgageFinancing, _PropertyPurchase, _PropertyTax
 from finance.augur.sim.property import Housing
 from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -45,10 +46,8 @@ CHECKING = AccountId("checking")
 FEDERAL = JurisdictionId("federal_us")
 CALIFORNIA = JurisdictionId("california")
 SP500 = SecurityKey(symbol=SP500_SYMBOL)
-SF = PreparedLocation(
+SF = Location(
     location_id=LocationId("sf"),
-    display_name="SF",
-    jurisdiction_ids=(FEDERAL, CALIFORNIA),
     annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.0118")),
     annual_special_assessment=0,
 )
