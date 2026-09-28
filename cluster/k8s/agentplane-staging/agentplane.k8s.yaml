@@ -439,15 +439,6 @@ spec:
         app.kubernetes.io/name: agentplane-electric
         cdk8s.io/metadata.addr: agentplane-electric-deployment-c86a4b11
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: false
       containers:
         - env:
@@ -536,6 +527,8 @@ spec:
               name: storage
       dnsPolicy: ClusterFirst
       hostNetwork: false
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 65534
@@ -681,15 +674,6 @@ spec:
         app.kubernetes.io/name: agentplane-llm-ingress
         cdk8s.io/metadata.addr: agentplane-llm-ingress-deployment-c81387cd
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -751,6 +735,8 @@ spec:
       hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -1023,15 +1009,6 @@ spec:
         app.kubernetes.io/name: agentplane-egress
         cdk8s.io/metadata.addr: agentplane-egress-deployment-c84e690f
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -1137,6 +1114,8 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -1737,15 +1716,6 @@ spec:
         app.kubernetes.io/name: agentplane-app
         cdk8s.io/metadata.addr: agentplane-app-deployment-c8d92233
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -1923,6 +1893,8 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -2625,15 +2597,6 @@ spec:
         app.kubernetes.io/name: agentplane-actions
         cdk8s.io/metadata.addr: agentplane-actions-deployment-c8d4c10b
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -2813,6 +2776,8 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
