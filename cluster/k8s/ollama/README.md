@@ -20,8 +20,9 @@ and does not use OpenEBS. The advertised 90Gi capacity is not an enforced quota.
 Node affinity pins the consumer to wyrm2. The model-specific path and startup file
 checks cause a missing SSD/model to fail rather than silently use an empty directory.
 
-The init container creates three digest-named symlinks in `/models/blobs` to the
-SSD shards. `qwen38-ssd-shards.tsv` pins their SHA256 digests and lengths from the
+The init container creates digest-named symlinks in `/models/blobs` to the
+three original SSD shards and the derived template shard. `qwen38-ssd-shards.tsv`
+pins the original SHA256 digests and lengths from the
 [verified download recipe](../../docs/inference/runs/2026-09-26_qwen38_capacity/README.md).
 Startup checks lengths and refuses to replace an existing file or a different link;
 it does not rehash 94 GB on every Pod restart. The setup Job calls `/api/create` to
@@ -82,3 +83,31 @@ round trip. The earlier IQ4 llama.cpp run averaged 40.79 decode tokens/s; the ea
 HDD Ollama path was 0.056–1.44 tokens/s. This storage change is not yet evidence that
 Ollama reaches the SSD reference speed; record the live measurements before claiming
 that acceptance criterion is met.
+
+## Claude system reminders in Qwen3.8
+
+Claude Code can send a system reminder after a user message. The pinned
+Unsloth GGUF template rejects that sequence. `qwen38-chat-template.jinja` is
+the model's original `tokenizer.chat_template` with one branch changed: a
+later `system` or `developer` message becomes a ChatML system turn at the same
+position. Qwen's template already maps leading developer content into a system
+turn. The original template SHA256 is pinned in `patch_qwen38_template.py`.
+
+The first GGUF shard is 10.9 MB and holds this metadata. On wyrm2, generate
+its derived copy **before** deploying the `setup-gpt-oss-v7` Job. The two large
+weight shards and all source files remain untouched:
+
+```bash
+ssd=/var/lib/llm-models-ssd/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS
+bb run //cluster/k8s/ollama:derive_qwen38_template -- \
+  "$ssd/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf" \
+  "$PWD/cluster/k8s/ollama/qwen38-chat-template.jinja" \
+  "$ssd/agentplane-midturn/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf" \
+  8681e217aad3be934fd9542709bf44123c4b569cb7906c01a2a383ac79c7c05f
+```
+
+The patcher verifies the source hash, exact original template, sole intended
+template edit, and derived hash. It refuses to replace a different output.
+The Job links the derived shard as a new Ollama blob and passes its digest
+under the original first split filename; the other two split filenames and
+digests stay fixed. The 256K alias inherits the 128K model's template.
