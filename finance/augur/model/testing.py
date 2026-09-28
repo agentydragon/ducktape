@@ -67,7 +67,6 @@ class ConstantFrameModel:
 
     levels: Mapping[LevelSeriesKey, LevelOverride] = field(default_factory=dict)
     private_equity: Mapping[IssuerId, PrivateEquityChannels] = field(default_factory=dict)
-    model_id: str = "constant_frame_fixture"
     provenance: Mapping[str, object] = field(default_factory=dict)
     sample_requests: list[ExogenousSamplingRequest] = field(default_factory=list)
 
@@ -95,7 +94,6 @@ class ConstantFrameModel:
         return SampledExogenousBundle(
             levels=frames,
             private_equity=PrivateEquityBundle.combine(pe_parts) if pe_parts else PrivateEquityBundle.empty(),
-            model_id=self.model_id,
             provenance=dict(self.provenance),
         )
 
