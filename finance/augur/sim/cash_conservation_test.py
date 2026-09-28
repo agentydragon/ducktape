@@ -44,12 +44,7 @@ from finance.augur.sim.actions import Action, DecisionActions, LotSale, Sell
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
-from finance.augur.sim.fixed_point import (
-    currency_amount_to_quanta,
-    quantity_scale_for_asset,
-    quantity_to_quanta,
-    rate_to_ppb,
-)
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
@@ -77,7 +72,6 @@ from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.testing.situs import START_YEAR
 from finance.augur.sim.world import World
 
-QUANTUM = Decimal("0.01")
 QUANTA_PER_UNIT = 100
 ALICE = AgentId("alice")
 CHECKING = AccountId("checking")
@@ -105,12 +99,10 @@ PROPERTY_LOCATION_ID = LocationId("loc")
 COUNTY = AgentId("county")
 
 
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
-
-
 def account(world: World, agent_id: AgentId, balance: Decimal | int = 0) -> None:
-    world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
+    world.declare_account(
+        account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=USD.quanta(balance)
+    )
 
 
 def ref(agent_id: AgentId) -> AccountRef:
@@ -145,7 +137,7 @@ def hold_vti(
         purchase_month=purchase_month,
         quantity_scale=VTI_SCALE,
         units=quantity_to_quanta(quantity, scale=VTI_SCALE),
-        basis=money(cost_basis),
+        basis=USD.quanta(cost_basis),
     )
 
 
@@ -236,7 +228,7 @@ def target_allocation_world() -> World:
             obligation_type="rent",
             from_account=ref(ALICE),
             to_account=ref(AgentId("landlord")),
-            amount_due=money(RENT),
+            amount_due=USD.quanta(RENT),
             property_id=None,
             deduction_category=None,
             deductible_fraction_ppb=rate_to_ppb(1),
@@ -290,10 +282,10 @@ def private_equity_tender_world() -> World:
         purchase_month=-36,
         quantity_scale=ACME_SCALE,
         units=quantity_to_quanta(TENDER_UNITS, scale=ACME_SCALE),
-        basis=money(Decimal(TENDER_UNITS) * 10),
+        basis=USD.quanta(Decimal(TENDER_UNITS) * 10),
     )
     world.declare_tender_policy(
-        TenderPolicy(owner_agent_id=ALICE, proceeds_account_id=CHECKING, liquid_net_worth_floor=money(500_000))
+        TenderPolicy(owner_agent_id=ALICE, proceeds_account_id=CHECKING, liquid_net_worth_floor=USD.quanta(500_000))
     )
     return world
 
@@ -354,8 +346,8 @@ def property_sale_world() -> World:
                     buyer_account_id=CHECKING,
                     seller_agent_id=AgentId("seller"),
                     seller_account_id=CHECKING,
-                    purchase_price=money(500_000),
-                    down_payment=money(100_000),
+                    purchase_price=USD.quanta(500_000),
+                    down_payment=USD.quanta(100_000),
                     buyer_closing_cost=0,
                     rented_fraction_ppb=0,
                     land_value_fraction_ppb=rate_to_ppb(Decimal("0.2")),
@@ -363,7 +355,7 @@ def property_sale_world() -> World:
                         liability_id=LiabilityId("house-mortgage"),
                         lender_agent_id=AgentId("bank"),
                         lender_account_id=CHECKING,
-                        principal=money(400_000),
+                        principal=USD.quanta(400_000),
                         annual_interest_rate_ppb=rate_to_ppb(Decimal("0.06")),
                         term_months=360,
                     ),
@@ -379,7 +371,7 @@ def property_sale_world() -> World:
             ),
             capital_improvements=(
                 CapitalImprovement(
-                    month=CAPEX_MONTH, property_id=PropertyId("house"), amount=money(30_000), description="roof"
+                    month=CAPEX_MONTH, property_id=PropertyId("house"), amount=USD.quanta(30_000), description="roof"
                 ),
             ),
         ),
