@@ -224,6 +224,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s/providers/seaweedfs:bucket",
+        "//cluster/cdk8s/providers/seaweedfs:resource_reference_grant",
         "//cluster/cdk8s/providers/seaweedfs:resourcereferencegrant",
         "//cluster/cdk8s/providers/seaweedfs:s3credentials",
         "//cluster/cdk8s/providers/seaweedfs:s3identity",
