@@ -28,7 +28,7 @@ from more_itertools import one
 from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId, RentKey
 from finance.augur.sim.actions import Action, ClaimId, DecisionActions, PayClaim
 from finance.augur.sim.bills import Biller
-from finance.augur.sim.books import AccountRef, Book
+from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
@@ -62,6 +62,7 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import MortgageInterestDeduction, SaltCap, SaltDeduction, TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.testing.rollouts import book, cash
 from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, flat_parcel
 from finance.augur.sim.world import World
 
@@ -482,15 +483,6 @@ def transfers(rollout: Rollout, cause_id: str) -> pl.DataFrame:
 
 def dollars(frame: pl.DataFrame, column: str) -> list[float]:
     return [value / 100 for value in frame[column].to_list()]
-
-
-def book_at(rollout: Rollout, month: int) -> Book:
-    return one(book for book in trace(rollout).books if book.month == month)
-
-
-def cash(rollout: Rollout, agent_id: AgentId, month: int) -> float:
-    balance = one(row for row in book_at(rollout, month).balances if row.account == ref(agent_id))
-    return balance.balance / 100
 
 
 def breakdown(
@@ -919,7 +911,7 @@ class TestRentalIncomeTaxation:
         [rollout] = run(situation)
         # Cumulative depreciation grows monotonically; at the post-horizon snapshot it has
         # accrued 12 months' worth = $400,000 / 27.5 = $14,545.45.
-        properties = book_at(rollout, 12).properties
+        properties = book(rollout, 12).properties
         assert properties is not None
         assert len([row for row in properties if row.active]) == 1
         # Federal ordinary income: $60,000 rental - $14,545.45 depreciation = $45,454.55.
@@ -1696,9 +1688,7 @@ class TestRentalIncomeTaxation:
         assert sale["section_121_exclusion_quanta"] / 100 == pytest.approx(expected_exclusion_usd, abs=1)
         assert sale["long_term_capital_gain_quanta"] / 100 == pytest.approx(expected_ltcg_usd, abs=1)
 
-        post_sale = [
-            row.long_term_gain for row in book_at(rollout, sale_month + 1).capital_gains if row.agent_id == OWNER
-        ]
+        post_sale = [row.long_term_gain for row in book(rollout, sale_month + 1).capital_gains if row.agent_id == OWNER]
         assert sum(post_sale) / 100 == pytest.approx(expected_ltcg_usd, abs=1)
 
     def test_section_121_does_not_apply_to_unassigned_non_rented_property(self) -> None:

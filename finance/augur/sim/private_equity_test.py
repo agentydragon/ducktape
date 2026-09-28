@@ -21,7 +21,7 @@ from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.sim.actions import DecisionActions, PayClaim
 from finance.augur.sim.bills import Biller
-from finance.augur.sim.books import AccountRef, Book
+from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.fixed_point import (
     currency_amount_to_quanta,
@@ -42,6 +42,7 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.issuer_protocol import Code, Money, Rate, at_month, issuer_protocol
+from finance.augur.sim.testing.rollouts import book
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -230,12 +231,6 @@ def run(case: Holder, channels: Sequence[Series]) -> Rollout:
         return rollout
     finally:
         session.close()
-
-
-def book(rollout: Rollout, month: int) -> Book:
-    assert rollout.trace is not None
-    [snapshot] = [snapshot for snapshot in rollout.trace.books if snapshot.month == month]
-    return snapshot
 
 
 def units_held(rollout: Rollout, *, month: int) -> float:

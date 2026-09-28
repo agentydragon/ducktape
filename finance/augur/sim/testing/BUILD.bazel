@@ -113,3 +113,14 @@ py_library(
         "//finance/augur/sim:situs",
     ],
 )
+
+py_library(
+    name = "rollouts",
+    srcs = ["rollouts.py"],
+    deps = [
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:results",
+        "@pypi//more_itertools",
+    ],
+)

@@ -42,7 +42,7 @@ from finance.augur.policy.cash_band_household import CashBandHousehold, Security
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import Action, DecisionActions, LotSale, Sell
 from finance.augur.sim.bills import Biller
-from finance.augur.sim.books import AccountRef, Book
+from finance.augur.sim.books import AccountRef
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import (
     currency_amount_to_quanta,
@@ -73,6 +73,7 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.issuer_protocol import at_month, issuer_protocol
+from finance.augur.sim.testing.rollouts import book
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.testing.situs import START_YEAR
 from finance.augur.sim.world import World
@@ -170,12 +171,6 @@ def run(world: World, *, funded_by: SecurityKey | None = None, script: Mapping[i
         return rollout
     finally:
         session.close()
-
-
-def book(rollout: Rollout, month: int) -> Book:
-    assert rollout.trace is not None
-    [snapshot] = [snapshot for snapshot in rollout.trace.books if snapshot.month == month]
-    return snapshot
 
 
 def crossed_the_boundary(rollout: Rollout, declared: frozenset[AccountRef], *, month: int) -> int:

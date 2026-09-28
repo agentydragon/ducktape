@@ -16,7 +16,7 @@ from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.policy.cash_band_household import CashBandHousehold, SecuritySleeve
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import DecisionActions, LotSale, Sell
-from finance.augur.sim.books import AccountRef, Book, TaxLiabilityState
+from finance.augur.sim.books import AccountRef, TaxLiabilityState
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import (
     currency_amount_to_quanta,
@@ -42,6 +42,7 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw, FixedNominalLaw, TaxIndexation
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.testing.rollouts import book, cash
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import World
 
@@ -261,16 +262,6 @@ def run(case: Situation, indexation: TaxIndexation) -> Rollout:
     finally:
         session.close()
     return one(batch.rollouts)
-
-
-def book(rollout: Rollout, month: int) -> Book:
-    assert rollout.trace is not None
-    return one(entry for entry in rollout.trace.books if entry.month == month)
-
-
-def cash(rollout: Rollout, agent_id: AgentId, month: int) -> float:
-    account_ = AccountRef(agent_id=agent_id, account_id=CHECKING)
-    return usd(one(row.balance for row in book(rollout, month).balances if row.account == account_))
 
 
 def owed(rollout: Rollout, month: int) -> list[TaxLiabilityState]:
