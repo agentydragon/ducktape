@@ -35,7 +35,6 @@ built raw at more than one call site, counted on devel 9904055a45:
 - Gateway API `HTTPRoute` (4) and `Gateway` (2).
 - CNPG `Database` (3).
 - trust-manager `Bundle` (3).
-- Kyverno `CleanupPolicy` (3).
 - Agentplane `EgressBinding` (2, one module).
 - SeaweedFS `ResourceReferenceGrant` (2, both in `seaweedfs/s3.py`).
 
