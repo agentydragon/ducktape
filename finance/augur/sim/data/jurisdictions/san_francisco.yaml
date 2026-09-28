@@ -19,3 +19,20 @@ debt_rates:
 # The Controller's rate history above, "Comparative Tax Bill": "Secured property tax bill pennies
 # are rounded down to next even penny value."
 bill_rounding: down_to_even
+
+# Assessor-Recorder, "Transfer tax" (fetched 2026-09-28), https://www.sf.gov/transfer-tax: "If entire
+# value or consideration is more than $100 but less or equal to $250,000, your tax rate is $2.50
+# for each $500 or portion thereof", more than $250,000 but less than $1,000,000 $3.40, $1,000,000
+# or more but less than $5,000,000 $3.75, $5,000,000 or more but less than $10,000,000 $11.25,
+# $10,000,000 or more but less than $25,000,000 $27.50, and $25,000,000 or more $30.00.
+# San Francisco is a city and county, so this is the whole tax (Business and Tax Regulations
+# Code Article 12-C).
+transfer_tax:
+  per: 500
+  brackets:
+    - { lower: 100, lower_included: false, rate: "2.50" }
+    - { lower: 250000, lower_included: false, rate: "3.40" }
+    - { lower: 1000000, lower_included: true, rate: "3.75" }
+    - { lower: 5000000, lower_included: true, rate: "11.25" }
+    - { lower: 10000000, lower_included: true, rate: "27.50" }
+    - { lower: 25000000, lower_included: true, rate: "30.00" }

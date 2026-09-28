@@ -1,4 +1,4 @@
-"""A parcel's ad-valorem law: its situs's jurisdiction tree resolved and quantized."""
+"""A parcel's property-tax law: its situs's jurisdiction tree resolved and quantized."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -7,8 +7,35 @@ from fractions import Fraction
 from more_itertools import one, only
 
 from finance.augur.sim.ids import JurisdictionId
-from finance.augur.sim.jurisdictions import BillRounding, Jurisdiction
+from finance.augur.sim.jurisdictions import BillRounding, Jurisdiction, TransferTax
 from finance.augur.sim.money import Currency, round_ratio
+
+
+@dataclass(frozen=True, kw_only=True)
+class TransferSchedule:
+    """One level's transfer tax in quanta: each bracket's lower bound, whether it is included, and its rate."""
+
+    per: int
+    brackets: tuple[tuple[int, bool, int], ...]
+
+    def tax(self, consideration: int) -> int:
+        """The rate of the highest bracket `consideration` reaches, on each `per` of it or part of one."""
+        rates = [
+            rate
+            for lower, included, rate in self.brackets
+            if consideration > lower or (included and consideration == lower)
+        ]
+        return rates[-1] * -(-consideration // self.per) if rates else 0
+
+
+def _schedule(transfer_tax: TransferTax, currency: Currency) -> TransferSchedule:
+    return TransferSchedule(
+        per=currency.quanta(transfer_tax.per),
+        brackets=tuple(
+            (currency.quanta(bracket.lower), bracket.lower_included, currency.quanta(bracket.rate))
+            for bracket in transfer_tax.brackets
+        ),
+    )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -24,8 +51,11 @@ class SitusLaw:
     inflation_cap: Fraction
     inflation_factors: Mapping[int, Fraction]
     homeowners_exemption: int
+    supplemental_proration: Mapping[int, Fraction]
     debt_rates: Mapping[int, Fraction]
     bill_rounding: BillRounding | None
+    # Every level's transfer tax, from the situs up.
+    transfer_taxes: tuple[TransferSchedule, ...]
 
     def debt_rate(self, fiscal_year: int) -> Fraction:
         """The rate area's debt rate for the fiscal year starting in July of `fiscal_year`.
@@ -38,6 +68,10 @@ class SitusLaw:
         if fiscal_year < min(self.debt_rates):
             raise ValueError(f"{self.situs_id!r} publishes no debt rate as early as fiscal year {fiscal_year}")
         return self.debt_rates[min(fiscal_year, max(self.debt_rates))]
+
+    def transfer_tax(self, consideration: int) -> int:
+        """Every level's transfer tax on a transfer of the parcel for `consideration`."""
+        return sum(schedule.tax(consideration) for schedule in self.transfer_taxes)
 
     def secured_bill(self, taxable: int, fiscal_year: int) -> int:
         """A fiscal year's secured tax on `taxable` quanta, rounded as the rate area's collector rounds it."""
@@ -68,9 +102,15 @@ def compile_situs(situs: Jurisdiction, *, currency: Currency) -> SitusLaw:
         inflation_cap=Fraction(proposition_13.inflation_cap),
         inflation_factors={year: Fraction(factor) for year, factor in proposition_13.inflation_factors.items()},
         homeowners_exemption=currency.quanta(proposition_13.homeowners_exemption),
+        supplemental_proration={
+            month: Fraction(share) for month, share in proposition_13.supplemental_proration.items()
+        },
         debt_rates={year: Fraction(rate) for year, rate in debt_rates.items()},
         bill_rounding=only(
             (level.bill_rounding for level in lineage if level.bill_rounding is not None),
             too_long=ValueError(f"several levels above {situs.jurisdiction_id!r} round secured bills"),
+        ),
+        transfer_taxes=tuple(
+            _schedule(level.transfer_tax, currency) for level in lineage if level.transfer_tax is not None
         ),
     )

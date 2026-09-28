@@ -516,6 +516,21 @@ class World:
                         f"indexes {previous} and {index}"
                     )
             self._check_situs(policy, owned)
+        # Whoever charges a transfer tax the owner owes is the parcel's authority.
+        transfers = [
+            (purchase.property_id, purchase.month, purchase.buyer_transfer_tax_share_ppb)
+            for purchase in housing.purchases
+        ] + [
+            (sale.property_id, sale.month, MONEY_FACTOR_SCALE - sale.buyer_transfer_tax_share_ppb)
+            for sale in housing.sales
+        ]
+        for property_id, month, share in transfers:
+            if not 0 <= share <= MONEY_FACTOR_SCALE:
+                raise ValueError(f"a transfer tax share for {property_id!r} is outside [0, 1]")
+            if share and purchases[property_id].parcel.situs.transfer_taxes and taxed.get((property_id, month)) is None:
+                raise ValueError(
+                    f"{property_id!r} owes transfer tax at month {month}, which no property tax policy charges"
+                )
         self.properties = Properties(housing, self.accounting)
         self.property_tax_authorities = [
             PropertyTaxAuthority(policy, purchases[policy.property_id]) for policy in tax_policies
@@ -526,6 +541,12 @@ class World:
         with no published inflation factor finds the modeled CPI it is measured by."""
         law = purchase.parcel.situs
         law.debt_rate(fiscal_year(policy, purchase.month + 1))
+        prior = purchase.parcel.prior_assessed_value
+        if prior is not None and not 0 <= prior <= purchase.purchase_price:
+            raise ValueError(
+                f"{policy.property_id!r} is bought below its prior assessed value, whose supplemental refund "
+                "is not modeled"
+            )
         latest = max(law.inflation_factors, default=None)
         simulated = [
             month

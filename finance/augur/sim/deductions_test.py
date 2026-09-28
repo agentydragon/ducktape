@@ -313,9 +313,10 @@ def property_tax_through(rollout: Rollout, *, month: int) -> float:
 def test_acquisition_interest_above_the_standard_deduction_is_itemized() -> None:
     """A $720k mortgage at 7% throws off ~$46k of first-year interest, well past both standards.
 
-    Both returns take the whole of it — the principal is under the federal cap — so the tax
-    saved is exactly the excess over each jurisdiction's standard deduction at that
-    jurisdiction's marginal rate, which $200k of wages leaves unchanged either way.
+    Both returns take the whole of it — the principal is under the federal cap. Federally the tax
+    saved is the excess over the standard deduction at the 24% marginal rate. California itemizes
+    the property tax paid with or without the interest (FTB Schedule CA, line 5e), and that
+    already beats its standard deduction, so the interest saves its full amount at 9.3%.
     """
     baseline = run(standard_home())
     deducted = run(standard_home(mortgage_interest_policies=(deducts(MORTGAGE_ID),)))
@@ -335,12 +336,15 @@ def test_acquisition_interest_above_the_standard_deduction_is_itemized() -> None
     assert usd(federal, "mortgage_interest_deduction_quanta") == pytest.approx(interest, rel=1e-5)
     assert usd(federal, "itemized_deduction_quanta") == pytest.approx(interest, rel=1e-5)
     assert usd(california, "mortgage_interest_deduction_quanta") == pytest.approx(interest, rel=1e-5)
-    assert usd(california, "itemized_deduction_quanta") == pytest.approx(interest, rel=1e-5)
+    assert usd(california, "itemized_deduction_quanta") == pytest.approx(
+        interest + property_tax_through(deducted, month=11), rel=1e-5
+    )
 
     federal_saved = usd(federal_baseline, "total_tax_quanta") - usd(federal, "total_tax_quanta")
     assert federal_saved == pytest.approx((interest - FEDERAL_STANDARD) * 0.24, abs=0.5)
     california_saved = usd(california_baseline, "total_tax_quanta") - usd(california, "total_tax_quanta")
-    assert california_saved == pytest.approx((interest - CALIFORNIA_STANDARD) * 0.093, abs=0.5)
+    assert property_tax_through(baseline, month=11) > CALIFORNIA_STANDARD
+    assert california_saved == pytest.approx(interest * 0.093, abs=0.5)
 
 
 def test_home_equity_interest_is_not_deductible() -> None:
@@ -401,7 +405,8 @@ def test_acquisition_and_home_equity_debt_are_classified_per_liability() -> None
 
 
 def test_without_a_policy_no_interest_is_deducted() -> None:
-    """A mortgage alone does not itemize a return; the standard deduction stands."""
+    """A mortgage alone does not itemize its interest. Federally the standard deduction stands;
+    California itemizes the property tax paid."""
     rollout = run(Situation(purchase_price=900_000, down_payment=180_000, annual_rate=Decimal("0.07")))
 
     federal = breakdown(rollout, jurisdiction_id=FEDERAL)
@@ -410,8 +415,7 @@ def test_without_a_policy_no_interest_is_deducted() -> None:
     assert usd(federal, "itemized_deduction_quanta") == 0.0
     assert usd(federal, "standard_deduction_quanta") == pytest.approx(FEDERAL_STANDARD)
     assert usd(california, "mortgage_interest_deduction_quanta") == 0.0
-    assert usd(california, "itemized_deduction_quanta") == 0.0
-    assert usd(california, "standard_deduction_quanta") == pytest.approx(CALIFORNIA_STANDARD)
+    assert usd(california, "itemized_deduction_quanta") == pytest.approx(property_tax_through(rollout, month=11))
 
 
 def test_the_federal_principal_cap_prorates_interest_and_california_does_not() -> None:

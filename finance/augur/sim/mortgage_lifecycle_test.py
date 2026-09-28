@@ -274,7 +274,8 @@ def test_sale_pays_off_ledger_principal_before_the_sale_months_installment(
             ScheduledSale(
                 month=5,
                 property_id=PropertyId(f"{ALICE}-home"),
-                closing_cost_ppb=rate_to_ppb(Decimal(closing_cost_pct) / 100),
+                commission_ppb=rate_to_ppb(Decimal(closing_cost_pct) / 100),
+                escrow_title_ppb=0,
             ),
         ),
     )

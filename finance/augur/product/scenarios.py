@@ -933,7 +933,10 @@ def _housing(
                     ScheduledSale(
                         month=month,
                         property_id=property_.id,
-                        closing_cost_ppb=_closing_cost_ppb(float(event.closing_cost_pct)),
+                        # The form asks one selling-cost percent and does not split commissions from
+                        # escrow and title; the situs's transfer tax is charged on top of it.
+                        commission_ppb=_closing_cost_ppb(float(event.closing_cost_pct)),
+                        escrow_title_ppb=0,
                     )
                 )
             case _:
@@ -995,7 +998,11 @@ def _parcel(property_: Property, locations: Mapping[LocationId, LocationConfig],
             f"scheduled property purchase {_purchase_cause_id(property_)!r} references unknown location_id "
             f"{property_.location_id!r}; known location ids: {known_location_ids}"
         )
-    return Parcel(situs=compile_situs(load_jurisdiction(locations[property_.location_id].situs), currency=currency))
+    # The catalog does not carry the seller's assessed value.
+    return Parcel(
+        situs=compile_situs(load_jurisdiction(locations[property_.location_id].situs), currency=currency),
+        prior_assessed_value=None,
+    )
 
 
 def _initial_rented_fraction(purchase: PropertyPurchase) -> Decimal:

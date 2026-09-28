@@ -54,6 +54,8 @@ class TaxRules:
     # The tax year the amounts are law for, and those of them statute adjusts for inflation.
     law_year: int
     indexed: frozenset[StatutoryAmount]
+    # Whether the owner's ad-valorem real property tax is itemized here without a cap.
+    itemizes_real_property_tax: bool
     # Over modified adjusted gross income, on the lesser of the excess and net investment income.
     net_investment_income_tax: ThresholdTax | None = None
     # Over taxable income.

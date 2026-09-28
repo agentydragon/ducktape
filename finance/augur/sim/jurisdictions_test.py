@@ -74,7 +74,7 @@ def test_a_situs_inherits_every_level_above_it() -> None:
 def test_unknown_law_is_refused_rather_than_ignored() -> None:
     """A key nothing reads would promise law the engine does not apply."""
     data = load_jurisdiction(JurisdictionId("california")).model_dump()
-    data["proposition_13"]["supplemental_proration"] = "monthly"
+    data["proposition_13"]["decline_in_value"] = "proposition_8"
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         Jurisdiction.model_validate(data)
 

@@ -5,7 +5,7 @@ from fractions import Fraction
 
 from finance.augur.sim.actor import Actor, MonthOpened
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.claims import Demand, PropertyTax
+from finance.augur.sim.claims import AdValoremTax, Demand, ObligationType, TransferTax
 from finance.augur.sim.ids import AccountId, AgentId, PropertyId
 from finance.augur.sim.market_path import MarketStatement
 from finance.augur.sim.money import round_ratio, scaled
@@ -49,7 +49,7 @@ class _Roll:
 
 class PropertyTaxBill(Demand):
     amount: int
-    effect: PropertyTax
+    effect: AdValoremTax | TransferTax
 
 
 class PropertyTaxAuthority(Actor[MonthOpened | PropertyStatement | MarketStatement, PropertyTaxBill]):
@@ -58,11 +58,19 @@ class PropertyTaxAuthority(Actor[MonthOpened | PropertyStatement | MarketStateme
     Assessed value is set to the price on purchase, grown on each January lien date by that year's
     factor, and raised by new construction at its cost when completed. A fiscal year's bill is
     (base rate + the rate area's debt rate) × (the value enrolled on its lien date, less the
-    homeowners' exemption if the owner then lived there), rounded to the quantum; month `j` of the
-    fiscal year pays its cumulative twelfths, so the months of a fiscal year sum to its bill. A
-    fiscal year whose lien date preceded the purchase is billed on the price from the month after it,
-    without the exemption. Not modeled: supplemental bills on new construction, Proposition 8
-    reductions and the two installment dates.
+    homeowners' exemption if the owner then lived there), rounded as the rate area's collector
+    rounds it; month `j` of the fiscal year pays its cumulative twelfths, so the months of a fiscal
+    year sum to its bill. A fiscal year whose lien date preceded the purchase is billed without the
+    exemption, from the month after the purchase, on the seller's prior assessed value where the
+    parcel names it and on the price where it does not. With a prior value, the month after the
+    purchase adds a supplemental bill: the full year's tax on the increase, prorated by R&TC 75.41's
+    factor for the first day of that month. A purchase from January to June is enrolled at its price
+    for the next fiscal year, which the law bills as a second supplemental of the same amount. Not
+    modeled: supplemental bills on new construction, the exemption on a supplemental bill,
+    Proposition 8 reductions and the two installment dates.
+
+    In the month of a purchase or a sale it also bills the owner's share of the transfer tax the
+    property's `PropertyStatement` reports.
     """
 
     def __init__(self, policy: PropertyTaxPolicy, purchase: ScheduledPurchase) -> None:
@@ -112,6 +120,18 @@ class PropertyTaxAuthority(Actor[MonthOpened | PropertyStatement | MarketStateme
             self.assess(property_, month, cpi if lien else None)
         if lien:
             self.january_cpi = cpi
+        transfer = (
+            []
+            if property_ is None or not property_.transfer_tax
+            else [
+                self.bill(
+                    f"{policy.property_id}_transfer_tax_m{month}",
+                    ObligationType.TRANSFER_TAX,
+                    property_.transfer_tax,
+                    TransferTax(policy.owner_agent_id),
+                )
+            ]
+        )
         if (
             property_ is None
             or not property_.active
@@ -119,24 +139,49 @@ class PropertyTaxAuthority(Actor[MonthOpened | PropertyStatement | MarketStateme
             or policy.start_month > month
             or (policy.end_month is not None and month > policy.end_month)
         ):
-            return []
+            return transfer
         fiscal = fiscal_year(policy, month)
         roll = self.roll[fiscal]
         taxable = max(0, roll.value - self.law.homeowners_exemption) if roll.exempt else roll.value
         bill = self.law.secured_bill(taxable, fiscal)
         elapsed = (month % 12 - 6) % 12
-        return [
-            PropertyTaxBill(
-                cause_id=f"{policy.property_id}_property_tax_m{month}",
-                obligation_type="property_tax",
-                from_account=AccountRef(agent_id=policy.owner_agent_id, account_id=policy.from_account_id),
-                to_account=AccountRef(
-                    agent_id=policy.tax_authority_agent_id, account_id=policy.tax_authority_account_id
-                ),
-                amount=round_ratio(bill * (elapsed + 1), 12) - round_ratio(bill * elapsed, 12),
-                effect=PropertyTax(policy.owner_agent_id, property_.rented_fraction_ppb),
-            )
+        ad_valorem = AdValoremTax(policy.owner_agent_id, property_.rented_fraction_ppb)
+        bills = [
+            *transfer,
+            self.bill(
+                f"{policy.property_id}_property_tax_m{month}",
+                ObligationType.PROPERTY_TAX,
+                round_ratio(bill * (elapsed + 1), 12) - round_ratio(bill * elapsed, 12),
+                ad_valorem,
+            ),
         ]
+        prior = self.purchase.parcel.prior_assessed_value
+        if prior is not None and month == property_.purchase_month + 1:
+            share = self.law.supplemental_proration.get(month % 12 + 1, Fraction(0))
+            if share:
+                full_year = self.law.secured_bill(self.purchase.purchase_price - prior, fiscal_year(policy, month - 1))
+                bills.append(
+                    self.bill(
+                        f"{policy.property_id}_supplemental_tax_m{month}",
+                        ObligationType.PROPERTY_TAX,
+                        round_ratio(full_year * share.numerator, share.denominator),
+                        ad_valorem,
+                    )
+                )
+        return bills
+
+    def bill(
+        self, cause_id: str, obligation_type: ObligationType, amount: int, effect: AdValoremTax | TransferTax
+    ) -> PropertyTaxBill:
+        policy = self.policy
+        return PropertyTaxBill(
+            cause_id=cause_id,
+            obligation_type=obligation_type,
+            from_account=AccountRef(agent_id=policy.owner_agent_id, account_id=policy.from_account_id),
+            to_account=AccountRef(agent_id=policy.tax_authority_agent_id, account_id=policy.tax_authority_account_id),
+            amount=amount,
+            effect=effect,
+        )
 
     def assess(self, property_: PropertyStatement, month: int, cpi: int | None) -> None:
         """This month's change to the assessed value, and the roll a lien date or the purchase sets."""
@@ -144,7 +189,8 @@ class PropertyTaxAuthority(Actor[MonthOpened | PropertyStatement | MarketStateme
         year = calendar_year(policy, month)
         if self.assessed_value is None:
             self.assessed_value = price
-            self.roll[fiscal_year(policy, month)] = _Roll(price, exempt=False)
+            prior = self.purchase.parcel.prior_assessed_value
+            self.roll[fiscal_year(policy, month)] = _Roll(price if prior is None else prior, exempt=False)
             if month % 12 < 6:
                 self.roll[year] = _Roll(price, exempt=False)
         if month % 12 == 0:

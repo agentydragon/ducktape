@@ -644,7 +644,10 @@ def sale_situation(
             purchases=(purchase(PropertyId("p1"), rented_fraction=1 if rented else 0),),
             sales=(
                 ScheduledSale(
-                    month=sale_month, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(Decimal("0.06"))
+                    month=sale_month,
+                    property_id=PropertyId("p1"),
+                    commission_ppb=rate_to_ppb(Decimal("0.06")),
+                    escrow_title_ppb=0,
                 ),
             ),
         ),
@@ -1206,7 +1209,10 @@ class TestRentalIncomeTaxation:
                 ),
                 sales=(
                     ScheduledSale(
-                        month=sale_month, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(Decimal("0.06"))
+                        month=sale_month,
+                        property_id=PropertyId("p1"),
+                        commission_ppb=rate_to_ppb(Decimal("0.06")),
+                        escrow_title_ppb=0,
                     ),
                 ),
                 residence_events=(PrimaryResidenceEvent(month=12, agent_id=OWNER, property_id=PropertyId("p1")),),
@@ -1331,12 +1337,14 @@ class TestRentalIncomeTaxation:
                     ScheduledSale(
                         month=sale_month,
                         property_id=PropertyId("alice_rental"),
-                        closing_cost_ppb=rate_to_ppb(Decimal("0.06")),
+                        commission_ppb=rate_to_ppb(Decimal("0.06")),
+                        escrow_title_ppb=0,
                     ),
                     ScheduledSale(
                         month=sale_month,
                         property_id=PropertyId("bob_home"),
-                        closing_cost_ppb=rate_to_ppb(Decimal("0.06")),
+                        commission_ppb=rate_to_ppb(Decimal("0.06")),
+                        escrow_title_ppb=0,
                     ),
                 ),
                 initial_residences=(PrimaryResidence(agent_id=BOB, property_id=PropertyId("bob_home")),),
@@ -1606,7 +1614,10 @@ class TestRentalIncomeTaxation:
                 purchases=(purchase(PropertyId("p1"), rented_fraction=0),),
                 sales=(
                     ScheduledSale(
-                        month=sale_month, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(Decimal("0.06"))
+                        month=sale_month,
+                        property_id=PropertyId("p1"),
+                        commission_ppb=rate_to_ppb(Decimal("0.06")),
+                        escrow_title_ppb=0,
                     ),
                 ),
                 initial_residences=(PrimaryResidence(agent_id=OWNER, property_id=PropertyId("p1")),),
@@ -1655,7 +1666,10 @@ class TestRentalIncomeTaxation:
                 purchases=(purchase(PropertyId("p1"), rented_fraction=0),),
                 sales=(
                     ScheduledSale(
-                        month=sale_month, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(Decimal("0.06"))
+                        month=sale_month,
+                        property_id=PropertyId("p1"),
+                        commission_ppb=rate_to_ppb(Decimal("0.06")),
+                        escrow_title_ppb=0,
                     ),
                 ),
                 residence_events=(
@@ -1692,7 +1706,10 @@ class TestRentalIncomeTaxation:
                 purchases=(purchase(PropertyId("p1"), rented_fraction=0),),
                 sales=(
                     ScheduledSale(
-                        month=sale_month, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(Decimal("0.06"))
+                        month=sale_month,
+                        property_id=PropertyId("p1"),
+                        commission_ppb=rate_to_ppb(Decimal("0.06")),
+                        escrow_title_ppb=0,
                     ),
                 ),
             ),
@@ -1720,7 +1737,10 @@ class TestRentalIncomeTaxation:
                 purchases=(purchase(PropertyId("p1"), rented_fraction=0),),
                 sales=(
                     ScheduledSale(
-                        month=sale_month, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(Decimal("0.06"))
+                        month=sale_month,
+                        property_id=PropertyId("p1"),
+                        commission_ppb=rate_to_ppb(Decimal("0.06")),
+                        escrow_title_ppb=0,
                     ),
                 ),
                 residence_events=(PrimaryResidenceEvent(month=6, agent_id=OWNER, property_id=PropertyId("p1")),),
@@ -1788,7 +1808,10 @@ class TestRentalIncomeTaxation:
                 purchases=(purchase(PropertyId("p1"), rented_fraction=0),),
                 sales=(
                     ScheduledSale(
-                        month=12, property_id=PropertyId("p1"), closing_cost_ppb=rate_to_ppb(Decimal("0.06"))
+                        month=12,
+                        property_id=PropertyId("p1"),
+                        commission_ppb=rate_to_ppb(Decimal("0.06")),
+                        escrow_title_ppb=0,
                     ),
                 ),
                 rented_fraction_events=(

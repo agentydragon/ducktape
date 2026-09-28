@@ -137,6 +137,12 @@ class IncomeTax(BaseModel):
         )
     )
     exempt_interest: InterestExemptions
+    itemizes_real_property_tax: bool = Field(
+        description=(
+            "Whether the ad-valorem real property tax an owner pays is an itemized deduction here without "
+            "a cap. Where it is not, a caller's `SaltDeduction` may claim it under the SALT cap."
+        )
+    )
     net_investment_income_tax: ThresholdTax | None = Field(
         default=None,
         description=(
@@ -187,6 +193,32 @@ class Proposition13(BaseModel):
     homeowners_exemption: CurrencyAmount = Field(
         description="The reduction of taxable value for a home that is its owner's principal residence on the lien date."
     )
+    supplemental_proration: dict[int, Rate] = Field(
+        description=(
+            "The share of a full year's tax a supplemental assessment on the current roll bears, by the "
+            "month (1-12) of the first day after the change in ownership; a month absent bears none."
+        )
+    )
+
+
+class TransferTaxBracket(BaseModel):
+    """The rate a consideration pays once it reaches `lower`; `lower_included` says whether `lower` itself does."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lower: CurrencyAmount
+    lower_included: bool
+    rate: CurrencyAmount = Field(description="The tax on each `per` of the whole consideration, or part of one.")
+
+
+class TransferTax(BaseModel):
+    """A documentary or city transfer tax on the whole consideration at the rate of the highest bracket it
+    reaches; below the lowest bracket nothing is due."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    per: CurrencyAmount
+    brackets: list[TransferTaxBracket] = Field(min_length=1)
 
 
 class Jurisdiction(BaseModel):
@@ -213,6 +245,10 @@ class Jurisdiction(BaseModel):
             "How the rate area's collector rounds a secured bill. Absent where no rule is published, and "
             "the bill rounds to the nearest quantum."
         ),
+    )
+    transfer_tax: TransferTax | None = Field(
+        default=None,
+        description="The tax this level levies on a transfer of real property; absent where it levies none.",
     )
 
     def lineage(self) -> tuple[Jurisdiction, ...]:
@@ -257,5 +293,6 @@ def flat_income_tax(jurisdiction_id: JurisdictionId, *, ordinary_rate: Decimal, 
             standard_deduction={"single": Decimal(0)},
             max_capital_loss_ordinary_offset={"single": Decimal(0)},
             exempt_interest=InterestExemptions(treasury=False, municipal=set()),
+            itemizes_real_property_tax=False,
         ),
     )

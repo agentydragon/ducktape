@@ -172,7 +172,8 @@ def a_property_bought_and_sold(closing_cost_pct: Decimal = Decimal(0)) -> Worlds
                     ScheduledSale(
                         month=PROPERTY_SALE_MONTH,
                         property_id=PropertyId("house"),
-                        closing_cost_ppb=rate_to_ppb(closing_cost_pct / 100),
+                        commission_ppb=rate_to_ppb(closing_cost_pct / 100),
+                        escrow_title_ppb=0,
                     ),
                 ),
             ),
