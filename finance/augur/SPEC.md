@@ -175,9 +175,9 @@ inflation factor, or for a lien year it has not published by the modeled CPI's c
 2%, and raised by completed construction at its cost. A fiscal year's secured bill is the 1% base
 plus the rate area's voter-approved debt rate on the value enrolled on its lien date, less the
 homeowners' exemption when the owner lived there then, paid in monthly twelfths; a fiscal year
-after the rate area's last published one keeps that year's debt rate. San Francisco is the rate
-area shipped. Supplemental bills, Proposition 8 reductions, special districts and the two
-installment dates are not modeled.
+after the rate area's last published one keeps that year's debt rate. San Francisco and mainland
+Vallejo (Solano County rate area 007000) are the rate areas shipped. Supplemental bills,
+Proposition 8 reductions, special districts and the two installment dates are not modeled.
 
 PE paths distinguish marks, voluntary opportunities, eligibility/capacity,
 liquidity blocks and forced sale/recovery. A stated recovery cashout is a total

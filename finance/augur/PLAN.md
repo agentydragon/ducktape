@@ -48,8 +48,8 @@ Every change is checked against an independent calculation, never a copy of the 
 Goal: Augur computes a homeowner's and a landlord's property-related taxes correctly in San
 Francisco, mainland Vallejo and Mare Island. Today a parcel's situs is a tax rate area loaded
 from `sim/data/jurisdictions/`, and `sim/property_tax.py` assesses it under Proposition 13 and
-bills its secured tax in monthly twelfths; San Francisco is the only rate area, and a sale pays one
-flat `closing_cost_ppb`.
+bills its secured tax in monthly twelfths in San Francisco and mainland Vallejo, and a sale pays
+one flat `closing_cost_ppb`.
 
 **Model.**
 
@@ -88,9 +88,6 @@ assessed value (SUPPLEMENTAL) beside its situs.
 **First milestone: San Francisco and mainland Vallejo, county and city level.** Accepted when
 each of these holds against an independent calculation or published source:
 
-- **B. Secured tax:** (1% + the rate area's debt rate for the fiscal year) × (assessed value −
-  the homeowners' exemption for a primary residence), to the cent, for one documented
-  mainland-Vallejo rate area.
 - **C. Supplemental bill:** (new − prior assessed value) × rate × the fiscal year's remaining
   share, in the purchase year.
 - **D. Transfer tax:** San Francisco's table just below, at and above bracket edges;
@@ -110,8 +107,6 @@ without them.
 
 **Items**, each landing its rule, data and tests together:
 
-- **VALLEJO**: Solano County's rate area for mainland Vallejo, sourced from the
-  county's published rate book.
 - **DISTRICTS**: district files with a per-category maximum, escalation and
   end date from each district's rate-and-method document: Mare Island's CFDs 2002-1, 2005-1A
   and 2005-1B (research so far: <docs/mare_island_special_taxes.md>), and San Francisco's parcel
