@@ -117,7 +117,7 @@ class CapitalImprovement:
     month: int
     property_id: PropertyId
     amount: int
-    description: str
+    description: str | None = None
 
 
 @dataclass(frozen=True)
@@ -405,9 +405,7 @@ class Properties:
                     )
                 )
                 property_.state = property_.state.model_copy(update={"building_basis": basis})
-                self.improvements.append(
-                    CapitalImprovement(month=month, property_id=id_, amount=improvement.amount, description="")
-                )
+                self.improvements.append(improvement)
             for sale in self.housing.sales:
                 if sale.month == month and sale.property_id == id_ and property_.state.active:
                     payoff = self.sell(accounting, market, purchases[id_], sale, mortgages, section_121_exclusions)

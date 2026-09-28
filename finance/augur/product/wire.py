@@ -237,7 +237,7 @@ class CapitalImprovementEventWire(ApiModel):
     kind: Literal["capital_improvement"] = "capital_improvement"
     month: PositiveInt
     amount: PositiveCurrencyAmount
-    description: str = ""
+    description: Annotated[str, StringConstraints(min_length=1)] | None = None
 
 
 class PropertySaleEventWire(ApiModel):

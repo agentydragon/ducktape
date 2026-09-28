@@ -465,9 +465,15 @@ def test_a_lifecycle_event_lands_on_the_property_it_names(lifecycle: Rollout) ->
     assert lifecycle.trace.events.set_rented_fraction_events.to_dicts() == [
         {"rollout_id": 0, "month_index": 12, "property_id": "rental", "rented_fraction": 0.5}
     ]
-    assert lifecycle.trace.events.capital_improvement_events.select(
-        "rollout_id", "month_index", "property_id", "amount_quanta"
-    ).to_dicts() == [{"rollout_id": 0, "month_index": 12, "property_id": "rental", "amount_quanta": 3_000_000}]
+    assert lifecycle.trace.events.capital_improvement_events.to_dicts() == [
+        {
+            "rollout_id": 0,
+            "month_index": 12,
+            "property_id": "rental",
+            "amount_quanta": 3_000_000,
+            "description": "new roof",
+        }
+    ]
 
 
 def test_the_rental_sale_carries_its_own_basis_and_not_the_home_s_exclusion(lifecycle: Rollout) -> None:
