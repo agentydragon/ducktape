@@ -8,7 +8,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
 from constructs import Construct
 from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecParentRefs,
@@ -26,9 +25,11 @@ from gateway_api_gateway_crds.io.k8s.networking.gateway import (
     GatewaySpecListenersAllowedRoutesNamespacesFrom,
 )
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.gateway_api.gateway import Gateway
 from cluster.cdk8s.providers.gateway_api.http_route import HttpRoute, RouteFilter, RouteMatch
 from cluster.cdk8s.providers.gateway_api.listener import Listener, ListenerTls
@@ -101,7 +102,7 @@ def https_route(
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "gateway-system", disable_resource_name_hashes=True)
-    k8s.KubeNamespace(chart, "namespace", metadata=k8s.ObjectMeta(name=_NAMESPACE))
+    namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.RECOMMEND, agent_readable=None)
     # Every listener admits routes from all namespaces. Per-listener Selector restriction is
     # avoided because Cilium bug #42159 makes listener-scoped allowedRoutes config bleed
     # across listeners (see cluster/docs/plan.md). The fence against agents publishing
