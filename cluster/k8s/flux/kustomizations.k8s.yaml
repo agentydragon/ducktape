@@ -329,6 +329,7 @@ metadata:
   name: seaweedfs-namespace
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   interval: 10m
   path: ./cluster/generated/seaweedfs/namespace
   prune: true
@@ -1276,6 +1277,7 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
     - name: seaweedfs-namespace
       namespace: ducktape-flux
@@ -1331,6 +1333,7 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
     - name: seaweedfs-namespace
       namespace: ducktape-flux
@@ -3316,6 +3319,7 @@ metadata:
   name: grocy-mcp-sf
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: external-secrets-operator
       namespace: ducktape-flux
@@ -3362,6 +3366,7 @@ metadata:
   name: grocy-mcp-vallejo
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: external-secrets-operator
       namespace: ducktape-flux

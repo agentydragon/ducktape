@@ -13,6 +13,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
 )
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -113,6 +114,7 @@ def seaweedfs_secrets(
         chart,
         name,
         directory,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         retry_interval=None,
         wait=None,
         suspend=False,
