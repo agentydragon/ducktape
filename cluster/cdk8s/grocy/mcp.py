@@ -13,6 +13,7 @@ secret env at the household's OIDC Secret).
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart, Size
@@ -24,6 +25,7 @@ from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.grocy import app as grocy  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -45,7 +47,7 @@ def _service(household: str) -> ServiceRef:
     return ServiceRef(
         name=_NAME,
         port=Port(name="http", number=_HTTP_PORT),
-        pods=Pods(namespace=f"grocy-{household}", labels=tuple(_LABELS.items())),
+        pods=Pods(namespace=grocy.service(household).pods.namespace, labels=tuple(_LABELS.items())),
     )
 
 
@@ -171,7 +173,7 @@ def base_chart(app: App) -> Chart:
 
 
 def household_chart(app: App, *, household: str, display_name: str) -> Chart:
-    namespace = f"grocy-{household}"
+    namespace = _service(household).pods.namespace
     chart = Chart(app, f"grocy-mcp-{household}", disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=namespace)
     # NOT behind the Authentik outpost — OIDCProxy runs inside the pod and drives the full MCP
@@ -211,11 +213,9 @@ def write_manifests(root: Path) -> None:
         root / BASE_DIR / "kustomization.yaml",
         kustomize_kustomization(resources=["grocy-mcp.k8s.yaml"], components=["./image-pins"]),
     )
-    write_charts(
-        root, f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", lambda app: household_chart(app, household="sf", display_name="SF")
-    )
-    write_charts(
-        root,
-        f"{HAND_WRITTEN_ROOT}/grocy/vallejo/mcp",
-        lambda app: household_chart(app, household="vallejo", display_name="Vallejo"),
-    )
+    for household, display_name in grocy.HOUSEHOLDS:
+        write_charts(
+            root,
+            f"{HAND_WRITTEN_ROOT}/grocy/{household}/mcp",
+            partial(household_chart, household=household, display_name=display_name),
+        )

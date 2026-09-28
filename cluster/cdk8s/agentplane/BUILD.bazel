@@ -114,6 +114,7 @@ py_library(
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s:token_reviewer_rbac",
         "//cluster/cdk8s/cert_manager:interception_ca",
+        "//cluster/cdk8s/home_assistant:app",
         "//cluster/cdk8s/providers/agentplane:egress_credential",
         "//cluster/cdk8s/providers/agentplane:egress_policy",
         "//cluster/cdk8s/providers/cert_manager:bundle",

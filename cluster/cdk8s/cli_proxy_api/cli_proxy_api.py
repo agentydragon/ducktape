@@ -29,7 +29,6 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling
-from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
@@ -37,6 +36,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cli-proxy-api"
@@ -50,7 +50,9 @@ SERVICE = ServiceRef(
 )
 _CONFIG_SECRET = "cli-proxy-api-config"
 _DATA_CLAIM = "cli-proxy-api-data"
-_ADMIN_OIDC_SECRET = "cli-proxy-api-admin-oidc"
+_ADMIN_OIDC = SecretRef(namespace=NAMESPACE, name="cli-proxy-api-admin-oidc")
+# The SOPS-managed management key; aiquota reads it too.
+MANAGEMENT_PASSWORD = SecretRef(namespace=NAMESPACE, name="cli-proxy-api-management").key("management-password")
 KEY_FILES = ("client-key.sops.yaml", "management-key.sops.yaml")
 
 _CONFIG = textwrap.dedent(
@@ -161,11 +163,9 @@ def _deployment(scope: Construct) -> None:
                             image=_IMAGE,
                             args=["-config", "/config/config.yaml"],
                             env=[
-                                secret_env_var(
-                                    "MANAGEMENT_PASSWORD", "cli-proxy-api-management", "management-password"
-                                ),
+                                MANAGEMENT_PASSWORD.env_var("MANAGEMENT_PASSWORD"),
                                 *(
-                                    secret_env_var(key, _ADMIN_OIDC_SECRET, key)
+                                    _ADMIN_OIDC.key(key).env_var(key)
                                     for key in (
                                         "MANAGEMENT_OIDC_ISSUER",
                                         "MANAGEMENT_OIDC_CLIENT_ID",
