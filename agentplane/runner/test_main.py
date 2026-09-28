@@ -50,16 +50,7 @@ def test_model_context_windows_are_optional_runner_owned_configuration() -> None
 
 
 @pytest.mark.parametrize(
-    "raw",
-    [
-        "not-json",
-        "[]",
-        '{"": 128}',
-        '{"qwen": 0}',
-        '{"qwen": -1}',
-        '{"qwen": true}',
-        '{"qwen": "128"}',
-    ],
+    "raw", ["not-json", "[]", '{"": 128}', '{"qwen": 0}', '{"qwen": -1}', '{"qwen": true}', '{"qwen": "128"}']
 )
 def test_invalid_model_context_windows_are_rejected_at_startup(raw: str) -> None:
     with pytest.raises(ValueError, match="AGENTPLANE_MODEL_CONTEXT_WINDOWS"):

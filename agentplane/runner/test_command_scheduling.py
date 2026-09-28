@@ -64,10 +64,7 @@ class RunningProcess:
 
 @asynccontextmanager
 async def session_with_blocked_adapter(
-    tmp_path: Path,
-    *,
-    model_context_windows: Mapping[str, int] | None = None,
-    initial_model: str = "test-model",
+    tmp_path: Path, *, model_context_windows: Mapping[str, int] | None = None, initial_model: str = "test-model"
 ) -> AsyncIterator[tuple[Session, BlockingAdapter]]:
     state_dir = tmp_path / "state"
     store = SessionStore(state_dir / "sessions")
@@ -190,8 +187,7 @@ async def test_a_model_change_with_a_different_or_missing_context_window_fails(
         tmp_path, initial_model=initial_model, model_context_windows=context_windows
     ) as (session, adapter):
         command = command_pb2.Command(
-            command_id="different-window",
-            change_model=command_pb2.ChangeModel(model=requested_model),
+            command_id="different-window", change_model=command_pb2.ChangeModel(model=requested_model)
         )
         await session.command(command)
         dispatch = session._normal_dispatch_task
@@ -210,15 +206,10 @@ async def test_a_model_change_with_a_different_or_missing_context_window_fails(
 
 async def test_a_same_window_model_change_reaches_the_harness(tmp_path: Path) -> None:
     async with session_with_blocked_adapter(
-        tmp_path,
-        initial_model="qwen-128",
-        model_context_windows={"qwen-128": 128 * 1024, "qwen-128-alias": 128 * 1024},
+        tmp_path, initial_model="qwen-128", model_context_windows={"qwen-128": 128 * 1024, "qwen-128-alias": 128 * 1024}
     ) as (session, adapter):
         await session.command(
-            command_pb2.Command(
-                command_id="same-window",
-                change_model=command_pb2.ChangeModel(model="qwen-128-alias"),
-            )
+            command_pb2.Command(command_id="same-window", change_model=command_pb2.ChangeModel(model="qwen-128-alias"))
         )
         dispatch = session._normal_dispatch_task
         if dispatch is not None:
