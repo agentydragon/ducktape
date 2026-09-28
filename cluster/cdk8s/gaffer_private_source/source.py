@@ -10,97 +10,30 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart
-from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
-    GitRepositorySpecProvider,
-    GitRepositorySpecRef,
-    GitRepositorySpecSecretRef,
-)
-from flux_imageupdateautomation_crds.io.fluxcd.toolkit.image import (
-    ImageUpdateAutomation,
-    ImageUpdateAutomationSpec,
-    ImageUpdateAutomationSpecGit,
-    ImageUpdateAutomationSpecGitCheckout,
-    ImageUpdateAutomationSpecGitCheckoutRef,
-    ImageUpdateAutomationSpecGitCommit,
-    ImageUpdateAutomationSpecGitCommitAuthor,
-    ImageUpdateAutomationSpecGitPush,
-    ImageUpdateAutomationSpecSourceRef,
-    ImageUpdateAutomationSpecSourceRefKind,
-    ImageUpdateAutomationSpecUpdate,
-    ImageUpdateAutomationSpecUpdateStrategy,
-)
+from cdk8s import App, Chart
 
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.image_automation import ImageUpdatePush
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
 NAME = "gaffer-private"
-NAMESPACE = "flux-system"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/gaffer-private-source"
-_BRANCH = "main"
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "gaffer-private-source", disable_resource_name_hashes=True)
-    source = GitRepository(
+    ImageUpdatePush(
         chart,
-        "source",
-        metadata=ApiObjectMetadata(
-            name=NAME,
-            namespace=NAMESPACE,
-            annotations={
-                "description": "Private companion monorepo. Reconciled from main branch via the ducktape-automation "
-                "GitHub App (also used to push image-pin commits back here)."
-            },
-        ),
-        interval="1m",
-        provider=GitRepositorySpecProvider.GITHUB,
-        ref=GitRepositorySpecRef(branch=_BRANCH),
-        secret_ref=GitRepositorySpecSecretRef(name="ducktape-automation-github-app"),
+        "image-update-push",
+        name="gaffer-images",
+        description="Sibling of `all-images` for the gaffer-private GitRepository. Watches ImagePolicies whose "
+        "marker comments target gaffer-private's manifests and commits image-tag bumps back to gaffer-private/main.",
+        source_name=NAME,
+        source_description="Private companion monorepo. Reconciled from main branch via the ducktape-automation "
+        "GitHub App (also used to push image-pin commits back here).",
         url="https://github.com/agentydragon/gaffer-private.git",
-    )
-    ImageUpdateAutomation(
-        chart,
-        "automation",
-        metadata=ApiObjectMetadata(
-            name="gaffer-images",
-            namespace=NAMESPACE,
-            annotations={
-                "description": "Sibling of `all-images` for the gaffer-private GitRepository. Watches ImagePolicies "
-                "whose marker comments target gaffer-private's manifests and commits image-tag bumps back to "
-                "gaffer-private/main."
-            },
-        ),
-        spec=ImageUpdateAutomationSpec(
-            interval="5m",
-            source_ref=ImageUpdateAutomationSpecSourceRef(
-                kind=ImageUpdateAutomationSpecSourceRefKind.GIT_REPOSITORY, name=source.name
-            ),
-            git=ImageUpdateAutomationSpecGit(
-                checkout=ImageUpdateAutomationSpecGitCheckout(
-                    ref=ImageUpdateAutomationSpecGitCheckoutRef(branch=_BRANCH)
-                ),
-                commit=ImageUpdateAutomationSpecGitCommit(
-                    author=ImageUpdateAutomationSpecGitCommitAuthor(
-                        name="flux-image-automation", email="flux@allegedly.works"
-                    ),
-                    message_template=(
-                        "chore: update images [skip ci]\n"
-                        "\n"
-                        "{{ range $resource, $changes := .Changed.Objects -}}\n"
-                        "{{ range $_, $change := $changes -}}\n"
-                        "{{ $change.OldValue }} -> {{ $change.NewValue }}\n"
-                        "{{ end -}}\n"
-                        "{{ end -}}"
-                    ),
-                ),
-                push=ImageUpdateAutomationSpecGitPush(branch=_BRANCH),
-            ),
-            update=ImageUpdateAutomationSpecUpdate(
-                strategy=ImageUpdateAutomationSpecUpdateStrategy.SETTERS, path="./k8s"
-            ),
-        ),
+        branch="main",
+        path="./k8s",
     )
     return chart
 

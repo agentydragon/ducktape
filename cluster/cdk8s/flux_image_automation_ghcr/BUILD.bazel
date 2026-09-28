@@ -9,12 +9,9 @@ py_library(
     deps = [
         "//cluster/cdk8s:ducktape_flux",
         "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:image_automation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/flux:git_repository",
-        "//cluster/cdk8s/providers/flux:gitrepository",
-        "//cluster/cdk8s/providers/flux:imagepolicy",
-        "//cluster/cdk8s/providers/flux:imagerepository",
-        "//cluster/cdk8s/providers/flux:imageupdateautomation",
+        "//cluster/cdk8s/providers/flux:image_repository",
         "@pypi//cdk8s",
     ],
 )

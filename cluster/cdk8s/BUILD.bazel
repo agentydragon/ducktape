@@ -931,14 +931,32 @@ py_test(
 )
 
 py_library(
+    name = "image_automation",
+    srcs = ["image_automation.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/flux:git_repository",
+        "//cluster/cdk8s/providers/flux:gitrepository",
+        "//cluster/cdk8s/providers/flux:image_policy",
+        "//cluster/cdk8s/providers/flux:image_repository",
+        "//cluster/cdk8s/providers/flux:image_update_automation",
+        "//cluster/cdk8s/providers/flux:imagepolicy",
+        "//cluster/cdk8s/providers/flux:imageupdateautomation",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "forgejo_image_automation",
     srcs = ["forgejo_image_automation.py"],
     deps = [
         ":artifact_generators",
         ":fleet_rules",
         ":flux",
+        ":image_automation",
         ":manifest_roots",
-        "//cluster/cdk8s/providers/flux:imagepolicy",
+        "//cluster/cdk8s/providers/flux:image_repository",
         "//cluster/cdk8s/providers/flux:imagerepository",
         "@pypi//cdk8s",
         "@pypi//constructs",
