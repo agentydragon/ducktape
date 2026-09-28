@@ -11460,13 +11460,13 @@ CONFIG = {
                 <code>Kustomization</code> are each built at one site inside a function with many callers; and naming
                 (cilium <code>NetworkPolicy</code> against <code>CiliumNetworkPolicy</code>, the
                 <code>flux_</code> prefix in <code>flux_kustomization.py</code>). Not your call: a kind built raw at
-                more than one site gets a provider class (C1), one PR per kind. On devel 9904055a45 that is 20 kinds,
-                listed in <code>cluster/cdk8s/PLAN.md</code> § A (#8296); the most repeated are Flux
-                <code>GitRepository</code> (8), External Secrets <code>ClusterSecretStore</code> and Gateway API
-                <code>HTTPRoute</code> (4 each). In review: <code>GitRepository</code> (#8295),
-                <code>CleanupPolicy</code> (#8290) and Terraform (#8293). The rest of the step landed in #8168, #8173 to
-                #8175, #8177 to #8180, #8182, #8288 (<code>CiliumClusterwideNetworkPolicy</code>), #8289
-                (<code>SandboxWarmPool</code>) and #8292 (<code>HelmRepository</code>).
+                more than one site gets a provider class (C1), one PR per kind. The audit on devel 9904055a45 found 20
+                (<code>cluster/cdk8s/PLAN.md</code> § A, #8296); 14 remain on devel a26c265931, the most repeated
+                External Secrets <code>ClusterSecretStore</code> and Gateway API <code>HTTPRoute</code> (4 each), and
+                Terraform is in review (#8293). The rest of the step landed in #8168, #8173 to #8175, #8177 to #8180,
+                #8182, #8288 (<code>CiliumClusterwideNetworkPolicy</code>), #8289 (<code>SandboxWarmPool</code>), #8290
+                (<code>CleanupPolicy</code>), #8292 (<code>HelmRepository</code>), #8295 (<code>GitRepository</code>),
+                #8298 (<code>VirtualMachine</code>) and #8302 (the three Flux image-automation kinds).
               </p>
             </div>
           </div>
