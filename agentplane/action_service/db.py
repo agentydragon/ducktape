@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any, Protocol
+from typing import Protocol
 from uuid import UUID, uuid4
 
 from pydantic import JsonValue, TypeAdapter
