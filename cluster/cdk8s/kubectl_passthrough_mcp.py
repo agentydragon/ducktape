@@ -13,11 +13,15 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "kubectl-passthrough-mcp"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agents/kubectl-passthrough-mcp/app"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _PORT = 8080
+SERVICE = ServiceRef(
+    name=NAME, port=Port(name="http", number=_PORT), pods=Pods(namespace=NAME, labels=tuple(_LABELS.items()))
+)
 _CONFIG_MAP = "kubectl-passthrough-mcp-public"
 _CONFIG_FILE = "00-public.toml"
 _CONFIG_DIR = "/etc/kubectl-passthrough-mcp"
@@ -144,8 +148,7 @@ def chart(app: App) -> Chart:
         "httproute",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAME),
         hostnames=["kubectl-passthrough-mcp.allegedly.works"],
-        backend=NAME,
-        port=_PORT,
+        backend=SERVICE,
         timeout="60s",
         hsts=False,
         listener=None,

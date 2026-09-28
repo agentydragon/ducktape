@@ -30,6 +30,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ollama"
 _NAME = "ollama"
@@ -37,6 +38,11 @@ _NAMESPACE = "ollama"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _OLLAMA_PORT = 11434
 _AUTH_PROXY_PORT = 11435
+_AUTH_PROXY = ServiceRef(
+    name=_NAME,
+    port=Port(name="auth-proxy", number=_AUTH_PROXY_PORT),
+    pods=Pods(namespace=_NAMESPACE, labels=tuple(_LABELS.items())),
+)
 _MODELS_CLAIM = "llm-models"
 _SSD_MODELS_CLAIM = "qwen38-iq4-ssd"
 _SSD_MODELS_VOLUME = "wyrm2-qwen38-iq4-ssd"
@@ -439,8 +445,7 @@ def chart(app: App) -> Chart:
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["ollama.allegedly.works"],
-        backend=_NAME,
-        port=_AUTH_PROXY_PORT,
+        backend=_AUTH_PROXY,
         timeout="600s",
         hsts=False,
         listener=None,
