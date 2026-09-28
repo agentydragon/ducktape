@@ -13,6 +13,13 @@ build time.
 
 ## Thread view UX
 
+- **Composer's bottom row hugs the viewport edge**: `shell.css`'s `.agentplane-shell-main-content.agentplane-shell-fullbleed`
+  deliberately has zero vertical padding (the session view "owns its own full-height layout"), so the composer's
+  status-dot/model-`Select`/stop-or-send `Group` (`projected_session.tsx` ~line 1394, the last child of the body's outer
+  `Stack`) sits flush against the bottom border of the page instead of a bit padded away -- unlike, e.g., the sidebar
+  footer icons (`.agentplane-sidebar-footer`, `sidebar.css`, `padding: 8px`). Give that bottom row its own bottom
+  padding/margin rather than reintroducing the fullbleed container's vertical padding, which would also push the
+  transcript's top edge away from the topbar.
 - **Per-message evidence icon is always-on visual noise**: `EvidenceToggle` (`projected_session.tsx`, the
   magnifying-glass `IconZoomCode` button) renders unconditionally at every one of its 7 call sites, one per
   message/entity, whether or not a reader is looking at that row. Consider a per-message overflow affordance
