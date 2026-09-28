@@ -38,11 +38,33 @@ apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
   name: loki
-  namespace: seaweedfs
+  namespace: loki
 spec:
   reclaimPolicy: Retain
   seaweedRef:
     name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: loki
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: S3Identity
+      namespace: loki
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: loki
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: loki
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
@@ -100,24 +122,6 @@ spec:
     namespace: seaweedfs
   name: loki
   reclaimPolicy: Retain
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: loki
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: loki
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: loki
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
