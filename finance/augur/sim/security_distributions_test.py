@@ -9,7 +9,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import LevelSeriesKey, SecurityDistributionKey
-from finance.augur.sim.actions import DecisionActions, PayClaim
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
@@ -52,6 +52,7 @@ from finance.augur.sim.testing.security_distributions import (
     YEAR_END,
     payout_quanta,
 )
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -175,34 +176,9 @@ def compose(
 
 def _run(world: World) -> Rollout:
     """Receive modeled payouts and explicitly pay observed claims; never trade or retry."""
-    session = ActionSession({0: world}, ALICE, capture="forensic")
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id,
-                        decision.observation.month,
-                        [
-                            PayClaim(
-                                request_id=index,
-                                cause_id=claim.cause_id,
-                                claim=claim,
-                                from_account=claim.from_account,
-                                amount=claim.amount_due,
-                            )
-                            for index, claim in enumerate(decision.observation.claims)
-                        ],
-                    )
-                    for decision in batch
-                ]
-            )
-        [result] = batch.rollouts
-        assert result.stop is None
-        return result
-    finally:
-        session.close()
+    [result] = finish(ActionSession({0: world}, ALICE, capture="forensic"), each(ClaimPayer(ALICE).decide)).rollouts
+    assert result.stop is None
+    return result
 
 
 def _cash_by_month(result: Rollout) -> dict[int, int]:

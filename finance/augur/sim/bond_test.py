@@ -10,11 +10,11 @@ from itertools import pairwise
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.actions import DecisionActions, PayClaim
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.books import IncomeState
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
 from finance.augur.sim.income import Municipal
-from finance.augur.sim.results import Finished, RejectedAction, Rollout
+from finance.augur.sim.results import RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.bonds import (
     CPI_DEFLATING,
@@ -29,37 +29,16 @@ from finance.augur.sim.testing.bonds import (
     bond_case,
     compose,
 )
+from finance.augur.sim.testing.session import each, finish
 
 
 def execute(case: Situation) -> Rollout:
     """Pay only observed due claims in order; no native configured policy or rescue."""
-    session = ActionSession({0: compose(case)}, AgentId("alice"), capture="forensic")
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id,
-                        decision.observation.month,
-                        [
-                            PayClaim(
-                                request_id=index,
-                                cause_id=claim.cause_id,
-                                claim=claim,
-                                from_account=claim.from_account,
-                                amount=claim.amount_due,
-                            )
-                            for index, claim in enumerate(decision.observation.claims)
-                        ],
-                    )
-                    for decision in batch
-                ]
-            )
-        [result] = batch.rollouts
-        return result
-    finally:
-        session.close()
+    [result] = finish(
+        ActionSession({0: compose(case)}, AgentId("alice"), capture="forensic"),
+        each(ClaimPayer(AgentId("alice")).decide),
+    ).rollouts
+    return result
 
 
 def _quanta(amount: Decimal | int | float) -> int:

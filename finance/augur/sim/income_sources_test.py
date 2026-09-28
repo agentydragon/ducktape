@@ -17,7 +17,7 @@ from decimal import Decimal
 
 import pytest_bazel
 
-from finance.augur.sim.actions import DecisionActions, PayClaim
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
@@ -32,12 +32,13 @@ from finance.augur.sim.income import (
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -151,34 +152,9 @@ def run(*payments: Payment) -> Rollout:
     accrual is computed when the year closes, both a month before any assessment is raised.
     """
 
-    world = compose(payments)
-    session = ActionSession({0: world}, min(payment.to_agent_id for payment in payments))
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id,
-                        decision.observation.month,
-                        [
-                            PayClaim(
-                                request_id=index + 1,
-                                cause_id=claim.cause_id,
-                                claim=claim,
-                                from_account=claim.from_account,
-                                amount=claim.amount_due,
-                            )
-                            for index, claim in enumerate(decision.observation.claims)
-                        ],
-                    )
-                    for decision in batch
-                ]
-            )
-        [rollout] = batch.rollouts
-        return rollout
-    finally:
-        session.close()
+    actor = min(payment.to_agent_id for payment in payments)
+    [rollout] = finish(ActionSession({0: compose(payments)}, actor), each(ClaimPayer(actor).decide)).rollouts
+    return rollout
 
 
 def _quanta(amount: Decimal) -> int:

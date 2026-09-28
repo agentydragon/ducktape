@@ -23,7 +23,6 @@ from more_itertools import one
 
 from finance.augur.model.series import LocationId
 from finance.augur.policy.funding import ClaimPayer
-from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
@@ -33,12 +32,13 @@ from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.property import Housing, MortgageFinancing, ScheduledPurchase
 from finance.augur.sim.property_tax import PropertyTaxPolicy
-from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import MortgageInterestDeduction, SaltCap, SaltDeduction, TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
 from finance.augur.sim.world import World
 
@@ -270,22 +270,7 @@ def compose(case: Situation) -> World:
 
 def run(case: Situation) -> Rollout:
     """Alice pays every due claim in full, in order: her installments, her property tax, her assessments."""
-    household = ClaimPayer(AgentId(ALICE))
-    session = ActionSession({0: compose(case)}, ALICE)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id, decision.observation.month, household.decide(decision.observation)
-                    )
-                    for decision in batch
-                ]
-            )
-    finally:
-        session.close()
-    return one(batch.rollouts)
+    return one(finish(ActionSession({0: compose(case)}, ALICE), each(ClaimPayer(AgentId(ALICE)).decide)).rollouts)
 
 
 def breakdown(rollout: Rollout, *, jurisdiction_id: JurisdictionId, year_index: int = 0) -> dict[str, Any]:

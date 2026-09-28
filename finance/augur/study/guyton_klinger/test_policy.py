@@ -22,12 +22,13 @@ from finance.augur.sim.ids import AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Treasury
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import Currency
-from finance.augur.sim.results import Executed, Finished, Receipt, Rejected, RejectedAction, Rollout
+from finance.augur.sim.results import Executed, Receipt, Rejected, RejectedAction, Rollout
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.session import finish
 from finance.augur.sim.world import World
 from finance.augur.study.guyton_klinger.panel import Sleeve
 from finance.augur.study.guyton_klinger.paths import (
@@ -180,13 +181,7 @@ def world(paths: list[Path], rollout_id: int) -> World:
 def run(paths: list[Path], rollout_ids: list[int]) -> tuple[list[Rollout], Policy]:
     policy = Policy(cell(len(paths[0].cpi) - 1))
     session = ActionSession({id_: world(paths, id_) for id_ in rollout_ids}, RETIREE, capture="forensic")
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(policy(batch))
-        return batch.rollouts, policy
-    finally:
-        session.close()
+    return finish(session, policy).rollouts, policy
 
 
 def settle(path: Path) -> tuple[Rollout, list[YearRecord]]:

@@ -11,9 +11,9 @@ import pytest_bazel
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.policy.cash_band import Raise, cash_band
-from finance.augur.policy.funding import fund_claims
+from finance.augur.policy.funding import ClaimPayer, fund_claims
 from finance.augur.policy.sleeves import withdraw
-from finance.augur.sim.actions import ClaimId, DecisionActions, PayClaim, Transfer
+from finance.augur.sim.actions import ClaimId, DecisionActions, Transfer
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
@@ -25,7 +25,6 @@ from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.results import (
     Executed,
-    Finished,
     InsufficientCash,
     Paid,
     PaymentRejected,
@@ -35,6 +34,7 @@ from finance.augur.sim.results import (
 )
 from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
@@ -183,20 +183,18 @@ def _run(
         [(VTI, np.asarray(prices, dtype=np.float64))], rollout_count=rollout_count, horizon_months=case.horizon_months
     )
     series = compile_series(paths, rollout_count=rollout_count, horizon_months=case.horizon_months, currency=USD)
+    calls: list[tuple[int, int]] = []
+
+    def respond(batch: list[Decision]) -> list[DecisionActions]:
+        calls.extend((decision.rollout_id, decision.observation.month) for decision in batch)
+        return policy(batch)
+
     session = ActionSession(
         {id_: compose(case, id_, series=series, rollout_count=rollout_count) for id_ in range(rollout_count)},
         AgentId("alice"),
         capture="forensic",
     )
-    calls: list[tuple[int, int]] = []
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            calls.extend((decision.rollout_id, decision.observation.month) for decision in batch)
-            batch = session.advance(policy(batch))
-        return batch.rollouts, calls
-    finally:
-        session.close()
+    return finish(session, respond).rollouts, calls
 
 
 def _cash(book: Book, agent_id: AgentId, account_id: AccountId = CHECKING) -> int:
@@ -206,24 +204,7 @@ def _cash(book: Book, agent_id: AgentId, account_id: AccountId = CHECKING) -> in
     return balance
 
 
-def _pay_claims(batch: list[Decision]) -> list[DecisionActions]:
-    return [
-        DecisionActions(
-            decision.rollout_id,
-            decision.observation.month,
-            [
-                PayClaim(
-                    request_id=index,
-                    cause_id=claim.cause_id,
-                    claim=claim,
-                    from_account=claim.from_account,
-                    amount=claim.amount_due,
-                )
-                for index, claim in enumerate(decision.observation.claims)
-            ],
-        )
-        for decision in batch
-    ]
+_pay_claims = each(ClaimPayer(AgentId("alice")).decide)
 
 
 def _band_funding(batch: list[Decision]) -> list[DecisionActions]:

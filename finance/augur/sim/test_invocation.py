@@ -18,6 +18,7 @@ from finance.augur.sim.observations import Decision
 from finance.augur.sim.results import Finished
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.session import finish
 from finance.augur.sim.world import Capture, World
 
 HORIZON = 13
@@ -59,14 +60,9 @@ def _spend_indexed(batch: list[Decision]) -> list[DecisionActions]:
 
 
 def _run(compose: Callable[[int], World], rollout_ids: list[int], capture: Capture) -> Finished:
-    session = ActionSession({id_: compose(id_) for id_ in rollout_ids}, AgentId("retiree"), capture=capture)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(_spend_indexed(batch))
-        return batch
-    finally:
-        session.close()
+    return finish(
+        ActionSession({id_: compose(id_) for id_ in rollout_ids}, AgentId("retiree"), capture=capture), _spend_indexed
+    )
 
 
 def test_each_path_keeps_its_own_cpi_and_selected_replay_matches_the_population() -> None:

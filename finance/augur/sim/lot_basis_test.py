@@ -17,7 +17,7 @@ from finance.augur.api.portfolio import (
 )
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.portfolio import product_portfolio_response
-from finance.augur.sim.actions import DecisionActions, LotSale, Sell
+from finance.augur.sim.actions import Action, LotSale, Sell
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
@@ -25,8 +25,9 @@ from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
-from finance.augur.sim.results import Finished
+from finance.augur.sim.observations import Observation
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
 CHECKING = AccountId("checking")
@@ -111,39 +112,28 @@ def test_imported_basis_is_exact_through_sales(
     portfolio: PortfolioConfig, sales: list[int], expected_basis: list[int]
 ) -> None:
     horizon = len(sales)
-    session = ActionSession({0: _compose(portfolio.holdings[0].lots, horizon_months=horizon)}, OWNER)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            responses = []
-            for decision in batch:
-                observation = decision.observation
-                [lot] = observation.public_positions
-                responses.append(
-                    DecisionActions(
-                        decision.rollout_id,
-                        observation.month,
-                        [
-                            Sell(
-                                cause_id=f"test-sale-{observation.month}",
-                                agent_id=OWNER,
-                                proceeds_account_id=CHECKING,
-                                asset_id=AssetId("test-security"),
-                                lots=(
-                                    LotSale(
-                                        account_id=CHECKING,
-                                        lot_id=LotId("test-lot"),
-                                        units=sales[observation.month] * lot.quantity_scale,
-                                    ),
-                                ),
-                            )
-                        ],
-                    )
-                )
-            batch = session.advance(responses)
-        [rollout] = batch.rollouts
-    finally:
-        session.close()
+
+    def sell(observation: Observation) -> list[Action]:
+        [lot] = observation.public_positions
+        return [
+            Sell(
+                cause_id=f"test-sale-{observation.month}",
+                agent_id=OWNER,
+                proceeds_account_id=CHECKING,
+                asset_id=AssetId("test-security"),
+                lots=(
+                    LotSale(
+                        account_id=CHECKING,
+                        lot_id=LotId("test-lot"),
+                        units=sales[observation.month] * lot.quantity_scale,
+                    ),
+                ),
+            )
+        ]
+
+    [rollout] = finish(
+        ActionSession({0: _compose(portfolio.holdings[0].lots, horizon_months=horizon)}, OWNER), each(sell)
+    ).rollouts
     assert rollout.stop is None
     assert rollout.trace is not None
     books = rollout.trace.books

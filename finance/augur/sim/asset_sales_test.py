@@ -13,7 +13,7 @@ from finance.augur.model.level_series_groups import AssetPriceGroups
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.policy import sleeves
-from finance.augur.sim.actions import Action, DecisionActions, LotSale, Sell
+from finance.augur.sim.actions import Action, LotSale, Sell
 from finance.augur.sim.books import AccountRef, SecurityLotState
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series, materialize_external_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
@@ -23,11 +23,12 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction, Rollout
+from finance.augur.sim.results import Executed, Rejected, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
@@ -178,19 +179,9 @@ def _sale(
 
 
 def _run(case: Situation, propose: Callable[[Observation], list[Action]]) -> list[Rollout]:
-    session = ActionSession({id_: _compose(case, id_) for id_ in range(case.rollout_count)}, ALICE)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(decision.rollout_id, decision.observation.month, propose(decision.observation))
-                    for decision in batch
-                ]
-            )
-        return batch.rollouts
-    finally:
-        session.close()
+    return finish(
+        ActionSession({id_: _compose(case, id_) for id_ in range(case.rollout_count)}, ALICE), each(propose)
+    ).rollouts
 
 
 def _remaining(lot: SecurityLotState) -> Fraction:
