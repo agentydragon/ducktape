@@ -26,7 +26,7 @@ Each CRD family's `cdk8s_import` bindings and generic constructors live in
 [the builder-authoring skill](../skills/cdk8s_builders/SKILL.md) states. Kinds still
 built raw at several call sites, each its own call: Flux `HelmRepository` (30
 sites) and `GitRepository` (8), then `CiliumClusterwideNetworkPolicy`, `CleanupPolicy`,
-`SandboxWarmPool`, Terraform and `VirtualMachine` (2 or 3 each).
+Terraform and `VirtualMachine` (2 or 3 each).
 
 Done: no ducktape-specific module builds a CRD's generated dataclasses raw at more than
 one call site, with no rendered-output diff from `//cluster/cdk8s:test_generate_manifests`.

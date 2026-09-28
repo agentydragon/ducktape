@@ -42,3 +42,14 @@ py_library(
         "@pypi//constructs",
     ],
 )
+
+py_library(
+    name = "sandbox_warm_pool",
+    srcs = ["sandbox_warm_pool.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":sandboxwarmpool",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
