@@ -369,12 +369,10 @@ export function EntityCard({
     if (!prominent) {
       return (
         <Stack gap={0} style={{ position: "relative" }}>
-          <Text size="xs" c="dimmed">
-            {label}
-          </Text>
+          <Text c="dimmed">{label}</Text>
           <EvidenceToggle entity={entity} style={{ position: "absolute", top: 0, right: 0 }} />
           {diagnostic && (
-            <Text size="xs" c="dimmed" style={wrapped}>
+            <Text c="dimmed" style={wrapped}>
               {diagnostic}
             </Text>
           )}
