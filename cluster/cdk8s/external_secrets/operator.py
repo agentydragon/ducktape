@@ -14,7 +14,7 @@ from cert_manager_issuer_crds.io.cert_manager import Issuer, IssuerSpec, IssuerS
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "external-secrets"
@@ -92,7 +92,7 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        repository=helm_repository(chart, NAME, NAMESPACE, url="https://charts.external-secrets.io"),
+        repository=https_helm_repository(chart, NAME, NAMESPACE, url="https://charts.external-secrets.io"),
         chart="external-secrets",
         version="2.10.0",
         interval="15m",

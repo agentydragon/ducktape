@@ -10,7 +10,7 @@ from cdk8s import App, Chart
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository, helm_repository_source_ref
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref, oci_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "talos-cloud-controller-manager"
@@ -22,7 +22,7 @@ _PORT = 50258
 
 def helmrepository_chart(app: App) -> Chart:
     chart = Chart(app, "helmrepository", disable_resource_name_hashes=True)
-    helm_repository(chart, _REPOSITORY, NAMESPACE, url="oci://ghcr.io/siderolabs/charts")
+    oci_helm_repository(chart, _REPOSITORY, NAMESPACE, url="oci://ghcr.io/siderolabs/charts")
     return chart
 
 

@@ -12,8 +12,6 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
-    GitRepository,
-    GitRepositorySpec,
     GitRepositorySpecProvider,
     GitRepositorySpecRef,
     GitRepositorySpecSecretRef,
@@ -35,6 +33,7 @@ from flux_imageupdateautomation_crds.io.fluxcd.toolkit.image import (
 
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
 NAME = "gaffer-private"
 NAMESPACE = "flux-system"
@@ -55,13 +54,11 @@ def chart(app: App) -> Chart:
                 "GitHub App (also used to push image-pin commits back here)."
             },
         ),
-        spec=GitRepositorySpec(
-            interval="1m",
-            provider=GitRepositorySpecProvider.GITHUB,
-            ref=GitRepositorySpecRef(branch=_BRANCH),
-            secret_ref=GitRepositorySpecSecretRef(name="ducktape-automation-github-app"),
-            url="https://github.com/agentydragon/gaffer-private.git",
-        ),
+        interval="1m",
+        provider=GitRepositorySpecProvider.GITHUB,
+        ref=GitRepositorySpecRef(branch=_BRANCH),
+        secret_ref=GitRepositorySpecSecretRef(name="ducktape-automation-github-app"),
+        url="https://github.com/agentydragon/gaffer-private.git",
     )
     ImageUpdateAutomation(
         chart,

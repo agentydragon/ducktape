@@ -19,7 +19,7 @@ from external_snapshotter_volumesnapshotclass_crds.io.k8s.storage.snapshot impor
 )
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "openebs-lvm"
@@ -76,7 +76,7 @@ def chart(app: App) -> Chart:
         chart,
         RELEASE,
         NAMESPACE,
-        repository=helm_repository(chart, RELEASE, "flux-system", url="https://openebs.github.io/lvm-localpv"),
+        repository=https_helm_repository(chart, RELEASE, "flux-system", url="https://openebs.github.io/lvm-localpv"),
         chart="lvm-localpv",
         version="1.10.1",
         interval="30m",

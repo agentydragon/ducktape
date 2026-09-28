@@ -7,7 +7,6 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from agentplane.action_service.models import PolicyKind
 from agentplane.action_service.policies.argument_schema import ArgumentSchema
 from agentplane.action_service.policies.exact_actions import ExactActions
 from agentplane.action_service.policies.github_public_repository import GitHubPublicRepository
@@ -48,7 +47,7 @@ def binding(spec: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def test_policy_set_parses_each_kind_and_keeps_deny_lists() -> None:
+def test_policy_set_parses_each_kind() -> None:
     parsed = parse_policy_set(
         policy_set(
             {
@@ -66,8 +65,7 @@ def test_policy_set_parses_each_kind_and_keeps_deny_lists() -> None:
                         "repository": "test-repo",
                     },
                     {"type": "github_public_repository", "actions": {"github": ["get_file_contents"]}},
-                ],
-                "autoDenyIf": [{"type": "exact_actions", "actions": {"ssh": ["run"]}}],
+                ]
             }
         )
     )
@@ -80,8 +78,6 @@ def test_policy_set_parses_each_kind_and_keeps_deny_lists() -> None:
     assert isinstance(fixed_repository, GitHubRepository)
     assert (fixed_repository.owner, fixed_repository.repository) == ("test-owner", "test-repo")
     assert isinstance(public_repository, GitHubPublicRepository)
-    assert [policy.type for policy in parsed.spec.auto_deny_if] == [PolicyKind.EXACT_ACTIONS]
-    assert parsed.spec.auto_deny_unless == []
     assert parsed.metadata.generation == 3
     assert parsed.status.ready() is None
 

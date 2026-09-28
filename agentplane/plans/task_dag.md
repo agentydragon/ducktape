@@ -413,10 +413,12 @@ another route replaces it.
   `ActionPolicyBinding` with that expiry. `BindingSpec.expires_at` already exists, so what is
   missing is the request-and-approve flow, not the storage.
 
-- **Schema auto-denial** (`autoDenyIf` equivalent): the console records a call whose arguments
+- **Schema auto-denial** (was: `autoDenyIf` equivalent): the console records a call whose arguments
   fail the registered tool schema as born-denied. The Action Service refuses such a request at
-  admission before persisting anything, so the audit row the console keeps does not exist here;
-  matching it needs `DENY_LISTS` and a recorded, denied Decision for the schema miss.
+  admission before persisting anything, so the audit row the console keeps does not exist here.
+  This is **not** a denial rule and does not wait on `DENY_LISTS`: the request never reached a
+  policy, so what is missing is a durable record of an admission rejection, not a policy kind that
+  denies it. Give it its own node when `CONSOLE_POLICIES` needs it.
 
 **The composition layer, which the list above omits.** What is actually bound to an agent is the
 `any_of` bundles `public_coder_v1` and `haku_v1`, and `manual_review`, which is `type: never`.
@@ -1205,7 +1207,7 @@ own text instead, so bringing one back means restoring an edge rather than inven
 - **`SSHDURABLE`** — durable SSH-backed processes
 - **`PROFILES`** — cross-cutting capability profiles
 - **`BB`** — BuildBuddy hosted-run credential boundary
-- **`DENY_LISTS`** — `autoDenyIf` and `autoDenyUnless`
+- **`DENY_LISTS`** — denial rules for `ActionPolicySet`
 - **`THREAD_BROWSE_PAGINATE`** — paginated/searchable all-threads page
 - **`CONTROL_STATE`** — dynamic runtime control acceptance
 - **`LIVE_CLEAN`** — executor heartbeat retention cleanup
@@ -1253,16 +1255,41 @@ BuildBuddy's runner — or wait for a stronger seam (a per-run BuildBuddy creden
 gateway). The boundary, wire shape and required evidence are in
 [`buildbuddy_remote_auth.md`](../docs/buildbuddy_remote_auth.md).
 
-### `DENY_LISTS` — `autoDenyIf` and `autoDenyUnless`
+### `DENY_LISTS` — denial rules for an `ActionPolicySet`
 
-**Deferred behavior:** an `ActionPolicySet` carries three lists and only `autoApproveIf` decides
-today; the CRD accepts `autoDenyIf` and `autoDenyUnless` and evaluation ignores them. Their
-semantics are settled in the [action policies design](../docs/action_policies.md): a request matching any
-`autoDenyIf` policy is auto-denied, one matching none of the `autoDenyUnless` policies is
-auto-denied, deny wins over approve, and a request matching nothing takes the human path.
-`autoDenyIf` first, when an Action needs it; `autoDenyUnless` later. Nothing waits on this; the
-console policy that needs it (schema misses recorded as denied Decisions) is under
-`CONSOLE_POLICIES`.
+**Consider adding, do not add by reflex.** A set carries one list, `autoApproveIf`, and what it does
+not match waits for a human. It used to carry `autoDenyIf` and `autoDenyUnless` too: parsed,
+validated, reported to callers and to the Sandbox page, and evaluated by nothing. Those fields are
+removed; the reasoning is the [action policies design](../docs/action_policies.md) § Rejected. A set
+whose spec adds a deny list later is a non-breaking `v1alpha1` change, so nothing is reserved here.
+
+Two things a deny list would obviously be reached for are **not** deny lists, and should be built
+without one:
+
+- **Hiding an Action the operator will never approve** (Haku's old steering denial of the GitHub
+  Copilot delegation tools). A policy denial still advertises the tool, still costs a submit and a
+  round-trip, and teaches the agent that routing around is worth trying. That is a per-group tool
+  denylist over catalog discovery and admission -- already noted in
+  [`action_service/TODO.md`](../action_service/TODO.md) with the same example -- and the catalog
+  already carries `available` and per-group health to hang it on.
+- **A broad set minus one carve-out.** Because a policy set is the _shared_ unit and a carve-out is
+  about one subject, this belongs on the `ActionPolicyBinding`, not the set; and evaluation unions
+  across every set of every binding, so it cannot be expressed against the set today. If a real
+  case ever needs it, the deny field goes on the binding.
+
+`autoDenyUnless` should not come back as a policy field at all. "Deny me anything outside this
+list" is a caller saying how much operator attention it is willing to spend, which is a
+request-side flag -- the shape `submit_decided` already refuses with for direct tools -- not an
+operator-authored authorization rule.
+
+**Open question a re-add has to settle first:** whether a deny that wins over approve is even
+compatible with evaluate-once. `autoDenyIf` was specced to dominate `autoApproveIf`, so a set edit
+could deny what an earlier revision approved; that is fine, since each request decides from one
+snapshot. But a deny on a _binding_ joined to a subject that also holds an approved, unclaimed
+Execution is a different object's decision than the one that allowed it, and dispatch re-checks
+caller authority only. Say which of the two the deny is allowed to reach.
+
+Nothing waits on this.
 
 ### `THREAD_BROWSE_PAGINATE` — paginated/searchable all-threads page
 

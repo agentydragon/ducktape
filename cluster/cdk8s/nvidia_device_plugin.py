@@ -6,7 +6,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "nvidia-device-plugin"
@@ -28,7 +28,7 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        repository=helm_repository(chart, "nvidia", NAMESPACE, url="https://nvidia.github.io/k8s-device-plugin"),
+        repository=https_helm_repository(chart, "nvidia", NAMESPACE, url="https://nvidia.github.io/k8s-device-plugin"),
         chart=NAME,
         version="0.20.0",
         interval="15m",

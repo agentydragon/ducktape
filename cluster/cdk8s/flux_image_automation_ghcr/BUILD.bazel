@@ -7,8 +7,10 @@ py_library(
     srcs = ["image_automation.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        "//cluster/cdk8s:ducktape_flux",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/providers/flux:git_repository",
         "//cluster/cdk8s/providers/flux:gitrepository",
         "//cluster/cdk8s/providers/flux:imagepolicy",
         "//cluster/cdk8s/providers/flux:imagerepository",

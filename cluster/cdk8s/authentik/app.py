@@ -26,7 +26,7 @@ from cluster.cdk8s.authentik import db
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.helm import helm_release, helm_repository
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter
@@ -173,7 +173,7 @@ def _helm_release(chart: Chart) -> None:
         chart,
         NAME,
         NAMESPACE,
-        repository=helm_repository(chart, NAME, NAMESPACE, url="https://charts.goauthentik.io"),
+        repository=https_helm_repository(chart, NAME, NAMESPACE, url="https://charts.goauthentik.io"),
         chart="authentik",
         version="2026.8.2",
         interval="15m",
