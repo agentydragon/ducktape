@@ -3455,8 +3455,6 @@ spec:
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
-    - name: cpap-sync
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/forgejo/cpap-data
   prune: true
