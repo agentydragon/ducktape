@@ -14,14 +14,14 @@ import textwrap
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import Namespace, k8s
+from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
-from cluster.cdk8s import external_creds, forgejo_images, public_coder_proxy, public_coder_sshpiper
+from cluster.cdk8s import external_creds, forgejo_images, namespaces, public_coder_proxy, public_coder_sshpiper
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.env_helpers import secret_env_var
@@ -44,6 +44,7 @@ from cluster.cdk8s.model_rosters import (
     codex_responses_name,
     exposed_name,
 )
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.openclaw_gateway import (
     disabled_commands,
     haku_console_mcp,
@@ -59,12 +60,6 @@ _CONFIG_MAP_NAME = "public-coder-agent-config"
 _NAME = "public-coder-agent"
 NAMESPACE = "public-coder-agent"
 LABELS = {"app.kubernetes.io/name": _NAME}
-_NAMESPACE_LABELS = {
-    "goldilocks.fairwinds.com/enabled": "true",
-    "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-    "name": NAMESPACE,
-    "rbac.ducktape.io/agent-readable-metadata": "true",
-}
 _NAMESPACE_ANNOTATIONS = {
     "description": (
         "Second OpenClaw agent, egress-confined to a CONNECT proxy and reachable only through the Authentik proxy "
@@ -1044,10 +1039,14 @@ def namespace_chart(app: App) -> Chart:
     Workloads that don't set their own imagePullSecrets (the devbox VM's containerDisk pull) need it.
     """
     chart = Chart(app, "namespace", disable_resource_name_hashes=True)
-    namespace = Namespace(
+    namespace = namespaces.namespace(
         chart,
         "namespace",
-        metadata=ApiObjectMetadata(name=NAMESPACE, labels=_NAMESPACE_LABELS, annotations=_NAMESPACE_ANNOTATIONS),
+        name=NAMESPACE,
+        vpa=Vpa.AUTO,
+        agent_readable=AgentReadable.METADATA,
+        labels={"name": NAMESPACE},
+        annotations=_NAMESPACE_ANNOTATIONS,
     )
     k8s.KubeServiceAccount(
         chart,
