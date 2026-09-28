@@ -67,6 +67,9 @@ permissions:
 jobs:
   image:
     strategy:
+      # The rows push to independent registries; a failed Forgejo push must not
+      # cancel the GHCR push public-coder-agent runs from.
+      fail-fast: false
       matrix:
         include:
           - image: ghcr.io/${{ github.repository_owner }}/openclaw

@@ -33,10 +33,9 @@ Proposed execution order for the Thread correctness/UI track:
   and optional app-wide/per-Thread raw-evidence retention controls (`THREAD_EVIDENCE_RETENTION`).
   The first view-sync implementation keeps the archive lossless.
 
-The independent Action Service track still has credentialed-provider acceptance (`MCPAUTH`),
-console policy parity (`CONSOLE_POLICIES`), and Haku MCP/tool-approval retirement
-(`MCP_CONSOLE_INTERNAL`, `MCPAGG`, `RETIRE_TOOLS`). Transcript search/lookup (`T3`) remains
-deferred. Priority is not a dependency between these tracks.
+The independent Action Service track still has console policy parity (`CONSOLE_POLICIES`) and Haku
+MCP/tool-approval retirement (`MCP_CONSOLE_INTERNAL`, `MCPAGG`, `RETIRE_TOOLS`). Transcript
+search/lookup (`T3`) remains deferred. Priority is not a dependency between these tracks.
 
 ## DAG
 
@@ -54,7 +53,6 @@ flowchart TB
     classDef future fill:#f3f4f6,stroke:#6b7280,color:#374151
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
 
-    MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>refresh, rotation, Kubernetes provider"]:::active
     ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
     MCP_CONSOLE_INTERNAL["Deferred migration<br/>Console's in-process sandbox and grants servers<br/>sandbox needs Haku's identity; grants a surface"]:::future
     MCPAGG["Capstone<br/>every Console MCP server has an ActionGroup<br/>the aggregator can be retired"]:::milestone
@@ -108,9 +106,7 @@ flowchart TB
     THREAD_OUTBOX_CUTOVER["Deferred cutover<br/>all product commands via app outbox if chosen<br/>no competing relay path"]:::future
     THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
     NO_MANUAL_REFRESH["Planned principle<br/>no page in the app needs a Refresh button<br/>push (WS or SSE) everywhere, not just Sandboxes/Actions"]:::future
-    ACTION_JSON_POLISH["Planned UI polish<br/>draw MCP Action results as the tool answered<br/>#7978 open"]:::future
 
-    MCPAUTH --> PROD
     ELEVATE --> CONSOLE_POLICIES
     ELEVATE -- grants half --> MCP_CONSOLE_INTERNAL
     MCP_CONSOLE_INTERNAL --> MCPAGG
@@ -145,9 +141,9 @@ flowchart TB
 ```
 
 Completed work is off this board: the credentialless MCP vertical, whose deployed Claude/Codex
-proof is the [acceptance suite](../acceptance/README.md), and the first external client, operator
-approval, and Web Push proofs below. Credentialed upstream access is `MCPAUTH`. Input delivery and
-proxy survivability proceed independently of the external-client track.
+proof is the [acceptance suite](../acceptance/README.md), credentialed provider acceptance, and the
+first external client, operator approval, and Web Push proofs below. Input delivery and proxy
+survivability proceed independently of the external-client track.
 
 ### Tested on staging
 
@@ -156,12 +152,17 @@ external harness rather than an Agentplane-hosted one, bound to a labeled Servic
 bindings auto-approved GitHub reads that executed through the operator-linked GitHub upstream; a
 repeated idempotency key was refused and recovered by key; a pending Action was approved by the
 operator through Authentik federation and executed; and a browser push arrived and was decided
-from its buttons. Not tested: upstream refresh, rotation, and the Kubernetes provider (`MCPAUTH`);
-that operator REST and enrollment-management routes are unreachable through the public MCP route;
-and, left to bug reports, the Deny control, grant retention across refresh and restart, negative
-isolation and revocation for an external client, duplicate Decision or Execution under retries or
-reconnect, push subscription revocation, unavailable-push and SSE fallbacks, and Web Push
-reconciliation after reconnect.
+from its buttons. Not tested: that operator REST and enrollment-management routes are unreachable
+through the public MCP route; and, left to bug reports, the Deny control, grant retention across
+refresh and restart, negative isolation and revocation for an external client, duplicate Decision or
+Execution under retries or reconnect, push subscription revocation, unavailable-push and SSE
+fallbacks, and Web Push reconciliation after reconnect.
+
+Credentialed provider acceptance -- upstream token refresh and refresh failure, rotation without
+rebuilding the executor, and the Kubernetes provider -- closed on 2026-09-28 on the operator's call
+rather than a recorded run, so what breaks there arrives as a bug report. The implemented contract is
+the [service README](../action_service/README.md); bringing the node back means restoring its edge
+to `PROD`, not inventing one.
 
 The external-client track is complete and single-operator: Identity (configured authority),
 Connection (runtime named client enrollment), and Thread (execution/conversation state), with no
@@ -169,8 +170,7 @@ multi-operator management or per-operator ownership model. A Connection binds to
 the principal policies bind to; backend credentials are the ActionGroup executor's auth modes
 ([MCP executor transports](../action_service/README.md#mcp-executor-transports)), shared by every
 caller of the group, and no linked token, static bearer, or kubeconfig reaches the MCP
-client, Sandbox, transcript, or Action prompt; outbound account OAuth remains `MCPAUTH`. Generic
-tool discovery stays compact; a client that needs more opts into a schema or description per
+client, Sandbox, transcript, or Action prompt. Generic tool discovery stays compact; a client that needs more opts into a schema or description per
 Action. What remains of the Haku Console cutover is Action Service counterparts for its
 in-process servers (`MCP_CONSOLE_INTERNAL`), policy parity (`CONSOLE_POLICIES`), and retiring the
 aggregator (`MCPAGG`, `RETIRE_TOOLS`).
@@ -323,9 +323,7 @@ bearer for a group does not.
 Still to decide: the roles themselves; whether the Kubernetes egress rule should stay an
 all-verbs, all-paths admission once RBAC is what bounds it; and whether the GitHub reads a
 Connection may auto-approve should also be what a sandbox of this account reaches, since the
-`EgressBinding` and the `ActionPolicyBinding` are separate grants that nothing keeps consistent
-(there is a `TODO(github-egress)` at the binding site, with the two things that question has to
-settle).
+`EgressBinding` and the `ActionPolicyBinding` are separate grants that nothing keeps consistent.
 
 **Acceptance:** a stated, reviewed authority for the account, rendered by the generator rather than
 accumulated; a real API request from inside a sandbox succeeds for the intended operations and is
@@ -558,18 +556,6 @@ command receipts for a child. Read-only inspection may be the first useful slice
 independent input, interrupt, model control, and resume are separate evidence-gated
 capabilities. Nothing in the current delivery/UI batch depends on this.
 
-### `MCPAUTH` — credentialed MCP account and OAuth boundary
-
-Operator-linked OAuth upstreams are implemented ([service README](../action_service/README.md)),
-and staging's GitHub upstream has been linked, discovered, and executed against (§ Tested on
-staging).
-
-**Remaining acceptance:** on the staging GitHub provider, refresh without MCP calls, observe
-refresh failure and degraded/reconnect behavior, and prove token rotation is used without
-rebuilding the executor; then add Kubernetes provider acceptance; preserve negative isolation for
-an unbound or different account. This milestone is not folded into the credentialless fixture
-test.
-
 ### `ELEVATE` — agent-requested temporary permission
 
 **Planned behavior:** a caller that knows it will need an Action outside its current policy asks
@@ -598,7 +584,7 @@ reclassified as search implementation by this deferral.
 **Deferred design:** choose per-system whether an Action uses the Agent's delegated identity, a
 brokered operator credential, or a hybrid. Keep target-side RBAC and egress enforcement authoritative;
 use grants/revocation reconciliation where a broker mints delegated authority. This is the broader
-external-access policy behind `MCPAUTH` and the SSH MCP server, not a prerequisite for the completed credentialless MCP vertical.
+external-access policy behind the operator-linked providers and the SSH MCP server, not a prerequisite for the completed credentialless MCP vertical.
 The [external-access design](external_access.md) is the source of truth for these choices;
 its [Kubernetes decisions](external_access.md#kubernetes-sandbox-access-decisions) also
 cover `SANDBOX_RBAC`, separately from that task's Sandbox/preset UI and lifecycle wiring.
@@ -1006,8 +992,8 @@ app admission policy. No automatic cross-successor replay is implied.
 ### `PROD` — production-capable governed action execution
 
 **Milestone:** a production Agentplane instance, distinct from staging, governing Actions for real
-operator work; `PC_EGRESS` needs the same instance. Gated on `MCPAUTH`'s remaining upstream
-acceptance; `T3` is product work that lands on it, not a prerequisite. What "production-capable"
+operator work; `PC_EGRESS` needs the same instance. Its former gate on credentialed-provider
+acceptance has cleared; `T3` is product work that lands on it, not a prerequisite. What "production-capable"
 requires beyond the staging deployment is not defined.
 
 ### `THREAD_OUTLIVES_SANDBOX` — a Thread lifecycle beyond its Sandbox
@@ -1184,16 +1170,6 @@ linkages, push subscriptions), reusing `live.py`'s generic `frames()` helper on 
 side rather than a third hand-rolled implementation.
 
 **No dependency** on the UI-shell cluster above; ships independently, one tab/page at a time.
-
-### `ACTION_JSON_POLISH` — parse the MCP content-block shape in Action results
-
-**Remaining, in #7978 (draft):** an MCP tool call's `execution.result` is its `CallToolResult`
-(`{"content": [{"type": "text", "text": <json-encoded string>}, ...], "structuredContent": ...,
-"isError": ...}`), and the history card dumps it through `JsonView` (`actions_history.tsx`). Parse
-a JSON string sitting in a text block's `text` rather than leaving it double-encoded, so it renders
-as structure instead of one escaped-quote wall of text, and render image blocks as images.
-
-**No dependency** on the UI-shell cluster; ships independently.
 
 ## Deferred work
 
