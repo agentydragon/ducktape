@@ -196,19 +196,19 @@ and traceable enough that reports can be reproduced and reconciled.
 Augur's model inventory is its stability tiers: historical replay in core,
 fitted models in `x/models/` until evidence promotes one, and a checked-in fit
 either passing `x/models/calibrated/sanity_test.py` or listed in its
-`QUARANTINED`. A model names itself with a `model_id` string that results
-display.
+`QUARANTINED`. The caller names the model it ran; Augur stamps no model
+identity on paths or results.
 
 ## Where Augur Stands
 
-| Pattern                                      | Augur today                                                                                                                                                                                                        |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Scenario generation separate from projection | Exogenous models sample first; `World` reads a `MarketPath` and never feeds back. `fit/` and model providers own evidence; `sim/` never loads it.                                                                  |
-| Path identity                                | Original `rollout_id` survives selection and reordering (SPEC). Independent series models derive a per-stream seed from each rollout seed (`derive_stream_rollout_seeds`). `model_id` plus free-form `provenance`. |
-| Decisions, actions and outcomes kept apart   | Caller policies emit `Action`s; each gets a `Receipt` with `Executed` or `Rejected`. Private-equity opportunities carry ids and come from the issuer protocol, not from policy.                                    |
-| Accounting as truth, arrays as views         | `Ledger` applies balanced `JournalEntry` groups atomically; lots keep exact basis; mortgage principal lives in the liability ledger. The product projects from canonical frames.                                   |
-| Explicit failure states                      | A path stops on `RejectedAction` or `UnpaidClaims`; an unfunded action is rejected, never an implicit overdraft (SPEC § Accounting and failure).                                                                   |
-| Provenance on reported results               | AGENTS § Provenance of a reported number: sampler, fit window, policy config, instrument construction, sampling noise.                                                                                             |
+| Pattern                                      | Augur today                                                                                                                                                                                                      |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scenario generation separate from projection | Exogenous models sample first; `World` reads a `MarketPath` and never feeds back. `fit/` and model providers own evidence; `sim/` never loads it.                                                                |
+| Path identity                                | Original `rollout_id` survives selection and reordering (SPEC). Independent series models derive a per-stream seed from each rollout seed (`derive_stream_rollout_seeds`). Samples carry free-form `provenance`. |
+| Decisions, actions and outcomes kept apart   | Caller policies emit `Action`s; each gets a `Receipt` with `Executed` or `Rejected`. Private-equity opportunities carry ids and come from the issuer protocol, not from policy.                                  |
+| Accounting as truth, arrays as views         | `Ledger` applies balanced `JournalEntry` groups atomically; lots keep exact basis; mortgage principal lives in the liability ledger. The product projects from canonical frames.                                 |
+| Explicit failure states                      | A path stops on `RejectedAction` or `UnpaidClaims`; an unfunded action is rejected, never an implicit overdraft (SPEC § Accounting and failure).                                                                 |
+| Provenance on reported results               | AGENTS § Provenance of a reported number: sampler, fit window, policy config, instrument construction, sampling noise.                                                                                           |
 
 ## Open Recommendations
 
@@ -245,8 +245,8 @@ These follow naturally from the prior art and were rejected; the reasons are in
   trace). Strategies are caller code; the world records only receipts; see "A
   facade that runs the rollout loop" and "a universal component/plugin
   framework".
-- **Typed model or path identity objects.** A model identifies itself with a
-  `model_id` string (AGENTS § Conventions).
+- **Typed model or path identity objects.** The caller names the model it
+  ran; nothing is stamped (AGENTS § Conventions).
 
 ## Things To Avoid
 

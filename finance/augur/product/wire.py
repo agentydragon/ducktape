@@ -665,7 +665,6 @@ class MetricFanResponse(ApiModel):
     basis: OutcomeBasis = Field(
         description="Aggregate outcome population; historical monthly rows have their own observed_count, not eventual-survivor conditioning."
     )
-    model_id: str
     currency_code: str
     currency_quantum: str
     metric: MetricName
@@ -681,7 +680,6 @@ class TerminalDistributionResponse(ApiModel):
     basis: OutcomeBasis = Field(
         description="Completed-horizon valuation or recorded event amounts through stop/completion; no post-stop outcomes are imputed."
     )
-    model_id: str
     currency_code: str
     currency_quantum: str
     metric: MetricName
@@ -701,7 +699,6 @@ class ProductProjectionResponse(ApiModel):
 
 
 class RolloutResponse(ApiModel):
-    model_id: str
     currency_code: str
     currency_quantum: str
     rollout: RolloutOutput

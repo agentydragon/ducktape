@@ -1,9 +1,10 @@
 import { type JSX, type ReactNode, useEffect, useState } from "react";
-import { Alert, Badge, Code, Paper, Stack, Text, Title } from "@mantine/core";
+import { Alert, Badge, Code, Paper, Stack, Text } from "@mantine/core";
 
 import { displayableError } from "../client";
 import { JsonView } from "../json_view";
 import { StaleNotice } from "../stream_status";
+import { TopbarTitle } from "../topbar";
 import { ActionCall } from "./call";
 import { parseCallToolResult } from "./call_tool_result";
 import {
@@ -122,12 +123,12 @@ export function ActionHistory({
 
   return (
     <Stack>
-      <div>
-        <Title order={2}>Action history</Title>
-        <Text c="dimmed" size="sm">
-          Denied and terminal ActionRequests, kept as durable receipts.
-        </Text>
-      </div>
+      <TopbarTitle>
+        <Text fw={700}>Action history</Text>
+      </TopbarTitle>
+      <Text c="dimmed" size="sm">
+        Denied and terminal ActionRequests, kept as durable receipts.
+      </Text>
       <StaleNotice streams={[stream]} />
       {error && <Text c="red">{error}</Text>}
       {executors.error && (

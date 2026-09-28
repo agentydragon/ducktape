@@ -18,7 +18,6 @@ def paths() -> MarketPaths:
         cpi_level=np.full((2, 4), 100.0),
         equity_total_return_index=np.ones((2, 4)),
         corporate_yields={YieldCurve.CORPORATE_AAA: np.full((2, 4), 0.06)},
-        model_id="test_market",
         provenance={},
     )
 
