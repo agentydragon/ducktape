@@ -47,7 +47,7 @@ historical Decision or invoking an executor. Revocation does not stop already cl
 
 ## Action policies
 
-An `ActionPolicySet` holds typed policies in `autoApproveIf`, `autoDenyIf` and `autoDenyUnless`;
+An `ActionPolicySet` holds typed policies in `autoApproveIf`;
 an `ActionPolicyBinding` joins one subject -- a namespaced ServiceAccount, which is what a
 workload's Pod runs as and what an external Connection acts as -- to sets by name, optionally until
 `expiresAt`. Both are namespaced Kubernetes objects the
@@ -79,7 +79,7 @@ The request is persisted only once evaluation has finished, together with any au
 request is observable as pending only while it waits for a human.
 
 A caller can read an effective policy: the bindings admission would resolve now for its own
-subject, or for a ServiceAccount it names, the sets that resolved, and the three lists
+subject, or for a ServiceAccount it names, the sets that resolved, and the `autoApproveIf` entries
 in evaluation order, each entry named as a Decision's evidence names the matching policy. The read
 and the Decision come from one resolution, so they cannot disagree; the answer says whose it is; a
 subject the service does not watch reads as no bindings; and it carries `synced`, which is false

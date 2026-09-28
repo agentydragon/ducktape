@@ -16,7 +16,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.helm import helm_release, helm_repository
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.seaweedfs import namespace
 
@@ -31,7 +31,7 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         namespace.NAME,
-        repository=helm_repository(
+        repository=https_helm_repository(
             chart, NAME, _REPOSITORY_NAMESPACE, url="https://seaweedfs.github.io/seaweedfs-operator/"
         ),
         chart=NAME,

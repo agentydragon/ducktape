@@ -14,7 +14,7 @@ from constructs import Construct
 
 from cluster.cdk8s import stateful_infra
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "descheduler"
@@ -85,7 +85,9 @@ class Descheduler(Construct):
             self,
             NAME,
             NAMESPACE,
-            repository=helm_repository(self, NAME, NAMESPACE, url="https://kubernetes-sigs.github.io/descheduler"),
+            repository=https_helm_repository(
+                self, NAME, NAMESPACE, url="https://kubernetes-sigs.github.io/descheduler"
+            ),
             chart="descheduler",
             version="0.36.0",
             interval="30m",

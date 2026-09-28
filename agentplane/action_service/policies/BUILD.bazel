@@ -127,7 +127,6 @@ py_test(
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/action_service:conftest",
-        "//agentplane/action_service:models",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

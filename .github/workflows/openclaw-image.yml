@@ -1,9 +1,13 @@
-# Build and push the OpenClaw derivative to GHCR with Nix.
+# Build and push the public-coder-agent OpenClaw image with Nix.
 #
 # This is a dockerTools archive rather than a Dockerfile build. The gateway is
 # packaged by nix-openclaw and openclaw/default.nix adds the proxy preload plus
-# the small public-coder command-line toolset. Keeping the existing image name
-# lets Flux roll public-coder-agent without a registry migration.
+# the small public-coder command-line toolset.
+#
+# CLEANUP(added 2026-09-28): Drop the GHCR matrix row and `packages: write` once
+#   cluster/k8s/agents/public-coder-agent/app/image-pins pins
+#   git.allegedly.works/ducktape-ci/public-coder-agent; until then Flux rolls
+#   public-coder-agent from GHCR.
 name: OpenClaw Image
 
 on:
@@ -62,11 +66,18 @@ permissions:
 
 jobs:
   image:
+    strategy:
+      matrix:
+        include:
+          - image: ghcr.io/${{ github.repository_owner }}/openclaw
+            registry: ghcr
+          - image: git.allegedly.works/ducktape-ci/public-coder-agent
+            registry: forgejo
     uses: ./.github/workflows/nix-image.yml
     with:
       attr: openclaw-image
-      image: ghcr.io/${{ github.repository_owner }}/openclaw
-      registry: ghcr
+      image: ${{ matrix.image }}
+      registry: ${{ matrix.registry }}
       smoke: |
         pip install --quiet pyyaml
         python3 -c '

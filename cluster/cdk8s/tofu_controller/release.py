@@ -17,7 +17,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 
 from cluster.cdk8s import flux, terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.helm import helm_release, helm_repository
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "tofu-controller"
@@ -31,7 +31,7 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        repository=helm_repository(chart, NAME, NAMESPACE, url="https://flux-iac.github.io/tofu-controller"),
+        repository=https_helm_repository(chart, NAME, NAMESPACE, url="https://flux-iac.github.io/tofu-controller"),
         chart="tofu-controller",
         version="0.16.5",
         interval="15m",

@@ -109,8 +109,6 @@ class PolicyField(StrEnum):
     SYNCED = "synced"
     BINDINGS = "bindings"
     AUTO_APPROVE_IF = "auto_approve_if"
-    AUTO_DENY_IF = "auto_deny_if"
-    AUTO_DENY_UNLESS = "auto_deny_unless"
 
 
 DEFAULT_POLICY_FIELDS: Final[list[PolicyField]] = [PolicyField.SUBJECT, PolicyField.SYNCED, PolicyField.BINDINGS]
@@ -474,7 +472,7 @@ def create_server(
     ) -> ToolResult:
         """Read what bindings auto-decide for a target: your own ("self", the default), or a named
         ServiceAccount. include_fields is a pure allowlist over subject (self-target only), synced,
-        bindings, auto_approve_if, auto_deny_if, and auto_deny_unless, defaulting to
+        bindings, and auto_approve_if, defaulting to
         subject/synced/bindings. Name auto_approve_if before request_action to learn which Actions and
         arguments are approved without an operator -- each entry names the binding, set and index a
         Decision's policy_evidence names; a request matching nothing waits for one, and until synced is

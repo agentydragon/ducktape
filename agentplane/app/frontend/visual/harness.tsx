@@ -277,15 +277,6 @@ const ACTION_POLICY: ActionPolicyView = {
       },
     },
   ],
-  auto_deny_if: [
-    {
-      binding: "demo-a1b2-push-afternoon",
-      policy_set: "harness-push",
-      index: 0,
-      policy: { type: "exact_actions", actions: { kubernetes: ["pods_delete", "resources_delete"] } },
-    },
-  ],
-  auto_deny_unless: [],
 };
 
 const DECISIONS: Decision[] = [

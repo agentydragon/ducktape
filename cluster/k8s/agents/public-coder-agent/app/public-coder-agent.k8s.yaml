@@ -215,6 +215,8 @@ spec:
               name: tmp
             - mountPath: /diag
               name: diagnostics
+      imagePullSecrets:
+        - name: forgejo-images-creds
       initContainers:
         - command:
             - sh

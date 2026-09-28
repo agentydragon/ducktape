@@ -14,7 +14,7 @@ from constructs import Construct
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "local-path-provisioner"
@@ -108,7 +108,7 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        repository=helm_repository(chart, NAME, "flux-system", url="https://charts.containeroo.ch"),
+        repository=https_helm_repository(chart, NAME, "flux-system", url="https://charts.containeroo.ch"),
         chart=NAME,
         version="0.0.38",
         interval="30m",

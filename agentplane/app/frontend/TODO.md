@@ -13,6 +13,13 @@ build time.
 
 ## Thread view UX
 
+- **Composer's bottom row hugs the viewport edge**: `shell.css`'s `.agentplane-shell-main-content.agentplane-shell-fullbleed`
+  deliberately has zero vertical padding (the session view "owns its own full-height layout"), so the composer's
+  status-dot/model-`Select`/stop-or-send `Group` (`projected_session.tsx` ~line 1394, the last child of the body's outer
+  `Stack`) sits flush against the bottom border of the page instead of a bit padded away -- unlike, e.g., the sidebar
+  footer icons (`.agentplane-sidebar-footer`, `sidebar.css`, `padding: 8px`). Give that bottom row its own bottom
+  padding/margin rather than reintroducing the fullbleed container's vertical padding, which would also push the
+  transcript's top edge away from the topbar.
 - **Per-message evidence icon is always-on visual noise**: `EvidenceToggle` (`projected_session.tsx`, the
   magnifying-glass `IconZoomCode` button) renders unconditionally at every one of its 7 call sites, one per
   message/entity, whether or not a reader is looking at that row. Consider a per-message overflow affordance
@@ -52,11 +59,6 @@ build time.
   `/observations/{cursor}` and `/evidence/{observation_cursor}/frames` routes), and the debug UI
   (`chronological_debug.tsx`'s "Observation N raw frames"). Worth revisiting whether this is a distinction worth
   keeping or whether it should just say "Event" everywhere a stored `Event` is meant.
-- **Conversation text reads larger and looser than it needs to**: `.agentplane-markdown` (`markdown.css`) and
-  `VerbatimText` (`projected_session.tsx` ~line 126, the user-bubble/plain-text renderer) both leave Mantine's
-  default `md` font size and line height untouched -- unlike `frame.css`'s explicit `--mantine-font-size-xs` or
-  `sidebar.css`'s 11px/13px, nothing in the transcript itself scales text or line spacing down. Agent sessions run
-  long and text-heavy; feedback was that both should shrink so more of a turn fits on screen without scrolling.
 - **Bubble chrome and the user bubble's blue read as unnecessary decoration**: `.agentplane-user-bubble`
   (`projected_session.css` ~line 40) fills the operator's bubble with `var(--mantine-color-blue-light)`; feedback
   was grey would do, since role already reads from position (right-aligned) without needing a hue. More broadly,
