@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import Protocol
 
 import certifi
 import plaid
@@ -28,7 +28,14 @@ from plaid.model.products import Products
 from plaid.model.sandbox_public_token_create_request import SandboxPublicTokenCreateRequest
 from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
+from pydantic import ValidationError
 
+from finance.plaid.db.models import (
+    InstitutionsGetByIdResponse,
+    InstitutionsSearchResponse,
+    PlaidError,
+    PlaidLinkTokenTransactionsOptions,
+)
 from finance.plaid.db.products import Product
 
 # Plaid removed the `development` environment in 2024; only sandbox/production remain.
@@ -74,14 +81,12 @@ class InstitutionDetail:
 
 
 class PlaidClientError(RuntimeError):
-    def __init__(
-        self, *, endpoint: str, status_code: int, text: str, payload: dict[str, JsonValue] | None = None
-    ) -> None:
+    def __init__(self, *, endpoint: str, status_code: int, text: str, payload: PlaidError | None = None) -> None:
         self.endpoint = endpoint
         self.status_code = status_code
         self.text = text
         self.payload = payload
-        message = payload.get("error_message") if payload else text
+        message = payload.error_message if payload else text
         super().__init__(f"Plaid {endpoint} {status_code}: {message}")
 
     def public_detail(self) -> dict[str, JsonValue]:
@@ -95,8 +100,8 @@ class PlaidClientError(RuntimeError):
                 "documentation_url",
                 "request_id",
             ):
-                if key in self.payload:
-                    detail[key] = self.payload[key]
+                if key in self.payload.model_fields_set:
+                    detail[key] = getattr(self.payload, key)
         else:
             detail["error_message"] = self.text
         return detail
@@ -189,13 +194,12 @@ class PlaidClient:
         # type-checks every kwarg it receives and rejects None for both.
         request = InstitutionsSearchRequest(query=query, country_codes=[CountryCode("US")])
         try:
-            response = self._api.institutions_search(request).to_dict()
+            response = InstitutionsSearchResponse.model_validate(self._api.institutions_search(request).to_dict())
         except PlaidApiException as exc:
             raise _plaid_api_error("/institutions/search", exc) from exc
-        institutions = cast(list[dict[str, object]], response.get("institutions") or [])
         return [
-            InstitutionSummary(institution_id=str(item["institution_id"]), name=str(item["name"]))
-            for item in institutions[:count]
+            InstitutionSummary(institution_id=item.institution_id, name=item.name)
+            for item in (response.institutions or [])[:count]
         ]
 
     def get_institution(self, institution_id: str) -> InstitutionDetail:
@@ -205,16 +209,15 @@ class PlaidClient:
             options=InstitutionsGetByIdRequestOptions(include_optional_metadata=True),
         )
         try:
-            response = self._api.institutions_get_by_id(request).to_dict()
+            response = InstitutionsGetByIdResponse.model_validate(self._api.institutions_get_by_id(request).to_dict())
         except PlaidApiException as exc:
             raise _plaid_api_error("/institutions/get_by_id", exc) from exc
-        institution = cast(dict[str, object], response["institution"])
-        url = institution.get("url")
+        institution = response.institution
         return InstitutionDetail(
-            institution_id=str(institution["institution_id"]),
-            name=str(institution["name"]),
-            products=[str(product) for product in cast(list[object], institution.get("products") or [])],
-            url=str(url) if url else None,
+            institution_id=institution.institution_id,
+            name=institution.name,
+            products=institution.products or [],
+            url=institution.url or None,
         )
 
     def create_link_token(
@@ -252,7 +255,9 @@ class PlaidClient:
         if conditional:
             request_args["required_if_supported_products"] = [Products(product) for product in conditional]
         if Product.TRANSACTIONS.value in products:
-            request_args["transactions"] = {"days_requested": transaction_days_requested}
+            request_args["transactions"] = PlaidLinkTokenTransactionsOptions(
+                days_requested=transaction_days_requested
+            ).model_dump(mode="json", exclude_unset=True)
         request = LinkTokenCreateRequest(**request_args)
         try:
             response = self._api.link_token_create(request)
@@ -380,5 +385,8 @@ def _plaid_api_error(endpoint: str, exc: PlaidApiException) -> PlaidClientError:
     except ValueError:
         parsed = None
     if isinstance(parsed, dict):
-        payload = cast(dict[str, JsonValue], parsed)
+        try:
+            payload = PlaidError.model_validate(parsed)
+        except ValidationError:
+            payload = None
     return PlaidClientError(endpoint=endpoint, status_code=exc.status or 500, text=text, payload=payload)

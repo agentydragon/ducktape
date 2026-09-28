@@ -10,7 +10,6 @@ Run:
 """
 
 import logging
-from typing import TypedDict, cast
 
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
@@ -20,39 +19,9 @@ from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
 from finance.plaid.db.client import PlaidClient
 from finance.plaid.db.dev_creds import load
+from finance.plaid.db.models import AccountsGetResponse, TransactionsSyncResponse
 
 logger = logging.getLogger(__name__)
-
-
-class _BalancePayload(TypedDict, total=False):
-    available: object
-    current: object
-    iso_currency_code: object
-
-
-class _AccountPayload(TypedDict, total=False):
-    name: object
-    type: object
-    subtype: object
-    balances: _BalancePayload
-
-
-class _AccountsPayload(TypedDict):
-    accounts: list[_AccountPayload]
-
-
-class _TransactionPayload(TypedDict, total=False):
-    date: object
-    amount: object
-    iso_currency_code: object
-    name: object
-    merchant_name: object
-
-
-class _TransactionsSyncPayload(TypedDict, total=False):
-    added: list[_TransactionPayload]
-    has_more: bool
-    next_cursor: str
 
 
 def main() -> None:
@@ -75,19 +44,19 @@ def main() -> None:
         logger.info("access_token=%s…", access_token[:24])
 
         logger.info("fetching /accounts/get …")
-        accounts_payload = cast(
-            _AccountsPayload, api.accounts_get(AccountsGetRequest(access_token=access_token)).to_dict()
+        accounts_payload = AccountsGetResponse.model_validate(
+            api.accounts_get(AccountsGetRequest(access_token=access_token)).to_dict()
         )
-        for acct in accounts_payload["accounts"]:
-            bal = acct.get("balances", {})
+        for acct in accounts_payload.accounts or []:
+            bal = acct.balances
             logger.info(
                 "  %-20s %-12s %-15s available=%s current=%s %s",
-                acct.get("name"),
-                acct.get("type"),
-                acct.get("subtype"),
-                bal.get("available"),
-                bal.get("current"),
-                bal.get("iso_currency_code"),
+                acct.name,
+                acct.type,
+                acct.subtype,
+                bal.available if bal else None,
+                bal.current if bal else None,
+                bal.iso_currency_code if bal else None,
             )
 
         logger.info('fetching /transactions/sync (cursor="") …')
@@ -98,20 +67,20 @@ def main() -> None:
             request = TransactionsSyncRequest(access_token=access_token, count=500)
             if cursor:
                 request.cursor = cursor
-            result = cast(_TransactionsSyncPayload, api.transactions_sync(request).to_dict())
-            added = result.get("added", [])
-            logger.info("  page=%d added=%d has_more=%s", page, len(added), result.get("has_more"))
+            result = TransactionsSyncResponse.model_validate(api.transactions_sync(request).to_dict())
+            added = result.added
+            logger.info("  page=%d added=%d has_more=%s", page, len(added), result.has_more)
             for txn in added[:5]:
                 logger.info(
                     "    %s  %8.2f %s  %s",
-                    txn.get("date"),
-                    txn.get("amount", 0),
-                    txn.get("iso_currency_code") or "",
-                    txn.get("name") or txn.get("merchant_name") or "",
+                    txn.date,
+                    txn.amount,
+                    txn.iso_currency_code or "",
+                    txn.name or txn.merchant_name or "",
                 )
-            if not result.get("has_more"):
+            if not result.has_more:
                 break
-            cursor = result["next_cursor"]
+            cursor = result.next_cursor
             if page >= 10:
                 logger.info("  stopping after 10 pages")
                 break
