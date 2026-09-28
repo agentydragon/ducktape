@@ -56,9 +56,9 @@ AX210/AX211; it beats waiting for a pve kernel ≥ 7.2 plus non-upstream firmwar
 
 ## References
 
-- https://github.com/openwrt/mt76/issues/927 (closed)
-- https://github.com/jetm/mediatek-mt7927-dkms (out-of-tree driver, current best source)
-- https://git.kernel.org/pub/scm/linux/kernel/git/bluetooth/bluetooth-next.git/log/?qt=grep&q=MT7927
-- https://jetm.github.io/blog/posts/enabling-mt7927-bluetooth-on-linux/
-- https://jetm.github.io/blog/posts/mt7927-wifi-the-missing-piece/
-- https://gist.github.com/max-prtsr/2e19d74e421b60fbad30b6932772e76e
+- <https://github.com/openwrt/mt76/issues/927> (closed)
+- <https://github.com/jetm/mediatek-mt7927-dkms> (out-of-tree driver, current best source)
+- <https://git.kernel.org/pub/scm/linux/kernel/git/bluetooth/bluetooth-next.git/log/?qt=grep&q=MT7927>
+- <https://jetm.github.io/blog/posts/enabling-mt7927-bluetooth-on-linux/>
+- <https://jetm.github.io/blog/posts/mt7927-wifi-the-missing-piece/>
+- <https://gist.github.com/max-prtsr/2e19d74e421b60fbad30b6932772e76e>

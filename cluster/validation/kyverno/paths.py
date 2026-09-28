@@ -18,5 +18,5 @@ def manifest(name: str) -> Path:
 
 
 def policy(file_name: str) -> Path:
-    """A ClusterPolicy manifest, by file name, from cluster/k8s/kyverno/policies/."""
-    return get_required_path(f"_main/cluster/k8s/kyverno/policies/{file_name}")
+    """A ClusterPolicy manifest, by file name, from cluster/generated/kyverno/policies/."""
+    return get_required_path(f"_main/cluster/generated/kyverno/policies/{file_name}")

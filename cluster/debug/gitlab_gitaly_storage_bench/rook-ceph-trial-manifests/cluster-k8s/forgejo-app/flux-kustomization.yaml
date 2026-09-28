@@ -1,0 +1,23 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: rook-ceph-trial-forgejo-bench
+  namespace: flux-system
+spec:
+  suspend: true # rook-ceph storage trial complete (2026-07-17); winding down, see cluster/debug/git_storage_latency_and_ha.md
+  interval: 10m
+  retryInterval: 1m
+  timeout: 30m
+  path: ./cluster/k8s/rook-ceph-trial/forgejo-app
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+  dependsOn:
+    - name: rook-ceph-trial-forgejo-state
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: forgejo-ceph-bench
+      namespace: forgejo-ceph-bench

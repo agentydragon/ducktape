@@ -175,7 +175,8 @@ on the same node). Same family:
 
 - `*.allegedly.works` is five node A records, TTL 300
   (<../../../tf/gitops/dns-records/main.tf>); CoreDNS runs `loadbalance` and
-  `cache 30` (<../../k8s/coredns-custom/config/Corefile>).
+  `cache 30`, Talos's stock Corefile
+  ([`CoreDNSConfigMap`](https://github.com/siderolabs/talos/blob/main/internal/app/machined/pkg/controllers/k8s/internal/k8stemplates/coredns.go)).
 - JWKS: `httpx.get(..., timeout=10)` in <../../../mcp_infra/oidc_principal.py>,
   no retries; `socket.create_connection` stops at the first address whose TCP
   connect succeeds, which the policy proxy always is. The TLS reset is
@@ -217,7 +218,7 @@ separate decisions.
 
 Canary first, on the two `hil-ovh` nodes hosting the app and Actions Pods
 (`ovh-ns103711`, `ovh-ns102453`), through a Flux-managed `CiliumNodeConfig`
-(<../../k8s/kube-system/ciliumnodeconfig-proxy-original-source-canary.yaml>). The
+(<../../generated/kube-system/ciliumnodeconfig-proxy-original-source-canary.yaml>). The
 agent reads it in its `build-config` init container, so after Flux applies it,
 delete the `cilium-agent` Pod on each canary node and wait for the replacement to
 be Ready. No Helm or `//cluster:bootstrap` run is involved until the global flip.

@@ -1,35 +1,21 @@
-import { ActionIcon, Badge, Button, Group, Loader, Select, Stack, Table, Tabs, Text } from "@mantine/core";
+import { Badge, Button, Group, Loader, Select, Stack, Table, Tabs, Text } from "@mantine/core";
 import { type JSX, useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { useAsyncResource, type AsyncResource, type AsyncResourceLoader } from "./async_resource";
 import {
-  connectMcpOperatorAuth,
-  connectOperatorConnection,
-  disconnectMcpOperatorAuth,
-  disconnectOperatorConnection,
   fetchDeploymentInfo,
   displayableError,
   listAgents,
   updateAgentAccessProfile,
   type AgentView,
   type DeploymentInfo,
-  type OperatorConnectionName,
 } from "./client";
 import { useConsoleEvents } from "./console_events";
 import { GrantsPanel } from "./grants_panel";
-import { DisconnectIcon } from "./icons";
 import { ExternalLink } from "./link";
 import { usePushNotifications, type PushState } from "./push_subscription";
 import { shortDate } from "./time";
-import {
-  getMcpServerStatus,
-  listMcpServers,
-  type McpOperatorAuthDegraded,
-  type McpOperatorAuthStatus,
-  type McpServerConnection,
-  type McpServerProbe,
-} from "./mcp_status_client";
-import { openExternal, POPUP_HINT } from "./open_external";
+import { getMcpServerStatus, listMcpServers, type McpServerConnection, type McpServerProbe } from "./mcp_status_client";
 import { toastError, toastSuccess } from "./toast";
 
 type DeploymentVersion = {
@@ -156,109 +142,17 @@ type McpServerView = {
   error: string | null;
 };
 
-function isMcpOperatorAuthStatus(connection: McpServerConnection["connection"]): connection is McpOperatorAuthStatus {
-  return connection !== null && "state" in connection;
-}
-
-function refreshFailureSummary({
-  initial,
-  latest,
-  attempts,
-  resolution,
-}: McpOperatorAuthDegraded["refresh_failure"]): string {
-  const failure =
-    attempts > 1 && latest.message !== initial.message
-      ? `${initial.message}; latest after ${attempts} attempts: ${latest.message}`
-      : initial.message;
-  return `${failure} · ${resolution}`;
-}
-
-function connectionSummary(server: McpServerConnection): string {
-  const connection = server.connection;
-  if (connection === null) {
-    return server.backend.kind === "remote_mcp" && server.backend.auth.kind === "static_bearer"
-      ? "Console-managed credential"
-      : "No operator-linked account";
-  }
-  if (isMcpOperatorAuthStatus(connection)) {
-    const linkedUntil = shortDate(
-      typeof connection.state.token_expires_at === "string" ? connection.state.token_expires_at : null
-    );
-    switch (connection.state.status) {
-      case "unconnected":
-        return `Not linked · ${connection.username}`;
-      case "degraded":
-        return `Linked · ${connection.username} · refresh failing${linkedUntil ? ` · token until ${linkedUntil}` : ""}`;
-      case "connected":
-        return `Linked · ${connection.username}${linkedUntil ? ` until ${linkedUntil}` : ""}`;
-    }
-  }
-  const until = shortDate(typeof connection.token_expires_at === "string" ? connection.token_expires_at : null);
-  switch (connection.status) {
-    case "unprovisioned":
-      return `${connection.display_name} OAuth client is not provisioned`;
-    case "unconnected":
-      return `${connection.display_name} is not connected`;
-    case "degraded":
-      return `${connection.display_name} refresh failing${until ? ` · token until ${until}` : ""}`;
-    case "connected":
-      return `${connection.display_name} connected${until ? ` · token until ${until}` : ""}`;
-  }
-}
-
-function McpServerRow({
-  view,
-  onConnectMcp,
-  onDisconnectMcp,
-  onConnectProvider,
-  onDisconnectProvider,
-}: {
-  view: McpServerView;
-  onConnectMcp: (serverId: string) => void;
-  onDisconnectMcp: (serverId: string) => void;
-  onConnectProvider: (connection: OperatorConnectionName) => void;
-  onDisconnectProvider: (connection: OperatorConnectionName) => void;
-}) {
-  const linkage = view.connection.connection;
-  const linkedMcpServerId =
-    linkage && "server_id" in linkage && typeof linkage.server_id === "string" ? linkage.server_id : null;
-  const providerConnection =
-    linkage && "connection" in linkage && typeof linkage.connection === "string"
-      ? (linkage.connection as OperatorConnectionName)
-      : null;
-  const mcpState = isMcpOperatorAuthStatus(linkage) ? linkage.state : null;
-  const providerState = linkage && !isMcpOperatorAuthStatus(linkage) ? linkage : null;
-  const linkageStatus = mcpState?.status ?? providerState?.status;
-  const unconnected = linkageStatus === "unconnected";
-  const unprovisioned = linkageStatus === "unprovisioned";
-  const degraded = linkageStatus === "degraded";
-  const state = unprovisioned
-    ? { label: "Unprovisioned", color: "orange" }
-    : unconnected
-      ? { label: "Unconnected", color: "gray" }
-      : degraded || view.error || view.probe?.server.state.status === "degraded"
-        ? { label: "Unavailable", color: "red" }
-        : view.probe?.server.state.status === "alive"
-          ? { label: "Available", color: "teal" }
-          : { label: "Checking", color: "blue" };
+function McpServerRow({ view }: { view: McpServerView }) {
+  const state =
+    view.error || view.probe?.server.state.status === "degraded"
+      ? { label: "Unavailable", color: "red" }
+      : view.probe?.server.state.status === "alive"
+        ? { label: "Available", color: "teal" }
+        : { label: "Checking", color: "blue" };
   const reason =
-    (providerState?.status === "unprovisioned" ? providerState.detail : null) ??
-    (mcpState?.status === "degraded" ? refreshFailureSummary(mcpState.refresh_failure) : null) ??
-    (providerState?.status === "degraded" ? refreshFailureSummary(providerState.refresh_failure) : null) ??
-    view.error ??
-    (view.probe?.server.state.status === "degraded" ? view.probe.server.state.degraded_reason : null);
-  const connect = linkedMcpServerId
-    ? () => onConnectMcp(linkedMcpServerId)
-    : providerConnection
-      ? () => onConnectProvider(providerConnection)
-      : null;
-  const disconnect = linkedMcpServerId
-    ? () => onDisconnectMcp(linkedMcpServerId)
-    : providerConnection
-      ? () => onDisconnectProvider(providerConnection)
-      : null;
+    view.error ?? (view.probe?.server.state.status === "degraded" ? view.probe.server.state.degraded_reason : null);
   const statusMarker = view.checking ? (
-    <Loader size={12} aria-label="Checking connection status" />
+    <Loader size={12} aria-label="Checking server status" />
   ) : (
     <span
       className="haku-status-dot"
@@ -278,39 +172,16 @@ function McpServerRow({
             <Text fw={600} size="sm">
               {view.connection.server_id}
             </Text>
-            <Text size="xs" c="dimmed">
-              {view.connection.backend.kind === "remote_mcp" ? "Remote MCP" : "In-process"}
-            </Text>
           </div>
         </Group>
       </Table.Td>
       <Table.Td data-slot="secondary" className="haku-dense-secondary">
-        <Text size="sm">{connectionSummary(view.connection)}</Text>
+        <Text size="sm">{state.label}</Text>
         {reason && (
           <Text size="xs" c="red">
             {reason}
           </Text>
         )}
-      </Table.Td>
-      <Table.Td data-slot="action" className="haku-dense-action">
-        {linkage &&
-          !unprovisioned &&
-          (linkageStatus === "connected" || linkageStatus === "degraded" ? (
-            <ActionIcon
-              size="sm"
-              variant="subtle"
-              color="red"
-              aria-label="Disconnect MCP account"
-              title="Disconnect MCP account"
-              onClick={disconnect ?? undefined}
-            >
-              <DisconnectIcon size={16} />
-            </ActionIcon>
-          ) : (
-            <Button size="compact-sm" variant="light" onClick={connect ?? undefined}>
-              Connect
-            </Button>
-          ))}
       </Table.Td>
     </Table.Tr>
   );
@@ -605,11 +476,6 @@ export function SettingsPanel(): JSX.Element {
   }, []);
   useConsoleEvents((event) => {
     if (event.event_type === "sync") refreshActiveTab();
-    if (
-      activeTab === "mcp" &&
-      (event.event_type === "mcp_operator_auth_changed" || event.event_type === "operator_connection_changed")
-    )
-      refreshMcp();
   });
   function selectTab(value: string | null) {
     if (!value || !SETTINGS_TABS.includes(value as SettingsTab)) return;
@@ -619,48 +485,6 @@ export function SettingsPanel(): JSX.Element {
     if (tab === "mcp") url.searchParams.delete("tab");
     else url.searchParams.set("tab", tab);
     window.history.replaceState(null, "", url);
-  }
-  function connect(serverId: string) {
-    connectMcpOperatorAuth(serverId).then(
-      (started) => {
-        if (!openExternal(started.authorization_url)) {
-          toastError("Pop-up blocked", POPUP_HINT);
-          return;
-        }
-        toastSuccess("MCP account link started", "Finish the authorization in the new tab.");
-      },
-      (e: unknown) => toastError("Couldn't start MCP account link", e)
-    );
-  }
-  function disconnect(serverId: string) {
-    disconnectMcpOperatorAuth(serverId).then(
-      () => {
-        toastSuccess("MCP account disconnected", serverId);
-        refreshMcp();
-      },
-      (e: unknown) => toastError("Couldn't disconnect MCP account", e)
-    );
-  }
-  function connectProvider(connection: OperatorConnectionName) {
-    connectOperatorConnection(connection).then(
-      (started) => {
-        if (!openExternal(started.authorization_url)) {
-          toastError("Pop-up blocked", POPUP_HINT);
-          return;
-        }
-        toastSuccess("Account connection started", "Finish the authorization in the new tab.");
-      },
-      (e: unknown) => toastError("Couldn't start account connection", e)
-    );
-  }
-  function disconnectProvider(connection: OperatorConnectionName) {
-    disconnectOperatorConnection(connection).then(
-      (status) => {
-        toastSuccess("Account disconnected", status.display_name);
-        refreshMcp();
-      },
-      (e: unknown) => toastError("Couldn't disconnect account", e)
-    );
   }
   function changeAgentAccessProfile(agent: AgentView, accessProfileId: string) {
     setSavingAgentId(agent.agent_id);
@@ -744,20 +568,12 @@ export function SettingsPanel(): JSX.Element {
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Server</Table.Th>
-                    <Table.Th>Connection</Table.Th>
-                    <Table.Th />
+                    <Table.Th>Status</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
                   {views.map((view) => (
-                    <McpServerRow
-                      key={view.connection.server_id}
-                      view={view}
-                      onConnectMcp={connect}
-                      onDisconnectMcp={disconnect}
-                      onConnectProvider={connectProvider}
-                      onDisconnectProvider={disconnectProvider}
-                    />
+                    <McpServerRow key={view.connection.server_id} view={view} />
                   ))}
                 </Table.Tbody>
               </DenseTable>

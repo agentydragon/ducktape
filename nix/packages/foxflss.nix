@@ -6,7 +6,7 @@
 #     tables, and NR carrier aggregation configs to modem non-volatile storage.
 #   - DW5932e_RF.dat, DW5934e_RF.dat: platform-specific RF calibration data files.
 #
-# FoxFlss shells out to several tools (per debug/rugged/hw/foxflss_wwan.md
+# FoxFlss shells out to several tools (per nix/debug/rugged/hw/foxflss_wwan.md
 # "FoxFlss Tool Dependencies"): dmidecode (system SKU lookup, REQUIRED for
 # FCC unlock — without it FoxFlss prints "Current platform: do not support
 # FccLock!" and exits 1), lspci, pgrep, tar/gzip (RF cal data extraction),

@@ -14,33 +14,17 @@ Application-scoped stores live with their applications (`ntfy.py`, ...).
 from __future__ import annotations
 
 from collections.abc import Sequence
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from external_secret_store_crds.io.external_secrets import (
-    ClusterSecretStore,
-    ClusterSecretStoreSpec,
-    ClusterSecretStoreSpecConditions,
-    ClusterSecretStoreSpecProvider,
-    ClusterSecretStoreSpecProviderKubernetes,
-    ClusterSecretStoreSpecProviderKubernetesAuth,
-    ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount,
-    ClusterSecretStoreSpecProviderKubernetesServer,
-    ClusterSecretStoreSpecProviderKubernetesServerCaProvider,
-    ClusterSecretStoreSpecProviderKubernetesServerCaProviderType,
-)
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from external_secret_store_crds.io.external_secrets import ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s import external_creds
+from cluster.cdk8s.external_secrets.kubernetes_store import ESO_SERVICE_ACCOUNT, cluster_secret_store
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "external-secrets-config"
-OUTPUT_DIR = "cluster/k8s/external-secrets/config"
-_ESO_SERVICE_ACCOUNT = ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(
-    name="external-secrets", namespace="external-secrets-system"
-)
+OUTPUT_DIR = f"{GENERATED_ROOT}/external-secrets/config"
 
 
 def _store(
@@ -49,29 +33,15 @@ def _store(
     *,
     namespaces: Sequence[str],
     remote_namespace: str,
-    service_account: ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount = _ESO_SERVICE_ACCOUNT,
+    service_account: ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount = ESO_SERVICE_ACCOUNT,
 ) -> None:
-    ClusterSecretStore(
+    cluster_secret_store(
         chart,
         name,
         metadata=ApiObjectMetadata(name=name),
-        spec=ClusterSecretStoreSpec(
-            conditions=[ClusterSecretStoreSpecConditions(namespaces=list(namespaces))],
-            provider=ClusterSecretStoreSpecProvider(
-                kubernetes=ClusterSecretStoreSpecProviderKubernetes(
-                    server=ClusterSecretStoreSpecProviderKubernetesServer(
-                        ca_provider=ClusterSecretStoreSpecProviderKubernetesServerCaProvider(
-                            type=ClusterSecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
-                            name="kube-root-ca.crt",
-                            key="ca.crt",
-                            namespace="default",
-                        )
-                    ),
-                    auth=ClusterSecretStoreSpecProviderKubernetesAuth(service_account=service_account),
-                    remote_namespace=remote_namespace,
-                )
-            ),
-        ),
+        namespaces=namespaces,
+        remote_namespace=remote_namespace,
+        service_account=service_account,
     )
 
 
@@ -110,26 +80,11 @@ def chart(app: App) -> Chart:
     _store(
         chart,
         "kubernetes-external-creds-secret-store",
-        # Source-side RoleBindings remain authoritative. Keep this defense-in-depth
-        # list equal to the namespaces approved by external-creds grants.
-        namespaces=[
-            "agentplane-staging-egress-credentials",
-            "agentplane-staging",
-            "agentplane-testing-egress-credentials",
-            "agents-infra",
-            "cert-manager",
-            "claude-sandbox",
-            "flux-system",
-            "haku-console",
-            "haku-egress-proxy",
-            "haku-sandbox",
-            "litellm",
-            "monitoring",
-            "nix-cache",
-            "public-coder-agent",
-            "tana-mcp",
-        ],
-        remote_namespace="ducktape-flux",
+        # Defense in depth: the source-side RoleBindings remain authoritative.
+        namespaces=sorted(
+            {consumer.namespace for credential in external_creds.CREDENTIALS for consumer in credential.consumers}
+        ),
+        remote_namespace=external_creds.NAMESPACE,
         # Referent authentication resolves this identity in each consuming
         # ExternalSecret's namespace. Access still requires a source-side grant.
         service_account=ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(name="external-creds-reader"),
@@ -169,6 +124,7 @@ def chart(app: App) -> Chart:
         chart,
         "kubernetes-forgejo-images-secret-store",
         namespaces=[
+            # keep-sorted start
             "activitywatch",
             "agent-workspaces",
             "agentplane-index",
@@ -201,45 +157,24 @@ def chart(app: App) -> Chart:
             "ssh-mcp",
             "study-casino",
             "tana-mcp",
+            "thrive-scraper",  # gaffer-private (not cdk8s); ESO lives in that repo's k8s/
             "wayback-cache",
+            # keep-sorted end
         ],
         remote_namespace="forgejo-images",
-    )
-    # google-mcp mints its own caller-facing bearer (cluster/cdk8s/google_mcp.py); only
-    # agentplane-staging's Action Service (the only caller) reads a copy.
-    _store(
-        chart, "kubernetes-google-mcp-secret-store", namespaces=["agentplane-staging"], remote_namespace="google-mcp"
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
 def external_secrets_config(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            interval="10m0s",
-            retry_interval="30s",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="5m0s",
-            wait=True,
-            # Health-check a representative shared ClusterSecretStore before dependents run.
-            # Application-scoped stores are owned and checked by their app Kustomizations.
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ClusterSecretStore",
-                    name="kubernetes-flux-system-secret-store",
-                )
-            ],
-            depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
-        ),
+        directory,
+        interval="10m0s",
+        retry_interval="30s",
+        timeout="5m0s",
+        depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
     )

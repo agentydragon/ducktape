@@ -117,18 +117,6 @@ const SCENES = [
     frame: true,
   },
   {
-    name: "settings-oauth-success",
-    viewport: { width: 1200, height: 1000 },
-    closeApprovals: true,
-    frame: true,
-  },
-  {
-    name: "settings-oauth-error",
-    viewport: { width: 1200, height: 1000 },
-    closeApprovals: true,
-    frame: true,
-  },
-  {
     name: "agent-enrollment",
     viewport: { width: 1200, height: 900 },
     closeApprovals: true,
@@ -204,9 +192,6 @@ const SCENES = [
     clicks: ['[aria-label="Session expiring soon"]'],
     expectVisible: '[aria-label="Console session"]',
   },
-  { name: "oauth-success", viewport: { width: 900, height: 700 } },
-  { name: "oauth-error", viewport: { width: 900, height: 700 } },
-  { name: "oauth-success-mobile", viewport: { width: 390, height: 760 } },
 ];
 const COLOR_SCHEMES = ["light", "dark"];
 

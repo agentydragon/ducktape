@@ -34,7 +34,7 @@ registry proxy (`props.allegedly.works` → `git.allegedly.works/props/*`).
 
 3. **Tag policy — avoid `:latest`**: Use Flux image automation to track pinned tags
    (`{branch}-{timestamp}-{sha7}`). For in-cluster images:
-   - Create `ImageRepository` + `ImagePolicy` in `k8s/flux-image-automation-forgejo/`
+   - Create `ImageRepository` + `ImagePolicy` in `generated/flux-image-automation-forgejo/`
      (with `secretRef: forgejo-images-creds` on the repository) or, for a GHCR image,
      in `k8s/flux-image-automation-ghcr/`
    - Add `{"$imagepolicy": "flux-system:<policy-name>"}` comment to the image field
@@ -75,12 +75,13 @@ Flux image scan are retired.
 --dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD"`. Direct to
    Forgejo — no proxy (unlike props).
 3. **Auto-roll** — add `ImageRepository` (with `secretRef: forgejo-images-creds`)
-   - `ImagePolicy` under `cluster/k8s/flux-image-automation-forgejo/`, and the
+   - `ImagePolicy` under `cluster/generated/flux-image-automation-forgejo/`, and the
      `{"$imagepolicy": "flux-system:<name>"}` marker on the image field. The
      cluster-wide `all-images` `ImageUpdateAutomation` updates it.
 4. **Consume** — image `git.allegedly.works/ducktape-ci/<image>` +
-   `imagePullSecrets: [{name: forgejo-images-creds}]`; the app's Flux Kustomization
-   `dependsOn: forgejo-images`.
+   `imagePullSecrets: [{name: forgejo-images-creds}]`. The app's Flux Kustomization
+   does not depend on `forgejo-images`: kubelet retries the pull until the
+   credential lands.
 
 **Tradeoff**: unlike GHCR (external), a Forgejo outage means these pods can't pull.
 Fine for non-critical workloads (agent pods); weigh per-image before moving

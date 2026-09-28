@@ -8,36 +8,27 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
-use std::fs;
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use analysis::{OwnerId, StatementOrdinal};
 use selector_constraint_backend::{
     BackendAssignment, BackendAssignmentCoverage, BackendAssignmentError, BackendSolveResult,
     BackendSolveStatus, BackendVariableAssignment, CompiledSelectorProblem, ConstraintValue,
-    ConstraintVariableId, SelectorProblemBackend, TargetBindingProjection,
+    ConstraintVariableId, MAX_ALTERNATIVES_PER_VARIABLE, PresolveScope, SelectorProblemBackend,
+    TargetBindingProjection,
 };
 use selector_constraint_model_builder::{
-    CompiledSelectorProblemBuildError, SelectorModelBuildSummary, compile_selector_problem,
-    compile_selector_problem_with_summary,
+    CompiledSelectorProblemBuildError, compile_selector_problem,
 };
 use selector_ir::{
-    ClaimKind, ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore,
-    SelectorProgram, SelectorSourceMatchProjectionEvent, SelectorSourceMatchProjectionOutcome,
+    ClaimKind, ClaimOutcome, ResolvedClaim, SelectorFact, SelectorFactStore, SelectorProgram,
     SelectorTargetId, SolverClaim, SolverGlobalDiagnostic, SolverResult,
 };
-
-const SUMMARY_JSON_ENV: &str = "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SUMMARY_JSON";
-const SUMMARY_JSON_DIR_ENV: &str = "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SUMMARY_JSON_DIR";
-static SUMMARY_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 
 pub fn compile_backend_problem(
     program: &SelectorProgram,
     facts: &SelectorFactStore,
 ) -> Result<CompiledSelectorProblem, CompiledSelectorProblemBuildError> {
-    compile_selector_problem(program, facts)
+    compile_selector_problem(program, facts, PresolveScope::AcrossTargets)
 }
 
 pub fn solve_with_backend<B>(
@@ -48,29 +39,42 @@ pub fn solve_with_backend<B>(
 where
     B: SelectorProblemBackend,
 {
-    write_selector_build_summary(program, facts, None, None)
-        .map_err(SelectorBackendSolveError::Summary)?;
-    let compiled = compile_selector_problem_with_summary(program, facts)
+    let problem = compile_selector_problem(program, facts, PresolveScope::AcrossTargets)
         .map_err(SelectorBackendSolveError::Build)?;
-    let problem = compiled.problem;
-    write_selector_build_summary(program, facts, Some(&compiled.summary), Some(&problem))
-        .map_err(SelectorBackendSolveError::Summary)?;
-    if let Some(reason) = problem.known_unsat.as_ref() {
-        return decode_backend_result(
-            program,
-            facts,
-            &problem,
-            BackendSolveResult {
-                status: BackendSolveStatus::Unsatisfiable,
-                assignment_coverage: BackendAssignmentCoverage::TargetSupportComplete,
-                assignments: Vec::new(),
-                diagnostic: Some(reason.clone()),
-                solver_response_stats: None,
-            },
-        );
+    if problem.known_unsat.is_some() {
+        return solve_localizing_conflicts(program, facts, backend);
     }
     if let Some(result) = singleton_no_constraint_backend_result(&problem) {
         return decode_backend_result(program, facts, &problem, result);
+    }
+    let result = backend
+        .solve(&problem)
+        .map_err(SelectorBackendSolveError::Backend)?;
+    if result.status == BackendSolveStatus::Unsatisfiable {
+        if !result.assignments.is_empty() {
+            return Err(SelectorBackendSolveError::UnsatReturnedAssignments);
+        }
+        return solve_localizing_conflicts(program, facts, backend);
+    }
+    decode_backend_result(program, facts, &problem, result)
+}
+
+/// The program is unsatisfiable as presolved across targets. Recompile it
+/// presolved within targets, so every constraint stays attributable, and let
+/// the backend report the conflicting targets while it solves the rest.
+fn solve_localizing_conflicts<B>(
+    program: &SelectorProgram,
+    facts: &SelectorFactStore,
+    backend: &B,
+) -> Result<SolverResult, SelectorBackendSolveError<B::Error>>
+where
+    B: SelectorProblemBackend,
+{
+    let problem = compile_selector_problem(program, facts, PresolveScope::WithinTargets)
+        .map_err(SelectorBackendSolveError::Build)?;
+    if let Some(reason) = &problem.known_unsat {
+        // Within targets, presolve only empties what no target owns.
+        return Ok(no_match_result(program, Some(reason.clone())));
     }
     let result = backend
         .solve(&problem)
@@ -86,8 +90,6 @@ fn singleton_no_constraint_backend_result(
     // constraints remain and every variable has exactly one possible value.
     if problem.known_unsat.is_some()
         || !problem.allowed_tuples.is_empty()
-        || !problem.binary_constraints.is_empty()
-        || !problem.linear_constraints.is_empty()
         || !problem.all_different.is_empty()
     {
         return None;
@@ -137,6 +139,8 @@ fn singleton_no_constraint_backend_result(
         assignments: vec![BackendAssignment { values }],
         diagnostic: None,
         solver_response_stats: None,
+        conflicts: Vec::new(),
+        fixed_variables: BTreeSet::new(),
     })
 }
 
@@ -144,7 +148,6 @@ fn singleton_no_constraint_backend_result(
 pub enum SelectorBackendSolveError<E> {
     Build(CompiledSelectorProblemBuildError),
     Backend(E),
-    Summary(SelectorBuildSummaryError),
     Assignment(BackendAssignmentError),
     MissingTargetProjection {
         target: SelectorTargetId,
@@ -164,6 +167,14 @@ pub enum SelectorBackendSolveError<E> {
         status: BackendSolveStatus,
     },
     UnsatReturnedAssignments,
+    /// A satisfiable or ambiguous status whose assignments are only a
+    /// sample, so they prove neither uniqueness nor the alternatives.
+    SampleCoverage {
+        status: BackendSolveStatus,
+    },
+    UnknownConflictTarget {
+        target: SelectorTargetId,
+    },
 }
 
 impl<E: fmt::Display> fmt::Display for SelectorBackendSolveError<E> {
@@ -171,7 +182,6 @@ impl<E: fmt::Display> fmt::Display for SelectorBackendSolveError<E> {
         match self {
             Self::Build(err) => write!(f, "{err}"),
             Self::Backend(err) => write!(f, "selector backend failed: {err}"),
-            Self::Summary(err) => write!(f, "{err}"),
             Self::Assignment(err) => {
                 write!(f, "selector backend returned invalid assignment: {err}")
             }
@@ -213,6 +223,19 @@ impl<E: fmt::Display> fmt::Display for SelectorBackendSolveError<E> {
                     "selector backend returned unsatisfiable with assignments"
                 )
             }
+            Self::SampleCoverage { status } => {
+                write!(
+                    f,
+                    "selector backend returned {status:?} with sample assignments, not complete \
+                     target support"
+                )
+            }
+            Self::UnknownConflictTarget { target } => {
+                write!(
+                    f,
+                    "selector backend reported a conflict for unknown target {target:?}"
+                )
+            }
         }
     }
 }
@@ -225,413 +248,15 @@ where
         match self {
             Self::Build(err) => Some(err),
             Self::Backend(err) => Some(err),
-            Self::Summary(err) => Some(err),
             Self::Assignment(err) => Some(err),
             Self::MissingTargetProjection { .. }
             | Self::MissingAssignmentVariable { .. }
             | Self::DecodedAssignmentDomainMismatch { .. }
             | Self::MissingOwnerFact { .. }
             | Self::EmptySatisfyingAssignments { .. }
-            | Self::UnsatReturnedAssignments => None,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum SelectorBuildSummaryError {
-    Io {
-        path: PathBuf,
-        source: io::Error,
-    },
-    Json {
-        path: PathBuf,
-        source: serde_json::Error,
-    },
-}
-
-impl fmt::Display for SelectorBuildSummaryError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Io { path, source } => {
-                write!(
-                    f,
-                    "failed to write selector build summary at {}: {source}",
-                    path.display()
-                )
-            }
-            Self::Json { path, source } => {
-                write!(
-                    f,
-                    "failed to serialize selector build summary at {}: {source}",
-                    path.display()
-                )
-            }
-        }
-    }
-}
-
-impl Error for SelectorBuildSummaryError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Io { source, .. } => Some(source),
-            Self::Json { source, .. } => Some(source),
-        }
-    }
-}
-
-fn write_selector_build_summary(
-    program: &SelectorProgram,
-    facts: &SelectorFactStore,
-    model_summary: Option<&SelectorModelBuildSummary>,
-    problem: Option<&CompiledSelectorProblem>,
-) -> Result<(), SelectorBuildSummaryError> {
-    let paths = selector_build_summary_paths();
-    if paths.is_empty() {
-        return Ok(());
-    }
-
-    let summary = selector_build_summary_json(program, facts, model_summary, problem);
-    for path in paths {
-        write_summary_json(&path, &summary)?;
-    }
-    Ok(())
-}
-
-fn selector_build_summary_paths() -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    if let Some(path) = env_path(SUMMARY_JSON_ENV) {
-        paths.push(path);
-    }
-    if let Some(dir) = env_path(SUMMARY_JSON_DIR_ENV) {
-        let sequence = SUMMARY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        paths.push(dir.join(format!("selector-pre-solver-{sequence:06}.json")));
-    }
-    paths
-}
-
-fn env_path(env: &str) -> Option<PathBuf> {
-    std::env::var_os(env)
-        .map(PathBuf::from)
-        .filter(|path| !path.as_os_str().is_empty())
-}
-
-fn write_summary_json(
-    path: &Path,
-    summary: &serde_json::Value,
-) -> Result<(), SelectorBuildSummaryError> {
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent).map_err(|source| SelectorBuildSummaryError::Io {
-            path: parent.to_path_buf(),
-            source,
-        })?;
-    }
-    let temp_path = path.with_extension("json.tmp");
-    let mut file =
-        fs::File::create(&temp_path).map_err(|source| SelectorBuildSummaryError::Io {
-            path: temp_path.clone(),
-            source,
-        })?;
-    serde_json::to_writer_pretty(&mut file, summary).map_err(|source| {
-        SelectorBuildSummaryError::Json {
-            path: temp_path.clone(),
-            source,
-        }
-    })?;
-    file.write_all(b"\n")
-        .map_err(|source| SelectorBuildSummaryError::Io {
-            path: temp_path.clone(),
-            source,
-        })?;
-    file.flush()
-        .map_err(|source| SelectorBuildSummaryError::Io {
-            path: temp_path.clone(),
-            source,
-        })?;
-    drop(file);
-    fs::rename(&temp_path, path).map_err(|source| SelectorBuildSummaryError::Io {
-        path: path.to_path_buf(),
-        source,
-    })
-}
-
-fn selector_build_summary_json(
-    program: &SelectorProgram,
-    facts: &SelectorFactStore,
-    model_summary: Option<&SelectorModelBuildSummary>,
-    problem: Option<&CompiledSelectorProblem>,
-) -> serde_json::Value {
-    let compiled_problem = problem.map(compiled_problem_summary_json);
-    serde_json::json!({
-        "summary_kind": "selector_pre_solver",
-        "stage": if problem.is_some() { "compiled_problem" } else { "input" },
-        "selector_program": selector_program_summary_json(program),
-        "facts": {
-            "total": facts.len(),
-            "count_by_relation": facts.counts_by_relation(),
-        },
-        "model_build": model_summary.map(model_build_summary_json),
-        "compiled_problem": compiled_problem,
-    })
-}
-
-fn selector_program_summary_json(program: &SelectorProgram) -> serde_json::Value {
-    serde_json::json!({
-        "variable_count": program.variables.len(),
-        "variable_count_by_domain": keyed_count(program.variables.iter().map(|variable| variable_domain_name(variable.domain))),
-        "target_count": program.targets.len(),
-        "target_count_by_claim_kind": keyed_count(program.targets.iter().map(|target| claim_kind_name(&target.claim))),
-        "atom_count": program.atoms.len(),
-        "atom_count_by_kind": keyed_count(program.atoms.iter().map(selector_atom_kind_name)),
-        "source_match_projection": source_match_projection_summary_json(&program.source_match_projection),
-        "all_different_count": program.all_different.len(),
-        "all_different_variables_count": program.all_different_variables.len(),
-        "all_different_arity_histogram": usize_histogram(program.all_different.iter().map(Vec::len)),
-        "all_different_variable_arity_histogram": usize_histogram(
-            program
-                .all_different_variables
-                .iter()
-                .map(|group| group.variables.len())
-        ),
-    })
-}
-
-fn source_match_projection_summary_json(
-    events: &[SelectorSourceMatchProjectionEvent],
-) -> serde_json::Value {
-    let mut count_by_outcome = BTreeMap::<&'static str, usize>::new();
-    let mut count_by_selector_kind = BTreeMap::<String, usize>::new();
-    let mut count_by_reason_category = BTreeMap::<String, usize>::new();
-    let mut candidate_count_by_outcome = BTreeMap::<&'static str, usize>::new();
-    let mut projected_row_count_by_outcome = BTreeMap::<&'static str, usize>::new();
-    for event in events {
-        let outcome = source_match_projection_outcome_name(&event.outcome);
-        *count_by_outcome.entry(outcome).or_insert(0) += 1;
-        *count_by_selector_kind
-            .entry(event.selector_kind.clone())
-            .or_insert(0) += 1;
-        *count_by_reason_category
-            .entry(event.reason_category.clone())
-            .or_insert(0) += 1;
-        *candidate_count_by_outcome.entry(outcome).or_insert(0) +=
-            event.candidate_count.unwrap_or(0);
-        *projected_row_count_by_outcome.entry(outcome).or_insert(0) +=
-            event.projected_row_count.unwrap_or(0);
-    }
-    serde_json::json!({
-        "event_count": events.len(),
-        "count_by_outcome": count_by_outcome,
-        "count_by_selector_kind": count_by_selector_kind,
-        "count_by_reason_category": count_by_reason_category,
-        "candidate_count_by_outcome": candidate_count_by_outcome,
-        "projected_row_count_by_outcome": projected_row_count_by_outcome,
-        "events": events,
-    })
-}
-
-fn source_match_projection_outcome_name(
-    outcome: &SelectorSourceMatchProjectionOutcome,
-) -> &'static str {
-    match outcome {
-        SelectorSourceMatchProjectionOutcome::Projected => "projected",
-        SelectorSourceMatchProjectionOutcome::NativeFallback => "native_fallback",
-        SelectorSourceMatchProjectionOutcome::NativeUnsupported => "native_unsupported",
-    }
-}
-
-fn model_build_summary_json(summary: &SelectorModelBuildSummary) -> serde_json::Value {
-    serde_json::json!({
-        "domain_value_counts": summary.domain_value_counts,
-        "stored_relation_counts": summary.stored_relation_counts,
-        "derived_relation_counts": summary.derived_relation_counts,
-        "timings_ms": summary.timings_ms,
-    })
-}
-
-fn compiled_problem_summary_json(problem: &CompiledSelectorProblem) -> serde_json::Value {
-    let mut constraint_count_by_kind = BTreeMap::from([
-        ("allowed_table", problem.allowed_tuples.len()),
-        ("linear", problem.linear_constraints.len()),
-        ("all_different", problem.all_different.len()),
-    ]);
-    for constraint in &problem.binary_constraints {
-        let key = match constraint.kind {
-            selector_constraint_backend::BinaryConstraintKind::Equal => "binary_equal",
-            selector_constraint_backend::BinaryConstraintKind::NotEqual => "binary_not_equal",
-            selector_constraint_backend::BinaryConstraintKind::OrdinalBefore => {
-                "binary_ordinal_before"
-            }
-        };
-        *constraint_count_by_kind.entry(key).or_insert(0) += 1;
-    }
-    let domain_sizes = problem
-        .variables
-        .iter()
-        .map(|variable| problem.variable_domain_value_count(variable))
-        .collect::<Vec<_>>();
-    let allowed_table_rows = problem
-        .allowed_tuples
-        .iter()
-        .map(|constraint| problem.allowed_tuple_rows(constraint).len())
-        .collect::<Vec<_>>();
-    let allowed_table_cells = problem
-        .allowed_tuples
-        .iter()
-        .map(|constraint| problem.allowed_tuple_rows(constraint).cell_count())
-        .collect::<Vec<_>>();
-    let shared_allowed_row_count = problem
-        .allowed_tuple_row_sets
-        .iter()
-        .map(|row_set| row_set.rows.len())
-        .sum::<usize>();
-    let shared_allowed_cell_count = problem
-        .allowed_tuple_row_sets
-        .iter()
-        .map(|row_set| row_set.rows.cell_count())
-        .sum::<usize>();
-    let shared_sparse_domain_value_count = problem
-        .shared_variable_domains
-        .iter()
-        .map(|domain| domain.values.len())
-        .sum::<usize>();
-
-    serde_json::json!({
-        "known_unsat": problem.known_unsat.is_some(),
-        "known_unsat_reason": problem.known_unsat.as_deref(),
-        "variable_count": problem.variables.len(),
-        "variable_count_by_domain": keyed_count(problem.variables.iter().map(|variable| variable_domain_name(variable.domain))),
-        "variable_domain_representation_count_by_kind": keyed_count(problem.variables.iter().map(|variable| match &variable.values {
-            selector_constraint_backend::CompiledVariableDomain::Full(_) => "full",
-            selector_constraint_backend::CompiledVariableDomain::Sparse(_) => "sparse",
-            selector_constraint_backend::CompiledVariableDomain::SharedSparse(_) => "shared_sparse",
-        })),
-        "domain_size_histogram": usize_histogram(domain_sizes.iter().copied()),
-        "max_domain_values": domain_sizes.into_iter().max().unwrap_or(0),
-        "full_domain_value_counts": {
-            "owner": problem.full_domains.owners.len(),
-            "ast_node": problem.full_domains.ast_nodes.len(),
-            "string": problem.full_domains.strings.len(),
-            "statement_ordinal": problem.full_domains.statement_ordinals.len(),
-        },
-        "value_dictionary_count": problem.value_dictionary.total_len(),
-        "shared_sparse_domain_count": problem.shared_variable_domains.len(),
-        "shared_sparse_domain_value_count": shared_sparse_domain_value_count,
-        "constraint_count_by_kind": constraint_count_by_kind,
-        "allowed_table_count": problem.allowed_tuples.len(),
-        "allowed_row_set_count": problem.allowed_tuple_row_sets.len(),
-        "allowed_table_arity_histogram": usize_histogram(problem.allowed_tuples.iter().map(|constraint| constraint.variables.len())),
-        "allowed_table_row_count_histogram": usize_histogram(allowed_table_rows.iter().copied()),
-        "allowed_table_cell_count_histogram": usize_histogram(allowed_table_cells.iter().copied()),
-        "allowed_row_count": allowed_table_rows.into_iter().sum::<usize>(),
-        "allowed_cell_count": allowed_table_cells.into_iter().sum::<usize>(),
-        "shared_allowed_row_count": shared_allowed_row_count,
-        "shared_allowed_cell_count": shared_allowed_cell_count,
-        "binary_constraint_count": problem.binary_constraints.len(),
-        "binary_constraint_count_by_kind": keyed_count(problem.binary_constraints.iter().map(|constraint| binary_constraint_kind_name(constraint.kind))),
-        "linear_constraint_count": problem.linear_constraints.len(),
-        "linear_constraint_arity_histogram": usize_histogram(problem.linear_constraints.iter().map(|constraint| constraint.variables.len())),
-        "all_different_count": problem.all_different.len(),
-        "all_different_count_by_reason": keyed_count(problem.all_different.iter().map(|constraint| all_different_reason_name(&constraint.reason))),
-        "all_different_arity_histogram": usize_histogram(problem.all_different.iter().map(|constraint| constraint.variables.len())),
-        "target_projection_count": problem.target_projections.len(),
-    })
-}
-
-fn usize_histogram(values: impl IntoIterator<Item = usize>) -> BTreeMap<String, usize> {
-    let mut histogram = BTreeMap::new();
-    for value in values {
-        *histogram.entry(value.to_string()).or_insert(0) += 1;
-    }
-    histogram
-}
-
-fn keyed_count(keys: impl IntoIterator<Item = &'static str>) -> BTreeMap<&'static str, usize> {
-    let mut counts = BTreeMap::new();
-    for key in keys {
-        *counts.entry(key).or_insert(0) += 1;
-    }
-    counts
-}
-
-fn variable_domain_name(domain: selector_ir::VariableDomain) -> &'static str {
-    match domain {
-        selector_ir::VariableDomain::Owner => "owner",
-        selector_ir::VariableDomain::AstNode => "ast_node",
-        selector_ir::VariableDomain::String => "string",
-        selector_ir::VariableDomain::StatementOrdinal => "statement_ordinal",
-    }
-}
-
-fn claim_kind_name(claim: &ClaimKind) -> &'static str {
-    match claim {
-        ClaimKind::Binding { .. } => "binding",
-        ClaimKind::AnonymousStatement => "anonymous_statement",
-        ClaimKind::BindingGroupMember { .. } => "binding_group_member",
-    }
-}
-
-fn selector_atom_kind_name(atom: &SelectorAtom) -> &'static str {
-    match atom {
-        SelectorAtom::OwnerKind { .. } => "owner_kind",
-        SelectorAtom::OwnerStatementOrdinal { .. } => "owner_statement_ordinal",
-        SelectorAtom::OwnerTopLevelRoot { .. } => "owner_top_level_root",
-        SelectorAtom::OwnerDeclaresBinding { .. } => "owner_declares_binding",
-        SelectorAtom::ProjectedAllowedTuples { .. } => "projected_allowed_tuples",
-        SelectorAtom::OwnerExportName { .. } => "owner_export_name",
-        SelectorAtom::OwnerReferencesBinding { .. } => "owner_references_binding",
-        SelectorAtom::OwnerReferencesOwner { .. } => "owner_references_owner",
-        SelectorAtom::OwnerAliasesOwner { .. } => "owner_aliases_owner",
-        SelectorAtom::AstKind { .. } => "ast_kind",
-        SelectorAtom::AstChild { .. } => "ast_child",
-        SelectorAtom::AstChildListPattern { .. } => "ast_child_list_pattern",
-        SelectorAtom::AstSuperClass { .. } => "ast_super_class",
-        SelectorAtom::AstChildCount { .. } => "ast_child_count",
-        SelectorAtom::AstStringLiteral { .. } => "ast_string_literal",
-        SelectorAtom::AstStringLiteralMatchingRegex { .. } => "ast_string_literal_matching_regex",
-        SelectorAtom::AstNumberLiteral { .. } => "ast_number_literal",
-        SelectorAtom::AstBoolLiteral { .. } => "ast_bool_literal",
-        SelectorAtom::AstIdentifierName { .. } => "ast_identifier_name",
-        SelectorAtom::AstPropertyName { .. } => "ast_property_name",
-        SelectorAtom::AstBareProperty { .. } => "ast_bare_property",
-        SelectorAtom::AstOperator { .. } => "ast_operator",
-        SelectorAtom::AstRegexLiteral { .. } => "ast_regex_literal",
-        SelectorAtom::AstTopLevel { .. } => "ast_top_level",
-        SelectorAtom::OrdinalOffset { .. } => "ordinal_offset",
-        SelectorAtom::OrdinalBefore { .. } => "ordinal_before",
-        SelectorAtom::ReadsMember { .. } => "reads_member",
-        SelectorAtom::ReadsMemberOfOwner { .. } => "reads_member_of_owner",
-        SelectorAtom::ConsumesModuleMember { .. } => "consumes_module_member",
-        SelectorAtom::PassedToCall { .. } => "passed_to_call",
-        SelectorAtom::PassedToCallOfOwner { .. } => "passed_to_call_of_owner",
-        SelectorAtom::MakesDecorateCall { .. } => "makes_decorate_call",
-        SelectorAtom::MakesDecorateCallForOwner { .. } => "makes_decorate_call_for_owner",
-        SelectorAtom::IntrinsicAlias { .. } => "intrinsic_alias",
-        SelectorAtom::Equal { .. } => "equal",
-        SelectorAtom::NotEqual { .. } => "not_equal",
-    }
-}
-
-fn binary_constraint_kind_name(
-    kind: selector_constraint_backend::BinaryConstraintKind,
-) -> &'static str {
-    match kind {
-        selector_constraint_backend::BinaryConstraintKind::Equal => "equal",
-        selector_constraint_backend::BinaryConstraintKind::NotEqual => "not_equal",
-        selector_constraint_backend::BinaryConstraintKind::OrdinalBefore => "ordinal_before",
-    }
-}
-
-fn all_different_reason_name(
-    reason: &selector_constraint_backend::AllDifferentReason,
-) -> &'static str {
-    match reason {
-        selector_constraint_backend::AllDifferentReason::TargetInjectivity { .. } => {
-            "target_injectivity"
-        }
-        selector_constraint_backend::AllDifferentReason::SelectorSemantics { .. } => {
-            "selector_semantics"
+            | Self::UnsatReturnedAssignments
+            | Self::SampleCoverage { .. }
+            | Self::UnknownConflictTarget { .. } => None,
         }
     }
 }
@@ -647,39 +272,120 @@ fn decode_backend_result<E>(
             if !result.assignments.is_empty() {
                 return Err(SelectorBackendSolveError::UnsatReturnedAssignments);
             }
+            // The attributed constraints were not the cause: the hard ones
+            // alone admit no assignment.
             Ok(no_match_result(program, result.diagnostic))
         }
-        BackendSolveStatus::Unknown => Ok(unsupported_result(
-            program,
-            result
-                .diagnostic
-                .unwrap_or_else(|| "selector backend returned unknown".to_string()),
-        )),
+        BackendSolveStatus::Unknown => decode_unknown_result(program, facts, problem, result),
         BackendSolveStatus::Satisfiable | BackendSolveStatus::Ambiguous => {
-            if result.assignment_coverage != BackendAssignmentCoverage::TargetSupportComplete {
-                return Ok(unsupported_result(
-                    program,
-                    result.diagnostic.unwrap_or_else(|| {
-                        "selector backend returned sample assignments, not complete target support"
-                            .to_string()
-                    }),
-                ));
-            }
+            let capped = match result.assignment_coverage {
+                BackendAssignmentCoverage::TargetSupportComplete => false,
+                BackendAssignmentCoverage::TargetSupportCapped => true,
+                BackendAssignmentCoverage::Sample => {
+                    return Err(SelectorBackendSolveError::SampleCoverage {
+                        status: result.status,
+                    });
+                }
+            };
             if result.assignments.is_empty() {
                 return Err(SelectorBackendSolveError::EmptySatisfyingAssignments {
                     status: result.status,
                 });
             }
-            decode_satisfying_assignments(program, facts, problem, &result.assignments)
+            let conflicts = conflict_outcomes(program, &result.conflicts)?;
+            decode_satisfying_assignments(
+                program,
+                facts,
+                problem,
+                &result.assignments,
+                capped,
+                &conflicts,
+            )
         }
     }
 }
 
+/// The backend stopped before finishing. A target is resolved only when every
+/// variable it projects was proven fixed before the stop; conflict sets found
+/// before it still stand; every other target is undecided.
+fn decode_unknown_result<E>(
+    program: &SelectorProgram,
+    facts: &SelectorFactStore,
+    problem: &CompiledSelectorProblem,
+    result: BackendSolveResult,
+) -> Result<SolverResult, SelectorBackendSolveError<E>> {
+    if result.assignments.is_empty() && !result.fixed_variables.is_empty() {
+        return Err(SelectorBackendSolveError::EmptySatisfyingAssignments {
+            status: result.status,
+        });
+    }
+    let reason = result
+        .diagnostic
+        .unwrap_or_else(|| "the selector backend stopped before deciding".to_string());
+    let mut decided_elsewhere = conflict_outcomes(program, &result.conflicts)?;
+    for projection in &problem.target_projections {
+        let fixed = result.fixed_variables.contains(&projection.owner_variable)
+            && match &projection.binding_projection {
+                Some(TargetBindingProjection::Variable(binding)) => {
+                    result.fixed_variables.contains(binding)
+                }
+                Some(TargetBindingProjection::Const(_)) | None => true,
+            };
+        if !fixed {
+            decided_elsewhere
+                .entry(projection.target)
+                .or_insert_with(|| ClaimOutcome::Undecided {
+                    reason: reason.clone(),
+                });
+        }
+    }
+    decode_satisfying_assignments(
+        program,
+        facts,
+        problem,
+        &result.assignments,
+        false,
+        &decided_elsewhere,
+    )
+}
+
+/// A core of one target means its own constraints admit no assignment, which
+/// is a plain no-match; a larger core is a conflict among its targets.
+fn conflict_outcomes<E>(
+    program: &SelectorProgram,
+    conflicts: &[Vec<SelectorTargetId>],
+) -> Result<BTreeMap<SelectorTargetId, ClaimOutcome>, SelectorBackendSolveError<E>> {
+    let mut outcomes = BTreeMap::new();
+    for conflict in conflicts {
+        for target in conflict {
+            if !program.targets.iter().any(|known| known.id == *target) {
+                return Err(SelectorBackendSolveError::UnknownConflictTarget { target: *target });
+            }
+            let with = conflict
+                .iter()
+                .copied()
+                .filter(|other| other != target)
+                .collect::<Vec<_>>();
+            let outcome = if with.is_empty() {
+                ClaimOutcome::NoMatch
+            } else {
+                ClaimOutcome::Conflict { with }
+            };
+            outcomes.insert(*target, outcome);
+        }
+    }
+    Ok(outcomes)
+}
+
+/// Targets in `decided_elsewhere` take their outcome from it; the assignments
+/// do not decide them.
 fn decode_satisfying_assignments<E>(
     program: &SelectorProgram,
     facts: &SelectorFactStore,
     problem: &CompiledSelectorProblem,
     assignments: &[BackendAssignment],
+    capped: bool,
+    decided_elsewhere: &BTreeMap<SelectorTargetId, ClaimOutcome>,
 ) -> Result<SolverResult, SelectorBackendSolveError<E>> {
     let facts = MaterializationFacts::from_store(facts);
     let projections = problem
@@ -694,6 +400,9 @@ fn decode_satisfying_assignments<E>(
             .decode_assignment(assignment)
             .map_err(SelectorBackendSolveError::Assignment)?;
         for target in &program.targets {
+            if decided_elsewhere.contains_key(&target.id) {
+                continue;
+            }
             let projection = projections
                 .get(&target.id)
                 .ok_or(SelectorBackendSolveError::MissingTargetProjection { target: target.id })?;
@@ -739,7 +448,13 @@ fn decode_satisfying_assignments<E>(
             .iter()
             .map(|target| SolverClaim {
                 target: target.id,
-                outcome: claims_to_outcome(claims_by_target.remove(&target.id).unwrap_or_default()),
+                outcome: match decided_elsewhere.get(&target.id) {
+                    Some(outcome) => outcome.clone(),
+                    None => claims_to_outcome(
+                        claims_by_target.remove(&target.id).unwrap_or_default(),
+                        capped,
+                    ),
+                },
             })
             .collect(),
         global_diagnostic: None,
@@ -776,13 +491,18 @@ fn assigned_string<E>(
     }
 }
 
-fn claims_to_outcome(claims: Vec<ResolvedClaim>) -> ClaimOutcome {
+/// `capped`: the backend stopped listing some variable's values at
+/// `MAX_ALTERNATIVES_PER_VARIABLE`, so a target with that many candidates may have more.
+fn claims_to_outcome(claims: Vec<ResolvedClaim>, capped: bool) -> ClaimOutcome {
     match claims.as_slice() {
         [] => ClaimOutcome::NoMatch,
         [claim] => ClaimOutcome::Unique {
             claim: claim.clone(),
         },
-        _ => ClaimOutcome::Ambiguous { candidates: claims },
+        _ => ClaimOutcome::Ambiguous {
+            candidates_truncated: capped && claims.len() >= MAX_ALTERNATIVES_PER_VARIABLE as usize,
+            candidates: claims,
+        },
     }
 }
 
@@ -797,25 +517,9 @@ fn no_match_result(program: &SelectorProgram, diagnostic: Option<String>) -> Sol
             })
             .collect(),
         global_diagnostic: diagnostic.map(|reason| SolverGlobalDiagnostic {
-            category: "known_unsat".to_string(),
+            category: "unsatisfiable".to_string(),
             reason,
         }),
-    }
-}
-
-fn unsupported_result(program: &SelectorProgram, message: String) -> SolverResult {
-    SolverResult {
-        claims: program
-            .targets
-            .iter()
-            .map(|target| SolverClaim {
-                target: target.id,
-                outcome: ClaimOutcome::Unsupported {
-                    message: message.clone(),
-                },
-            })
-            .collect(),
-        global_diagnostic: None,
     }
 }
 
@@ -861,7 +565,6 @@ impl MaterializationFacts {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
     use std::convert::Infallible;
 
     use analysis::{ChunkId, OwnerId, StatementOrdinal};
@@ -870,9 +573,7 @@ mod tests {
         BackendAssignment, BackendAssignmentCoverage, BackendSolveResult, BackendSolveStatus,
         BackendValueId, BackendVariableAssignment,
     };
-    use selector_constraint_model_builder::compile_selector_problem_with_summary;
-    use selector_ir::{ClaimOrigin, NodeTerm, OwnerTerm, SelectorAtom, StringTerm, VariableDomain};
-    use serde_json::json;
+    use selector_ir::{ClaimOrigin, OwnerTerm, SelectorAtom, StringTerm, VariableDomain};
 
     use super::*;
 
@@ -908,6 +609,40 @@ mod tests {
                 assignments,
                 diagnostic: None,
                 solver_response_stats: None,
+                conflicts: Vec::new(),
+                fixed_variables: BTreeSet::new(),
+            })
+        }
+    }
+
+    /// Reports every target of the problem it receives as one conflict set.
+    #[derive(Debug, Default)]
+    struct ConflictingBackend {
+        received: std::cell::RefCell<Vec<CompiledSelectorProblem>>,
+    }
+
+    impl SelectorProblemBackend for ConflictingBackend {
+        type Error = Infallible;
+
+        fn solve(
+            &self,
+            problem: &CompiledSelectorProblem,
+        ) -> Result<BackendSolveResult, Self::Error> {
+            self.received.borrow_mut().push(problem.clone());
+            Ok(BackendSolveResult {
+                status: BackendSolveStatus::Satisfiable,
+                assignment_coverage: BackendAssignmentCoverage::TargetSupportComplete,
+                assignments: vec![BackendAssignment { values: Vec::new() }],
+                diagnostic: None,
+                solver_response_stats: None,
+                conflicts: vec![
+                    problem
+                        .target_projections
+                        .iter()
+                        .map(|projection| projection.target)
+                        .collect(),
+                ],
+                fixed_variables: BTreeSet::new(),
             })
         }
     }
@@ -923,44 +658,6 @@ mod tests {
             _problem: &CompiledSelectorProblem,
         ) -> Result<BackendSolveResult, Self::Error> {
             panic!("singleton/no-constraint selector should not invoke backend")
-        }
-    }
-
-    #[derive(Debug)]
-    struct CountingBackend {
-        calls: Cell<usize>,
-        assignments: Vec<Vec<(ConstraintVariableId, ConstraintValue)>>,
-        coverage: BackendAssignmentCoverage,
-        status: BackendSolveStatus,
-    }
-
-    impl SelectorProblemBackend for CountingBackend {
-        type Error = Infallible;
-
-        fn solve(
-            &self,
-            problem: &CompiledSelectorProblem,
-        ) -> Result<BackendSolveResult, Self::Error> {
-            self.calls.set(self.calls.get() + 1);
-            let mut assignments = Vec::new();
-            for assignment in &self.assignments {
-                assignments.push(BackendAssignment {
-                    values: assignment
-                        .iter()
-                        .map(|(variable, value)| BackendVariableAssignment {
-                            variable: *variable,
-                            value: backend_value_for(problem, value),
-                        })
-                        .collect(),
-                });
-            }
-            Ok(BackendSolveResult {
-                status: self.status.clone(),
-                assignment_coverage: self.coverage,
-                assignments,
-                diagnostic: None,
-                solver_response_stats: None,
-            })
         }
     }
 
@@ -991,20 +688,11 @@ mod tests {
         }
     }
 
-    fn binding_fact(owner: OwnerId, binding: &str, export_name: &str) -> SelectorFact {
+    fn binding_fact(owner: OwnerId, binding: &str) -> SelectorFact {
         SelectorFact::DeclaredBinding {
             chunk_id: ChunkId(0),
             owner,
             binding: binding.to_string(),
-            export_name: Some(export_name.to_string()),
-        }
-    }
-
-    fn ast_identifier_name_fact(node: u32, value: &str) -> SelectorFact {
-        SelectorFact::AstIdentifierName {
-            chunk_id: ChunkId(0),
-            node,
-            value: value.to_string(),
         }
     }
 
@@ -1024,12 +712,6 @@ mod tests {
         program.add_atom(SelectorAtom::OwnerDeclaresBinding {
             owner: OwnerTerm::Var { id: owner },
             binding: StringTerm::Var { id: binding },
-        });
-        program.add_atom(SelectorAtom::OwnerExportName {
-            owner: OwnerTerm::Var { id: owner },
-            export_name: StringTerm::Const {
-                value: "Readable".to_string(),
-            },
         });
         (program, target)
     }
@@ -1052,38 +734,6 @@ mod tests {
                 value: "minA".to_string(),
             },
         });
-        (program, target)
-    }
-
-    fn singleton_with_binary_constraint_program() -> (SelectorProgram, SelectorTargetId) {
-        let mut program = SelectorProgram::default();
-        let owner = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
-        let left = program.add_variable(VariableDomain::String, Some("left".to_string()));
-        let right = program.add_variable(VariableDomain::String, Some("right".to_string()));
-        let target = program.add_target(
-            ChunkId(0),
-            owner,
-            "module",
-            ClaimKind::Binding {
-                export_name: Some("Readable".to_string()),
-            },
-            ClaimOrigin::Synthetic,
-        );
-        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: OwnerTerm::Var { id: owner },
-            binding: StringTerm::Const {
-                value: "minA".to_string(),
-            },
-        });
-        program.add_atom(SelectorAtom::AstIdentifierName {
-            node: NodeTerm::Const { node: 100 },
-            value: StringTerm::Var { id: left },
-        });
-        program.add_atom(SelectorAtom::AstIdentifierName {
-            node: NodeTerm::Const { node: 200 },
-            value: StringTerm::Var { id: right },
-        });
-        program.add_atom(SelectorAtom::Equal { left, right });
         (program, target)
     }
 
@@ -1124,16 +774,16 @@ mod tests {
     fn facts() -> SelectorFactStore {
         let mut facts = SelectorFactStore::default();
         facts.push(owner_fact(OwnerId(1), 10, "function"));
-        facts.push(binding_fact(OwnerId(1), "minA", "Readable"));
+        facts.push(binding_fact(OwnerId(1), "minA"));
         facts.push(owner_fact(OwnerId(2), 20, "function"));
-        facts.push(binding_fact(OwnerId(2), "minB", "Readable"));
+        facts.push(binding_fact(OwnerId(2), "minB"));
         facts
     }
 
     fn single_binding_facts() -> SelectorFactStore {
         let mut facts = SelectorFactStore::default();
         facts.push(owner_fact(OwnerId(1), 10, "function"));
-        facts.push(binding_fact(OwnerId(1), "minA", "Readable"));
+        facts.push(binding_fact(OwnerId(1), "minA"));
         facts
     }
 
@@ -1163,85 +813,6 @@ mod tests {
                 .value_dictionary
                 .encode(&ConstraintValue::String("minA".to_string()))
                 .is_some()
-        );
-    }
-
-    #[test]
-    fn selector_build_summary_json_reports_input_shape_before_model_build() {
-        let (program, _) = binding_program();
-        let summary = selector_build_summary_json(&program, &facts(), None, None);
-
-        assert_eq!(summary["summary_kind"], json!("selector_pre_solver"));
-        assert_eq!(summary["stage"], json!("input"));
-        assert_eq!(summary["selector_program"]["variable_count"], json!(2));
-        assert_eq!(
-            summary["selector_program"]["variable_count_by_domain"]["owner"],
-            json!(1)
-        );
-        assert_eq!(
-            summary["selector_program"]["atom_count_by_kind"]["owner_declares_binding"],
-            json!(1)
-        );
-        assert_eq!(
-            summary["selector_program"]["atom_count_by_kind"]["owner_export_name"],
-            json!(1)
-        );
-        assert_eq!(summary["facts"]["total"], json!(4));
-        assert_eq!(summary["facts"]["count_by_relation"]["owner"], json!(2));
-        assert_eq!(
-            summary["facts"]["count_by_relation"]["declared_binding"],
-            json!(2)
-        );
-        assert!(summary["model_build"].is_null());
-        assert!(summary["compiled_problem"].is_null());
-    }
-
-    #[test]
-    fn selector_build_summary_json_reports_compiled_problem_shape() {
-        let (program, _) = binding_program();
-        let facts = facts();
-        let compiled = compile_selector_problem_with_summary(&program, &facts).unwrap();
-        let summary = selector_build_summary_json(
-            &program,
-            &facts,
-            Some(&compiled.summary),
-            Some(&compiled.problem),
-        );
-
-        assert_eq!(summary["stage"], json!("compiled_problem"));
-        assert_eq!(
-            summary["model_build"]["domain_value_counts"]["owner"],
-            json!(2)
-        );
-        assert_eq!(
-            summary["model_build"]["domain_value_counts"]["string"],
-            json!(4)
-        );
-        assert_eq!(
-            summary["model_build"]["stored_relation_counts"]["owner_kind"],
-            json!(2)
-        );
-        assert_eq!(
-            summary["model_build"]["stored_relation_counts"]["declared_binding"],
-            json!(2)
-        );
-        assert_eq!(summary["compiled_problem"]["variable_count"], json!(2));
-        assert_eq!(
-            summary["compiled_problem"]["variable_count_by_domain"]["owner"],
-            json!(1)
-        );
-        assert_eq!(
-            summary["compiled_problem"]["variable_count_by_domain"]["string"],
-            json!(1)
-        );
-        assert_eq!(summary["compiled_problem"]["allowed_table_count"], json!(1));
-        assert_eq!(
-            summary["compiled_problem"]["constraint_count_by_kind"]["allowed_table"],
-            json!(1)
-        );
-        assert_eq!(
-            summary["compiled_problem"]["constraint_count_by_kind"]["linear"],
-            json!(0)
         );
     }
 
@@ -1331,7 +902,10 @@ mod tests {
         let result = solve_with_backend(&program, &facts(), &backend).unwrap();
 
         match result.outcome_for(target) {
-            Some(ClaimOutcome::Ambiguous { candidates }) => {
+            Some(ClaimOutcome::Ambiguous {
+                candidates,
+                candidates_truncated: false,
+            }) => {
                 assert_eq!(candidates.len(), 2);
                 assert!(candidates.iter().any(|claim| claim.owner == OwnerId(1)));
                 assert!(candidates.iter().any(|claim| claim.owner == OwnerId(2)));
@@ -1341,7 +915,7 @@ mod tests {
     }
 
     #[test]
-    fn unsat_backend_result_maps_to_no_match() {
+    fn hard_unsat_backend_result_maps_to_no_match() {
         let (program, target) = binding_program();
         let backend = SelectingBackend {
             status: BackendSolveStatus::Unsatisfiable,
@@ -1355,8 +929,8 @@ mod tests {
     }
 
     #[test]
-    fn sample_backend_assignment_maps_to_unsupported_not_unique() {
-        let (program, target) = binding_program();
+    fn sample_coverage_on_a_satisfiable_status_is_a_backend_error() {
+        let (program, _target) = binding_program();
         let backend = SelectingBackend {
             status: BackendSolveStatus::Satisfiable,
             coverage: BackendAssignmentCoverage::Sample,
@@ -1366,14 +940,10 @@ mod tests {
             ]],
         };
 
-        let result = solve_with_backend(&program, &facts(), &backend).unwrap();
-
-        match result.outcome_for(target) {
-            Some(ClaimOutcome::Unsupported { message }) => {
-                assert!(message.contains("sample assignments"));
-            }
-            other => panic!("expected unsupported sample backend result, got {other:?}"),
-        }
+        assert!(matches!(
+            solve_with_backend(&program, &facts(), &backend),
+            Err(SelectorBackendSolveError::SampleCoverage { .. })
+        ));
     }
 
     #[test]
@@ -1417,57 +987,187 @@ mod tests {
         );
     }
 
+    /// Presolve across targets proves the two fixed targets clash before any
+    /// backend call; the program is then recompiled within targets, keeping
+    /// the clash as an attributed `all_different` for the backend to localize.
     #[test]
-    fn known_unsat_diagnostic_wins_over_singleton_fast_path() {
+    fn known_unsat_is_recompiled_for_conflict_localization() {
         let (program, first_target, second_target) = duplicate_fixed_target_program();
+        let backend = ConflictingBackend::default();
 
-        let result =
-            solve_with_backend(&program, &single_binding_facts(), &PanickingBackend).unwrap();
+        let result = solve_with_backend(&program, &single_binding_facts(), &backend).unwrap();
 
+        let received = backend.received.borrow();
+        let [problem] = received.as_slice() else {
+            panic!("expected one backend call, got {}", received.len());
+        };
+        assert_eq!(problem.presolve_scope, PresolveScope::WithinTargets);
+        assert_eq!(problem.known_unsat, None);
+        assert_eq!(problem.all_different.len(), 1);
+        assert_eq!(problem.all_different[0].variables.len(), 2);
         assert_eq!(
             result.outcome_for(first_target),
-            Some(&ClaimOutcome::NoMatch)
+            Some(&ClaimOutcome::Conflict {
+                with: vec![second_target]
+            })
         );
         assert_eq!(
             result.outcome_for(second_target),
-            Some(&ClaimOutcome::NoMatch)
-        );
-        let diagnostic = result
-            .global_diagnostic
-            .as_ref()
-            .expect("known-unsat result should preserve diagnostic");
-        assert_eq!(diagnostic.category, "known_unsat");
-        assert!(
-            diagnostic
-                .reason
-                .contains("variable restriction has empty domain"),
-            "{}",
-            diagnostic.reason
+            Some(&ClaimOutcome::Conflict {
+                with: vec![first_target]
+            })
         );
     }
 
+    fn fixed_binding_targets(
+        program: &mut SelectorProgram,
+        bindings: &[&str],
+    ) -> Vec<SelectorTargetId> {
+        bindings
+            .iter()
+            .map(|binding| {
+                let owner =
+                    program.add_variable(VariableDomain::Owner, Some(format!("@{binding}")));
+                program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+                    owner: OwnerTerm::Var { id: owner },
+                    binding: StringTerm::Const {
+                        value: binding.to_string(),
+                    },
+                });
+                program.add_target(
+                    ChunkId(0),
+                    owner,
+                    "module",
+                    ClaimKind::Binding {
+                        export_name: Some(binding.to_string()),
+                    },
+                    ClaimOrigin::Synthetic,
+                )
+            })
+            .collect()
+    }
+
     #[test]
-    fn singleton_problem_with_remaining_constraint_still_uses_backend() {
-        let (program, target) = singleton_with_binary_constraint_program();
-        let mut facts = facts();
-        facts.push(ast_identifier_name_fact(100, "same"));
-        facts.push(ast_identifier_name_fact(200, "same"));
-        let backend = CountingBackend {
-            calls: Cell::new(0),
-            status: BackendSolveStatus::Satisfiable,
-            coverage: BackendAssignmentCoverage::TargetSupportComplete,
-            assignments: vec![vec![
-                (ConstraintVariableId(0), owner(1)),
-                (ConstraintVariableId(1), string("same")),
-                (ConstraintVariableId(2), string("same")),
-            ]],
+    fn conflict_sets_decode_per_target_and_the_rest_resolves() {
+        let mut program = SelectorProgram::default();
+        let targets = fixed_binding_targets(&mut program, &["minA", "minB", "minC", "minD"]);
+        let [left, right, lone, resolved] = targets[..] else {
+            unreachable!()
         };
+        let mut facts = SelectorFactStore::default();
+        for (owner, binding) in [(1, "minA"), (2, "minB"), (3, "minC"), (4, "minD")] {
+            facts.push(owner_fact(OwnerId(owner), owner * 10, "function"));
+            facts.push(binding_fact(OwnerId(owner), binding));
+        }
+        let problem =
+            compile_selector_problem(&program, &facts, PresolveScope::WithinTargets).unwrap();
+        let resolved_owner = problem
+            .target_projections
+            .iter()
+            .find(|projection| projection.target == resolved)
+            .unwrap()
+            .owner_variable;
 
-        let result = solve_with_backend(&program, &facts, &backend).unwrap();
+        let result = decode_backend_result::<Infallible>(
+            &program,
+            &facts,
+            &problem,
+            BackendSolveResult {
+                status: BackendSolveStatus::Satisfiable,
+                assignment_coverage: BackendAssignmentCoverage::TargetSupportComplete,
+                assignments: vec![BackendAssignment {
+                    values: vec![BackendVariableAssignment {
+                        variable: resolved_owner,
+                        value: backend_value_for(&problem, &owner(4)),
+                    }],
+                }],
+                diagnostic: None,
+                solver_response_stats: None,
+                conflicts: vec![vec![left, right], vec![lone]],
+                fixed_variables: BTreeSet::new(),
+            },
+        )
+        .unwrap();
 
-        assert_eq!(backend.calls.get(), 1);
         assert_eq!(
-            result.outcome_for(target),
+            result.outcome_for(left),
+            Some(&ClaimOutcome::Conflict { with: vec![right] })
+        );
+        assert_eq!(
+            result.outcome_for(right),
+            Some(&ClaimOutcome::Conflict { with: vec![left] })
+        );
+        // A core of one target is its own constraints failing: a no-match.
+        assert_eq!(result.outcome_for(lone), Some(&ClaimOutcome::NoMatch));
+        assert_eq!(
+            result.outcome_for(resolved),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(4),
+                    statement_ordinal: StatementOrdinal(40),
+                    binding: Some("minD".to_string()),
+                    provenance: Vec::new(),
+                }
+            })
+        );
+    }
+
+    /// Four targets over distinct bindings, decoded from an UNKNOWN response:
+    /// only a target whose variables the backend proved fixed resolves,
+    /// however many rows agree on the others.
+    #[test]
+    fn unknown_resolves_only_proven_fixed_targets() {
+        let mut program = SelectorProgram::default();
+        let targets = fixed_binding_targets(&mut program, &["minA", "minB", "minC", "minD"]);
+        let [fixed, unproven, left, right] = targets[..] else {
+            unreachable!()
+        };
+        let mut facts = SelectorFactStore::default();
+        for (owner, binding) in [(1, "minA"), (2, "minB"), (3, "minC"), (4, "minD")] {
+            facts.push(owner_fact(OwnerId(owner), owner * 10, "function"));
+            facts.push(binding_fact(OwnerId(owner), binding));
+        }
+        let problem =
+            compile_selector_problem(&program, &facts, PresolveScope::WithinTargets).unwrap();
+        let owner_variable = |target| {
+            problem
+                .target_projections
+                .iter()
+                .find(|projection| projection.target == target)
+                .unwrap()
+                .owner_variable
+        };
+        let row = BackendAssignment {
+            values: [(fixed, 1), (unproven, 2)]
+                .into_iter()
+                .map(|(target, value)| BackendVariableAssignment {
+                    variable: owner_variable(target),
+                    value: backend_value_for(&problem, &owner(value)),
+                })
+                .collect(),
+        };
+        let reason = "CP-SAT stopped before proving complete target support";
+
+        let result = decode_backend_result::<Infallible>(
+            &program,
+            &facts,
+            &problem,
+            BackendSolveResult {
+                status: BackendSolveStatus::Unknown,
+                assignment_coverage: BackendAssignmentCoverage::Sample,
+                // Both rows agree on `unproven`, but nothing proved it fixed.
+                assignments: vec![row.clone(), row],
+                diagnostic: Some(reason.to_string()),
+                solver_response_stats: None,
+                conflicts: vec![vec![left, right]],
+                fixed_variables: BTreeSet::from([owner_variable(fixed)]),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            result.outcome_for(fixed),
             Some(&ClaimOutcome::Unique {
                 claim: ResolvedClaim {
                     chunk_id: ChunkId(0),
@@ -1477,6 +1177,64 @@ mod tests {
                     provenance: Vec::new(),
                 }
             })
+        );
+        assert_eq!(
+            result.outcome_for(unproven),
+            Some(&ClaimOutcome::Undecided {
+                reason: reason.to_string()
+            })
+        );
+        // A conflict set found before the stop is still proven.
+        assert_eq!(
+            result.outcome_for(left),
+            Some(&ClaimOutcome::Conflict { with: vec![right] })
+        );
+    }
+
+    #[test]
+    fn unknown_without_rows_leaves_every_target_undecided() {
+        let (program, target) = binding_program();
+        let backend = SelectingBackend {
+            status: BackendSolveStatus::Unknown,
+            coverage: BackendAssignmentCoverage::Sample,
+            assignments: Vec::new(),
+        };
+
+        let result = solve_with_backend(&program, &facts(), &backend).unwrap();
+
+        assert!(matches!(
+            result.outcome_for(target),
+            Some(ClaimOutcome::Undecided { .. })
+        ));
+    }
+
+    /// Within targets, a target's own candidate restriction that leaves no
+    /// value becomes an empty table attributed to that target alone, instead
+    /// of an empty domain that would fail the whole program.
+    #[test]
+    fn within_targets_exhausted_domain_becomes_an_attributed_empty_table() {
+        let mut program = SelectorProgram::default();
+        let targets = fixed_binding_targets(&mut program, &["absent", "minA"]);
+        let problem = compile_selector_problem(
+            &program,
+            &single_binding_facts(),
+            PresolveScope::WithinTargets,
+        )
+        .unwrap();
+
+        assert_eq!(problem.known_unsat, None);
+        let absent_owner = problem
+            .target_projections
+            .iter()
+            .find(|projection| projection.target == targets[0])
+            .unwrap()
+            .owner_variable;
+        assert!(
+            problem.allowed_tuples.iter().any(|constraint| {
+                constraint.variables == [absent_owner]
+                    && problem.allowed_tuple_rows(constraint).is_empty()
+            }),
+            "{problem:#?}"
         );
     }
 }

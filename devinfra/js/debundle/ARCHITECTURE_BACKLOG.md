@@ -50,10 +50,10 @@ as a deliberate wholesale rename.
 
 The module-quotient pipeline currently has two broad Tarjan consumers:
 
-1. `check_realizability` materialises one SCC partition and exposes it on the verdict; `validate_factorization` and `reports::build_quotient_scc_reports` consume it instead of re-walking.
-2. `ChunkFactorization::build_with` caches a `dep_graph_sccs` field used by the materializer/emitter path.
+1. `check_realizability` runs Tarjan and exposes only the unrealizable (multi-module) SCCs on the verdict (`unrealizable_sccs`), which `validate_factorization` consumes.
+2. `ChunkFactorization::build_with` caches `dep_graph_sccs`, which the materializer/emitter path and `report_builders::build_quotient_scc_reports` read.
 
-Remaining legitimate walks (different graphs): `validation.rs::compute_realizability_cut` (FAS iteration, intrinsic), `graph.rs::promote_at_init_calls` (closure fixpoint), `atomic_units.rs::compute_atomic_units` (constraining-edge owner SCC).
+Remaining legitimate walks (different graphs): `validation.rs::compute_realizability_cut` (FAS iteration, intrinsic), `graph/build.rs::promote_at_init_calls` (closure fixpoint), `atomic_units.rs::compute_atomic_units` (constraining-edge owner SCC).
 
 **Open follow-up.** The verdict-time and factorization-build-time walks
 compute the same partition for different consumers; structurally
@@ -61,28 +61,6 @@ consolidatable behind a wider API change, but not urgent and not on a hot
 path.
 
 ## Encapsulation + module boundaries
-
-### `ChunkFactorization` is yet another per-chunk IR/report layer
-
-`chunk_factorization.rs::ChunkFactorization` holds `analysis: Arc<ChunkAnalysis>` plus partition + dep_graph + linker_order + maps. Then `validate()` returns a `FactorizationReport` which is yet a third "report" type alongside `ChunkAnalysisReport` and the IR `ChunkAnalysis`. The naming hierarchy is:
-
-```
-ChunkAnalysis (IR)     // chunk_analysis.rs
-  ↓ wrapped in
-ChunkFactorization     // chunk_factorization.rs (IR + partition + dep_graph)
-  ↓ validate() →
-FactorizationReport    // validation.rs (cycles + atomic_unit_conflicts + linker_order)
-
-ChunkAnalysisReport    // artifact.rs (the JSON per-chunk report stub)
-  ↓ from_analysis() →
-ChunkManifest          // artifact.rs (analysis report + decomposition + metrics)
-
-OwnerGraphReport       // reports/schema.rs (the JSON view of the typed OwnerGraph)
-```
-
-Six distinct types in the orbit of "stuff a chunk analysis produced" (after the `ChunkAnalysis`/`ChunkAnalysisReport` split). A reader still can't tell from the name alone which one carries which data without grepping. Some of this is unavoidable (the JSON-wire / typed-IR split is real), but the layering of `ChunkAnalysis` → `ChunkFactorization` → `FactorizationReport` could plausibly collapse to two: an IR with optional partition state + a derive-to-report adapter.
-
-**Verdict (2026-06, do not attempt):** the proposed two-layer shape — an IR with optional partition state plus a derive-to-report adapter — is already the shape in practice. `ChunkAnalysis` is the partition-free IR; `ChunkFactorization` is that IR plus applied partition state; `FactorizationReport` is the derive-to-report adapter (`validate()`). Collapsing the `Arc<ChunkAnalysis>` boundary inside `ChunkFactorization` (folding the wrapper into a single partition-optional IR type) is a large, risky change touching the materializer/emitter path for no behavior gain, so it is deliberately left alone. The naming-clarity nit (`ChunkFactorization` vs `ChunkAnalysis`) survives in "Name overloading" below.
 
 ### `pub(crate)` on internals is broad
 
@@ -93,71 +71,100 @@ it from JSON. The _crate-internal_ invariant surface is still large:
 several consumers rely on conventions rather than a type boundary that
 makes invalid operations impossible.
 
-## Name overloading
-
-Watch out for:
-
-- **`ChunkFactorization` vs `ChunkAnalysis`**: both are per-chunk IR; the difference is whether the partition is applied. Could be `ChunkAnalysis` (no partition) vs `FactorizedChunk` (partition applied) and the meaning would be more obvious.
-
-## Algorithmic clarity (realizability gate, atom detection)
-
-### The gate is _more_ coherent than the maintainer fears, but its docs make it look like a stack of patches
-
-The realizability gate's actual algorithm, read carefully, is:
-
-> Build the canonical constraining-edge view of the I-graph; the gate accepts iff (a) Tarjan on the constraining-edge view has no multi-module SCC, and (b) for every multi-module SCC in the full I-graph that has at least one constraining edge, the ECMA-262 Phase-2 simulator (rooted at residual, with residual's imports sorted by `source_import_position` and every other module's by `linker_position`) yields a post-order with `post_order[target] < post_order[source]` for every constraining edge.
-
-That's one algorithm with two passes. Pass 1 is a cheap necessary condition (mutual at-init cycles can never be rescued by reordering); Pass 2 is the precise condition (the runtime DFS-simulator decides asymmetric cycles). The 2× Tarjan is structural to the algorithm, not patchy. **This is fine.** The docs/design.md theorem reads cleanly.
-
-### Atomic-units classification has two paths but only one is wired
-
-`atomic_units.rs::compute_atomic_units` is the structural-atom detector (SCCs of the constraining-edge owner graph). `factor_assembly::detect_unit_conflict` is the "did the spec split a unit?" detector. The structural atoms are computed once per chunk (in `compute_owner_graph_and_units_with`), passed through `OwnerGraphAndUnits` to the materializer and into `ChunkFactorization`. Clean — this is the right shape.
-
-Spec-induced atoms (the SCCs of `I ∪ S` under the quotient) are NOT
-precomputed; they emerge from the realizability primitive. docs/design.md
-§"Two classes of atom" labels them as a distinct concept. The verdict
-exposes the SCC partition and `validate_factorization` consumes it. The
-residual walk lives on `ChunkFactorization::dep_graph_sccs` for the
-materializer/emitter path (see "Duplicated calculations" for the open
-consolidation).
-
 ## Test-vs-spec drift
-
-### `#[ignore]`d tests should name the future work
-
-`e2e/purity_test.rs` names explicit "Step D"/"Step E" reasons for its
-ignored tests. Keep that standard for any new ignored test: the reason
-must point to current future work, not an unexplained skip.
 
 ### Defensive comments should stay tied to a real invariant
 
-`graph.rs::chunk_source_import_order`'s `None`-after-`Some` clause is
-"kept for robustness against future filter changes that might admit
+`graph/linker_order.rs::chunk_source_import_order`'s `None`-after-`Some`
+clause is "kept for robustness against future filter changes that might admit
 non-constraining members". If the filter shape changes, either turn this
 into a tested invariant or delete the defensive branch.
 
-### Keep the doc split crisp
+## Code refactor / dedup opportunities
 
-These files document the same project from multiple perspectives. Skimming them, I find:
+Production-code dedup/cleanup options, calibrated by (LOC saved × safety).
 
-- docs/design.md is the canonical theorem + algorithm document.
-- AGENTS.md is the canonical "how to work on this crate" document.
-- docs/cli.md is the cross-command CLI semantics document (per-flag
-  reference lives in the clap doc-comments / `--help`); docs/selectors.md
-  and docs/spec_editing.md are the worked workflow documents.
-- docs/wire_format.md is the JSON sidecar reference.
-- docs/selector_resolution.md is how selectors resolve, and the measured
-  reason the architecture is shaped that way.
-- SELECTOR_BUGS.md is the status-tracked selector bug list.
-- README.md is the component overview and CLI cheat sheet.
-- TODO.md is the broad active work backlog.
-- perf/proposer.md is the performance work log.
-- plans/ holds future-work design notes (including
-  plans/factor_vocabulary_rename.md, the terminology-rename plan
-  removing "factor" vocabulary in favor of precise graph-theoretic
-  names); x/ holds experimental/in-flux notes.
-- docs/lessons_learned/cross_process_stage_b.md is the historical
-  exception: it records an abandoned design to prevent repeating it.
+**Structural findings (full-package review):**
+
+1. `realizability/mod.rs` — extract `gate_perf_counters` (~490-line `pub mod`).
+   Entangled with index internals (`use super::*`, `pub(super)` recording APIs
+   called from `RealizabilityIndex` / `IncrementalQuotient` query methods, and
+   the timing-only `IncrementalQuotient::base_snapshot_stale` shadow state); a
+   clean move needs a narrow recording trait first, not just a file move.
+2. `vendor/mod.rs` further split (~1.3k lines + tests remain after the
+   emission/manifests/passthrough/plan/strip/validate/wrappers extraction):
+   package/subpath resolution helpers, export-surface collection,
+   `MaterializedOutputChunkIndex`, the shared import factories
+   (`DeferredImport` / `IdentRewriteTarget` / `PartialSwapIdentRewriter` and
+   the `make_*` constructors), and the post-strip consumer scan are each
+   liftable.
+3. Two parallel top-level fact extractors:
+   `program_analysis.rs::analyze_program_shallow` keeps its own traversal and
+   `classify_top_level_decl` alongside the `facts/` walk; the two rule sets
+   can drift independently. Fold the shallow extractor into the facts
+   traversal or derive its records from `StatementFacts`.
+4. `lowering/lower.rs` — extract the remaining inline phases of `lower_chunk`
+   (naturalization, disambiguation, import planning, the per-module loop);
+   each needs substantial captured state from `LowerChunkInputs` (15–20
+   fields). Related: `lowering/mod.rs` carries a ~95-line import block from
+   wildcard `use super::*` in every sub-module.
+5. `output_layout.rs` — replace the 10 identical `self.root.join(CONSTANT)`
+   accessors with a data-driven `report_path(name)` plus constants.
+6. Encapsulation/type design: BTree collections in hot-path graph structures
+   (`rollback_graph.rs`, `artifact.rs`, `realizability/`) where hash-based
+   would be measurably faster — document determinism where it is required;
+   make `DepKind`'s constraining vs non-constraining axis
+   (`constrains_init_order()`) a first-class type distinction; the three-layer
+   edge representation (domain graph → rollback graph → realizability index)
+   has fragile bridging; `pub(super)` blankets `lowering/` field and function
+   visibility; `SourceImportResolution = Option<(String, String, String)>`
+   (`plan_references.rs`) needs a named struct.
+7. Tests: `e2e/comma_list_owner_split_test.rs` asserts emitted shapes via
+   whitespace OR-chains — parse or normalize instead;
+   `peel/quotient_integration_test.rs` references share too much code with the
+   system under test (most verdicts compare against the kernel's own
+   `project_partition`; only `replay_partition` rebuilds independently, and
+   compares only `cycle_set()`), and randomized merge/partition sequences and
+   gate-residual promotion transitions are uncovered.
+8. `ChunkBundle` ownership ping-pong through every stage
+   (`artifact = result.artifact`) — cosmetic now that each stage is a pure
+   function.
+
+SWC-reuse evaluations (what to adopt, what was rejected and why):
+<docs/swc_reuse.md>.
+
+**Real value but needs design work / behavior-risk:**
+
+1. Parameterize the per-form AST holing visitors (`render.rs` `hole_expr` /
+   `hole_stmt`, `minimize/class.rs` `hole_class_member`, etc.) behind a `Holer`
+   trait or table to collapse repeated per-variant match clusters. ~150 LOC,
+   medium risk (over-abstraction hazard; the per-form holing strategies differ
+   for good reasons).
+2. Migrate `e2e/vendor_swap_test.rs` off raw `serde_json::json!` vendor-mark
+   literals onto the typed vendor-mark builders. The raw-`json!` form bypasses
+   `FixtureOpts` and the typed `VendorResolutionPlan` constructors, so test
+   fixtures can drift from real config shapes without a compile error
+   (e.g. a renamed vendor-mark field stays green in tests while breaking real
+   specs). Points: <e2e/vendor_swap_test.rs> (~lines 1680, 1821 and the
+   `report_out_dir` literals), builder surface in `vendor/mod.rs`.
+3. Consolidate the two `*BindingProjection` enums
+   (`TargetBindingProjection` in `selector_constraint_backend.rs`,
+   `SourceBindingProjection` in `selector_constraint_model_builder.rs`) into one
+   shared projection type.
+   They are structurally identical views of the same binding-namespace
+   partition, duplicated per solver stage; the copies drift silently when a
+   new binding kind is added. Unify behind one enum (plus any stage-specific
+   extension) and re-point the three stages at it.
+
+**Organization only (≈0 LOC removed, navigability win):** split the giant
+files by responsibility — <selector_codemod.rs>, <peel/quotient.rs>,
+<lowering/rename_ledger.rs>.
+
+**Defer (high risk):** unifying the union-find / Tarjan-SCC / incremental
+cycle-detection between <peel/quotient.rs> and
+<realizability/condensation_order.rs>. They look parallel but encode different
+correctness invariants for the realizability gate; a shared impl risks hiding
+drift. Audit before attempting.
 
 ## Quick wins (≤30 min each)
 
@@ -183,6 +190,18 @@ chunks keep no TDZ-prone bindings in the entry file. Extending candidate
 enumeration with the universal entry edges would close it at the cost of much
 larger SCCs in the incremental planner path.
 
+### CLI common args via clap `#[command(flatten)]` (DECIDED: declined)
+
+The
+recurring flags (`--modules` / `--source-root` / `--format`) occur in
+incompatible combinations across the `Args` structs with inconsistent attrs
+(`source-root` carries `env` on some structs, not others; `MatchSelector` /
+`Describe` / `ShowSource` have no `--modules`), so there is no cohesive group to
+extract. Flattening `{modules, format}` would add `args.common.*` indirection
+for a semantically-incohesive bundle (input locator + output format) without a
+real clarity or LOC win. `peel`'s `CommonArgs` (`{graph, modules}`) stays as the
+one cohesive case.
+
 ### `BindingId`/`BindingTable` interning (DECIDED 2026-06: defer, perf-triggered)
 
 Implement only if corpus profiling (`perf/proposer.md`) shows the binding-keyed graph paths as a material cost; docs/design.md marks the sketch as hypothetical with the same trigger. Until then it stays unimplemented — do not treat the design.md sketch as a description of the code.
@@ -197,4 +216,4 @@ Today an "anonymous statement" is just an `OwnerNode` with empty `declared`. The
 
 ### Two distinct `LogicalModule` types share a name
 
-`spec::LogicalModule` (the authoring-spec module: `members` / `source_matches` / `annotations` / `anonymous_statements` / `comment`) and the graph/analysis `LogicalModule` (`id` / `target_file` / `residual` / `rename_map` / `anonymous_statement_ordinals`, used in `graph/tests.rs` and `analysis_tests/factorization_validation.rs`) are unrelated structs with the same name. "Find a LogicalModule literal" is therefore ambiguous, and it bit an atomic field addition (adding `note:` to the spec-side member/annotation fields). Rename one (e.g. the graph one to `PlannedModule` / `OutputModule`) to disambiguate. Not blocking.
+`spec::LogicalModule` (the authoring-spec module: `members` / `source_matches` / `annotations` / `anonymous_statements` / `comment`) and `ids.rs::LogicalModule` (the IR materialization record: `id` / `target_file` / `residual` / `rename_map` / `anonymous_statement_ordinals`) are unrelated structs with the same name, forcing qualified-path imports wherever both are visible. "Find a LogicalModule literal" is therefore ambiguous, and it bit an atomic field addition to the spec-side type. Rename the IR one (e.g. `LogicalModuleIr`, `PlannedModule` or `OutputModule`); the rename is mechanical but ripples through `lowering/`, `pipeline.rs` and the e2e fixtures. Not blocking.

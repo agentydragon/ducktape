@@ -1,0 +1,40 @@
+/* The prose styling `markdown.tsx`'s class promises. Code takes Mantine's monospace stack, the font
+   of every `Code` block, so code in the agent's prose reads like the tool payloads beside it. */
+
+.agentplane-markdown :where(h1, h2, h3, h4, h5, h6) {
+  font-weight: 700;
+  line-height: 1.25;
+  margin-block: 1em 0.5em;
+}
+
+.agentplane-markdown :where(p, ul, ol, pre, blockquote, table) {
+  margin-block: 0.75em;
+}
+
+.agentplane-markdown :where(ul, ol) {
+  padding-inline-start: 1.5em;
+}
+
+/* The card around this prose pads all four sides equally; without this, the first/last child's own
+   block margin above stacks on top of that padding, so the card reads with more space top/bottom
+   than left/right. */
+.agentplane-markdown > :first-child {
+  margin-block-start: 0;
+}
+
+.agentplane-markdown > :last-child {
+  margin-block-end: 0;
+}
+
+.agentplane-markdown :where(code) {
+  font-family: var(--mantine-font-family-monospace);
+  overflow-wrap: anywhere;
+}
+
+/* A `pre` does not wrap by default, so a fenced code block would otherwise overflow past the
+   message bubble instead of wrapping in place -- the same treatment `.agentplane-hljs` gives
+   highlighted code. */
+.agentplane-markdown :where(pre) {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

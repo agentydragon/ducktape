@@ -1,45 +1,21 @@
 """cert-manager's environment: the Route 53 credentials its ACME DNS-01 solvers read,
-copied from external-creds, plus the ClusterIssuers and cluster CA from `config/base`
-and `cluster-ca/base`, which the directory's `kustomization.yaml` pulls in."""
+copied from external-creds, rendered beside the Let's Encrypt ClusterIssuers (`config`) and
+the cluster CA (`cluster_ca`)."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
-    ExternalSecretSpecTargetCreationPolicy,
-)
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecHealthChecks,
-    KustomizationSpecPostBuild,
-    KustomizationSpecPostBuildSubstituteFrom,
-    KustomizationSpecPostBuildSubstituteFromKind,
-)
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s import external_creds
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAME = "cert-manager-environment"
 NAMESPACE = "cert-manager"
-OUTPUT_DIR = "cluster/k8s/cert-manager/environment"
+OUTPUT_DIR = f"{GENERATED_ROOT}/cert-manager/environment"
 _ROUTE53_SECRET = "aws-route53-credentials"
 _ROUTE53_SOURCE = "aws-route53-cert-manager-credentials"
 
@@ -51,72 +27,28 @@ def chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         "route53-credentials",
-        metadata=metadata(_ROUTE53_SECRET, NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name="kubernetes-external-creds-secret-store",
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-            ),
-            target=ExternalSecretSpecTarget(
-                name=_ROUTE53_SECRET, creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key=key, remote_ref=ExternalSecretSpecDataRemoteRef(key=_ROUTE53_SOURCE, property=key)
-                )
-                for key in ("AWS_ACCESS_KEY_ID", "AWS_REGION", "AWS_SECRET_ACCESS_KEY")
-            ],
-        ),
+        metadata=ApiObjectMetadata(name=_ROUTE53_SECRET, namespace=NAMESPACE),
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
+        data=[
+            remote_data(_ROUTE53_SOURCE, key) for key in ("AWS_ACCESS_KEY_ID", "AWS_REGION", "AWS_SECRET_ACCESS_KEY")
+        ],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=["environment.k8s.yaml", "../config/base", "../cluster-ca/base"]),
-    )
-
-
 def cert_manager_environment(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     cert_manager: Kustomization,
     cert_manager_trust: Kustomization,
-    cert_manager_issuer_config: Kustomization,
-    external_creds: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            post_build=KustomizationSpecPostBuild(
-                substitute_from=[
-                    KustomizationSpecPostBuildSubstituteFrom(
-                        kind=KustomizationSpecPostBuildSubstituteFromKind.CONFIG_MAP, name="cert-manager-issuer-config"
-                    )
-                ]
-            ),
-            depends_on=flux_kustomization_depends_on_many(
-                cert_manager, cert_manager_trust, cert_manager_issuer_config, external_creds, external_secrets_config
-            ),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="cert-manager.io/v1", kind="ClusterIssuer", name="letsencrypt-prod", namespace=""
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="cert-manager.io/v1", kind="ClusterIssuer", name="letsencrypt-staging", namespace=""
-                ),
-            ],
-        ),
+        directory,
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(cert_manager, cert_manager_trust, external_secrets_operator),
     )

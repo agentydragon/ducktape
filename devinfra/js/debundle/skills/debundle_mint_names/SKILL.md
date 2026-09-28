@@ -210,7 +210,9 @@ accessor, etc.
 
 ### 4. Assign the name
 
-Edit the YAML spec file. Change only the member `name:` field:
+Prefer `debundle bindings rename <minified> <newName>`, which checks the new
+name for collisions; otherwise edit the YAML spec file. Change only the member
+`name:` field:
 
 ```yaml
 # Before:
@@ -228,9 +230,15 @@ Edit the YAML spec file. Change only the member `name:` field:
       name: DZ
 ```
 
-### 5. Verify (optional, at batch boundaries)
+### 5. Verify at batch boundaries
+
+`source_match` templates name other entities by export name, so a rename can
+turn a reference in another module's template into an alpha-renamed identifier,
+or a free identifier that happens to equal the new name into a reference. Check
+that the batch changed no selector outcome and no template's `templates` entry:
 
 ```bash
+debundle spec validate --modules "$SPEC_ROOT" --source-file "$UPSTREAM_JS" --format json
 bazelisk --output_base="$BAZEL_OUTPUT_BASE" \
     build //path/to/spec:debundle_<version> --config=nolint
 ```

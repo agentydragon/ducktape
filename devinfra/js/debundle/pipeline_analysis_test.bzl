@@ -3,7 +3,7 @@
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load(":pipeline.bzl", "debundle_pipeline")
 
-def _multi_chunk_diagnostics_use_per_solve_directories_impl(ctx):
+def _pipeline_action_reaches_the_solver_impl(ctx):
     env = analysistest.begin(ctx)
     actions = [
         action
@@ -12,31 +12,17 @@ def _multi_chunk_diagnostics_use_per_solve_directories_impl(ctx):
     ]
     asserts.equals(env, 1, len(actions))
     if actions:
-        command = " ".join(actions[0].argv)
+        # The action has no runfiles tree, so the debundler finds the CP-SAT
+        # sidecar only through this variable.
         asserts.true(
             env,
-            "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_REQUEST_PROTO_DIR=" in command,
-            "the parallel pipeline must give each selector solve a distinct request path",
-        )
-        asserts.true(
-            env,
-            "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SUMMARY_JSON_DIR=" in command,
-            "the parallel pipeline must give each selector solve a distinct summary path",
-        )
-        asserts.false(
-            env,
-            "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_REQUEST_PROTO=" in command,
-            "a fixed request path races across parallel chunk solves",
-        )
-        asserts.false(
-            env,
-            "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SUMMARY_JSON=" in command,
-            "a fixed summary path races across parallel chunk solves",
+            "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER=" in " ".join(actions[0].argv),
+            "the pipeline action must name the CP-SAT sidecar",
         )
     return analysistest.end(env)
 
-multi_chunk_diagnostics_use_per_solve_directories_test = analysistest.make(
-    _multi_chunk_diagnostics_use_per_solve_directories_impl,
+pipeline_action_reaches_the_solver_test = analysistest.make(
+    _pipeline_action_reaches_the_solver_impl,
 )
 
 def pipeline_analysis_test_suite(name):
@@ -52,7 +38,7 @@ def pipeline_analysis_test_suite(name):
         tags = ["manual"],
         tree_source_root = ":" + source_root,
     )
-    multi_chunk_diagnostics_use_per_solve_directories_test(
+    pipeline_action_reaches_the_solver_test(
         name = name,
         target_under_test = ":" + subject,
     )

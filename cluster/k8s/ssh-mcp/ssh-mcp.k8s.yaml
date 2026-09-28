@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Namespace
 metadata:
   annotations:
-    description: Standalone SSH MCP backend; private keys stay in this namespace.
+    description: SSH MCP backend; private keys stay in this namespace.
   labels:
     goldilocks.fairwinds.com/enabled: "false"
     name: ssh-mcp
@@ -39,12 +39,6 @@ spec:
     template:
       data:
         bearer-token: "{{ .password }}"
-      metadata:
-        annotations:
-          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: ^haku-console$,^agentplane-staging$
-          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: ^haku-console$,^agentplane-staging$
       type: Opaque
 ---
 apiVersion: v1
@@ -94,8 +88,6 @@ immutable: false
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: ssh-mcp
   name: ssh-mcp
@@ -109,7 +101,10 @@ spec:
     matchLabels:
       app.kubernetes.io/name: ssh-mcp
   strategy:
-    type: Recreate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
   template:
     metadata:
       labels:
@@ -288,9 +283,6 @@ spec:
         - matchLabels:
             app.kubernetes.io/name: agentplane-actions
             k8s:io.kubernetes.pod.namespace: agentplane-staging
-        - matchLabels:
-            app.kubernetes.io/name: haku-console
-            k8s:io.kubernetes.pod.namespace: haku-console
       toPorts:
         - ports:
             - port: "8080"

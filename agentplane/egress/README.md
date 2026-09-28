@@ -20,7 +20,8 @@ bbr test //agentplane/egress/...
 - `identity.py`: the shared `workload_auth` resolver behind a proxied connection, translating a
   refused bearer into the `DenyReason` the client sees.
 - `upstream.py`: the admitted host resolved by the proxy, refused when it points anywhere not
-  globally reachable, and pinned so the dial goes to the address checked.
+  globally reachable, and pinned so the dial goes to the address checked — through
+  `PinnedDialEventLoop`, the event loop the proxy must run on, which answers the dial's own lookup.
 - `informer.py`: read-only list-and-watch of the four kinds into each replica’s `Index`.
 - `rules_api.py`: the agent-facing
   `agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` API and the narrow
@@ -165,6 +166,17 @@ label: a namespace-wide read where the sandboxes run would hand the proxy the mo
 database credential along with the ones it is meant to substitute. Staging uses
 `agentplane-staging-egress-credentials` for GitHub and Forgejo; testing uses
 `agentplane-testing-egress-credentials` for GitHub only.
+
+### Rejected: binding a bearer to its Pod's source address
+
+Reading the calling Pod and refusing a connection whose source is not that Pod's IP, on every
+request including cache hits, stops a token copied out of its Pod from being replayed elsewhere in
+the cluster. It costs a `pods` read in every `allowed_service_account_namespaces` entry, the grant
+the rule above keeps at nothing. Without it the exposure is bounded (<SPEC.md> § Identity): one
+in-cluster workload borrowing another's egress rules, not a way past the policy. Restore it if that
+borrowing becomes a real concern — a compromised sidecar reading another Pod's projected token, or
+a namespace whose Pod specs are not ours — with a `pod_ip` on the principal, the check in
+`WorkloadIdentityVerifier.identify`, the peer-address read in the addon, and that `pods` read.
 
 ## Decision history
 

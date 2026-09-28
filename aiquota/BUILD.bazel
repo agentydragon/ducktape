@@ -91,6 +91,7 @@ py_library(
     name = "api",
     srcs = ["api.py"],
     imports = [".."],
+    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":cache",
         ":clickhouse",

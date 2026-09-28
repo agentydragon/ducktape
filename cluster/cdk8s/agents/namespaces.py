@@ -6,18 +6,19 @@ from __future__ import annotations
 from pathlib import Path
 
 from cluster.cdk8s.generation import write_namespace
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 
 def write_manifests(root: Path) -> None:
     write_namespace(
         root,
-        "cluster/k8s/agents/plaid-mcp",
+        f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp",
         name="plaid-mcp",
         labels={"goldilocks.fairwinds.com/enabled": "false", "rbac.ducktape.io/agent-readable-logs": "true"},
     )
     write_namespace(
         root,
-        "cluster/k8s/agents/haku-egress-proxy",
+        f"{HAND_WRITTEN_ROOT}/agents/haku-egress-proxy",
         name="haku-egress-proxy",
         labels={
             "goldilocks.fairwinds.com/enabled": "true",
@@ -27,7 +28,7 @@ def write_manifests(root: Path) -> None:
     )
     write_namespace(
         root,
-        "cluster/k8s/agents/haku-openclaw-spike/app",
+        f"{HAND_WRITTEN_ROOT}/agents/haku-openclaw-spike/app",
         name="haku-openclaw-spike",
         labels={
             "goldilocks.fairwinds.com/enabled": "true",

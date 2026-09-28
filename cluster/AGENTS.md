@@ -159,7 +159,7 @@ manifest is consumed by a tool that requires a single YAML document.
 When adding agent read access to a new service namespace, create a new `agent-rbac/`
 directory — never add RoleBindings to `agent-rbac-base` or `shared-rbac`. The full
 three-layer split, permission scopes, and the sandbox quota:
-<k8s/agents/agent-rbac-base/README.md>.
+<docs/agent_rbac.md>.
 
 ## Storage Selection
 
@@ -180,8 +180,10 @@ read <skills/seaweed_operator/SKILL.md> before operating on them.
 ## Flux Kustomization Wiring
 
 Flux `Kustomization` resources are defined together in the generated
-`cluster/k8s/flux/kustomizations.k8s.yaml`, applied from the **root**
-`cluster/k8s/kustomization.yaml` through `flux/`. A directory's own `kustomization.yaml`
+`cluster/k8s/flux/kustomizations.k8s.yaml`, applied by the bootstrap `flux-system`
+Kustomization from `./cluster/k8s/flux` (`flux/flux-system/gotk-sync.yaml`). Nothing
+applies the root `cluster/k8s/kustomization.yaml`; it is the runfiles anchor validation
+tests locate `cluster/k8s` by. A directory's own `kustomization.yaml`
 lists only the manifests Flux applies at `spec.path` — never its Flux Kustomization,
 which lives in the central chart.
 
@@ -250,9 +252,10 @@ per-app reasons: <docs/decisions.md> § "Parked application manifests".
 
 ## Generated manifests
 
-Every `*.k8s.yaml` under `cluster/k8s`, and each `kustomization.yaml` that
-`.gitattributes` marks `linguist-generated=true` (the list of record), is
-`bb run //cluster/cdk8s:generate_manifests` output. Change the generator under
+Every file under `cluster/generated`, every `*.k8s.yaml` under `cluster/k8s`, and each
+`kustomization.yaml` there that `.gitattributes` marks `linguist-generated=true` (the list
+of record), is `bb run //cluster/cdk8s:generate_manifests` output. A directory lives under
+`cluster/generated` exactly when the generator writes all of it (<docs/cdk8s.md>). Change the generator under
 `cluster/cdk8s/` and regenerate; `//cluster/cdk8s:test_generate_manifests` fails on
 drift. What stays hand-written, and why: <docs/cdk8s.md> § What stays hand-written. The
 layout rules in this file for hand-written directories bind a generated directory only

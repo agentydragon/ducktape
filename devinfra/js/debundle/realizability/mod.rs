@@ -141,8 +141,7 @@ impl RealizabilityVerdict {
 /// Pure-function form. Builds the canonical constraining edge set,
 /// runs Tarjan, surfaces multi-module SCCs and cross-rebinds. The
 /// correctness reference for the `RealizabilityIndex`'s incremental
-/// backing (verified by differential test in the
-/// `RealizabilityIndex` step 1b follow-up).
+/// backing.
 pub fn check_realizability(
     owner_graph: &OwnerGraph,
     partition: &Partition,

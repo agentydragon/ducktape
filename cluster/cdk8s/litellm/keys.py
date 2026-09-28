@@ -6,29 +6,21 @@ against what the main proxy serves before it is written.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from pydantic import BaseModel, ConfigDict
 
 from cluster.cdk8s import terraform
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.litellm.config import main_proxy_config
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_rosters import (
     ANTHROPIC_MODELS,
+    ANTIGRAVITY_MODELS,
     CLIPROXY_MODELS,
     GEMINI_EMBEDDING_COMPAT_ALIAS,
     GEMINI_EMBEDDING_MODELS,
     GEMINI_MODELS,
+    GPT6_CODEX_MODELS,
     MISTRAL_MODELS,
     OLLAMA_CHAT_MODELS,
     OLLAMA_EMBEDDING_MODEL,
@@ -41,20 +33,18 @@ from cluster.cdk8s.model_rosters import (
     ollama_chat_variant,
 )
 
-OUTPUT_DIR = "cluster/k8s/litellm/keys-tf"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/keys-tf"
 
-# The Codex-subscription models on LiteLLM's Responses surface, for Codex CLI clients
-# (codex-pod, agent-workspaces-codex, the agentplane staging session form) -- served
-# by CLIProxyAPI.
-OAI_LANE_MODELS = [codex_responses_name(model) for model in CLIPROXY_MODELS]
-# The same models on the Anthropic Messages surface -- Claude Code clients
-# (laptop codex-claude, agent-box, codex-pod).
+# GPT-6 Codex-subscription models on LiteLLM's Responses and Anthropic Messages surfaces.
+GPT6_OAI_LANE_MODELS = [codex_responses_name(model.id) for model in GPT6_CODEX_MODELS]
+GPT6_CODEX_CLIENT_MODELS = [codex_messages_name(model.id) for model in GPT6_CODEX_MODELS]
+# The same models on the Anthropic Messages surface -- laptop and agent-box Claude Code
+# clients. Codex pod has a separate GPT-6-only key.
 CODEX_CLIENT_MODELS = [codex_messages_name(model) for model in CLIPROXY_MODELS]
 # Claude-subscription models on the Anthropic Messages surface, fronted through
-# CLIProxyAPI's Claude OAuth session -- the Console-launched Claude runner, the laptop
-# litellm-claude wrapper, and the agentplane staging session form. A different
-# upstream session on the same pod as the Codex lanes; distinct from the direct-API
-# anthropic-api/ant-messages/* entries.
+# CLIProxyAPI's Claude OAuth session -- the laptop litellm-claude wrapper and the
+# agentplane staging session form. A different upstream session on the same pod as the
+# Codex lanes; distinct from the direct-API anthropic-api/ant-messages/* entries.
 CLAUDE_CLIENT_MODELS = [
     exposed_name(Provider.ANTHROPIC_MAX20, ApiShape.ANT_MESSAGES, model) for model in ANTHROPIC_MODELS
 ]
@@ -63,6 +53,17 @@ CLAUDE_CLIENT_MODELS = [
 TANA_CLIENT_MODELS = [exposed_name(Provider.TANA, ApiShape.ANT_MESSAGES, exposed) for exposed, _ in TANA_MODELS]
 # The Gemini chat lineup -- the laptop gemini-claude wrapper and public-coder-agent.
 GEMINI_CLIENT_MODELS = [exposed_name(Provider.GOOGLE, ApiShape.GOOG_GENERATE, model.id) for model in GEMINI_MODELS]
+# The Antigravity OAuth-session lineup on the Anthropic Messages surface -- the laptop
+# antigravity-claude wrapper, agentplane-staging's Claude harness, and public-coder-agent.
+ANTIGRAVITY_CLIENT_MODELS = [
+    exposed_name(Provider.ANTIGRAVITY, ApiShape.ANT_MESSAGES, model.id) for model in ANTIGRAVITY_MODELS
+]
+# Antigravity's flash-lite tier -- cheap/fast, shared by the cheap-experiments key and
+# agentplane-testing's Claude harness (agentplane/testing_config.py).
+ANTIGRAVITY_CHEAP_CLIENT_MODELS = [
+    exposed_name(Provider.ANTIGRAVITY, ApiShape.ANT_MESSAGES, model)
+    for model in ("gemini-3.1-flash-lite", "gemini-3.5-flash-lite")
+]
 _GEMINI_EMBEDDING_ROUTES = [
     exposed_name(Provider.GOOGLE, ApiShape.GOOG_EMBED, model) for model in GEMINI_EMBEDDING_MODELS
 ]
@@ -76,29 +77,34 @@ EMBEDDING_CLIENT_MODELS = [
     exposed_name(Provider.OLLAMA, ApiShape.OLM_EMBED, OLLAMA_EMBEDDING_MODEL),
 ]
 
+# Both existing LiteLLM chat routes for each local Ollama model, exposed to Agentplane
+# through the environment's own key.
+OLLAMA_CHAT_CLIENT_MODELS = [
+    exposed_name(Provider.OLLAMA, shape, ollama_chat_variant(model, context))
+    for model, _, contexts in OLLAMA_CHAT_MODELS
+    for context in contexts
+    for shape in (ApiShape.OAI_CHAT, ApiShape.OLM_CHAT)
+]
+
 # The one native subscription model per harness the agentplane testing session form
 # offers; the Codex one on both wires, for Claude Code clients on the same key.
 CHEAP_EXPERIMENTS_CLAUDE_MODEL = exposed_name(
     Provider.ANTHROPIC_API, ApiShape.ANT_MESSAGES, "claude-haiku-4-5-20251001"
 )
-_CHEAP_EXPERIMENTS_CODEX = "gpt-5.6-luna"
+_CHEAP_EXPERIMENTS_CODEX = "gpt-6-luna"
 CHEAP_EXPERIMENTS_CODEX_MODEL = codex_responses_name(_CHEAP_EXPERIMENTS_CODEX)
 # The cheap-experiments key, shared with agents only through an expiring Haku Console
 # Kubernetes grant and standing on the agentplane testing LLM ingress. Intentionally an
 # exact, cheap-model-only set rather than a provider-wide prefix or wildcard: the Gemini
-# chat and embedding lineups, the API-key-verified Mistral chat roster, every
-# model/context/protocol variant of the self-hosted Ollama chat models, and the two
-# native subscription models above.
+# chat and embedding lineups, Antigravity's flash-lite tier, the API-key-verified
+# Mistral chat roster, every model/context/protocol variant of the self-hosted Ollama
+# chat models, and the two native subscription models above.
 CHEAP_EXPERIMENTS_MODELS = [
     *GEMINI_CLIENT_MODELS,
+    *ANTIGRAVITY_CHEAP_CLIENT_MODELS,
     *_GEMINI_EMBEDDING_ROUTES,
     *(exposed_name(Provider.MISTRAL, ApiShape.OAI_CHAT, model) for model in MISTRAL_MODELS),
-    *(
-        exposed_name(Provider.OLLAMA, shape, ollama_chat_variant(model, context))
-        for model, _, contexts in OLLAMA_CHAT_MODELS
-        for context in contexts
-        for shape in (ApiShape.OAI_CHAT, ApiShape.OLM_CHAT)
-    ),
+    *OLLAMA_CHAT_CLIENT_MODELS,
     CHEAP_EXPERIMENTS_CLAUDE_MODEL,
     codex_messages_name(_CHEAP_EXPERIMENTS_CODEX),
     CHEAP_EXPERIMENTS_CODEX_MODEL,
@@ -109,12 +115,15 @@ def model_allowlists() -> dict[str, list[str]]:
     """The lanes keyed as main.tf's `var.model_allowlists` reads them."""
     served = {entry["model_name"] for entry in main_proxy_config()["model_list"]}
     lanes = {
-        "oai_lane_models": OAI_LANE_MODELS,
+        "gpt6_oai_lane_models": GPT6_OAI_LANE_MODELS,
+        "gpt6_codex_client_models": GPT6_CODEX_CLIENT_MODELS,
         "tana_client_models": TANA_CLIENT_MODELS,
         "codex_client_models": CODEX_CLIENT_MODELS,
         "claude_client_models": CLAUDE_CLIENT_MODELS,
         "embedding_client_models": EMBEDDING_CLIENT_MODELS,
         "gemini_client_models": GEMINI_CLIENT_MODELS,
+        "antigravity_client_models": ANTIGRAVITY_CLIENT_MODELS,
+        "ollama_chat_client_models": OLLAMA_CHAT_CLIENT_MODELS,
         "cheap_experiments_models": CHEAP_EXPERIMENTS_MODELS,
     }
     for lane, models in lanes.items():
@@ -122,6 +131,14 @@ def model_allowlists() -> dict[str, list[str]]:
         if unserved:
             raise ValueError(f"{lane=} allowlists models the proxy does not serve: {unserved}")
     return lanes
+
+
+class KeysVars(BaseModel):
+    """The inputs of tf/gitops/litellm-keys."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    model_allowlists: dict[str, list[str]]
 
 
 def keys_chart(app: App) -> Chart:
@@ -134,7 +151,7 @@ def keys_chart(app: App) -> Chart:
         chart,
         "terraform",
         name="litellm-keys",
-        variables={"model_allowlists": model_allowlists()},
+        variables=KeysVars(model_allowlists=model_allowlists()),
         env=[
             # The narrow SOPS age private key (litellm-clients-sops-age-key.sops.yaml
             # beside this CR) that decrypts the module's pinned client-key files for
@@ -145,56 +162,14 @@ def keys_chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, keys_chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=["litellm-keys.k8s.yaml", "litellm-clients-sops-age-key.sops.yaml"]),
-    )
-
-
 # The litellm-keys Terraform CR lives DOWNSTREAM of the litellm app, not in
 # litellm-secrets: minting virtual keys needs a serving LiteLLM with its
 # virtual-key DB. Coupling the TF's health into litellm-secrets (the app's
 # dependency) deadlocked the 2026-07-02 rollout — the app never applied the
 # DATABASE_URL deployment because its secrets layer waited on a TF apply that
 # needed the app. Dependency direction here is the fix.
-def litellm_keys_tf(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    litellm: Kustomization,
-    tofu_controller: Kustomization,
-    tofu_state_db: Kustomization,
-) -> Kustomization:
+def litellm_keys_tf(chart: Chart, directory: RenderedDirectory, tofu_controller: Kustomization) -> Kustomization:
     name = "litellm-keys-tf"
     return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            # Decrypt litellm-clients-sops-age-key.sops.yaml (the narrow SOPS_AGE_KEY for
-            # the tf-runner) so sops_file in tf/gitops/litellm-keys can read the virtual-key
-            # SSOT. Added when that SOPS file arrived — previously this dir held only plain YAML.
-            decryption=SOPS_DECRYPTION,
-            source_ref=artifact_source_ref(artifact),
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="infra.contrib.fluxcd.io/v1alpha2",
-                    kind="Terraform",
-                    name="litellm-keys",
-                    namespace="flux-system",
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                # The app must serve (with its DB) before keys can mint.
-                litellm,
-                tofu_controller,
-                tofu_state_db,
-            ),
-        ),
+        chart, name, directory, timeout="10m", depends_on=flux_kustomization_depends_on_many(tofu_controller)
     )

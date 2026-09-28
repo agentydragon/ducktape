@@ -34,8 +34,8 @@ class Settings(BaseModel):
     def credentials(self) -> dict[str, SecretStr]:
         credentials: dict[str, SecretStr] = {}
         for path in self.credential_dirs:
-            incoming = ClientCredential(
-                username=(path / "username").read_text(), password=(path / "password").read_text()
+            incoming = ClientCredential.model_validate(
+                {"username": (path / "username").read_text(), "password": (path / "password").read_text()}
             )
             if incoming.username in credentials:
                 raise ValueError("Duplicate client IDs across credential directories")

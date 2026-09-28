@@ -228,25 +228,13 @@ MCP endpoint is:
 | ------------------------- | --------- | --------------------------------------- | ----------------------------------- |
 | `kubectl-passthrough-mcp` | HTTP      | OAuth passthrough (public client, PKCE) | caller's own OIDC group permissions |
 
-Equivalent CLI:
-
-```bash
-claude mcp add --transport http kubectl-sandbox \
-  https://kubectl-sandbox-mcp.allegedly.works/mcp \
-  --client-id kubectl-sandbox-mcp \
-  --callback-port 8080
-```
-
 ### `claude.ai` web (Custom Connectors)
 
 Claude.ai's hosted app also requires a pre-configured client_id since
-Authentik doesn't do DCR. Its callback URL is fixed:
-`https://claude.ai/api/mcp/auth_callback` — already added to the
-provider's `allowed_redirect_uris`. In the Custom Connectors UI, paste:
-
-- MCP server URL: `https://kubectl-sandbox-mcp.allegedly.works/mcp`
-- Client ID: `kubectl-sandbox-mcp`
-- Client Secret: (leave empty — public client, PKCE)
+Authentik doesn't do DCR. Its callback URL is fixed,
+`https://claude.ai/api/mcp/auth_callback`, and the provider's `allowed_redirect_uris` must list
+it. In the Custom Connectors UI, give the server's `/mcp` URL and the provider's client ID, and
+leave the client secret empty (public client, PKCE).
 
 ## Followups
 

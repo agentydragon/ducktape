@@ -32,35 +32,39 @@ on:
     # Every pin commit except rbe-container-image.yml's carries `[skip ci]`, which
     # is what stops that cascade from looping.
     paths:
+      # keep-sorted start
+      - ".github/workflows/container-images.yml"
       - "devinfra/buildbuddy_remote_runner/Dockerfile"
       - "devinfra/image_pins.json"
-      - "flake.nix"
       - "flake.lock"
-      - "nix/packages/**"
-      - "nix/flake/**"
+      - "flake.nix"
+      - "loom/gym/sandbox/**"
       - "nix/artifact-pins.json"
       - "nix/attic-pubkeys.json"
+      - "nix/flake/**"
       - "nix/gaffer-pins.json"
-      - "skills/skills_registry.json"
+      - "nix/packages/**"
       - "skills/freecad/Dockerfile.test"
+      - "skills/skills_registry.json"
       - "x/rtl_tcp/Dockerfile"
-      - "loom/gym/sandbox/**"
-      - ".github/workflows/container-images.yml"
+      # keep-sorted end
   # Build the real runner Dockerfile before merge, but do not log in, tag, push,
   # publish cache entries, or update the pinned image digest.
   pull_request:
     paths:
+      # keep-sorted start
+      - ".github/workflows/container-images.yml"
       - "devinfra/buildbuddy_remote_runner/Dockerfile"
       - "devinfra/image_pins.json"
-      - "flake.nix"
       - "flake.lock"
-      - "nix/packages/**"
-      - "nix/flake/**"
+      - "flake.nix"
       - "nix/artifact-pins.json"
       - "nix/attic-pubkeys.json"
+      - "nix/flake/**"
       - "nix/gaffer-pins.json"
+      - "nix/packages/**"
       - "skills/skills_registry.json"
-      - ".github/workflows/container-images.yml"
+      # keep-sorted end
   workflow_dispatch:
 
 concurrency:

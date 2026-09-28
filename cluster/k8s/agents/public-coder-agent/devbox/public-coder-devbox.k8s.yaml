@@ -18,6 +18,94 @@ spec:
     kubevirt.io/domain: public-coder-devbox
   type: ClusterIP
 ---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  labels:
+    app.kubernetes.io/name: public-coder-devbox
+  name: public-coder-devbox
+  namespace: public-coder-agent
+spec:
+  runStrategy: Always
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: public-coder-devbox
+        kubevirt.io/domain: public-coder-devbox
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+      domain:
+        cpu:
+          cores: 4
+        devices:
+          disks:
+            - bootOrder: 1
+              disk:
+                bus: virtio
+              name: rootdisk
+            - disk:
+                bus: virtio
+              name: bazel-cache
+              serial: pcbazelcache
+            - disk:
+                bus: virtio
+              name: proxy-ca
+              serial: pcproxyca
+            - disk:
+                bus: virtio
+              name: buildbuddy-api-key
+              serial: pcbuildbuddy
+            - disk:
+                bus: virtio
+              name: ssh-host-key
+              serial: pchostkey
+          interfaces:
+            - masquerade: {}
+              name: default
+              ports:
+                - name: ssh
+                  port: 22
+        firmware:
+          bootloader:
+            efi:
+              secureBoot: false
+        resources:
+          limits:
+            cpu: "4"
+            memory: 8Gi
+          requests:
+            cpu: "2"
+            memory: 4Gi
+      networks:
+        - name: default
+          pod: {}
+      nodeSelector:
+        kubevirt.io/schedulable: "true"
+        topology.kubernetes.io/region: proxmox
+      volumes:
+        - containerDisk:
+            image: git.allegedly.works/ducktape-ci/public-coder-devbox:unset
+            imagePullPolicy: IfNotPresent
+          name: rootdisk
+        - name: bazel-cache
+          persistentVolumeClaim:
+            claimName: public-coder-devbox-bazel-cache
+        - configMap:
+            name: public-coder-agent-proxy-ca-cert
+          name: proxy-ca
+        - name: buildbuddy-api-key
+          secret:
+            secretName: buildbuddy-api-key
+        - name: ssh-host-key
+          secret:
+            secretName: public-coder-devbox-ssh-host-key
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

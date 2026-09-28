@@ -54,22 +54,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   annotations:
-    description: Persistent OpenClaw home, agent workspace, memory, and Claude Code session transcripts for the isolated Haku spike.
-  name: haku-openclaw-spike-state
-  namespace: haku-openclaw-spike
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 30Gi
-  storageClassName: local-path-ovh-hdd
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  annotations:
-    description: Worker-local (optiplex SSD) replacement for the OpenClaw spike state, migrating it off the ovh-ns103656 HDD (which fell over under I/O contention with etcd+kubelet). WaitForFirstConsumer binds it on optiplex when the VolSync restore mover is created; it must not be mounted by the Deployment before the restore completes.
+    description: Persistent OpenClaw home, agent workspace, memory, and Claude Code session transcripts for the isolated Haku spike, on the optiplex worker's local SSD, away from the control-plane disks etcd and kubelet need.
   name: haku-openclaw-spike-state-v2
   namespace: haku-openclaw-spike
 spec:
@@ -83,8 +68,6 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: haku-openclaw-spike
   name: haku-openclaw-spike
@@ -422,6 +405,24 @@ spec:
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: haku-openclaw-spike
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: haku-openclaw-spike
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: haku-openclaw-spike
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
 metadata:
   annotations:
@@ -439,21 +440,3 @@ spec:
     accessKeyField: AWS_ACCESS_KEY_ID
     name: haku-openclaw-spike-volsync-s3-credentials
     secretKeyField: AWS_SECRET_ACCESS_KEY
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: haku-openclaw-spike
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: haku-openclaw-spike
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: haku-openclaw-spike
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs

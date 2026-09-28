@@ -102,10 +102,9 @@ spec:
       replicas: 1
       resources:
         limits:
-          cpu: 500m
-          memory: 1Gi
+          memory: 1536Mi
         requests:
-          cpu: 100m
+          cpu: 300m
           memory: 512Mi
       service:
         enabled: true
@@ -156,10 +155,9 @@ spec:
       replicas: 1
       resources:
         limits:
-          cpu: 500m
           memory: 1Gi
         requests:
-          cpu: 100m
+          cpu: 300m
           memory: 512Mi
 ---
 apiVersion: v1

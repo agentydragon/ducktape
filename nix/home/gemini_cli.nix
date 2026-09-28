@@ -12,9 +12,7 @@ let
   # Import SSOTs
   inspection = import ../lib/inspection-commands.nix { inherit lib; };
   allowed = import ./allowed-commands.nix;
-
-  # Reuse existing gmail-mcp-server package
-  gmail-mcp-server = import ../packages/gmail-mcp.nix { inherit pkgs lib; };
+  mcpServers = import ./mcp-servers.nix;
 
   # Transform simple { type, cmd } → Gemini policy rule
   # Input: priority (int), entry ({ type = "prefix"|"exact"; cmd = "command string"; })
@@ -141,15 +139,13 @@ in
       };
 
       # MCP servers
-      mcpServers = {
-        gmail = {
-          command = "${gmail-mcp-server}/bin/gmail-mcp";
-          args = [ ];
-        };
-      };
+      mcpServers = lib.mapAttrs (name: server: {
+        type = "http";
+        inherit (server) url;
+        # Skip the per-tool confirmation prompt for every SSOT-configured MCP
+        # server (still gated on the workspace folder itself being trusted).
+        trust = true;
+      }) mcpServers;
     };
   };
-
-  # Add gmail-mcp-server to PATH for auth setup
-  home.packages = [ gmail-mcp-server ];
 }

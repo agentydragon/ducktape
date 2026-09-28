@@ -17,7 +17,59 @@ Rules: don't edit an accepted run's numbers in place — add a new run directory
 and repoint the row. Keep configurations that failed or underperformed in the
 table; a known dead end is a result.
 
-## Coding-agent configurations
+## September agentic task completion
+
+| Model and configuration                                          | Task / agent                                           | Outcome                              | Agent time | Compactions | Trust |
+| ---------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------ | ---------: | ----------: | ----- |
+| Qwen3.8 Flash Next UD-Q4_K_XL, SSD, two GPUs, 128K, Q8 KV, xhigh | Terminal-Bench 4.0 `interleaved-vigenere` / Terminus-2 | Reward 1.0; 6/6 verifier tests       | 7h 39m 40s |           2 | local |
+| Qwen3.8 Flash Next UD-IQ4_XS, SSD, two GPUs, 128K, Q8 KV, xhigh  | Terminal-Bench 4.0 `interleaved-vigenere` / Terminus-2 | Reward 1.0; 6/6 tests; agent timeout |         8h |           3 | local |
+
+One predetermined task, one attempt; not a suite score. The
+[result record](runs/2026-09-26_qwen38_q4_terminus_result/README.md) includes committed
+verifier evidence, full-run token/timing totals, two compaction boundaries, download
+overlap and a wrapper guard failure after the passing result was already saved.
+The [IQ4 result](runs/2026-09-26_qwen38_iq4_terminus_result/README.md) passed the same
+verifier after three compactions, but reached the eight-hour agent deadline while
+still testing. Its wrapper exited cleanly. Decode averaged 40.79 versus Q4's 24.74
+tokens/s; different memory caps, trajectories and download overlap confound causal
+attribution. These are two attempts on one shared task, not two distinct tasks.
+
+## September resident control (initial screen)
+
+Qwen3.8-27B Q8, CUDA llama.cpp build 11151, Q8 KV, one slot. These are one-sample
+server token timings; coding quality is not scored. Filled context contains unrelated
+source text, not a retrieval test. Full inputs, caveats and artifacts are in the
+[SSD run](runs/2026-09-24_qwen38_ssd/README.md).
+
+| Placement             | Configured context | Actual input tokens | Prefill tokens/s | Decode tokens/s | Trust  |
+| --------------------- | -----------------: | ------------------: | ---------------: | --------------: | ------ |
+| GPU1                  |               8192 |                 102 |           826.21 |           51.09 | local~ |
+| Two GPUs, layer split |               8192 |                 102 |           733.12 |           50.00 | local~ |
+| GPU1                  |              32768 |               24132 |          3363.97 |           47.74 | local~ |
+| Two GPUs, layer split |              32768 |               24132 |          5013.31 |           46.18 | local~ |
+
+Tensor splitting initially failed with the base image's NCCL 2.25.1. Replacing only
+that container library with pinned NCCL 2.27.7 yielded 71.85 tokens/s on the short
+input and 68.23 at 24,132 input tokens, with 32K configured context (`local~`).
+Output lengths changed, so this is not a matched-output task-speed comparison.
+See the same run for the build recipe, failure logs and measurements.
+
+The GPU1 reasoning-enabled synthetic tool roundtrip passed. Real coding-task
+screening remains pending. See PLAN for limitations of historical measurements below;
+their numbers are not directly comparable with this screen.
+
+## September larger-model feasibility
+
+Flash-Next Q4 runs on both GPUs with CPU offload and lazy mmap embeddings under a
+38 GiB container cap. At 8K configured context and 102 input tokens, a 1,776-token
+coding generation decoded at 32.73 tokens/s (`local~`). Coding correctness is unscored.
+At 32K configured context with 24,132 actual input tokens, prefill took 126.703 s
+and decode was 30.72 tokens/s (1,697 output tokens, normal stop, zero cached input).
+This is not a 128K measurement. Its first synthetic tool-result answer invented file content; two seeded repeats
+returned grounded answers. This is a retained failure, not a passed agent-quality
+gate. [Exact inputs, responses, launch and limits](runs/2026-09-24_qwen38_ssd/README.md).
+
+## Historical coding-agent configurations
 
 | Config                       | Runtime          | Quant                        | Allocated ctx | Effective ctx       | Decode tok/s @128K           | Peak VRAM              | Coding quality          | Tool calls                         | Run                                                           |
 | ---------------------------- | ---------------- | ---------------------------- | ------------- | ------------------- | ---------------------------- | ---------------------- | ----------------------- | ---------------------------------- | ------------------------------------------------------------- |

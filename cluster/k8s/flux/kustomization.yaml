@@ -7,5 +7,5 @@ resources:
   # Hand-written: the Flux bootstrap.
   - flux-system/
   # cdk8s-generated: the ducktape-flux namespace and upstream sources.
-  - ducktape-flux/
+  - ducktape-flux/ducktape-flux.k8s.yaml
   - sources/git-repositories.k8s.yaml

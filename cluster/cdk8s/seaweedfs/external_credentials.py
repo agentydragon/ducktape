@@ -8,53 +8,18 @@ The Secrets live outside the operator's namespace so the operator consumes them 
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.seaweedfs import namespace
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.seaweedfs import s3
 
 NAMESPACE = "seaweedfs-credentials"
-OUTPUT_DIR = "cluster/k8s/seaweedfs/external-credentials"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/external-credentials"
 CLAUDE_READER_SECRET = "claude-reader-s3-credentials"
 DRIVEFS_ARTIFACTS_SECRET = "drivefs-artifacts-s3-credentials"
 _CHART = "external-credentials"
-_SECRET_FILES = ("claude-reader-credentials.sops.yaml", "drivefs-artifacts-credentials.sops.yaml")
-
-
-def _secret_grant(scope: Chart, secret: str) -> None:
-    ResourceReferenceGrant(
-        scope,
-        secret,
-        metadata=metadata(secret, NAMESPACE),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(
-                    group="seaweed.seaweedfs.com", kind="S3Credentials", namespace=namespace.NAME
-                )
-            ],
-            to=[ResourceReferenceGrantSpecTo(group="", kind="Secret", name=secret)],
-        ),
-    )
 
 
 def chart(app: App) -> Chart:
@@ -68,39 +33,20 @@ def chart(app: App) -> Chart:
             annotations={"description": "Externally managed SeaweedFS S3 credential source Secrets."},
         ),
     )
-    _secret_grant(chart, CLAUDE_READER_SECRET)
-    _secret_grant(chart, DRIVEFS_ARTIFACTS_SECRET)
+    for secret in (CLAUDE_READER_SECRET, DRIVEFS_ARTIFACTS_SECRET):
+        s3.secret_grant(chart, secret=secret, namespace=NAMESPACE)
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{_CHART}.k8s.yaml", *_SECRET_FILES]),
-    )
-
-
 def seaweedfs_external_credentials(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_secrets: Kustomization,
-    seaweedfs_cluster: Kustomization,
+    chart: Chart, directory: RenderedDirectory, seaweedfs_operator: Kustomization
 ) -> Kustomization:
     name = "seaweedfs-external-credentials"
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            depends_on=flux_kustomization_depends_on_many(seaweedfs_secrets, seaweedfs_cluster),
-            wait=True,
-            timeout="5m",
-        ),
+        directory,
+        depends_on=flux_kustomization_depends_on_many(seaweedfs_operator),
+        timeout="5m",
         description="Externally managed SeaweedFS S3 credential source Secrets and grants.",
     )

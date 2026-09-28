@@ -28,6 +28,24 @@ def _scan(
     )
 
 
+class RecordingProgress:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int, int, str]] = []
+        self.totals: dict[str, int] = {}
+        self.done: dict[str, int] = {}
+        self.lock = threading.Lock()
+
+    def start_phase(self, phase: str, total: int) -> None:
+        with self.lock:
+            self.totals[phase] = total
+            self.done[phase] = 0
+
+    def record(self, phase: str, category: str) -> None:
+        with self.lock:
+            self.done[phase] += 1
+            self.calls.append((phase, self.done[phase], self.totals[phase], category))
+
+
 def test_branch_follows_its_holding_worktree(repo: GitRepo, proc: Path, mountinfo: Path) -> None:
     prunable_wt = _add(repo, "wt_merged", "merged")  # empty branch → prunable worktree
     kept_wt = _add(repo, "wt_kept", "kept")
@@ -52,7 +70,7 @@ def test_branch_follows_its_holding_worktree(repo: GitRepo, proc: Path, mountinf
 
 
 def test_scan_workspace_reports_progress(repo: GitRepo, proc: Path, mountinfo: Path) -> None:
-    """The `progress` callback drives the CLI's live indicator (workspace_gc._ProgressReporter).
+    """The progress sink drives the CLI's live indicator (workspace_gc._ProgressReporter).
 
     Branches classify from a thread pool, so this pins the guarantee that matters for a
     concurrent reporter: every completion still reports a distinct `done` count that reaches
@@ -61,12 +79,7 @@ def test_scan_workspace_reports_progress(repo: GitRepo, proc: Path, mountinfo: P
     _add(repo, "wt_a", "branch_a")
     _add(repo, "wt_b", "branch_b")
 
-    lock = threading.Lock()
-    calls: list[tuple[str, int, int]] = []
-
-    def progress(phase: str, done: int, total: int) -> None:
-        with lock:
-            calls.append((phase, done, total))
+    progress = RecordingProgress()
 
     workspace_scan.scan_workspace(
         repo.path,
@@ -78,11 +91,14 @@ def test_scan_workspace_reports_progress(repo: GitRepo, proc: Path, mountinfo: P
         progress=progress,
     )
 
-    worktree_calls = [(done, total) for phase, done, total in calls if phase == "worktrees"]
-    branch_calls = [(done, total) for phase, done, total in calls if phase == "branches"]
-    assert worktree_calls[-1] == (2, 2)  # wt_a, wt_b
-    assert branch_calls[-1] == (3, 3)  # main, branch_a, branch_b
-    assert sorted(done for done, _ in branch_calls) == [1, 2, 3]
+    worktree_calls = [call[1:] for call in progress.calls if call[0] == "worktrees"]
+    branch_calls = [call[1:] for call in progress.calls if call[0] == "branches"]
+    assert worktree_calls[-1][:2] == (2, 2)  # wt_a, wt_b
+    assert branch_calls[-1][:2] == (3, 3)  # main, branch_a, branch_b
+    assert sorted(done for done, _, _ in branch_calls) == [1, 2, 3]
+    assert sum(call[3] == "PRUNE" for call in progress.calls if call[0] == "worktrees") == 2
+    assert sum(call[3] == "PRUNE" for call in progress.calls if call[0] == "branches") == 2
+    assert sum(call[3] == "KEEP" for call in progress.calls if call[0] == "branches") == 1
 
 
 def test_base_whose_workspace_is_a_prunable_worktree_is_annotated(

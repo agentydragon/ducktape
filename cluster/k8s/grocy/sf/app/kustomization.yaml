@@ -2,8 +2,8 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: grocy-sf
 resources:
-  - ../../app-base
   # cdk8s-generated (cluster/cdk8s/grocy/app.py) -- see cluster/docs/cdk8s.md.
+  - grocy.k8s.yaml
   - grocy-sf.k8s.yaml
 patches:
   - target:

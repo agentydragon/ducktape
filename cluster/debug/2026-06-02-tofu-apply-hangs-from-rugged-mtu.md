@@ -278,7 +278,7 @@ First remeasure direct Fi PMTU and a forced Cilium-over-Nebula path. Then use
 either a host-specific static MSS cap derived from the observed outer limit or
 a PMTU-probing policy proven by a large cluster write. Do not reduce global
 Cilium MTU for one roaming host. The current experiment sequence is maintained
-in <../../debug/rugged/network.md>.
+in <../../nix/debug/rugged/network.md>.
 
 ## Rename project progress
 

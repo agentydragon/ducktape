@@ -16,6 +16,7 @@ spec:
     branch: devel
   sparseCheckout:
     - cluster/k8s/
+    - cluster/generated/
     - cluster/charts/browsertrix/
     - haku/x/dispatch/deploy/
     - haku/runtime/managed_agent/self_hosted/deploy/

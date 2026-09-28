@@ -159,6 +159,89 @@ async def test_coalesced_outcome_and_all_origins_commit_atomically(
         assert stored.terminal_cursor == receipt.cursor
 
 
+async def test_a_batch_publishes_nothing_until_its_one_commit(
+    journal: Journal, commit_gate: CommitGate, tmp_path: Path
+) -> None:
+    """No follower, other writer, published state or other connection sees a batch before its
+    commit; the batch itself reads its own writes."""
+    follower = asyncio.create_task(journal.wait_beyond(0))
+
+    async def write_batch() -> list[event_log_pb2.EventEntry]:
+        async with journal.batch():
+            entries = [
+                await journal.append(event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"n":1}')),
+                await journal.append(event_pb2.TurnStarted(turn_id="test-turn")),
+                await journal.append(event_pb2.TextDelta(item_id="test-item", text="hello")),
+            ]
+            assert await journal.remember_adapter_item("test-adapter", "test-item")
+            assert await journal.has_adapter_item("test-adapter", "test-item")
+            commit_gate.armed = True
+        return entries
+
+    batch = asyncio.create_task(write_batch())
+    await commit_gate.reached.wait()
+    admission = asyncio.create_task(
+        journal.admit(command_pb2.Command(command_id="test-input", submit_input=command_pb2.SubmitInput(text="hi")))
+    )
+    await asyncio.sleep(0)
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'journal.sqlite'}")
+    try:
+        async with AsyncSession(engine) as reader:
+            assert (await reader.scalars(select(EventEntry.cursor))).all() == []
+    finally:
+        await engine.dispose()
+    assert (journal.last_cursor, journal.recovery_state.active_turn_id) == (0, "")
+    assert not follower.done()
+    assert not admission.done()
+    commit_gate.release.set()
+    entries = await batch
+    await follower
+    admitted = await admission
+    assert [entry.cursor for entry in entries] == [1, 2, 3]
+    assert await journal.since(0, limit=128) == [*entries, admitted]
+    assert journal.recovery_state.active_turn_id == "test-turn"
+
+
+@pytest.mark.parametrize("persisted", [False, True])
+async def test_a_failed_batch_commit_publishes_none_of_it_and_recovery_keeps_it_whole(
+    tmp_path: Path, commit_gate: CommitGate, persisted: bool
+) -> None:
+    path = tmp_path / "journal.sqlite"
+    async with Journal.open(path, "test-source") as journal:
+        first = await journal.append(event_pb2.Native(line="committed"))
+        commit_gate.armed, commit_gate.fail, commit_gate.persisted = True, True, persisted
+        commit_gate.release.set()
+
+        async def write_batch() -> None:
+            async with journal.batch():
+                for n in range(3):
+                    await journal.append(event_pb2.TextDelta(item_id="test-item", text=str(n)))
+
+        with pytest.raises(JournalStorageError):
+            await write_batch()
+        assert await journal.since(0, limit=128) == [first]
+        with pytest.raises(JournalStorageError, match="reopen"):
+            await journal.append(event_pb2.HarnessLost())
+    async with Journal.open(path, "test-source") as recovered:
+        assert recovered.last_cursor == (4 if persisted else 1)
+
+
+async def test_a_rejected_write_inside_a_batch_is_undone_alone(journal: Journal) -> None:
+    """As outside a batch, a write the journal rejects rolls back by itself: the batch's writes
+    before and after it commit, with contiguous cursors, and the writer goes on."""
+    await journal.append(event_pb2.HarnessStarted(pid=123))
+
+    async with journal.batch():
+        before = await journal.append(event_pb2.TextDelta(item_id="test-item", text="kept"))
+        with pytest.raises(ValueError, match="unknown command id"):
+            await journal.append(event_pb2.HarnessUserMessageConfirmed(), terminal_command_ids=["missing"])
+        after = await journal.append(event_pb2.TextDelta(item_id="test-item", text="also kept"))
+
+    assert [entry.cursor for entry in (before, after)] == [2, 3]
+    assert [entry.cursor for entry in await journal.since(0, limit=128)] == [1, 2, 3]
+    assert (await journal.append(event_pb2.HarnessLost())).cursor == 4
+
+
 async def test_admission_dedup_uses_the_full_frozen_command(journal: Journal, tmp_path: Path) -> None:
     command = command_pb2.Command(command_id="test-input", submit_input=command_pb2.SubmitInput(text="hello"))
     original = command.SerializeToString()

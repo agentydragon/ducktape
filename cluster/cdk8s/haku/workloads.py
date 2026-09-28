@@ -5,31 +5,18 @@ impersonates, and that identity's Role; and the Flux Kustomization for this dire
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
-    GitRepository,
-    GitRepositorySpec,
-    GitRepositorySpecRef,
-    GitRepositorySpecSecretRef,
-)
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef, GitRepositorySpecSecretRef
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.haku.namespace import NAMESPACE
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
 NAME = "haku-workloads"
-OUTPUT_DIR = "cluster/k8s/haku/workloads"
+OUTPUT_DIR = f"{GENERATED_ROOT}/haku/workloads"
 
 _FLUX_NAMESPACE = "flux-system"
 _RECONCILER = "haku-state-reconciler"
@@ -42,9 +29,9 @@ def chart(app: App) -> Chart:
     source = GitRepository(
         chart,
         "source",
-        metadata=metadata(
-            "haku-state",
-            _FLUX_NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name="haku-state",
+            namespace=_FLUX_NAMESPACE,
             annotations={
                 "description": "Haku's own state repo (internal Forgejo, plaintext HTTP). Source for the "
                 "haku-state-workloads Kustomization, which reconciles Haku-authored manifests under k8s/ into "
@@ -52,12 +39,10 @@ def chart(app: App) -> Chart:
                 "available — Flux never pushes)."
             },
         ),
-        spec=GitRepositorySpec(
-            interval="5m",
-            url="http://forgejo-http.forgejo:3000/haku/haku-state.git",
-            ref=GitRepositorySpecRef(branch="main"),
-            secret_ref=GitRepositorySpecSecretRef(name="haku-forgejo-git"),
-        ),
+        interval="5m",
+        url="http://forgejo-http.forgejo:3000/haku/haku-state.git",
+        ref=GitRepositorySpecRef(branch="main"),
+        secret_ref=GitRepositorySpecSecretRef(name="haku-forgejo-git"),
     )
     k8s.KubeServiceAccount(
         chart,
@@ -91,7 +76,7 @@ def chart(app: App) -> Chart:
                     "touch Haku's own images + haku-state. Deliberately NOT secrets (no plaintext-git "
                     "secrets), NOT Gateway-API routes (Kyverno denies those too), and NOT "
                     "notification.toolkit Receivers (a cross-namespace force-reconcile primitive — kept "
-                    "operator-owned, see cluster/k8s/haku/ui-image-webhook). So Haku's GitOps path can "
+                    "operator-owned, see cluster/generated/haku/ui-image-webhook). So Haku's GitOps path can "
                     "run + ship its own workloads but never widen its own perimeter."
                 )
             },
@@ -125,6 +110,7 @@ def chart(app: App) -> Chart:
     flux_kustomization(
         chart,
         "haku-state-workloads",
+        KustomizationSpecSourceRef(kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name=source.name),
         namespace=_FLUX_NAMESPACE,
         description=(
             "Reconciles Haku-authored workload manifests (haku-state k8s/) into haku-sandbox. "
@@ -133,51 +119,30 @@ def chart(app: App) -> Chart:
             "Secrets, no routes). Until Haku seeds k8s/ this is NotReady (path not found); that is "
             "expected pre-first-run."
         ),
-        spec=KustomizationSpec(
-            interval="5m",
-            retry_interval="1m",
-            timeout="5m",
-            path="./k8s",
-            prune=True,
-            # Don't gate on workload health -- these are Haku's own workloads; their readiness is
-            # Haku's concern, not the pipe's.
-            wait=False,
-            source_ref=KustomizationSpecSourceRef(kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name=source.name),
-            # Force everything into haku-sandbox regardless of what the manifests declare, so Haku
-            # can't target another namespace via this pipe.
-            target_namespace=NAMESPACE,
-            # Apply as the constrained SA (kustomize-controller impersonates
-            # system:serviceaccount:flux-system:haku-state-reconciler). RBAC + Kyverno are the
-            # fence; this just executes a subset of what Haku itself could do.
-            service_account_name=_RECONCILER,
-        ),
+        interval="5m",
+        timeout="5m",
+        path="./k8s",
+        # Don't gate on workload health -- these are Haku's own workloads; their readiness is
+        # Haku's concern, not the pipe's.
+        wait=False,
+        # Force everything into haku-sandbox regardless of what the manifests declare, so Haku
+        # can't target another namespace via this pipe.
+        target_namespace=NAMESPACE,
+        # Apply as the constrained SA (kustomize-controller impersonates
+        # system:serviceaccount:flux-system:haku-state-reconciler). RBAC + Kyverno are the
+        # fence; this just executes a subset of what Haku itself could do.
+        service_account_name=_RECONCILER,
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def haku_workloads(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, haku_state: Kustomization) -> Kustomization:
+def haku_workloads(chart: Chart, directory: RenderedDirectory) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            # Don't gate on the inner haku-state-workloads Kustomization's readiness — it's
-            # NotReady until Haku first seeds k8s/, which would otherwise wedge this wrapper.
-            wait=False,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=[
-                # The forgejo/haku-state Terraform apply provisions the haku-state repo and the
-                # haku-forgejo-git Secret (now also reflected into flux-system for the
-                # GitRepository's basic auth).
-                flux_kustomization_depends_on(haku_state)
-            ],
-        ),
+        directory,
+        timeout="5m",
+        # Don't gate on the inner haku-state-workloads Kustomization's readiness — it's
+        # NotReady until Haku first seeds k8s/, which would otherwise wedge this wrapper.
+        wait=False,
     )

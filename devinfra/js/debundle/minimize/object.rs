@@ -12,7 +12,7 @@ use super::{finish_minimized_selector, hole_var_init_padded, render_var_slots};
 use crate::render::{AnchorSpan, MAX_MINIMIZER_ANCHORS, node_holds_anchor, span_key};
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
-    prove_synthesized_selector, solve_single_member_selector,
+    match_single_member_selector, prove_synthesized_selector,
 };
 
 /// Ranked anchor spans for an object literal's key-set cover, best-first: each
@@ -61,7 +61,7 @@ pub(crate) fn object_anchor_ranking(object: &ObjectLit) -> Vec<AnchorSpan> {
 /// anchors are exhausted (then `None`, and the caller keeps its keep-shallow
 /// form).
 fn cover_object_slot(
-    index: &ChunkSelectorIndex,
+    index: &ChunkSelectorIndex<'_>,
     decl: &IndexedDeclaration,
     target: &SynthesizedTargetBinding,
     ranked: &[AnchorSpan],
@@ -81,7 +81,7 @@ fn cover_object_slot(
             let mut trial = kept.clone();
             trial.insert(anchor);
             let matches =
-                solve_single_member_selector(index, &target.export_name, &render_with(&trial)?)?;
+                match_single_member_selector(index, &target.export_name, &render_with(&trial)?)?;
             let target_unresolved = !matches.iter().any(|m| {
                 m.body_idx == decl.body_idx && m.binding.binding_name == target.runtime_binding
             });
@@ -124,7 +124,7 @@ fn cover_object_slot(
 /// Returns `None` — so the caller falls back to the keep-shallow group path —
 /// when the target is not a single object declarator or neither pass resolves it.
 pub(crate) fn try_object_read_off(
-    index: &ChunkSelectorIndex,
+    index: &ChunkSelectorIndex<'_>,
     var: &VarDecl,
     decl: &IndexedDeclaration,
     targets: &[SynthesizedTargetBinding],
@@ -144,7 +144,7 @@ pub(crate) fn try_object_read_off(
 /// with the slot's individually-discriminating value anchors; an object that has
 /// no minimal/cover read-off offers no menu (matching the single-pick `None`).
 pub(crate) fn try_object_read_off_candidates(
-    index: &ChunkSelectorIndex,
+    index: &ChunkSelectorIndex<'_>,
     var: &VarDecl,
     decl: &IndexedDeclaration,
     targets: &[SynthesizedTargetBinding],
@@ -187,7 +187,6 @@ pub(crate) fn try_object_read_off_candidates(
     };
 
     let item = index
-        .parsed
         .module
         .body
         .get(decl.body_idx)

@@ -41,23 +41,32 @@
   height: 100%;
 }
 
-/* Hidden on desktop, where the persistent sidebar (sidebar.css) needs no toggle. Sticky rather than
-   part of the normal flow so it stays reachable while agentplane-shell-main's own content scrolls
-   under it (UISHELL_MOBILE, agentplane/plans/task_dag.md). */
-.agentplane-mobile-topbar {
-  display: none;
+/* The main area's own header row: the sidebar-toggle button, then the current route's title
+   (topbar.tsx's TopbarTitle, portaled in) and trailing actions (TopbarActions). Shown at every
+   width -- not just phone width -- so the toggle also collapses the desktop sidebar. Sticky rather
+   than part of the normal flow so it stays reachable while agentplane-shell-main's own content
+   scrolls under it. */
+.agentplane-topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  background: var(--mantine-color-body);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
-@media (max-width: 560px) {
-  .agentplane-mobile-topbar {
-    display: flex;
-    align-items: center;
-    flex: 0 0 auto;
-    padding: 8px;
-    border-bottom: 1px solid var(--mantine-color-default-border);
-    background: var(--mantine-color-body);
-    position: sticky;
-    top: 0;
-    z-index: 10;
-  }
+.agentplane-topbar-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.agentplane-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
 }

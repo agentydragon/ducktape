@@ -124,7 +124,7 @@ def _one_loader_at_a_time(tag: str) -> Iterator[None]:
     — against one daemon per worker. Without this they all find the image missing at the same
     moment and push the same layers into the same storage driver simultaneously, and what should be
     one ~30s load becomes a thundering herd that wedges container startup for minutes
-    (<../debug/2026_08_14_docker_test_timeouts.md>).
+    (<../devinfra/debug/2026_08_14_docker_test_timeouts.md>).
 
     A file lock rather than anything cleverer because the thing being serialised is per machine and
     the processes share nothing else. `flock` is released when the fd closes, so a loader that dies

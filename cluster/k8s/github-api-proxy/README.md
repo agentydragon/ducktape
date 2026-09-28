@@ -110,7 +110,7 @@ capture-write errors, failed scrapes, missing targets, a high collection physica
 missing budget inputs. The budget compares deduplicated SeaweedFS normal-volume
 bytes (including replicas) with the PVC storage request; it does not measure free
 space or guarantee writes. Partial volume-server telemetry loss can undercount
-it. See the [storage metric investigation](../../../debug/github_graphql_exhaustion/central_capture_storage.md)
+it. See the [storage metric investigation](../../../devinfra/github_proxy/debug/github_graphql_exhaustion/central_capture_storage.md)
 for accounting and coverage limits. Validate retained metrics and notification
 delivery during rollout, not just rule installation.
 

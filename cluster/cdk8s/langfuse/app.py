@@ -1,4 +1,4 @@
-"""Langfuse: its namespace, Postgres, S3 bucket and credentials, route, log-reader RBAC,
+"""Langfuse: its namespace, Postgres, S3 bucket, identity and credentials, route, log-reader RBAC,
 queue/cache Valkey and Helm release, and the `langfuse` Flux Kustomization owning them.
 
 Hand-written beside the generated output: `langfuse-secrets.sops.yaml`.
@@ -6,31 +6,10 @@ Hand-written beside the generated output: `langfuse-secrets.sops.yaml`.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecAffinityTolerations,
-    ClusterSpecBootstrap,
-    ClusterSpecBootstrapInitdb,
-    ClusterSpecMonitoring,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecStorage,
-)
+from cdk8s import ApiObjectMetadata, App, Chart, Size
+from cdk8s_plus_34 import Cpu, k8s
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallStrategy,
     HelmReleaseSpecInstallStrategyName,
@@ -38,132 +17,39 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategy,
     HelmReleaseSpecUpgradeStrategyName,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthChecks,
-)
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
-    RedisReplication,
-    RedisReplicationSpec,
-    RedisReplicationSpecAffinity,
-    RedisReplicationSpecAffinityNodeAffinity,
-    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution,
-    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
-    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions,
-    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
-    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
-    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
-    RedisReplicationSpecAffinityPodAntiAffinity,
-    RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution,
-    RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector,
-    RedisReplicationSpecKubernetesConfig,
-    RedisReplicationSpecKubernetesConfigResources,
-    RedisReplicationSpecKubernetesConfigResourcesLimits,
-    RedisReplicationSpecKubernetesConfigResourcesRequests,
-    RedisReplicationSpecRedisConfig,
-    RedisReplicationSpecStorage,
-    RedisReplicationSpecStorageVolumeClaimTemplate,
-    RedisReplicationSpecStorageVolumeClaimTemplateSpec,
-    RedisReplicationSpecStorageVolumeClaimTemplateSpecResources,
-    RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests,
-)
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
-from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
-    S3Identity,
-    S3IdentitySpec,
-    S3IdentitySpecReclaimPolicy,
-    S3IdentitySpecSeaweedRef,
-)
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
+from cluster.cdk8s import cnpg, namespaces, node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.helm import helm_release, https_helm_repository
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.valkey import valkey_instance
 
-OUTPUT_DIR = "cluster/k8s/langfuse"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/langfuse"
 _NAME = "langfuse"
 _NAMESPACE = "langfuse"
-_ZONE = "hil-ovh"
-_SEAWEEDFS = "seaweedfs"
-_SEAWEED_GROUP = "seaweed.seaweedfs.com"
 _S3_CREDENTIALS_SECRET = "langfuse-seaweedfs-credentials"
 _VALKEY = "langfuse-valkey-ovh"
 
 
 def _namespace(scope: Construct) -> None:
-    k8s.KubeNamespace(
-        scope,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={"goldilocks.fairwinds.com/enabled": "true", "goldilocks.fairwinds.com/vpa-update-mode": "auto"},
-        ),
-    )
+    namespaces.namespace(scope, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO, agent_readable=None)
 
 
 def _database(scope: Construct) -> None:
-    Cluster(
+    cnpg.cluster(
         scope,
         "database",
-        metadata=metadata("langfuse-db", _NAMESPACE),
-        spec=ClusterSpec(
-            instances=2,
-            # renovate: datasource=docker
-            image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
-            # CNPG 1.27+ kills isolated primaries by default (liveness probe).
-            # Disable to prevent false positives from transient network blips.
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
-                )
-            ),
-            affinity=ClusterSpecAffinity(
-                node_selector={"topology.kubernetes.io/zone": _ZONE},
-                tolerations=[
-                    ClusterSpecAffinityTolerations(
-                        key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                    )
-                ],
-                topology_key="kubernetes.io/hostname",
-                node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
-            ),
-            storage=ClusterSpecStorage(storage_class="local-path-ovh", size="10Gi"),
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-            # CNPG auto-generates credentials in secret langfuse-db-app
-            bootstrap=ClusterSpecBootstrap(initdb=ClusterSpecBootstrapInitdb(database="langfuse", owner="langfuse")),
-        ),
+        name="langfuse-db",
+        namespace=_NAMESPACE,
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        storage_class="local-path-ovh-ssd",
+        size="10Gi",
+        # CNPG auto-generates credentials in secret langfuse-db-app
+        initdb=cnpg.same_owner_initdb("langfuse"),
     )
 
 
@@ -181,72 +67,23 @@ def _storage(scope: Construct) -> None:
         ),
         type="Opaque",
     )
-    Bucket(
+    bucket = s3.Bucket(
         scope,
         "bucket",
-        metadata=metadata(_NAME, _NAMESPACE, annotations={"description": "Langfuse event, export, and media objects."}),
-        spec=BucketSpec(
-            name=_NAME,
-            # The physical bucket is populated; adopt it during the ownership handoff.
-            adopt_existing=True,
-            cluster_ref=BucketSpecClusterRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-            access=[
-                BucketSpecAccess(
-                    user=_NAME,
-                    actions=[
-                        BucketSpecAccessActions.READ,
-                        BucketSpecAccessActions.WRITE,
-                        BucketSpecAccessActions.LIST,
-                        BucketSpecAccessActions.TAGGING,
-                    ],
-                )
-            ],
-        ),
+        name=_NAME,
+        namespace=_NAMESPACE,
+        adopt_existing=True,
+        description="Langfuse event, export, and media objects.",
     )
-    S3Credentials(
-        scope,
-        "s3-credentials",
-        metadata=metadata(
-            _NAME, _NAMESPACE, annotations={"description": "Langfuse's tenant-local SeaweedFS credentials."}
-        ),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            # The IAM identity name is cluster-global. Without a same-namespace
-            # S3Identity, the operator uses the existing identity named langfuse.
-            identity_ref=S3CredentialsSpecIdentityRef(name=_NAME),
-            # Use a new Secret during the staged handoff. The existing Secret is
-            # populated by the old cross-namespace S3Credentials object and cannot be
-            # adopted here.
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_S3_CREDENTIALS_SECRET,
-                access_key_field="s3-access-key-id",
-                secret_key_field="s3-secret-access-key",
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
-    )
-    # Permit only Langfuse's tenant-local Bucket and S3Credentials to reference the
-    # SeaweedFS cluster in its namespace.
-    ResourceReferenceGrant(
-        scope,
-        "reference-grant",
-        metadata=metadata(_NAME, _SEAWEEDFS),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="Bucket", namespace=_NAMESPACE),
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="S3Credentials", namespace=_NAMESPACE),
-            ],
-            to=[ResourceReferenceGrantSpecTo(group=_SEAWEED_GROUP, kind="Seaweed", name=_SEAWEEDFS)],
-        ),
-    )
-    S3Identity(
-        scope,
-        "s3-identity",
-        metadata=metadata(_NAME, _SEAWEEDFS),
-        spec=S3IdentitySpec(
-            seaweed_ref=S3IdentitySpecSeaweedRef(name=_SEAWEEDFS), reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN
-        ),
+    identity = s3.Identity(scope, "identity", name=_NAME, namespace=_NAMESPACE)
+    bucket.grant_read_write(identity)
+    identity.credentials(
+        namespace=_NAMESPACE,
+        # A new Secret during the staged handoff: the existing one is populated by the old
+        # cross-namespace S3Credentials object and cannot be adopted here.
+        secret=_S3_CREDENTIALS_SECRET,
+        key_fields=s3.SecretKeyFields(access_key="s3-access-key-id", secret_key="s3-secret-access-key"),
+        description="Langfuse's tenant-local SeaweedFS credentials.",
     )
 
 
@@ -277,94 +114,11 @@ def _log_reader(scope: Construct) -> None:
     )
 
 
-def _valkey(scope: Construct) -> None:
-    RedisReplication(
-        scope,
-        "valkey",
-        metadata=metadata(
-            _VALKEY, _NAMESPACE, annotations={"description": "OVH Valkey for Langfuse queue/cache state"}
-        ),
-        spec=RedisReplicationSpec(
-            cluster_size=2,
-            kubernetes_config=RedisReplicationSpecKubernetesConfig(
-                # renovate: datasource=docker
-                image="valkey/valkey:9-alpine",
-                image_pull_policy="IfNotPresent",
-                resources=RedisReplicationSpecKubernetesConfigResources(
-                    requests={
-                        "cpu": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("50m"),
-                        "memory": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("128Mi"),
-                    },
-                    limits={
-                        "cpu": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string("500m"),
-                        "memory": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string("512Mi"),
-                    },
-                ),
-            ),
-            redis_config=RedisReplicationSpecRedisConfig(max_memory_percent_of_limit=80),
-            storage=RedisReplicationSpecStorage(
-                volume_claim_template=RedisReplicationSpecStorageVolumeClaimTemplate(
-                    spec=RedisReplicationSpecStorageVolumeClaimTemplateSpec(
-                        access_modes=["ReadWriteOnce"],
-                        storage_class_name="local-path-ovh",
-                        resources=RedisReplicationSpecStorageVolumeClaimTemplateSpecResources(
-                            requests={
-                                "storage": RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests.from_string(
-                                    "2Gi"
-                                )
-                            }
-                        ),
-                    )
-                )
-            ),
-            affinity=RedisReplicationSpecAffinity(
-                node_affinity=RedisReplicationSpecAffinityNodeAffinity(
-                    required_during_scheduling_ignored_during_execution=RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                        node_selector_terms=[
-                            RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                                match_expressions=[
-                                    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                        key="topology.kubernetes.io/zone", operator="In", values=["hil-ovh"]
-                                    )
-                                ]
-                            )
-                        ]
-                    ),
-                    # Prefer ordinary workers when this workload tolerates control planes.
-                    preferred_during_scheduling_ignored_during_execution=[
-                        RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution(
-                            weight=100,
-                            preference=RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference(
-                                match_expressions=[
-                                    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions(
-                                        key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
-                                    )
-                                ]
-                            ),
-                        )
-                    ],
-                ),
-                pod_anti_affinity=RedisReplicationSpecAffinityPodAntiAffinity(
-                    required_during_scheduling_ignored_during_execution=[
-                        RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                            label_selector=RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
-                                match_labels={"app": _VALKEY}
-                            ),
-                            topology_key="kubernetes.io/hostname",
-                        )
-                    ]
-                ),
-            ),
-        ),
-    )
-
-
 def _secret_key_ref(name: str, key: str) -> dict[str, object]:
     return {"secretKeyRef": {"name": name, "key": key}}
 
 
 def _values() -> dict[str, object]:
-    control_plane = "node-role.kubernetes.io/control-plane"
     resources = {"requests": {"cpu": "100m", "memory": "1Gi"}, "limits": {"cpu": "1", "memory": "2Gi"}}
     return {
         "langfuse": {
@@ -380,22 +134,12 @@ def _values() -> dict[str, object]:
                 # binding in Authentik (tf/gitops/sso-providers/provider_langfuse.tf).
                 "signUpDisabled": False
             },
-            "nodeSelector": {"topology.kubernetes.io/zone": _ZONE},
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             # Langfuse is stateless at the pod level and uses external storage. Allow
             # control-plane nodes as overflow capacity, while the affinity below keeps
             # ordinary placement on workers.
-            "tolerations": [{"key": control_plane, "operator": "Exists", "effect": "NoSchedule"}],
-            # Prefer ordinary workers when this workload tolerates control planes.
-            "affinity": {
-                "nodeAffinity": {
-                    "preferredDuringSchedulingIgnoredDuringExecution": [
-                        {
-                            "weight": 100,
-                            "preference": {"matchExpressions": [{"key": control_plane, "operator": "DoesNotExist"}]},
-                        }
-                    ]
-                }
-            },
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
+            "affinity": node_scheduling.PREFER_WORKERS,
             "nextauth": {
                 "url": "https://langfuse.allegedly.works",
                 "secret": _secret_key_ref("langfuse-secrets", "nextauth-secret"),
@@ -533,39 +277,23 @@ def _values() -> dict[str, object]:
 
 
 def _helm_release(scope: Construct) -> None:
-    repository = HelmRepository(
+    helm_release(
         scope,
-        "helm-repository",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://langfuse.github.io/langfuse-k8s"),
-    )
-    HelmRelease(
-        scope,
-        "helm-release",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="15m",
-            timeout="20m",
-            install=HelmReleaseSpecInstall(
-                strategy=HelmReleaseSpecInstallStrategy(name=HelmReleaseSpecInstallStrategyName.RETRY_ON_FAILURE)
-            ),
-            upgrade=HelmReleaseSpecUpgrade(
-                strategy=HelmReleaseSpecUpgradeStrategy(name=HelmReleaseSpecUpgradeStrategyName.RETRY_ON_FAILURE)
-            ),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart=_NAME,
-                    # renovate: datasource=helm depName=langfuse registryUrl=https://langfuse.github.io/langfuse-k8s
-                    version="2.1.0",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values=_values(),
+        _NAME,
+        _NAMESPACE,
+        repository=https_helm_repository(scope, _NAME, _NAMESPACE, url="https://langfuse.github.io/langfuse-k8s"),
+        chart=_NAME,
+        # renovate: datasource=helm depName=langfuse registryUrl=https://langfuse.github.io/langfuse-k8s
+        version="2.1.0",
+        interval="15m",
+        timeout="20m",
+        install=HelmReleaseSpecInstall(
+            strategy=HelmReleaseSpecInstallStrategy(name=HelmReleaseSpecInstallStrategyName.RETRY_ON_FAILURE)
         ),
+        upgrade=HelmReleaseSpecUpgrade(
+            strategy=HelmReleaseSpecUpgradeStrategy(name=HelmReleaseSpecUpgradeStrategyName.RETRY_ON_FAILURE)
+        ),
+        values=_values(),
     )
 
 
@@ -577,30 +305,33 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
-        hostname="langfuse.allegedly.works",
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        hostnames=["langfuse.allegedly.works"],
         backend="langfuse-web",
         port=3000,
         hsts=False,
         listener=None,
     )
     _log_reader(chart)
-    _valkey(chart)
+    valkey_instance(
+        chart,
+        name=_VALKEY,
+        namespace=_NAMESPACE,
+        description="OVH Valkey for Langfuse queue/cache state",
+        memory_request=Size.mebibytes(128),
+        cpu_limit=Cpu.millis(500),
+        memory_limit=Size.mebibytes(512),
+        max_memory_percent_of_limit=80,
+        storage_class="local-path-ovh",
+        storage_size=Size.gibibytes(2),
+    )
     _helm_release(chart)
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml", "langfuse-secrets.sops.yaml"]),
-    )
-
-
 def langfuse(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     cnpg: Kustomization,
     valkey: Kustomization,
     seaweedfs_operator: Kustomization,
@@ -608,22 +339,9 @@ def langfuse(
     return flux_kustomization(
         chart,
         _NAME,
-        spec=KustomizationSpec(
-            suspend=False,
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            decryption=SOPS_DECRYPTION,
-            source_ref=artifact_source_ref(artifact),
-            timeout="20m",
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=_NAME, namespace=_NAMESPACE
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(cnpg, valkey, seaweedfs_operator),
-        ),
+        directory,
+        suspend=False,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        timeout="20m",
+        depends_on=flux_kustomization_depends_on_many(cnpg, valkey, seaweedfs_operator),
     )

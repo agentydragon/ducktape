@@ -11,16 +11,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 
-OUTPUT_DIR = "cluster/k8s/agents/plaid-mcp/app"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/app"
 NAMESPACE = "plaid-mcp"
 _NAME = "plaid-mcp"
 _LABELS = {"app.kubernetes.io/name": _NAME}
@@ -36,12 +38,6 @@ _CONFIG = {
 }
 
 
-def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
-    )
-
-
 def _env() -> list[k8s.EnvVar]:
     """The environment the web UI and the sync job share."""
     return [
@@ -53,9 +49,9 @@ def _env() -> list[k8s.EnvVar]:
             for key in _CONFIG
         ),
         # CNPG generates this Secret for the plaid-mcp-db Cluster (db.py).
-        _secret_env("DATABASE_URL", "plaid-mcp-db-app", "uri"),
-        _secret_env("PLAID_MCP_CLIENT_ID", "plaid-client-credentials", "client_id"),
-        _secret_env("PLAID_MCP_CLIENT_SECRET", "plaid-client-credentials", "client_secret"),
+        secret_env_var("DATABASE_URL", "plaid-mcp-db-app", "uri"),
+        secret_env_var("PLAID_MCP_CLIENT_ID", "plaid-client-credentials", "client_id"),
+        secret_env_var("PLAID_MCP_CLIENT_SECRET", "plaid-client-credentials", "client_secret"),
     ]
 
 
@@ -116,8 +112,7 @@ def _deployment(chart: Chart) -> None:
                     "Plaid self-contained link web UI. Authentik proxy outpost protects browser access; no"
                     " bespoke Plaid MCP tools are exposed in v0. The app writes access-token Secrets and syncs"
                     " linked Items into the plaid-mcp Postgres database."
-                ),
-                "reloader.stakater.com/auto": "true",
+                )
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -217,12 +212,12 @@ def chart(app: App) -> Chart:
             type="ClusterIP",
         ),
     )
-    cilium.network_policy(
+    NetworkPolicy(
         chart,
         "ingress-policy",
-        metadata=metadata(
-            "plaid-mcp-ingress",
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name="plaid-mcp-ingress",
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "Default-deny ingress for plaid-mcp pods. Only the Authentik embedded proxy outpost can"
@@ -230,8 +225,8 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        selector=_LABELS,
-        ingress=[cilium.ingress_from(cilium.endpoint_labels("authentik", "authentik"), ports=[_HTTP_PORT])],
+        endpoint_selector=_LABELS,
+        ingress=[IngressRule.from_endpoints(cilium.endpoint_labels("authentik", "authentik"), ports=[_HTTP_PORT])],
     )
     return chart
 

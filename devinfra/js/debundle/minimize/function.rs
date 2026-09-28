@@ -39,7 +39,7 @@ fn function_render_with<'a>(
 /// (gate 1); a target the read-off cannot single out yields no candidate and is
 /// reported as debt (never a full-AST pin).
 pub(crate) fn minimize_function_selector_candidates(
-    index: &ChunkSelectorIndex,
+    index: &ChunkSelectorIndex<'_>,
     function: &Function,
     decl: &IndexedDeclaration,
     target: &SynthesizedTargetBinding,

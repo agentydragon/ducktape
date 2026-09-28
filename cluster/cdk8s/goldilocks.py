@@ -3,83 +3,53 @@ admits only the Authentik proxy outpost to that dashboard."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-)
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s import namespaces, vpa
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "goldilocks"
 NAMESPACE = "goldilocks"
-OUTPUT_DIR = "cluster/k8s/goldilocks"
+OUTPUT_DIR = f"{GENERATED_ROOT}/goldilocks"
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=None)
+    helm_release(
         chart,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={"goldilocks.fairwinds.com/enabled": "true", "goldilocks.fairwinds.com/vpa-update-mode": "auto"},
-        ),
-    )
-    HelmRelease(
-        chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart=NAME,
-                    # renovate: datasource=helm depName=goldilocks registryUrl=https://charts.fairwinds.com/stable
-                    version="11.1.0",
-                    # Declared by the vpa directory, which this one's Kustomization depends on.
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name="fairwinds-stable",
-                        namespace="flux-system",
-                    ),
-                    interval="12h",
-                )
-            ),
-            values={
-                "vpa": {"enabled": False},
-                "controller": {
-                    "flags": {"on-by-default": "true"},
-                    "resources": {
-                        "requests": {"cpu": "25m", "memory": "256Mi"},
-                        "limits": {"cpu": "200m", "memory": "512Mi"},
-                    },
-                },
-                "dashboard": {
-                    "enabled": True,
-                    "replicaCount": 1,
-                    "resources": {
-                        "requests": {"cpu": "25m", "memory": "128Mi"},
-                        "limits": {"cpu": "200m", "memory": "256Mi"},
-                    },
+        NAME,
+        NAMESPACE,
+        # Declared by the vpa directory.
+        repository=vpa.REPOSITORY_SOURCE_REF,
+        chart=NAME,
+        # renovate: datasource=helm depName=goldilocks registryUrl=https://charts.fairwinds.com/stable
+        version="11.1.0",
+        interval="30m",
+        chart_interval="12h",
+        install=RETRY_FAILED_INSTALL,
+        values={
+            "vpa": {"enabled": False},
+            "controller": {
+                "flags": {"on-by-default": "true"},
+                "resources": {
+                    "requests": {"cpu": "25m", "memory": "256Mi"},
+                    "limits": {"cpu": "200m", "memory": "512Mi"},
                 },
             },
-        ),
+            "dashboard": {
+                "enabled": True,
+                "replicaCount": 1,
+                "resources": {
+                    "requests": {"cpu": "25m", "memory": "128Mi"},
+                    "limits": {"cpu": "200m", "memory": "256Mi"},
+                },
+            },
+        },
     )
     k8s.KubeNetworkPolicy(
         chart,
@@ -113,27 +83,12 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def goldilocks(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, vpa: Kustomization) -> Kustomization:
+def goldilocks(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
-                )
-            ],
-            depends_on=[flux_kustomization_depends_on(vpa)],
-        ),
+        directory,
+        timeout="5m",
+        # Kyverno's failurePolicy: Fail webhooks admit the Namespace.
+        depends_on=[flux_kustomization_depends_on(kyverno)],
     )

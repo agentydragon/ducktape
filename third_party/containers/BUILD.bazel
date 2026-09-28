@@ -10,7 +10,7 @@
 #     from third_party.containers import postgres_18
 
 load("//devinfra/oci:defs.bzl", "oci_image_py")
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "RYUK_TAG", "py_library")
 
 py_library(
     name = "fixtures",
@@ -52,7 +52,7 @@ oci_image_py(
     name = "ryuk",
     testonly = True,
     image = "@ryuk_linux_amd64",
-    tag = "testcontainers/ryuk:0.14.0",
+    tag = RYUK_TAG,
     visibility = ["//visibility:public"],
 )
 

@@ -10,6 +10,7 @@ execution sequence. This is a priority decision, not a technical dependency.
 
 ## Open plans and gates
 
+- [Thread sync](thread_sync/README.md) — what is still open on the deployed Electric design (eviction, pending-command paging, body compaction, measurement), and the seams and candidates for a second implementation
 - [Task DAG](task_dag.md) — remaining work and proposed priorities: deployed command acceptance, UI usability/history, native recovery, and deferred cluster-browser/subagent work
 - [Durable SSH-backed processes](ssh_durable_processes.md) — deferred systemd-backed host daemon for processes that outlive an SSH connection
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
@@ -29,7 +30,7 @@ generic MCP, configured Identities, Connection grants, and OAuth/consent. The
 [workload authentication](../docs/workload_authentication.md),
 [launch presets](../docs/launch_presets.md), and [action policies](../docs/action_policies.md) own
 the other implemented contracts.
-[Sandbox Actions](../docs/sandbox_actions.md) owns the exec-target contract for agents hosted
+[Sandbox Actions](../action_service/sandbox/README.md) owns the exec-target contract for agents hosted
 outside the cluster: sandboxes that run as the calling ServiceAccount, and Kubernetes reach from
 inside one.
 [Thread, runner, and harness layering](../docs/thread_layering.md) owns the command/Event

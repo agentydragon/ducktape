@@ -13,6 +13,7 @@ from typing import Any, cast
 from cdk8s import ApiObject
 from cdk8s_plus_34 import Service
 
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from x.ssh_mcp_server.server import SshSettings
 
@@ -28,7 +29,7 @@ CONFIG_DIR = "/etc/ssh-mcp"
 
 DEVBOX_HOST_KEY = "ssh_keys/public-coder-devbox-host.pub"
 AGENT_DOWNSTREAM_KEY = "ssh_keys/public-coder-agent-devbox.pub"
-NEBULA_KNOWN_HOSTS = "cluster/k8s/ssh-mcp/known_hosts"
+NEBULA_KNOWN_HOSTS = f"{HAND_WRITTEN_ROOT}/ssh-mcp/known_hosts"
 
 _WYRM2 = "wyrm2.nebula.allegedly.works"
 _RUGGED = "rugged.nebula.allegedly.works"

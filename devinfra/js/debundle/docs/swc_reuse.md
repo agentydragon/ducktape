@@ -3,11 +3,9 @@
 What the debundler adopts from SWC, what it deliberately reimplements, and the
 evaluations behind both — recorded so the same investigations are not re-run.
 
-Currently pinned: `swc_common` 21.0.1, `swc_ecma_ast` 23.0.0, `swc_ecma_codegen` 26.0.1, `swc_ecma_parser` 39.0.2, `swc_ecma_utils` 29.1.1 (only `find_pat_ids` used), `swc_ecma_transforms_base` (resolver only), `swc_ecma_visit` 23.0.0, `swc_atoms` 9.0.0. SWC source cloned at `~/code/swc` for reference.
-
 ## `swc_ecma_utils` underutilized
 
-The crate (at pinned 29.1.1) provides more than just `find_pat_ids`. Additional functions worth investigating:
+The crate provides more than `find_pat_ids`, the only function the debundler uses. Additional functions worth investigating:
 
 | Utility                                   | Location in `swc_ecma_utils` | Debundle use case                                                                                                                                                                                                                                      |
 | ----------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

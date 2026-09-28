@@ -20,6 +20,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastmcp import FastMCP
 from kubernetes_asyncio import client as k8s_client
+from mcp.types import CallToolResult
 from more_itertools import one
 from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -79,7 +80,7 @@ async def test_empty_catalog_has_no_echo_fallback(engine: AsyncEngine) -> None:
     catalog = ActionCatalog(groups=settings.action_groups)
     async with running_executor(catalog) as executors:
         assert executors == {}
-        assert catalog.group_views() == []
+        assert catalog.group_views(with_detail=False) == []
         service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, executors)
         for identity in (ActionIdentity(group="agentplane", name="echo"),):
             with pytest.raises(UnsupportedActionError):
@@ -233,7 +234,7 @@ async def test_live_catalog_and_exact_group_dispatch(execution_lease: ExecutionL
                     _request(ActionIdentity(group=key, name="owner")), execution_lease
                 )
                 assert result.state is ExecutionState.SUCCEEDED
-                assert result.result == {"owner": key}
+                assert CallToolResult.model_validate(result.result).structured_content == {"owner": key}
             assert (
                 await executors["one"].execute(
                     _request(ActionIdentity(group="one_extra", name="owner")), execution_lease
@@ -338,7 +339,7 @@ async def test_main_serves_real_stdio_execution_and_closes_in_order(db_url: str,
             else:
                 pytest.fail("stdio execution did not succeed")
         assert view.execution is not None
-        assert view.execution.result == {"echoed": "wired"}
+        assert CallToolResult.model_validate(view.execution.result).structured_content == {"echoed": "wired"}
         assert await asyncio.to_thread((tmp_path / "called").read_text) == "started"
         events.append("executed")
 
@@ -438,7 +439,7 @@ async def test_main_auto_approves_the_bound_service_account_from_watched_policy_
                 await asyncio.sleep(0.01)
                 view = await service.get(view.id, bound_caller)
         assert view.execution is not None
-        assert view.execution.result == {"result": "Echo: MCP0-ok"}
+        assert CallToolResult.model_validate(view.execution.result).structured_content == {"result": "Echo: MCP0-ok"}
         with pytest.raises(ActionConflictError):
             await service.submit(body, bound_caller)
         recovered = one(await service.list_requests(bound_caller, idempotency_key=body.idempotency_key))

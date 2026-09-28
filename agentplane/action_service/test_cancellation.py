@@ -8,7 +8,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.action_service.catalog import ActionCatalog, ActionIdentity
+from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.db import ActionConflictError, ActionNotFoundError, ActionStore, make_sessionmaker
 from agentplane.action_service.models import (
     ActionRequestInput,
@@ -17,18 +17,12 @@ from agentplane.action_service.models import (
     CallerPrincipal,
     CancellationOutcome,
     DecisionInput,
-    ExecutionLease,
-    ExecutionRequest,
     ExecutionResult,
     ExecutionState,
-    Executor,
     OperatorPrincipal,
     Principal,
-    ProviderOutcome,
-    ProviderVerdict,
     Verdict,
 )
-from agentplane.action_service.providers import DecisionContext
 from agentplane.action_service.service import ActionService
 from agentplane.subjects import ServiceAccountRef
 
@@ -56,7 +50,7 @@ def envelope() -> ActionRequestInput:
 
 @pytest.fixture
 async def pending(store: ActionStore, envelope: ActionRequestInput) -> ActionRequestView:
-    return await store.submit(envelope, CALLER)
+    return await store.submit(envelope, CALLER, request_id=uuid4(), vote=None)
 
 
 def decision(pending: ActionRequestView, verdict: Verdict = Verdict.ALLOW) -> DecisionInput:
@@ -83,9 +77,11 @@ async def test_pending_cancellation_is_durable_and_idempotent(
     assert duplicate.outcome is CancellationOutcome.ALREADY_CANCELLED
     assert duplicate.request == result.request
     with pytest.raises(ActionConflictError):
-        await restarted.submit(envelope, CALLER)
+        await restarted.submit(envelope, CALLER, request_id=uuid4(), vote=None)
     assert await restarted.list_requests(CALLER, idempotency_key=envelope.idempotency_key) == [result.request]
-    fresh = await restarted.submit(envelope.model_copy(update={"idempotency_key": "fresh-attempt"}), CALLER)
+    fresh = await restarted.submit(
+        envelope.model_copy(update={"idempotency_key": "fresh-attempt"}), CALLER, request_id=uuid4(), vote=None
+    )
     assert fresh.id != pending.id
     assert fresh.state is ActionState.DECISION_PENDING
     events = await restarted.events(pending.id, CALLER)
@@ -211,48 +207,6 @@ async def test_concurrent_approval_cannot_revive_cancelled_request(
         assert isinstance(approval, ActionConflictError)
     assert (await store.get(pending.id, CALLER)).state is ActionState.CANCELLED
     assert await store.pending_dispatches() == []
-
-
-class GatedProvider:
-    name = "gated-provider"
-
-    def __init__(self, verdict: ProviderVerdict) -> None:
-        self.verdict = verdict
-        self.entered = asyncio.Event()
-        self.release = asyncio.Event()
-
-    async def decide(self, context: DecisionContext) -> ProviderOutcome:
-        self.entered.set()
-        await self.release.wait()
-        return ProviderOutcome(verdict=self.verdict, reason_code="test-gated-vote")
-
-
-class UnreachableExecutor(Executor):
-    async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
-        raise AssertionError("cancelled request reached executor")
-
-
-@pytest.mark.parametrize("verdict", list(ProviderVerdict))
-async def test_cancellation_during_provider_evaluation_is_returned_by_submit(
-    store: ActionStore, echo_catalog: ActionCatalog, envelope: ActionRequestInput, verdict: ProviderVerdict
-) -> None:
-    provider = GatedProvider(verdict)
-    service = ActionService(store, echo_catalog, {"agentplane": UnreachableExecutor()}, providers=[provider])
-    try:
-        async with asyncio.timeout(10):
-            async with asyncio.TaskGroup() as tasks:
-                submitted = tasks.create_task(service.submit(envelope, CALLER))
-                await provider.entered.wait()
-                pending_requests = await store.list_requests(CALLER)
-                assert len(pending_requests) == 1
-                await service.cancel(pending_requests[0].id, CALLER)
-                provider.release.set()
-        assert submitted.result().state is ActionState.CANCELLED
-        assert submitted.result().decision is None
-        assert submitted.result().execution is None
-        assert await store.pending_dispatches() == []
-    finally:
-        await service.close()
 
 
 if __name__ == "__main__":

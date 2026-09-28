@@ -24,6 +24,7 @@ filegroup(
         "//agentplane/action_service/migrations/versions:0015_action_request_context.py",
         "//agentplane/action_service/migrations/versions:0016_structured_principals.py",
         "//agentplane/action_service/migrations/versions:0017_drop_mcp_linkage_provider.py",
+        "//agentplane/action_service/migrations/versions:0018_mcp_refresh_failure_error.py",
     ],
     visibility = ["//agentplane/action_service:__pkg__"],
 )

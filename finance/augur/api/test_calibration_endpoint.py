@@ -22,8 +22,8 @@ from finance.augur.api.config import Config
 from finance.augur.api.server import create_app_from_augur_config, static_price_clients
 from finance.augur.calibration.catalog import MarketCatalog
 from finance.augur.calibration.testing import mock_price_clients
-from finance.augur.model.sample_sanity import LevelSeriesSanityCheck, PrivateEquityMarkSanityCheck, SampleSanitySpec
 from finance.augur.model.series import SP500_SYMBOL, IssuerId, SecurityKey
+from finance.augur.x.models.sample_sanity import LevelSeriesSanityCheck, PrivateEquityMarkSanityCheck, SampleSanitySpec
 from finance.evidence.markets import Platform
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.

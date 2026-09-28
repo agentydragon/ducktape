@@ -9,8 +9,7 @@ use std::error::Error;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-use analysis::{OwnerId, StatementOrdinal};
-use chunk_facts::NodeId;
+use analysis::OwnerId;
 use selector_ir::{SelectorTargetId, SelectorVariableId, VariableDomain};
 use serde::{Deserialize, Serialize};
 
@@ -44,20 +43,68 @@ pub struct BackendValueId(pub i64);
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum ConstraintValue {
     Owner(OwnerId),
-    AstNode(NodeId),
     String(String),
-    StatementOrdinal(StatementOrdinal),
 }
 
 impl ConstraintValue {
     pub fn domain(&self) -> VariableDomain {
         match self {
             Self::Owner(_) => VariableDomain::Owner,
-            Self::AstNode(_) => VariableDomain::AstNode,
             Self::String(_) => VariableDomain::String,
-            Self::StatementOrdinal(_) => VariableDomain::StatementOrdinal,
         }
     }
+}
+
+/// How far compile-time presolve may carry one target's constraints into the
+/// domains other constraints see.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PresolveScope {
+    /// Propagate freely. A contradiction then surfaces wherever propagation
+    /// meets it, as an empty domain or table that no longer says which targets
+    /// caused it.
+    AcrossTargets,
+    /// A constraint prunes a variable's domain only when every target the
+    /// constraint is attributed to owns that variable, and `all_different`
+    /// propagates nothing. Every constraint keeps its attribution, so the
+    /// sidecar can localize an infeasible program to conflicting targets; an
+    /// owned variable whose own constraints empty its domain gets an empty
+    /// table instead, which localizes to that variable's targets alone.
+    WithinTargets,
+}
+
+/// The targets each variable belongs to: a target owns its owner variable and
+/// its binding variable. A constraint is attributed to every target owning one
+/// of its variables; a constraint over unowned variables only is hard.
+pub fn targets_by_variable(
+    projections: &[TargetProjection],
+) -> BTreeMap<ConstraintVariableId, BTreeSet<SelectorTargetId>> {
+    let mut targets = BTreeMap::<_, BTreeSet<_>>::new();
+    for projection in projections {
+        targets
+            .entry(projection.owner_variable)
+            .or_default()
+            .insert(projection.target);
+        if let Some(TargetBindingProjection::Variable(binding)) = &projection.binding_projection {
+            targets
+                .entry(*binding)
+                .or_default()
+                .insert(projection.target);
+        }
+    }
+    targets
+}
+
+pub fn constraint_targets(
+    targets_by_variable: &BTreeMap<ConstraintVariableId, BTreeSet<SelectorTargetId>>,
+    variables: &[ConstraintVariableId],
+) -> BTreeSet<SelectorTargetId> {
+    variables
+        .iter()
+        .filter_map(|variable| targets_by_variable.get(variable))
+        .flatten()
+        .copied()
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,8 +118,7 @@ pub enum CompiledVariableDomain {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompiledVariable {
     pub id: ConstraintVariableId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<SelectorVariableId>,
+    pub source: SelectorVariableId,
     pub domain: VariableDomain,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub debug_name: Option<String>,
@@ -234,29 +280,6 @@ struct AllowedTupleRowsFingerprint {
     hash: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BinaryConstraintKind {
-    Equal,
-    NotEqual,
-    OrdinalBefore,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CompiledBinaryConstraint {
-    pub left: ConstraintVariableId,
-    pub right: ConstraintVariableId,
-    pub kind: BinaryConstraintKind,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CompiledLinearConstraint {
-    pub variables: Vec<ConstraintVariableId>,
-    pub coefficients: Vec<i64>,
-    pub offset: i64,
-    pub domain: Vec<i64>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AllDifferentReason {
@@ -274,27 +297,21 @@ pub struct CompiledAllDifferentConstraint {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FullDomainValues {
     pub owners: Vec<BackendValueId>,
-    pub ast_nodes: Vec<BackendValueId>,
     pub strings: Vec<BackendValueId>,
-    pub statement_ordinals: Vec<BackendValueId>,
 }
 
 impl FullDomainValues {
     pub fn get(&self, domain: VariableDomain) -> &[BackendValueId] {
         match domain {
             VariableDomain::Owner => &self.owners,
-            VariableDomain::AstNode => &self.ast_nodes,
             VariableDomain::String => &self.strings,
-            VariableDomain::StatementOrdinal => &self.statement_ordinals,
         }
     }
 
     fn get_mut(&mut self, domain: VariableDomain) -> &mut Vec<BackendValueId> {
         match domain {
             VariableDomain::Owner => &mut self.owners,
-            VariableDomain::AstNode => &mut self.ast_nodes,
             VariableDomain::String => &mut self.strings,
-            VariableDomain::StatementOrdinal => &mut self.statement_ordinals,
         }
     }
 }
@@ -302,25 +319,18 @@ impl FullDomainValues {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DomainValueDictionary {
     pub owners: Vec<OwnerId>,
-    pub ast_nodes: Vec<NodeId>,
     pub strings: Vec<String>,
-    pub statement_ordinals: Vec<StatementOrdinal>,
 }
 
 impl DomainValueDictionary {
     pub fn total_len(&self) -> usize {
-        self.owners.len()
-            + self.ast_nodes.len()
-            + self.strings.len()
-            + self.statement_ordinals.len()
+        self.owners.len() + self.strings.len()
     }
 
     fn domain_len(&self, domain: VariableDomain) -> usize {
         match domain {
             VariableDomain::Owner => self.owners.len(),
-            VariableDomain::AstNode => self.ast_nodes.len(),
             VariableDomain::String => self.strings.len(),
-            VariableDomain::StatementOrdinal => self.statement_ordinals.len(),
         }
     }
 
@@ -329,17 +339,9 @@ impl DomainValueDictionary {
             ConstraintValue::Owner(value) => {
                 self.owners.iter().position(|candidate| candidate == value)
             }
-            ConstraintValue::AstNode(value) => self
-                .ast_nodes
-                .iter()
-                .position(|candidate| candidate == value),
             ConstraintValue::String(value) => {
                 self.strings.iter().position(|candidate| candidate == value)
             }
-            ConstraintValue::StatementOrdinal(value) => self
-                .statement_ordinals
-                .iter()
-                .position(|candidate| candidate == value),
         }?;
         Some(BackendValueId(index.try_into().ok()?))
     }
@@ -348,27 +350,18 @@ impl DomainValueDictionary {
         let index = backend_value_index(value).ok()?;
         match domain {
             VariableDomain::Owner => self.owners.get(index).copied().map(ConstraintValue::Owner),
-            VariableDomain::AstNode => self
-                .ast_nodes
-                .get(index)
-                .copied()
-                .map(ConstraintValue::AstNode),
             VariableDomain::String => self
                 .strings
                 .get(index)
                 .cloned()
                 .map(ConstraintValue::String),
-            VariableDomain::StatementOrdinal => self
-                .statement_ordinals
-                .get(index)
-                .copied()
-                .map(ConstraintValue::StatementOrdinal),
         }
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompiledSelectorProblem {
+    pub presolve_scope: PresolveScope,
     pub value_dictionary: DomainValueDictionary,
     pub full_domains: FullDomainValues,
     #[serde(default)]
@@ -378,9 +371,6 @@ pub struct CompiledSelectorProblem {
     #[serde(default)]
     pub allowed_tuple_row_sets: Vec<CompiledAllowedTupleRowSet>,
     pub allowed_tuples: Vec<CompiledAllowedTupleConstraint>,
-    pub binary_constraints: Vec<CompiledBinaryConstraint>,
-    #[serde(default)]
-    pub linear_constraints: Vec<CompiledLinearConstraint>,
     pub all_different: Vec<CompiledAllDifferentConstraint>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub known_unsat: Option<String>,
@@ -479,8 +469,14 @@ impl CompiledSelectorProblem {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct CompiledSelectorProblemBuilder {
+    presolve_scope: PresolveScope,
+    targets_by_variable: BTreeMap<ConstraintVariableId, BTreeSet<SelectorTargetId>>,
+    /// `WithinTargets` only: owned variables whose own constraints left no
+    /// value. Their domain keeps its last non-empty value and `finish` adds an
+    /// empty table over each.
+    exhausted_variables: BTreeSet<ConstraintVariableId>,
     value_ids: DomainValueIds,
     value_dictionary: DomainValueDictionary,
     full_domains: FullDomainValues,
@@ -495,8 +491,6 @@ pub struct CompiledSelectorProblemBuilder {
     allowed_tuple_row_sets_by_fingerprint:
         HashMap<AllowedTupleRowsFingerprint, Vec<AllowedTupleRowsId>>,
     allowed_tuples: Vec<CompiledAllowedTupleConstraint>,
-    binary_constraints: Vec<CompiledBinaryConstraint>,
-    linear_constraints: Vec<CompiledLinearConstraint>,
     all_different: Vec<CompiledAllDifferentConstraint>,
     known_unsat: Option<String>,
 }
@@ -504,42 +498,13 @@ pub struct CompiledSelectorProblemBuilder {
 #[derive(Debug, Default)]
 struct DomainValueIds {
     owners: HashMap<OwnerId, BackendValueId>,
-    ast_nodes_sparse: HashMap<NodeId, BackendValueId>,
-    ast_nodes_dense: Vec<Option<BackendValueId>>,
     strings: HashMap<String, BackendValueId>,
-    statement_ordinals: HashMap<StatementOrdinal, BackendValueId>,
-}
-
-impl DomainValueIds {
-    fn get_ast_node(&self, value: NodeId) -> Option<BackendValueId> {
-        let index = usize::try_from(value).ok()?;
-        self.ast_nodes_dense
-            .get(index)
-            .copied()
-            .flatten()
-            .or_else(|| self.ast_nodes_sparse.get(&value).copied())
-    }
-
-    fn insert_ast_node(&mut self, value: NodeId, id: BackendValueId) {
-        let Ok(index) = usize::try_from(value) else {
-            self.ast_nodes_sparse.insert(value, id);
-            return;
-        };
-        if index <= self.ast_nodes_dense.len().saturating_add(1024) {
-            if index >= self.ast_nodes_dense.len() {
-                self.ast_nodes_dense.resize(index + 1, None);
-            }
-            self.ast_nodes_dense[index] = Some(id);
-        } else {
-            self.ast_nodes_sparse.insert(value, id);
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
 struct CompiledVariableBuilder {
     id: ConstraintVariableId,
-    source: Option<SelectorVariableId>,
+    source: SelectorVariableId,
     domain: VariableDomain,
     debug_name: Option<String>,
     values: CompiledVariableDomain,
@@ -572,8 +537,79 @@ impl SharedVariableDomainIntersectionKey {
 }
 
 impl CompiledSelectorProblemBuilder {
+    pub fn new(presolve_scope: PresolveScope) -> Self {
+        Self {
+            presolve_scope,
+            targets_by_variable: BTreeMap::new(),
+            exhausted_variables: BTreeSet::new(),
+            value_ids: DomainValueIds::default(),
+            value_dictionary: DomainValueDictionary::default(),
+            full_domains: FullDomainValues::default(),
+            variables: Vec::new(),
+            target_projections: Vec::new(),
+            shared_variable_domains: Vec::new(),
+            shared_variable_domains_by_fingerprint: HashMap::new(),
+            shared_variable_domain_intersections: HashMap::new(),
+            allowed_tuple_row_sets: Vec::new(),
+            allowed_tuple_row_sets_by_fingerprint: HashMap::new(),
+            allowed_tuples: Vec::new(),
+            all_different: Vec::new(),
+            known_unsat: None,
+        }
+    }
+
     pub fn known_unsat_reason(&self) -> Option<&str> {
         self.known_unsat.as_deref()
+    }
+
+    /// Whether presolve may narrow `variable` from a constraint over
+    /// `constraint_variables` (see [`PresolveScope`]).
+    pub fn may_prune(
+        &self,
+        constraint_variables: &[ConstraintVariableId],
+        variable: ConstraintVariableId,
+    ) -> bool {
+        match self.presolve_scope {
+            PresolveScope::AcrossTargets => true,
+            PresolveScope::WithinTargets => {
+                let owners = self.targets_by_variable.get(&variable);
+                constraint_targets(&self.targets_by_variable, constraint_variables)
+                    .iter()
+                    .all(|target| owners.is_some_and(|owners| owners.contains(target)))
+            }
+        }
+    }
+
+    /// Records that a table over `id` has no rows. Across targets that proves
+    /// the program unsatisfiable; within targets the empty table stays in the
+    /// problem for the sidecar to attribute.
+    fn record_empty_table(&mut self, id: AllowedTupleConstraintId) {
+        if self.presolve_scope == PresolveScope::AcrossTargets {
+            self.known_unsat
+                .get_or_insert_with(|| format!("allowed tuple constraint {id:?} has no rows"));
+        }
+    }
+
+    /// Installs a narrowed domain for `variable`, handling the empty case.
+    fn set_variable_domain(
+        &mut self,
+        variable: ConstraintVariableId,
+        values: CompiledVariableDomain,
+    ) -> Result<(), CompiledSelectorProblemError> {
+        if !self.compiled_variable_domain_is_empty(&values) {
+            self.require_variable_mut(variable)?.values = values;
+            return Ok(());
+        }
+        if self.presolve_scope == PresolveScope::WithinTargets
+            && self.targets_by_variable.contains_key(&variable)
+        {
+            self.exhausted_variables.insert(variable);
+            return Ok(());
+        }
+        self.require_variable_mut(variable)?.values = values;
+        let reason = self.variable_empty_domain_reason(variable);
+        self.known_unsat.get_or_insert(reason);
+        Ok(())
     }
 
     fn variable_empty_domain_reason(&self, variable: ConstraintVariableId) -> String {
@@ -641,114 +677,10 @@ impl CompiledSelectorProblemBuilder {
         let id = ConstraintVariableId(self.variables.len());
         self.variables.push(CompiledVariableBuilder {
             id,
-            source: Some(source),
+            source,
             domain,
             debug_name,
             values: CompiledVariableDomain::Full(domain),
-        });
-        Ok(id)
-    }
-
-    pub fn add_internal_integer_variable(
-        &mut self,
-        debug_name: Option<String>,
-        values: impl IntoIterator<Item = BackendValueId>,
-    ) -> Result<ConstraintVariableId, CompiledSelectorProblemError> {
-        let mut values = values.into_iter().collect::<Vec<_>>();
-        values.sort_unstable();
-        values.dedup();
-        self.add_internal_integer_variable_from_normalized_values(debug_name, values)
-    }
-
-    pub fn add_internal_integer_variable_from_normalized_values(
-        &mut self,
-        debug_name: Option<String>,
-        mut values: Vec<BackendValueId>,
-    ) -> Result<ConstraintVariableId, CompiledSelectorProblemError> {
-        debug_assert!(values.windows(2).all(|window| window[0] < window[1]));
-        if values.is_empty() {
-            self.known_unsat
-                .get_or_insert_with(|| "internal integer variable has empty domain".to_string());
-            values.push(BackendValueId(0));
-        }
-        if let Some(value) = values.iter().find(|value| value.0 < 0) {
-            return Err(
-                CompiledSelectorProblemError::InternalVariableValueOutOfDomain { value: *value },
-            );
-        }
-        let id = ConstraintVariableId(self.variables.len());
-        self.variables.push(CompiledVariableBuilder {
-            id,
-            source: None,
-            domain: VariableDomain::StatementOrdinal,
-            debug_name,
-            values: CompiledVariableDomain::Sparse(values),
-        });
-        Ok(id)
-    }
-
-    pub fn add_internal_variable(
-        &mut self,
-        domain: VariableDomain,
-        debug_name: Option<String>,
-    ) -> Result<ConstraintVariableId, CompiledSelectorProblemError> {
-        let id = ConstraintVariableId(self.variables.len());
-        self.variables.push(CompiledVariableBuilder {
-            id,
-            source: None,
-            domain,
-            debug_name,
-            values: CompiledVariableDomain::Full(domain),
-        });
-        Ok(id)
-    }
-
-    pub fn add_internal_sparse_variable(
-        &mut self,
-        domain: VariableDomain,
-        debug_name: Option<String>,
-        values: impl IntoIterator<Item = BackendValueId>,
-    ) -> Result<ConstraintVariableId, CompiledSelectorProblemError> {
-        let mut values = values.into_iter().collect::<Vec<_>>();
-        values.sort_unstable();
-        values.dedup();
-        if values.is_empty() {
-            self.known_unsat
-                .get_or_insert_with(|| "internal sparse variable has empty domain".to_string());
-        }
-        for value in values.iter().copied() {
-            self.validate_encoded_domain_value(domain, value)?;
-        }
-        let id = ConstraintVariableId(self.variables.len());
-        self.variables.push(CompiledVariableBuilder {
-            id,
-            source: None,
-            domain,
-            debug_name,
-            values: CompiledVariableDomain::Sparse(values),
-        });
-        Ok(id)
-    }
-
-    pub fn add_internal_shared_sparse_variable(
-        &mut self,
-        domain_id: SharedVariableDomainId,
-        debug_name: Option<String>,
-    ) -> Result<ConstraintVariableId, CompiledSelectorProblemError> {
-        let Some(shared_domain) = self.shared_variable_domains.get(domain_id.0) else {
-            return Err(CompiledSelectorProblemError::UnknownSharedVariableDomain { domain_id });
-        };
-        if shared_domain.values.is_empty() {
-            self.known_unsat
-                .get_or_insert_with(|| "internal sparse variable has empty domain".to_string());
-        }
-        let id = ConstraintVariableId(self.variables.len());
-        self.variables.push(CompiledVariableBuilder {
-            id,
-            source: None,
-            domain: shared_domain.domain,
-            debug_name,
-            values: CompiledVariableDomain::SharedSparse(domain_id),
         });
         Ok(id)
     }
@@ -773,11 +705,18 @@ impl CompiledSelectorProblemBuilder {
         {
             return Err(CompiledSelectorProblemError::DuplicateTargetProjection { target });
         }
-        self.target_projections.push(TargetProjection {
+        let projection = TargetProjection {
             target,
             owner_variable,
             binding_projection,
-        });
+        };
+        for (variable, targets) in targets_by_variable(std::slice::from_ref(&projection)) {
+            self.targets_by_variable
+                .entry(variable)
+                .or_default()
+                .extend(targets);
+        }
+        self.target_projections.push(projection);
         Ok(())
     }
 
@@ -854,8 +793,7 @@ impl CompiledSelectorProblemBuilder {
         compiled_tuples.dedup();
 
         if compiled_tuples.is_empty() {
-            self.known_unsat
-                .get_or_insert_with(|| format!("allowed tuple constraint {id:?} has no rows"));
+            self.record_empty_table(id);
         }
 
         let row_set = self
@@ -1008,8 +946,7 @@ impl CompiledSelectorProblemBuilder {
             });
         }
         if rows.is_empty() {
-            self.known_unsat
-                .get_or_insert_with(|| format!("allowed tuple constraint {id:?} has no rows"));
+            self.record_empty_table(id);
         }
         self.allowed_tuples.push(CompiledAllowedTupleConstraint {
             id,
@@ -1062,14 +999,8 @@ impl CompiledSelectorProblemBuilder {
                 intersect_sorted_encoded_values(existing, values.as_slice())
             }
         };
-        let empty_domain = restricted.is_empty();
         let replacement = self.compiled_sparse_variable_domain(domain, restricted);
-        self.require_variable_mut(variable)?.values = replacement;
-        if empty_domain {
-            let reason = self.variable_empty_domain_reason(variable);
-            self.known_unsat.get_or_insert(reason);
-        }
-        Ok(())
+        self.set_variable_domain(variable, replacement)
     }
 
     pub fn intern_owner(
@@ -1086,20 +1017,6 @@ impl CompiledSelectorProblemBuilder {
         Ok(id)
     }
 
-    pub fn intern_ast_node(
-        &mut self,
-        value: NodeId,
-    ) -> Result<BackendValueId, CompiledSelectorProblemError> {
-        if let Some(id) = self.value_ids.get_ast_node(value) {
-            return Ok(id);
-        }
-        let count = self.value_dictionary.ast_nodes.len();
-        let id = backend_value_id(count)?;
-        self.value_ids.insert_ast_node(value, id);
-        self.value_dictionary.ast_nodes.push(value);
-        Ok(id)
-    }
-
     pub fn intern_string(
         &mut self,
         value: &str,
@@ -1112,20 +1029,6 @@ impl CompiledSelectorProblemBuilder {
         let value = value.to_string();
         self.value_ids.strings.insert(value.clone(), id);
         self.value_dictionary.strings.push(value);
-        Ok(id)
-    }
-
-    pub fn intern_statement_ordinal(
-        &mut self,
-        value: StatementOrdinal,
-    ) -> Result<BackendValueId, CompiledSelectorProblemError> {
-        if let Some(id) = self.value_ids.statement_ordinals.get(&value) {
-            return Ok(*id);
-        }
-        let count = self.value_dictionary.statement_ordinals.len();
-        let id = backend_value_id(count)?;
-        self.value_ids.statement_ordinals.insert(value, id);
-        self.value_dictionary.statement_ordinals.push(value);
         Ok(id)
     }
 
@@ -1175,8 +1078,7 @@ impl CompiledSelectorProblemBuilder {
         compiled_tuples.dedup();
 
         if compiled_tuples.is_empty() {
-            self.known_unsat
-                .get_or_insert_with(|| format!("allowed tuple constraint {id:?} has no rows"));
+            self.record_empty_table(id);
         }
 
         let arity = variables.len();
@@ -1188,35 +1090,6 @@ impl CompiledSelectorProblemBuilder {
             row_set,
         });
         Ok(id)
-    }
-
-    pub fn add_binary_constraint(
-        &mut self,
-        left: ConstraintVariableId,
-        right: ConstraintVariableId,
-        kind: BinaryConstraintKind,
-    ) -> Result<(), CompiledSelectorProblemError> {
-        self.validate_binary_constraint(left, right, kind)?;
-        self.binary_constraints
-            .push(CompiledBinaryConstraint { left, right, kind });
-        Ok(())
-    }
-
-    pub fn add_linear_constraint(
-        &mut self,
-        variables: Vec<ConstraintVariableId>,
-        coefficients: Vec<i64>,
-        offset: i64,
-        domain: Vec<i64>,
-    ) -> Result<(), CompiledSelectorProblemError> {
-        self.validate_linear_constraint(&variables, &coefficients, &domain)?;
-        self.linear_constraints.push(CompiledLinearConstraint {
-            variables,
-            coefficients,
-            offset,
-            domain,
-        });
-        Ok(())
     }
 
     pub fn variable_domain_values(
@@ -1289,7 +1162,17 @@ impl CompiledSelectorProblemBuilder {
         Ok(Some(id))
     }
 
-    pub fn finish(self) -> Result<CompiledSelectorProblem, CompiledSelectorProblemError> {
+    pub fn finish(mut self) -> Result<CompiledSelectorProblem, CompiledSelectorProblemError> {
+        for variable in std::mem::take(&mut self.exhausted_variables) {
+            let row_set = self
+                .intern_allowed_tuple_rows(CompiledAllowedTupleRows::from_unary_values(Vec::new()));
+            let id = AllowedTupleConstraintId(self.allowed_tuples.len());
+            self.allowed_tuples.push(CompiledAllowedTupleConstraint {
+                id,
+                variables: vec![variable],
+                row_set,
+            });
+        }
         let variables: Vec<CompiledVariable> = self
             .variables
             .iter()
@@ -1303,6 +1186,7 @@ impl CompiledSelectorProblemBuilder {
             .collect();
 
         Ok(CompiledSelectorProblem {
+            presolve_scope: self.presolve_scope,
             value_dictionary: self.value_dictionary,
             full_domains: self.full_domains,
             shared_variable_domains: self.shared_variable_domains,
@@ -1310,8 +1194,6 @@ impl CompiledSelectorProblemBuilder {
             target_projections: self.target_projections,
             allowed_tuple_row_sets: self.allowed_tuple_row_sets,
             allowed_tuples: self.allowed_tuples,
-            binary_constraints: self.binary_constraints,
-            linear_constraints: self.linear_constraints,
             all_different: self.all_different,
             known_unsat: self.known_unsat,
         })
@@ -1323,9 +1205,7 @@ impl CompiledSelectorProblemBuilder {
     ) -> Result<BackendValueId, CompiledSelectorProblemError> {
         match value {
             ConstraintValue::Owner(value) => self.intern_owner(value),
-            ConstraintValue::AstNode(value) => self.intern_ast_node(value),
             ConstraintValue::String(value) => self.intern_string(&value),
-            ConstraintValue::StatementOrdinal(value) => self.intern_statement_ordinal(value),
         }
     }
 
@@ -1365,32 +1245,6 @@ impl CompiledSelectorProblemBuilder {
         Ok(self.intern_normalized_shared_sparse_variable_domain(domain, values))
     }
 
-    pub fn intern_internal_statement_ordinal_shared_sparse_variable_domain(
-        &mut self,
-        values: impl IntoIterator<Item = BackendValueId>,
-    ) -> Result<SharedVariableDomainId, CompiledSelectorProblemError> {
-        let mut values = values.into_iter().collect::<Vec<_>>();
-        values.sort_unstable();
-        values.dedup();
-        if values.is_empty() {
-            self.known_unsat
-                .get_or_insert_with(|| "internal sparse variable has empty domain".to_string());
-            values.push(BackendValueId(0));
-        }
-        for value in values.iter().copied() {
-            if value.0 < 0 {
-                return Err(
-                    CompiledSelectorProblemError::InternalVariableValueOutOfDomain { value },
-                );
-            }
-            self.ensure_full_domain_contains(VariableDomain::StatementOrdinal, value);
-        }
-        Ok(self.intern_normalized_shared_sparse_variable_domain(
-            VariableDomain::StatementOrdinal,
-            values,
-        ))
-    }
-
     pub fn restrict_variable_to_shared_sparse_domain(
         &mut self,
         variable: ConstraintVariableId,
@@ -1401,7 +1255,6 @@ impl CompiledSelectorProblemBuilder {
             return Err(CompiledSelectorProblemError::UnknownSharedVariableDomain { domain_id });
         };
         let shared_domain_kind = shared_domain.domain;
-        let shared_domain_is_empty = shared_domain.values.is_empty();
         if shared_domain_kind != variable_domain {
             return Err(CompiledSelectorProblemError::VariableDomainMismatch {
                 variable,
@@ -1412,13 +1265,10 @@ impl CompiledSelectorProblemBuilder {
 
         let restricted = match self.require_variable(variable)?.values.clone() {
             CompiledVariableDomain::Full(_) => {
-                self.require_variable_mut(variable)?.values =
-                    CompiledVariableDomain::SharedSparse(domain_id);
-                if shared_domain_is_empty {
-                    let reason = self.variable_empty_domain_reason(variable);
-                    self.known_unsat.get_or_insert(reason);
-                }
-                return Ok(());
+                return self.set_variable_domain(
+                    variable,
+                    CompiledVariableDomain::SharedSparse(domain_id),
+                );
             }
             CompiledVariableDomain::Sparse(existing) => {
                 let shared_domain_values = &self.shared_variable_domains[domain_id.0].values;
@@ -1436,28 +1286,11 @@ impl CompiledSelectorProblemBuilder {
                     existing_id,
                     domain_id,
                 );
-                let empty_domain = self.compiled_variable_domain_is_empty(&replacement);
-                self.require_variable_mut(variable)?.values = replacement;
-                if empty_domain {
-                    let reason = self.variable_empty_domain_reason(variable);
-                    self.known_unsat.get_or_insert(reason);
-                }
-                return Ok(());
+                return self.set_variable_domain(variable, replacement);
             }
         };
-        let empty_domain = restricted.is_empty();
-        if !matches!(
-            self.require_variable(variable)?.values,
-            CompiledVariableDomain::SharedSparse(id) if id == domain_id
-        ) {
-            let replacement = self.compiled_sparse_variable_domain(variable_domain, restricted);
-            self.require_variable_mut(variable)?.values = replacement;
-        }
-        if empty_domain {
-            let reason = self.variable_empty_domain_reason(variable);
-            self.known_unsat.get_or_insert(reason);
-        }
-        Ok(())
+        let replacement = self.compiled_sparse_variable_domain(variable_domain, restricted);
+        self.set_variable_domain(variable, replacement)
     }
 
     fn compiled_sparse_variable_domain(
@@ -1550,6 +1383,13 @@ impl CompiledSelectorProblemBuilder {
                 kept_rows.extend_from_slice(row);
             }
         }
+        if kept_rows.is_empty() && self.presolve_scope == PresolveScope::WithinTargets {
+            return Ok(Some((
+                variables.to_vec(),
+                CompiledAllowedTupleRows::from_flat_rows(arity, Vec::new()),
+                rows.cell_count() != 0,
+            )));
+        }
         if kept_rows.is_empty() {
             if self.known_unsat.is_none() {
                 let variables = self.variables_debug_summary(variables);
@@ -1573,8 +1413,8 @@ impl CompiledSelectorProblemBuilder {
         for (column, values) in column_values.iter_mut().enumerate() {
             values.sort_unstable();
             values.dedup();
-            let can_restrict =
-                self.can_restrict_variable_to_encoded_values(variables[column], values)?;
+            let can_restrict = self.may_prune(variables, variables[column])
+                && self.can_restrict_variable_to_encoded_values(variables[column], values)?;
             column_can_restrict[column] = can_restrict;
             if can_restrict {
                 changed |= self.restrict_variable_to_encoded_values_changed(
@@ -1627,11 +1467,7 @@ impl CompiledSelectorProblemBuilder {
         variable: ConstraintVariableId,
         values: &[BackendValueId],
     ) -> Result<bool, CompiledSelectorProblemError> {
-        let variable_ref = self.require_variable(variable)?;
-        let domain = variable_ref.domain;
-        if variable_ref.source.is_none() && domain == VariableDomain::StatementOrdinal {
-            return Ok(false);
-        }
+        let domain = self.require_variable(variable)?.domain;
         for value in values {
             if value.0 < 0 {
                 return Ok(false);
@@ -1671,6 +1507,9 @@ impl CompiledSelectorProblemBuilder {
         entries: Vec<T>,
         variable_for_entry: impl Fn(&T) -> ConstraintVariableId,
     ) -> Result<Vec<T>, CompiledSelectorProblemError> {
+        if self.presolve_scope == PresolveScope::WithinTargets {
+            return Ok(entries);
+        }
         let mut entries = entries;
         let mut fixed_values = BTreeSet::new();
         loop {
@@ -1786,9 +1625,6 @@ impl CompiledSelectorProblemBuilder {
                 value,
             });
         };
-        if self.require_variable(variable)?.source.is_none() {
-            return Ok(());
-        }
         if index >= self.value_dictionary.domain_len(domain) {
             return Err(CompiledSelectorProblemError::EncodedTupleValueOutOfDomain {
                 id,
@@ -1886,74 +1722,6 @@ impl CompiledSelectorProblemBuilder {
         if index == values.len() {
             values.push(value);
         }
-    }
-
-    fn validate_binary_constraint(
-        &self,
-        left: ConstraintVariableId,
-        right: ConstraintVariableId,
-        kind: BinaryConstraintKind,
-    ) -> Result<(), CompiledSelectorProblemError> {
-        let left_domain = self.require_variable(left)?.domain;
-        let right_domain = self.require_variable(right)?.domain;
-        match kind {
-            BinaryConstraintKind::Equal | BinaryConstraintKind::NotEqual => {
-                if left_domain != right_domain {
-                    return Err(CompiledSelectorProblemError::BinaryDomainMismatch {
-                        left,
-                        right,
-                        left_domain,
-                        right_domain,
-                    });
-                }
-            }
-            BinaryConstraintKind::OrdinalBefore => {
-                if left_domain != VariableDomain::StatementOrdinal
-                    || right_domain != VariableDomain::StatementOrdinal
-                {
-                    return Err(CompiledSelectorProblemError::OrdinalBeforeDomainMismatch {
-                        left,
-                        right,
-                    });
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn validate_linear_constraint(
-        &self,
-        variables: &[ConstraintVariableId],
-        coefficients: &[i64],
-        domain: &[i64],
-    ) -> Result<(), CompiledSelectorProblemError> {
-        if variables.is_empty() {
-            return Err(CompiledSelectorProblemError::DegenerateLinearConstraint);
-        }
-        if variables.len() != coefficients.len() {
-            return Err(CompiledSelectorProblemError::LinearArityMismatch {
-                variables: variables.len(),
-                coefficients: coefficients.len(),
-            });
-        }
-        if domain.is_empty() || !domain.len().is_multiple_of(2) {
-            return Err(CompiledSelectorProblemError::InvalidLinearDomain);
-        }
-        for interval in domain.as_chunks::<2>().0 {
-            if interval[0] > interval[1] {
-                return Err(CompiledSelectorProblemError::InvalidLinearDomain);
-            }
-        }
-        for variable in variables {
-            let domain = self.require_variable(*variable)?.domain;
-            if domain != VariableDomain::StatementOrdinal {
-                return Err(CompiledSelectorProblemError::LinearDomainMismatch {
-                    variable: *variable,
-                    domain,
-                });
-            }
-        }
-        Ok(())
     }
 
     fn validate_all_different_constraint(
@@ -2114,26 +1882,6 @@ pub enum CompiledSelectorProblemError {
         domain: VariableDomain,
         value: BackendValueId,
     },
-    BinaryDomainMismatch {
-        left: ConstraintVariableId,
-        right: ConstraintVariableId,
-        left_domain: VariableDomain,
-        right_domain: VariableDomain,
-    },
-    OrdinalBeforeDomainMismatch {
-        left: ConstraintVariableId,
-        right: ConstraintVariableId,
-    },
-    DegenerateLinearConstraint,
-    LinearArityMismatch {
-        variables: usize,
-        coefficients: usize,
-    },
-    InvalidLinearDomain,
-    LinearDomainMismatch {
-        variable: ConstraintVariableId,
-        domain: VariableDomain,
-    },
     DegenerateAllDifferent {
         id: AllDifferentConstraintId,
     },
@@ -2145,9 +1893,6 @@ pub enum CompiledSelectorProblemError {
         id: AllDifferentConstraintId,
         expected: VariableDomain,
         actual: VariableDomain,
-    },
-    InternalVariableValueOutOfDomain {
-        value: BackendValueId,
     },
     TargetInjectivityProjectionMismatch {
         id: AllDifferentConstraintId,
@@ -2237,36 +1982,6 @@ impl fmt::Display for CompiledSelectorProblemError {
                 f,
                 "shared {domain:?} domain contains encoded value {value:?} outside its dictionary"
             ),
-            Self::BinaryDomainMismatch {
-                left,
-                right,
-                left_domain,
-                right_domain,
-            } => write!(
-                f,
-                "binary constraint {left:?}/{right:?} has mismatched domains {left_domain:?}/{right_domain:?}"
-            ),
-            Self::OrdinalBeforeDomainMismatch { left, right } => write!(
-                f,
-                "ordinal_before constraint {left:?}/{right:?} must reference statement ordinals"
-            ),
-            Self::DegenerateLinearConstraint => {
-                write!(f, "linear constraint has no variables")
-            }
-            Self::LinearArityMismatch {
-                variables,
-                coefficients,
-            } => write!(
-                f,
-                "linear constraint has {variables} variables but {coefficients} coefficients"
-            ),
-            Self::InvalidLinearDomain => {
-                write!(f, "linear constraint has an invalid domain")
-            }
-            Self::LinearDomainMismatch { variable, domain } => write!(
-                f,
-                "linear constraint variable {variable:?} has {domain:?} domain, expected statement ordinals"
-            ),
             Self::DegenerateAllDifferent { id } => {
                 write!(
                     f,
@@ -2285,9 +2000,6 @@ impl fmt::Display for CompiledSelectorProblemError {
                 f,
                 "all_different constraint {id:?} mixes {expected:?} and {actual:?} domains"
             ),
-            Self::InternalVariableValueOutOfDomain { value } => {
-                write!(f, "internal integer variable has invalid value {value:?}")
-            }
             Self::TargetInjectivityProjectionMismatch { id } => write!(
                 f,
                 "target-injectivity all_different constraint {id:?} does not match target projections"
@@ -2325,8 +2037,17 @@ pub enum BackendSolveStatus {
 pub enum BackendAssignmentCoverage {
     #[default]
     Sample,
+    /// Every value each projected variable can take appears in some assignment.
     TargetSupportComplete,
+    /// As `TargetSupportComplete`, except that some ambiguous variable stopped at
+    /// `MAX_ALTERNATIVES_PER_VARIABLE` values without proving it has no more.
+    TargetSupportCapped,
 }
+
+/// Distinct values a backend lists per ambiguous projected variable before it reports
+/// `BackendAssignmentCoverage::TargetSupportCapped`: the listing bound of an
+/// ambiguous selector outcome.
+pub const MAX_ALTERNATIVES_PER_VARIABLE: u32 = selector_outcome::MAX_LISTED_CANDIDATES as u32;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackendSolveResult {
@@ -2335,6 +2056,13 @@ pub struct BackendSolveResult {
     pub assignments: Vec<BackendAssignment>,
     pub diagnostic: Option<String>,
     pub solver_response_stats: Option<String>,
+    /// Unsatisfiable cores found after the plain solve was infeasible. The
+    /// status and assignments then cover only the targets outside them.
+    pub conflicts: Vec<Vec<SelectorTargetId>>,
+    /// Only with [`BackendSolveStatus::Unknown`]: the projected variables
+    /// proven to take one value before the backend stopped; each takes the
+    /// value it has in every assignment. Every other variable is undecided.
+    pub fixed_variables: BTreeSet<ConstraintVariableId>,
 }
 
 pub trait SelectorProblemBackend {
@@ -2438,9 +2166,7 @@ fn sparse_variable_domain_fingerprint(
 fn variable_domain_fingerprint_tag(domain: VariableDomain) -> u8 {
     match domain {
         VariableDomain::Owner => 0,
-        VariableDomain::AstNode => 1,
         VariableDomain::String => 2,
-        VariableDomain::StatementOrdinal => 3,
     }
 }
 

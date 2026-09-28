@@ -3,10 +3,8 @@ the KubeVirt control plane, and the Flux Kustomization that waits for that plane
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
+from cdk8s import ApiObjectMetadata, App, Chart
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from kubevirt_kubevirt_crds.io.kubevirt import (
     KubeVirt,
     KubeVirtSpec,
@@ -29,16 +27,14 @@ from kubevirt_kubevirt_crds.io.kubevirt import (
     KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
     KubeVirtSpecWorkloadUpdateStrategy,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "kubevirt"
 NAMESPACE = "kubevirt"
-OUTPUT_DIR = "cluster/k8s/kubevirt/app"
+OUTPUT_DIR = f"{GENERATED_ROOT}/kubevirt/app"
 _IF_NOT_PRESENT = "IfNotPresent"
 
 
@@ -47,9 +43,9 @@ def chart(app: App) -> Chart:
     KubeVirt(
         chart,
         "kubevirt",
-        metadata=metadata(
-            NAME,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=NAME,
+            namespace=NAMESPACE,
             annotations={
                 "description": "KubeVirt control plane for running virtual machines on KVM-capable Kubernetes workers."
             },
@@ -95,7 +91,7 @@ def chart(app: App) -> Chart:
                                                 values=["hil", "home", "proxmox"],
                                             ),
                                             KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                                key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
+                                                key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="DoesNotExist"
                                             ),
                                         ]
                                     )
@@ -111,33 +107,26 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def kubevirt(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kubevirt_operator: Kustomization) -> Kustomization:
+def kubevirt(chart: Chart, directory: RenderedDirectory, kubevirt_operator: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            wait=True,
-            timeout="10m",
-            depends_on=[flux_kustomization_depends_on(kubevirt_operator)],
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="virt-api", namespace=NAMESPACE
+        directory,
+        timeout="10m",
+        depends_on=[flux_kustomization_depends_on(kubevirt_operator)],
+        # The KubeVirt CR has no Ready condition, so `wait` alone passes it before virt-operator
+        # rolls out virt-api/-controller/-handler. virt-operator sets phase Deployed and
+        # Available=True only once they are ready (kubevirt v1.8.2
+        # pkg/virt-operator/kubevirt.go isReady, pkg/virt-operator/util/client.go
+        # UpdateConditionsAvailable).
+        health_check_exprs=[
+            KustomizationSpecHealthCheckExprs(
+                api_version="kubevirt.io/v1",
+                kind="KubeVirt",
+                current=(
+                    "has(status.phase) && status.phase == 'Deployed' && has(status.conditions) && "
+                    "status.conditions.exists(c, c.type == 'Available' && c.status == 'True')"
                 ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="virt-controller", namespace=NAMESPACE
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="DaemonSet", name="virt-handler", namespace=NAMESPACE
-                ),
-            ],
-        ),
+            )
+        ],
     )

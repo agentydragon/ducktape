@@ -19,8 +19,9 @@ resource "authentik_provider_oauth2" "matrix" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://matrix.allegedly.works/_synapse/client/oidc/callback"
+      matching_mode     = "strict"
+      url               = "https://matrix.allegedly.works/_synapse/client/oidc/callback"
+      redirect_uri_type = "authorization"
     },
   ]
 }

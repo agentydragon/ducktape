@@ -1181,6 +1181,13 @@ pub struct RejectedFixture {
     _root: TempDir,
 }
 
+pub struct DryRunFixture {
+    pub stderr: String,
+    pub report_root: PathBuf,
+    // Held to keep the tempdir alive for the duration of assertions.
+    _root: TempDir,
+}
+
 pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
     let setup = setup_fixture(&opts);
     let spec_path = setup.root.path().join("transform_spec.yaml");
@@ -1279,10 +1286,75 @@ pub fn run_fail_fast_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> Rejecte
     run_rejection_fixture_with_args(opts, &["--dry-run", "--fail-fast"])
 }
 
-/// Compatibility spelling for tests that need to document the old explicit
-/// flag; keep-going is now the default for broad pipeline runs.
-pub fn run_keep_going_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_args(opts, &["--dry-run", "--keep-going"])
+/// Runs `fixture` keep-going and with `--fail-fast`, both dry. Keep-going
+/// reports every outcome, at least two; fail-fast fails with exactly one of
+/// those lines, of `kind`, and no other. Returns that line.
+pub fn assert_fail_fast_stops_at_first_outcome<'a>(
+    fixture: impl Fn() -> FixtureOpts<'a>,
+    kind: &str,
+) -> String {
+    let keep_going = run_dry_run_rejection_fixture(fixture());
+    let reported = keep_going
+        .stderr
+        .lines()
+        .filter_map(|line| line.strip_prefix("  - ["))
+        .map(|line| format!("[{line}"))
+        .collect::<Vec<_>>();
+    let recorded = read_selector_outcomes(&keep_going.report_root);
+    assert_eq!(
+        reported.len(),
+        recorded.len(),
+        "keep-going must print every recorded outcome\nstderr:\n{}\nrecorded: {recorded:#?}",
+        keep_going.stderr
+    );
+    assert!(
+        reported.len() >= 2,
+        "the fixture needs outcomes after the first: {reported:#?}"
+    );
+
+    let fail_fast = run_fail_fast_dry_run_rejection_fixture(fixture());
+    let stopped_at = reported
+        .iter()
+        .filter(|line| fail_fast.stderr.contains(line.as_str()))
+        .collect::<Vec<_>>();
+    let [line] = stopped_at[..] else {
+        panic!(
+            "fail-fast must report exactly one outcome, got {stopped_at:#?}\nstderr:\n{}",
+            fail_fast.stderr
+        );
+    };
+    assert!(
+        line.starts_with(&format!("[{kind}] ")),
+        "fail-fast stopped at {line:?}, expected a {kind} outcome"
+    );
+    assert!(
+        !fail_fast.stderr.contains("Selector outcome report"),
+        "fail-fast printed the keep-going report:\n{}",
+        fail_fast.stderr
+    );
+    line.clone()
+}
+
+/// Run `debundle run --dry-run` over `opts` and assert it succeeds. The report
+/// root holds whatever the pass still writes on success, such as selector
+/// warnings in `selector_diagnostics.json`.
+pub fn run_dry_run_fixture(opts: FixtureOpts<'_>) -> DryRunFixture {
+    let setup = setup_fixture(&opts);
+    let spec_path = setup.root.path().join("transform_spec.yaml");
+    write_yaml_file(&spec_path, &build_spec(&opts, &setup));
+    let result = spawn_transform_with_args(&spec_path, &["--dry-run"], &[]);
+    assert!(
+        result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr,
+    );
+    DryRunFixture {
+        stderr: result.stderr,
+        report_root: setup.report_root,
+        _root: setup.root,
+    }
 }
 
 fn run_rejection_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> RejectedFixture {
@@ -2067,6 +2139,92 @@ pub struct CommandResult {
     pub status: std::process::ExitStatus,
 }
 
+fn command_result(output: std::process::Output) -> CommandResult {
+    CommandResult {
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        status: output.status,
+    }
+}
+
+/// `debundle spec validate --modules <modules_root> --source-file <source_file>`:
+/// the source-only preflight.
+pub fn run_source_only_validate(
+    modules_root: &Path,
+    source_file: &Path,
+    extra_args: &[&str],
+) -> CommandResult {
+    let bin = debundler_path();
+    let output = Command::new(&bin)
+        .args(["spec", "validate", "--modules"])
+        .arg(modules_root)
+        .arg("--source-file")
+        .arg(source_file)
+        .args(extra_args)
+        .output()
+        .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
+    command_result(output)
+}
+
+/// `debundle spec match-selector --source-file <source_file> --match <selector>
+/// --format json`, parsed; panics on a non-zero exit.
+pub fn run_match_selector(source_file: &Path, selector: &str, extra_args: &[&str]) -> Value {
+    let bin = debundler_path();
+    let result = command_result(
+        Command::new(&bin)
+            .args(["spec", "match-selector", "--source-file"])
+            .arg(source_file)
+            .args(["--match", selector, "--format", "json"])
+            .args(extra_args)
+            .output()
+            .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display())),
+    );
+    assert!(
+        result.status.success(),
+        "match-selector exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr,
+    );
+    serde_json::from_str(&result.stdout).unwrap_or_else(|e| {
+        panic!(
+            "match-selector stdout is not JSON ({e}):\n{}",
+            result.stdout
+        )
+    })
+}
+
+/// The `outcomes` of the `static/app` chunk's `selector_diagnostics.json`
+/// under a `debundle run --dry-run` report root.
+pub fn read_selector_outcomes(report_root: &Path) -> Vec<Value> {
+    read_chunk_selector_outcomes(report_root, "static/app")
+}
+
+/// The `outcomes` of `chunk`'s `selector_diagnostics.json` under a report root.
+pub fn read_chunk_selector_outcomes(report_root: &Path, chunk: &str) -> Vec<Value> {
+    let report_path = report_root.join(chunk).join("selector_diagnostics.json");
+    let report: Value = serde_json::from_str(
+        &fs::read_to_string(&report_path)
+            .unwrap_or_else(|error| panic!("read {}: {error}", report_path.display())),
+    )
+    .unwrap_or_else(|error| panic!("parse {}: {error}", report_path.display()));
+    report["outcomes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("outcomes must be an array: {report:#}"))
+        .clone()
+}
+
+/// The outcome record of `kind` whose entity is the export `export_name`.
+pub fn find_outcome<'a>(outcomes: &'a [Value], kind: &str, export_name: &str) -> &'a Value {
+    outcomes
+        .iter()
+        .find(|record| {
+            record["outcome"]["kind"] == kind
+                && record["placement"]["entity"]["export"] == export_name
+        })
+        .unwrap_or_else(|| panic!("missing {kind} outcome for export {export_name}: {outcomes:#?}"))
+}
+
 fn spawn_transform(spec_path: &Path) -> CommandResult {
     run_debundler(spec_path, &[])
 }
@@ -2126,41 +2284,78 @@ pub fn run_debundler_with_env(
     }
 }
 
-/// Run the tree-authoring form of `debundle run` with explicit environment
-/// variables. Keeping the environment on a child process makes diagnostics
-/// tests safe when Rust executes test functions concurrently.
-pub fn run_debundler_tree_with_env(
-    config_path: &Path,
-    modules_root: &Path,
-    vendor_marks_path: &Path,
-    source_root: &Path,
-    out_root: &Path,
-    env: &[(&str, &str)],
-) -> CommandResult {
+/// A tree-authored spec over several chunks: `chunks` are `(chunk id,
+/// source)`, `module_roots` are `(tree root, chunk id)`, and `modules` are
+/// `(path below the modules root, module YAML)`. Every chunk is inlined into
+/// its entry when unassigned; the first chunk is `main_chunk_id`.
+pub struct TreeFixture<'a> {
+    pub chunks: &'a [(&'a str, &'a str)],
+    pub module_roots: &'a [(&'a str, &'a str)],
+    pub modules: &'a [(&'a str, &'a str)],
+}
+
+pub struct TreeRun {
+    _root: TempDir,
+    pub out_root: PathBuf,
+    pub report_root: PathBuf,
+    pub result: CommandResult,
+}
+
+/// Writes `fixture` and runs `debundle run` on it in tree form with
+/// `extra_args`, writing the JS tree.
+pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeRun {
+    let root = TempDir::with_prefix(current_test_prefix()).expect("create tempdir");
+    let snapshot = root.path().join("snapshot");
+    let modules = root.path().join("modules");
+    let out_root = root.path().join("out");
+    let mut js_list = String::new();
+    let mut unassigned_mode = String::new();
+    for (chunk, source) in fixture.chunks {
+        write_text_file(&snapshot.join(format!("{chunk}.js")), source);
+        js_list.push_str(&format!("{chunk}.js\n"));
+        unassigned_mode.push_str(&format!("  {chunk}: {{ kind: inline_in_entry }}\n"));
+    }
+    write_text_file(&root.path().join("js-files.txt"), &js_list);
+    let module_roots = fixture
+        .module_roots
+        .iter()
+        .map(|(tree, chunk)| format!("  {tree}: {chunk}\n"))
+        .collect::<String>();
+    for (path, body) in fixture.modules {
+        write_text_file(&modules.join(path), body);
+    }
+    let config = root.path().join("spec_config.yaml");
+    write_text_file(
+        &config,
+        &format!(
+            "main_chunk_id: {}\nmodule_roots:\n{module_roots}inputs:\n  root: snapshot\n  \
+             js_list_path: js-files.txt\nwrite_js_tree: true\nunassigned_mode:\n{unassigned_mode}",
+            fixture.chunks[0].0,
+        ),
+    );
+    let vendor_marks = root.path().join("vendor_marks.yaml");
+    write_text_file(&vendor_marks, "vendor_marks: []\n");
     let bin = debundler_path();
-    let mut command = Command::new(&bin);
-    command
+    let output = Command::new(&bin)
         .arg("run")
         .arg("--tree-config")
-        .arg(config_path)
+        .arg(&config)
         .arg("--tree-modules")
-        .arg(modules_root)
+        .arg(&modules)
         .arg("--tree-vendor-marks")
-        .arg(vendor_marks_path)
+        .arg(&vendor_marks)
         .arg("--tree-source-root")
-        .arg(source_root)
+        .arg(root.path())
         .arg("--out-root")
-        .arg(out_root);
-    for (name, value) in env {
-        command.env(name, value);
-    }
-    let output = command
+        .arg(&out_root)
+        .args(extra_args)
         .output()
         .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
-    CommandResult {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        status: output.status,
+    TreeRun {
+        report_root: out_root.join("reports").join("tree"),
+        out_root,
+        result: command_result(output),
+        _root: root,
     }
 }
 

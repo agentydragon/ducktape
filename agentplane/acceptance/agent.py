@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from typing import TypeVar
@@ -66,8 +67,13 @@ _OBJECT = re.compile(r"\{.*\}", re.DOTALL)
 class Turn:
     """What one turn produced: the harness's own tool outputs and its assistant text."""
 
+    # `time.monotonic()` when the app answered the turn's input as admitted: the runner has admitted
+    # it and the app has archived that, and no native work need have started.
+    admitted: float
     tool_outputs: list[str] = field(default_factory=list)
     text: list[str] = field(default_factory=list)
+    # Every line the harness wrote during the turn, as the runner recorded it.
+    native: list[str] = field(default_factory=list)
     status: event_pb2.TurnStatus | None = None
 
     @property
@@ -105,6 +111,10 @@ class Agent:
         self._thread_id = thread_id
         self._cursor = cursor
 
+    @property
+    def thread_id(self) -> UUID:
+        return self._thread_id
+
     @classmethod
     async def open(
         cls, client: Client, *, sandbox: str, harness: protocol_pb2.Harness, model: str, instructions: str = ""
@@ -139,13 +149,15 @@ class Agent:
                 command_id=f"input-{uuid4().hex[:8]}", submit_input=command_pb2.SubmitInput(text=prompt)
             ),
         )
-        turn = Turn()
+        turn = Turn(admitted=time.monotonic())
         async for entry in self._client.events(self._thread_id, after=after, read_seconds=TURN_SECONDS):
             self._cursor = entry.cursor
             event = entry.event
             match event.WhichOneof("observation"):
                 case "item_completed":
                     _completed(event.item_completed, turn)
+                case "native" if event.native.direction == event_pb2.DIRECTION_FROM_HARNESS:
+                    turn.native.append(event.native.line)
                 case "turn_completed":
                     completed = event.turn_completed
                     turn.status = completed.status

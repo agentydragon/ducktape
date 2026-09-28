@@ -9,8 +9,7 @@ Haku (`haku@allegedly.works`) over an authenticated channel — contract in
 The `haku-mailbox` Flux Kustomization owns the namespace, database, and application
 through the root `kustomization.yaml`; the Namespace is part of that root. CNPG,
 cert-manager, and External Secrets retain their
-operator prerequisites; `cert-manager-issuer-config` supplies the required issuer
-substitution. Registry, storage, identity, and routing services may converge after
+operator prerequisites. Registry, storage, identity, and routing services may converge after
 admission. The init container retries through normal Pod reconciliation.
 
 Ownership changes follow the [stateful Flux migration guidance](../../../AGENTS.md#migrating-stateful-flux-kustomizations).
@@ -93,6 +92,10 @@ kubectl-sandbox JWT) are rejected. The `authentik-jwt-rotation` CronJob
 (`haku-mail` entry) mints the JWT for the `haku` service account
 biweekly-ish, publishes it as the `haku-mail-token` Secret (flux-system),
 and the `ClusterExternalSecret` in `app/` mirrors it into `haku-sandbox`.
+agentplane-staging's egress proxy also holds a copy and presents it to
+`claude-ai` sandboxes for the `agentplane-credential-haku-mailbox`
+placeholder, on JMAP paths only
+(`cluster/cdk8s/agentplane/egress_staging_credentials.py`).
 
 ## Traffic
 

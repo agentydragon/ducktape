@@ -1,16 +1,15 @@
-# Build of upstream iron-proxy pinned to a specific unreleased commit — the
-# first one with HTTP/2/gRPC support in MITM mode. Nothing here is specific to
-# any one consumer; three egress fences share this image (public-coder-agent,
-# haku-claude-oauth-proxy, haku-openclaw-spike-proxy).
+# Build of upstream iron-proxy pinned to the v0.50.0 release commit, the first
+# stable release with HTTP/2/gRPC support in MITM mode. Nothing here is specific to
+# any one consumer; two egress fences share this image (public-coder-agent,
+# haku-openclaw-spike-proxy).
 #
 # The workflow supplies the exact checked-out source tree as this build context;
 # do not fetch a branch or mutable tag here.
 #
-# CLEANUP(added 2026-08-09): delete this build path and return every consumer to
-#   the official upstream image once iron-proxy v0.50.0 ships stable. c90f4fe is
-#   v0.49.0 (latest stable) + 1 commit and is already in v0.50.0-rc.1/rc.2, so
-#   the only thing keeping this here is the lack of a non-RC tag. Note the
-#   official image also picks up the two rc commits.
+# v0.50.0 is now a stable release, so consumers could return to the official
+# upstream image; whether to is the supply-chain decision in
+# plans/personal_agents/TODO.md ("Decide deliberately how the iron-proxy image is
+# pinned"), which moved production off Docker Hub on purpose.
 FROM golang:1.27.1-alpine3.24@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125 AS build
 
 ARG IRON_PROXY_REVISION

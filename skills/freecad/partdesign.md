@@ -2,7 +2,7 @@
 
 The Part Design workbench builds solid models as a feature tree inside a `PartDesign::Body`
 where each operation (Pad, Pocket, Fillet, Chamfer) builds on the previous one.
-See <build_bearing_block.py> for a full example, and <build_bearing_block_techdraw.py> for
+See <examples/bearing_block/build.py> for a full example, and <examples/bearing_block/build_techdraw.py> for
 a multi-view TechDraw drawing.
 
 ## Body and feature tree
@@ -160,4 +160,4 @@ for obj in doc.Objects:
         vo.Visibility = obj.TypeId in _3D_TYPES
 ```
 
-See <render_multi_angle.py> for rendering Part Design models from multiple camera angles.
+See <examples/render_multi_angle.py> for rendering Part Design models from multiple camera angles.

@@ -7,21 +7,13 @@
 import "./network";
 import "@mantine/core/styles.css";
 
-import { create, toJson } from "@bufbuild/protobuf";
-import { MantineProvider } from "@mantine/core";
+import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import { createRoot } from "react-dom/client";
 
 import App from "../app";
 import { sampleConnection } from "../connections_fixture";
-import type {
-  ActionPolicyView,
-  ActionRequestView,
-  BindingView,
-  Decision,
-  PolicyView,
-  SandboxView,
-  ThreadView,
-} from "../client";
+import type { BindingView, Decision, McpLinkageView, PolicyView, SandboxView, ThreadView } from "../client";
+import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
 import { EventSchema, ItemKind, TurnStatus } from "../../../protocol/event_pb";
 import { CommandSchema } from "../../../protocol/command_pb";
@@ -34,9 +26,11 @@ import {
   type SessionSpec,
   type SessionSummary,
 } from "../../../runner/protocol_pb";
-import { electricLongPoll, electricShape, electricSubset, routes } from "./network";
+import { electricLive, electricShape, electricSubset, routes, UNANSWERED } from "./network";
 import { SCENARIOS, type Scenario } from "./scenarios";
 import { LocalCommands } from "../local_commands";
+import { streamRegistry } from "../stream_status";
+import { ThemeProvider } from "../theme";
 
 /** Resolved before any fixture is built: the scenario's fields are what the fixtures vary on. */
 function resolveScenario(): Scenario {
@@ -283,15 +277,6 @@ const ACTION_POLICY: ActionPolicyView = {
       },
     },
   ],
-  auto_deny_if: [
-    {
-      binding: "demo-a1b2-push-afternoon",
-      policy_set: "harness-push",
-      index: 0,
-      policy: { type: "exact_actions", actions: { kubernetes: ["pods_delete", "resources_delete"] } },
-    },
-  ],
-  auto_deny_unless: [],
 };
 
 const DECISIONS: Decision[] = [
@@ -484,6 +469,30 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   },
 ];
 
+// A 32x32 checkerboard, 95 bytes: a real image, small enough to inline.
+const DIAGRAM_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgAQMAAABJtOi3AAAABlBMVEX///8ii+b/FUc9AAAAFElEQVR42mNg+A+ERBBEKmOgsnkA7b0/wU6R7xwAAAAASUVORK5CYII=";
+
+// What the ssh MCP server's `exec` (x/ssh_mcp_server/server.py) returns for a listing that names one
+// missing path: ls exits 2, and its output runs past the lines the widget shows before "Show all".
+const SSH_EXEC_RESULT = {
+  host: "test-archive-host",
+  user: "test-user",
+  exit_code: 2,
+  stdout: [
+    "/home/test-user/test-archive:",
+    "total 1536",
+    ...Array.from({ length: 30 }, (_, index) => {
+      const day = index + 1;
+      return `-rw-r--r-- 1 test-user test-user 51200 Sep ${String(day).padStart(2)} 03:00 test-backup-2026-09-${String(day).padStart(2, "0")}.tar.zst`;
+    }),
+    "",
+  ].join("\n"),
+  stderr: "ls: cannot access '/home/test-user/test-archive/test-missing': No such file or directory\n",
+  stdout_truncated: false,
+  stderr_truncated: false,
+};
+
 const ACTIONS: ActionRequestView[] = [
   {
     id: "70000000-0000-4000-8000-000000000001",
@@ -511,10 +520,79 @@ const ACTIONS: ActionRequestView[] = [
     execution: null,
   },
   {
+    id: "70000000-0000-4000-8000-000000000006",
+    // The ssh group in MCP_GROUPS: its `exec` Action has widgets of its own (actions/rendering/ssh.tsx).
+    action: { group: "ssh", name: "exec" },
+    arguments: {
+      host: "test-archive-host",
+      user: "test-user",
+      command: 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"',
+      timeout_seconds: 60,
+    },
+    title: "restart the test backup service",
+    description: "Its last run stopped on a stale lock, which a restart clears.",
+    origin: { thread_id: THREADS[0].id },
+    correlation: {},
+    idempotency_key: "visual-ssh-pending",
+    caller: { namespace: "agentplane-visual", name: "demo-a1b2" },
+    state: "decision_pending",
+    version: 1,
+    created_at: ago(2 * 60_000),
+    updated_at: ago(2 * 60_000),
+    decision: null,
+    execution: null,
+  },
+  {
+    id: "70000000-0000-4000-8000-000000000007",
+    action: { group: "ssh", name: "exec" },
+    arguments: {
+      host: "test-archive-host",
+      user: "test-user",
+      command: 'ls -l "$HOME/test-archive" "$HOME/test-archive/test-missing"',
+    },
+    title: "list the test backup archive",
+    description: null,
+    origin: { thread_id: THREADS[0].id },
+    correlation: {},
+    idempotency_key: "visual-ssh-completed",
+    caller: { namespace: "agentplane-visual", name: "demo-a1b2" },
+    state: "succeeded",
+    version: 4,
+    created_at: ago(5 * 60_000),
+    updated_at: ago(4 * 60_000),
+    decision: {
+      id: "71000000-0000-4000-8000-000000000007",
+      verdict: "allow",
+      provider: "human_operator",
+      operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+      decision_note: null,
+      idempotency_key: "visual-allow-ssh",
+      decided_at: ago(4 * 60_000),
+    },
+    execution: {
+      id: "72000000-0000-4000-8000-000000000007",
+      state: "succeeded",
+      // The whole CallToolResult, as FastMCP answers with the ExecResult: the value as structured
+      // content and again as one JSON text block, and the server's info in `_meta`.
+      result: {
+        _meta: { "io.modelcontextprotocol/serverInfo": { name: "ssh-mcp", version: "4.0.3" } },
+        content: [{ type: "text", text: JSON.stringify(SSH_EXEC_RESULT) }],
+        structuredContent: SSH_EXEC_RESULT,
+        isError: false,
+      },
+      error: null,
+      created_at: ago(4 * 60_000),
+      started_at: ago(4 * 60_000 - 500),
+      completed_at: ago(4 * 60_000 - 1_900),
+      reconciled_at: null,
+    },
+  },
+  {
     id: "70000000-0000-4000-8000-000000000002",
-    action: { group: "everything", name: "echo" },
-    arguments: { message: "completed fixture execution" },
-    title: "echo the completed fixture message",
+    // An MCP group in MCP_GROUPS below, so its stored result is the tool's whole CallToolResult.
+    action: { group: "example_docs", name: "render_diagram" },
+    arguments: { path: "docs/test-diagram.mmd" },
+    title: "render the test diagram",
     description: null,
     origin: { thread_id: THREADS[1].id },
     correlation: {},
@@ -536,7 +614,20 @@ const ACTIONS: ActionRequestView[] = [
     execution: {
       id: "72000000-0000-4000-8000-000000000002",
       state: "succeeded",
-      result: { echo: { message: "completed fixture execution" } },
+      result: {
+        content: [
+          { type: "text", text: "Rendered docs/test-diagram.mmd as a 32x32 PNG." },
+          { type: "image", data: DIAGRAM_PNG, mimeType: "image/png" },
+          {
+            type: "resource_link",
+            uri: "https://docs-mcp.example.test/diagrams/test-diagram",
+            name: "test-diagram",
+            title: "Test diagram page",
+          },
+        ],
+        structuredContent: { path: "docs/test-diagram.mmd", width: 32, height: 32 },
+        isError: false,
+      },
       error: null,
       created_at: ago(39 * 60_000),
       started_at: ago(39 * 60_000 - 500),
@@ -622,20 +713,49 @@ const ACTIONS: ActionRequestView[] = [
       reconciled_at: null,
     },
   },
+  {
+    id: "70000000-0000-4000-8000-000000000005",
+    // A tool's error answer: the Action succeeded, and the CallToolResult says the tool failed.
+    action: { group: "example_notes", name: "get_note" },
+    arguments: { note_id: "test-missing-note" },
+    title: "read the missing test note",
+    description: null,
+    origin: { thread_id: THREADS[2].id },
+    correlation: {},
+    idempotency_key: "visual-tool-error",
+    caller: { namespace: "agentplane-visual", name: "demo-a1b2" },
+    state: "succeeded",
+    version: 4,
+    created_at: ago(10 * 60_000),
+    updated_at: ago(9 * 60_000),
+    decision: {
+      id: "71000000-0000-4000-8000-000000000005",
+      verdict: "allow",
+      provider: "human_operator",
+      operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+      decision_note: null,
+      idempotency_key: "visual-allow-tool-error",
+      decided_at: ago(9 * 60_000),
+    },
+    execution: {
+      id: "72000000-0000-4000-8000-000000000005",
+      state: "succeeded",
+      result: { content: [{ type: "text", text: "No note has the id test-missing-note." }], isError: true },
+      error: null,
+      created_at: ago(9 * 60_000),
+      started_at: ago(9 * 60_000 - 500),
+      completed_at: ago(9 * 60_000 - 900),
+      reconciled_at: null,
+    },
+  },
 ];
 
 const CONVERSATION_SOURCE = "visual-runner";
 const CONVERSATION_EPOCH = "20260921";
 const payloadBodies = new Map<string, string>();
 
-function payloadKey(
-  ownerCursor: string,
-  ownerId: string,
-  field: string,
-  generation: string,
-  revisionCursor: string
-): string {
-  return `${ownerCursor}:${ownerId}:${field}:${generation}:${revisionCursor}`;
+function payloadKey(ownerId: string, field: string, generation: string): string {
+  return `${ownerId}:${field}:${generation}`;
 }
 
 function payload(
@@ -652,8 +772,9 @@ function payload(
     field,
     generation: "1",
     revision_cursor: String(revisionCursor),
+    chunk_count: "1",
   };
-  payloadBodies.set(payloadKey(reference.owner_cursor, ownerId, field, "1", reference.revision_cursor), body);
+  payloadBodies.set(payloadKey(ownerId, field, reference.generation), body);
   return reference;
 }
 
@@ -731,6 +852,7 @@ function item(
     tool?: string;
     arguments?: string;
     output?: string;
+    failed?: boolean;
     complete?: boolean;
     turn?: string;
     threadId?: string;
@@ -743,8 +865,8 @@ function item(
     {
       kind,
       tool_name: extra.tool ?? "",
-      completion: extra.complete === false ? null : text,
-      tool_succeeded: extra.output === undefined ? null : true,
+      completion: extra.complete === false ? null : kind === ItemKind.TOOL_CALL ? "tool" : "text",
+      tool_succeeded: extra.output === undefined ? null : !extra.failed,
     },
     {
       thread_id: extra.threadId,
@@ -910,6 +1032,7 @@ function statesRows(threadId: string): Record<string, unknown>[] {
       tool: "Bash",
       arguments: '{"command":"git branch -d stale"}',
       output: "fatal: branch 'stale' not found.",
+      failed: true,
     }),
     item(10, "m-0", ItemKind.ASSISTANT_TEXT, "That branch does not exist.", { threadId, turn: "t1" }),
     item(16, "r-0", ItemKind.REASONING, "Running the suite twice exposes flaky failures.", {
@@ -942,23 +1065,92 @@ function statesRows(threadId: string): Record<string, unknown>[] {
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
+/** Three mundane observations that collapse into one comma-joined row, then a prominent one
+ * (harness lost) that stands alone, then one final mundane one -- lone, so it groups with nothing. */
+function lifecycleGroupRows(threadId: string): Record<string, unknown>[] {
+  const event = (value: MessageInitShape<typeof EventSchema>["observation"]): Record<string, unknown> =>
+    toJson(EventSchema, create(EventSchema, { observation: value })) as Record<string, unknown>;
+  const rows = [
+    viewState(50, null),
+    lifecycle(10, "turn_started", event({ case: "turnStarted", value: { turnId: "turn-visual" } }), threadId),
+    lifecycle(20, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+    lifecycle(
+      30,
+      "turn_completed",
+      event({ case: "turnCompleted", value: { turnId: "turn-visual", status: TurnStatus.COMPLETED } }),
+      threadId
+    ),
+    lifecycle(40, "harness_lost", event({ case: "harnessLost", value: {} }), threadId),
+    lifecycle(50, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
+/** One user turn answered with a fenced Python code block, so Markdown's syntax highlighting of a
+ * registered language renders the way tool-call Arguments/Output already do. */
+function codeFenceRows(threadId: string): Record<string, unknown>[] {
+  const rows = [
+    viewState(20, null),
+    entity(
+      "confirmed_input",
+      "user-1",
+      4,
+      { harness_message_id: "user-1", origin_command_ids: ["input-1"] },
+      {
+        thread_id: threadId,
+        turn_id: "turn-visual",
+        input_ref: payload(4, "user-1", "confirmed_input", "Add type hints to the greet function."),
+      }
+    ),
+    item(
+      20,
+      "m-code",
+      ItemKind.ASSISTANT_TEXT,
+      'Done. The signature now declares its types explicitly:\n\n```python\ndef greet(name: str) -> str:\n    return f"Hello, {name}!"\n```\n',
+      { threadId }
+    ),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
+/** A reasoning step with no neighboring tool call, so `historyRows` never folds it into a run and
+ * `EntityCard` renders it directly -- the standalone case, distinct from `standardRows`'s reasoning
+ * step, which sits right after a tool call and so is always part of a run. */
+function standaloneReasoningRows(threadId: string): Record<string, unknown>[] {
+  const rows = [
+    viewState(24, null),
+    entity(
+      "confirmed_input",
+      "user-1",
+      4,
+      { harness_message_id: "user-1", origin_command_ids: ["input-1"] },
+      {
+        thread_id: threadId,
+        turn_id: "turn-visual",
+        input_ref: payload(4, "user-1", "confirmed_input", "What should we try next?"),
+      }
+    ),
+    item(20, "r-solo", ItemKind.REASONING, "Weighing whether to add a retry or fix the root cause first.", {
+      threadId,
+    }),
+    item(24, "m-1", ItemKind.ASSISTANT_TEXT, "Let's fix the root cause.", { threadId }),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
 function threadEntityRows(threadId: string): Record<string, unknown>[] {
   if (scenario.failedTurn) return failedRows(threadId, scenario.failedTurn === "after-content");
   if (scenario.interleavedEvents) return interleavedRows(threadId);
+  if (scenario.lifecycleGroup) return lifecycleGroupRows(threadId);
+  if (scenario.markdownCodeFence) return codeFenceRows(threadId);
+  if (scenario.standaloneReasoning) return standaloneReasoningRows(threadId);
   if (threadId === THREADS[2].id || scenario.pendingCommands) return statesRows(threadId);
   return standardRows(threadId);
 }
 
-function threadEntityInterest(threadId: string): Record<string, string | null> {
+function threadScope(threadId: string): Record<string, string> {
   const through = threadEntityRows(threadId).find((row) => row.entity_kind === "view_state")?.revision_cursor ?? "0";
-  return {
-    projection_epoch: CONVERSATION_EPOCH,
-    through_cursor: String(through),
-    anchor_cursor: String(through),
-    tail_from: "0",
-    window_from: null,
-    window_before: null,
-  };
+  return { projection_epoch: CONVERSATION_EPOCH, through_cursor: String(through) };
 }
 
 if (scenario.pendingCommands === "mixed") {
@@ -974,13 +1166,172 @@ if (scenario.pendingCommands === "mixed") {
   );
 }
 
+if (scenario.pendingCommands === "outcomes") {
+  // A settled command shows while the browser that sent it still holds it.
+  const local = new LocalCommands(THREADS[2].id);
+  local.remember(
+    create(CommandSchema, {
+      commandId: "queued-model",
+      operation: { case: "changeModel", value: { model: "next-model" } },
+    })
+  );
+  local.remember(
+    create(CommandSchema, {
+      commandId: "queued-interrupt",
+      operation: { case: "interruptTurn", value: { turnId: "t2" } },
+    })
+  );
+}
+
+// One MCP server per row state the MCP servers page draws: linked and connected, a link whose token
+// lapsed while its refresh keeps failing, a refresh the provider refused, never linked, and
+// bearer-only backends that are up or unreachable.
+const MCP_LINKAGES: McpLinkageView[] = [
+  {
+    server_id: "example_docs",
+    server_url: "https://docs-mcp.example.test/mcp",
+    status: "linked",
+    revision: 3,
+    scopes: ["openid", "offline_access"],
+    expires_at: new Date(NOW + HOUR).toISOString(),
+    linked_at: ago(30 * 24 * HOUR),
+    linked_by: null,
+  },
+  {
+    server_id: "example_cluster",
+    server_url: "https://cluster-mcp.example.test/mcp",
+    status: "expired",
+    revision: 2,
+    scopes: ["openid", "email", "profile", "offline_access"],
+    expires_at: ago(2 * HOUR),
+    linked_at: ago(9 * 24 * HOUR),
+    linked_by: null,
+    refresh_failure: {
+      action: "retrying",
+      error: "the token endpoint answered HTTP 503 Service Unavailable",
+      attempts: 6,
+      retry_at: new Date(NOW + 4 * 60_000).toISOString(),
+    },
+  },
+  {
+    server_id: "example_calendar",
+    server_url: "https://calendar-mcp.example.test/mcp",
+    status: "degraded",
+    revision: 5,
+    scopes: ["openid", "offline_access"],
+    expires_at: ago(HOUR),
+    linked_at: ago(40 * 24 * HOUR),
+    linked_by: null,
+    refresh_failure: {
+      action: "reconnect",
+      error: "the OAuth provider refused the token request: invalid_grant: Token is not active",
+      attempts: 1,
+      retry_at: null,
+    },
+  },
+  {
+    server_id: "example_pantry",
+    server_url: "https://pantry-mcp.example.test/mcp",
+    status: "unlinked",
+    revision: 0,
+    scopes: [],
+    expires_at: null,
+    linked_at: null,
+    linked_by: null,
+  },
+];
+
+function mcpGroup(key: string, executorDescription: string, health: ActionGroupView["health"]): ActionGroupView {
+  return {
+    key,
+    title: key,
+    description: `Test MCP backend ${key}.`,
+    executor_kind: "mcp",
+    executor_description: executorDescription,
+    available: health?.state === "available",
+    health,
+    actions: [],
+  };
+}
+
+const MCP_GROUPS: ActionGroupView[] = [
+  mcpGroup("example_docs", "Linked operator account.", {
+    state: "available",
+    reason: null,
+    detail: null,
+    last_discovery_at: ago(60_000),
+    retry_at: null,
+    failures: 0,
+  }),
+  mcpGroup("example_cluster", "Linked operator account.", {
+    state: "disconnected",
+    reason: "linkage_unavailable",
+    detail: `the access token expired at ${ago(2 * HOUR)
+      .replace("T", " ")
+      .slice(0, 19)} UTC and has not been refreshed`,
+    last_discovery_at: ago(3 * HOUR),
+    retry_at: new Date(NOW + 20_000).toISOString(),
+    failures: 12,
+  }),
+  mcpGroup("example_calendar", "Linked operator account.", {
+    state: "disconnected",
+    reason: "linkage_unavailable",
+    detail: "refreshing the token failed in a way retrying cannot fix; link the account again",
+    last_discovery_at: ago(HOUR),
+    retry_at: new Date(NOW + 20_000).toISOString(),
+    failures: 9,
+  }),
+  mcpGroup("example_pantry", "Linked operator account.", {
+    state: "disconnected",
+    reason: "linkage_unavailable",
+    detail: "no account is linked",
+    last_discovery_at: null,
+    retry_at: new Date(NOW + 20_000).toISOString(),
+    failures: 4,
+  }),
+  mcpGroup("example_mail", "Test MCP backend behind a static bearer.", {
+    state: "disconnected",
+    reason: "connect_failed",
+    detail: "RuntimeError: Client failed to connect: All connection attempts failed",
+    last_discovery_at: null,
+    retry_at: new Date(NOW + 20_000).toISOString(),
+    failures: 7,
+  }),
+  mcpGroup("example_notes", "Test MCP backend behind a static bearer.", {
+    state: "available",
+    reason: null,
+    detail: null,
+    last_discovery_at: ago(60_000),
+    retry_at: null,
+    failures: 0,
+  }),
+  mcpGroup("ssh", "Test MCP backend behind a static bearer.", {
+    state: "available",
+    reason: null,
+    detail: null,
+    last_discovery_at: ago(60_000),
+    retry_at: null,
+    failures: 0,
+  }),
+];
+
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
 // live streams above.
 routes.push(
   [
     "GET",
     /^\/models$/,
-    () => ({ HARNESS_CLAUDE: ["harness-claude-model", "next-model"], HARNESS_CODEX: ["harness-codex-model"] }),
+    () => ({
+      models: [
+        { model: "harness-claude-model", display_name: "Harness Claude Model" },
+        { model: "next-model", display_name: "Next Model" },
+        { model: "harness-codex-model", display_name: "Harness Codex Model" },
+      ],
+      harnesses: {
+        HARNESS_CLAUDE: ["harness-claude-model", "next-model"],
+        HARNESS_CODEX: ["harness-codex-model"],
+      },
+    }),
   ],
   [
     "GET",
@@ -1028,9 +1379,17 @@ routes.push(
     ],
   ],
   ["GET", /^\/connection-service-accounts$/, () => [{ namespace: "agentplane-visual", name: "operator-assistant" }]],
-  // The Settings modal mounts all three tabs at once (Mantine keepMounted); MCP servers and
+  // The Settings modal mounts all three tabs at once (Mantine keepMounted), so MCP servers and
   // Notifications fetch on mount even while the OAuth clients tab is the one shown in the shot.
-  ["GET", /^\/mcp-servers$/, () => []],
+  ["GET", /^\/mcp-servers$/, () => MCP_LINKAGES],
+  [
+    "GET",
+    /^\/action-groups$/,
+    () =>
+      scenario.actionGroupsUnavailable
+        ? Response.json({ detail: "the Action Service did not answer: connection refused" }, { status: 502 })
+        : MCP_GROUPS,
+  ],
   ["GET", /^\/push\/config$/, () => ({ application_server_key: null })],
   ["GET", /^\/push\/subscriptions$/, () => []],
   [
@@ -1083,18 +1442,46 @@ function electricEntity(row: Record<string, unknown>): Record<string, unknown> {
   return value;
 }
 
-/** Mutable Electric collections bootstrap their fixed server-selected interest through an on-demand subset. */
-function currentSubset(query: URLSearchParams): boolean {
-  if (!query.has("subset__where") && !query.has("subset__params")) return false;
-  if (query.get("subset__where") !== "true = true" || query.get("subset__params") !== "{}") {
-    throw new Error("current Electric shapes must request the fixed true = true subset with empty parameters");
-  }
+interface Subset {
+  where?: string;
+  params?: Record<string, string>;
+  order_by?: string;
+  limit?: number;
+}
+
+function subsetOf(query: URLSearchParams, body: string | undefined): Subset {
   if (query.get("projection_epoch") !== CONVERSATION_EPOCH) {
-    throw new Error("current Electric shapes must select the resolved thread fold projection epoch");
+    throw new Error("thread shapes must name the resolved thread fold projection epoch");
   }
-  // The subset parameters persist on the first cursor-based continuation. Only `offset=now`
-  // is the current-state bootstrap; a later offset receives the ordinary empty/up-to-date log.
-  return query.get("offset") === "now";
+  if (body === undefined) throw new Error("a subset is POSTed with its parameters in the body");
+  return JSON.parse(body) as Subset;
+}
+
+/** The proxy's entity subset forms, evaluated over the fixture rows. */
+function entitySubset(rows: Record<string, unknown>[], subset: Subset): Record<string, unknown>[] {
+  const index = (row: Record<string, unknown>) => BigInt(String(row.entity_index));
+  const newestFirst = (selected: Record<string, unknown>[]) =>
+    selected.sort((left, right) => (index(right) > index(left) ? 1 : index(right) < index(left) ? -1 : 0));
+  const selected =
+    subset.where === undefined && subset.order_by === "entity_index DESC"
+      ? newestFirst(rows)
+      : subset.where === "entity_index < $1" && subset.order_by === "entity_index DESC"
+        ? newestFirst(rows.filter((row) => index(row) < BigInt(subset.params?.["1"] ?? "0")))
+        : subset.where === "entity_kind = 'view_state'"
+          ? rows.filter((row) => row.entity_kind === "view_state")
+          : subset.where === "entity_kind = 'command' AND pending = true"
+            ? rows.filter((row) => row.entity_kind === "command" && row.pending === "true")
+            : subset.where === "entity_kind = 'command' AND entity_id = ANY($1)"
+              ? rows.filter(
+                  (row) =>
+                    row.entity_kind === "command" &&
+                    (JSON.parse(`[${(subset.params?.["1"] ?? "{}").slice(1, -1)}]`) as string[]).includes(
+                      String(row.entity_id)
+                    )
+                )
+              : undefined;
+  if (selected === undefined) throw new Error(`the proxy admits no entity subset ${JSON.stringify(subset)}`);
+  return selected.slice(0, subset.limit);
 }
 
 function shapeRow(relation: string, value: Record<string, unknown>) {
@@ -1117,8 +1504,9 @@ function shapeRow(relation: string, value: Record<string, unknown>) {
   };
 }
 
+/** Positions in the order the fixture lists its rows, which is the order they were first written. */
 function threadRows(threadId: string): Record<string, unknown>[] {
-  return threadEntityRows(threadId).map(electricEntity);
+  return threadEntityRows(threadId).map((row, index) => electricEntity({ ...row, entity_index: String(index) }));
 }
 
 function archivedStderr(cursor: number): Record<string, unknown> {
@@ -1167,106 +1555,74 @@ function observationPage(threadId: string) {
 routes.push(
   [
     "GET",
-    /^\/threads\/([0-9a-f-]+)\/sync\/interest$/,
+    /^\/threads\/([0-9a-f-]+)\/sync\/scope$/,
     (match) =>
       scenario.sessionReplay === "unavailable"
-        ? // This persistent service failure is distinct from a ready shape's stale source/epoch
-          // 410, which the production collection intentionally resolves once.
+        ? // This persistent service failure is distinct from a retired epoch's 410, which the
+          // production store resolves by reading the scope again.
           Response.json({ detail: "thread fold is temporarily unavailable" }, { status: 503 })
-        : threadEntityInterest(match[1]),
+        : threadScope(match[1]),
   ],
   [
     "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
-    (match, query, signal) => {
-      const subset = currentSubset(query);
-      if (!subset && query.get("offset") !== null) {
-        if (query.get("live") === "true") return electricLongPoll(`visual-entities-${match[1]}`, undefined, signal);
-        return electricShape([], `visual-entities-${match[1]}`);
-      }
-      if (!subset) throw new Error("current Electric shapes must begin with a subset snapshot");
-      const rows = threadRows(match[1]).map((row) => {
-        if (scenario.sessionReplay !== "catching-up" || row.entity_kind !== "view_state") return row;
-        return { ...row, revision_cursor: "8" };
-      });
-      return electricSubset(
-        rows.map((row) => shapeRow("thread_entity", row)),
-        `visual-entities-${match[1]}`
-      );
-    },
+    (match, query, signal) =>
+      query.get("live") !== "true"
+        ? electricShape([], `visual-entities-${match[1]}`)
+        : scenario.sessionReplay === "reconnecting"
+          ? Response.json({ detail: "thread shape is temporarily unavailable" }, { status: 503 })
+          : electricLive(`visual-entities-${match[1]}`, undefined, signal),
   ],
   [
-    "GET",
-    /^\/threads\/([0-9a-f-]+)\/sync\/commands$/,
-    (match, query, signal) => {
-      const subset = currentSubset(query);
-      if (!subset && query.get("offset") !== null) {
-        if (query.get("live") === "true") return electricLongPoll(`visual-commands-${match[1]}`, undefined, signal);
-        return electricShape([], `visual-commands-${match[1]}`);
-      }
-      if (!subset) throw new Error("current Electric command shapes must begin with a subset snapshot");
-      const selected = new Set(query.getAll("command_id"));
-      const rows = threadRows(match[1]).filter(
-        (row) => row.entity_kind === "command" && selected.has(String(row.entity_id))
+    "POST",
+    /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
+    (match, query, _signal, body) => {
+      const rows = threadRows(match[1]).map((row) =>
+        scenario.sessionReplay === "catching-up" && row.entity_kind === "view_state"
+          ? { ...row, revision_cursor: "8" }
+          : row
       );
       return electricSubset(
-        rows.map((row) => shapeRow("thread_entity", row)),
-        `visual-commands-${match[1]}`
+        entitySubset(rows, subsetOf(query, body)).map((row) => shapeRow("thread_entity", row)),
+        `visual-entities-${match[1]}`,
+        "thread_entity"
       );
     },
   ],
   [
     "GET",
-    /^\/threads\/([0-9a-f-]+)\/sync\/payload-interest$/,
-    (_match, query) => {
-      const ownerCursor = query.get("owner_cursor") ?? "0";
-      const ownerId = query.get("owner_id") ?? "";
-      const field = query.get("field") ?? "";
-      const generation = query.get("generation") ?? "0";
-      const revisionCursor = query.get("revision_cursor") ?? "0";
-      const body = payloadBodies.get(payloadKey(ownerCursor, ownerId, field, generation, revisionCursor));
-      return {
-        projection_epoch: CONVERSATION_EPOCH,
-        owner_cursor: ownerCursor,
-        owner_id: ownerId,
-        field,
-        generation,
-        revision_cursor: revisionCursor,
-        chunk_count: body === undefined ? "0" : "1",
-        content_bytes: String(new TextEncoder().encode(body ?? "").byteLength),
-      };
-    },
+    /^\/threads\/([0-9a-f-]+)\/sync\/chunks\/([a-z_]+)$/,
+    (match, query, signal) =>
+      query.get("live") === "true"
+        ? electricLive(`visual-chunks-${match[1]}-${match[2]}`, "thread_payload_chunk", signal)
+        : electricShape([], `visual-chunks-${match[1]}-${match[2]}`, "thread_payload_chunk"),
   ],
   [
-    "GET",
-    /^\/threads\/([0-9a-f-]+)\/sync\/payload-chunks$/,
-    (match, query, signal) => {
-      const ownerCursor = query.get("owner_cursor") ?? "0";
-      const ownerId = query.get("owner_id") ?? "";
-      const field = query.get("field") ?? "";
-      const generation = query.get("generation") ?? "0";
-      const revisionCursor = query.get("revision_cursor") ?? "0";
-      const body = payloadBodies.get(payloadKey(ownerCursor, ownerId, field, generation, revisionCursor));
-      const rows =
-        query.get("offset") !== null && query.get("offset") !== "-1"
+    "POST",
+    /^\/threads\/([0-9a-f-]+)\/sync\/chunks\/([a-z_]+)$/,
+    (match, query, _signal, body) => {
+      const params = subsetOf(query, body).params ?? {};
+      const rows = Array.from({ length: Object.keys(params).length / 2 }, (_, index) => ({
+        ownerId: params[String(2 * index + 1)],
+        generation: params[String(2 * index + 2)],
+      })).flatMap(({ ownerId, generation }) => {
+        const text = payloadBodies.get(payloadKey(ownerId, match[2], generation));
+        return text === undefined
           ? []
-          : body === undefined
-            ? []
-            : [
-                shapeRow("thread_payload_chunk", {
-                  thread_id: match[1],
-                  projection_epoch: CONVERSATION_EPOCH,
-                  owner_cursor: ownerCursor,
-                  owner_id: ownerId,
-                  field,
-                  generation,
-                  chunk_index: "0",
-                  text: body,
-                }),
-              ];
-      if (query.get("live") === "true" && query.get("offset") !== "-1")
-        return electricLongPoll(`visual-payload-${ownerCursor}-${ownerId}-${field}`, "thread_payload_chunk", signal);
-      return electricShape(rows, `visual-payload-${ownerCursor}-${ownerId}-${field}`);
+          : [
+              shapeRow("thread_payload_chunk", {
+                thread_id: match[1],
+                projection_epoch: CONVERSATION_EPOCH,
+                owner_cursor: "0",
+                owner_id: ownerId,
+                field: match[2],
+                generation,
+                chunk_index: "0",
+                text,
+              }),
+            ];
+      });
+      return electricSubset(rows, `visual-chunks-${match[1]}-${match[2]}`, "thread_payload_chunk");
     },
   ],
   [
@@ -1287,6 +1643,15 @@ routes.push(
       ],
       next_after_sequence: null,
     }),
+  ],
+  // No runner here admits a command, so one the page delivers on load stays unadmitted.
+  [
+    "POST",
+    /^\/threads\/([0-9a-f-]+)\/commands$/,
+    () =>
+      scenario.commandAdmissionTimedOut
+        ? Response.json({ detail: "runner did not admit the command within 15 seconds" }, { status: 504 })
+        : UNANSWERED,
   ],
   ["GET", /^\/threads\/([0-9a-f-]+)\/observations$/, (match) => observationPage(match[1])],
   [
@@ -1327,10 +1692,15 @@ function watch(): WatchHealth {
   return scenario.wedgedWatch ? WEDGED : FRESH;
 }
 
-/** Live inventory and action streams remain EventSource; projected threads use Electric fetches above. */
+/** Live inventory and action streams remain EventSource; projected threads use Electric fetches above.
+ * A stream a scenario drops goes back to `CONNECTING`, as a browser's does when the network drops,
+ * and never reconnects. */
 class HarnessEventSource extends EventTarget {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 2;
   readonly url: string;
-  readyState = 1;
+  readyState = HarnessEventSource.CONNECTING;
 
   constructor(url: string) {
     super();
@@ -1340,6 +1710,7 @@ class HarnessEventSource extends EventTarget {
   }
 
   private serve(url: URL): void {
+    this.readyState = HarnessEventSource.OPEN;
     if (url.pathname === "/live/threads") {
       const snapshot: ThreadsSnapshot = {
         sandboxes: SANDBOXES,
@@ -1348,12 +1719,13 @@ class HarnessEventSource extends EventTarget {
         watch: watch(),
       };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      if (scenario.sidebarSource === "disconnected") this.dispatchEvent(new Event("error"));
+      if (scenario.sidebarSource === "disconnected") this.drop();
       return;
     }
     if (url.pathname === "/live/sandboxes") {
       const snapshot: SandboxesSnapshot = { sandboxes: SANDBOXES, watch: watch() };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
+      if (scenario.inventoryDropped) this.drop();
       return;
     }
     const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
@@ -1375,44 +1747,126 @@ class HarnessEventSource extends EventTarget {
     throw new Error(`Unexpected EventSource route: ${url.pathname}`);
   }
 
+  private drop(): void {
+    this.readyState = HarnessEventSource.CONNECTING;
+    this.dispatchEvent(new Event("error"));
+  }
+
   close(): void {
-    this.readyState = 2;
+    this.readyState = HarnessEventSource.CLOSED;
   }
 }
 
 window.EventSource = HarnessEventSource as unknown as typeof EventSource;
 
-if (scenario.openDebug) {
-  const openDebug = new MutationObserver(() => {
-    const button = [...document.querySelectorAll("button")].find(
-      (candidate) => candidate.textContent === "Debug history"
-    );
-    if (!(button instanceof HTMLButtonElement)) return;
-    openDebug.disconnect();
-    button.click();
-    if (scenario.openDebug !== "stderr") return;
-    const expandStderr = new MutationObserver(() => {
-      const row = document.querySelector<HTMLDetailsElement>('[data-debug-observation="31"]');
-      if (!row) return;
-      expandStderr.disconnect();
-      row.open = true;
-      row.dispatchEvent(new Event("toggle", { bubbles: true }));
-    });
-    expandStderr.observe(document, { childList: true, subtree: true });
+// Under the frozen clock no stream is ever off for any time at all, so the registry's runs ahead of
+// it instead: a stream off since the scene began has been off this long when it renders.
+const { outageAge } = scenario;
+if (outageAge !== undefined) streamRegistry.now = () => Date.now() + outageAge;
+
+if (scenario.openConnectionStatus) {
+  // Focus opens the indicator's tooltip, as it does for a keyboard or touch reader. Every stream is
+  // off until its first frame, so the one to open is the indicator for a stream that has dropped.
+  const openStatus = new MutationObserver(() => {
+    const indicator = document.querySelector<HTMLElement>('[data-connection][aria-label*="reconnecting"]');
+    if (!indicator) return;
+    openStatus.disconnect();
+    indicator.focus();
   });
-  openDebug.observe(document, { childList: true, subtree: true });
+  openStatus.observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-label"] });
+}
+
+if (scenario.openDebug) {
+  // "Debug history" now lives in the composer's overflow menu: open that first, since Mantine
+  // does not mount a closed Menu's dropdown items at all.
+  const openMenu = new MutationObserver(() => {
+    const trigger = document.querySelector('button[aria-label="More"]');
+    if (!(trigger instanceof HTMLButtonElement)) return;
+    openMenu.disconnect();
+    trigger.click();
+    const openDebug = new MutationObserver(() => {
+      const item = [...document.querySelectorAll('[role="menuitem"]')].find(
+        (candidate) => candidate.textContent === "Debug history"
+      );
+      if (!(item instanceof HTMLElement)) return;
+      openDebug.disconnect();
+      item.click();
+      if (scenario.openDebug !== "stderr") return;
+      const expandStderr = new MutationObserver(() => {
+        const row = document.querySelector<HTMLDetailsElement>('[data-debug-observation="31"]');
+        if (!row) return;
+        expandStderr.disconnect();
+        row.open = true;
+        row.dispatchEvent(new Event("toggle", { bubbles: true }));
+      });
+      expandStderr.observe(document, { childList: true, subtree: true });
+    });
+    openDebug.observe(document, { childList: true, subtree: true });
+  });
+  openMenu.observe(document, { childList: true, subtree: true });
+}
+
+if (scenario.openMoreMenu) {
+  // Left open, unlike scenario.openDebug's use of the same trigger: this scene's point is the
+  // menu's own contents, not a page it navigates to.
+  const openMoreMenu = new MutationObserver(() => {
+    const trigger = document.querySelector('button[aria-label="More"]');
+    if (!(trigger instanceof HTMLButtonElement)) return;
+    openMoreMenu.disconnect();
+    trigger.click();
+  });
+  openMoreMenu.observe(document, { childList: true, subtree: true });
+}
+
+/** Opens the folded tool-call run, whose steps mount only once it is open. */
+function openRun(summaries: HTMLElement[]): void {
+  summaries
+    .find(
+      (candidate) =>
+        candidate.textContent?.includes("tool call") &&
+        candidate.parentElement instanceof HTMLDetailsElement &&
+        !candidate.parentElement.open
+    )
+    ?.click();
 }
 
 if (scenario.openReasoning) {
   const openReasoning = new MutationObserver(() => {
-    const summary = [...document.querySelectorAll("summary")].find(
-      (candidate) => candidate.textContent === "Reasoning"
-    );
-    if (!(summary instanceof HTMLElement)) return;
+    const summaries = [...document.querySelectorAll("summary")];
+    const step = summaries.find((candidate) => candidate.textContent === "Reasoning");
+    if (!step) {
+      openRun(summaries);
+      return;
+    }
     openReasoning.disconnect();
-    summary.click();
+    step.click();
   });
   openReasoning.observe(document, { childList: true, subtree: true });
+}
+
+if (scenario.openToolPayloads) {
+  const unopened = new Set(["Arguments", "Output"]);
+  const openToolPayloads = new MutationObserver(() => {
+    const summaries = [...document.querySelectorAll("summary")];
+    openRun(summaries);
+    for (const summary of summaries) {
+      if (unopened.delete(summary.textContent ?? "")) summary.click();
+    }
+    if (unopened.size === 0) openToolPayloads.disconnect();
+  });
+  openToolPayloads.observe(document, { childList: true, subtree: true });
+}
+
+if (scenario.openEvidence) {
+  const openEvidence = new MutationObserver(() => {
+    const button = document.querySelector<HTMLButtonElement>(
+      `[data-thread-anchor="${scenario.openEvidence}"] button[aria-label="Evidence"]`
+    );
+    if (!button) return;
+    openEvidence.disconnect();
+    button.click();
+  });
+  openEvidence.observe(document, { childList: true, subtree: true });
 }
 
 if (scenario.preselectReconnect) {
@@ -1454,21 +1908,22 @@ if (scenario.openSettings) {
   });
   openSettings.observe(document, { childList: true, subtree: true });
 }
-if (scenario.openRawStatus) {
-  // No URL param toggles the switch (unlike the tab itself); flip it the way an operator would.
-  const openRaw = new MutationObserver(() => {
-    const label = [...document.querySelectorAll("label")].find((candidate) => candidate.textContent === "Raw");
-    if (!label) return;
-    openRaw.disconnect();
-    label.click();
-  });
-  openRaw.observe(document, { childList: true, subtree: true });
+if (scenario.openRaw) {
+  // No URL param toggles a Raw switch; flip each one as it mounts, the way an operator would.
+  const flipped = new WeakSet<HTMLLabelElement>();
+  new MutationObserver(() => {
+    for (const label of document.querySelectorAll("label")) {
+      if (label.textContent !== "Raw" || flipped.has(label)) continue;
+      flipped.add(label);
+      label.click();
+    }
+  }).observe(document, { childList: true, subtree: true });
 }
 if (scenario.openMobileSidebar) {
   // The drawer has no route of its own; open it the way an operator would, by tapping the
   // phone-width hamburger.
   const openMobileSidebar = new MutationObserver(() => {
-    const button = document.querySelector('button[aria-label="Open navigation"]');
+    const button = document.querySelector('button[aria-label="Toggle navigation"]');
     if (!button) return;
     openMobileSidebar.disconnect();
     (button as HTMLButtonElement).click();
@@ -1480,7 +1935,7 @@ window.location.hash = scenario.route;
 const container = document.getElementById("app");
 if (!container) throw new Error("missing #app");
 createRoot(container).render(
-  <MantineProvider defaultColorScheme="auto">
+  <ThemeProvider>
     <App />
-  </MantineProvider>
+  </ThemeProvider>
 );

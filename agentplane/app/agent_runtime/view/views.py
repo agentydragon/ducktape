@@ -35,6 +35,9 @@ class ThreadPayloadReference(BaseModel):
     field: fold.PayloadField
     revision_cursor: str
     generation: str
+    chunk_count: str = Field(
+        description="How many of the generation's chunks this revision spans; a reader renders at most these."
+    )
 
 
 class ThreadControlsState(BaseModel):

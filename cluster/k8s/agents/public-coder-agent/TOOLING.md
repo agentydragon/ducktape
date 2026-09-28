@@ -201,11 +201,8 @@ Use direct Git and GitHub REST as `agentydragon-agent` for ordinary contribution
 Never push to upstream after a 403; it is expected. Never merge automatically, even if an API call
 would technically succeed.
 
-Do not route these writes through Haku's Operator OAuth GitHub connection. That uses the wrong
-principal and adds an unnecessary approval round-trip.
-
-Use Haku's repository-scoped GitHub reads when they provide authority the direct credential lacks.
-The main current example is read access to `agentydragon/gaffer-private`.
+`agentydragon/gaffer-private` is not reachable from this Pod: this credential cannot see it, and
+Haku Console serves no GitHub tools.
 
 ### Ducktape and local source inspection
 
@@ -306,15 +303,10 @@ another run. Retain the devbox checkout only as long as needed for the run.
 
 ## Current auto-approval summary
 
-As of 2026-09-06, `public-coder-agent` uses the `public-coder` access profile. Its standing Haku
-policy auto-approves reviewed GitHub reads scoped to:
-
-- `agentydragon/ducktape`; and
-- `agentydragon/gaffer-private`.
-
-The repository evaluator checks ordinary owner/repository fields and applies stricter parsing to
-code and pull-request search queries. Every other Haku operation remains approval-gated unless the
-live configuration has changed.
+`public-coder-agent` uses the `public-coder` access profile. Its standing Haku policy
+auto-approves only the `grants` server's self-service calls: `kubernetes_can_i`, `get_grant`,
+`whoami`, `list_grants` for its own grants, and `revoke_grants`. Every other Haku operation remains
+approval-gated unless the live configuration has changed.
 
 Do not infer public-coder authority from the broader `haku_v1` profile. That profile belongs to Haku
 and includes personal-service and other standing permissions that public coder must not inherit.

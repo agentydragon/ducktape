@@ -21,15 +21,28 @@ pub struct SourceMatchBodyDebt {
     pub near_misses: Vec<SourceMatchNearMiss>,
 }
 
+/// `free_bindings` on every candidate maps each of the template's free
+/// identifiers (`free_identifiers`) to the chunk identifier it bound to in that
+/// match.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MemberBindingMatch {
     pub body_idx: usize,
     pub binding: ResolvedMemberBinding,
+    pub free_bindings: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MemberBindingGroupMatch {
     pub bindings: BTreeMap<String, MemberBindingMatch>,
+    pub free_bindings: BTreeMap<String, String>,
+}
+
+/// One anonymous-statement candidate: the matched top-level body indices, one
+/// per template statement.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AnonymousGroupMatch {
+    pub body_indices: Vec<usize>,
+    pub free_bindings: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

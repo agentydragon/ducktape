@@ -1,4 +1,4 @@
-"""Loki (SimpleScalable) with its SeaweedFS bucket and credentials, the two promtail
+"""Loki (SimpleScalable) with its SeaweedFS bucket, identity and credentials, the two promtail
 DaemonSets shipping pod logs and the NixOS journal, and Loki's CiliumNetworkPolicy.
 
 External access goes through the Authentik proxy outpost (native blueprint in
@@ -9,20 +9,16 @@ backend. Grafana reaches Loki internally via the cluster Service.
 from __future__ import annotations
 
 import textwrap
-from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
-    CiliumNetworkPolicy,
-    CiliumNetworkPolicySpec,
     CiliumNetworkPolicySpecEgress,
     CiliumNetworkPolicySpecEgressToEndpoints,
     CiliumNetworkPolicySpecEgressToEntities,
     CiliumNetworkPolicySpecEgressToPorts,
     CiliumNetworkPolicySpecEgressToPortsPorts,
     CiliumNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumNetworkPolicySpecEndpointSelector,
     CiliumNetworkPolicySpecIngress,
     CiliumNetworkPolicySpecIngressFromEndpoints,
     CiliumNetworkPolicySpecIngressFromEntities,
@@ -30,125 +26,53 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPorts,
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-    HelmReleaseSpecUpgrade,
-)
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
-from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
-    S3Identity,
-    S3IdentitySpec,
-    S3IdentitySpecReclaimPolicy,
-    S3IdentitySpecSeaweedRef,
-)
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.monitoring import grafana_helmrepository
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
+from cluster.cdk8s.seaweedfs import namespace, s3
 
 NAME = "loki"
-OUTPUT_DIR = "cluster/k8s/monitoring/loki"
+OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/loki"
 _SEAWEEDFS = "seaweedfs"
-_SEAWEED_GROUP = "seaweed.seaweedfs.com"
 # Written by the old cross-namespace S3Credentials in seaweedfs.
 _LEGACY_CREDENTIALS_SECRET = "loki-s3-credentials"
 # Written by the tenant-local S3Credentials; what the Loki pods read.
 _CREDENTIALS_SECRET = "loki-seaweedfs-credentials"
-_BUCKET_ACTIONS = [
-    BucketSpecAccessActions.READ,
-    BucketSpecAccessActions.WRITE,
-    BucketSpecAccessActions.LIST,
-    BucketSpecAccessActions.TAGGING,
-]
-_PUSH_URL = "http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push"
-_ZONE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh"}
-# Prefer ordinary workers when this workload tolerates control planes.
-_PREFER_WORKERS_AFFINITY = {
-    "nodeAffinity": {
-        "preferredDuringSchedulingIgnoredDuringExecution": [
-            {
-                "weight": 100,
-                "preference": {
-                    "matchExpressions": [{"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}]
-                },
-            }
-        ]
-    }
-}
+WRITE_URL = "http://loki-write.loki.svc.cluster.local:3100"
+_PUSH_URL = f"{WRITE_URL}/loki/api/v1/push"
 _CREDENTIALS_ENV_FROM = [{"secretRef": {"name": _CREDENTIALS_SECRET}}]
 _GOLDILOCKS_OFF = {"goldilocks.fairwinds.com/enabled": "false"}
 _TOLERATE_NO_SCHEDULE = [{"effect": "NoSchedule", "operator": "Exists"}]
-# Must exceed the roaming-node count, or an offline laptop's undeletable pod
-# holds the whole unavailable budget and the rollout deadlocks silently.
-# Enforced by //cluster/validation:test_roaming_daemonset_capacity (which
-# derives the count from nebula-mesh.json); incident write-up in
-# cluster/docs/lessons_learned/2026_07_31_promtail_daemonset_roaming_deadlock.md.
-# renovate: datasource=helm depName=loki registryUrl=https://grafana.github.io/helm-charts
-_LOKI_CHART_VERSION = "7.x"
+# The pod-log and journal promtail releases run one chart version.
 # renovate: datasource=helm depName=promtail registryUrl=https://grafana.github.io/helm-charts
 _PROMTAIL_CHART_VERSION = "6.x"
+# Must exceed the roaming-node count, or an offline laptop's undeletable pod
+# holds the whole unavailable budget and the rollout deadlocks silently.
+# Enforced by //cluster/cdk8s/monitoring:test_roaming_daemonset_capacity (which
+# derives the count from nebula-mesh.json); incident write-up in
+# cluster/docs/lessons_learned/2026_07_31_promtail_daemonset_roaming_deadlock.md.
 _ROAMING_SAFE_UPDATE_STRATEGY = {"type": "RollingUpdate", "rollingUpdate": {"maxUnavailable": 3}}
 
 
-def _grafana_chart(chart: str, version: str) -> HelmReleaseSpecChart:
-    return HelmReleaseSpecChart(
-        spec=HelmReleaseSpecChartSpec(
-            chart=chart,
-            version=version,
-            source_ref=HelmReleaseSpecChartSpecSourceRef(
-                kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY, name="grafana", namespace="flux-system"
-            ),
-            interval="12h",
-        )
-    )
-
-
 def _storage(chart: Chart) -> None:
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAME,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "initial",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-                "pod-security.kubernetes.io/enforce": "privileged",
-                "pod-security.kubernetes.io/audit": "privileged",
-                "pod-security.kubernetes.io/warn": "privileged",
-            },
-        ),
+        name=NAME,
+        vpa=Vpa.INITIAL,
+        agent_readable=AgentReadable.LOGS,
+        labels={
+            "pod-security.kubernetes.io/enforce": "privileged",
+            "pod-security.kubernetes.io/audit": "privileged",
+            "pod-security.kubernetes.io/warn": "privileged",
+        },
     )
     # S3Credentials owns the credential values; Flux owns only this target shell.
     k8s.KubeSecret(
@@ -161,98 +85,46 @@ def _storage(chart: Chart) -> None:
     )
     # Permit only the SeaweedFS operator's S3Credentials resource to populate
     # this exact workload Secret across namespaces.
-    ResourceReferenceGrant(
-        chart,
-        "legacy-credentials-grant",
-        metadata=metadata(_LEGACY_CREDENTIALS_SECRET, NAME),
-        spec=ResourceReferenceGrantSpec(
-            from_=[ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="S3Credentials", namespace=_SEAWEEDFS)],
-            to=[ResourceReferenceGrantSpecTo(group="", kind="Secret", name=_LEGACY_CREDENTIALS_SECRET)],
-        ),
-    )
-    S3Identity(
-        chart,
-        "identity",
-        metadata=metadata(NAME, _SEAWEEDFS),
-        spec=S3IdentitySpec(
-            seaweed_ref=S3IdentitySpecSeaweedRef(name=_SEAWEEDFS), reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN
-        ),
-    )
-    S3Credentials(
-        chart,
-        "legacy-credentials-source",
-        metadata=metadata(NAME, _SEAWEEDFS),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=_SEAWEEDFS),
-            identity_ref=S3CredentialsSpecIdentityRef(name=NAME),
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_LEGACY_CREDENTIALS_SECRET,
-                namespace=NAME,
-                access_key_field="AWS_ACCESS_KEY_ID",
-                secret_key_field="AWS_SECRET_ACCESS_KEY",
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
+    s3.secret_grant(chart, secret=_LEGACY_CREDENTIALS_SECRET, namespace=NAME)
+    identity = s3.Identity(chart, "identity", name=NAME, namespace=NAME)
+    identity.credentials(
+        namespace=namespace.NAME,
+        secret=_LEGACY_CREDENTIALS_SECRET,
+        secret_namespace=NAME,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
     )
     # Single bucket "loki" carrying chunks, ruler, and admin sub-paths
     # (Loki splits them internally by key prefix). See the HelmRelease's
     # `storage.bucketNames` — all three point at the same bucket.
-    Bucket(
+    legacy_bucket = s3.Bucket(
         chart,
         "legacy-bucket",
-        metadata=metadata(NAME, _SEAWEEDFS),
-        spec=BucketSpec(
-            name=NAME,
-            cluster_ref=BucketSpecClusterRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            access=[BucketSpecAccess(user=NAME, actions=_BUCKET_ACTIONS)],
-        ),
+        name=NAME,
+        namespace=namespace.NAME,
+        adopt_existing=False,
+        # Unset: the CRD defaults to Retain.
+        reclaim_policy=None,
     )
+    legacy_bucket.grant_read_write(identity)
     # Tenant-local ownership for Loki's existing Seaweed bucket and credentials.
     # The old seaweedfs-namespace resources remain until the consumer cutover and
     # data-path verification are complete.
-    Bucket(
+    bucket = s3.Bucket(
         chart,
         "bucket",
-        metadata=metadata(NAME, NAME, annotations={"description": "Loki chunks, ruler, and admin objects."}),
-        spec=BucketSpec(
-            name=NAME,
-            adopt_existing=True,
-            cluster_ref=BucketSpecClusterRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-            access=[BucketSpecAccess(user=NAME, actions=_BUCKET_ACTIONS)],
-        ),
+        name=NAME,
+        namespace=NAME,
+        adopt_existing=True,
+        description="Loki chunks, ruler, and admin objects.",
     )
-    S3Credentials(
-        chart,
-        "credentials",
-        metadata=metadata(NAME, NAME, annotations={"description": "Loki's tenant-local SeaweedFS credentials."}),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            # The IAM identity name is cluster-global. Without a same-namespace
-            # S3Identity, the operator uses the existing identity named loki.
-            identity_ref=S3CredentialsSpecIdentityRef(name=NAME),
-            # Use a new Secret during the staged handoff. The existing Secret is
-            # populated by the old cross-namespace S3Credentials object and cannot be
-            # adopted here.
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_CREDENTIALS_SECRET, access_key_field="AWS_ACCESS_KEY_ID", secret_key_field="AWS_SECRET_ACCESS_KEY"
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
-    )
-    # Permit only Loki's tenant-local Bucket and S3Credentials to reference the
-    # SeaweedFS cluster in its namespace.
-    ResourceReferenceGrant(
-        chart,
-        "seaweed-grant",
-        metadata=metadata(NAME, _SEAWEEDFS),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="Bucket", namespace=NAME),
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="S3Credentials", namespace=NAME),
-            ],
-            to=[ResourceReferenceGrantSpecTo(group=_SEAWEED_GROUP, kind="Seaweed", name=_SEAWEEDFS)],
-        ),
+    bucket.grant_read_write(identity)
+    identity.credentials(
+        namespace=NAME,
+        # A new Secret during the staged handoff: the existing one is populated by the old
+        # cross-namespace S3Credentials object and cannot be adopted here.
+        secret=_CREDENTIALS_SECRET,
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
+        description="Loki's tenant-local SeaweedFS credentials.",
     )
 
 
@@ -313,8 +185,8 @@ def _loki_values() -> dict[str, object]:
         "write": {
             "replicas": 2,
             "annotations": _GOLDILOCKS_OFF,
-            "nodeSelector": _ZONE_SELECTOR,
-            "affinity": _PREFER_WORKERS_AFFINITY,
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
+            "affinity": node_scheduling.PREFER_WORKERS,
             "persistence": {"storageClass": "local-path-ovh", "size": "10Gi"},
             "extraEnvFrom": _CREDENTIALS_ENV_FROM,
             "resources": {"requests": {"cpu": "100m", "memory": "256Mi"}, "limits": {"cpu": "500m", "memory": "512Mi"}},
@@ -322,8 +194,8 @@ def _loki_values() -> dict[str, object]:
         "read": {
             "replicas": 2,
             "annotations": _GOLDILOCKS_OFF,
-            "nodeSelector": _ZONE_SELECTOR,
-            "affinity": _PREFER_WORKERS_AFFINITY,
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
+            "affinity": node_scheduling.PREFER_WORKERS,
             "extraEnvFrom": _CREDENTIALS_ENV_FROM,
             # Loki doesn't derive GOMEMLIMIT from its own cgroup limit yet (open
             # upstream: grafana/loki#23514, grafana/loki#19586), so the Go GC never
@@ -340,8 +212,8 @@ def _loki_values() -> dict[str, object]:
         "backend": {
             "replicas": 2,
             "annotations": _GOLDILOCKS_OFF,
-            "nodeSelector": _ZONE_SELECTOR,
-            "affinity": _PREFER_WORKERS_AFFINITY,
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
+            "affinity": node_scheduling.PREFER_WORKERS,
             "persistence": {"volumeClaimsEnabled": False},
             "extraEnvFrom": _CREDENTIALS_ENV_FROM,
             # backend runs the compactor + index-gateway + ruler. Its memory tracks
@@ -362,8 +234,8 @@ def _loki_values() -> dict[str, object]:
             # service out of ServiceMonitor discovery.
             "replicas": 1,
             "resources": {"requests": {"cpu": "10m", "memory": "32Mi"}},
-            "nodeSelector": _ZONE_SELECTOR,
-            "affinity": _PREFER_WORKERS_AFFINITY,
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
+            "affinity": node_scheduling.PREFER_WORKERS,
             # nginx's DNS resolver reuses one fixed UDP source port for every
             # query; Kubernetes' conntrack-based Service NAT then pins that flow
             # to whichever CoreDNS pod answered first and never re-evaluates it,
@@ -511,56 +383,60 @@ def _promtail_journal_values() -> dict[str, object]:
 
 
 def _helm_releases(chart: Chart) -> None:
-    HelmRelease(
+    helm_release(
         chart,
-        "loki",
-        metadata=metadata(NAME, NAME),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=_grafana_chart("loki", _LOKI_CHART_VERSION),
-            values=_loki_values(),
-        ),
+        NAME,
+        NAME,
+        repository=grafana_helmrepository.SOURCE_REF,
+        chart="loki",
+        # renovate: datasource=helm depName=loki registryUrl=https://grafana.github.io/helm-charts
+        version="7.x",
+        interval="30m",
+        chart_interval="12h",
+        install=RETRY_FAILED_INSTALL,
+        values=_loki_values(),
     )
-    HelmRelease(
+    helm_release(
         chart,
         "promtail",
-        metadata=metadata("promtail", NAME),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            upgrade=HelmReleaseSpecUpgrade(
-                # DaemonSet runs on roaming nodes (rugged, iguana) that may be offline.
-                # Without this, Helm waits for all pods including those stuck Pending/Terminating
-                # on offline nodes, causing the HelmRelease to hit RetriesExceeded and stall.
-                disable_wait=True
-            ),
-            chart=_grafana_chart("promtail", _PROMTAIL_CHART_VERSION),
-            values=_promtail_values(),
+        NAME,
+        repository=grafana_helmrepository.SOURCE_REF,
+        chart="promtail",
+        version=_PROMTAIL_CHART_VERSION,
+        interval="30m",
+        chart_interval="12h",
+        install=RETRY_FAILED_INSTALL,
+        upgrade=HelmReleaseSpecUpgrade(
+            # DaemonSet runs on roaming nodes (rugged, iguana) that may be offline.
+            # Without this, Helm waits for all pods including those stuck Pending/Terminating
+            # on offline nodes, causing the HelmRelease to hit RetriesExceeded and stall.
+            disable_wait=True
         ),
+        values=_promtail_values(),
     )
     # Deviation from the stock promtail chart (whose default is pod-log tailing): this
     # release is journal-only. It scrapes the systemd journal on the NixOS nodes
     # (wyrm2, rugged, iguana) so kernel messages — notably the RTX 5090
     # `Xid 79 "GPU has fallen off the bus"` events — reach Loki with cluster
     # retention instead of dying with the node's ~5-day local journal. Talos nodes
-    # have no journald and are handled separately (cluster/k8s/vector-talos-logs/);
+    # have no journald and are handled separately (cluster/cdk8s/vector_talos_logs.py);
     # the main pod-log promtail above is untouched and still runs on every node.
-    HelmRelease(
+    helm_release(
         chart,
         "promtail-journal",
-        metadata=metadata("promtail-journal", NAME),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            upgrade=HelmReleaseSpecUpgrade(
-                # Same rationale as the pod-log promtail: roaming nodes (rugged, iguana) may
-                # be offline, so don't block the release on their Pending/Terminating pods.
-                disable_wait=True
-            ),
-            chart=_grafana_chart("promtail", _PROMTAIL_CHART_VERSION),
-            values=_promtail_journal_values(),
+        NAME,
+        repository=grafana_helmrepository.SOURCE_REF,
+        chart="promtail",
+        version=_PROMTAIL_CHART_VERSION,
+        interval="30m",
+        chart_interval="12h",
+        install=RETRY_FAILED_INSTALL,
+        upgrade=HelmReleaseSpecUpgrade(
+            # Same rationale as the pod-log promtail: roaming nodes (rugged, iguana) may
+            # be offline, so don't block the release on their Pending/Terminating pods.
+            disable_wait=True
         ),
+        values=_promtail_journal_values(),
     )
 
 
@@ -617,114 +493,112 @@ def _network_policy(chart: Chart) -> None:
     #   - kube-apiserver (k8s-sidecar needs to list/watch secrets for rule sync)
     #   - SeaweedFS S3 gateway (seaweedfs namespace, S3 chunk/index storage)
     #   - Loki itself (intra-cluster gossip, gRPC, HTTP, and gateway)
-    CiliumNetworkPolicy(
+    NetworkPolicy(
         chart,
         "network-policy",
-        metadata=metadata("loki-ingress", NAME),
-        spec=CiliumNetworkPolicySpec(
-            endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels={"app.kubernetes.io/name": NAME}),
-            ingress=[
-                # Promtail → Loki (log push)
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=_from_pods({"app.kubernetes.io/name": "promtail", namespace_label: NAME}),
-                    to_ports=_ingress_tcp("3100"),
+        metadata=ApiObjectMetadata(name="loki-ingress", namespace=NAME),
+        endpoint_selector={"app.kubernetes.io/name": NAME},
+        ingress=[
+            # Promtail → Loki (log push)
+            CiliumNetworkPolicySpecIngress(
+                from_endpoints=_from_pods({"app.kubernetes.io/name": "promtail", namespace_label: NAME}),
+                to_ports=_ingress_tcp("3100"),
+            ),
+            # Vector Talos-log receiver → Loki (Talos node logs). The receiver runs in
+            # hostNetwork so it can bind only 127.0.0.1:13333; Cilium represents it as
+            # host on the local node and remote-node after a cross-node service hop.
+            CiliumNetworkPolicySpecIngress(
+                from_entities=[
+                    CiliumNetworkPolicySpecIngressFromEntities.HOST,
+                    CiliumNetworkPolicySpecIngressFromEntities.REMOTE_HYPHEN_NODE,
+                ],
+                to_ports=_ingress_tcp("3100"),
+            ),
+            # Grafana → Loki (log queries)
+            CiliumNetworkPolicySpecIngress(
+                from_endpoints=_from_pods({"app": "grafana", namespace_label: "monitoring"}),
+                to_ports=_ingress_tcp("3100"),
+            ),
+            # Props backend → Loki (GET /api/runs/{id}/logs reads agent container logs)
+            CiliumNetworkPolicySpecIngress(
+                from_endpoints=_from_pods(
+                    {
+                        "app.kubernetes.io/component": "backend",
+                        "app.kubernetes.io/instance": "props",
+                        namespace_label: "props",
+                    }
                 ),
-                # Vector Talos-log receiver → Loki (Talos node logs). The receiver runs in
-                # hostNetwork so it can bind only 127.0.0.1:13333; Cilium represents it as
-                # host on the local node and remote-node after a cross-node service hop.
-                CiliumNetworkPolicySpecIngress(
-                    from_entities=[
-                        CiliumNetworkPolicySpecIngressFromEntities.HOST,
-                        CiliumNetworkPolicySpecIngressFromEntities.REMOTE_HYPHEN_NODE,
-                    ],
-                    to_ports=_ingress_tcp("3100"),
+                to_ports=_ingress_tcp("3100"),
+            ),
+            # Alloy → Loki (OTel log forwarding)
+            CiliumNetworkPolicySpecIngress(
+                from_endpoints=_from_pods({"app.kubernetes.io/name": "alloy", namespace_label: "monitoring"}),
+                to_ports=_ingress_tcp("3100"),
+            ),
+            # Alloy → Loki canary metrics (ServiceMonitor scraping)
+            CiliumNetworkPolicySpecIngress(
+                from_endpoints=_from_pods({"app.kubernetes.io/name": "alloy", namespace_label: "monitoring"}),
+                to_ports=_ingress_tcp("3500"),
+            ),
+            # Gatus → Loki (health checks)
+            CiliumNetworkPolicySpecIngress(
+                from_endpoints=_from_pods({"app.kubernetes.io/name": "gatus", namespace_label: "gatus"}),
+                to_ports=_ingress_tcp("3100"),
+            ),
+            # Authentik proxy outpost → Loki (SSO-protected external access)
+            CiliumNetworkPolicySpecIngress(
+                from_endpoints=_from_pods({namespace_label: "authentik"}), to_ports=_ingress_tcp("3100")
+            ),
+            # loki-read-proxy → loki-read directly, bypassing the gateway (the proxy
+            # enforces the query validator + allowlist). See ducktape#4750: the
+            # gateway's nginx resolver can get permanently pinned to a dead CoreDNS
+            # pod IP after CoreDNS reschedules, and this proxy only ever queries, so
+            # it never needed the gateway's read/write path routing.
+            CiliumNetworkPolicySpecIngress(
+                from_endpoints=_from_pods(
+                    {"app.kubernetes.io/name": "loki-read-proxy", namespace_label: "loki-read-proxy"}
                 ),
-                # Grafana → Loki (log queries)
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=_from_pods({"app": "grafana", namespace_label: "monitoring"}),
-                    to_ports=_ingress_tcp("3100"),
-                ),
-                # Props backend → Loki (GET /api/runs/{id}/logs reads agent container logs)
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=_from_pods(
-                        {
-                            "app.kubernetes.io/component": "backend",
-                            "app.kubernetes.io/instance": "props",
-                            namespace_label: "props",
+                to_ports=_ingress_tcp("3100"),
+            ),
+            # Loki ↔ Loki (SimpleScalable read/write/backend, gateway, and canary)
+            CiliumNetworkPolicySpecIngress(
+                from_endpoints=_from_pods(loki_pods), to_ports=_ingress_tcp("80", "8080", "3100", "9095", "7946")
+            ),
+        ],
+        egress=[
+            # Loki → kube-apiserver (sc-rules sidecar watches secrets)
+            CiliumNetworkPolicySpecEgress(
+                to_entities=[CiliumNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER],
+                to_ports=_egress_ports(("443", tcp), ("6443", tcp)),
+            ),
+            # Loki → kube-dns (DNS resolution)
+            CiliumNetworkPolicySpecEgress(
+                to_endpoints=[
+                    CiliumNetworkPolicySpecEgressToEndpoints(
+                        match_labels={namespace_label: "kube-system", "k8s-app": "kube-dns"}
+                    )
+                ],
+                to_ports=_egress_ports(("53", udp), ("53", tcp)),
+            ),
+            # Loki → SeaweedFS S3 (S3 chunk/index storage)
+            CiliumNetworkPolicySpecEgress(
+                to_endpoints=[
+                    CiliumNetworkPolicySpecEgressToEndpoints(
+                        match_labels={
+                            "app.kubernetes.io/component": "s3",
+                            "app.kubernetes.io/name": _SEAWEEDFS,
+                            namespace_label: _SEAWEEDFS,
                         }
-                    ),
-                    to_ports=_ingress_tcp("3100"),
-                ),
-                # Alloy → Loki (OTel log forwarding)
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=_from_pods({"app.kubernetes.io/name": "alloy", namespace_label: "monitoring"}),
-                    to_ports=_ingress_tcp("3100"),
-                ),
-                # Alloy → Loki canary metrics (ServiceMonitor scraping)
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=_from_pods({"app.kubernetes.io/name": "alloy", namespace_label: "monitoring"}),
-                    to_ports=_ingress_tcp("3500"),
-                ),
-                # Gatus → Loki (health checks)
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=_from_pods({"app.kubernetes.io/name": "gatus", namespace_label: "gatus"}),
-                    to_ports=_ingress_tcp("3100"),
-                ),
-                # Authentik proxy outpost → Loki (SSO-protected external access)
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=_from_pods({namespace_label: "authentik"}), to_ports=_ingress_tcp("3100")
-                ),
-                # loki-read-proxy → loki-read directly, bypassing the gateway (the proxy
-                # enforces the query validator + allowlist). See ducktape#4750: the
-                # gateway's nginx resolver can get permanently pinned to a dead CoreDNS
-                # pod IP after CoreDNS reschedules, and this proxy only ever queries, so
-                # it never needed the gateway's read/write path routing.
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=_from_pods(
-                        {"app.kubernetes.io/name": "loki-read-proxy", namespace_label: "loki-read-proxy"}
-                    ),
-                    to_ports=_ingress_tcp("3100"),
-                ),
-                # Loki ↔ Loki (SimpleScalable read/write/backend, gateway, and canary)
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=_from_pods(loki_pods), to_ports=_ingress_tcp("80", "8080", "3100", "9095", "7946")
-                ),
-            ],
-            egress=[
-                # Loki → kube-apiserver (sc-rules sidecar watches secrets)
-                CiliumNetworkPolicySpecEgress(
-                    to_entities=[CiliumNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER],
-                    to_ports=_egress_ports(("443", tcp), ("6443", tcp)),
-                ),
-                # Loki → kube-dns (DNS resolution)
-                CiliumNetworkPolicySpecEgress(
-                    to_endpoints=[
-                        CiliumNetworkPolicySpecEgressToEndpoints(
-                            match_labels={namespace_label: "kube-system", "k8s-app": "kube-dns"}
-                        )
-                    ],
-                    to_ports=_egress_ports(("53", udp), ("53", tcp)),
-                ),
-                # Loki → SeaweedFS S3 (S3 chunk/index storage)
-                CiliumNetworkPolicySpecEgress(
-                    to_endpoints=[
-                        CiliumNetworkPolicySpecEgressToEndpoints(
-                            match_labels={
-                                "app.kubernetes.io/component": "s3",
-                                "app.kubernetes.io/name": _SEAWEEDFS,
-                                namespace_label: _SEAWEEDFS,
-                            }
-                        )
-                    ],
-                    to_ports=_egress_ports(("8333", tcp)),
-                ),
-                # Loki ↔ Loki (SimpleScalable read/write/backend, gateway, and canary)
-                CiliumNetworkPolicySpecEgress(
-                    to_endpoints=[CiliumNetworkPolicySpecEgressToEndpoints(match_labels=loki_pods)],
-                    to_ports=_egress_ports(("80", tcp), ("8080", tcp), ("7946", tcp), ("9095", tcp), ("3100", tcp)),
-                ),
-            ],
-        ),
+                    )
+                ],
+                to_ports=_egress_ports(("8333", tcp)),
+            ),
+            # Loki ↔ Loki (SimpleScalable read/write/backend, gateway, and canary)
+            CiliumNetworkPolicySpecEgress(
+                to_endpoints=[CiliumNetworkPolicySpecEgressToEndpoints(match_labels=loki_pods)],
+                to_ports=_egress_ports(("80", tcp), ("8080", tcp), ("7946", tcp), ("9095", tcp), ("3100", tcp)),
+            ),
+        ],
     )
 
 
@@ -736,38 +610,29 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
 def loki(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    grafana_helmrepository: Kustomization,
-    seaweedfs_cluster: Kustomization,
+    chart: Chart, directory: RenderedDirectory, seaweedfs_operator: Kustomization, monitoring_crds: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         "loki",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="loki", namespace="loki"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="loki", namespace="loki"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1", kind="S3Credentials", name="loki", namespace="loki"
-                ),
-            ],
-            timeout="10m",
-            depends_on=flux_kustomization_depends_on_many(grafana_helmrepository, seaweedfs_cluster),
+        directory,
+        wait=None,
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="loki", namespace="loki"
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="loki", namespace="loki"
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="seaweed.seaweedfs.com/v1", kind="S3Credentials", name="loki", namespace="loki"
+            ),
+        ],
+        timeout="10m",
+        depends_on=flux_kustomization_depends_on_many(
+            seaweedfs_operator,
+            # the chart's monitoring.serviceMonitor
+            monitoring_crds,
         ),
     )

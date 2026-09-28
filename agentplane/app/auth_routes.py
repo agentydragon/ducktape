@@ -11,17 +11,17 @@ from __future__ import annotations
 import json
 import logging
 import math
-import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from joserfc.errors import JoseError
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
-from agentplane.app.oidc import CLIENT_NAME, session_operator, settings
+from agentplane.app.oidc import CLIENT_NAME, TokenResponse, session_operator, settings
+from agentplane.app.operator_sessions import LoginTokens, OperatorSession, request_session
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +51,9 @@ async def callback(request: Request) -> RedirectResponse:
     try:
         client = _oauth(request).create_client(CLIENT_NAME)
         token = await client.authorize_access_token(request)
-    except json.JSONDecodeError:
-        logger.warning("OIDC token exchange returned a non-JSON response")
+        response = TokenResponse.model_validate(token)
+    except json.JSONDecodeError, ValidationError:
+        logger.warning("OIDC token exchange returned an invalid response")
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, "Identity provider returned an invalid response; please retry."
         ) from None
@@ -77,35 +78,24 @@ async def callback(request: Request) -> RedirectResponse:
     subject = claims.get("sub")
     if not isinstance(subject, str) or not subject:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "id token has no subject")
-    now = time.time()
+    now = datetime.now(UTC)
     id_expiry = claims.get("exp")
-    if not isinstance(id_expiry, (float, int)) or not math.isfinite(id_expiry) or id_expiry <= now:
+    if not isinstance(id_expiry, (float, int)) or not math.isfinite(id_expiry) or id_expiry <= now.timestamp():
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "id token has no valid expiry")
-    expiry = min(now + settings(request).session_seconds, id_expiry)
-    access_token = token.get("access_token")
-    token_expiry = token.get("expires_at")
     # Never retain a token without a known lifetime. Login still works, but federation fails closed.
-    if (
-        request.app.state.operator_actions is not None
-        and isinstance(access_token, str)
-        and access_token
-        and isinstance(token_expiry, (float, int))
-        and math.isfinite(token_expiry)
-        and token_expiry > now
-    ):
-        expiry = min(expiry, token_expiry)
-    else:
-        access_token = None
-    request.session.clear()
-    request.session["user"] = {
-        "issuer": settings(request).issuer,
-        "subject": subject,
-        "username": username,
-        "access_token": access_token,
-        "expires_at": expiry,
-    }
-    request.state.rotate_operator_session = True
-    request.state.operator_session_expires_at = datetime.fromtimestamp(expiry, UTC)
+    tokens = (
+        LoginTokens(
+            access_token=response.access_token, expires_at=response.expires_at, refresh_token=response.refresh_token
+        )
+        if request.app.state.operator_actions is not None
+        and response.expires_at is not None
+        and response.expires_at > now
+        else None
+    )
+    request_session(request).log_in(
+        OperatorSession(issuer=settings(request).issuer, subject=subject, username=username, tokens=tokens),
+        absolute_expires_at=now + timedelta(seconds=settings(request).session_max_seconds),
+    )
     logger.info("operator logged in")
     return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -114,7 +104,7 @@ async def callback(request: Request) -> RedirectResponse:
 async def logout(request: Request) -> RedirectResponse:
     if request.headers.get("origin") != settings(request).public_base_url.rstrip("/"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "logout requires exact same-origin Origin")
-    request.session.clear()
+    request_session(request).end()
     return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
 
 

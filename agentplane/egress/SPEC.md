@@ -217,5 +217,5 @@ GitOps gates and live rollout acceptance remain separate operational requirement
   local Remote Runner control RPC with the metadata, then also serialises the API key into the
   Bazel command run on a BuildBuddy-hosted runner. That runner is outside this proxy, so a
   placeholder arrives there unsubstituted, which is why the public-coder devbox, whose `bbr` is a
-  `bb remote` client, still mounts the real key (<../../cluster/k8s/agents/public-coder-agent/devbox/virtualmachine.yaml>). The
+  `bb remote` client, still mounts the real key (<../../cluster/cdk8s/public_coder_devbox.py>). The
   boundary and the candidate rewrite are in <../docs/buildbuddy_remote_auth.md>.

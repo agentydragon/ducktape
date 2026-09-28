@@ -5,6 +5,8 @@
 //! plus fail-closed (`Unsupported`) outside the faithful subset. These pin the
 //! matcher's behavior directly; the corpus-wide gate covers real specs.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use selector_match::Mode;
 
 fn facts(source: &str) -> chunk_facts::ChunkFacts {
@@ -28,6 +30,21 @@ fn roots(source: &str) -> Vec<chunk_facts::ChunkFacts> {
             .unwrap()
         })
         .collect()
+}
+
+/// The free identifiers of a template given as per-statement facts.
+fn free_of(needle: &[chunk_facts::ChunkFacts]) -> BTreeSet<String> {
+    let indices: Vec<selector_match::Index> =
+        needle.iter().map(selector_match::Index::build).collect();
+    source_match::free_identifiers(&indices)
+}
+
+fn free(source: &str) -> BTreeSet<String> {
+    free_of(&roots(source))
+}
+
+fn sites<T>(matches: Vec<selector_match::Matched<T>>) -> Vec<T> {
+    matches.into_iter().map(|matched| matched.site).collect()
 }
 
 struct Case {
@@ -317,8 +334,13 @@ fn fact_matcher_agrees_with_production_on_faithful_subset() {
             } else {
                 Mode::Exact
             };
-            let fact = selector_match::matches(&facts(case.selector), &facts(case.subject), mode)
-                .expect("case is within the faithful subset");
+            let fact = selector_match::matches(
+                &facts(case.selector),
+                &facts(case.subject),
+                mode,
+                &free(case.selector),
+            )
+            .expect("case is within the faithful subset");
             assert_eq!(
                 fact, case.expected,
                 "unexpected result for {:?} vs {:?} (alpha={})",
@@ -335,8 +357,15 @@ fn multi_statement_sequence_aligns_around_a_stmt_list_hole() {
         // absorbs the intervening body statements (module-level subsequence).
         let needle = roots("const a = first();\nSTMT_LIST;\nconst b = second();");
         let subject = roots("const a = first();\nx();\ny();\nconst b = second();");
-        let alignments = selector_match::match_top_level_sequence(&needle, &subject, Mode::Exact)
-            .expect("supported multi-statement needle");
+        let alignments = sites(
+            selector_match::match_top_level_sequence(
+                &needle,
+                &subject,
+                Mode::Exact,
+                &free_of(&needle),
+            )
+            .expect("supported multi-statement needle"),
+        );
         // `const a` pins body 0, `const b` pins body 3; the hole spans 1..3.
         assert_eq!(alignments, vec![vec![Some(0), None, Some(3)]]);
     });
@@ -349,8 +378,15 @@ fn multi_statement_sequence_enumerates_all_alignments() {
         // the matcher must enumerate both (categoricity at the resolver level).
         let needle = roots("STMT_LIST;\nfoo();");
         let subject = roots("foo();\nbar();\nfoo();");
-        let alignments = selector_match::match_top_level_sequence(&needle, &subject, Mode::Exact)
-            .expect("supported multi-statement needle");
+        let alignments = sites(
+            selector_match::match_top_level_sequence(
+                &needle,
+                &subject,
+                Mode::Exact,
+                &free_of(&needle),
+            )
+            .expect("supported multi-statement needle"),
+        );
         assert_eq!(alignments, vec![vec![None, Some(0)], vec![None, Some(2)]]);
     });
 }
@@ -365,6 +401,7 @@ fn fail_closed_on_malformed_regex_predicate() {
             &facts("const a = STR_LITERAL_MATCHING_RE();"),
             &facts("const a = b();"),
             Mode::Exact,
+            &free("const a = STR_LITERAL_MATCHING_RE();"),
         );
         assert!(
             matches!(result, Err(selector_match::Unsupported { .. })),
@@ -382,11 +419,16 @@ fn var_declarator_alignment_pins_target_through_holes() {
         let needle =
             facts("const DECLARATORS_BEFORE = null, c = \"abc\", DECLARATORS_AFTER = null;");
         let subject = facts("const p = 1, q = \"abc\", r = 2;");
-        let alignment =
-            selector_match::var_declarator_alignment(&needle, &subject, Mode::AlphaAll, None)
-                .expect("supported needle")
-                .expect("the pinned declarator matches");
-        assert_eq!(alignment, vec![None, Some(1), None]);
+        let alignment = selector_match::var_declarator_alignment(
+            &needle,
+            &subject,
+            Mode::AlphaAll,
+            &[],
+            &free_of(std::slice::from_ref(&needle)),
+        )
+        .expect("supported needle")
+        .expect("the pinned declarator matches");
+        assert_eq!(alignment.site, vec![None, Some(1), None]);
     });
 }
 
@@ -398,20 +440,23 @@ fn var_declarator_alignment_prebinding_forces_target_identity() {
         // production declarator-hole resolver's per-candidate prebinding).
         let needle = facts("const c = \"abc\", DECLARATORS_AFTER = null;");
         let subject = facts("const x = \"abc\", y = \"abc\";");
+        let free = free_of(std::slice::from_ref(&needle));
         let to_first = selector_match::var_declarator_alignment(
             &needle,
             &subject,
             Mode::AlphaAll,
-            Some(("c", "x")),
+            &[("c", "x")],
+            &free,
         )
         .expect("supported")
         .expect("matches x");
-        assert_eq!(to_first, vec![Some(0), None]);
+        assert_eq!(to_first.site, vec![Some(0), None]);
         let to_second = selector_match::var_declarator_alignment(
             &needle,
             &subject,
             Mode::AlphaAll,
-            Some(("c", "y")),
+            &[("c", "y")],
+            &free,
         )
         .expect("supported");
         // `c` is anchored-left (no leading hole), so prebinding it to `y`
@@ -428,8 +473,14 @@ fn var_declarator_alignment_rejects_kind_mismatch() {
         let needle = facts("let DECLARATORS_BEFORE = null, c = \"abc\";");
         let subject = facts("const q = \"abc\";");
         assert_eq!(
-            selector_match::var_declarator_alignment(&needle, &subject, Mode::AlphaAll, None)
-                .expect("supported needle"),
+            selector_match::var_declarator_alignment(
+                &needle,
+                &subject,
+                Mode::AlphaAll,
+                &[],
+                &free_of(std::slice::from_ref(&needle)),
+            )
+            .expect("supported needle"),
             None,
         );
     });
@@ -444,10 +495,113 @@ fn alpha_scopes_per_function_so_reused_param_names_stay_independent() {
         // would force `p`↔`e` then reject `p`↔`t` and find no alignment.
         let needle = roots("function a(p){ g = p; }\nfunction b(p){ h = p; }");
         let subject = roots("function x(e){ M = e; }\nfunction y(t){ N = t; }");
-        let alignments =
-            selector_match::match_top_level_sequence(&needle, &subject, Mode::AlphaAll)
-                .expect("supported");
+        let alignments = sites(
+            selector_match::match_top_level_sequence(
+                &needle,
+                &subject,
+                Mode::AlphaAll,
+                &free_of(&needle),
+            )
+            .expect("supported"),
+        );
         assert_eq!(alignments, vec![vec![Some(0), Some(1)]]);
+    });
+}
+
+fn pairs(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+    pairs
+        .iter()
+        .map(|(needle, subject)| (needle.to_string(), subject.to_string()))
+        .collect()
+}
+
+/// Every alignment of a multi-statement alpha needle, with its free bindings.
+fn alpha_sequence(needle: &str, subject: &str) -> Vec<selector_match::Matched<Vec<Option<usize>>>> {
+    let needle = roots(needle);
+    selector_match::match_top_level_sequence(
+        &needle,
+        &roots(subject),
+        Mode::AlphaAll,
+        &free_of(&needle),
+    )
+    .expect("supported")
+}
+
+#[test]
+fn a_match_reports_what_each_free_identifier_bound_to() {
+    js_ast::with_swc_globals(|| {
+        // `helper` and `x` are free; the declared `a` and the param `p` are not
+        // reported. Exact mode reports a free name bound to its own spelling.
+        let needle = "const a = helper(x, (p) => p);";
+        let index = |source| selector_match::Index::build(&facts(source));
+        assert_eq!(
+            selector_match::matches_indexed(
+                &index(needle),
+                &index("const q = h(y, (e) => e);"),
+                Mode::AlphaAll,
+                &free(needle),
+            )
+            .expect("supported"),
+            Some(pairs(&[("helper", "h"), ("x", "y")])),
+        );
+        assert_eq!(
+            selector_match::matches_indexed(
+                &index(needle),
+                &index("const a = helper(x, (p) => p);"),
+                Mode::Exact,
+                &free(needle),
+            )
+            .expect("supported"),
+            Some(pairs(&[("helper", "helper"), ("x", "x")])),
+        );
+    });
+}
+
+#[test]
+fn a_free_name_is_reported_only_when_it_bound_one_chunk_name() {
+    js_ast::with_swc_globals(|| {
+        // `helper` is free and binds per frame, so the sibling functions may call
+        // different chunk functions; the match then reports no binding for it.
+        let needle = "function a(){ helper(); }\nfunction b(){ helper(); }";
+        assert_eq!(
+            alpha_sequence(needle, "function x(){ f(); }\nfunction y(){ g(); }"),
+            vec![selector_match::Matched {
+                site: vec![Some(0), Some(1)],
+                free_bindings: pairs(&[]),
+            }],
+        );
+        assert_eq!(
+            alpha_sequence(needle, "function x(){ f(); }\nfunction y(){ f(); }"),
+            vec![selector_match::Matched {
+                site: vec![Some(0), Some(1)],
+                free_bindings: pairs(&[("helper", "f")]),
+            }],
+        );
+    });
+}
+
+#[test]
+fn a_free_name_may_bind_the_chunk_name_of_a_renamed_declaration() {
+    js_ast::with_swc_globals(|| {
+        // The template renames the chunk's `q` to `readable` yet references it by
+        // its chunk spelling: the free `q` (inside the arrow) and the declared
+        // `readable` both bind chunk `q`, and the statement still matches.
+        let needle = "const DECLARATORS_BEFORE = null, wrap = () => use(q), readable = () => 1;";
+        let subject = facts("const z = 0, w = () => use(q), q = () => 1;");
+        let alignment = selector_match::var_declarator_alignment(
+            &facts(needle),
+            &subject,
+            Mode::AlphaAll,
+            &[],
+            &free(needle),
+        )
+        .expect("supported")
+        .expect("the renamed declaration matches");
+        assert_eq!(alignment.site, vec![None, Some(1), Some(2)]);
+        assert_eq!(
+            alignment.free_bindings,
+            pairs(&[("q", "q"), ("use", "use")])
+        );
     });
 }
 
@@ -461,6 +615,7 @@ fn fail_closed_on_misplaced_run_hole() {
             &facts("const a = ARGS;"),
             &facts("const a = b;"),
             Mode::Exact,
+            &free("const a = ARGS;"),
         );
         assert!(
             matches!(result, Err(selector_match::Unsupported { .. })),
@@ -533,8 +688,9 @@ fn key_value_hole_value_matches_any() {
         ];
         for (label, selector, subject, alpha) in cases {
             let mode = if alpha { Mode::AlphaAll } else { Mode::Exact };
-            let got = selector_match::matches(&facts(selector), &facts(subject), mode)
-                .unwrap_or_else(|e| panic!("{label}: Unsupported({})", e.reason));
+            let got =
+                selector_match::matches(&facts(selector), &facts(subject), mode, &free(selector))
+                    .unwrap_or_else(|e| panic!("{label}: Unsupported({})", e.reason));
             assert!(got, "{label}: expected match, got false");
         }
     });
@@ -547,8 +703,7 @@ fn key_value_hole_value_matches_any() {
 // node and are matchable as anchors. Pins: the construct matches; a `=> ({…})`
 // needle must NOT match a block-bodied arrow (`=> { return … }`) — the two are
 // different shapes; alpha bindings flow from the params into the object body;
-// and an object-property run hole works inside the returned object. Closes the
-// SELECTOR_BUGS.md "arrow whose body is a parenthesized object literal" gap.
+// and an object-property run hole works inside the returned object.
 #[test]
 fn arrow_returning_object_literal_matches_on_its_object_anchors() {
     js_ast::with_swc_globals(|| {
@@ -606,8 +761,13 @@ fn arrow_returning_object_literal_matches_on_its_object_anchors() {
             } else {
                 Mode::Exact
             };
-            let got = selector_match::matches(&facts(case.selector), &facts(case.subject), mode)
-                .expect("arrow-returns-object is within the faithful subset");
+            let got = selector_match::matches(
+                &facts(case.selector),
+                &facts(case.subject),
+                mode,
+                &free(case.selector),
+            )
+            .expect("arrow-returns-object is within the faithful subset");
             assert_eq!(
                 got, case.expected,
                 "arrow-returns-object: {:?} vs {:?} (alpha={})",
@@ -625,8 +785,7 @@ fn arrow_returning_object_literal_matches_on_its_object_anchors() {
 // grouping, the structure is kept), so these bodies match structurally — the
 // inner lazy-init assignment is a real anchor, not lost. Pins: the construct
 // matches (exact + alpha); a near-miss that drops the lazy-init assignment
-// fails; sequence arity is significant. Closes the SELECTOR_BUGS.md
-// "parenthesized sequence or assignment expression body" gap.
+// fails; sequence arity is significant.
 #[test]
 fn parenthesized_sequence_body_matches_on_its_inner_assignment() {
     js_ast::with_swc_globals(|| {
@@ -685,8 +844,13 @@ fn parenthesized_sequence_body_matches_on_its_inner_assignment() {
             } else {
                 Mode::Exact
             };
-            let got = selector_match::matches(&facts(case.selector), &facts(case.subject), mode)
-                .expect("parenthesized sequence body is within the faithful subset");
+            let got = selector_match::matches(
+                &facts(case.selector),
+                &facts(case.subject),
+                mode,
+                &free(case.selector),
+            )
+            .expect("parenthesized sequence body is within the faithful subset");
             assert_eq!(
                 got, case.expected,
                 "parenthesized-sequence-body: {:?} vs {:?} (alpha={})",
@@ -700,8 +864,7 @@ fn parenthesized_sequence_body_matches_on_its_inner_assignment() {
 // arrays): a bare identifier element absorbing a run of array elements, so a long
 // array initializer can be anchored on its few stable elements without spelling
 // the rest. It is matched as an ordered subsequence with gaps, exactly like the
-// other run holes (the carriers partition the needle into fixed segments). Closes
-// the SELECTOR_BUGS.md "no array-element-run hole" gap.
+// other run holes (the carriers partition the needle into fixed segments).
 #[test]
 fn array_elements_run_hole_anchors_a_few_stable_elements() {
     js_ast::with_swc_globals(|| {
@@ -775,8 +938,13 @@ fn array_elements_run_hole_anchors_a_few_stable_elements() {
             } else {
                 Mode::Exact
             };
-            let got = selector_match::matches(&facts(case.selector), &facts(case.subject), mode)
-                .expect("ARRAY_ELEMENTS is within the faithful subset");
+            let got = selector_match::matches(
+                &facts(case.selector),
+                &facts(case.subject),
+                mode,
+                &free(case.selector),
+            )
+            .expect("ARRAY_ELEMENTS is within the faithful subset");
             assert_eq!(
                 got, case.expected,
                 "array-elements-run-hole: {:?} vs {:?} (alpha={})",
@@ -798,6 +966,7 @@ fn fail_closed_on_misplaced_array_elements_hole() {
             &facts("const c = ARRAY_ELEMENTS;"),
             &facts("const c = x;"),
             Mode::Exact,
+            &free("const c = ARRAY_ELEMENTS;"),
         );
         assert!(
             matches!(result, Err(selector_match::Unsupported { .. })),
@@ -812,8 +981,7 @@ fn fail_closed_on_misplaced_array_elements_hole() {
 // against each declarator of an owner (it synthesizes a single-declarator subject
 // per declarator), so these subjects are exactly what the needle is matched
 // against here: a needle pinning the nested `"POST"` matches only the POST
-// sibling, not the same-shape `"GET"` one. Closes the SELECTOR_BUGS.md
-// "comma-list sibling disambiguation by nested body" gap.
+// sibling, not the same-shape `"GET"` one.
 #[test]
 fn comma_list_siblings_disambiguated_by_nested_value() {
     js_ast::with_swc_globals(|| {
@@ -859,8 +1027,13 @@ fn comma_list_siblings_disambiguated_by_nested_value() {
             ),
         ];
         for (selector, subject, expected) in cases {
-            let got = selector_match::matches(&facts(selector), &facts(subject), Mode::AlphaAll)
-                .expect("nested-value selector is within the faithful subset");
+            let got = selector_match::matches(
+                &facts(selector),
+                &facts(subject),
+                Mode::AlphaAll,
+                &free(selector),
+            )
+            .expect("nested-value selector is within the faithful subset");
             assert_eq!(
                 got, expected,
                 "comma-list-sibling: {selector:?} vs {subject:?}"

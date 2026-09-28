@@ -68,7 +68,6 @@ def _zillow_frame(source: sources.EvidenceSource, *, region_name: str, state: st
 
 
 MONTHS_PER_YEAR = 12
-DATA_DERIVED_SERIES_PATH_PRIOR_SUFFIXES = ("_monthly_log_mu", "_monthly_log_mu_sigma", "_monthly_log_vol_sigma")
 MIN_MONTHLY_LOG_MU_SIGMA = 0.005 / MONTHS_PER_YEAR
 MIN_MONTHLY_LOG_VOL_SIGMA = 0.01 / math.sqrt(MONTHS_PER_YEAR)
 
@@ -87,17 +86,11 @@ class ExogenousEvidence:
     (`HomeValueKey(location_id=…)`), and its consumer used to flatten them to strings here
     and parse them straight back at `fit/data.py`. The typed value existed at both ends and
     only the middle was stringly typed, which bought nothing and cost the `parse` round trip.
-
-    `calibrated_series_path_priors` stays string-keyed on purpose — those are synthesized
-    numpyro site names (`"security:SPY_monthly_log_mu"`), not series identities.
     """
 
     series_names: tuple[LevelSeriesKey, ...]
     monthly_log_returns: np.ndarray
     monthly_return_months: tuple[str, ...]
-    marginal_returns: dict[LevelSeriesKey, PeriodReturns]
-    series_path_calibration: dict[LevelSeriesKey, FactorSeriesCalibration]
-    calibrated_series_path_priors: dict[str, float]
     current_mortgage30_rate_pct: float
     latest_observations: dict[LevelSeriesKey, ExogenousObservedPoint]
     metadata: EvidenceMetadata
@@ -105,9 +98,8 @@ class ExogenousEvidence:
 
 def calibrate_series_path_priors(
     series_names: tuple[LevelSeriesKey, ...], marginal_returns: dict[LevelSeriesKey, PeriodReturns]
-) -> tuple[dict[LevelSeriesKey, FactorSeriesCalibration], dict[str, float]]:
+) -> dict[LevelSeriesKey, FactorSeriesCalibration]:
     calibration: dict[LevelSeriesKey, FactorSeriesCalibration] = {}
-    priors: dict[str, float] = {}
     for series_name in series_names:
         if series_name not in marginal_returns:
             raise ValueError(f"missing marginal returns for exogenous series {series_name.wire_id!r}")
@@ -141,11 +133,7 @@ def calibrate_series_path_priors(
             observed_months=observed_months,
             observation_count=len(log_returns),
         )
-        # Numpyro site names, built from the wire id: strings by nature, not keys.
-        priors[f"{series_name.wire_id}_monthly_log_mu"] = monthly_log_mu
-        priors[f"{series_name.wire_id}_monthly_log_mu_sigma"] = monthly_log_mu_sigma
-        priors[f"{series_name.wire_id}_monthly_log_vol_sigma"] = monthly_log_vol_sigma
-    return calibration, priors
+    return calibration
 
 
 # Evidence series are carried as 2-column polars frames: raw series as `(date, value)`, and the
@@ -298,7 +286,7 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         **{rent_series_key[loc]: _returns(returns) for loc, returns in rent_returns.items()},
         InflationKey(): _returns(cpi_returns),
     }
-    series_path_calibration, calibrated_series_path_priors = calibrate_series_path_priors(series_names, marginal)
+    series_path_calibration = calibrate_series_path_priors(series_names, marginal)
 
     latest_observations: dict[LevelSeriesKey, ExogenousObservedPoint] = {
         SP500_KEY: _monthly_latest(sp500_total_return, sources.YAHOO_SPY, units=ObservationUnits.USD_PER_UNIT),
@@ -376,9 +364,6 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         series_names=series_names,
         monthly_log_returns=aligned.select([key.wire_id for key in series_names]).to_numpy().astype("float64"),
         monthly_return_months=tuple(aligned["month"].dt.strftime("%Y-%m").to_list()),
-        marginal_returns=marginal,
-        series_path_calibration=series_path_calibration,
-        calibrated_series_path_priors=calibrated_series_path_priors,
         current_mortgage30_rate_pct=float(mortgage30["value"].to_list()[-1]),
         latest_observations=latest_observations,
         metadata=metadata,

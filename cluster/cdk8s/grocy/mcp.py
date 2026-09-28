@@ -1,5 +1,5 @@
-"""The Grocy MCP server: the household-independent `mcp-base` (Deployment, Service) and
-`mcp-servicemonitor-base`, and each household's `<household>/mcp` (pull credentials and
+"""The Grocy MCP server: the household-independent `mcp-base` (Deployment, Service,
+ServiceMonitor), and each household's `<household>/mcp` (pull credentials and
 the public HTTPRoute).
 
 The server's image tag is the placeholder "unset"; the hand-written
@@ -15,47 +15,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecSelector,
-)
-from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
-    RedisReplication,
-    RedisReplicationSpec,
-    RedisReplicationSpecAffinity,
-    RedisReplicationSpecAffinityNodeAffinity,
-    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution,
-    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
-    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions,
-    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
-    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
-    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
-    RedisReplicationSpecAffinityPodAntiAffinity,
-    RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution,
-    RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector,
-    RedisReplicationSpecKubernetesConfig,
-    RedisReplicationSpecKubernetesConfigResources,
-    RedisReplicationSpecKubernetesConfigResourcesLimits,
-    RedisReplicationSpecKubernetesConfigResourcesRequests,
-    RedisReplicationSpecStorage,
-    RedisReplicationSpecStorageVolumeClaimTemplate,
-    RedisReplicationSpecStorageVolumeClaimTemplateSpec,
-    RedisReplicationSpecStorageVolumeClaimTemplateSpecResources,
-    RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests,
-)
+from cdk8s import ApiObjectMetadata, App, Chart, Size
+from cdk8s_plus_34 import Cpu, k8s
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.valkey import valkey_instance
 
-BASE_DIR = "cluster/k8s/grocy/mcp-base"
-SERVICEMONITOR_BASE_DIR = "cluster/k8s/grocy/mcp-servicemonitor-base"
+BASE_DIR = f"{HAND_WRITTEN_ROOT}/grocy/mcp-base"
 _NAME = "grocy-mcp-server"
 _LABELS = {"app.kubernetes.io/name": "grocy-mcp", "app.kubernetes.io/component": "server"}
 _IMAGE = "git.allegedly.works/ducktape-ci/grocy-mcp:unset"
@@ -63,7 +36,6 @@ _HTTP_PORT = 8765
 _METRICS_PORT = 9090
 # The base's placeholder; each household's kustomization.yaml patches in its own Secret.
 _OIDC_SECRET = "grocy-mcp-oidc"
-_CONTROL_PLANE = "node-role.kubernetes.io/control-plane"
 
 
 def _secret_env(name: str, key: str) -> k8s.EnvVar:
@@ -87,8 +59,7 @@ def base_chart(app: App) -> Chart:
                     "FastMCP server generating Grocy tools from Grocy's OpenAPI spec. Per-request token"
                     " exchange swaps the caller's Authentik JWT for a Grocy-proxy-scoped JWT before calling"
                     " Grocy."
-                ),
-                "reloader.stakater.com/auto": "true",
+                )
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -101,25 +72,12 @@ def base_chart(app: App) -> Chart:
                     # The OAuth state Valkey instances use local-path-ovh and are pinned to
                     # hil-ovh. Keep the MCP client in the same site: valkey-glide's default
                     # 250 ms request timeout is too small for the current cross-site path.
-                    node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     # Stateless (config only, no PVC). Allow control-plane nodes as overflow
                     # capacity, but prefer workers to keep ordinary application I/O away from
                     # etcd disks.
-                    tolerations=[k8s.Toleration(key=_CONTROL_PLANE, operator="Exists", effect="NoSchedule")],
-                    affinity=k8s.Affinity(
-                        node_affinity=k8s.NodeAffinity(
-                            preferred_during_scheduling_ignored_during_execution=[
-                                k8s.PreferredSchedulingTerm(
-                                    weight=100,
-                                    preference=k8s.NodeSelectorTerm(
-                                        match_expressions=[
-                                            k8s.NodeSelectorRequirement(key=_CONTROL_PLANE, operator="DoesNotExist")
-                                        ]
-                                    ),
-                                )
-                            ]
-                        )
-                    ),
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
+                    affinity=node_scheduling.PREFER_WORKERS,
                     containers=[
                         k8s.Container(
                             name="server",
@@ -191,109 +149,14 @@ def base_chart(app: App) -> Chart:
             type="ClusterIP",
         ),
     )
-    return chart
-
-
-def servicemonitor_base_chart(app: App) -> Chart:
-    chart = Chart(app, "grocy-mcp-servicemonitor", disable_resource_name_hashes=True)
     ServiceMonitor(
         chart,
         "servicemonitor",
         metadata=ApiObjectMetadata(name=_NAME),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-            endpoints=[ServiceMonitorSpecEndpoints(port="metrics", path="/metrics", scrape_timeout="10s")],
-        ),
+        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
+        endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
     return chart
-
-
-def _valkey(chart: Chart, *, household: str, display_name: str, namespace: str) -> None:
-    name = f"grocy-{household}-valkey-ovh"
-    RedisReplication(
-        chart,
-        "valkey",
-        metadata=metadata(
-            name,
-            namespace,
-            annotations={"description": f"Replacement OVH Valkey for Grocy {display_name} MCP OAuth state"},
-        ),
-        spec=RedisReplicationSpec(
-            cluster_size=2,
-            kubernetes_config=RedisReplicationSpecKubernetesConfig(
-                # renovate: datasource=docker
-                image="valkey/valkey:9-alpine",
-                image_pull_policy="IfNotPresent",
-                resources=RedisReplicationSpecKubernetesConfigResources(
-                    requests={
-                        "cpu": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("50m"),
-                        "memory": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("64Mi"),
-                    },
-                    limits={
-                        "cpu": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string("200m"),
-                        # TODO(vpa-memory-audit): 128Mi -> 384Mi. VPA observed 256Mi for both
-                        # request and upper bound — double the old limit. This valkey backs the
-                        # Grocy MCP cache; 256Mi resident suggests unbounded key growth rather
-                        # than a working set, so check the eviction policy.
-                        "memory": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string("384Mi"),
-                    },
-                ),
-            ),
-            storage=RedisReplicationSpecStorage(
-                volume_claim_template=RedisReplicationSpecStorageVolumeClaimTemplate(
-                    spec=RedisReplicationSpecStorageVolumeClaimTemplateSpec(
-                        access_modes=["ReadWriteOnce"],
-                        storage_class_name="local-path-ovh",
-                        resources=RedisReplicationSpecStorageVolumeClaimTemplateSpecResources(
-                            requests={
-                                "storage": RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests.from_string(
-                                    "1Gi"
-                                )
-                            }
-                        ),
-                    )
-                )
-            ),
-            affinity=RedisReplicationSpecAffinity(
-                node_affinity=RedisReplicationSpecAffinityNodeAffinity(
-                    required_during_scheduling_ignored_during_execution=RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                        node_selector_terms=[
-                            RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                                match_expressions=[
-                                    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                        key="topology.kubernetes.io/zone", operator="In", values=["hil-ovh"]
-                                    )
-                                ]
-                            )
-                        ]
-                    ),
-                    # Prefer ordinary workers when this workload tolerates control planes.
-                    preferred_during_scheduling_ignored_during_execution=[
-                        RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution(
-                            weight=100,
-                            preference=RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference(
-                                match_expressions=[
-                                    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions(
-                                        key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
-                                    )
-                                ]
-                            ),
-                        )
-                    ],
-                ),
-                pod_anti_affinity=RedisReplicationSpecAffinityPodAntiAffinity(
-                    required_during_scheduling_ignored_during_execution=[
-                        RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                            label_selector=RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
-                                match_labels={"app": name}
-                            ),
-                            topology_key="kubernetes.io/hostname",
-                        )
-                    ]
-                ),
-            ),
-        ),
-    )
 
 
 def household_chart(app: App, *, household: str, display_name: str) -> Chart:
@@ -305,15 +168,30 @@ def household_chart(app: App, *, household: str, display_name: str) -> Chart:
     https_route(
         chart,
         "httproute",
-        metadata=metadata(f"grocy-mcp-{household}-server", namespace),
-        hostname=f"grocy-mcp-{household}.allegedly.works",
+        metadata=ApiObjectMetadata(name=f"grocy-mcp-{household}-server", namespace=namespace),
+        hostnames=[f"grocy-mcp-{household}.allegedly.works"],
         backend=_NAME,
         port=_HTTP_PORT,
         timeout="60s",
         hsts=False,
         listener=None,
     )
-    _valkey(chart, household=household, display_name=display_name, namespace=namespace)
+    valkey_instance(
+        chart,
+        name=f"grocy-{household}-valkey-ovh",
+        namespace=namespace,
+        description=f"Replacement OVH Valkey for Grocy {display_name} MCP OAuth state",
+        memory_request=Size.mebibytes(64),
+        cpu_limit=Cpu.millis(200),
+        # TODO(vpa-memory-audit): 128Mi -> 384Mi. VPA observed 256Mi for both
+        # request and upper bound — double the old limit. This valkey backs the
+        # Grocy MCP cache; 256Mi resident suggests unbounded key growth rather
+        # than a working set, so check the eviction policy.
+        memory_limit=Size.mebibytes(384),
+        max_memory_percent_of_limit=None,
+        storage_class="local-path-ovh",
+        storage_size=Size.gibibytes(1),
+    )
     return chart
 
 
@@ -323,14 +201,11 @@ def write_manifests(root: Path) -> None:
         root / BASE_DIR / "kustomization.yaml",
         kustomize_kustomization(resources=["grocy-mcp.k8s.yaml"], components=["./image-pins"]),
     )
-    write_charts(root, SERVICEMONITOR_BASE_DIR, servicemonitor_base_chart)
-    write_yaml(
-        root / SERVICEMONITOR_BASE_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=["grocy-mcp-servicemonitor.k8s.yaml"]),
+    write_charts(
+        root, f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", lambda app: household_chart(app, household="sf", display_name="SF")
     )
-    write_charts(root, "cluster/k8s/grocy/sf/mcp", lambda app: household_chart(app, household="sf", display_name="SF"))
     write_charts(
         root,
-        "cluster/k8s/grocy/vallejo/mcp",
+        f"{HAND_WRITTEN_ROOT}/grocy/vallejo/mcp",
         lambda app: household_chart(app, household="vallejo", display_name="Vallejo"),
     )

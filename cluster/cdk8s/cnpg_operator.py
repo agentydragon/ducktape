@@ -6,17 +6,8 @@ Namespace, the shared HelmRepository and both HelmReleases, which install their 
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallCrds,
     HelmReleaseSpecInstallRemediation,
@@ -24,23 +15,17 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeCrds,
     HelmReleaseSpecUpgradeRemediation,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.helm import helm_release, https_helm_repository
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 
 NAME = "cnpg"
 NAMESPACE = "cnpg-system"
-OUTPUT_DIR = "cluster/k8s/cnpg"
+OUTPUT_DIR = f"{GENERATED_ROOT}/cnpg"
 _BARMAN_CLOUD = "plugin-barman-cloud"
-# renovate: datasource=helm depName=cloudnative-pg registryUrl=https://cloudnative-pg.github.io/charts
-_CNPG_CHART_VERSION = "0.29.0"
-# renovate: datasource=helm depName=plugin-barman-cloud registryUrl=https://cloudnative-pg.github.io/charts
-_BARMAN_CLOUD_CHART_VERSION = "0.8.0"
 # The operator backs two failurePolicy: Fail webhooks (Cluster, Backup, ScheduledBackup),
 # so while it is down those writes are rejected outright — and it is the operator
 # reconciling every Postgres cluster here. Same treatment as the other blocking-webhook
@@ -51,107 +36,56 @@ _BARMAN_CLOUD_CHART_VERSION = "0.8.0"
 # on a control-plane node.
 _CRITICAL_VALUES: dict[str, object] = {
     "priorityClassName": "system-cluster-critical",
-    "tolerations": [{"key": "node-role.kubernetes.io/control-plane", "effect": "NoSchedule", "operator": "Exists"}],
+    "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
 }
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.INITIAL, agent_readable=AgentReadable.LOGS)
+    repository = https_helm_repository(chart, NAME, "flux-system", url="https://cloudnative-pg.github.io/charts")
+    helm_release(
         chart,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "initial",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
+        NAME,
+        NAMESPACE,
+        repository=repository,
+        chart="cloudnative-pg",
+        # renovate: datasource=helm depName=cloudnative-pg registryUrl=https://cloudnative-pg.github.io/charts
+        version="0.29.0",
+        interval="30m",
+        install=HelmReleaseSpecInstall(
+            crds=HelmReleaseSpecInstallCrds.CREATE_REPLACE, remediation=HelmReleaseSpecInstallRemediation(retries=3)
         ),
+        upgrade=HelmReleaseSpecUpgrade(crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE),
+        values=_CRITICAL_VALUES,
     )
-    repository = HelmRepository(
+    helm_release(
         chart,
-        "repository",
-        metadata=metadata(NAME, "flux-system"),
-        spec=HelmRepositorySpec(interval="24h", url="https://cloudnative-pg.github.io/charts"),
-    )
-    source_ref = HelmReleaseSpecChartSpecSourceRef(
-        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-        name=repository.name,
-        namespace=repository.metadata.namespace,
-    )
-    HelmRelease(
-        chart,
-        "operator",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(
-                crds=HelmReleaseSpecInstallCrds.CREATE_REPLACE, remediation=HelmReleaseSpecInstallRemediation(retries=3)
-            ),
-            upgrade=HelmReleaseSpecUpgrade(crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="cloudnative-pg", version=_CNPG_CHART_VERSION, source_ref=source_ref
-                )
-            ),
-            values=_CRITICAL_VALUES,
+        _BARMAN_CLOUD,
+        NAMESPACE,
+        repository=repository,
+        chart=_BARMAN_CLOUD,
+        # renovate: datasource=helm depName=plugin-barman-cloud registryUrl=https://cloudnative-pg.github.io/charts
+        version="0.8.0",
+        interval="30m",
+        install=HelmReleaseSpecInstall(
+            crds=HelmReleaseSpecInstallCrds.CREATE_REPLACE, remediation=HelmReleaseSpecInstallRemediation(retries=3)
         ),
-    )
-    HelmRelease(
-        chart,
-        "barman-cloud",
-        metadata=metadata(
-            _BARMAN_CLOUD,
-            NAMESPACE,
-            annotations={"description": "CloudNativePG Barman Cloud plugin for physical backups and WAL archiving."},
+        upgrade=HelmReleaseSpecUpgrade(
+            crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE, remediation=HelmReleaseSpecUpgradeRemediation(retries=3)
         ),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(
-                crds=HelmReleaseSpecInstallCrds.CREATE_REPLACE, remediation=HelmReleaseSpecInstallRemediation(retries=3)
-            ),
-            upgrade=HelmReleaseSpecUpgrade(
-                crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE, remediation=HelmReleaseSpecUpgradeRemediation(retries=3)
-            ),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart=_BARMAN_CLOUD, version=_BARMAN_CLOUD_CHART_VERSION, source_ref=source_ref
-                )
-            ),
-            values=_CRITICAL_VALUES,
-        ),
+        values=_CRITICAL_VALUES,
+        description="CloudNativePG Barman Cloud plugin for physical backups and WAL archiving.",
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def cnpg(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cert_manager: Kustomization) -> Kustomization:
+def cnpg(chart: Chart, directory: RenderedDirectory, cert_manager: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="10m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=_BARMAN_CLOUD, namespace=NAMESPACE
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name=_BARMAN_CLOUD, namespace=NAMESPACE
-                ),
-            ],
-            depends_on=[flux_kustomization_depends_on(cert_manager)],
-        ),
+        directory,
+        timeout="10m",
+        # The plugin-barman-cloud chart renders a cert-manager Issuer and Certificates.
+        depends_on=[flux_kustomization_depends_on(cert_manager)],
     )

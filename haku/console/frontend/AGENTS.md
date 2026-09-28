@@ -8,7 +8,7 @@ the tool-call cards, or their styles (`styles.src.css`) — regenerate and **loo
 screenshots before handing off:
 
 ```bash
-bbr test //haku/console/frontend:screenshots                          # all 58 shots
+bbr test //haku/console/frontend:screenshots                          # all 54 shots
 bbr test //haku/console/frontend:screenshots --test_filter=settings   # just the ones you touched
 ```
 

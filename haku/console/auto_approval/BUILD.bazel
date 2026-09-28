@@ -13,15 +13,6 @@ py_library(
 )
 
 py_library(
-    name = "gmail",
-    srcs = ["gmail.py"],
-    deps = [
-        ":decision",
-        "//haku/console/tools:gmail_client",
-    ],
-)
-
-py_library(
     name = "home_assistant",
     srcs = ["home_assistant.py"],
     deps = [":decision"],
@@ -61,15 +52,11 @@ py_library(
     ],
     deps = [
         ":decision",
-        ":gmail",
         ":home_assistant",
         ":kubernetes",
-        "//github_policy:repository",
-        "//github_policy:visibility",
         "//haku/console:mcp_config",
         "//haku/console:tool_call_actor",
         "//haku/console/grants/kubernetes:authorization_service",
-        "//haku/console/tools:gmail_client",
         "@pypi//fastmcp_slim",
         "@pypi//jsonschema",
         "@pypi//referencing",
@@ -82,14 +69,11 @@ py_test(
     deps = [
         ":registry",
         "//:conftest",
-        "//github_policy:visibility",
-        "//gmail_api:labels",
         "//haku/console:conftest",
         "//haku/console:mcp_config",
         "//haku/console:tool_call_actor",
-        "//haku/console/tools:gmail",
-        "//haku/console/tools:google_calendar",
-        "@pypi//httpx",
+        "//x/google_mcp_server:gmail",
+        "//x/google_mcp_server:google_calendar",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -1,6 +1,13 @@
 {
   "skills": [
     {
+      "name": "cdk8s_builders",
+      "pkg": "skill-cdk8s_builders",
+      "target": "//cluster/skills/cdk8s_builders:cdk8s_builders_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/cluster/skills/cdk8s_builders/cdk8s_builders.skill",
+      "filename": "cdk8s_builders.skill"
+    },
+    {
       "name": "cluster_health",
       "pkg": "skill-cluster_health",
       "target": "//cluster/skills/cluster_health:cluster_health_skill",

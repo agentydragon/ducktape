@@ -10,12 +10,17 @@ from finance.augur.model.series import (
     HomeValueKey,
     IndexSeriesKey,
     InflationKey,
+    LocationId,
     PropertyValueKey,
     RentKey,
     SecurityKey,
+    SecuritySymbol,
     parse_level_series_key,
     try_parse_level_series_key,
 )
+
+SF = LocationId("sf")
+BTC = SecuritySymbol("btc")
 
 _INDEX_ADAPTER: TypeAdapter[IndexSeriesKey] = TypeAdapter(IndexSeriesKey)
 _ASSET_PRICE_ADAPTER: TypeAdapter[AssetPriceKey] = TypeAdapter(AssetPriceKey)
@@ -26,9 +31,9 @@ def test_level_series_key_round_trip_through_wire_id() -> None:
     for key in (
         InflationKey(),
         SecurityKey(symbol=SP500_SYMBOL),
-        HomeValueKey(location_id="san_francisco_ca"),
-        RentKey(location_id="vallejo_ca"),
-        SecurityKey(symbol="btc"),
+        HomeValueKey(location_id=LocationId("san_francisco_ca")),
+        RentKey(location_id=LocationId("vallejo_ca")),
+        SecurityKey(symbol=BTC),
     ):
         assert parse_level_series_key(key.wire_id) == key
 
@@ -42,9 +47,9 @@ def test_level_series_key_kind_serializes_as_readable_string_and_round_trips() -
     assert isinstance(inflation_dump["kind"], str)
     assert InflationKey.model_validate(inflation_dump) == InflationKey()
 
-    security_dump = SecurityKey(symbol="btc").model_dump(mode="json")
+    security_dump = SecurityKey(symbol=BTC).model_dump(mode="json")
     assert isinstance(security_dump["kind"], str)
-    assert SecurityKey.model_validate(security_dump) == SecurityKey(symbol="btc")
+    assert SecurityKey.model_validate(security_dump) == SecurityKey(symbol=BTC)
 
 
 def test_parse_level_series_key_rejects_unknown_wire_ids() -> None:
@@ -64,10 +69,10 @@ def test_roles_unions_accept_their_members_and_reject_others() -> None:
     # only escalates amounts if it's an index; only prices a lot if asset-price;
     # only values a property if home-value.
     assert _INDEX_ADAPTER.validate_python(InflationKey().model_dump()) == InflationKey()
-    assert _INDEX_ADAPTER.validate_python(RentKey(location_id="sf").model_dump()) == RentKey(location_id="sf")
-    assert _ASSET_PRICE_ADAPTER.validate_python(SecurityKey(symbol="btc").model_dump()) == SecurityKey(symbol="btc")
-    assert _PROPERTY_VALUE_ADAPTER.validate_python(HomeValueKey(location_id="sf").model_dump()) == HomeValueKey(
-        location_id="sf"
+    assert _INDEX_ADAPTER.validate_python(RentKey(location_id=SF).model_dump()) == RentKey(location_id=SF)
+    assert _ASSET_PRICE_ADAPTER.validate_python(SecurityKey(symbol=BTC).model_dump()) == SecurityKey(symbol=BTC)
+    assert _PROPERTY_VALUE_ADAPTER.validate_python(HomeValueKey(location_id=SF).model_dump()) == HomeValueKey(
+        location_id=SF
     )
 
     # Cross-role values are rejected: a security (asset price) is not an index,
@@ -75,9 +80,9 @@ def test_roles_unions_accept_their_members_and_reject_others() -> None:
     with pytest.raises(ValidationError):
         _INDEX_ADAPTER.validate_python(SecurityKey(symbol=SP500_SYMBOL).model_dump())
     with pytest.raises(ValidationError):
-        _ASSET_PRICE_ADAPTER.validate_python(RentKey(location_id="sf").model_dump())
+        _ASSET_PRICE_ADAPTER.validate_python(RentKey(location_id=SF).model_dump())
     with pytest.raises(ValidationError):
-        _PROPERTY_VALUE_ADAPTER.validate_python(SecurityKey(symbol="btc").model_dump())
+        _PROPERTY_VALUE_ADAPTER.validate_python(SecurityKey(symbol=BTC).model_dump())
 
 
 if __name__ == "__main__":

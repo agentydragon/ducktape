@@ -58,6 +58,7 @@ pub fn source_match_claim_member_selectors(
         );
     }
 
+    let free = super::chunk_resolver::template_free_identifiers(&parsed);
     let mut seen_locals = BTreeSet::new();
     let mut seen_names = BTreeSet::new();
     let mut out = Vec::new();
@@ -73,10 +74,12 @@ pub fn source_match_claim_member_selectors(
                  `{name}`"
             );
         }
-        if !declared_set.contains(local) {
+        // A free identifier pins the declaration it binds to: pinning by use
+        // site.
+        if !declared_set.contains(local) && !free.contains(local) {
             bail!(
                 "logical_module {request_id}: source_matches[].bindings entry `{local}` is \
-                 not declared by source_matches[].match"
+                 neither declared nor used by source_matches[].match"
             );
         }
         let parsed_selector = parsed.with_target_binding(Some(local.to_string()));

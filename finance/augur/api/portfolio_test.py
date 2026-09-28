@@ -8,75 +8,86 @@ from pydantic import ValidationError
 
 from finance.augur.api.portfolio import (
     BondHoldingConfig,
+    HoldingKind,
     HoldingTaxLotConfig,
     PortfolioAccountConfig,
     PortfolioConfig,
     SecurityHoldingConfig,
 )
-from finance.augur.model.series import SecurityKey, SecuritySymbol
+from finance.augur.model.series import SecuritySymbol
+from finance.augur.sim.ids import AccountId, AgentId, BondId, LotId
+from finance.augur.sim.income import Taxable
+
+BROKERAGE = AccountId("brokerage")
+TAXABLE_BROKERAGE = AccountId("taxable_brokerage")
+AGENT_A = AgentId("agent_a")
+ALICE = AgentId("alice")
 
 
-def test_holding_tax_lots_expand_to_sim_initial_lots() -> None:
+def test_position_values_sum_over_its_lots() -> None:
     portfolio = PortfolioConfig(
-        accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="agent_a", label="Taxable"),),
+        accounts=(PortfolioAccountConfig(account_id=TAXABLE_BROKERAGE, owner_agent_id=AGENT_A, label="Taxable"),),
         holdings=(
             SecurityHoldingConfig(
                 position_id="voo_position",
-                account_id="taxable_brokerage",
+                account_id=TAXABLE_BROKERAGE,
                 symbol=SecuritySymbol("VOO"),
-                security_kind="etf",
-                unit_value=500,
+                security_kind=HoldingKind.ETF,
+                unit_value=Decimal(500),
                 lots=(
                     HoldingTaxLotConfig(
-                        lot_id="voo_2024_05_20", holding_period_months_at_start=24, quantity=100.0, cost_basis=30_000
+                        lot_id=LotId("voo_2024_05_20"),
+                        holding_period_months_at_start=24,
+                        quantity=100.0,
+                        cost_basis=Decimal(30_000),
                     ),
                     HoldingTaxLotConfig(
-                        lot_id="voo_2026_05_20", holding_period_months_at_start=0, quantity=20.0, cost_basis=9_000
+                        lot_id=LotId("voo_2026_05_20"),
+                        holding_period_months_at_start=0,
+                        quantity=20.0,
+                        cost_basis=Decimal(9_000),
                     ),
                 ),
             ),
         ),
     )
 
-    lots = portfolio.to_initial_lots()
-
     assert portfolio.holdings[0].current_value == Decimal(60_000)
     assert portfolio.holdings[0].total_cost_basis == Decimal(39_000)
     assert portfolio.total_holdings_value == Decimal(60_000)
-    assert [(lot.lot_id, lot.agent_id, lot.account_id, lot.asset, lot.purchase_month_index) for lot in lots] == [
-        ("voo_2024_05_20", "agent_a", "taxable_brokerage", SecurityKey(symbol=SecuritySymbol("VOO")), -24),
-        ("voo_2026_05_20", "agent_a", "taxable_brokerage", SecurityKey(symbol=SecuritySymbol("VOO")), 0),
-    ]
-    assert lots[0].quantity == 100.0
-    assert lots[0].cost_basis == Decimal(30_000)
-    assert lots[1].cost_basis == Decimal(9_000)
 
 
 def test_one_account_can_hold_multiple_holding_positions() -> None:
     portfolio = PortfolioConfig(
-        accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="agent_a"),),
+        accounts=(PortfolioAccountConfig(account_id=TAXABLE_BROKERAGE, owner_agent_id=AGENT_A),),
         holdings=(
             SecurityHoldingConfig(
                 position_id="voo_position",
-                account_id="taxable_brokerage",
+                account_id=TAXABLE_BROKERAGE,
                 symbol=SecuritySymbol("VOO"),
-                security_kind="etf",
-                unit_value=500,
+                security_kind=HoldingKind.ETF,
+                unit_value=Decimal(500),
                 lots=(
                     HoldingTaxLotConfig(
-                        lot_id="voo_lot", holding_period_months_at_start=28, quantity=10.0, cost_basis=4_000
+                        lot_id=LotId("voo_lot"),
+                        holding_period_months_at_start=28,
+                        quantity=10.0,
+                        cost_basis=Decimal(4_000),
                     ),
                 ),
             ),
             SecurityHoldingConfig(
                 position_id="goog_position",
-                account_id="taxable_brokerage",
+                account_id=TAXABLE_BROKERAGE,
                 symbol=SecuritySymbol("GOOG"),
-                security_kind="stock",
-                unit_value=180,
+                security_kind=HoldingKind.STOCK,
+                unit_value=Decimal(180),
                 lots=(
                     HoldingTaxLotConfig(
-                        lot_id="goog_lot", holding_period_months_at_start=35, quantity=5.0, cost_basis=500
+                        lot_id=LotId("goog_lot"),
+                        holding_period_months_at_start=35,
+                        quantity=5.0,
+                        cost_basis=Decimal(500),
                     ),
                 ),
             ),
@@ -93,13 +104,16 @@ def test_holding_positions_must_reference_known_accounts() -> None:
             holdings=(
                 SecurityHoldingConfig(
                     position_id="voo_position",
-                    account_id="missing",
+                    account_id=AccountId("missing"),
                     symbol=SecuritySymbol("VOO"),
-                    security_kind="etf",
-                    unit_value=500,
+                    security_kind=HoldingKind.ETF,
+                    unit_value=Decimal(500),
                     lots=(
                         HoldingTaxLotConfig(
-                            lot_id="voo_lot", holding_period_months_at_start=28, quantity=10.0, cost_basis=4_000
+                            lot_id=LotId("voo_lot"),
+                            holding_period_months_at_start=28,
+                            quantity=10.0,
+                            cost_basis=Decimal(4_000),
                         ),
                     ),
                 ),
@@ -108,7 +122,7 @@ def test_holding_positions_must_reference_known_accounts() -> None:
 
 
 def test_holding_lot_ids_must_be_unique() -> None:
-    account = PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="agent_a")
+    account = PortfolioAccountConfig(account_id=TAXABLE_BROKERAGE, owner_agent_id=AGENT_A)
     with pytest.raises(ValidationError, match="unique lot_id"):
         PortfolioConfig(
             accounts=(account,),
@@ -117,11 +131,14 @@ def test_holding_lot_ids_must_be_unique() -> None:
                     position_id="voo_position",
                     account_id=account.account_id,
                     symbol=SecuritySymbol("VOO"),
-                    security_kind="etf",
-                    unit_value=500,
+                    security_kind=HoldingKind.ETF,
+                    unit_value=Decimal(500),
                     lots=(
                         HoldingTaxLotConfig(
-                            lot_id="duplicate_lot", holding_period_months_at_start=28, quantity=10.0, cost_basis=4_000
+                            lot_id=LotId("duplicate_lot"),
+                            holding_period_months_at_start=28,
+                            quantity=10.0,
+                            cost_basis=Decimal(4_000),
                         ),
                     ),
                 ),
@@ -129,11 +146,14 @@ def test_holding_lot_ids_must_be_unique() -> None:
                     position_id="goog_position",
                     account_id=account.account_id,
                     symbol=SecuritySymbol("GOOG"),
-                    security_kind="stock",
-                    unit_value=180,
+                    security_kind=HoldingKind.STOCK,
+                    unit_value=Decimal(180),
                     lots=(
                         HoldingTaxLotConfig(
-                            lot_id="duplicate_lot", holding_period_months_at_start=35, quantity=5.0, cost_basis=500
+                            lot_id=LotId("duplicate_lot"),
+                            holding_period_months_at_start=35,
+                            quantity=5.0,
+                            cost_basis=Decimal(500),
                         ),
                     ),
                 ),
@@ -142,7 +162,7 @@ def test_holding_lot_ids_must_be_unique() -> None:
 
 
 def test_holding_positions_sharing_series_must_share_unit_value() -> None:
-    account = PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="agent_a")
+    account = PortfolioAccountConfig(account_id=TAXABLE_BROKERAGE, owner_agent_id=AGENT_A)
     with pytest.raises(ValidationError, match="must share unit_value"):
         PortfolioConfig(
             accounts=(account,),
@@ -151,11 +171,14 @@ def test_holding_positions_sharing_series_must_share_unit_value() -> None:
                     position_id="sp500_a",
                     account_id=account.account_id,
                     symbol=SecuritySymbol("VOO"),
-                    security_kind="other",
-                    unit_value=500,
+                    security_kind=HoldingKind.OTHER,
+                    unit_value=Decimal(500),
                     lots=(
                         HoldingTaxLotConfig(
-                            lot_id="sp500_a_lot", holding_period_months_at_start=28, quantity=10.0, cost_basis=4_000
+                            lot_id=LotId("sp500_a_lot"),
+                            holding_period_months_at_start=28,
+                            quantity=10.0,
+                            cost_basis=Decimal(4_000),
                         ),
                     ),
                 ),
@@ -163,11 +186,14 @@ def test_holding_positions_sharing_series_must_share_unit_value() -> None:
                     position_id="sp500_b",
                     account_id=account.account_id,
                     symbol=SecuritySymbol("VOO"),
-                    security_kind="other",
-                    unit_value=600,
+                    security_kind=HoldingKind.OTHER,
+                    unit_value=Decimal(600),
                     lots=(
                         HoldingTaxLotConfig(
-                            lot_id="sp500_b_lot", holding_period_months_at_start=35, quantity=5.0, cost_basis=500
+                            lot_id=LotId("sp500_b_lot"),
+                            holding_period_months_at_start=35,
+                            quantity=5.0,
+                            cost_basis=Decimal(500),
                         ),
                     ),
                 ),
@@ -177,7 +203,9 @@ def test_holding_positions_sharing_series_must_share_unit_value() -> None:
 
 def test_negative_holding_period_is_rejected() -> None:
     with pytest.raises(ValidationError, match="greater than or equal to 0"):
-        HoldingTaxLotConfig(lot_id="future_lot", holding_period_months_at_start=-1, quantity=10.0, cost_basis=4_000)
+        HoldingTaxLotConfig(
+            lot_id=LotId("future_lot"), holding_period_months_at_start=-1, quantity=10.0, cost_basis=Decimal(4_000)
+        )
 
 
 # -- Bonds ---------------------------------------------------------------------------------
@@ -187,7 +215,7 @@ def _bond_portfolio(**overrides: object) -> PortfolioConfig:
     bond = {
         "bond_id": "tips_rung",
         "account_id": "brokerage",
-        "issuer_jurisdiction_id": "federal_us",
+        "character": {"kind": "treasury"},
         "face_value": 100_000,
         "purchase_price": 100_000,
         "annual_coupon_rate": 0.02,
@@ -196,50 +224,22 @@ def _bond_portfolio(**overrides: object) -> PortfolioConfig:
         "months_to_maturity_at_start": 96,
     } | overrides
     return PortfolioConfig(
-        accounts=(PortfolioAccountConfig(account_id="brokerage", owner_agent_id="alice"),),
+        accounts=(PortfolioAccountConfig(account_id=BROKERAGE, owner_agent_id=ALICE),),
         bonds=(BondHoldingConfig.model_validate(bond),),
     )
-
-
-def test_a_bond_converts_both_months_relative_to_month_zero() -> None:
-    """The whole point of the config idiom: a deployment writes "held 24 months, matures in 96"
-    and never a calendar date, so the two conversions are where a sign error would hide. A bond
-    held 24 months is `purchase_month_index=-24`, in the PAST."""
-
-    [bond] = _bond_portfolio().to_initial_bonds(coupon_account_id="checking")
-
-    assert bond.purchase_month_index == -24
-    assert bond.maturity_month_index == 96
-
-
-def test_a_bonds_owner_comes_through_its_custody_account() -> None:
-    """Like a lot: the account is the owner-bearing object, and the bond names no agent."""
-
-    [bond] = _bond_portfolio().to_initial_bonds(coupon_account_id="checking")
-
-    assert bond.agent_id == "alice"
-
-
-def test_coupons_land_in_the_named_cash_account_not_the_custody_account() -> None:
-    """The two are different things that are the same string only by coincidence. A portfolio
-    account is custody (`brokerage`) and carries no cash row, so a coupon paid into one would
-    have nowhere to go — the caller names the destination because it knows its cash topology."""
-
-    [bond] = _bond_portfolio().to_initial_bonds(coupon_account_id="checking")
-
-    assert bond.account_id == "checking"
 
 
 def test_a_bond_on_an_unknown_account_is_rejected() -> None:
     with pytest.raises(ValidationError, match="bonds reference unknown account_id"):
         PortfolioConfig(
-            accounts=(PortfolioAccountConfig(account_id="brokerage", owner_agent_id="alice"),),
+            accounts=(PortfolioAccountConfig(account_id=BROKERAGE, owner_agent_id=ALICE),),
             bonds=(
                 BondHoldingConfig(
-                    bond_id="orphan",
-                    account_id="nowhere",
-                    face_value=1_000,
-                    purchase_price=1_000,
+                    bond_id=BondId("orphan"),
+                    account_id=AccountId("nowhere"),
+                    character=Taxable(),
+                    face_value=Decimal(1_000),
+                    purchase_price=Decimal(1_000),
                     annual_coupon_rate=0.01,
                     months_to_maturity_at_start=12,
                 ),
@@ -251,31 +251,18 @@ def test_duplicate_bond_ids_are_rejected() -> None:
     """Two rungs sharing an id are two different instruments the ledger cannot tell apart."""
 
     bond = BondHoldingConfig(
-        bond_id="rung",
-        account_id="brokerage",
-        face_value=1_000,
-        purchase_price=1_000,
+        bond_id=BondId("rung"),
+        account_id=BROKERAGE,
+        character=Taxable(),
+        face_value=Decimal(1_000),
+        purchase_price=Decimal(1_000),
         annual_coupon_rate=0.01,
         months_to_maturity_at_start=12,
     )
     with pytest.raises(ValidationError, match="unique bond_id"):
         PortfolioConfig(
-            accounts=(PortfolioAccountConfig(account_id="brokerage", owner_agent_id="alice"),), bonds=(bond, bond)
+            accounts=(PortfolioAccountConfig(account_id=BROKERAGE, owner_agent_id=ALICE),), bonds=(bond, bond)
         )
-
-
-def test_a_non_par_purchase_survives_config_to_be_rejected_by_the_sim() -> None:
-    """The reason `purchase_price` is carried at all despite having one legal value today.
-
-    Config is where somebody writes what they actually paid. Dropping the field would silently
-    promote a bond bought at 98.5 to par — the exact failure the sim's validator exists to make
-    loud — so the config accepts it and the conversion is what raises.
-    """
-
-    portfolio = _bond_portfolio(purchase_price=98_500)
-
-    with pytest.raises(ValidationError, match="bought away from par"):
-        portfolio.to_initial_bonds(coupon_account_id="checking")
 
 
 def test_bond_face_is_kept_out_of_the_holdings_value_total() -> None:

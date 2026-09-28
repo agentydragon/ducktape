@@ -6,15 +6,22 @@ from collections.abc import Sequence
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentplane.app.agent_runtime.events.event_log import EventReplicationError
-from agentplane.app.agent_runtime.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
+from agentplane.app.agent_runtime.models import (
+    ThreadCheckpoint,
+    ThreadEntity,
+    ThreadEvidence,
+    ThreadNativeLink,
+    ThreadPayloadChunk,
+    ThreadPayloadManifest,
+)
 from agentplane.app.agent_runtime.view import fold
 from agentplane.app.agent_runtime.view.payloads import write_payloads
-from agentplane.app.agent_runtime.view.rows import command_summary, fold_item, ordered_entity_rows
+from agentplane.app.agent_runtime.view.rows import command_summary, fold_item, ordered_entity_rows, payload_references
 from agentplane.app.agent_runtime.view.views import (
     EntityKind,
     ThreadCommandEntityView,
@@ -63,7 +70,8 @@ async def record_thread_fold(
     # A revision takes the conflict path and `set_` omits the index, so `returning` hands back the
     # number the row already had and the counter stays where it is.
     next_index = await _next_entity_index(session, thread_id, result.state.position)
-    for values in ordered_entity_rows(thread_id, result, operational):
+    extents = await _extents(session, thread_id, payload_references(result))
+    for values in ordered_entity_rows(thread_id, result, extents, operational):
         stored = await session.execute(
             insert(ThreadEntity)
             .values(**values, entity_index=next_index)
@@ -161,7 +169,7 @@ async def _prior_entities(session: AsyncSession, thread_id: UUID, batch: fold.Ev
     required = fold.touched_keys(batch)
     checkpoint = await session.scalar(select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == thread_id))
     if checkpoint is None:
-        return fold.PriorEntities(dict.fromkeys(required.item_ids), dict.fromkeys(required.command_ids))
+        return fold.PriorEntities(dict.fromkeys(required.item_ids), dict.fromkeys(required.command_ids), {})
     rows = await session.scalars(
         select(ThreadEntity).where(
             ThreadEntity.thread_id == thread_id,
@@ -179,7 +187,84 @@ async def _prior_entities(session: AsyncSession, thread_id: UUID, batch: fold.Ev
             items[row.entity_id] = fold_item(ThreadItemEntityView.model_validate(row, from_attributes=True))
         elif row.entity_kind == EntityKind.COMMAND:
             commands[row.entity_id] = command_summary(ThreadCommandEntityView.model_validate(row, from_attributes=True))
-    return fold.PriorEntities(items, commands)
+    completed = {
+        reference
+        for item_id, field in required.completed
+        if (item := items[item_id]) is not None and (reference := item.payload(field)) is not None
+    }
+    return fold.PriorEntities(items, commands, await _bodies(session, thread_id, completed))
+
+
+async def _bodies(
+    session: AsyncSession, thread_id: UUID, references: set[fold.PayloadRef]
+) -> dict[fold.PayloadRef, str]:
+    """Each reference's whole text: its generation's chunks, as far as the reference spans them."""
+    extents = await _extents(session, thread_id, references)
+    chunk = ThreadPayloadChunk
+    return {
+        reference: "".join(
+            await session.scalars(
+                select(chunk.text)
+                .where(
+                    chunk.thread_id == thread_id,
+                    chunk.projection_epoch == reference.projection_epoch,
+                    chunk.owner_cursor == reference.owner_cursor,
+                    chunk.owner_id == reference.owner_id,
+                    chunk.field == reference.field,
+                    chunk.generation == reference.generation,
+                    chunk.chunk_index < extents[reference],
+                )
+                .order_by(chunk.chunk_index)
+            )
+        )
+        for reference in references
+    }
+
+
+async def _extents(
+    session: AsyncSession, thread_id: UUID, references: set[fold.PayloadRef]
+) -> dict[fold.PayloadRef, int]:
+    """How many chunks each stored reference spans, from the manifest of the revision it names."""
+    if not references:
+        return {}
+    manifest = ThreadPayloadManifest
+    rows = await session.execute(
+        select(
+            manifest.projection_epoch,
+            manifest.owner_cursor,
+            manifest.owner_id,
+            manifest.field,
+            manifest.revision_cursor,
+            manifest.generation,
+            manifest.chunk_count,
+        ).where(
+            manifest.thread_id == thread_id,
+            tuple_(
+                manifest.projection_epoch,
+                manifest.owner_cursor,
+                manifest.owner_id,
+                manifest.field,
+                manifest.revision_cursor,
+                manifest.generation,
+            ).in_(
+                [
+                    (
+                        ref.projection_epoch,
+                        ref.owner_cursor,
+                        ref.owner_id,
+                        ref.field,
+                        ref.revision_cursor,
+                        ref.generation,
+                    )
+                    for ref in references
+                ]
+            ),
+        )
+    )
+    return {
+        fold.PayloadRef(epoch, owner_cursor, owner_id, fold.PayloadField(field), revision_cursor, generation): count
+        for epoch, owner_cursor, owner_id, field, revision_cursor, generation, count in rows
+    }
 
 
 async def _next_entity_index(session: AsyncSession, thread_id: UUID, scope: fold.Position) -> int:

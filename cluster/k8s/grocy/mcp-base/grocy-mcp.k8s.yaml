@@ -3,7 +3,6 @@ kind: Deployment
 metadata:
   annotations:
     description: FastMCP server generating Grocy tools from Grocy's OpenAPI spec. Per-request token exchange swaps the caller's Authentik JWT for a Grocy-proxy-scoped JWT before calling Grocy.
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/component: server
     app.kubernetes.io/name: grocy-mcp
@@ -114,3 +113,17 @@ spec:
     app.kubernetes.io/component: server
     app.kubernetes.io/name: grocy-mcp
   type: ClusterIP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: grocy-mcp-server
+spec:
+  endpoints:
+    - path: /metrics
+      port: metrics
+      scrapeTimeout: 10s
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: server
+      app.kubernetes.io/name: grocy-mcp

@@ -8,8 +8,3 @@ resources:
   - public-coder-agent-proxy.k8s.yaml
 components:
   - ./image-pins
-configMapGenerator:
-  - name: public-coder-agent-proxy-config
-    namespace: public-coder-agent
-    files:
-      - iron.yaml

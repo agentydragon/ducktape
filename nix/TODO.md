@@ -7,7 +7,7 @@ path is **xrdp + Xfce over Nebula** (PR #3431, live on wyrm2): headless, pre-log
 no auto-login, firewall-restricted to the `nebula1` trusted interface. Connect with
 `xfreerdp /v:10.42.0.20 /u:agentydragon /cert:tofu`, or the "wyrm2 (RDP)" desktop
 entry on rugged (PR #3435). Full RCA + security model + connection steps in
-`debug/atlas/remote-desktop-wyrm2.md`.
+`nix/debug/wyrm2/remote_desktop_wyrm2.md`.
 
 Later options (not now): Sunshine/Moonlight (passwordless after one-time pairing,
 GPU/gaming, but needs a logged-in seat0 session); Guacamole via Authentik RAC
@@ -79,7 +79,7 @@ wrappers under `nix/home/claude_code/` are the last consumers naming models outs
 roster and Terraform pins; `haku-console` is already covered by
 `test_console_codex_harnesses_use_oai_responses_wire_models`.
 
-Two ways to close it: add the wrappers to `//cluster/k8s/litellm/app:test_litellm_config`'s
+Two ways to close it: add the wrappers to `//cluster/cdk8s/litellm:test_config`'s
 `data` and parse `model`/`haikuModel` out, asserting both are served by `proxy-config.yaml`
 and admitted by the consuming key (cheap, but introduces nix parsing from a Python test); or
 generate a JSON roster from `cluster/cdk8s/model_rosters.py` that the wrappers

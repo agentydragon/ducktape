@@ -1,7 +1,6 @@
 # SSH MCP server
 
-This standalone SSH MCP server is consumed by Haku Console and Agentplane's Action
-Service. It exposes two code-owned MCP tools:
+This standalone SSH MCP server is consumed by Agentplane's Action Service. It exposes two code-owned MCP tools:
 
 - `list_targets` — list every configured `(host, user)` tuple and whether its mounted identity is
   currently available;
@@ -36,7 +35,7 @@ server. Duplicate `(host, user)` tuples are rejected as invalid configuration.
 
 The HTTP MCP endpoint requires `Authorization: Bearer <SSH_MCP_BEARER_TOKEN>`. The standalone
 [deployment](../../cluster/k8s/ssh-mcp/README.md) uses one ESO-generated bearer
-shared only with Haku Console and the staging Action Service. The endpoint is cluster-internal and has no public route.
+shared only with the staging Action Service. The endpoint is cluster-internal and has no public route.
 
 Paramiko provides the SSH transport with strict reviewed `known_hosts`, disabled agent/key
 search, disabled PTY, and bounded connect/command/output behavior. The remote command is passed

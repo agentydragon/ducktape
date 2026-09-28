@@ -50,9 +50,9 @@ The 2026-07-31 Kubernetes compatibility spike passed: a `claude setup-token`
 credential authenticated Agent SDK 0.1.48/Claude CLI 2.1.71 headlessly through
 Haku's forced TLS-intercepting proxy, with streaming, multi-turn state,
 same-pod disk resume, transcripts, and Python hooks. This resolves technical
-feasibility, not the credential-boundary or model-lock-in tradeoffs above. Full
-evidence and remaining acceptance tests are in
-[agent_sdk_sandbox_runtime.md](agent_sdk_sandbox_runtime.md).
+feasibility, not the credential-boundary or model-lock-in tradeoffs above. The
+runtime was then built, run briefly, and retired; its lessons are in
+<../docs/agent_sdk_runtime.md>.
 
 **Amendment (2026-07-31).** The above conflates two separable choices —
 self-hosting the loop, and routing the model leg through LiteLLM. Only the second
@@ -166,7 +166,7 @@ The Agent SDK overview's blunter "use the API key authentication methods instead
 guidance for that developer audience; note also that `CLAUDE_CODE_OAUTH_TOKEN` appears nowhere
 in the SDK's documented auth surface, so the mechanics still need proving even where the
 policy allows it. Design caveats (chiefly the credential-boundary inversion) are in
-[agent_sdk_sandbox_runtime.md](agent_sdk_sandbox_runtime.md). Managed Agents (B) bill **API rates
+<../docs/agent_sdk_runtime.md>. Managed Agents (B) bill **API rates
 regardless**, so they never draw on the subscription in the first place. Net:
 A-as-routine is defensible; the caution is specifically about self-hosted
 subscription-CLI automation, and it is one more reason C (pay each provider directly,

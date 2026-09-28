@@ -7,7 +7,7 @@ Uses CNPG's **Standalone Replica Cluster** pattern: target bootstrapped via `pg_
 ## Prerequisites
 
 - CNPG operator installed in cluster
-- Source and target storage classes exist and are region-pinned (see <../../docs/cnpg_conventions.md> for the current profiles and region names)
+- Source and target storage classes exist and are region-pinned (see `cluster/docs/cnpg_conventions.md` for the current profiles and region names)
 - Both regions' nodes can reach each other over pod network (Nebula mesh)
 - `kubectl` access to the namespace
 - Same PostgreSQL image version on both clusters (required for physical replication)

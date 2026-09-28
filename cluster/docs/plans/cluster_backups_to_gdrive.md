@@ -167,7 +167,6 @@ least-privilege token and doesn't broaden the agent-facing read-only Google toke
   token_url: https://oauth2.googleapis.com/token
   scopes:
     - https://www.googleapis.com/auth/drive.file # write, but only files this app creates
-  redirect_uri: https://airlock.allegedly.works/oauth/callback/google_drive_backup
   refresh_secret:
     name: google-drive-backup-tokens
   access_secret:
@@ -244,8 +243,9 @@ No GCP console work, no `rclone authorize`, no SOPS token — airlock handles
 acquisition, storage, and refresh. The OAuth client and a published consent screen
 already exist independently of the decommissioned Google Workspace MCP service.
 
-1. **Land the airlock provider entry** (step 4) so airlock exposes
-   `/oauth/callback/google_drive_backup`.
+1. **Land the airlock provider entry** (step 4), with no `redirect_uri`, so it uses airlock's
+   shared `/oauth/callback`. That is the URI registered on the Google OAuth client; any other
+   fails with `redirect_uri_mismatch`.
 2. **Authorize once in a browser as the personal Gmail account**: visit airlock's
    authorize endpoint for the new provider (the same flow used for oura/google/bsc;
    the Airlock UI surfaces the link). Approve the

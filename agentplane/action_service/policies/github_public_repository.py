@@ -10,11 +10,11 @@ from typing import Literal
 from pydantic import JsonValue
 
 from agentplane.action_service.catalog import ActionIdentity
+from agentplane.action_service.github_policy.repository import evaluate_public_repository
+from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.models import PolicyKind
 from agentplane.action_service.policies.github_repository import from_repository_decision
 from agentplane.action_service.policies.kind import Kind, Matched, NotMatched
-from github_policy.repository import evaluate_public_repository
-from github_policy.visibility import RepositoryVisibilityService
 
 
 class GitHubPublicRepository(Kind):

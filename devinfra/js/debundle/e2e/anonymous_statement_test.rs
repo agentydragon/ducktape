@@ -254,17 +254,16 @@ export { marker };
         ],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let rejected = run_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
-        "Anonymous statement selector diagnostic report: 2 unresolved selector(s) found",
+        "3 selector outcome(s): no_match=1, ambiguous=1, duplicate_claim=1",
         "diagnostics/missing",
-        "did not match any top-level statement group",
+        "did not match any top-level statement",
         r#"console.log("missing")"#,
         "diagnostics/ambiguous",
         "ambiguous",
         r#"console.log("dup")"#,
-        "Duplicate binding claim report: 1 duplicate claim(s) found",
         "\"marker\"",
         "owners/marker",
         "duplicates/marker",

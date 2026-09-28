@@ -63,11 +63,8 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from kyverno_clusterpolicy_crds.io.kyverno import (
-    ClusterPolicy,
-    ClusterPolicySpec,
     ClusterPolicySpecRules,
     ClusterPolicySpecRulesMatch,
-    ClusterPolicySpecRulesMatchAny,
     ClusterPolicySpecRulesMatchAnyResources,
     ClusterPolicySpecRulesMatchAnyResourcesOperations,
     ClusterPolicySpecRulesMutate,
@@ -77,20 +74,16 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesMutateForeachPreconditionsAllOperator,
 )
 
+from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy, match_resources
+
 _CLUSTER_NO_PROXY = ".svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
 
 
 def _pods_created_in(namespace: str) -> ClusterPolicySpecRulesMatch:
-    return ClusterPolicySpecRulesMatch(
-        any=[
-            ClusterPolicySpecRulesMatchAny(
-                resources=ClusterPolicySpecRulesMatchAnyResources(
-                    kinds=["Pod"],
-                    namespaces=[namespace],
-                    operations=[ClusterPolicySpecRulesMatchAnyResourcesOperations.CREATE],
-                )
-            )
-        ]
+    return match_resources(
+        ClusterPolicySpecRulesMatchAnyResources(
+            kinds=["Pod"], namespaces=[namespace], operations=[ClusterPolicySpecRulesMatchAnyResourcesOperations.CREATE]
+        )
     )
 
 
@@ -108,6 +101,9 @@ def _env_and_mount_rule(
     """Appends the proxy env vars and the CA mount to every entry of `spec.<field>`,
     skipping an entry that already mounts the CA (the reinvocation guard)."""
     ca_file = f"{mount_path}/ca-certificates.crt"
+    # Four CA variables because four client stacks each read only their own (OpenSSL/Python
+    # ssl, curl, `requests`, Node); a missing one passes admission and fails TLS later, in
+    # whichever runtime uses that client.
     env = [
         ("HTTP_PROXY", f'"{proxy_url}"'),
         ("HTTPS_PROXY", f'"{proxy_url}"'),
@@ -175,58 +171,56 @@ def _injection_policy(
                 "policies.kyverno.io/description": description,
             },
         ),
-        spec=ClusterPolicySpec(
-            mutate_existing_on_policy_update=False,
-            rules=[
-                ClusterPolicySpecRules(
-                    name="add-proxy-volume",
-                    match=_pods_created_in(namespace),
-                    preconditions={
-                        "all": [
-                            {
-                                "key": f"{{{{ (request.object.spec.volumes || `[]`)[?name=='{volume}'] | length(@) }}}}",
-                                "operator": "Equals",
-                                "value": 0,
-                            }
-                        ]
-                    },
-                    mutate=ClusterPolicySpecRulesMutate(
-                        patches_json6902=(
-                            f'- op: add\n  path: "/spec/volumes/-"\n  value:\n'
-                            f"    name: {volume}\n    configMap:\n      name: {volume}"
-                        )
-                    ),
+        mutate_existing_on_policy_update=False,
+        rules=[
+            ClusterPolicySpecRules(
+                name="add-proxy-volume",
+                match=_pods_created_in(namespace),
+                preconditions={
+                    "all": [
+                        {
+                            "key": f"{{{{ (request.object.spec.volumes || `[]`)[?name=='{volume}'] | length(@) }}}}",
+                            "operator": "Equals",
+                            "value": 0,
+                        }
+                    ]
+                },
+                mutate=ClusterPolicySpecRulesMutate(
+                    patches_json6902=(
+                        f'- op: add\n  path: "/spec/volumes/-"\n  value:\n'
+                        f"    name: {volume}\n    configMap:\n      name: {volume}"
+                    )
                 ),
-                _env_and_mount_rule(
-                    rule="add-proxy-env-and-mount-containers",
-                    field="containers",
-                    preconditions=None,
-                    namespace=namespace,
-                    volume=volume,
-                    mount_path=mount_path,
-                    proxy_url=proxy_url,
-                    no_proxy=no_proxy,
-                ),
-                _env_and_mount_rule(
-                    rule="add-proxy-env-and-mount-init-containers",
-                    field="initContainers",
-                    preconditions={
-                        "any": [
-                            {
-                                "key": "{{ (request.object.spec.initContainers || `[]`) | length(@) }}",
-                                "operator": "GreaterThanOrEquals",
-                                "value": 1,
-                            }
-                        ]
-                    },
-                    namespace=namespace,
-                    volume=volume,
-                    mount_path=mount_path,
-                    proxy_url=proxy_url,
-                    no_proxy=no_proxy,
-                ),
-            ],
-        ),
+            ),
+            _env_and_mount_rule(
+                rule="add-proxy-env-and-mount-containers",
+                field="containers",
+                preconditions=None,
+                namespace=namespace,
+                volume=volume,
+                mount_path=mount_path,
+                proxy_url=proxy_url,
+                no_proxy=no_proxy,
+            ),
+            _env_and_mount_rule(
+                rule="add-proxy-env-and-mount-init-containers",
+                field="initContainers",
+                preconditions={
+                    "any": [
+                        {
+                            "key": "{{ (request.object.spec.initContainers || `[]`) | length(@) }}",
+                            "operator": "GreaterThanOrEquals",
+                            "value": 1,
+                        }
+                    ]
+                },
+                namespace=namespace,
+                volume=volume,
+                mount_path=mount_path,
+                proxy_url=proxy_url,
+                no_proxy=no_proxy,
+            ),
+        ],
     )
 
 

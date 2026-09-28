@@ -1,5 +1,10 @@
 # AI Subscription Comparison — Apples-to-Apples (2026-08-23)
 
+**Historical analysis.** Model rankings, costs, and subscription terms below are
+dated August 2026, not current recommendations. The refreshed September AA dataset,
+including GPT-6, is in <artificial_analysis/README.md>. Its index methodology differs;
+the August CSV is retained so this document's calculations remain reproducible.
+
 ## Goal
 
 Find AI capacity that complements an existing **Claude Max 20x + ChatGPT Pro** loadout for heavy agentic coding. That loadout is already at the ceiling of what either frontier vendor sells one person: Max 20x is the top individual Claude tier and ChatGPT Pro $200 the top consumer OpenAI tier, with nothing above either short of per-seat Team/Enterprise plans.

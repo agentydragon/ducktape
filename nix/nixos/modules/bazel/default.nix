@@ -14,9 +14,9 @@
 # a Nix-built image that ported only the vars broke on every environment-scrubbed Bazel
 # action until the fallback was added. Same for bash: nixpkgs' fallback PATH is
 # `/no-such-path`, which an FHS host never notices. See
-# debug/nixos_bazel_bash/README.md "Two substrates" and "Issue 4".
+# devinfra/debug/nixos_bazel_bash/README.md "Two substrates" and "Issue 4".
 #
-# See debug/nixos_bazel_bash/README.md for details.
+# See devinfra/debug/nixos_bazel_bash/README.md for details.
 {
   config,
   pkgs,

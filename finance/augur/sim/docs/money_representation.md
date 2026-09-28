@@ -1,7 +1,8 @@
 # Exact money representation
 
-Runtime money is an integer count of the scenario's declared currency quantum,
-not a floating-point currency amount. The authoring quantum is an exact Decimal
+Runtime money is an integer count of a `Currency`'s quantum (<../money.py>), not a
+floating-point currency amount. `Currency.quanta` converts at the caller's edge and refuses
+an amount the quantum cannot represent exactly. The authoring quantum is an exact Decimal
 and need not be a power of ten: five-rappen and fifth-unit currencies remain valid.
 Public money counts preserve their declared signed range; Python's arbitrary-size
 integers permit safe intermediate products, not silent widening of that contract.

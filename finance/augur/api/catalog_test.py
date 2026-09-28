@@ -8,11 +8,14 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 from more_itertools import one
+from pydantic import HttpUrl
 
 from finance.augur.api.catalog import build_catalog, build_settings
 from finance.augur.api.config import LocationConfig, PropertyAssetConfig
 from finance.augur.api.conftest import MakeCatalogConfig
-from finance.augur.api.local_regulation import TaxRegime
+from finance.augur.sim.ids import PropertyId
+
+LOCATION_B_PROPERTY = PropertyId("location_b_property")
 
 
 def test_catalog_locations_default_to_loaded_property_source(
@@ -24,7 +27,7 @@ def test_catalog_locations_default_to_loaded_property_source(
     assert [property_.id for property_ in catalog.properties] == ["location_a_property", "location_b_property"]
 
 
-def test_catalog_san_francisco_location_carries_modeled_tax_defaults(
+def test_catalog_san_francisco_location_carries_its_labels(
     builtin_properties_path: Path, make_catalog_config: MakeCatalogConfig
 ) -> None:
     catalog = build_catalog(make_catalog_config(builtin_properties_path))
@@ -32,8 +35,6 @@ def test_catalog_san_francisco_location_carries_modeled_tax_defaults(
 
     assert location.label == "San Francisco, CA"
     assert location.city == "San Francisco"
-    assert location.local_regulation.property_tax_regime is TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX
-    assert TaxRegime.SAN_FRANCISCO_TRANSFER_TAX in location.local_regulation.default_tax_regimes
 
 
 def test_catalog_applies_public_property_asset_urls(
@@ -44,16 +45,18 @@ def test_catalog_applies_public_property_asset_urls(
             properties_path,
             property_assets=(
                 PropertyAssetConfig(
-                    property_id="location_a_property", image_url="https://cdn.example.com/augur/location-a-hero.jpg"
+                    property_id=PropertyId("location_a_property"),
+                    image_url=HttpUrl("https://cdn.example.com/augur/location-a-hero.jpg"),
                 ),
             ),
         )
     )
 
     assert (
-        catalog.properties_by_id["location_a_property"].image_url == "https://cdn.example.com/augur/location-a-hero.jpg"
+        catalog.properties_by_id[PropertyId("location_a_property")].image_url
+        == "https://cdn.example.com/augur/location-a-hero.jpg"
     )
-    assert catalog.properties_by_id["location_b_property"].image_url is None
+    assert catalog.properties_by_id[LOCATION_B_PROPERTY].image_url is None
 
 
 def test_catalog_allows_explicit_public_property_asset_url(
@@ -64,13 +67,14 @@ def test_catalog_allows_explicit_public_property_asset_url(
             properties_path,
             property_assets=(
                 PropertyAssetConfig(
-                    property_id="location_b_property", image_url="https://cdn.example.com/augur/location-b-hero.jpg"
+                    property_id=LOCATION_B_PROPERTY,
+                    image_url=HttpUrl("https://cdn.example.com/augur/location-b-hero.jpg"),
                 ),
             ),
         )
     )
 
-    assert catalog.properties_by_id["location_b_property"].image_url == (
+    assert catalog.properties_by_id[LOCATION_B_PROPERTY].image_url == (
         "https://cdn.example.com/augur/location-b-hero.jpg"
     )
 
@@ -131,7 +135,8 @@ def test_catalog_rejects_asset_for_unknown_property(
                 properties_path,
                 property_assets=(
                     PropertyAssetConfig(
-                        property_id="missing_property", image_url="https://cdn.example.com/augur/missing-hero.jpg"
+                        property_id=PropertyId("missing_property"),
+                        image_url=HttpUrl("https://cdn.example.com/augur/missing-hero.jpg"),
                     ),
                 ),
             )

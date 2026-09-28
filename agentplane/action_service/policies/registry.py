@@ -9,6 +9,7 @@ from typing import Annotated
 from pydantic import Field, JsonValue
 
 from agentplane.action_service.catalog import ActionIdentity
+from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.policies import (
     argument_schema,
     exact_actions,
@@ -16,7 +17,6 @@ from agentplane.action_service.policies import (
     github_repository,
 )
 from agentplane.action_service.policies.kind import Matched, NotMatched
-from github_policy.visibility import RepositoryVisibilityService
 
 Policy = Annotated[
     exact_actions.ExactActions
@@ -27,11 +27,15 @@ Policy = Annotated[
 ]
 
 
+def lists(policy: Policy, action: ActionIdentity) -> bool:
+    return action.name in policy.actions.get(action.group, frozenset())
+
+
 async def evaluate(
     policy: Policy, action: ActionIdentity, arguments: Mapping[str, JsonValue], visibility: RepositoryVisibilityService
 ) -> Matched | NotMatched:
     """The Action must be listed, and the kind's own test must pass."""
-    if action.name not in policy.actions.get(action.group, frozenset()):
+    if not lists(policy, action):
         return NotMatched(f"{action.group}/{action.name} is not listed")
     match policy:
         case exact_actions.ExactActions():

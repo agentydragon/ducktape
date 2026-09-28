@@ -7,6 +7,7 @@ within the explicit budget; execution owns prices, basis and taxes.
 from finance.augur.policy.cash_band import Invest, Raise, cash_band
 from finance.augur.sim.actions import Action, Buy, DecisionActions, LotSale, PayClaim, Sell
 from finance.augur.sim.fixed_point import quantity_for_value
+from finance.augur.sim.ids import AccountId, LotId
 from finance.augur.sim.observations import Decision
 
 
@@ -28,10 +29,10 @@ def decide(batch: list[Decision]) -> list[DecisionActions]:
                     Buy(
                         cause_id="opening-investment",
                         agent_id=observation.agent_id,
-                        cash_account_id="checking",
+                        cash_account_id=AccountId("checking"),
                         holding_account_id=pool.account_id,
                         asset_id=pool.asset_id,
-                        lot_id="opening-investment",
+                        lot_id=LotId("opening-investment"),
                         units=units,
                         quantity_scale=pool.quantity_scale,
                     )
@@ -43,7 +44,7 @@ def decide(batch: list[Decision]) -> list[DecisionActions]:
                 Sell(
                     cause_id=f"fund-{position.lot_id}",
                     agent_id=observation.agent_id,
-                    proceeds_account_id="checking",
+                    proceeds_account_id=AccountId("checking"),
                     asset_id=position.asset_id,
                     lots=(LotSale(account_id=position.account_id, lot_id=position.lot_id, units=position.units),),
                 )

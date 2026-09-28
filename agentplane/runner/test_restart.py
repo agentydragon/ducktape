@@ -197,7 +197,7 @@ async def test_state_fence_survives_native_leader_exit_until_its_child_group_is_
     owner_descriptor_closed = False
     try:
         await process.start()
-        tool_pid = int(await anext(process.lines()))
+        tool_pid = int((await anext(process.line_batches()))[0])
         # Closing a dead runner's descriptor does not unlock the shared open file description
         # inherited by the supervisor/native group. ``StateOwner.close`` is intentionally not
         # used: its orderly-shutdown unlock would release that shared lock for every descendant.
@@ -256,7 +256,7 @@ async def test_native_leader_exit_stops_background_tool(tmp_path: Path) -> None:
     try:
         await process.start()
         try:
-            tool_pid = int(await anext(process.lines()))
+            tool_pid = int((await anext(process.line_batches()))[0])
             # Only the leader dies: no stop/parent-death signal reaches its supervisor.
             os.kill(process.native_pid, signal.SIGKILL)
             async with asyncio.timeout(10):

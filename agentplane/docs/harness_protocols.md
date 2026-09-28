@@ -19,7 +19,7 @@ system, or product persistence model.
   executable-integrity infrastructure.
 - A version string is useful human-readable metadata, not a compatibility gate.
 
-The existing `haku/cli_protocol` and `haku/console` code is behavior evidence only.
+The existing `haku/console` code is behavior evidence only.
 The implementation under `agentplane/` must not import it.
 
 When a harness version changes or a new protocol area needs coverage, run the live probe with the
@@ -68,6 +68,14 @@ starting scenario traffic:
 ```
 
 Required tests should prove the actual response shape rather than relying on stdin ordering.
+
+Every request field is optional (schema reading, 2.1.220): `hooks`, `sdkMcpServers`, `jsonSchema`,
+`systemPrompt`, `appendSystemPrompt`, `agents`, `skills`, `title`, `toolAliases`,
+`planModeInstructions`, `excludeDynamicSections`, `supportedDialogKinds`, `agentProgressSummaries`,
+`forwardSubagentText`, `promptSuggestions`, `appendSubagentSystemPrompt`,
+`webSearchIsolationExemptMcpServers`. **Gotcha** (measured 2.1.220): validation is partial — `skills`
+and `hooks` get typed errors, but a mistyped field (`agents: 42`) or an invented one is answered
+`success` and ignored, so only an observed effect proves a field took.
 
 ### Prompt and output
 

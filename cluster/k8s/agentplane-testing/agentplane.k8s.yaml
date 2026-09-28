@@ -17,8 +17,8 @@ metadata:
   namespace: agentplane-testing
 spec:
   hard:
-    limits.cpu: "12"
-    limits.memory: 24Gi
+    limits.cpu: "18"
+    limits.memory: 28Gi
     requests.cpu: "4"
     requests.memory: 8Gi
     requests.storage: 80Gi
@@ -56,17 +56,61 @@ metadata:
 data:
   config.yaml: |
     models:
-      HARNESS_CLAUDE:
-        - anthropic-api/ant-messages/claude-haiku-4-5-20251001
-      HARNESS_CODEX:
-        - chatgpt/oai-responses/gpt-5.6-luna
+      models:
+        - model: anthropic-api/ant-messages/claude-haiku-4-5-20251001
+          display_name: Haiku 4.5
+        - model: antigravity/ant-messages/gemini-3.1-flash-lite
+          display_name: Gemini 3.1 Flash Lite
+        - model: antigravity/ant-messages/gemini-3.5-flash-lite
+          display_name: Gemini 3.5 Flash Lite
+        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          display_name: Qwen3.8 Flash Next IQ4_XS (128K)
+        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          display_name: Qwen3.8 Flash Next IQ4_XS (256K)
+        - model: ollama/oai-chat/gpt-oss-20b-128k
+          display_name: GPT-OSS 20B (128K)
+        - model: ollama/oai-chat/gpt-oss-20b-256k
+          display_name: GPT-OSS 20B (256K)
+        - model: ollama/oai-chat/gpt-oss-20b-512k
+          display_name: GPT-OSS 20B (512K)
+        - model: ollama/oai-chat/gpt-oss-20b-1m
+          display_name: GPT-OSS 20B (1M)
+        - model: ollama/oai-chat/gpt-oss-120b-128k
+          display_name: GPT-OSS 120B (128K)
+        - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
+          display_name: Gemma 4 31B (128K)
+        - model: chatgpt/oai-responses/gpt-6-luna
+          display_name: GPT-6 Luna
+      harnesses:
+        HARNESS_CLAUDE:
+          - anthropic-api/ant-messages/claude-haiku-4-5-20251001
+          - antigravity/ant-messages/gemini-3.1-flash-lite
+          - antigravity/ant-messages/gemini-3.5-flash-lite
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          - ollama/oai-chat/gpt-oss-20b-128k
+          - ollama/oai-chat/gpt-oss-20b-256k
+          - ollama/oai-chat/gpt-oss-20b-512k
+          - ollama/oai-chat/gpt-oss-20b-1m
+          - ollama/oai-chat/gpt-oss-120b-128k
+          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+        HARNESS_CODEX:
+          - chatgpt/oai-responses/gpt-6-luna
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          - ollama/oai-chat/gpt-oss-20b-128k
+          - ollama/oai-chat/gpt-oss-20b-256k
+          - ollama/oai-chat/gpt-oss-20b-512k
+          - ollama/oai-chat/gpt-oss-20b-1m
+          - ollama/oai-chat/gpt-oss-120b-128k
+          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
     agent_egress_api_url: http://agentplane-egress.agentplane-testing.svc.cluster.local
     agent_actions_service_url: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
     thread_presets:
       public-coder-codex:
         title: Public coder / Codex
         harness: HARNESS_CODEX
-        model: chatgpt/oai-responses/gpt-5.6-luna
+        model: chatgpt/oai-responses/gpt-6-luna
         cwd: /state/workspaces/{session_id}
         reasoning_effort: medium
         instructions: Work as a public-repository coding agent. Keep private cluster data out of the workspace and outputs.
@@ -76,7 +120,9 @@ data:
         template: agentplane-runner
         policies:
           - basic
-          - github-public
+          - github-agentydragon-agent
+          - github-clone
+          - github-actions-logs
         thread_preset: public-coder-codex
         bootstrap: |
           marker=/state/workspaces/.agentplane-public-coder-ready
@@ -121,6 +167,7 @@ spec:
   dataFrom:
     - sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: postgres-actions-generator
   refreshInterval: 8760h
@@ -157,6 +204,7 @@ spec:
   dataFrom:
     - sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: postgres-egress-generator
   refreshInterval: 8760h
@@ -193,6 +241,7 @@ spec:
   dataFrom:
     - sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: postgres-electric-generator
   refreshInterval: 8760h
@@ -215,19 +264,14 @@ metadata:
   namespace: agentplane-testing
 spec:
   affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - preference:
-            matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-          weight: 100
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
     tolerations:
       - effect: NoSchedule
         key: node-role.kubernetes.io/control-plane
         operator: Exists
+    topologyKey: kubernetes.io/hostname
   bootstrap:
     initdb:
       database: app
@@ -289,20 +333,6 @@ spec:
   name: egress
   owner: egress
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: agentplane-electric-storage
-  namespace: agentplane-testing
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi
-  storageClassName: seaweedfs-ovh
-  volumeMode: Filesystem
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -326,15 +356,6 @@ spec:
         app.kubernetes.io/name: agentplane-electric
         cdk8s.io/metadata.addr: agentplane-electric-deployment-c86a4b11
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: false
       containers:
         - env:
@@ -420,9 +441,11 @@ spec:
             runAsNonRoot: true
           volumeMounts:
             - mountPath: /var/lib/electric
-              name: pvc-agentplane-electric-storage
+              name: storage
       dnsPolicy: ClusterFirst
       hostNetwork: false
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 65534
@@ -436,10 +459,9 @@ spec:
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 60
       volumes:
-        - name: pvc-agentplane-electric-storage
-          persistentVolumeClaim:
-            claimName: agentplane-electric-storage
-            readOnly: false
+        - emptyDir:
+            sizeLimit: 5120Mi
+          name: storage
 ---
 apiVersion: v1
 kind: Service
@@ -539,6 +561,7 @@ data:
   settings.yaml: |
     allowed_service_account_namespaces:
       - agentplane-testing
+    log_llm_requests: false
 immutable: false
 ---
 apiVersion: apps/v1
@@ -566,15 +589,6 @@ spec:
         app.kubernetes.io/name: agentplane-llm-ingress
         cdk8s.io/metadata.addr: agentplane-llm-ingress-deployment-c81387cd
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -636,6 +650,8 @@ spec:
       hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -831,6 +847,9 @@ spec:
         key: tls.crt
         name: agentplane-testing-egress-ca
   target:
+    additionalFormats:
+      pkcs12:
+        key: ca-certificates.p12
     configMap:
       key: ca-certificates.crt
       metadata:
@@ -882,8 +901,6 @@ immutable: false
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: agentplane-egress
   name: agentplane-egress
@@ -904,15 +921,6 @@ spec:
         app.kubernetes.io/name: agentplane-egress
         cdk8s.io/metadata.addr: agentplane-egress-deployment-c84e690f
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -1018,6 +1026,8 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -1145,6 +1155,13 @@ spec:
             - port: "3000"
               protocol: TCP
     - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "8123"
+              protocol: TCP
+    - toEntities:
         - world
         - remote-node
         - host
@@ -1161,6 +1178,9 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-runner
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-sandbox
             k8s:io.kubernetes.pod.namespace: agentplane-testing
       toPorts:
         - ports:
@@ -1293,24 +1313,24 @@ metadata:
 spec:
   rules:
     - hosts:
-        - pypi.org
-        - files.pythonhosted.org
-        - registry.npmjs.org
-        - nodejs.org
-        - index.crates.io
-        - static.crates.io
-        - static.rust-lang.org
-        - releases.bazel.build
         - bcr.bazel.build
         - cache.nixos.org
-        - nixos.org
         - channels.nixos.org
-        - ftp.gnu.org
-        - snapshot.debian.org
         - code.forgejo.org
         - data.forgejo.org
+        - files.pythonhosted.org
+        - ftp.gnu.org
         - ghcr.io
+        - index.crates.io
+        - nixos.org
+        - nodejs.org
         - pkg-containers.githubusercontent.com
+        - pypi.org
+        - registry.npmjs.org
+        - releases.bazel.build
+        - snapshot.debian.org
+        - static.crates.io
+        - static.rust-lang.org
       methods:
         - GET
         - HEAD
@@ -1318,19 +1338,79 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
-  name: github-public
+  name: github-agentydragon-agent
   namespace: agentplane-testing
 spec:
   rules:
     - hosts:
         - api.github.com
         - github.com
+        - codeload.github.com
         - "*.githubusercontent.com"
       methods:
         - GET
         - POST
       credentialRef:
         name: github-pat
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: github-actions-logs
+  namespace: agentplane-testing
+spec:
+  rules:
+    - hosts:
+        - "*.blob.core.windows.net"
+      methods:
+        - GET
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: github-clone
+  namespace: agentplane-testing
+spec:
+  rules:
+    - hosts:
+        - github.com
+      methods:
+        - GET
+        - POST
+      paths:
+        - /*/*.git/info/refs
+        - /*/*.git/git-upload-pack
+        - /*/*/info/refs
+        - /*/*/git-upload-pack
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-sandbox-tool-config
+  namespace: agentplane-testing
+data:
+  bazel.bazelrc: |
+    startup --host_jvm_args=-Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
+    common --test_env=HTTP_PROXY --test_env=HTTPS_PROXY --test_env=http_proxy --test_env=https_proxy --test_env=NO_PROXY --test_env=no_proxy --test_env=SSL_CERT_FILE --test_env=NODE_EXTRA_CA_CERTS --test_env=CURL_CA_BUNDLE --test_env=GIT_SSL_CAINFO --test_env=REQUESTS_CA_BUNDLE --test_env=KUBECONFIG
+  kubeconfig: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: in-cluster
+        cluster:
+          server: https://kubernetes.default.svc.cluster.local
+          certificate-authority: /etc/ssl/certs/ca-certificates.crt
+    users:
+      - name: workload
+        user:
+          token: agentplane-credential-kubernetes-workload
+    contexts:
+      - name: in-cluster
+        context:
+          cluster: in-cluster
+          user: workload
+    current-context: in-cluster
+immutable: false
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -1534,15 +1614,6 @@ spec:
         app.kubernetes.io/name: agentplane-app
         cdk8s.io/metadata.addr: agentplane-app-deployment-c8d92233
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -1720,6 +1791,8 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -1901,6 +1974,8 @@ spec:
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
+  annotations:
+    sandbox-actions.agentplane.allegedly.works/description: "The shared runner image, built to host an agent harness: the sandbox tools (git, curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
   name: agentplane-runner
   namespace: agentplane-testing
 spec:
@@ -1918,11 +1993,11 @@ spec:
             - --listen
             - 0.0.0.0:7000
             - --claude-binary
-            - /usr/local/bin/claude
+            - /bin/claude
             - --anthropic-base-url
             - $(LITELLM_URL)
             - --codex-binary
-            - /opt/codex/bin/codex
+            - /bin/codex
             - --openai-base-url
             - $(LITELLM_URL)/v1
             - --harness-env
@@ -1951,9 +2026,13 @@ spec:
             - GIT_SSL_CAINFO
             - --harness-env
             - REQUESTS_CA_BUNDLE
+            - --harness-env
+            - KUBECONFIG
           env:
             - name: LITELLM_URL
               value: http://agentplane-llm-ingress.agentplane-testing.svc.cluster.local:8080
+            - name: AGENTPLANE_MODEL_CONTEXT_WINDOWS
+              value: '{"ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k":262144,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k":262144}'
             - name: HTTP_PROXY
               value: http://127.0.0.1:3128
             - name: HTTPS_PROXY
@@ -1976,6 +2055,8 @@ spec:
               value: /etc/ssl/certs/ca-certificates.crt
             - name: REQUESTS_CA_BUNDLE
               value: /etc/ssl/certs/ca-certificates.crt
+            - name: KUBECONFIG
+              value: /etc/kubernetes/kubeconfig
             - name: ANTHROPIC_AUTH_TOKEN
               value: agentplane-credential-agentplane-workload
             - name: OPENAI_API_KEY
@@ -2004,6 +2085,15 @@ spec:
               name: egress-ca
               readOnly: true
               subPath: ca-certificates.crt
+            - mountPath: /etc/ssl/certs/java/cacerts
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.p12
+            - mountPath: /etc/kubernetes/kubeconfig
+              name: tool-config
+              readOnly: true
+              subPath: kubeconfig
+          workingDir: /state
         - env:
             - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
               value: agentplane-egress.agentplane-testing.svc.cluster.local
@@ -2011,12 +2101,23 @@ spec:
               value: "8888"
             - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
               value: "3128"
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
+              value: 0.0.0.0
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
+              value: "3129"
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
               value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
+          readinessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /readyz
+              port: 3129
+            periodSeconds: 2
+            timeoutSeconds: 1
           resources:
             limits:
               memory: 128Mi
@@ -2047,6 +2148,9 @@ spec:
         - configMap:
             name: agentplane-testing-egress-ca
           name: egress-ca
+        - configMap:
+            name: agentplane-sandbox-tool-config
+          name: tool-config
         - name: egress-token
           projected:
             sources:
@@ -2263,15 +2367,6 @@ spec:
         app.kubernetes.io/name: agentplane-actions
         cdk8s.io/metadata.addr: agentplane-actions-deployment-c8d4c10b
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/zone
-                    operator: In
-                    values:
-                      - hil-ovh
       automountServiceAccountToken: true
       containers:
         - args:
@@ -2406,6 +2501,8 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -2682,6 +2779,59 @@ subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-acceptance-token
+  namespace: agentplane-testing
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - agentplane-agent
+    resources:
+      - serviceaccounts/token
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: claude-ai-acceptance-token
+  namespace: agentplane-testing
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-acceptance-token
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: claude-ai
+    namespace: agentplane-staging
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: haku-agent
+    namespace: agentplane-staging
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-app-from-staging-egress
+  namespace: agentplane-testing
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-app
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -3031,6 +3181,7 @@ spec:
             target: client-secret
       sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: agentplane-testing-dex-client-secret
     - rewrite:
@@ -3039,6 +3190,7 @@ spec:
             target: session-secret
       sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: agentplane-testing-agentplane-session-secret
   refreshInterval: 8760h
@@ -3068,6 +3220,7 @@ spec:
             target: client-secret
       sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: agentplane-testing-mcp-client-secret
   refreshInterval: 8760h
@@ -3092,6 +3245,7 @@ spec:
   dataFrom:
     - sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: agentplane-testing-dex-operator-password
   refreshInterval: 8760h

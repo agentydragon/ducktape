@@ -210,77 +210,16 @@ export function sampleRecentToolCalls(nowMs: number): RecentToolCall[] {
 
 export const SAMPLE_MCP_SERVERS: McpServerConnection[] = [
   {
-    server_id: "grocy-sf",
-    backend: {
-      kind: "remote_mcp",
-      url: "https://grocy-sf.example.test/mcp",
-      auth: { kind: "remote_server_oauth", client_registration: { kind: "dynamic", client_name: "Haku Console" } },
-    },
-    connection: {
-      server_id: "grocy-sf",
-      username: "agentydragon",
-      state: {
-        status: "degraded",
-        connected_at: "2026-07-01T09:00:00Z",
-        token_expires_at: "2026-07-17T10:00:00Z",
-        scope: "read write",
-        refresh_failure: {
-          started_at: "2026-07-17T09:59:00Z",
-          initial: {
-            at: "2026-07-17T09:59:00Z",
-            kind: "outcome_unknown",
-            message: "MCP OAuth token refresh timed out after 30 seconds",
-          },
-          latest: {
-            at: "2026-07-17T09:59:00Z",
-            kind: "outcome_unknown",
-            message: "MCP OAuth token refresh timed out after 30 seconds",
-          },
-          attempts: 1,
-          resolution: "Reconnect the account before retrying.",
-          next_retry_at: null,
-        },
-      },
-    },
+    server_id: "sandbox",
+    backend: { kind: "in_process", credential: { kind: "none" } },
   },
   {
-    server_id: "tana",
-    backend: {
-      kind: "remote_mcp",
-      url: "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp",
-      auth: { kind: "static_bearer" },
-    },
-    connection: null,
+    server_id: "grants",
+    backend: { kind: "in_process", credential: { kind: "none" } },
   },
   {
-    server_id: "gmail",
-    backend: {
-      kind: "in_process",
-      credential: { kind: "operator_connection", connection: "google_mail" },
-    },
-    connection: {
-      connection: "google_mail",
-      display_name: "Google Mail",
-      provider: "google",
-      status: "connected",
-      connected_at: "2026-07-01T09:00:00Z",
-      token_expires_at: "2026-08-17T10:00:00Z",
-      scope: "https://www.googleapis.com/auth/gmail.modify",
-    },
-  },
-  {
-    server_id: "google_calendar",
-    backend: {
-      kind: "in_process",
-      credential: { kind: "operator_connection", connection: "google_calendar" },
-    },
-    connection: {
-      connection: "google_calendar",
-      display_name: "Google Calendar",
-      provider: "google",
-      status: "unprovisioned",
-      detail: "OAuth client not provisioned on this console; see the console deployment README.",
-    },
+    server_id: "haku_routine",
+    backend: { kind: "in_process", credential: { kind: "none" } },
   },
 ];
 
@@ -289,33 +228,11 @@ export const SAMPLE_MCP_PROBES: Record<string, McpServerProbe> = Object.fromEntr
     connection.server_id,
     {
       connection,
-      server:
-        connection.server_id === "grocy-sf"
-          ? {
-              server_id: connection.server_id,
-              title: connection.server_id,
-              state: {
-                status: "degraded" as const,
-                failure_stage: "credential_resolution" as const,
-                degraded_reason: "MCP OAuth token refresh failed: 401",
-              },
-            }
-          : connection.connection?.status === "unprovisioned"
-            ? {
-                server_id: connection.server_id,
-                title: connection.server_id,
-                state: {
-                  status: "degraded" as const,
-                  failure_stage: "credential_resolution" as const,
-                  degraded_reason:
-                    "OAuth client for google_calendar is not provisioned on this console; see the console deployment README.",
-                },
-              }
-            : {
-                server_id: connection.server_id,
-                title: connection.server_id,
-                state: { status: "alive" as const, tools: [] },
-              },
+      server: {
+        server_id: connection.server_id,
+        title: connection.server_id,
+        state: { status: "alive" as const, tools: [] },
+      },
     },
   ])
 );
@@ -402,18 +319,6 @@ export const SAMPLE_GRANTS: GrantListResponse = {
         ended_at: "2025-01-31T21:20:00Z",
         end_reason: "Pilot complete; return to standard diagnostics.",
       },
-    },
-    {
-      source: { kind: "config_file", entry_id: "grocy-read" },
-      subject: { kind: "access_profile", access_profile_id: "public-coder" },
-      coverage: {
-        kind: "http",
-        origins: [{ scheme: "https", host: "grocy.example", port: 443 }],
-        coverage: { methods: ["GET"], path_regex: "/api/.*" },
-        credential_handles: ["grocy-readonly"],
-        allow_prohibited_address: false,
-      },
-      validity: { ends_at: null, status: "active", ended_at: null, end_reason: null },
     },
   ],
 } satisfies GrantListResponse;

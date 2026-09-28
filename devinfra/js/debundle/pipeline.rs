@@ -41,9 +41,13 @@ pub struct TransformRunOptions {
     pub keep_going: bool,
     /// Force per-chunk reports (owner graph, selector diagnostics, …) to this
     /// directory, overriding the spec's `materialize_logical_modules.report_out_dir`.
-    /// Used by `debundle spec validate --keep-going` to capture the keep-going
+    /// Used by `debundle spec validate` to capture the keep-going
     /// selector diagnostics regardless of how the spec configures reporting.
     pub report_dir_override: Option<PathBuf>,
+    /// Add what each matched template's free identifiers mean to every
+    /// chunk's selector report, and write the report even when every
+    /// selector resolved. For `debundle spec validate`.
+    pub list_template_identifiers: bool,
 }
 
 impl Default for TransformRunOptions {
@@ -52,6 +56,7 @@ impl Default for TransformRunOptions {
             dry_run: false,
             keep_going: true,
             report_dir_override: None,
+            list_template_identifiers: false,
         }
     }
 }
@@ -101,16 +106,12 @@ pub struct TransformArgs {
     /// reported.
     #[arg(long)]
     pub dry_run: bool,
-    /// Deprecated compatibility no-op: keep-going is now the default.
-    /// Use `--fail-fast` to stop at the first supported diagnostic instead.
-    #[arg(long)]
-    pub keep_going: bool,
     /// Stop at the first supported diagnostic instead of collecting all
     /// findings from the pass. Broad runs otherwise aggregate every
     /// supported diagnostic — currently unresolved source-match
     /// selectors and duplicate binding claims, with
     /// module/export/origin evidence — before failing.
-    #[arg(long, conflicts_with = "keep_going")]
+    #[arg(long)]
     pub fail_fast: bool,
 }
 
@@ -251,7 +252,7 @@ pub fn run_transform_cli_with_options(
     let mut vendor_lowering_rewrites: BTreeMap<(ChunkId, String), usize> = BTreeMap::new();
     if !materialise_chunk_ids.is_empty() {
         let report_out_dir = spec.materialize_logical_modules.report_out_dir.clone();
-        // `validate --keep-going` forces reports to its own capture dir even
+        // `spec validate` forces reports to its own capture dir even
         // when the spec leaves `report_out_dir` unset; otherwise honor the spec.
         let report_out_dir = options.report_dir_override.clone().or(report_out_dir);
         // `materialize_logical_modules` derives its own per-run indexes
@@ -273,6 +274,7 @@ pub fn run_transform_cli_with_options(
                     config: spec.materialize_logical_modules.clone(),
                     chunk_ids: materialise_chunk_ids,
                     keep_going: options.keep_going,
+                    list_template_identifiers: options.list_template_identifiers,
                     // Dry-run keeps the no-output contract on the
                     // accept path but still materializes rejection
                     // evidence (owner graph + cycles/conflicts) at the
@@ -857,8 +859,8 @@ mod tests {
                 &config,
                 r#"main_chunk_id: cli
 module_roots:
-  cli: chunks/cli
-  print: chunks/print
+  chunks/cli: cli
+  chunks/print: print
 inputs:
   root: snapshot
   js_list_path: extracted/js-files.txt
@@ -1029,6 +1031,7 @@ unassigned_mode:
                     dry_run: true,
                     keep_going: false,
                     report_dir_override: None,
+                    list_template_identifiers: false,
                 },
             )?;
 

@@ -25,21 +25,6 @@
       "test": "//third_party/cli_proxy_api_tests:tests",
       "registry": "forgejo"
     },
-    "augur": {
-      "target": "//finance/augur/api:image",
-      "test": "//finance/augur/api/...",
-      "registry": "forgejo"
-    },
-    "augur-frontend": {
-      "target": "//finance/augur/frontend:image",
-      "test": "//finance/augur/frontend/...",
-      "registry": "forgejo"
-    },
-    "augur-evidence": {
-      "target": "//finance/scraper:image",
-      "test": "//finance/scraper/...",
-      "registry": "forgejo"
-    },
     "haku-kube-api-proxy": {
       "target": "//haku/kube_api_proxy:image",
       "test": "//haku/kube_api_proxy/...",
@@ -130,11 +115,6 @@
       "test": "//finance/plaid/...",
       "registry": "forgejo"
     },
-    "budget-exporter": {
-      "target": "//finance/beancount_export:image",
-      "test": "//finance/beancount_export/...",
-      "registry": "forgejo"
-    },
     "study-casino": {
       "target": "//study_casino:image",
       "test": "//study_casino/...",
@@ -167,14 +147,19 @@
       "target": "//cluster/rotators/attic_jwt_rotation:image",
       "registry": "forgejo"
     },
-    "ha-mcp-token-provisioner": {
-      "target": "//cluster/provisioners/ha_mcp_token_provisioner:image",
-      "test": "//cluster/provisioners/ha_mcp_token_provisioner/...",
+    "homeassistant-component-installer": {
+      "target": "//homeassistant/provisioner/components:image",
+      "test": "//homeassistant/provisioner/components/...",
       "registry": "forgejo"
     },
-    "homeassistant-provisioner": {
-      "target": "//homeassistant/provisioner:image",
-      "test": "//homeassistant/provisioner/...",
+    "homeassistant-onboarding": {
+      "target": "//homeassistant/provisioner/onboarding:image",
+      "test": "//homeassistant/provisioner/onboarding/...",
+      "registry": "forgejo"
+    },
+    "homeassistant-token-provisioner": {
+      "target": "//homeassistant/provisioner/tokens:image",
+      "test": "//homeassistant/provisioner/tokens/...",
       "registry": "forgejo"
     },
     "grocy-user-perms-provisioner": {
@@ -203,11 +188,6 @@
     },
     "cpap-sync": {
       "target": "//cpap:image",
-      "registry": "forgejo"
-    },
-    "agentplane-runner": {
-      "target": "//agentplane/runner:image",
-      "test": "//agentplane/runner/...",
       "registry": "forgejo"
     },
     "agentplane-app": {

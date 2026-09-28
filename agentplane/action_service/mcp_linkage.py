@@ -81,6 +81,10 @@ class McpRefreshFailure(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     action: str
+    error: str = Field(
+        description="What the latest refresh got back: the provider's OAuth error, or the token endpoint's "
+        "HTTP status or connection failure."
+    )
     attempts: int
     retry_at: datetime | None
 
@@ -423,8 +427,11 @@ class McpLinkageAuthority:
 
     async def _refresh_loop(self) -> None:
         while not self._stop.is_set():
-            with contextlib.suppress(Exception):
+            try:
                 await self._refresh_once()
+            except Exception as error:
+                # Type only: a database error's text can carry the tokens it was writing.
+                logger.warning("MCP OAuth refresh sweep failed (%s); retrying next sweep", type(error).__name__)
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._stop.wait(), timeout=_REFRESH_SWEEP_INTERVAL.total_seconds())
 
@@ -495,8 +502,11 @@ class McpLinkageAuthority:
             ):
                 return
             _replace_token_state(current, refreshed, list(current.scope), datetime.now(UTC))
+        self._notify_change(server_id)
 
     async def _store_refresh_failure(self, server_id: str, claim_id: UUID, error: Exception) -> None:
+        action = "reconnect" if isinstance(error, _RefreshError) and error.action == "reconnect" else "retrying"
+        message = str(error) if isinstance(error, _RefreshError) else f"{type(error).__name__}: {error}"
         async with self._sessions.begin() as db:
             linkage = await db.get(McpServerLinkageRow, server_id)
             state = (
@@ -510,16 +520,17 @@ class McpLinkageAuthority:
             state.refresh_failure_count += 1
             state.refresh_failure_started_at = state.refresh_failure_started_at or now
             state.refresh_failure_latest_at = now
-            state.refresh_failure_action = (
-                "reconnect" if isinstance(error, _RefreshError) and error.action == "reconnect" else "retrying"
-            )
+            state.refresh_failure_action = action
+            state.refresh_failure_error = message
             state.refresh_retry_at = (
                 None
-                if state.refresh_failure_action == "reconnect"
+                if action == "reconnect"
                 else now + min(_REFRESH_RETRY_MAX, _REFRESH_RETRY_BASE * (2 ** min(state.refresh_failure_count - 1, 8)))
             )
             state.refresh_claim_id = None
             state.refresh_claim_expires_at = None
+        logger.warning("MCP OAuth token refresh for %s failed, %s: %s", server_id, action, message)
+        self._notify_change(server_id)
 
     def _server(self, server_id: str) -> McpOAuthServer:
         try:
@@ -556,7 +567,7 @@ class McpLinkageAuthority:
         resource: str | None,
     ) -> dict[str, object]:
         if token_endpoint is None:
-            raise _RefreshError("MCP OAuth token endpoint is not configured", action="reconnect")
+            raise _RefreshError("no token endpoint was discovered for this server", action="reconnect")
         data = {"grant_type": "refresh_token", "refresh_token": refresh_token, "client_id": server.client_id}
         if scopes:
             data["scope"] = " ".join(scopes)
@@ -578,26 +589,57 @@ class McpLinkageAuthority:
             response = await client.post(token_endpoint, data=data, headers={"Accept": "application/json"})
             if response.status_code == 400:
                 _observe_oauth_metric(operation, "rejected", started)
-                raise _RefreshError("MCP OAuth provider rejected the token", action="reconnect")
+                raise _RefreshError(
+                    f"the OAuth provider refused the token request: {_refusal(response)}", action="reconnect"
+                )
             response.raise_for_status()
             body = response.json()
         except _RefreshError:
             raise
-        except httpx2.HTTPError, ValueError:
+        except httpx2.HTTPStatusError as error:
             _observe_oauth_metric(operation, "transport", started)
-            raise _RefreshError("MCP OAuth token endpoint unavailable", action="retrying") from None
+            raise _RefreshError(
+                f"the token endpoint answered HTTP {error.response.status_code} {error.response.reason_phrase}",
+                action="retrying",
+            ) from None
+        except httpx2.HTTPError as error:
+            _observe_oauth_metric(operation, "transport", started)
+            raise _RefreshError(
+                f"the token endpoint was unreachable: {type(error).__name__}: {error}", action="retrying"
+            ) from None
+        except ValueError:
+            _observe_oauth_metric(operation, "transport", started)
+            raise _RefreshError("the token endpoint's answer was not JSON", action="retrying") from None
         finally:
             if close:
                 await client.aclose()
         # GitHub reports a bad or reused code as 200 with an error object.
         if isinstance(body, dict) and "error" in body:
             _observe_oauth_metric(operation, "rejected", started)
-            raise _RefreshError("MCP OAuth provider rejected the token", action="reconnect")
+            raise _RefreshError(
+                f"the OAuth provider refused the token request: {_oauth_error(body)}", action="reconnect"
+            )
         if not isinstance(body, dict) or not isinstance(body.get("access_token"), str):
             _observe_oauth_metric(operation, "invalid_response", started)
-            raise _RefreshError("MCP OAuth provider returned no access token", action="reconnect")
+            raise _RefreshError("the OAuth provider's answer had no access_token", action="reconnect")
         _observe_oauth_metric(operation, "success", started)
         return body
+
+
+def _oauth_error(body: dict[str, object]) -> str:
+    """RFC 6749 §5.2's `error`, and its description when there is one."""
+    description = body.get("error_description")
+    return f"{body['error']}: {description}" if isinstance(description, str) else str(body["error"])
+
+
+def _refusal(response: httpx2.Response) -> str:
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    if isinstance(body, dict) and "error" in body:
+        return _oauth_error(body)
+    return f"HTTP {response.status_code} {response.reason_phrase}"
 
 
 def _observe_oauth_metric(operation: str, outcome: str, started: float) -> None:
@@ -624,6 +666,7 @@ def _replace_token_state(
     state.refresh_failure_started_at = None
     state.refresh_failure_latest_at = None
     state.refresh_failure_action = None
+    state.refresh_failure_error = None
     state.refresh_retry_at = None
 
 
@@ -631,54 +674,41 @@ def _view(
     server: McpOAuthServer, row: McpServerLinkageRow | None, state: McpOAuthTokenStateRow | None
 ) -> McpLinkageView:
     if row is None or state is None:
-        status = McpLinkageStatus.UNLINKED
-        revision = row.revision if row else 0
-        scopes = row.scopes if row else server.scopes
-        expires_at = linked_at = None
-        linked_by = None
-        failure = None
-    elif state.refresh_failure_action in {"reconnect", "operator_action"}:
+        return McpLinkageView(
+            server_id=server.server_id,
+            server_url=server.server_url,
+            status=McpLinkageStatus.UNLINKED,
+            revision=row.revision if row else 0,
+            scopes=row.scopes if row else server.scopes,
+            expires_at=None,
+            linked_at=None,
+            linked_by=None,
+        )
+    if state.refresh_failure_action in {"reconnect", "operator_action"}:
         status = McpLinkageStatus.DEGRADED
-        revision, scopes, expires_at, linked_at, linked_by = (
-            row.revision,
-            row.scopes,
-            state.expires_at,
-            row.linked_at,
-            operator_or_none(row.linked_by_issuer, row.linked_by_subject),
-        )
-        failure = McpRefreshFailure(
-            action=state.refresh_failure_action, attempts=state.refresh_failure_count, retry_at=state.refresh_retry_at
-        )
     elif state.expires_at is not None and state.expires_at <= datetime.now(UTC):
         status = McpLinkageStatus.EXPIRED
-        revision, scopes, expires_at, linked_at, linked_by = (
-            row.revision,
-            row.scopes,
-            state.expires_at,
-            row.linked_at,
-            operator_or_none(row.linked_by_issuer, row.linked_by_subject),
-        )
-        failure = None
     else:
         status = McpLinkageStatus.LINKED
-        revision, scopes, expires_at, linked_at, linked_by = (
-            row.revision,
-            row.scopes,
-            state.expires_at,
-            row.linked_at,
-            operator_or_none(row.linked_by_issuer, row.linked_by_subject),
-        )
-        failure = None
     return McpLinkageView(
         server_id=server.server_id,
         server_url=server.server_url,
         status=status,
-        revision=revision,
-        scopes=scopes,
-        expires_at=expires_at,
-        linked_at=linked_at,
-        linked_by=linked_by,
-        refresh_failure=failure,
+        revision=row.revision,
+        scopes=row.scopes,
+        expires_at=state.expires_at,
+        linked_at=row.linked_at,
+        linked_by=operator_or_none(row.linked_by_issuer, row.linked_by_subject),
+        # A failure that is still being retried is reported too: the token may lapse before it clears.
+        refresh_failure=McpRefreshFailure(
+            action=state.refresh_failure_action,
+            error=state.refresh_failure_error,
+            attempts=state.refresh_failure_count,
+            retry_at=state.refresh_retry_at,
+        )
+        # The table's CHECK sets the two together; testing both is what narrows them for mypy.
+        if state.refresh_failure_action is not None and state.refresh_failure_error is not None
+        else None,
     )
 
 

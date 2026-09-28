@@ -3,22 +3,45 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from finance.augur.model.series import PrivateEquityEventKindCode, PrivateEquityRegimeCode
+from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Sell
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, quantity_for_value
 from finance.augur.sim.holdings import Holdings, private_issuer
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.ids import AccountId, AgentId, AssetId
+from finance.augur.sim.market_path import Amount, MarketPath
 from finance.augur.sim.money import checked_count, mul_div, mul_div_wide, position_value
 from finance.augur.sim.observations import TlhPortfolioObservation
-from finance.augur.sim.prepared import PreparedScenario
+
+
+@dataclass(frozen=True, kw_only=True)
+class TenderPolicy:
+    owner_agent_id: AgentId
+    proceeds_account_id: AccountId
+    liquid_net_worth_floor: Amount
+
+
+# The issuer protocol's per-issuer series on a path, `private_equity_<channel>:<issuer>`, with the
+# closed range of each channel's integer values.
+CHANNEL_RANGES = {
+    "mark": (0, (1 << 63) - 1),
+    "regime": (min(PrivateEquityRegimeCode), max(PrivateEquityRegimeCode)),
+    "event_kind": (min(PrivateEquityEventKindCode), max(PrivateEquityEventKindCode)),
+    "sale_opportunity": (0, 1),
+    "sale_capacity": (0, MONEY_FACTOR_SCALE),
+    "eligible": (0, MONEY_FACTOR_SCALE),
+    "forced_sale": (0, MONEY_FACTOR_SCALE),
+    "liquidity_blocked": (0, 1),
+    "forced_recovery": (0, (1 << 63) - 1),
+    "company_valuation": (0, (1 << 63) - 1),
+}
 
 
 @dataclass(frozen=True)
 class ProtocolEvent:
     month: int
-    issuer_id: str
-    asset_id: str
+    issuer_id: IssuerId
+    asset_id: AssetId
     event_kind: str
     regime: str
     mark: int
@@ -33,8 +56,8 @@ class ProtocolEvent:
 class Opportunity:
     month: int
     cause_id: str
-    issuer_id: str
-    asset_id: str
+    issuer_id: IssuerId
+    asset_id: AssetId
     event_kind: str
     regime: str
     outcome: str
@@ -67,27 +90,26 @@ def sellable_units(units: int, capacity: int, eligible: int) -> int:
 
 
 def liquid_net_worth(
-    scenario: PreparedScenario,
     accounting: Accounting,
     holdings: Holdings,
     market: MarketPath,
     marks: Sequence[TlhPortfolioObservation],
-    actor: str,
+    actor: AgentId,
     month: int,
 ) -> int:
     total = 0
-    for account in scenario.accounts:
-        if account.account.agent_id == actor:
-            total = checked_count(total + accounting.ledger.balance(account.account), "money addition")
+    for account in accounting.declared:
+        if account.agent_id == actor:
+            total = checked_count(total + accounting.ledger.balance(account), "money addition")
     for lot in holdings.lots:
-        if lot.spec.agent_id != actor or private_issuer(lot.spec.asset_id) is not None or lot.units_remaining <= 0:
+        if lot.agent_id != actor or private_issuer(lot.asset_id) is not None or lot.units_remaining <= 0:
             continue
-        series = f"security:{lot.spec.asset_id}"
+        series = f"security:{lot.asset_id}"
         # The configured PE floor omits an unmarked public holding; it does not price bonds or property.
         if series not in market.series:
             continue
         total = checked_count(
-            total + position_value(market.value(series, month), lot.units_remaining, lot.spec.quantity_scale),
+            total + position_value(market.value(series, month), lot.units_remaining, lot.quantity_scale),
             "money addition",
         )
     for mark in marks:
@@ -97,7 +119,8 @@ def liquid_net_worth(
 
 
 class PrivateEquity:
-    def __init__(self) -> None:
+    def __init__(self, tender_policies: list[TenderPolicy]) -> None:
+        self.tender_policies = tender_policies
         # This month's protocol outcomes, cleared by `begin_month`.
         self.events: list[ProtocolEvent] = []
         self.opportunities: list[Opportunity] = []
@@ -108,21 +131,20 @@ class PrivateEquity:
 
     def advance(
         self,
-        scenario: PreparedScenario,
         accounting: Accounting,
         holdings: Holdings,
         market: MarketPath,
         marks: Sequence[TlhPortfolioObservation],
         month: int,
     ) -> None:
-        issuers = sorted({issuer for lot in holdings.lots if (issuer := private_issuer(lot.spec.asset_id)) is not None})
+        issuers = sorted({issuer for lot in holdings.lots if (issuer := private_issuer(lot.asset_id)) is not None})
         for issuer in issuers:
-            asset = f"private_equity:{issuer}"
+            asset = AssetId(f"private_equity:{issuer}")
             candidates = sorted(
-                (index for index, lot in enumerate(holdings.lots) if lot.spec.asset_id == asset),
-                key=lambda index: (holdings.lots[index].spec.purchase_month, holdings.lots[index].spec.lot_id),
+                (index for index, lot in enumerate(holdings.lots) if lot.asset_id == asset),
+                key=lambda index: (holdings.lots[index].purchase_month, holdings.lots[index].lot_id),
             )
-            first = holdings.lots[candidates[0]].spec
+            first = holdings.lots[candidates[0]]
             actor, scale = first.agent_id, first.quantity_scale
             mark = market.value(f"private_equity_mark:{issuer}", month)
             regime = PrivateEquityRegimeCode(market.value(f"private_equity_regime:{issuer}", month))
@@ -150,9 +172,7 @@ class PrivateEquity:
                     )
                 )
             held = units_held(holdings, candidates)
-            policy = next(
-                (policy for policy in scenario._private_equity_tender_policies if policy.owner_agent_id == actor), None
-            )
+            policy = next((policy for policy in self.tender_policies if policy.owner_agent_id == actor), None)
             if policy is None:
                 if tender:
                     self.opportunities.append(
@@ -204,7 +224,7 @@ class PrivateEquity:
                     )
                     holdings.sell(accounting, month, request, price=mark)
             floor = market.amount(policy.liquid_net_worth_floor, month)
-            liquid = liquid_net_worth(scenario, accounting, holdings, market, marks, actor, month)
+            liquid = liquid_net_worth(accounting, holdings, market, marks, actor, month)
             shortfall = max(0, checked_count(floor - liquid, "money subtraction"))
             held = units_held(holdings, candidates)
             sellable = sellable_units(held, capacity, eligible)

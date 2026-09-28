@@ -14,7 +14,14 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
-from agentplane.egress.sidecar import PROJECTED_TOKEN_HEADER, REFUSED_HEADER, RefusalReason, SidecarRelay
+from agentplane.egress.sidecar import (
+    PROJECTED_TOKEN_HEADER,
+    READINESS_PATH,
+    REFUSED_HEADER,
+    RefusalReason,
+    SidecarRelay,
+    serve_readiness,
+)
 
 REFUSED_HOST = "refused.test"
 CONNECT_REFUSAL_HEADER = "x-agentplane-egress"
@@ -104,6 +111,39 @@ async def get_through(relay: SidecarRelay, path: str, headers: dict[str, str] | 
         return response.status, await response.text(), response.headers.get(REFUSED_HEADER, "")
 
 
+async def get_readiness(port: int) -> int:
+    async with aiohttp.ClientSession() as session, session.get(f"http://127.0.0.1:{port}{READINESS_PATH}") as response:
+        return response.status
+
+
+async def test_readiness_tracks_delayed_listener_startup_and_shutdown(
+    central: FakeCentralProxy, token_file: Path
+) -> None:
+    relay = SidecarRelay(proxy_host="127.0.0.1", proxy_port=central.port, token_file=token_file)
+    async with serve_readiness(relay, host="127.0.0.1", port=0) as readiness_port:
+        assert await get_readiness(readiness_port) == 503
+        async with relay:
+            assert await get_readiness(readiness_port) == 200
+        assert await get_readiness(readiness_port) == 503
+
+
+async def test_failed_listener_start_never_reports_ready(central: FakeCentralProxy, token_file: Path) -> None:
+    occupied = await asyncio.start_server(lambda reader, writer: None, "127.0.0.1", 0)
+    listen_port = one(occupied.sockets).getsockname()[1]
+    relay = SidecarRelay(
+        proxy_host="127.0.0.1", proxy_port=central.port, token_file=token_file, listen_port=listen_port
+    )
+    try:
+        async with serve_readiness(relay, host="127.0.0.1", port=0) as readiness_port:
+            assert await get_readiness(readiness_port) == 503
+            with pytest.raises(OSError, match="address already in use"):
+                await relay.__aenter__()
+            assert await get_readiness(readiness_port) == 503
+    finally:
+        occupied.close()
+        await occupied.wait_closed()
+
+
 async def test_plain_request_carries_the_token(relay: SidecarRelay, central: FakeCentralProxy) -> None:
     status, body, _ = await get_through(relay, "/path?q=1", headers={"Proxy-Authorization": "Bearer forged"})
     assert (status, body) == (200, "seen-token=token-1")
@@ -137,8 +177,10 @@ async def test_unreachable_central_proxy_refuses(tmp_path: Path, token_file: Pat
     unused_port = one(server.sockets).getsockname()[1]
     server.close()
     await server.wait_closed()
-    async with SidecarRelay(proxy_host="127.0.0.1", proxy_port=unused_port, token_file=token_file) as relay:
+    relay = SidecarRelay(proxy_host="127.0.0.1", proxy_port=unused_port, token_file=token_file)
+    async with serve_readiness(relay, host="127.0.0.1", port=0) as readiness_port, relay:
         status, _, refusal = await get_through(relay, "/path")
+        assert await get_readiness(readiness_port) == 200
     assert (status, refusal) == (502, f"reason={RefusalReason.PROXY_UNREACHABLE}")
 
 

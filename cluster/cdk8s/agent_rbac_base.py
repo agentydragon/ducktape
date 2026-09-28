@@ -1,6 +1,6 @@
 """agent-rbac-base: the claude-sandbox namespace (its quota, limits, admin Role, bindings and
 janitor) and the shared agent-facing ClusterRoles other directories bind. Permissions and
-bindings: cluster/k8s/agents/agent-rbac-base/permissions.md.
+bindings: cluster/docs/agent_rbac.md.
 
 Every Role is a tier-2 `k8s.KubeRole`/`k8s.KubeClusterRole`: rules keep the exact grouping they
 are reviewed in.
@@ -8,31 +8,17 @@ are reviewed in.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec, KustomizationSpecHealthChecks
-from kyverno_cleanuppolicy_crds.io.kyverno import (
-    CleanupPolicy,
-    CleanupPolicySpec,
-    CleanupPolicySpecConditions,
-    CleanupPolicySpecConditionsAll,
-    CleanupPolicySpecConditionsAllOperator,
-    CleanupPolicySpecMatch,
-    CleanupPolicySpecMatchAny,
-    CleanupPolicySpecMatchAnyResources,
-)
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.kyverno.janitor import janitor
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "agent-rbac-base"
 NAMESPACE = "claude-sandbox"
-OUTPUT_DIR = "cluster/k8s/agents/agent-rbac-base"
+OUTPUT_DIR = f"{GENERATED_ROOT}/agents/agent-rbac-base"
 
 _RBAC_GROUP = "rbac.authorization.k8s.io"
 _READ = ["get", "list", "watch"]
@@ -107,15 +93,17 @@ def _add_sandbox(chart: Chart) -> None:
             k8s.PolicyRule(
                 api_groups=[""],
                 resources=[
-                    "pods",
-                    "pods/log",
-                    "pods/exec",
-                    "pods/attach",
-                    "services",
+                    # keep-sorted start
                     "configmaps",
-                    "secrets",
-                    "persistentvolumeclaims",
                     "events",
+                    "persistentvolumeclaims",
+                    "pods",
+                    "pods/attach",
+                    "pods/exec",
+                    "pods/log",
+                    "secrets",
+                    "services",
+                    # keep-sorted end
                 ],
                 verbs=["*"],
             ),
@@ -144,35 +132,17 @@ def _add_sandbox(chart: Chart) -> None:
     )
     # The sandbox is ephemeral by contract: agents get full CRUD and a shared quota, and nothing
     # here is GitOps-managed, so forgotten experiments otherwise linger and pin the quota forever.
-    # Reap anything older than 7 days. CronJob is included deliberately -- an orphaned CronJob is
-    # self-renewing litter that keeps spawning fresh Jobs. Owned children (ReplicaSets, Job pods) go
-    # via cascade when their parent is reaped. Delete RBAC comes from the two aggregated
-    # ClusterRoles in kyverno/policies/ (cleanup-controller-{jobs,workloads}).
-    CleanupPolicy(
+    # CronJob is included deliberately -- an orphaned CronJob is self-renewing litter that keeps
+    # spawning fresh Jobs. Owned children (ReplicaSets, Job pods) go via cascade when their parent
+    # is reaped. Delete RBAC comes from the two aggregated ClusterRoles in kyverno/policies/
+    # (cleanup-controller-{jobs,workloads}).
+    janitor(
         chart,
         "janitor",
-        metadata=metadata("sandbox-janitor", NAMESPACE),
-        spec=CleanupPolicySpec(
-            schedule="20 * * * *",
-            match=CleanupPolicySpecMatch(
-                any=[
-                    CleanupPolicySpecMatchAny(
-                        resources=CleanupPolicySpecMatchAnyResources(
-                            kinds=["Pod", "Deployment", "StatefulSet", "Job", "CronJob", "Service"]
-                        )
-                    )
-                ]
-            ),
-            conditions=CleanupPolicySpecConditions(
-                all=[
-                    CleanupPolicySpecConditionsAll(
-                        key="{{ time_since('', '{{ target.metadata.creationTimestamp }}', '') }}",
-                        operator=CleanupPolicySpecConditionsAllOperator.GREATER_THAN,
-                        value="168h",
-                    )
-                ]
-            ),
-        ),
+        name="sandbox-janitor",
+        namespace=NAMESPACE,
+        schedule="20 * * * *",
+        kinds=["Pod", "Deployment", "StatefulSet", "Job", "CronJob", "Service"],
     )
 
 
@@ -300,10 +270,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def claude_rbac(
-    flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path, kyverno_policies: Kustomization
-) -> Kustomization:
-    write_charts(root, OUTPUT_DIR, chart)
+def claude_rbac(flux_chart: Chart, directory: RenderedDirectory, kyverno_policies: Kustomization) -> Kustomization:
     # TODO: migrate this live Flux object name to agent-rbac-base in a staged
     # change. Renaming it directly would delete the old Kustomization and may prune
     # its inventory before the replacement owns the same RBAC resources.
@@ -311,15 +278,12 @@ def claude_rbac(
     return flux_kustomization(
         flux_chart,
         name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="2m",
-            depends_on=[flux_kustomization_depends_on(kyverno_policies)],
-            health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name=NAMESPACE)],
-        ),
+        directory,
+        retry_interval=None,
+        wait=None,
+        timeout="2m",
+        depends_on=[flux_kustomization_depends_on(kyverno_policies)],
+        health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name=NAMESPACE)],
         description=(
             "Lightweight base for agent RBAC. Claude sandbox namespace + shared "
             "ClusterRoles. Must not depend on service or database kustomizations."

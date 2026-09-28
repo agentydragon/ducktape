@@ -5,16 +5,16 @@ metadata:
   namespace: monitoring
 spec:
   affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - preference:
-            matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-          weight: 100
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: grafana
+      owner: grafana
+      secret:
+        name: grafana-db-app
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
   instances: 2
   monitoring:
@@ -76,9 +76,6 @@ spec:
   deployment:
     spec:
       template:
-        metadata:
-          annotations:
-            reloader.stakater.com/auto: "true"
         spec:
           containers:
             - env:
@@ -185,6 +182,26 @@ spec:
     name: Tempo
     type: tempo
     url: http://tempo.monitoring.svc.cluster.local:3200
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: alertmanager
+  namespace: monitoring
+spec:
+  datasource:
+    access: proxy
+    editable: true
+    isDefault: false
+    jsonData:
+      handleGrafanaManagedAlerts: false
+      implementation: prometheus
+    name: Alertmanager
+    type: alertmanager
+    url: http://alertmanager-operated.monitoring.svc.cluster.local:9093
   instanceSelector:
     matchLabels:
       dashboards: grafana

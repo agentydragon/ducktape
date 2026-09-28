@@ -233,8 +233,7 @@ pub(crate) fn classify_expr_purity(
         // its own. Recurse through the OptChainBase so an
         // OptChain that expands to a whitelisted static-property
         // read or a whitelisted call returns the same `Pure` /
-        // `Unknown` answer the non-optional shape would. R1 in
-        // docs/design.md "Open design questions / OptChain purity".
+        // `Unknown` answer the non-optional shape would.
         Expr::OptChain(opt) => match &*opt.base {
             OptChainBase::Member(member) => {
                 classify_member_purity(member, shadowed, local_shadowed, declared_pure, graph)

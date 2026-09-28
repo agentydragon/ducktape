@@ -6,8 +6,8 @@ py_library(
     name = "store",
     srcs = ["store.py"],
     deps = [
+        "//agentplane/app:database_updates",
         "//agentplane/app/agent_runtime:models",
-        "//agentplane/app/agent_runtime:updates",
         "//agentplane/app/agent_runtime/events:event_log",
         "//agentplane/app/agent_runtime/view:views",
         "//agentplane/runner:protocol_pb2",

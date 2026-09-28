@@ -7,43 +7,24 @@ chart values that must stay encrypted; the HelmRelease reads it through `valuesF
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
     HelmReleaseSpecDriftDetection,
     HelmReleaseSpecDriftDetectionMode,
     HelmReleaseSpecValuesFrom,
     HelmReleaseSpecValuesFromKind,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthChecks,
-)
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s import namespaces
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.helm import helm_release, oci_helm_repository
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 
 NAME = "clickhouse-operator"
 NAMESPACE = "clickhouse"
-OUTPUT_DIR = "cluster/k8s/clickhouse/operator"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/operator"
 _RESTRICTED_CONTAINER = {
     "allowPrivilegeEscalation": False,
     "capabilities": {"drop": ["ALL"]},
@@ -87,98 +68,66 @@ def _values() -> dict[str, object]:
     }
 
 
-def helmrelease_chart(app: App) -> Chart:
-    chart = Chart(app, "helmrelease", disable_resource_name_hashes=True)
-    repository = HelmRepository(
+def namespace_chart(app: App) -> Chart:
+    chart = Chart(app, "namespace", disable_resource_name_hashes=True)
+    namespaces.namespace(
         chart,
-        "repository",
-        metadata=metadata("altinity-clickhouse-operator", "flux-system"),
-        spec=HelmRepositorySpec(
-            type=HelmRepositorySpecType.OCI, url="oci://ghcr.io/altinity/clickhouse-operator-helm-chart", interval="12h"
-        ),
-    )
-    HelmRelease(
-        chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            timeout="10m",
-            drift_detection=HelmReleaseSpecDriftDetection(mode=HelmReleaseSpecDriftDetectionMode.ENABLED),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="altinity-clickhouse-operator",
-                    # renovate: datasource=docker depName=ghcr.io/altinity/clickhouse-operator-helm-chart/altinity-clickhouse-operator
-                    version="0.27.3",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                    interval="12h",
-                )
-            ),
-            values_from=[
-                HelmReleaseSpecValuesFrom(
-                    # operator-values.sops.yaml
-                    kind=HelmReleaseSpecValuesFromKind.SECRET,
-                    name="clickhouse-operator-values",
-                    values_key="values.yaml",
-                )
-            ],
-            values=_values(),
-        ),
-    )
-    return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_namespace(
-        root,
-        OUTPUT_DIR,
+        "namespace",
         name=NAMESPACE,
+        # ClickHouse and Keeper have topology-aware, capacity-planned requests.
+        # VPA admission raised ClickHouse from 500m to 1554m, which made its
+        # local-PV-pinned replica unschedulable. Keep recommendations visible in
+        # Goldilocks without mutating operator-managed Pods.
+        vpa=Vpa.RECOMMEND,
+        agent_readable=AgentReadable.LOGS,
         labels={
-            "goldilocks.fairwinds.com/enabled": "true",
-            # ClickHouse and Keeper have topology-aware, capacity-planned requests.
-            # VPA admission raised ClickHouse from 500m to 1554m, which made its
-            # local-PV-pinned replica unschedulable. Keep recommendations visible in
-            # Goldilocks without mutating operator-managed Pods.
-            "goldilocks.fairwinds.com/vpa-update-mode": "off",
-            "rbac.ducktape.io/agent-readable-logs": "true",
             "pod-security.kubernetes.io/enforce": "baseline",
             "pod-security.kubernetes.io/audit": "restricted",
             "pod-security.kubernetes.io/warn": "restricted",
         },
     )
-    write_charts(root, OUTPUT_DIR, helmrelease_chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=["namespace.k8s.yaml", "operator-values.sops.yaml", "helmrelease.k8s.yaml"]),
+    return chart
+
+
+def helmrelease_chart(app: App) -> Chart:
+    chart = Chart(app, "helmrelease", disable_resource_name_hashes=True)
+    helm_release(
+        chart,
+        NAME,
+        NAMESPACE,
+        repository=oci_helm_repository(
+            chart,
+            "altinity-clickhouse-operator",
+            "flux-system",
+            url="oci://ghcr.io/altinity/clickhouse-operator-helm-chart",
+        ),
+        chart="altinity-clickhouse-operator",
+        # renovate: datasource=docker depName=ghcr.io/altinity/clickhouse-operator-helm-chart/altinity-clickhouse-operator
+        version="0.27.3",
+        interval="30m",
+        chart_interval="12h",
+        timeout="10m",
+        drift_detection=HelmReleaseSpecDriftDetection(mode=HelmReleaseSpecDriftDetectionMode.ENABLED),
+        values_from=[
+            HelmReleaseSpecValuesFrom(
+                # operator-values.sops.yaml
+                kind=HelmReleaseSpecValuesFromKind.SECRET,
+                name="clickhouse-operator-values",
+                values_key="values.yaml",
+            )
+        ],
+        values=_values(),
     )
+    return chart
 
 
-def clickhouse_operator(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
-) -> Kustomization:
+def clickhouse_operator(chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            decryption=SOPS_DECRYPTION,
-            source_ref=artifact_source_ref(artifact),
-            timeout="10m",
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
-                )
-            ],
-            # The chart enables ServiceMonitor resources.
-            depends_on=[flux_kustomization_depends_on(monitoring_crds)],
-        ),
+        directory,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        timeout="10m",
+        # The chart enables ServiceMonitor resources.
+        depends_on=[flux_kustomization_depends_on(monitoring_crds)],
     )

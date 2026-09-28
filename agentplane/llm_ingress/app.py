@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
@@ -13,8 +15,11 @@ from starlette.responses import Response, StreamingResponse
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipal
 
+logger = logging.getLogger(__name__)
+
 _HOP_BY_HOP = frozenset(
     {
+        # keep-sorted start
         "connection",
         "keep-alive",
         "proxy-authenticate",
@@ -23,6 +28,7 @@ _HOP_BY_HOP = frozenset(
         "trailer",
         "transfer-encoding",
         "upgrade",
+        # keep-sorted end
     }
 )
 _CREDENTIAL_HEADERS = frozenset({"authorization", "x-api-key", "x-litellm-api-key"})
@@ -40,6 +46,7 @@ class IngressResources:
     authenticate: WorkloadPrincipalAuthenticator
     backend: httpx.AsyncClient
     litellm_key: str
+    log_llm_requests: bool = False
 
 
 def _verified_metadata(principal: WorkloadPrincipal) -> str:
@@ -118,23 +125,59 @@ def create_app(resources: IngressResources) -> FastAPI:
         url = request.url.path
         if request.url.query:
             url += f"?{request.url.query}"
+        request_body = await request.body()
+        request_id = uuid.uuid4().hex
+        if resources.log_llm_requests:
+            # This opt-in trace deliberately includes prompts, generated text, reasoning, and
+            # tool arguments. Never include headers: they can carry either workload or proxy keys.
+            logger.info(
+                "llm request id=%s namespace=%s pod=%s pod_uid=%s method=%s path=%s body=%r",
+                request_id,
+                verified.namespace,
+                verified.pod_name,
+                verified.pod_uid,
+                request.method,
+                request.url.path,
+                request_body.decode("utf-8", errors="backslashreplace"),
+            )
         upstream_request = resources.backend.build_request(
             request.method,
             url,
             headers=_forwarded_request_headers(request, verified, resources.litellm_key),
-            content=await request.body(),
+            content=request_body,
         )
         try:
             upstream = await resources.backend.send(upstream_request, stream=True)
         except httpx.HTTPError as error:
             # Never include the exception: transport errors can contain request headers.
             raise HTTPException(status_code=502, detail="LiteLLM backend unavailable") from error
+        if resources.log_llm_requests:
+            logger.info(
+                "llm response start id=%s status=%s content_type=%s",
+                request_id,
+                upstream.status_code,
+                upstream.headers.get("content-type", ""),
+            )
 
         async def body() -> AsyncIterator[bytes]:
+            stream_complete = False
             try:
+                chunk_number = 0
                 async for chunk in upstream.aiter_raw():
+                    if resources.log_llm_requests:
+                        logger.info(
+                            "llm response id=%s status=%s chunk=%d body=%r",
+                            request_id,
+                            upstream.status_code,
+                            chunk_number,
+                            chunk.decode("utf-8", errors="backslashreplace"),
+                        )
+                    chunk_number += 1
                     yield chunk
+                stream_complete = True
             finally:
+                if resources.log_llm_requests:
+                    logger.info("llm response end id=%s complete=%s", request_id, stream_complete)
                 # Client disconnect/cancellation closes the in-flight internal hop too.
                 await upstream.aclose()
 

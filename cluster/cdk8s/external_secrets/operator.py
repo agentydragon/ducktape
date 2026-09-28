@@ -8,38 +8,18 @@ repository.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_issuer_crds.io.cert_manager import Issuer, IssuerSpec, IssuerSpecSelfSigned
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-)
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "external-secrets"
 NAMESPACE = "external-secrets-system"
-OUTPUT_DIR = "cluster/k8s/external-secrets/operator"
-_CONTROL_PLANE_TOLERATION = {
-    "key": "node-role.kubernetes.io/control-plane",
-    "effect": "NoSchedule",
-    "operator": "Exists",
-}
+OUTPUT_DIR = f"{GENERATED_ROOT}/external-secrets/operator"
 
 
 def _values(webhook_issuer: str) -> dict[str, object]:
@@ -78,12 +58,8 @@ def _values(webhook_issuer: str) -> dict[str, object]:
         # consider a control-plane node at all. Deliberately no nodeSelector or
         # affinity: steady-state ESO is small and I/O-light, so this widens the
         # candidate set rather than pinning it.
-        "tolerations": [_CONTROL_PLANE_TOLERATION],
-        "serviceMonitor": {
-            "enabled": True,
-            "namespace": "monitoring",
-            "additionalLabels": {"release": "kube-prometheus-stack"},
-        },
+        "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
+        "serviceMonitor": {"enabled": True, "namespace": "monitoring"},
         # Service account used by the Kubernetes-provider ClusterSecretStores to read
         # secrets across namespaces.
         "serviceAccount": {"create": True, "name": "external-secrets"},
@@ -93,7 +69,7 @@ def _values(webhook_issuer: str) -> dict[str, object]:
             "create": True,
             "port": 9443,
             "priorityClassName": "system-cluster-critical",
-            "tolerations": [_CONTROL_PLANE_TOLERATION],
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
             "certManager": {
                 "enabled": True,
                 "cert": {"issuerRef": {"group": "cert-manager.io", "kind": "Issuer", "name": webhook_issuer}},
@@ -109,98 +85,38 @@ def chart(app: App) -> Chart:
     webhook_issuer = Issuer(
         chart,
         "webhook-issuer",
-        metadata=metadata("external-secrets-selfsigned-issuer", NAMESPACE),
+        metadata=ApiObjectMetadata(name="external-secrets-selfsigned-issuer", namespace=NAMESPACE),
         spec=IssuerSpec(self_signed=IssuerSpecSelfSigned()),
     )
-    repository = HelmRepository(
+    helm_release(
         chart,
-        "repository",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://charts.external-secrets.io"),
-    )
-    HelmRelease(
-        chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="15m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="external-secrets",
-                    # renovate: datasource=helm depName=external-secrets registryUrl=https://charts.external-secrets.io
-                    version="2.10.0",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values=_values(webhook_issuer.name),
-        ),
+        NAME,
+        NAMESPACE,
+        repository=https_helm_repository(chart, NAME, NAMESPACE, url="https://charts.external-secrets.io"),
+        chart="external-secrets",
+        # renovate: datasource=helm depName=external-secrets registryUrl=https://charts.external-secrets.io
+        version="2.10.0",
+        interval="15m",
+        install=RETRY_FAILED_INSTALL,
+        values=_values(webhook_issuer.name),
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
 def external_secrets_operator(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_crds: Kustomization,
-    cert_manager: Kustomization,
+    chart: Chart, directory: RenderedDirectory, external_secrets_crds: Kustomization, cert_manager: Kustomization
 ) -> Kustomization:
     name = "external-secrets-operator"
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m0s",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="5m0s",
-            wait=True,
-            depends_on=flux_kustomization_depends_on_many(
-                # CRDs must be in kustomize-controller cache first
-                external_secrets_crds,
-                # ESO uses Issuer resources
-                cert_manager,
-            ),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2",
-                    kind="HelmRelease",
-                    name="external-secrets",
-                    namespace="external-secrets-system",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1",
-                    kind="Deployment",
-                    name="external-secrets",
-                    namespace="external-secrets-system",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1",
-                    kind="Deployment",
-                    name="external-secrets-webhook",
-                    namespace="external-secrets-system",
-                ),
-                # Ensure both webhook configurations are registered before dependents create resources
-                KustomizationSpecHealthChecks(
-                    api_version="admissionregistration.k8s.io/v1",
-                    kind="ValidatingWebhookConfiguration",
-                    name="externalsecret-validate",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="admissionregistration.k8s.io/v1",
-                    kind="ValidatingWebhookConfiguration",
-                    name="secretstore-validate",
-                ),
-            ],
+        directory,
+        interval="10m0s",
+        timeout="5m0s",
+        depends_on=flux_kustomization_depends_on_many(
+            # CRDs must be in kustomize-controller cache first
+            external_secrets_crds,
+            # ESO uses Issuer resources
+            cert_manager,
         ),
     )

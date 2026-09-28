@@ -8,10 +8,11 @@
 # artifacts, host configs. Pull a tree out of this list to bazelize it.
 # gazelle:exclude cluster/docs/inference
 # gazelle:exclude cluster/k8s/parked
-# gazelle:exclude debug/agent_fleet
+# gazelle:exclude devinfra/debug/agent_fleet
 # gazelle:exclude debug/atlas
-# gazelle:exclude debug/kernel-6.18-amd-kvm-stall
-# gazelle:exclude debug/sqlite_storage_bench
+# gazelle:exclude debug/kernel_6_18_amd_kvm_stall
+# gazelle:exclude cluster/debug/sqlite_storage_bench
+# gazelle:exclude nix/debug/wyrm2
 # gazelle:exclude nix/nixos
 # gazelle:exclude tgarchive
 # gazelle:exclude x/domains

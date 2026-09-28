@@ -1,0 +1,105 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: forgejo-secret-reader
+  namespace: flux-system
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: flux-system-forgejo-webhook-token-reader
+  namespace: forgejo
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - forgejo-webhook-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: flux-system-forgejo-webhook-token-reader
+  namespace: forgejo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: flux-system-forgejo-webhook-token-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: forgejo-secret-reader
+    namespace: flux-system
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-flux-system-forgejo-webhook-token-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - flux-system
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: forgejo-secret-reader
+      remoteNamespace: forgejo
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-webhook-token
+  namespace: flux-system
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-webhook-token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-flux-system-forgejo-webhook-token-secret-store
+  target:
+    creationPolicy: Owner
+    name: forgejo-webhook-token
+---
+apiVersion: notification.toolkit.fluxcd.io/v1
+kind: Receiver
+metadata:
+  name: haku-ui-forgejo
+  namespace: flux-system
+spec:
+  resources:
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      kind: ImageRepository
+      name: haku-ui
+      namespace: haku-sandbox
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      kind: ImageRepository
+      name: haku-anki
+      namespace: haku-sandbox
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      kind: ImageUpdateAutomation
+      name: haku-ui
+      namespace: haku-sandbox
+    - apiVersion: source.toolkit.fluxcd.io/v1
+      kind: GitRepository
+      name: haku-state
+      namespace: flux-system
+    - apiVersion: source.toolkit.fluxcd.io/v1
+      kind: GitRepository
+      name: haku-state-write
+      namespace: haku-sandbox
+  secretRef:
+    name: forgejo-webhook-token
+  type: generic

@@ -1,6 +1,6 @@
 # NixOS system-level Bazel configuration.
 # Installed to /etc/bazel.bazelrc so it applies regardless of $HOME.
-# See debug/nixos_bazel_bash/STATUS.md for full context.
+# See devinfra/debug/nixos_bazel_bash/STATUS.md for full context.
 
 # Local NixOS actions need a shell outside the FHS paths absent on NixOS.
 # Repo-specific RBE configs may override this with the worker's shell path.
@@ -25,7 +25,7 @@ test --test_env=PATH=/run/current-system/sw/bin:/bin:/usr/bin:/usr/local/bin
 # list: Bazel renders actions as `exec env - …`, and rules that set
 # use_default_shell_env = False cannot be reached by --action_env at all. Give the tools
 # filesystem defaults instead — nix-ld's fallback directory, and a --shell_executable
-# wrapper that puts /bin back on PATH. See debug/nixos_bazel_bash/README.md "Issue 4".
+# wrapper that puts /bin back on PATH. See devinfra/debug/nixos_bazel_bash/README.md "Issue 4".
 build --host_action_env=NIX_LD
 build --host_action_env=NIX_LD_LIBRARY_PATH
 common --repo_env=NIX_LD

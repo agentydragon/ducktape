@@ -54,7 +54,7 @@ fn class_render_with<'a>(
 /// read-off cannot single out through its own value features yields no candidate
 /// and is reported as debt (never a full-AST pin).
 pub(crate) fn minimize_class_selector_candidates(
-    index: &ChunkSelectorIndex,
+    index: &ChunkSelectorIndex<'_>,
     class: &Class,
     decl: &IndexedDeclaration,
     target: &SynthesizedTargetBinding,

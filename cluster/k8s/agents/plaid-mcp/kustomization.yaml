@@ -5,4 +5,4 @@ resources:
   - db
   - app
   - reader
-  - servicemonitor
+  - servicemonitor/plaid-db-mcp.k8s.yaml

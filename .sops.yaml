@@ -189,20 +189,6 @@ creation_rules:
           - *iguana-agentydragon
           - *gecko-agentydragon
 
-  # Flux ntfy webhook: only the topic URL (address) is a capability/secret. The
-  # ntfy message-template headers are non-secret presentation config, so keep
-  # them plaintext (encrypted_regex matches address only) and out of the MAC
-  # (mac_only_encrypted). Template tweaks can then be made without the age key
-  # (agents/CI) while `address` stays encrypted. More specific than the generic
-  # cluster/k8s/* rule below, so this match wins.
-  - path_regex: cluster/k8s/flux-webhook/ntfy-webhook\.sops\.yaml$
-    encrypted_regex: ^address$
-    mac_only_encrypted: true
-    key_groups:
-      - age:
-          - *admin
-          - *cluster-secrets
-
   # This is an intentionally narrow, cluster-wide pull credential. Its
   # reflector policy and consumer inventory are plaintext operational metadata,
   # so keep them out of the MAC: adding a namespace grant must not require
@@ -850,6 +836,18 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
+  # antigravity-clients virtual key (laptop antigravity-claude — laptop-only). Reuses
+  # the narrow litellm-clients age key so the existing tf-runner SOPS_AGE_KEY decrypts
+  # it too.
+  - path_regex: tf/gitops/litellm-keys/litellm-antigravity-clients-key\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *litellm-clients
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
   # Haku mailbox (Stalwart) bearer JWT (auto-rotated by the authentik-jwt-rotation
   # CronJob). Same readers as haku-k8s-jwt: the Haku routine (haku) plus admin +
   # user keys for break-glass.
@@ -908,7 +906,7 @@ creation_rules:
           - *iguana-agentydragon
 
   # OVH API credentials for Terraform (US endpoint, HIL Kimsufi node).
-  # cluster-secrets: the infra-drift tf-runner (cluster/k8s/infra-drift) needs
+  # cluster-secrets: the infra-drift tf-runner (cluster/generated/infra-drift) needs
   # the ovh provider to configure during a plan. tf-runner-role already grants
   # cluster-wide secret read, so a narrow key here would buy nothing the runner
   # cannot already take.

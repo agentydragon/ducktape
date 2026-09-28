@@ -22,7 +22,11 @@ resource "authentik_provider_oauth2" "aiquota" {
     data.authentik_property_mapping_provider_scope.email.id,
     data.authentik_property_mapping_provider_scope.profile.id,
   ]
-  allowed_redirect_uris = [{ matching_mode = "strict", url = "https://aiquota.allegedly.works/auth/callback" }]
+  allowed_redirect_uris = [{
+    matching_mode     = "strict"
+    url               = "https://aiquota.allegedly.works/auth/callback"
+    redirect_uri_type = "authorization"
+  }]
 }
 
 resource "authentik_application" "aiquota" {

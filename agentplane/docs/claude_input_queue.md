@@ -116,6 +116,11 @@ Older CLIs simply resolve `interrupt()` to `undefined`. Absence of a capability 
 signal; it is not an error. This is a better fit for the seam's "never present an unsupported
 operation as successful" rule than a version table would be.
 
+Observed on 2.1.220: nothing is negotiated — `initialize` has no client-capability field, the list
+is the CLI's own statement, and each feature is reached by using it. That build also advertised
+`msg_lifecycle_v1`, presumably the `command_lifecycle` frames above. The section title's "negotiation" is an
+open question in [the native TODO](../native/TODO.md).
+
 ## Against Codex, for a later common facade
 
 Set next to Codex's durable `thread/queue/{add,list,update,delete,reorder,start}`

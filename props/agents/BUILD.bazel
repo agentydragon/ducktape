@@ -88,6 +88,7 @@ py_test(
         "//:conftest",
         "//props:conftest",
         "//props/core:agent_types",
+        "//props/core:ids",
         "//props/core/models:examples",
         "//props/db:database",
         "//util/testing:undeclared_outputs",

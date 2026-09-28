@@ -4,13 +4,16 @@ package ducktape.debundle.solver_backends.ortools_cpsat;
 
 message SelectorCpSatRequest {
   repeated Variable variables = 1;
+  reserved 3, 6;
   repeated TableConstraint allowed_tables = 2;
-  repeated BinaryConstraint binary_constraints = 3;
   repeated AllDifferent all_different = 4;
   repeated TargetProjection target_projections = 5;
-  repeated LinearConstraint linear_constraints = 6;
   repeated AllowedRowSet allowed_row_sets = 7;
   repeated SharedSparseDomain shared_sparse_domains = 8;
+  // Per ambiguous projection variable, how many distinct values the solver
+  // collects before it stops looking (ASSIGNMENT_COVERAGE_TARGET_SUPPORT_CAPPED).
+  // Must be positive.
+  uint32 max_alternatives_per_variable = 9;
 }
 
 message Variable {
@@ -36,11 +39,17 @@ message SharedSparseDomain {
   repeated int64 values = 2;
 }
 
+// `target_ids` attributes a constraint to the targets whose selectors it
+// encodes. Attribution only matters once the plain solve is infeasible: the
+// sidecar then enforces the constraint only while every listed target is
+// enabled, and reports which targets had to be disabled (see
+// `SelectorCpSatResponse.conflicts`). An empty list keeps the constraint hard.
 message TableConstraint {
   uint32 id = 1;
   repeated uint32 variable_ids = 2;
   repeated Tuple allowed_rows = 3;
   optional uint32 row_set_id = 4;
+  repeated uint32 target_ids = 5;
 }
 
 message AllowedRowSet {
@@ -53,31 +62,17 @@ message Tuple {
   repeated int64 values = 1;
 }
 
-message BinaryConstraint {
-  uint32 left_variable_id = 1;
-  uint32 right_variable_id = 2;
-  BinaryConstraintKind kind = 3;
-}
-
-enum BinaryConstraintKind {
-  BINARY_CONSTRAINT_KIND_UNSPECIFIED = 0;
-  BINARY_CONSTRAINT_KIND_EQUAL = 1;
-  BINARY_CONSTRAINT_KIND_NOT_EQUAL = 2;
-  BINARY_CONSTRAINT_KIND_ORDINAL_BEFORE = 3;
-}
-
-message LinearConstraint {
-  // Mirrors OR-Tools' LinearConstraintProto shape: sum(vars[i] * coeffs[i]) +
-  // offset must fall in the flat interval-domain list [lb0, ub0, lb1, ub1, ...].
-  repeated uint32 variable_ids = 1;
-  repeated int64 coefficients = 2;
-  int64 offset = 3;
-  repeated int64 domain = 4;
-}
-
 message AllDifferent {
   uint32 id = 1;
   repeated uint32 variable_ids = 2;
+  // Parallel to `variable_ids`: the targets each entry is attributed to, with
+  // `TableConstraint.target_ids` semantics. A disabled entry leaves the
+  // constraint; the remaining entries stay pairwise distinct.
+  repeated TargetSet entry_targets = 3;
+}
+
+message TargetSet {
+  repeated uint32 target_ids = 1;
 }
 
 message TargetProjection {
@@ -95,6 +90,22 @@ message SelectorCpSatResponse {
   repeated AssignmentRow assignments = 3;
   string diagnostic = 4;
   string solver_response_stats = 5;
+  // Set only when the plain solve was infeasible. Each entry is one
+  // infeasible core (CP-SAT's sufficient assumptions, not necessarily
+  // minimal): with all its targets enabled, the attributed constraints have no
+  // solution. `status`, `assignment_coverage` and `assignments` then describe
+  // the targets outside every conflict set, solved with the conflicting
+  // targets disabled.
+  repeated ConflictSet conflicts = 6;
+  // Set only with SOLVER_STATUS_UNKNOWN: the projection variables proven to
+  // take one value in every solution before the solver stopped. Each takes
+  // the value it has in every row of `assignments`. Every other projection
+  // variable is undecided, whatever values the rows show for it.
+  repeated uint32 fixed_variable_ids = 7;
+}
+
+message ConflictSet {
+  repeated uint32 target_ids = 1;
 }
 
 enum SolverStatus {
@@ -109,7 +120,13 @@ enum SolverStatus {
 enum AssignmentCoverage {
   ASSIGNMENT_COVERAGE_UNSPECIFIED = 0;
   ASSIGNMENT_COVERAGE_SAMPLE = 1;
+  // Every value each projection variable can take appears in some row. The
+  // rows do not enumerate every combination of those values.
   ASSIGNMENT_COVERAGE_TARGET_SUPPORT_COMPLETE = 2;
+  // Every projection variable's value set is complete, except that some
+  // ambiguous variable stopped at max_alternatives_per_variable values without
+  // proving it has no more.
+  ASSIGNMENT_COVERAGE_TARGET_SUPPORT_CAPPED = 3;
 }
 
 message AssignmentRow {

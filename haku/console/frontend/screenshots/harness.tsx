@@ -5,17 +5,14 @@ import "./mock_api";
 
 import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
-import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 
 import { AgentNamesProvider } from "../agent_names";
 import { ApprovalsEmbedPage } from "../approvals_embed_page";
 import { HakuUiEmbed } from "../haku_ui_embed";
-import { OAuthResultView } from "../oauth_result_page";
 import type { ConsoleNavigationView, ConsoleView } from "../routing";
 import { ShellChrome, type ShellChromeProps } from "../shell_chrome";
 import { hakuTheme } from "../theme";
-import { toastError, toastSuccess } from "../toast";
 import { sampleAiquota, SAMPLE_PENDING, sampleRecentToolCalls } from "./sample_data";
 
 const noop = () => {};
@@ -109,17 +106,6 @@ function SessionExpiringScene() {
   );
 }
 
-function OAuthSettingsResultScene({ status }: { status: "success" | "error" }) {
-  useEffect(() => {
-    if (status === "success") {
-      toastSuccess("Connected to grocy-sf", "The MCP account is now available in Haku Console.");
-    } else {
-      toastError("Couldn't connect the MCP account", "The authorization request expired.");
-    }
-  }, [status]);
-  return <ConsoleScene view="settings" />;
-}
-
 function sceneElement(scene: string) {
   switch (scene) {
     case "aiquota":
@@ -135,10 +121,6 @@ function sceneElement(scene: string) {
     case "settings-notifications":
     case "settings-system":
       return <ConsoleScene view="settings" />;
-    case "settings-oauth-success":
-      return <OAuthSettingsResultScene status="success" />;
-    case "settings-oauth-error":
-      return <OAuthSettingsResultScene status="error" />;
     case "agent-enrollment":
     case "agent-enrollment-mobile":
       return <ConsoleScene view="agentEnrollment" />;
@@ -158,29 +140,6 @@ function sceneElement(scene: string) {
       return <SessionExpiringScene />;
     case "not-found":
       return <ConsoleScene view="notFound" />;
-    case "oauth-success":
-    case "oauth-success-mobile":
-      return (
-        <OAuthResultView
-          result={{
-            status: "success",
-            title: "Connected to Google Calendar",
-            message: "The account is now available in Haku Console.",
-          }}
-          onClose={noop}
-        />
-      );
-    case "oauth-error":
-      return (
-        <OAuthResultView
-          result={{
-            status: "error",
-            title: "Couldn't connect the MCP account",
-            message: "The authorization request expired or was superseded by a newer attempt.",
-          }}
-          onClose={noop}
-        />
-      );
     default:
       return <ConsoleScene view="embed" />;
   }

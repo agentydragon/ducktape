@@ -6,17 +6,9 @@ Hand-written beside the generated output: `grafana-admin-password.sops.yaml`.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart, JsonPatch
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallCrds,
     HelmReleaseSpecInstallRemediation,
@@ -24,27 +16,15 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeCrds,
     HelmReleaseSpecUpgradeRemediation,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecHealthCheckExprs,
-    KustomizationSpecHealthChecks,
-)
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.helm import helm_release, https_helm_repository
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "monitoring-stack"
-OUTPUT_DIR = "cluster/k8s/monitoring/stack"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/stack"
 _NAMESPACE = "monitoring"
 _HELM_REPOSITORY = "prometheus-community"
 _CONTROL_PLANE_TOKEN = "alloy-control-plane-token"
@@ -277,10 +257,10 @@ def _values() -> dict[str, object]:
         "cleanPrometheusOperatorObjectNames": True,
         "defaultRules": {
             "create": True,
-            # This is a wyrm2-only volume for host-local Colibri/model data, not
+            # This is a wyrm2-only volume for host-local model data, not
             # storage used by Kubernetes workloads. Kubernetes filesystem alerts
             # should not care about it; node-exporter still exposes its raw metrics.
-            "node": {"fsSelector": 'fstype!="",mountpoint!="/var/lib/colibri"'},
+            "node": {"fsSelector": 'fstype!="",mountpoint!="/var/lib/llm-models-ssd"'},
             # Forked into cluster/cdk8s/monitoring/rules.py so
             # roaming laptops (iguana/rugged) can be excluded by taint. Denying these two by
             # alertname in the route below would also have silenced them for the
@@ -294,7 +274,7 @@ def _values() -> dict[str, object]:
             },
             "rules": {
                 "alertmanager": True,
-                # Static Talos etcd endpoints are scraped by monitoring/etcd; keep the
+                # Static Talos etcd endpoints are scraped through cluster/cdk8s/etcd.py; keep the
                 # chart's stock etcd rule bundle disabled until the scrape is verified.
                 "etcd": False,
                 "configReloaders": True,
@@ -340,27 +320,12 @@ def _values() -> dict[str, object]:
                     }
                 },
                 # Chart auto-generates podAntiAffinity when replicas > 1
-                "nodeSelector": {"topology.kubernetes.io/zone": "hil-ovh"},
+                "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
                 # The replica with its local PVC on a control plane must survive the
                 # default taint until monitoring-state migration. Prefer workers for
                 # any placement not constrained by that PVC.
-                "tolerations": [
-                    {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
-                ],
-                "affinity": {
-                    "nodeAffinity": {
-                        "preferredDuringSchedulingIgnoredDuringExecution": [
-                            {
-                                "weight": 100,
-                                "preference": {
-                                    "matchExpressions": [
-                                        {"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}
-                                    ]
-                                },
-                            }
-                        ]
-                    }
-                },
+                "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
+                "affinity": node_scheduling.PREFER_WORKERS,
                 "resources": {
                     "requests": {"cpu": "10m", "memory": "64Mi"},
                     "limits": {"cpu": "100m", "memory": "128Mi"},
@@ -460,7 +425,7 @@ def _values() -> dict[str, object]:
         "kubeControllerManager": {"enabled": True, "serviceMonitor": _CONTROL_PLANE_SERVICE_MONITOR},
         # `serviceMonitor.authorization: null` is patched in below.
         "coreDns": {"enabled": True, "serviceMonitor": {}},
-        # Static Talos etcd endpoints are managed in cluster/k8s/monitoring/etcd.
+        # Static Talos etcd endpoints are managed in cluster/cdk8s/etcd.py.
         "kubeEtcd": {"enabled": False},
         "kubeScheduler": {"enabled": True, "serviceMonitor": _CONTROL_PLANE_SERVICE_MONITOR},
         # kube-proxy is intentionally absent: Cilium runs kube-proxy replacement,
@@ -496,53 +461,43 @@ def chart(app: App) -> Chart:
         ),
         type="kubernetes.io/service-account-token",
     )
-    HelmRepository(
+    release = helm_release(
         chart,
-        "helm-repository",
-        metadata=metadata(_HELM_REPOSITORY, "flux-system"),
-        spec=HelmRepositorySpec(interval="12h", url="https://prometheus-community.github.io/helm-charts"),
-    )
-    release = HelmRelease(
-        chart,
-        "helm-release",
-        metadata=metadata("kube-prometheus-stack", _NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            timeout="10m",  # Prometheus stack upgrades can be slow
-            install=HelmReleaseSpecInstall(
-                # The `crds` subchart is disabled below; monitoring-crds owns them instead.
-                # Kept as CreateReplace so any chart that does ship a crds/ directory is
-                # updated rather than skipped.
-                crds=HelmReleaseSpecInstallCrds.CREATE_REPLACE,
-                # TODO(roaming-nodes): Roaming nodes (iguana/rugged) are often offline,
-                # so DaemonSets (node-exporter) have perpetually Pending pods. Helm waits
-                # for all pods to be ready, causing timeout. disableWait is a blunt
-                # workaround — need a general solution for every HelmRelease with a
-                # DaemonSet. Options: taint roaming nodes + add tolerations to DaemonSets
-                # that should run there, or use nodeAffinity to exclude roaming entirely.
-                disable_wait=True,
-                remediation=HelmReleaseSpecInstallRemediation(retries=3),
-            ),
-            upgrade=HelmReleaseSpecUpgrade(
-                crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE,
-                disable_wait=True,
-                remediation=HelmReleaseSpecUpgradeRemediation(retries=3),
-            ),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="kube-prometheus-stack",
-                    # renovate: datasource=helm depName=kube-prometheus-stack registryUrl=https://prometheus-community.github.io/helm-charts
-                    version="91.3.0",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=_HELM_REPOSITORY,
-                        namespace="flux-system",
-                    ),
-                    interval="12h",
-                )
-            ),
-            values=_values(),
+        "kube-prometheus-stack",
+        _NAMESPACE,
+        repository=https_helm_repository(
+            chart,
+            _HELM_REPOSITORY,
+            "flux-system",
+            url="https://prometheus-community.github.io/helm-charts",
+            interval="12h",
         ),
+        chart="kube-prometheus-stack",
+        # renovate: datasource=helm depName=kube-prometheus-stack registryUrl=https://prometheus-community.github.io/helm-charts
+        version="91.3.0",
+        interval="30m",
+        chart_interval="12h",
+        timeout="10m",  # Prometheus stack upgrades can be slow
+        install=HelmReleaseSpecInstall(
+            # The `crds` subchart is disabled below; monitoring-crds owns them instead.
+            # Kept as CreateReplace so any chart that does ship a crds/ directory is
+            # updated rather than skipped.
+            crds=HelmReleaseSpecInstallCrds.CREATE_REPLACE,
+            # TODO(roaming-nodes): Roaming nodes (iguana/rugged) are often offline,
+            # so DaemonSets (node-exporter) have perpetually Pending pods. Helm waits
+            # for all pods to be ready, causing timeout. disableWait is a blunt
+            # workaround — need a general solution for every HelmRelease with a
+            # DaemonSet. Options: taint roaming nodes + add tolerations to DaemonSets
+            # that should run there, or use nodeAffinity to exclude roaming entirely.
+            disable_wait=True,
+            remediation=HelmReleaseSpecInstallRemediation(retries=3),
+        ),
+        upgrade=HelmReleaseSpecUpgrade(
+            crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE,
+            disable_wait=True,
+            remediation=HelmReleaseSpecUpgradeRemediation(retries=3),
+        ),
+        values=_values(),
     )
     # CoreDNS serves metrics over plain HTTP on 9153 and requires no
     # authentication. Explicitly clear the chart's v91 default authorization
@@ -572,58 +527,43 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml", "grafana-admin-password.sops.yaml"]),
-    )
-
-
 def monitoring_stack(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     monitoring_namespace: Kustomization,
     monitoring_crds: Kustomization,
-    ntfy: Kustomization,
-    external_secrets_config: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         "monitoring-stack",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="v1", kind="Secret", name="alloy-control-plane-token", namespace="monitoring"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2",
-                    kind="HelmRelease",
-                    name="kube-prometheus-stack",
-                    namespace="monitoring",
-                ),
-            ],
-            # The built-in Secret health check only checks existence. This CEL check waits
-            # for the service-account token controller to populate data.token.
-            health_check_exprs=[
-                KustomizationSpecHealthCheckExprs(
-                    api_version="v1", kind="Secret", current="has(data.token) && data.token != ''"
-                )
-            ],
-            timeout="10m",
-            depends_on=flux_kustomization_depends_on_many(
-                monitoring_namespace,
-                # The chart's Prometheus/Alertmanager CRs are rejected at admission until
-                # the CRDs exist, and the chart no longer installs them itself.
-                monitoring_crds,
-                ntfy,
-                external_secrets_config,
+        directory,
+        wait=None,
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="v1", kind="Secret", name="alloy-control-plane-token", namespace="monitoring"
             ),
+            KustomizationSpecHealthChecks(
+                api_version="helm.toolkit.fluxcd.io/v2",
+                kind="HelmRelease",
+                name="kube-prometheus-stack",
+                namespace="monitoring",
+            ),
+        ],
+        # The built-in Secret health check only checks existence. This CEL check waits
+        # for the service-account token controller to populate data.token.
+        health_check_exprs=[
+            KustomizationSpecHealthCheckExprs(
+                api_version="v1", kind="Secret", current="has(data.token) && data.token != ''"
+            )
+        ],
+        timeout="10m",
+        depends_on=flux_kustomization_depends_on_many(
+            monitoring_namespace,
+            # The chart's Prometheus/Alertmanager CRs are rejected at admission until
+            # the CRDs exist, and the chart no longer installs them itself.
+            monitoring_crds,
+            # Kyverno's failurePolicy: Fail webhooks admit the chart's Deployments and DaemonSet.
+            kyverno,
         ),
     )

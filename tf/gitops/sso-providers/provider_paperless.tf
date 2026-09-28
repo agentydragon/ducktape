@@ -43,8 +43,9 @@ resource "authentik_provider_oauth2" "paperless" {
   # django-allauth openid_connect callback (provider_id = "authentik").
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://paperless.allegedly.works/accounts/oidc/authentik/login/callback/"
+      matching_mode     = "strict"
+      url               = "https://paperless.allegedly.works/accounts/oidc/authentik/login/callback/"
+      redirect_uri_type = "authorization"
     },
   ]
 }

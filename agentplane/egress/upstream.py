@@ -4,6 +4,11 @@ A policy names hosts, but a connection is made to an address, and nothing about 
 it points: an allowed name can resolve into the cluster (a Service, a Pod, a node), and it can
 resolve differently on the second lookup (DNS rebinding). So the proxy resolves the host itself,
 refuses every address that is not globally reachable, and dials exactly the address it checked.
+
+The pin answers the dial's own name resolution, and the connection keeps the name its requests
+carry: mitmproxy reuses an upstream connection only for requests to the address it carries, and
+holds at most five open to one address per client connection. Re-addressed to its IP, a connection
+is never reused, so every request on a kept-open tunnel dials another and the sixth waits forever.
 """
 
 from __future__ import annotations
@@ -11,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import socket
 from collections.abc import Callable, Collection
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network, ip_address
@@ -69,6 +75,18 @@ class Pin:
     resolved_at: datetime
 
 
+@dataclass(frozen=True)
+class Dial:
+    """A connection mitmproxy is about to make to `host:port`, and the socket address it goes to."""
+
+    host: str
+    port: int
+    target: tuple[str, int]
+
+
+_DIAL: ContextVar[Dial | None] = ContextVar("agentplane_egress_dial", default=None)
+
+
 class UpstreamResolver:
     """Resolves and checks a host on admission, and answers the dial with the address checked.
 
@@ -88,16 +106,24 @@ class UpstreamResolver:
         self._clock = clock
         self._pins: dict[tuple[str, int], Pin] = {}
 
-    def redirect(self, server: connection.Server) -> None:
-        """Point a dial at the pin for its target, or kill it: a dial with no fresh pin did not come
-        through the gate, which pins every target it admits just before the first bytes flow."""
+    def dial(self, server: connection.Server) -> None:
+        """Answer the dial about to be made for `server` with the pin for its target, or kill it: a
+        dial with no fresh pin did not come through the gate, which pins every target it admits just
+        before the first bytes flow.
+
+        Called from mitmproxy's `server_connect` hook, which runs in the task that then dials, so the
+        answer reaches that dial's name resolution (`PinnedDialEventLoop`) and nothing else.
+        """
         assert server.address is not None
         host, port = server.address[:2]
         pin = self.pinned(host, port)
         if pin is None:
             server.error = f"no pinned address for {host}:{port}"
             return
-        server.address = (str(pin.address), port)
+        _DIAL.set(Dial(host=pin.host, port=port, target=self._target(pin)))
+
+    def _target(self, pin: Pin) -> tuple[str, int]:
+        return str(pin.address), pin.port
 
     def pinned(self, host: str, port: int) -> Pin | None:
         pin = self._pins.get((host.lower(), port))
@@ -147,3 +173,50 @@ class UpstreamResolver:
         if not addresses:
             raise UpstreamRefusedError(DenyReason.HOST_UNRESOLVED, f"{host}: no addresses")
         return addresses
+
+
+class PinnedDialEventLoop(asyncio.SelectorEventLoop):
+    """The event loop the proxy runs on: a dial's name resolution returns the pinned address.
+
+    mitmproxy connects with `asyncio.open_connection(host, port)`, which resolves `host` through
+    the loop's `getaddrinfo` in the task that dials. There `UpstreamResolver.dial` has left the
+    answer, which the first lookup takes; a lookup for any other name there is refused. Every other
+    task resolves as usual.
+    """
+
+    async def getaddrinfo(
+        self,
+        host: bytes | str | None,
+        port: bytes | str | int | None,
+        *,
+        family: int = 0,
+        type: int = 0,
+        proto: int = 0,
+        flags: int = 0,
+    ) -> list[
+        tuple[
+            socket.AddressFamily,
+            socket.SocketKind,
+            int,
+            str,
+            tuple[str, int] | tuple[str, int, int, int] | tuple[int, bytes],
+        ]
+    ]:
+        dial = _DIAL.get()
+        if dial is None:
+            return await super().getaddrinfo(host, port, family=family, type=type, proto=proto, flags=flags)
+        _DIAL.set(None)
+        if not isinstance(host, str) or (host.lower(), port) != (dial.host, dial.port):
+            raise socket.gaierror(
+                socket.EAI_NONAME, f"{host!r}:{port!r} is not the pinned dial {dial.host}:{dial.port}"
+            )
+        version = ip_address(dial.target[0]).version
+        return [
+            (
+                socket.AF_INET6 if version == 6 else socket.AF_INET,
+                socket.SOCK_STREAM,
+                socket.IPPROTO_TCP,
+                "",
+                dial.target,
+            )
+        ]

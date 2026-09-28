@@ -1,25 +1,21 @@
-"""kubectl-passthrough-mcp (cluster/k8s/agents/kubectl-passthrough-mcp/app):
+"""kubectl-passthrough-mcp (cluster/generated/agents/kubectl-passthrough-mcp/app):
 containers/kubernetes-mcp-server in OAuth passthrough mode, its public route, and the
 ClusterRoleBinding that makes agentydragon's passthrough identity cluster-admin.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import Kustomization, flux_kustomization
+from cluster.cdk8s import namespaces
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "kubectl-passthrough-mcp"
-OUTPUT_DIR = "cluster/k8s/agents/kubectl-passthrough-mcp/app"
+OUTPUT_DIR = f"{GENERATED_ROOT}/agents/kubectl-passthrough-mcp/app"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _PORT = 8080
 _CONFIG_MAP = "kubectl-passthrough-mcp-public"
@@ -58,8 +54,7 @@ def _deployment(chart: Chart) -> None:
                 "description": (
                     "containers/kubernetes-mcp-server in OAuth passthrough mode. Caller's Authentik JWT is"
                     " forwarded directly to kube-apiserver; server itself is unprivileged."
-                ),
-                "reloader.stakater.com/auto": "true",
+                )
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -110,9 +105,7 @@ def _deployment(chart: Chart) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
-        chart, "namespace", metadata=k8s.ObjectMeta(name=NAME, labels={"goldilocks.fairwinds.com/enabled": "false"})
-    )
+    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.DISABLED, agent_readable=None)
     k8s.KubeServiceAccount(
         chart,
         "serviceaccount",
@@ -150,8 +143,8 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "httproute",
-        metadata=metadata(NAME, NAME),
-        hostname="kubectl-passthrough-mcp.allegedly.works",
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAME),
+        hostnames=["kubectl-passthrough-mcp.allegedly.works"],
         backend=NAME,
         port=_PORT,
         timeout="60s",
@@ -162,10 +155,10 @@ def chart(app: App) -> Chart:
     # kubectl-passthrough-mcp (username prefix oidc-ksbx:, distinct from Headlamp's
     # oidc: prefix — see cluster/terraform/main/infrastructure.tf's AuthenticationConfiguration).
     # Mirrors headlamp.py's oidc-agentydragon-admin,
-    # scoped to this issuer instead. Consumed by haku-console's operator_oauth flow for the
-    # kubectl-passthrough-mcp MCP server entry: Haku proposes a call, agentydragon approves in
-    # haku-console's trusted UI, and the call executes with agentydragon's own passthrough
-    # identity — the approval click is the only gate, by design.
+    # scoped to this issuer instead. Consumed by agentplane-staging's `kubernetes_admin`
+    # ActionGroup, which links the operator's passthrough identity (cluster/cdk8s/agentplane/
+    # staging.py): an agent requests an Action, agentydragon approves it, and the call executes
+    # with agentydragon's own passthrough identity — the approval click is the only gate, by design.
     k8s.KubeClusterRoleBinding(
         chart,
         "agentydragon-admin",
@@ -176,25 +169,5 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def kubectl_passthrough_mcp(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        spec=KustomizationSpec(
-            suspend=False,
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=NAME, namespace=NAME)
-            ],
-        ),
-    )
+def kubectl_passthrough_mcp(chart: Chart, directory: RenderedDirectory) -> Kustomization:
+    return flux_kustomization(chart, NAME, directory, suspend=False, timeout="5m")

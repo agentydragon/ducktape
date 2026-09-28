@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecHealthChecks,
     KustomizationSpecImages,
     KustomizationSpecPatches,
     KustomizationSpecPatchesTarget,
@@ -13,50 +11,39 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.flux_sources import EXTERNAL_SNAPSHOTTER_TAG
 
 
-def snapshot_controller(chart: Chart, snapshot_controller_crds: Kustomization) -> Kustomization:
+def snapshot_controller(chart: Chart) -> Kustomization:
     name = "snapshot-controller"
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY,
-                name="external-snapshotter-source",
-                namespace="ducktape-flux",
-            ),
-            path="./deploy/kubernetes/snapshot-controller",
-            prune=True,
-            wait=True,
-            timeout="5m",
-            depends_on=[flux_kustomization_depends_on(snapshot_controller_crds)],
-            images=[
-                KustomizationSpecImages(
-                    name="registry.k8s.io/sig-storage/snapshot-controller", new_tag=EXTERNAL_SNAPSHOTTER_TAG
-                )
-            ],
-            patches=[
-                KustomizationSpecPatches(
-                    target=KustomizationSpecPatchesTarget(
-                        kind="Deployment", name="snapshot-controller", namespace="kube-system"
-                    ),
-                    patch=(
-                        "- op: add\n  path: /spec/template/spec/nodeSelector\n  value:\n    "
-                        "topology.kubernetes.io/zone: hil-ovh"
-                    ),
-                )
-            ],
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="snapshot-controller", namespace="kube-system"
-                )
-            ],
+        KustomizationSpecSourceRef(
+            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY,
+            name="external-snapshotter-source",
+            namespace="ducktape-flux",
         ),
+        path="./deploy/kubernetes/snapshot-controller",
+        timeout="5m",
+        images=[
+            KustomizationSpecImages(
+                name="registry.k8s.io/sig-storage/snapshot-controller", new_tag=EXTERNAL_SNAPSHOTTER_TAG
+            )
+        ],
+        patches=[
+            KustomizationSpecPatches(
+                target=KustomizationSpecPatchesTarget(
+                    kind="Deployment", name="snapshot-controller", namespace="kube-system"
+                ),
+                patch=(
+                    "- op: add\n  path: /spec/template/spec/nodeSelector\n  value:\n    "
+                    f"{node_scheduling.ZONE_LABEL}: {node_scheduling.HIL_OVH_ZONE}"
+                ),
+            )
+        ],
     )
 
 
@@ -65,17 +52,13 @@ def snapshot_controller_crds(chart: Chart) -> Kustomization:
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="1h",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY,
-                name="external-snapshotter-source",
-                namespace="ducktape-flux",
-            ),
-            path="./client/config/crd",
-            prune=False,
-            wait=True,
-            timeout="2m",
+        KustomizationSpecSourceRef(
+            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY,
+            name="external-snapshotter-source",
+            namespace="ducktape-flux",
         ),
+        interval="1h",
+        path="./client/config/crd",
+        prune=False,
+        timeout="2m",
     )

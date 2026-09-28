@@ -7,60 +7,35 @@ Hand-written beside the output: the per-tenant `identities/*.sops.yaml`.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromFind,
-    ExternalSecretSpecDataFromFindName,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
 )
-from external_secrets_secretstore_crds.io.external_secrets import (
-    SecretStore,
-    SecretStoreSpec,
-    SecretStoreSpecProvider,
-    SecretStoreSpecProviderKubernetes,
-    SecretStoreSpecProviderKubernetesAuth,
-    SecretStoreSpecProviderKubernetesAuthServiceAccount,
-    SecretStoreSpecProviderKubernetesServer,
-    SecretStoreSpecProviderKubernetesServerCaProvider,
-    SecretStoreSpecProviderKubernetesServerCaProviderType,
-)
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.seaweedfs import namespace
 
 SECRET_NAME = "seaweedfs-s3-config"
 SECRET_KEY = "seaweedfs_s3_config.json"
-OUTPUT_DIR = "cluster/k8s/seaweedfs/secrets"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/secrets"
 _CHART = "s3-config"
 _READER = "eso-reader"
 _SECRET_STORE = "seaweedfs-identities"
+# Per-tenant credentials. Legacy entries also contain an ExternalSecret that renders static
+# gateway JSON. Migrated entries contain only the SOPS Secret; their S3Identity/S3Credentials
+# CRs live with the corresponding Bucket CR.
+IDENTITY_FILES = ("identities/admin.sops.yaml",)
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _CHART, disable_resource_name_hashes=True)
     # The SecretStore's identity when reading source Secrets from this namespace.
-    k8s.KubeServiceAccount(chart, "reader", metadata=k8s.ObjectMeta(name=_READER, namespace=namespace.NAME))
+    reader = k8s.KubeServiceAccount(chart, "reader", metadata=k8s.ObjectMeta(name=_READER, namespace=namespace.NAME))
     k8s.KubeRole(
         chart,
         "reader-role",
@@ -74,14 +49,13 @@ def chart(app: App) -> Chart:
         role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_READER),
         subjects=[k8s.Subject(kind="ServiceAccount", name=_READER, namespace=namespace.NAME)],
     )
-    # In-namespace SecretStore that the global + per-tenant ExternalSecrets read from. Provider =
-    # kubernetes (looks back at the same cluster).
-    SecretStore(
+    # In-namespace SecretStore that the global + per-tenant ExternalSecrets read from.
+    secret_store(
         chart,
         "secret-store",
-        metadata=metadata(
-            _SECRET_STORE,
-            namespace.NAME,
+        metadata=ApiObjectMetadata(
+            name=_SECRET_STORE,
+            namespace=namespace.NAME,
             annotations={
                 "description": (
                     "Reads per-tenant s3-identity-* Secrets and the per-tenant intermediate Secrets that the "
@@ -89,25 +63,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        spec=SecretStoreSpec(
-            provider=SecretStoreSpecProvider(
-                kubernetes=SecretStoreSpecProviderKubernetes(
-                    server=SecretStoreSpecProviderKubernetesServer(
-                        ca_provider=SecretStoreSpecProviderKubernetesServerCaProvider(
-                            type=SecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
-                            name="kube-root-ca.crt",
-                            key="ca.crt",
-                        )
-                    ),
-                    auth=SecretStoreSpecProviderKubernetesAuth(
-                        service_account=SecretStoreSpecProviderKubernetesAuthServiceAccount(
-                            name=_READER, namespace=namespace.NAME
-                        )
-                    ),
-                    remote_namespace=namespace.NAME,
-                )
-            )
-        ),
+        reader=reader,
     )
     # Concatenates the per-tenant intermediate Secrets' pre-rendered identity JSON snippets
     # into the blob the s3 gateway consumes. `creationPolicy: Owner` so ESO creates the
@@ -119,60 +75,36 @@ def chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         "s3-config",
-        metadata=metadata(
-            SECRET_NAME,
-            namespace.NAME,
+        metadata=ApiObjectMetadata(
+            name=SECRET_NAME,
+            namespace=namespace.NAME,
             annotations={"description": "Assembles the s3 gateway config Secret from per-tenant identity Secrets."},
         ),
-        spec=ExternalSecretSpec(
-            refresh_interval="1m",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                kind=ExternalSecretSpecSecretStoreRefKind.SECRET_STORE, name=_SECRET_STORE
-            ),
-            target=ExternalSecretSpecTarget(
-                name=SECRET_NAME,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                template=ExternalSecretSpecTargetTemplate(
-                    type="Opaque",
-                    data={
-                        SECRET_KEY: (
-                            '{"identities":[\n'
-                            "  {{- $first := true -}}\n"
-                            "  {{- range $sName, $sJson := . -}}\n"
-                            "  {{- $sData := $sJson | fromJson -}}\n"
-                            "  {{- if not $first }},{{ end -}}{{ $sData.identity }}{{- $first = false -}}\n"
-                            "  {{- end -}}\n"
-                            "]}\n"
-                        )
-                    },
-                ),
-            ),
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    find=ExternalSecretSpecDataFromFind(
-                        name=ExternalSecretSpecDataFromFindName(regexp="^s3-identity-.+-json$")
-                    )
+        refresh_interval="1m",
+        secret_store_ref=SecretStoreRef.namespaced(_SECRET_STORE),
+        data_from=[DataFrom.from_find_by_name_regexp("^s3-identity-.+-json$")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        template=ExternalSecretSpecTargetTemplate(
+            type="Opaque",
+            data={
+                SECRET_KEY: (
+                    '{"identities":[\n'
+                    "  {{- $first := true -}}\n"
+                    "  {{- range $sName, $sJson := . -}}\n"
+                    "  {{- $sData := $sJson | fromJson -}}\n"
+                    "  {{- if not $first }},{{ end -}}{{ $sData.identity }}{{- $first = false -}}\n"
+                    "  {{- end -}}\n"
+                    "]}\n"
                 )
-            ],
+            },
         ),
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        # Per-tenant credentials. Legacy entries also contain an ExternalSecret that renders static
-        # gateway JSON. Migrated entries contain only the SOPS Secret; their S3Identity/S3Credentials
-        # CRs live with the corresponding Bucket CR.
-        kustomize_kustomization(resources=[f"{_CHART}.k8s.yaml", "identities/admin.sops.yaml"]),
-    )
-
-
 def seaweedfs_secrets(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     seaweedfs_namespace: Kustomization,
     external_secrets_operator: Kustomization,
 ) -> Kustomization:
@@ -180,17 +112,13 @@ def seaweedfs_secrets(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            suspend=False,
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            decryption=SOPS_DECRYPTION,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=flux_kustomization_depends_on_many(
-                seaweedfs_namespace,
-                # ExternalSecret + SecretStore CRDs + ESO controller
-                external_secrets_operator,
-            ),
+        directory,
+        retry_interval=None,
+        wait=None,
+        suspend=False,
+        depends_on=flux_kustomization_depends_on_many(
+            seaweedfs_namespace,
+            # ExternalSecret + SecretStore CRDs + ESO controller
+            external_secrets_operator,
         ),
     )

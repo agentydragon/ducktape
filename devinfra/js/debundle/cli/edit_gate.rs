@@ -53,14 +53,11 @@ use analysis::{
     AtomicUnit, AtomicUnitConflict, AtomicUnitConflictReport, ConflictingClaim, ModuleId,
     OwnerGraph, OwnerGraphReport, OwnerId, Partition, compute_atomic_units,
 };
-use anonymous_resolution::{
-    AnonymousStatementClaimSet, MemberSelectorClaimSet, resolve_anonymous_statement_claims,
-    resolve_member_selector_claims,
-};
+use anonymous_resolution::{SourceClaimSet, resolve_source_claims};
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use serde_yaml::Value;
-use spec::{AnonymousStatementSelector, ModulePath};
+use spec::ModulePath;
 use spec_modules::{
     ModuleClaims, ModuleFile, collect_module_files, is_module_yaml, module_claims,
     module_path_from_file, read_module_claims,
@@ -374,61 +371,25 @@ pub fn gate_post_edit_partition(
                 .or_insert(owner);
         }
     }
-    let claim_sets: Vec<AnonymousStatementClaimSet<'_>> = post_spec
+    // Source-backed claims resolve to the chunk-top bindings and anonymous
+    // owners they claim. A claim the gate cannot resolve (missing chunk
+    // source, unmatched/ambiguous selector) is a hard error — the claimed
+    // owner must never silently fall to residual.
+    let claim_sets: Vec<SourceClaimSet<'_>> = post_spec
         .modules
         .iter()
-        .map(|module| AnonymousStatementClaimSet {
+        .map(|module| SourceClaimSet {
             module_path: &module.path,
-            selectors: &module.claims.anonymous_selectors,
+            source_matches: &module.claims.source_matches,
+            anonymous_selectors: &module.claims.anonymous_selectors,
         })
         .collect();
-    let anonymous_owners_by_module = resolve_anonymous_statement_claims(
+    let resolved_claims = resolve_source_claims(
         &owner_graph_report,
         owner_graph_path,
         modules_root,
         source_root,
         &claim_sets,
-    )?;
-
-    // Canonical `source_matches:` entries expand into per-binding internal
-    // selectors, then resolve source-backed to the chunk-top binding names
-    // they claim. A selector the gate cannot resolve (missing chunk source,
-    // unmatched/ambiguous selector) is a hard error — the claimed owner must
-    // never silently fall to residual.
-    let expanded_member_selectors: Vec<BTreeSet<AnonymousStatementSelector>> =
-        js_ast::with_swc_globals(|| {
-            post_spec
-                .modules
-                .iter()
-                .map(|module| {
-                    let mut selectors = BTreeSet::new();
-                    let request_id = module.path.to_string_lossy();
-                    for claim in &module.claims.source_matches {
-                        for expanded in
-                            source_match::source_match_claim_member_selectors(&request_id, claim)?
-                        {
-                            selectors.insert(expanded.selector);
-                        }
-                    }
-                    Ok(selectors)
-                })
-                .collect::<Result<_>>()
-        })?;
-    let member_claim_sets: Vec<MemberSelectorClaimSet<'_>> = post_spec
-        .modules
-        .iter()
-        .zip(&expanded_member_selectors)
-        .map(|(module, selectors)| MemberSelectorClaimSet {
-            module_path: &module.path,
-            selectors,
-        })
-        .collect();
-    let member_bindings_by_module = resolve_member_selector_claims(
-        &owner_graph_report,
-        owner_graph_path,
-        modules_root,
-        source_root,
-        &member_claim_sets,
     )?;
 
     // ModuleId assignment: residual at logical:0, every surviving
@@ -456,13 +417,13 @@ pub fn gate_post_edit_partition(
             .claims
             .bindings
             .iter()
-            .chain(&member_bindings_by_module[module_idx])
+            .chain(&resolved_claims[module_idx].bindings)
         {
             if let Some(&owner) = owner_by_binding_name.get(name) {
                 of[owner.0] = mid;
             }
         }
-        for owner in &anonymous_owners_by_module[module_idx] {
+        for owner in &resolved_claims[module_idx].anonymous_owners {
             of[owner.0] = mid;
         }
     }

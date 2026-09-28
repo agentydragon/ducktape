@@ -10,12 +10,14 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
-from agentplane.sandbox_actions.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 
 _KEY = r"^[a-z][a-z0-9_-]*$"
 Key = Annotated[str, StringConstraints(pattern=_KEY, min_length=1, max_length=200)]
+DIRECT_TOOL_SEPARATOR = "__"
 
 
 class ActionIdentity(BaseModel):
@@ -37,6 +39,12 @@ class ActionDefinition(BaseModel):
         default_factory=dict,
         description="A small JSON-Schema-shaped parameter contract, opaque to this catalog. Submission "
         "validates against this advertised schema; execution re-checks the current backend schema.",
+    )
+    title: str | None = Field(default=None, description="Human-readable display name, as MCP tools carry one.")
+    annotations: ToolAnnotations | None = Field(
+        default=None,
+        description="MCP behavior hints (read-only, destructive, idempotent, open-world). Advisory: they "
+        "shape how a client presents the Action as a direct tool, never what the service allows.",
     )
 
 
@@ -77,10 +85,15 @@ class McpUnavailableReason(StrEnum):
 
 
 class McpHealth(BaseModel):
-    """Replica-local diagnostics; never contains backend exception text or configuration."""
+    """Replica-local diagnostics. Only `detail` may carry backend exception text or configuration."""
 
     state: McpLifecycle = McpLifecycle.DISCONNECTED
     reason: McpUnavailableReason | None = None
+    detail: str | None = Field(
+        default=None,
+        description="What `reason` came from: the backend's error, or the OAuth linkage's state. Operators only: "
+        "it can name backend addresses, so a workload's view leaves it out.",
+    )
     last_discovery_at: datetime | None = None
     retry_at: datetime | None = None
     failures: int = 0
@@ -109,6 +122,12 @@ class ActionGroup(BaseModel):
     available: bool = Field(default=True, description="Whether this group is currently offered to Agents.")
     health: McpHealth | None = Field(default=None, exclude=True)
     actions: dict[Key, ActionDefinition] = Field(default_factory=dict)
+    direct_tools: frozenset[Key] | None = Field(
+        default=None,
+        min_length=1,
+        description="Actions of this group external Connections also see as MCP tools of their own, named "
+        f"`<group>{DIRECT_TOOL_SEPARATOR}<action>`. Only these: a new upstream tool is never exposed unreviewed.",
+    )
 
 
 class ActionView(BaseModel):
@@ -151,6 +170,16 @@ class ActionCatalog(BaseModel):
 
     groups: dict[Key, ActionGroup] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def _direct_tool_names_split_at_the_group(self) -> ActionCatalog:
+        for key, group in self.groups.items():
+            if group.direct_tools is not None and DIRECT_TOOL_SEPARATOR in key:
+                raise ValueError(
+                    f"ActionGroup {key!r} offers direct tools, so its key must not contain {DIRECT_TOOL_SEPARATOR!r}: "
+                    "a direct tool's name is split at the first one"
+                )
+        return self
+
     # Lets the operator settings page join an ActionGroupView back to its McpLinkageView by
     # matching `key` against `server_id` directly, with no separate wire-carried join key needed.
     @model_validator(mode="after")
@@ -172,8 +201,9 @@ class ActionCatalog(BaseModel):
             raise UnknownActionError(group_key, action_key)
         return group, action
 
-    def group_views(self) -> list[ActionGroupView]:
-        return [_group_view(key, group) for key, group in self.groups.items()]
+    def group_views(self, *, with_detail: bool) -> list[ActionGroupView]:
+        """`with_detail` keeps `McpHealth.detail`, which only an operator may read."""
+        return [_group_view(key, group, with_detail=with_detail) for key, group in self.groups.items()]
 
     def action_view(self, group_key: str, action_key: str) -> ActionView:
         _, action = self.resolve(group_key, action_key)
@@ -186,7 +216,7 @@ def _action_view(group_key: str, action_key: str, action: ActionDefinition) -> A
     )
 
 
-def _group_view(group_key: str, group: ActionGroup) -> ActionGroupView:
+def _group_view(group_key: str, group: ActionGroup, *, with_detail: bool) -> ActionGroupView:
     return ActionGroupView(
         key=group_key,
         title=group.title,
@@ -194,7 +224,9 @@ def _group_view(group_key: str, group: ActionGroup) -> ActionGroupView:
         executor_kind=group.executor.kind,
         executor_description=group.executor.description,
         available=group.available,
-        health=group.health,
+        health=group.health
+        if with_detail or group.health is None
+        else group.health.model_copy(update={"detail": None}),
         actions=[_action_view(group_key, name, action) for name, action in group.actions.items()]
         if group.available
         else [],

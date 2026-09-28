@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngress,
@@ -21,20 +21,16 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
 from constructs import Construct
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-)
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 
-_OUTPUT_DIR = "cluster/k8s/activitywatch"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/activitywatch"
 _NAME = "activitywatch"
 _NAMESPACE = "activitywatch"
 _LABELS = {"app.kubernetes.io/name": _NAME}
@@ -48,22 +44,19 @@ _READ_PORT = 5603
 
 
 def _namespace(scope: Construct) -> None:
-    k8s.KubeNamespace(
+    namespaces.namespace(
         scope,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "pod-security.kubernetes.io/enforce": "privileged",
-                "pod-security.kubernetes.io/audit": "privileged",
-                "pod-security.kubernetes.io/warn": "privileged",
-                # Lets the approved agent identities read workload metadata and pod logs here,
-                # so a crashlooping sidecar can be diagnosed without an operator grant.
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
+        name=_NAMESPACE,
+        vpa=Vpa.AUTO,
+        # Lets the approved agent identities read workload metadata and pod logs here,
+        # so a crashlooping sidecar can be diagnosed without an operator grant.
+        agent_readable=AgentReadable.LOGS,
+        labels={
+            "pod-security.kubernetes.io/enforce": "privileged",
+            "pod-security.kubernetes.io/audit": "privileged",
+            "pod-security.kubernetes.io/warn": "privileged",
+        },
     )
 
 
@@ -162,9 +155,7 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -230,15 +221,15 @@ def _service(scope: Construct, id: str, *, name: str, target_port: int, descript
 def _route(scope: Construct, id: str, *, name: str, hostname: str) -> None:
     """A public route on the cluster-gateway wildcard for *.allegedly.works, straight to the
     same-named bearer-gated Service."""
-    HttpRoute(
+    https_route(
         scope,
         id,
-        metadata=metadata(name, _NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=[hostname],
-            rules=[HttpRouteSpecRules(backend_refs=[HttpRouteSpecRulesBackendRefs(name=name, port=_SERVICE_PORT)])],
-        ),
+        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
+        hostnames=[hostname],
+        backend=name,
+        port=_SERVICE_PORT,
+        hsts=False,
+        listener=None,
     )
 
 
@@ -246,11 +237,11 @@ def _network_policy(scope: Construct) -> None:
     # ActivityWatch central query + write server.
     # Ingress: kube-apiserver (health probes), Authentik proxy (read-only proxy 5601),
     # the Gateway (bearer-gated bearer-proxy: write 5602, read 5603). Egress: DNS only.
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "network-policy",
-        metadata=metadata(_NAME, _NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        endpoint_selector=_LABELS,
         ingress=[
             CiliumNetworkPolicySpecIngress(
                 from_entities=[CiliumNetworkPolicySpecIngressFromEntities.KUBE_HYPHEN_APISERVER],
@@ -265,7 +256,7 @@ def _network_policy(scope: Construct) -> None:
                 ],
             ),
             # Read-only proxy through Authentik embedded outpost (nginx on 5601).
-            cilium.ingress_from(
+            IngressRule.from_endpoints(
                 {
                     "k8s:io.kubernetes.pod.namespace": "authentik",
                     "app.kubernetes.io/name": "authentik",
@@ -276,7 +267,7 @@ def _network_policy(scope: Construct) -> None:
             # Public write + read routes: the Gateway (Envoy, hostNetwork) reaches the
             # bearer-gated bearer-proxy sidecar on 5602 (write) and 5603 (read).
             # See docs/cilium_network_policy.md (fromEntities: ingress).
-            cilium.ingress_from_gateway(_WRITE_PORT, _READ_PORT),
+            IngressRule.from_gateway(_WRITE_PORT, _READ_PORT),
         ],
         egress=[cilium.dns_egress()],
     )
@@ -306,7 +297,7 @@ def chart(app: App) -> Chart:
         target_port=_READ_PORT,
         description=(
             "Bearer-gated read-only ActivityWatch endpoint (bearer-proxy sidecar, 5603), fronted by the public "
-            "read HTTPRoute for the Haku agent via the iron egress proxy."
+            "read HTTPRoute for the Haku agent."
         ),
     )
     # Public write route for desktop importers. The read route is Authentik-gated, but
@@ -314,14 +305,12 @@ def chart(app: App) -> Chart:
     # exchange, so auth here is the write-proxy's bearer check and the route goes straight
     # to the bearer-gated write Service. See cluster/docs/activitywatch/revival-plan.md.
     _route(chart, "write-route", name="activitywatch-write", hostname="activitywatch-write.allegedly.works")
-    # Public read route for the Haku agent. Reaches the bearer-gated read Service; the
-    # Haku sandbox sends a placeholder bearer that the iron egress proxy substitutes for
-    # the real read token (cluster/k8s/agents/haku-egress-proxy/claude-iron.yaml). The
-    # bearer-proxy allows read methods only, so even a leaked read token can't write.
+    # Public read route for the Haku agent. Reaches the bearer-gated read Service, which
+    # allows read methods only, so even a leaked read token can't write.
     _route(chart, "read-route", name="activitywatch-read", hostname="activitywatch-read.allegedly.works")
     _network_policy(chart)
     return chart
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, _OUTPUT_DIR, chart)
+    write_charts(root, OUTPUT_DIR, chart)

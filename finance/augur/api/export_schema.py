@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+from decimal import Decimal
 from pathlib import Path
 
 from finance.augur.api.config import (
@@ -23,24 +24,25 @@ from finance.augur.api.config import (
     PropertySourceConfig,
 )
 from finance.augur.api.finance import FinanceSnapshot
-from finance.augur.api.local_regulation import LocalRegulation, TaxRegime
 from finance.augur.api.portfolio_source_config import FixedPortfolioSourceConfig, PortfolioSourcesConfig
 from finance.augur.api.server import create_app_from_augur_config, static_price_clients
 from finance.augur.api.wire import ActorRole, Property
-from finance.augur.model.independent import IndependentProviderConfig
+from finance.augur.model.series import LocationId
+from finance.augur.sim.ids import AgentId, JurisdictionId, PropertyId
+from finance.augur.x.models.independent import IndependentProviderConfig
 
-_SCHEMA_LOCATION_ID = "schema_location"
+_SCHEMA_LOCATION_ID = LocationId("schema_location")
 
 _SCHEMA_PROPERTY = Property(
-    id="schema_property",
+    id=PropertyId("schema_property"),
     source_catalog_id="schema",
     source_property_id="schema-property",
     location_id=_SCHEMA_LOCATION_ID,
     address="Schema Property",
     neighborhood="Schema",
     type="Fixture",
-    price=900_000,
-    rent_estimate=4_200,
+    price=Decimal(900_000),
+    rent_estimate=Decimal(4_200),
     beds=3,
     baths=2,
     sqft=1_400,
@@ -56,13 +58,8 @@ def _schema_export_config(properties_path: Path, calibration_catalog_path: Path)
     provider (no artifacts), and the calibration catalog points at an empty `MarketCatalog`.
     None of this data shapes the OpenAPI document — only the routes do."""
 
-    regulation = LocalRegulation(
-        property_tax_regime=TaxRegime.CALIFORNIA_PROP13,
-        default_tax_regimes=(TaxRegime.CALIFORNIA_PROP13,),
-        property_tax_annual_pct=1.0,
-    )
     return Config(
-        agents=(AgentDefinition(actor_id="schema", label="Schema", role=ActorRole.PRIMARY_OWNER),),
+        agents=(AgentDefinition(actor_id=AgentId("schema"), label="Schema", role=ActorRole.PRIMARY_OWNER),),
         property_source=PropertySourceConfig(properties_path=properties_path),
         portfolio_sources=PortfolioSourcesConfig(
             fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-01-01"))
@@ -74,7 +71,7 @@ def _schema_export_config(properties_path: Path, calibration_catalog_path: Path)
                 label="Schema",
                 city="Schema",
                 state="Schema",
-                local_regulation=regulation,
+                situs=JurisdictionId("san_francisco"),
             ),
         ),
         models={"schema": IndependentProviderConfig()},

@@ -29,27 +29,6 @@ function jsonResponse(body: unknown): Response {
 
 const scene = (window as unknown as { __SCENE__?: string }).__SCENE__;
 
-const mcpServers =
-  scene === "settings-oauth-success"
-    ? SAMPLE_MCP_SERVERS.map((server) =>
-        server.server_id === "grocy-sf"
-          ? {
-              ...server,
-              connection: {
-                server_id: "grocy-sf",
-                username: "agentydragon",
-                state: {
-                  status: "connected" as const,
-                  connected_at: "2026-07-20T20:00:00Z",
-                  token_expires_at: "2026-08-20T20:00:00Z",
-                  scope: "read write",
-                },
-              },
-            }
-          : server
-      )
-    : SAMPLE_MCP_SERVERS;
-
 async function respond(input: RequestInfo | URL, init: RequestInit | undefined, url: string): Promise<Response | null> {
   if (url.includes("/api/grants")) return jsonResponse(SAMPLE_GRANTS);
   if (url.includes("/api/agent-enrollment/agents/") && init?.method === "PUT") {
@@ -152,17 +131,8 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
   const mcpResponse = await mockOperatorMcpFetch(input, init, url, {
     ...GOOGLE_CALENDAR_MCP_FIXTURES,
     ...GROCY_MCP_FIXTURES,
-    list_mcp_servers: () => ({ servers: mcpServers }),
-    get_mcp_server_status: (args) => {
-      const serverId = String(args.server_id);
-      if (scene === "settings-oauth-success" && serverId === "grocy-sf") {
-        return {
-          connection: mcpServers.find((server) => server.server_id === serverId)!,
-          server: { server_id: serverId, title: serverId, state: { status: "alive" as const, tools: [] } },
-        };
-      }
-      return SAMPLE_MCP_PROBES[serverId];
-    },
+    list_mcp_servers: () => ({ servers: SAMPLE_MCP_SERVERS }),
+    get_mcp_server_status: (args) => SAMPLE_MCP_PROBES[String(args.server_id)],
   });
   if (mcpResponse !== null) return mcpResponse;
   if (url.includes("/api/tool-calls")) {

@@ -77,10 +77,10 @@ struct AdmissionViolation {
 }
 
 /// Scan `module` for admission violations and `bail!` on any that the
-/// spec does not override. Overridden violations print a one-line
-/// notice; configured overrides that suppress nothing print a
-/// redundant-override warning (mirroring the redundant-purity-hint
-/// diagnostics).
+/// spec does not override. Overridden violations print one notice line
+/// per check and description, naming every statement it suppressed;
+/// configured overrides that suppress nothing print a redundant-override
+/// warning (mirroring the redundant-purity-hint diagnostics).
 pub fn enforce_chunk_admission(
     chunk_id: &str,
     module: &Module,
@@ -91,14 +91,34 @@ pub fn enforce_chunk_admission(
     let (suppressed, fatal): (Vec<_>, Vec<_>) = violations
         .into_iter()
         .partition(|violation| overrides.contains(violation.check));
+    let mut notices: Vec<(AdmissionCheck, &str, Vec<usize>)> = Vec::new();
     for violation in &suppressed {
+        match notices.iter_mut().find(|(check, description, _)| {
+            *check == violation.check && *description == violation.description
+        }) {
+            Some((_, _, ordinals)) => ordinals.push(violation.ordinal),
+            None => notices.push((
+                violation.check,
+                violation.description.as_str(),
+                vec![violation.ordinal],
+            )),
+        }
+    }
+    for (check, description, ordinals) in &notices {
+        let noun = if ordinals.len() == 1 {
+            "statement"
+        } else {
+            "statements"
+        };
+        let statements = ordinals
+            .iter()
+            .map(|ordinal| format!("#{ordinal}"))
+            .collect::<Vec<_>>()
+            .join(", ");
         eprintln!(
             "notice: chunk {chunk_id}: admission check {check} overridden by spec \
-             (chunk_analysis_options.{chunk_id}.admission_overrides): statement \
-             #{ordinal}: {description}",
-            check = violation.check,
-            ordinal = violation.ordinal,
-            description = violation.description,
+             (chunk_analysis_options.{chunk_id}.admission_overrides): {noun} \
+             {statements}: {description}",
         );
     }
     for check in overrides.iter() {

@@ -218,10 +218,12 @@ async def test_a_replica_that_loses_one_index_lock_leaves_that_index_alone(
 
 def test_git_index_credentials_are_explicit_and_paired() -> None:
     with pytest.raises(ValueError, match="password"):
-        GitRecallIndexDefinition(
-            index_id="private-notes",
-            repo_url="https://example.invalid/private-notes.git",
-            credentials={"username": "private-notes"},
+        GitRecallIndexDefinition.model_validate(
+            {
+                "index_id": "private-notes",
+                "repo_url": "https://example.invalid/private-notes.git",
+                "credentials": {"username": "private-notes"},
+            }
         )
 
 

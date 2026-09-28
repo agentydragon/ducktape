@@ -1,13 +1,8 @@
-"""Short-lived reuse of reflected upstream MCP tool catalogs.
+"""Short-lived reuse of reflected MCP tool catalogs.
 
-Every `tools/list` against the console fans out to each configured server and reflects it live,
-and each reflection is a fresh MCP connect: transport, `initialize`, `tools/list`, teardown. The
-fan-out runs concurrently, so the cost of a listing is its slowest upstream, and `stateless_http=
-True` means the whole thing is paid again on every request.
-
-Two wins, the second larger in practice: a TTL lets a burst of listings reuse one reflection, and
-single-flight collapses *concurrent* listings of the same server into a single upstream call — an
-MCP client opening several connections during one handshake is the normal case.
+Each reflection builds the server and runs a fresh in-memory MCP session: `initialize`,
+`tools/list`, teardown. A TTL lets a burst of reflections reuse one result, and single-flight
+collapses *concurrent* reflections of the same server into a single session.
 
 **Only successful reflections are stored.** A failure propagates to the caller, which turns it
 into a `DegradedReflection` -- so a server that has recovered is retried on the very next
@@ -28,19 +23,14 @@ from mcp import types as mcp_types
 class ReflectionCacheKey:
     """Everything a cached catalog is valid for.
 
-    `credential_fingerprint` is what keeps discovery fail-closed. Reflection is deliberately
-    request-local so a client cannot call a tool after its Operator disconnects that server
-    (see `OperatorToolProvider`), and a cache keyed only by server id would reintroduce exactly
-    that hole. Because credentials are resolved *before* the cache is consulted, a disconnected
-    Operator never reaches a cached entry at all, and a rotated or refreshed credential lands on
-    a different key instead of reusing the previous holder's catalog.
+    Reflection builds the server without a credential, so a catalog is shared by every Operator.
+    Discovery still fails closed: an Operator's missing account is resolved *before* the cache is
+    consulted (`metadata_for_operator`), so a disconnected Operator never reaches a cached entry.
     """
 
     server_id: str
-    # Covers URL, backend kind, and auth shape, so an edited config invalidates on reload.
+    # Covers the backend kind and credential shape, so an edited config invalidates on reload.
     config_fingerprint: str
-    # A digest, never the credential itself.
-    credential_fingerprint: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,11 +81,7 @@ class ReflectionCache:
         self._in_flight: dict[ReflectionCacheKey, asyncio.Task[ReflectedCatalog]] = {}
 
     async def reflect(
-        self,
-        key: ReflectionCacheKey,
-        load: Callable[[], Awaitable[ReflectedCatalog]],
-        *,
-        ttl_seconds: float | None = None,
+        self, key: ReflectionCacheKey, load: Callable[[], Awaitable[ReflectedCatalog]]
     ) -> ReflectedCatalog:
         """Return a fresh cached catalog, join an in-flight reflection, or start one."""
         cached = self._catalogs.get(key)
@@ -103,28 +89,25 @@ class ReflectionCache:
             return _detached(cached.catalog)
         task = self._in_flight.get(key)
         if task is None:
-            task = asyncio.create_task(self._load(key, load, ttl_seconds=ttl_seconds))
+            task = asyncio.create_task(self._load(key, load))
             self._in_flight[key] = task
         # Shielded so one caller giving up (client disconnect, an outer timeout) does not cancel
         # the reflection every other caller is waiting on.
         catalog = await asyncio.shield(task)
         return _detached(catalog)
 
-    async def _load(
-        self, key: ReflectionCacheKey, load: Callable[[], Awaitable[ReflectedCatalog]], *, ttl_seconds: float | None
-    ) -> ReflectedCatalog:
+    async def _load(self, key: ReflectionCacheKey, load: Callable[[], Awaitable[ReflectedCatalog]]) -> ReflectedCatalog:
         try:
             catalog = await load()
             self._prune()
-            cache_ttl = self._ttl_seconds if ttl_seconds is None else ttl_seconds
-            self._catalogs[key] = _CachedCatalog(catalog=catalog, expires_at=time.monotonic() + cache_ttl)
+            self._catalogs[key] = _CachedCatalog(catalog=catalog, expires_at=time.monotonic() + self._ttl_seconds)
             return catalog
         finally:
             # Also on failure: a raise must not wedge the key into permanent single-flight.
             self._in_flight.pop(key, None)
 
     def _prune(self) -> None:
-        """Drop expired entries so rotated credentials and removed servers don't accumulate keys."""
+        """Drop expired entries so edited server configurations don't accumulate keys."""
         now = time.monotonic()
         for key in [key for key, entry in self._catalogs.items() if entry.expires_at <= now]:
             del self._catalogs[key]

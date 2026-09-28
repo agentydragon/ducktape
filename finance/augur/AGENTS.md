@@ -11,9 +11,30 @@ execution or market-bundle adapters. When extending API responses, project the p
 input and the canonical frames directly, as <product/projection.py> does, instead of
 adding parallel read-model tables over the captured long-form polars frames.
 
+## Conventions
+
+- **One way to declare a world:** `declare_*`, `hold_lot`, `hold_bond` and `track` on a
+  `World`, taking keyword arguments rather than argument-bundle records, driven by
+  `start()`/`step()` or `ActionSession` (README § Using Augur). Do not add a second
+  declaration path beside it.
+- **Exogenous paths come first and flow one way.** Exogenous models sample market paths;
+  a `World` of simulated actors is built on them. Nothing in `sim/` feeds back into a
+  sampler.
+- **No scenario objects.** No configuration value or enum that tries to represent every use
+  case; callers compose worlds in code.
+- **No layer without a caller that needs it now.**
+- **Strategies stay with their caller.** A rule specific to one study (Guyton–Klinger, a
+  glide, a spending ladder) lives in that study under `study/` or `x/`; core does not grow
+  options to configure it.
+- **A model identifies itself with a `model_id` string, and results display that string.**
+- **Core never depends on `study/` or `x/`:** add no visibility exception for it. A model
+  moves from `x/models/` into core only on evidence that it is good enough.
+- **Money conversions are exact or raise.** Never convert through floats or ad-hoc rounding
+  (`round(x * 100)`); use the helpers README § Using Augur names.
+
 ## numpy vs jnp
 
-JAX is the sampler, not the simulator: `model/` and `fit/` trace and jit;
+JAX is the sampler, not the simulator: `model/`, `fit/` and `x/models/` trace and jit;
 `sim/` runs ordinary Python financial steps. Inside the traced
 packages numpy still belongs, but only in specific places, and the
 line is not "whichever imports first":
@@ -64,12 +85,11 @@ message, a chat reply — carries enough to reproduce it:
   separable at achievable sample sizes, so a bare ordering of cells is usually reading
   noise.
 
-`TargetAllocationPolicy.allow_purchases` is an explicit policy choice. With `False`, surplus
-cash accumulates instead of being invested; reports must state this sales-only behavior.
-
-`rebalancing` on the same model used to be the worse instance of this, defaulting to "never
-rebalance on drift"; it is now a required `CashflowOnly | DriftBand`, so every run says which
-it was. Results published before that change did not, and ran as `CashflowOnly`.
+`CashBandHousehold`'s `reinvest` (<policy/cash_band_household.py>) is an explicit policy
+choice. With `None`, surplus cash accumulates instead of being invested; reports must state
+this sales-only behavior. Its `rebalance_tolerance_ppb` says whether drift alone trades.
+Results published before the rebalancing choice was required did not say, and ran
+cash-flow-only.
 
 **"Probability of X" is never the whole label.** Write "probability of X under
 {sampler, window, policy}", or point at the config that pins all three. Where a figure is

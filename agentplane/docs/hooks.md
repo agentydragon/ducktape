@@ -46,6 +46,10 @@ harness behavior, not a runner capability.
   `hook_started`/`hook_progress`/`hook_response` frames appeared under `--include-hook-events`:
   those report command hooks, not SDK callbacks. Every callback carries a top-level
   `tool_use_id`, an id per firing even for events without a tool.
+- **`SessionStart` fires on compaction** (measured 2.1.233), with `source: "compact"`: for an
+  `initialize` registration that is its only firing, mid-session, just after the context was
+  discarded. `PreCompact` precedes it
+  ([compaction on the wire](claude_runtime_contracts.md#compaction-on-the-wire-measured-21233-re-verify-on-21252)).
 - **Deny, observed.** `permissionDecision: deny` with a reason: no `can_use_tool` followed, the
   model received a `tool_result` with `is_error: true` whose content is the reason verbatim,
   the turn continued, and the assistant reported the reason. Allow: no `can_use_tool` either,

@@ -1,15 +1,13 @@
 """User-friendly portfolio schema for Augur runtime configuration.
 
-This is intentionally not the simulator's executable scenario schema. The
-deployment YAML should read like a portfolio statement: accounts contain
-positions, and positions contain actual tax lots. The API/runtime layer expands
-this shape into lower-level sim objects at the runtime boundary.
+The deployment YAML should read like a portfolio statement: accounts contain
+positions, and positions contain actual tax lots. `product/holdings.py` turns
+this shape into the exact facts a world declares.
 """
 
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
@@ -30,7 +28,9 @@ from pydantic import (
 from finance.augur.api.schemas import NonNegativeCurrencyAmount, PositiveCurrencyAmount
 from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
-from finance.augur.sim.scenario import BondHolding, DistributionTaxSlice, InitialLot, SecurityDistribution
+from finance.augur.sim.ids import AccountId, AgentId, BondId, LotId, PortfolioId
+from finance.augur.sim.income import InterestCharacter
+from finance.augur.sim.tlh import TlhAssumptions
 
 _ID_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
 
@@ -60,14 +60,14 @@ class HoldingKind(StrEnum):
 
 
 class PortfolioAccountConfig(PortfolioConfigModel):
-    account_id: str = Field(pattern=_ID_PATTERN)
-    owner_agent_id: str = Field(pattern=_ID_PATTERN)
+    account_id: AccountId = Field(pattern=_ID_PATTERN)
+    owner_agent_id: AgentId = Field(pattern=_ID_PATTERN)
     account_type: PortfolioAccountType = PortfolioAccountType.TAXABLE_BROKERAGE
     label: str | None = None
 
 
 class HoldingTaxLotConfig(PortfolioConfigModel):
-    lot_id: str = Field(pattern=_ID_PATTERN)
+    lot_id: LotId = Field(pattern=_ID_PATTERN)
     holding_period_months_at_start: NonNegativeInt
     quantity: PositiveFloat
     cost_basis: NonNegativeCurrencyAmount
@@ -86,7 +86,7 @@ class HoldingAssetKind(StrEnum):
 
 class _HoldingPositionBase(PortfolioConfigModel):
     position_id: str = Field(pattern=_ID_PATTERN)
-    account_id: str = Field(pattern=_ID_PATTERN)
+    account_id: AccountId = Field(pattern=_ID_PATTERN)
     label: str | None = None
     unit_value: PositiveCurrencyAmount
     lots: tuple[HoldingTaxLotConfig, ...] = Field(min_length=1)
@@ -172,23 +172,21 @@ class BondHoldingConfig(PortfolioConfigModel):
     so a portfolio never mixes calendar dates with sim-relative indexes.
     """
 
-    bond_id: str = Field(pattern=_ID_PATTERN)
-    account_id: str = Field(pattern=_ID_PATTERN)
+    bond_id: BondId = Field(pattern=_ID_PATTERN)
+    account_id: AccountId = Field(pattern=_ID_PATTERN)
     label: str | None = None
-    issuer_jurisdiction_id: str | None = Field(
-        default=None,
+    character: InterestCharacter = Field(
         description=(
-            "The taxing authority that issued the debt — `federal_us` for a Treasury, "
-            "`california` for a CA muni, `None` for a corporate issuer. Whether the holder "
-            "owes tax on the coupon is a relation between this issuer and the holder's own "
-            "jurisdictions, never a property of the bond: in-state is holder-relative."
-        ),
+            "The coupon's tax character. Whether the holder owes tax on it is each of the "
+            "holder's jurisdictions' rule for that character, never a property of the bond: "
+            "in-state is holder-relative."
+        )
     )
     face_value: PositiveCurrencyAmount
-    # Carried even though the sim requires it to equal face today. The sim rejects a non-par
-    # purchase explicitly so a real holding bought at 98.5 raises rather than being silently
-    # treated as par — and this is where a user writes 98.5, so dropping the field would
-    # defeat exactly the loud failure that validator exists to produce.
+    # Carried even though the sim requires it to equal face today. Preparing the bond rejects a
+    # non-par purchase explicitly so a real holding bought at 98.5 raises rather than being
+    # silently treated as par — and this is where a user writes 98.5, so dropping the field
+    # would defeat exactly the loud failure that check exists to produce.
     purchase_price: PositiveCurrencyAmount
     annual_coupon_rate: NonNegativeFloat
     coupon_period_months: PositiveInt = 6
@@ -283,97 +281,45 @@ class PortfolioConfig(PortfolioConfigModel):
             level_series_anchors=level_series_anchors, private_equity_anchors=private_equity_anchors
         )
 
-    def to_initial_lots(self) -> tuple[InitialLot, ...]:
-        account_by_id = {account.account_id: account for account in self.accounts}
-        return tuple(
-            InitialLot(
-                lot_id=lot.lot_id,
-                agent_id=account_by_id[position.account_id].owner_agent_id,
-                account_id=position.account_id,
-                asset=position.asset,
-                purchase_month_index=-int(lot.holding_period_months_at_start),
-                quantity=float(lot.quantity),
-                cost_basis=lot.cost_basis,
-            )
-            for position in self.holdings
-            for lot in position.lots
-        )
 
-    def to_security_distributions(
-        self,
-        *,
-        tax_character_by_symbol: Mapping[SecuritySymbol, tuple[DistributionTaxSlice, ...]],
-        payout_account_id: str,
-    ) -> tuple[SecurityDistribution, ...]:
-        """One payout spec per held pool of a declared distributing security.
+class TlhCohort(BaseModel):
+    """One tax lot of a direct-indexing statement: what it is worth, its basis and when it was bought."""
 
-        A pool is (owner, custody account, asset): units in two accounts pay into the same
-        cash account but are two pools, because the units they pay on are separate. Two
-        positions in the same fund in the same account are ONE pool, so the pools are deduped
-        here — emitting both would pay the whole holding twice.
+    model_config = ConfigDict(extra="forbid")
 
-        `payout_account_id` is required for the same reason `to_initial_bonds` requires a
-        coupon account: portfolio accounts are CUSTODY accounts and carry no cash row, so a
-        distribution paid into one would have nowhere to go.
+    value: NonNegativeCurrencyAmount = Field(description="Market value at the opening mark, month zero's price.")
+    cost_basis: NonNegativeCurrencyAmount = Field(
+        description="Remaining adjusted basis, already net of harvesting before the scenario opens."
+    )
+    purchase_month_index: int
 
-        A declared security nobody holds contributes nothing, which is what makes the
-        deployment's list a catalog rather than a per-portfolio duplicate.
-        """
 
-        account_by_id = {account.account_id: account for account in self.accounts}
-        pools: dict[tuple[str, str, SecuritySymbol], SecurityDistribution] = {}
-        for position in self.holdings:
-            if not isinstance(position, SecurityHoldingConfig):
-                continue
-            tax_character = tax_character_by_symbol.get(position.symbol)
-            if tax_character is None:
-                continue
-            agent_id = account_by_id[position.account_id].owner_agent_id
-            pools.setdefault(
-                (agent_id, position.account_id, position.symbol),
-                SecurityDistribution(
-                    asset=position.asset,
-                    agent_id=agent_id,
-                    holding_account_id=position.account_id,
-                    to_account_id=payout_account_id,
-                    tax_character=tax_character,
-                ),
-            )
-        return tuple(pools.values())
+class TlhPortfolioSpec(BaseModel):
+    """A separately owned reduced-form portfolio, not an ordinary holding plus a policy.
 
-    def to_initial_bonds(self, *, coupon_account_id: str) -> tuple[BondHolding, ...]:
-        """The bond mirror of `to_initial_lots`, with the same two conversions plus a routing.
+    `asset` is the public index the portfolio tracks; its price series carries the cohorts' value.
+    """
 
-        The owner comes through the CUSTODY account, not the bond — the account is the
-        owner-bearing object. Both months are relative to month 0: a bond bought 24 months ago
-        and maturing in 96 lands at `purchase_month_index=-24`, `maturity_month_index=96`.
+    model_config = ConfigDict(extra="forbid")
 
-        `coupon_account_id` is required and has no default because a bond's config account is
-        where it is HELD, and the sim's is where its coupons LAND — two different things that
-        are the same string only by coincidence. Portfolio accounts are custody accounts
-        (`taxable_brokerage`); they carry no cash row, so a coupon paid into one would have
-        nowhere to go. The caller knows its own cash topology, so it names the destination.
-        This mirrors sale proceeds, which already land in the funding account rather than in
-        the account whose lots were sold.
-        """
+    portfolio_id: PortfolioId = Field(min_length=1)
+    owner_agent_id: AgentId
+    account_id: AccountId
+    asset: SecurityKey
+    initial_cohorts: list[TlhCohort]
+    assumptions: TlhAssumptions
 
-        account_by_id = {account.account_id: account for account in self.accounts}
-        return tuple(
-            BondHolding(
-                bond_id=bond.bond_id,
-                agent_id=account_by_id[bond.account_id].owner_agent_id,
-                account_id=coupon_account_id,
-                issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
-                face_value=bond.face_value,
-                purchase_price=bond.purchase_price,
-                annual_coupon_rate=bond.annual_coupon_rate,
-                coupon_period_months=bond.coupon_period_months,
-                inflation_indexed=bond.inflation_indexed,
-                purchase_month_index=-int(bond.holding_period_months_at_start),
-                maturity_month_index=int(bond.months_to_maturity_at_start),
-            )
-            for bond in self.bonds
-        )
+
+@dataclass(frozen=True)
+class LabeledTlhPortfolio:
+    """A managed TLH portfolio and the name the product shows it under.
+
+    Not a `PortfolioConfig` holding: the portfolio is money-denominated and owns its cohorts,
+    so it has no unit price or lots, and nothing may also hold its (owner, account, asset) pool.
+    """
+
+    spec: TlhPortfolioSpec
+    label: str
 
 
 @dataclass(frozen=True)

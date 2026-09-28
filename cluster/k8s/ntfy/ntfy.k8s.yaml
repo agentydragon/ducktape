@@ -40,14 +40,6 @@ metadata:
   namespace: ntfy
 spec:
   affinity:
-    enablePodAntiAffinity: true
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - preference:
-            matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-          weight: 100
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
     podAntiAffinityType: required
@@ -143,7 +135,6 @@ kind: Deployment
 metadata:
   annotations:
     description: Single ntfy server backed by the two-instance ntfy PostgreSQL cluster.
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: ntfy
   name: ntfy
@@ -300,7 +291,6 @@ kind: ServiceMonitor
 metadata:
   labels:
     app.kubernetes.io/name: ntfy
-    release: kube-prometheus-stack
   name: ntfy
   namespace: ntfy
 spec:

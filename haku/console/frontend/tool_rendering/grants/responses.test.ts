@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { renderResultPreview } from "../result_entry";
 import { grantsResultPreviews } from "./responses";
 
-const ENVELOPE = {
+const KUBERNETES_VIEW = {
   grant_id: "20000000-0000-4000-8000-000000000002",
   owner_agent_id: "10000000-0000-4000-8000-000000000001",
   principal: { kind: "agent" as const, agent_id: "10000000-0000-4000-8000-000000000001" },
@@ -13,46 +13,20 @@ const ENVELOPE = {
   expires_at: "2026-08-23T11:00:00Z",
   ended_at: "2026-08-23T10:15:00Z",
   end_reason: "probe complete",
-};
-
-const KUBERNETES_VIEW = {
-  domain: "kubernetes" as const,
-  grant: {
-    ...ENVELOPE,
-    scope: { kind: "namespaces" as const, namespaces: ["haku-sandbox"] },
-    rules: [{ api_groups: [""], resources: ["pods"], verbs: ["get", "list"] }],
-  },
-};
-
-const HTTP_VIEW = {
-  domain: "http" as const,
-  grant: {
-    ...ENVELOPE,
-    spec: {
-      origin: { scheme: "https" as const, host: "api.github.com", port: 443 },
-      coverage: { methods: ["GET"], path_regex: null },
-      credential_handle: null,
-    },
-  },
+  scope: { kind: "namespaces" as const, namespaces: ["haku-sandbox"] },
+  rules: [{ api_groups: [""], resources: ["pods"], verbs: ["get", "list"] }],
 };
 
 const ACCESS_PROFILE_VIEW = {
-  domain: "kubernetes" as const,
-  grant: {
-    ...KUBERNETES_VIEW.grant,
-    principal: { kind: "access_profile" as const, access_profile_id: "public-coder" },
-  },
+  ...KUBERNETES_VIEW,
+  principal: { kind: "access_profile" as const, access_profile_id: "public-coder" },
 };
 
 describe("grantsResultPreviews", () => {
-  it("renders kubernetes and http domain results in both variants", () => {
+  it("renders grant results in both variants", () => {
     for (const variant of ["compact", "detailed"] as const) {
       expect(
-        renderResultPreview(
-          grantsResultPreviews.create_grant,
-          [KUBERNETES_VIEW, HTTP_VIEW, ACCESS_PROFILE_VIEW],
-          variant
-        )
+        renderResultPreview(grantsResultPreviews.create_grant, [KUBERNETES_VIEW, ACCESS_PROFILE_VIEW], variant)
       ).not.toBeNull();
       expect(renderResultPreview(grantsResultPreviews.revoke_grants, [KUBERNETES_VIEW], variant)).not.toBeNull();
     }

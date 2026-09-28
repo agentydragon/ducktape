@@ -17,9 +17,9 @@ from agentplane.app.agent_runtime.events import event_log, ingestion_lease
 from agentplane.app.agent_runtime.events.event_log import EventLogStore, EventReplicationError, FeedError
 from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
 from agentplane.app.agent_runtime.runner.runners import Runners, SandboxNotReachableError
-from agentplane.app.agent_runtime.updates import notify
 from agentplane.app.agent_runtime.view import fold
 from agentplane.app.agent_runtime.view.recording import ThreadFoldError, record_thread_fold, set_operational
+from agentplane.app.database_updates import Channel, notify
 from agentplane.app.inventory import SandboxNotFoundError
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
@@ -108,14 +108,14 @@ class Ingestion:
             # The maximum stored cursor is the checkpoint: the fenced transaction admits
             # only a contiguous suffix, so there is no separately mutable progress counter.
             await event_log.advance_feed(session, thread_id, inserted)
-            await notify(session)
+            await notify(session, Channel.THREADS)
 
     async def set_attached(self, thread_id: UUID, attached: protocol_pb2.Attached, *, lease: IngestionLease) -> None:
         async with self._sessions.begin() as session:
             await ingestion_lease.fence(session, lease, thread_id)
             await event_log.set_attached(session, thread_id, attached)
             await set_operational(session, thread_id, status="active", error=None)
-            await notify(session)
+            await notify(session, Channel.THREADS)
 
     async def end_feed(
         self, thread_id: UUID, *, lease: IngestionLease, error: str | None, error_cursor: int | None = None
@@ -131,7 +131,7 @@ class Ingestion:
                 error_cursor=error_cursor,
             )
             await session.flush()
-            await notify(session)
+            await notify(session, Channel.THREADS)
 
 
 class Feed:
@@ -156,8 +156,7 @@ class Feed:
     async def run(self) -> None:
         attachment: Attachment | None = None
         try:
-            async with asyncio.timeout(10):
-                attachment = await self.client.attach(self.session_id)
+            attachment = await self.client.attach(self.session_id)
             attached = attachment.attached
             thread_id = await self.event_logs.open(self.lease.sandbox, self.session_id, attached.spec)
             stored = await self.event_logs.last_cursor(thread_id)
@@ -172,10 +171,9 @@ class Feed:
                 return
             if stored:
                 attachment.cancel()
-                async with asyncio.timeout(10):
-                    # Replay the boundary entry too: the same cursor must still identify the
-                    # exact archived Event and source even if the runner has no new entries.
-                    attachment = await self.client.attach(self.session_id, after_cursor=stored - 1)
+                # Replay the boundary entry too: the same cursor must still identify the
+                # exact archived Event and source even if the runner has no new entries.
+                attachment = await self.client.attach(self.session_id, after_cursor=stored - 1)
             await self.ingestion.set_attached(thread_id, attachment.attached, lease=self.lease)
             try:
                 async with contextlib.aclosing(event_batches(attachment.next_entry)) as batches:

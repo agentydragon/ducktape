@@ -10,15 +10,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitRepositorySpec, GitRepositorySpecRef
+from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef
 
 from cluster.cdk8s.flux import NAMESPACE
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.haku import console_config
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
-OUTPUT_DIR = "cluster/k8s/flux/ducktape-flux"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux/ducktape-flux"
+SOURCE_NAME = "ducktape"
+# This repository and the branch Flux deploys, for every GitRepository that checks it out.
+REPOSITORY_URL = "https://github.com/agentydragon/ducktape.git"
+BRANCH = "devel"
+TF_GITOPS_ROOT = "tf/gitops"  # tofu-controller Terraform modules (terraform.py)
 _READER = "ducktape-flux-reader"
 
 
@@ -41,21 +48,20 @@ def chart(app: App) -> Chart:
     GitRepository(
         chart,
         "source",
-        metadata=metadata("ducktape", NAMESPACE),
-        spec=GitRepositorySpec(
-            interval="1m",
-            ref=GitRepositorySpecRef(branch="devel"),
-            sparse_checkout=[
-                "cluster/k8s/",
-                "cluster/charts/browsertrix/",
-                "haku/x/dispatch/deploy/",
-                "haku/runtime/managed_agent/self_hosted/deploy/",
-                "loom/wayback/deploy/",
-                "props/deploy/",
-                "tf/gitops/",
-            ],
-            url="https://github.com/agentydragon/ducktape.git",
-        ),
+        metadata=ApiObjectMetadata(name=SOURCE_NAME, namespace=NAMESPACE),
+        interval="1m",
+        ref=GitRepositorySpecRef(branch=BRANCH),
+        sparse_checkout=[
+            f"{HAND_WRITTEN_ROOT}/",
+            f"{GENERATED_ROOT}/",
+            "cluster/charts/browsertrix/",
+            "haku/x/dispatch/deploy/",
+            "haku/runtime/managed_agent/self_hosted/deploy/",
+            "loom/wayback/deploy/",
+            "props/deploy/",
+            f"{TF_GITOPS_ROOT}/",
+        ],
+        url=REPOSITORY_URL,
     )
     # Only the two public control-plane CRDs in this namespace. In particular no access to
     # the controller-only SOPS key Secret, ConfigMaps, Pods, logs, exec, or writes.
@@ -81,7 +87,7 @@ def chart(app: App) -> Chart:
         "public-coder-agent-ducktape-flux-reader",
         description="Binds the public-coder access profile to public Ducktape Flux diagnostics.",
         subjects=[
-            k8s.Subject(kind="Group", name="haku:access-profile:public-coder", api_group="rbac.authorization.k8s.io")
+            k8s.Subject(kind="Group", name=console_config.PUBLIC_CODER_GROUP, api_group="rbac.authorization.k8s.io")
         ],
     )
     _reader_binding(

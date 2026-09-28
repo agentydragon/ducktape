@@ -18,8 +18,9 @@ from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
-BASE_DIR = "cluster/k8s/grocy/user-perms-base"
+BASE_DIR = f"{HAND_WRITTEN_ROOT}/grocy/user-perms-base"
 _NAME = "grocy-user-perms-provisioner"
 # Shared by the Job's and the CronJob's pods: the NetworkPolicy admits them to grocy:80.
 _LABELS = {"app.kubernetes.io/name": _NAME}

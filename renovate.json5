@@ -18,8 +18,9 @@
   },
   // The flux manager defaults to bootstrap's gotk-components.yaml only. Scan
   // the hand-written manifests under cluster/k8s for HelmRelease/HelmRepository
-  // pins and image references in Helm values; generated `*.k8s.yaml` files are
-  // in ignorePaths and their pins live in the cdk8s custom manager below.
+  // pins and image references in Helm values; generated `*.k8s.yaml` files and
+  // cluster/generated are in ignorePaths and their pins live in the cdk8s
+  // custom manager below.
   flux: {
     managerFilePatterns: ["/^cluster\\/k8s\\/.+\\.ya?ml$/"],
   },
@@ -31,8 +32,9 @@
   },
   customManagers: [
     {
-      // Versions the cdk8s generators render into cluster/k8s/**/*.k8s.yaml,
-      // each behind a `# renovate:` comment (format: cluster/cdk8s/AGENTS.md).
+      // Versions the cdk8s generators render into cluster/k8s/**/*.k8s.yaml and
+      // cluster/generated, each behind a `# renovate:` comment (format:
+      // cluster/cdk8s/AGENTS.md).
       // The first form names the dependency and the next line's last string
       // literal is the version; the bare `datasource=docker` form reads a whole
       // image reference. Either may sit on the line after an opening `(`.
@@ -69,6 +71,7 @@
     // Rendered by //cluster/cdk8s:generate_manifests; the cdk8s custom manager
     // updates the generator source instead.
     "cluster/k8s/**/*.k8s.yaml",
+    "cluster/generated/**",
     "props/specimens/**",
     "devinfra/claude/web_env/**",
     // Generated from pyproject.toml; Renovate should update the source instead.

@@ -1,6 +1,6 @@
 # Long-lived Claude Code subscription OAuth token, rendered as the
 # haku-claude-oauth-token Secret (the kustomization patch relocates this
-# object's plaintext metadata) and consumed only by claude-iron-deployment.yaml
+# object's plaintext metadata) and consumed only by haku-openclaw-spike-proxy
 # for CLAUDE_CODE_OAUTH_TOKEN substitution.
 #
 # CLEANUP(added 2026-08-29): the encrypted object still carries its historical

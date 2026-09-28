@@ -30,14 +30,12 @@ class ReplicaProfile:
 @dataclass(frozen=True)
 class DbProps:
     instances: int
-    # Preferred pod anti-affinity across nodes; a single instance sets none of CNPG's
-    # three affinity fields at all (not just false).
-    pod_anti_affinity: bool
 
 
 @dataclass(frozen=True)
 class LlmIngressProps:
     litellm_key_secret_name: str
+    log_llm_requests: bool = False
 
 
 @dataclass(frozen=True)
@@ -64,7 +62,7 @@ class AppProps:
 
 @dataclass(frozen=True)
 class BearerMcpMount:
-    """One static-bearer MCP backend's reflected Secret, mounted at
+    """The environment's copy of one static-bearer MCP backend's bearer Secret, mounted at
     `/run/secrets/<name>/<file_name>` for an `action_groups` entry's `bearer_file` to name."""
 
     name: str

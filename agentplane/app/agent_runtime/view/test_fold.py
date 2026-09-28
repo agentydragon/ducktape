@@ -1,10 +1,11 @@
 """Behavioral coverage for the bounded thread fold."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pytest
 import pytest_bazel
 from google.protobuf import json_format
+from more_itertools import partitions
 
 from agentplane.app.agent_runtime.view.fold import (
     AppendPayload,
@@ -19,6 +20,7 @@ from agentplane.app.agent_runtime.view.fold import (
     PayloadRef,
     PriorEntities,
     ProjectionBatch,
+    ReplacePayload,
     TextCompletion,
     ToolCompletion,
     ViewState,
@@ -66,12 +68,18 @@ class Store:
     def apply(self, entries: list[event_log_pb2.EventEntry]) -> ProjectionBatch:
         batch = EventBatch(SOURCE, self.state.position.through_cursor, tuple(entries))
         keys = touched_keys(batch)
+        items = {item_id: self.items.get(item_id) for item_id in keys.item_ids}
         result = advance(
             self.state,
             batch,
             PriorEntities(
-                items={item_id: self.items.get(item_id) for item_id in keys.item_ids},
+                items=items,
                 commands={command_id: self.commands.get(command_id) for command_id in keys.command_ids},
+                bodies={
+                    reference: self.payloads[reference]
+                    for item_id, payload_field in keys.completed
+                    if (item := items[item_id]) is not None and (reference := item.payload(payload_field)) is not None
+                },
             ),
         )
         for write in result.payload_writes:
@@ -239,6 +247,65 @@ def test_authoritative_empty_replacement_is_present_and_new_generation() -> None
     assert completed.generation != streamed.generation
 
 
+def streaming(cursor: int, payload_field: PayloadField, text: str) -> event_log_pb2.EventEntry:
+    match payload_field:
+        case PayloadField.TEXT:
+            return entry(cursor, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text=text)))
+        case PayloadField.ARGUMENTS:
+            delta = event_pb2.ToolArgumentsDelta(item_id="item", partial_json=text)
+            return entry(cursor, event_pb2.Event(tool_arguments_delta=delta))
+        case PayloadField.OUTPUT:
+            return entry(
+                cursor, event_pb2.Event(tool_output_delta=event_pb2.ToolOutputDelta(item_id="item", text=text))
+            )
+    raise ValueError(payload_field)
+
+
+def authoritative(cursor: int, payload_field: PayloadField, text: str) -> event_log_pb2.EventEntry:
+    match payload_field:
+        case PayloadField.TEXT:
+            return entry(cursor, event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id="item", text=text)))
+        case PayloadField.ARGUMENTS:
+            arguments = event_pb2.ToolArguments(item_id="item", arguments_json=text)
+            return entry(cursor, event_pb2.Event(tool_arguments=arguments))
+        case PayloadField.OUTPUT:
+            result = event_pb2.ToolResult(output=text, succeeded=True)
+            return entry(cursor, event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id="item", tool=result)))
+    raise ValueError(payload_field)
+
+
+@pytest.mark.parametrize("payload_field", [PayloadField.TEXT, PayloadField.ARGUMENTS, PayloadField.OUTPUT])
+@pytest.mark.parametrize(
+    ("deltas", "final", "kept"),
+    [(["hel", "lo"], "hello", True), (["hel", "lo"], "Hello", False), ([], "hello", False)],
+    ids=["as-streamed", "rewritten", "not-streamed"],
+)
+def test_an_authoritative_value_keeps_the_body_only_when_it_is_what_streamed(
+    payload_field: PayloadField, deltas: list[str], final: str, kept: bool
+) -> None:
+    entries = [
+        *(streaming(cursor, payload_field, text) for cursor, text in enumerate(deltas, 1)),
+        authoritative(len(deltas) + 1, payload_field, final),
+    ]
+    cursor = len(entries)
+    reference = PayloadRef(EPOCH, 1, "item", payload_field, cursor, 1 if kept else cursor)
+    # Kept: the streamed revision's generation and chunks, and no new text to store.
+    last_write = (
+        AppendPayload(replace(reference, revision_cursor=cursor - 1), reference, "")
+        if kept
+        else ReplacePayload(reference, final)
+    )
+    whole = Store()
+    whole.apply(entries)
+    assert whole.items["item"].payload(payload_field) == reference
+    assert whole.payloads[reference] == final
+    for batches in partitions(entries):
+        store = Store()
+        results = [store.apply(batch) for batch in batches]
+        assert store == whole
+        assert results[-1].payload_writes[-1] == last_write
+
+
 def test_commands_settle_coalesced_input_and_observed_model_effect(script: list[event_log_pb2.EventEntry]) -> None:
     store = replay(script, [17])
     assert store.commands["input-1"].outcome is CommandOutcome.EFFECTED
@@ -284,10 +351,15 @@ def test_failed_and_noop_evidence_stays_on_the_admitted_command() -> None:
 def test_missing_lookup_is_not_absence_and_preloaded_rows_cannot_be_from_this_batch() -> None:
     observed = entry(1, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text="x")))
     with pytest.raises(FoldContractError, match="missing prior item lookup"):
-        advance(initial(SOURCE, EPOCH), EventBatch(SOURCE, 0, (observed,)), PriorEntities({}, {}))
+        advance(initial(SOURCE, EPOCH), EventBatch(SOURCE, 0, (observed,)), PriorEntities({}, {}, {}))
     future = Item(EPOCH, "item", 1, 2)
     with pytest.raises(FoldContractError, match="invalid prior item"):
-        advance(initial(SOURCE, EPOCH), EventBatch(SOURCE, 0, (observed,)), PriorEntities({"item": future}, {}))
+        advance(initial(SOURCE, EPOCH), EventBatch(SOURCE, 0, (observed,)), PriorEntities({"item": future}, {}, {}))
+    store = Store()
+    store.apply([observed])
+    completion = authoritative(2, PayloadField.TEXT, "x")
+    with pytest.raises(FoldContractError, match="missing prior body lookup"):
+        advance(store.state, EventBatch(SOURCE, 1, (completion,)), PriorEntities({"item": store.items["item"]}, {}, {}))
 
 
 def test_rejects_wrong_field_ref_unknown_kind_and_does_not_mutate_inputs_on_failure() -> None:
@@ -299,11 +371,11 @@ def test_rejects_wrong_field_ref_unknown_kind_and_does_not_mutate_inputs_on_fail
     )
     next_entry = entry(2, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text="y")))
     with pytest.raises(FoldContractError, match="owner revision"):
-        advance(store.state, EventBatch(SOURCE, 1, (next_entry,)), PriorEntities({"item": invalid}, {}))
+        advance(store.state, EventBatch(SOURCE, 1, (next_entry,)), PriorEntities({"item": invalid}, {}, {}))
     unknown = entry(2, json_format.ParseDict({"itemStarted": {"itemId": "other", "kind": 99}}, event_pb2.Event()))
     before = unknown.SerializeToString(), store.state
     with pytest.raises(ObservationNotUnderstoodError):
-        advance(store.state, EventBatch(SOURCE, 1, (unknown,)), PriorEntities({"other": None}, {}))
+        advance(store.state, EventBatch(SOURCE, 1, (unknown,)), PriorEntities({"other": None}, {}, {}))
     assert unknown.SerializeToString() == before[0]
     assert store.state == before[1]
 

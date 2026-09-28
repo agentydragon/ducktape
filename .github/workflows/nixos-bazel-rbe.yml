@@ -3,31 +3,35 @@ name: Bazel execution contract
 on:
   pull_request:
     paths:
+      # keep-sorted start
       - ".bazelrc"
-      - "MODULE.bazel"
-      - "flake.nix"
-      - "nix/flake/packages.nix"
-      - "devinfra/bazel/**"
-      - "devinfra/nixos_bazel_test/**"
-      - "openai_utils/testing/testing.bzl"
-      - "nix/home/modules/bazel-cache.nix"
-      - "nix/nixos/modules/bazel/**"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/nixos-bazel-rbe.yml"
+      - "MODULE.bazel"
+      - "devinfra/bazel/**"
+      - "devinfra/nixos_bazel_test/**"
+      - "flake.nix"
+      - "nix/flake/packages.nix"
+      - "nix/home/modules/bazel-cache.nix"
+      - "nix/nixos/modules/bazel/**"
+      - "openai_utils/testing/testing.bzl"
+      # keep-sorted end
   push:
     branches: [devel]
     paths:
+      # keep-sorted start
       - ".bazelrc"
-      - "MODULE.bazel"
-      - "flake.nix"
-      - "nix/flake/packages.nix"
-      - "devinfra/bazel/**"
-      - "devinfra/nixos_bazel_test/**"
-      - "openai_utils/testing/testing.bzl"
-      - "nix/home/modules/bazel-cache.nix"
-      - "nix/nixos/modules/bazel/**"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/nixos-bazel-rbe.yml"
+      - "MODULE.bazel"
+      - "devinfra/bazel/**"
+      - "devinfra/nixos_bazel_test/**"
+      - "flake.nix"
+      - "nix/flake/packages.nix"
+      - "nix/home/modules/bazel-cache.nix"
+      - "nix/nixos/modules/bazel/**"
+      - "openai_utils/testing/testing.bzl"
+      # keep-sorted end
   workflow_dispatch:
 
 permissions:

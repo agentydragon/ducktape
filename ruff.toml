@@ -13,15 +13,15 @@ target-version = "py314"
 # .gitattributes is the source of truth; this list must stay in sync.
 # Reason: devinfra/format/format.py reads .gitattributes, but ruff check reads ruff.toml.
 # See README.md "Lint/Format Exclusions" section for details.
-exclude = [
+exclude = [  # keep-sorted start
+    "cluster/docs/inference/model_comparison",
+    "props/specimens/*/*/code",
     "props/testing/fixtures/testdata",
     "py_detectors/rules/**/bad/**",
     "py_detectors/rules/**/ok/**",
-    "x/sysrw/testdata",
     "tana/testdata",
-    "props/specimens/*/*/code",
-    "cluster/docs/inference/model_comparison",
-]
+    "x/sysrw/testdata",
+]  # keep-sorted end
 
 [format]
 # Ignore trailing commas when deciding whether to collapse to one line
@@ -146,7 +146,6 @@ known-first-party = [
     "ember",
     "finance",
     "git_commit_ai",
-    "github_policy",
     "gmail_api",
     "gmail_archiver",
     "gnome",

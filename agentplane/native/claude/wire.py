@@ -253,6 +253,8 @@ class ResultFrame(BaseModel):
     session_id: str
     user_message_uuid: str | None = None
     num_turns: int
+    # The turn's wall time on Claude's own clock.
+    duration_ms: int
     # Present on a failed resume, before Claude has a durable transcript to report as `result`.
     errors: list[str] = Field(default_factory=list)
 
@@ -277,14 +279,16 @@ ClaudeFrame = Annotated[
         tag_or_unknown(
             "type",
             (
+                # keep-sorted start
+                "assistant",
+                "command_lifecycle",
                 "control_request",
                 "control_response",
-                "command_lifecycle",
-                "system",
-                "stream_event",
-                "assistant",
-                "user",
                 "result",
+                "stream_event",
+                "system",
+                "user",
+                # keep-sorted end
             ),
         )
     ),

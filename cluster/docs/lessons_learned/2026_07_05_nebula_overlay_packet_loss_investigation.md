@@ -2,7 +2,7 @@
 
 **Status: explained by OVH class limits plus underlay asymmetry, not Nebula-primary.**
 Tracking issue: agentydragon/ducktape#2917.
-The live follow-up is in <../../../debug/nebula_inter_node_perf/>.
+The live follow-up is in <../../../cluster/debug/nebula_inter_node_perf/>.
 
 ## Symptom
 
@@ -24,7 +24,7 @@ the public path is already slow, lossy, and asymmetric.
 
 ## 2026-07-07 follow-up: public underlay is already near class limits
 
-The reduced evidence report is in <../../../debug/nebula_inter_node_perf/>.
+The reduced evidence report is in <../../../cluster/debug/nebula_inter_node_perf/>.
 
 The authenticated OVH API reports these live network specs:
 

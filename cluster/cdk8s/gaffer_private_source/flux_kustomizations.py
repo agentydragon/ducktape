@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
-from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import (
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    flux_kustomization_depends_on_many,
+)
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 
 def gaffer_private_source(chart: Chart, flux_image_automation_ghcr: Kustomization) -> Kustomization:
@@ -17,17 +19,38 @@ def gaffer_private_source(chart: Chart, flux_image_automation_ghcr: Kustomizatio
     return flux_kustomization(
         chart,
         name,
+        KustomizationSpecSourceRef(kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="flux-system"),
         namespace="flux-system",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="10m",
-            path="./cluster/k8s/gaffer-private-source",
-            prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="flux-system"
-            ),
-            decryption=SOPS_DECRYPTION,
-            depends_on=[flux_kustomization_depends_on(flux_image_automation_ghcr)],
+        wait=None,
+        timeout="10m",
+        path=f"./{HAND_WRITTEN_ROOT}/gaffer-private-source",
+        depends_on=[flux_kustomization_depends_on(flux_image_automation_ghcr)],
+    )
+
+
+def gaffer_private_bridge(chart: Chart, kyverno: Kustomization, tofu_controller: Kustomization) -> Kustomization:
+    """The cross-repo bridge: reconciles ``gaffer-private/k8s/`` from the private companion
+    monorepo's ``gaffer-private`` GitRepository (built by ``gaffer_private_source``), the
+    entry point for every private app's ``flux-kustomization.yaml``. Its child resources live
+    in the private repo, outside this graph. ``wait`` stays off -- workload readiness is owned
+    by the private child Kustomizations, which tolerate apply-then-eventually-ready."""
+    name = "gaffer-private"
+    return flux_kustomization(
+        chart,
+        name,
+        KustomizationSpecSourceRef(kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name=name),
+        namespace="flux-system",
+        path="./k8s",
+        timeout="5m",
+        wait=None,
+        depends_on=flux_kustomization_depends_on_many(
+            # Kyverno's failurePolicy: Fail webhook admits the child Flux Kustomizations.
+            kyverno,
+            # The Terraform CRD: the private repo's k8s/ applies Terraform CRs.
+            tofu_controller,
+        ),
+        description=(
+            "Cross-repo bridge. Reconciles gaffer-private/k8s/ from the gaffer-private "
+            "GitRepository -- entry point for every private app's flux-kustomization.yaml."
         ),
     )

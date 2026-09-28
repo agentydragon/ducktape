@@ -1,7 +1,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  # cdk8s-generated (cluster/cdk8s/authentik/app.py) -- see cluster/docs/cdk8s.md.
   - authentik.k8s.yaml
   - admin-password.sops.yaml
   - secret-key.sops.yaml
@@ -9,26 +8,26 @@ resources:
   - user-password.sops.yaml
   - google-oauth.sops.yaml
   - auragon-google-email.sops.yaml
-generatorOptions:
-  disableNameSuffixHash: true
 configMapGenerator:
   - name: authentik-sso-blueprints
+    namespace: authentik
+    options:
+      disableNameSuffixHash: true
     files:
-      - blueprints/users.yaml
-      - blueprints/hubble-sso.yaml
-      - blueprints/public-coder-agent-sso.yaml
-      - blueprints/haku-openclaw-spike-sso.yaml
+      - blueprints/activitywatch-sso.yaml
+      - blueprints/adsb-sso.yaml
       - blueprints/agents-mitmproxy-sso.yaml
-      - blueprints/proxmox-sso.yaml
+      - blueprints/airlock-sso-retire.yaml
+      - blueprints/claude-service-account.yaml
+      - blueprints/embedded-outpost.yaml
+      - blueprints/fava-sso-retire.yaml
       - blueprints/goldilocks-sso.yaml
       - blueprints/google-workspace-mcp-sso-retire.yaml
-      - blueprints/plaid-link-sso.yaml
-      - blueprints/embedded-outpost.yaml
-      - blueprints/airlock-sso-retire.yaml
-      - blueprints/sdr-sso.yaml
-      - blueprints/adsb-sso.yaml
-      - blueprints/claude-service-account.yaml
-      - blueprints/fava-sso-retire.yaml
-      - blueprints/activitywatch-sso.yaml
+      - blueprints/haku-openclaw-spike-sso.yaml
       - blueprints/haku-ui-sso.yaml
-    namespace: authentik
+      - blueprints/hubble-sso.yaml
+      - blueprints/plaid-link-sso.yaml
+      - blueprints/proxmox-sso.yaml
+      - blueprints/public-coder-agent-sso.yaml
+      - blueprints/sdr-sso.yaml
+      - blueprints/users.yaml

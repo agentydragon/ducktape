@@ -7,17 +7,19 @@ on:
   push:
     branches: [devel]
     paths:
-      - "flake.nix"
-      - "flake.lock"
-      - "nix/flake/packages.nix"
-      - "openclaw/public_coder_agent/devbox/*.nix"
-      - "nix/nixos/modules/base.nix"
-      - "nix/nixos/modules/vm-hardware.nix"
-      - "nix/nixos/modules/bazel/**"
-      - "nix/ssh-keys.nix"
+      # keep-sorted start
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"
       - ".github/workflows/public-coder-devbox-image.yml"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/flake/packages.nix"
+      - "nix/nixos/modules/base.nix"
+      - "nix/nixos/modules/bazel/**"
+      - "nix/nixos/modules/vm-hardware.nix"
+      - "nix/ssh-keys.nix"
+      - "openclaw/public_coder_agent/devbox/*.nix"
+      # keep-sorted end
   workflow_dispatch:
 
 permissions:

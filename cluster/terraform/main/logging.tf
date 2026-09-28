@@ -1,7 +1,7 @@
 # Ship Talos service logs off-node to the in-cluster Vector receiver.
 #
 # Talos has no journald; machine.logging.destinations streams newline-delimited JSON to a
-# local endpoint. The vector-talos-logs DaemonSet (cluster/k8s/vector-talos-logs/) joins
+# local endpoint. The vector-talos-logs DaemonSet (cluster/generated/vector-talos-logs/) joins
 # the host network and binds only host loopback on :13333, which forwards the logs to
 # cluster Loki. The node-vendor=talos label scopes that DaemonSet to Talos nodes (NixOS
 # nodes ship their journal via the promtail-journal HelmRelease instead).

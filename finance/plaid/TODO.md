@@ -29,5 +29,5 @@ Two things to get right:
   than leave it filtered out.
 
 Until then, anything summing balances or holdings should dedupe on `(name, mask)` rather than
-trusting `account_id` to be one row per real account. The augur budget read model and the
-tender-proceeds tracking both read these tables.
+trusting `account_id` to be one row per real account. The budget read model (`finance/budget/`)
+and the tender-proceeds tracking both read these tables.

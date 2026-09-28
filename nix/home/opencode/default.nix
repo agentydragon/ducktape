@@ -1,410 +1,122 @@
-# OpenCode configuration for local LLM inference (Ollama + vLLM)
+# OpenCode configuration (https://opencode.ai/docs/providers/).
 #
-# Hardware: 2x RTX 5090 (64GB total VRAM)
-#
-# RECOMMENDED: vLLM with AWQ quantization
-#   Start: ~/code/ducktape/experimental/local-llm/start-vllm-awq.sh
-#   Model: qwen3-coder-awq (262K context, 8.5 GiB/GPU, FP8 KV cache)
-#
-# Critical vLLM fixes (see cluster/docs/inference/qwen3_coder_vram_analysis.md):
-#   - --max-num-seqs 32 (default 256 causes OOM during warmup)
-#   - --kv-cache-dtype fp8 (doubles context capacity)
-#   - Don't use --quantization awq (model auto-detects compressed-tensors)
-#
-# Two inference backends:
-#   - vLLM (port 8000): Tensor parallelism, 262K context, recommended
-#   - Ollama (port 11434): Easy setup, GGUF quantization
-#
-# Capability matrix:
-#   Model                         | Reasoning | Tools | Context | Size/GPU | Notes
-#   ------------------------------|-----------|-------|---------|----------|---------------------------
-#   === CONFIGURED (vLLM) ===
-#   deepseek-r1-32b               | ✓         | ✓     | 128k    | ~17 GB   | Best reasoning 32B, start-vllm-deepseek-r1.sh
-#   deepseek-r1-70b               | ✓         | ✓     | 64k     | ~38 GB   | Best quality, start-vllm-deepseek-r1-70b.sh
-#   qwen3-32b                     | ✓         | ✓     | 40k     | ~17 GB   | General model, start-vllm-qwen3-32b.sh
-#   qwen3-coder-awq               | ✗         | ✓     | 262k    | ~8.5 GB  | AWQ removes thinking, start-vllm-awq.sh
-#   === CONFIGURED (Ollama) ===
-#   qwen3-coder-long              | ✗*        | ✓     | 131k    | ~19 GB   | *thinking untested
-#   llama3.3:70b                  | ✗         | ✓     | 32k     | ~38 GB   | Reliable tools, no thinking
-#   === DOWNLOADED (not yet configured) ===
-#   deepseek-r1-distill-llama-70b | ✓         | ✓     | 128k    | ~19 GB   | Best quality, needs TP=2
-#   qwen3-32b-awq                 | ✓         | ✓     | 128k    | ~17 GB   | General model, thinking works
-#
-# See cluster/docs/inference/model_download_history.md for download status and benchmarks.
+# This module owns the shared defaults (skills, MCP servers from
+# nix/home/mcp-servers.nix) plus a typed `providers` extension point.
+# Host-specific local-LLM wiring belongs in that host's own config (e.g.
+# nix/home/hosts/wyrm2-opencode.nix), which sets
+# `ducktape.opencode.providers.<name> = { ... }` — this module never needs to
+# know which host has which GPU.
 {
   config,
-  pkgs,
   lib,
   sharedSkillsArgs,
   ...
 }:
 let
   mkSkills = import ../skills.nix sharedSkillsArgs;
-  inherit (config.ducktape.opencode) ruggedLocalLlm;
-  ruggedProvider = lib.optionalAttrs ruggedLocalLlm.enable {
-    # === Rugged: Gemma 4 on local Intel iGPU via upstream Ollama/Vulkan ===
-    # Enabled only by nix/home/hosts/rugged.nix. If this moves behind an
-    # authenticated service route, move the option into shared home config.
-    rugged = {
-      npm = "@ai-sdk/openai-compatible";
-      name = "Rugged local Ollama";
-      options = {
-        inherit (ruggedLocalLlm) baseURL;
-      };
-      models = {
-        "gemma4:e2b-it-qat" = {
-          name = "Gemma 4 E2B QAT (rugged iGPU)";
-          reasoning = false;
-          # Ollama's Gemma 4 template advertises tools, but OpenCode tool use
-          # has not been validated on this small local model yet.
-          tool_call = false;
-          limit = {
-            context = 131072;
-            output = 8192;
-          };
-        };
-      };
-    };
+  mcpServers = import ../mcp-servers.nix;
+  cfg = config.ducktape.opencode;
 
-    # === Rugged: Gemma 4 on local Intel iGPU via Google LiteRT-LM ===
-    # Start this separately:
-    #   litert-lm serve --host 127.0.0.1 --port 9379 --enable-speculative-decoding=true
-    #
-    # The current Gemma 4 E2B LiteRT artifact rewrites its magic-number target
-    # to 32000 tokens, so advertise that as the usable full context here rather
-    # than Ollama's larger GGUF/QAT context.
-    rugged-litert = {
-      npm = "@ai-sdk/openai-compatible";
-      name = "Rugged local LiteRT-LM";
-      options = {
-        baseURL = ruggedLocalLlm.litertBaseURL;
+  opencodeModelType = lib.types.submodule {
+    options = {
+      name = lib.mkOption {
+        type = lib.types.str;
+        description = "Display name shown in the OpenCode model picker.";
       };
-      models = {
-        "gemma4-e2b-it,gpu,32000" = {
-          name = "Gemma 4 E2B LiteRT-LM MTP 32k (rugged iGPU)";
-          reasoning = false;
-          # LiteRT-LM's OpenAI handler accepts the tools envelope, but tool use
-          # and output limiting are not reliable enough for OpenCode yet.
-          tool_call = false;
-          limit = {
-            context = 32000;
-            output = 8192;
+      reasoning = lib.mkOption {
+        type = lib.types.bool;
+        description = "Whether this model exposes a thinking/reasoning channel.";
+      };
+      tool_call = lib.mkOption {
+        type = lib.types.bool;
+        description = "Whether this model supports OpenCode tool calling.";
+      };
+      interleaved = lib.mkOption {
+        type = lib.types.nullOr (
+          lib.types.submodule {
+            options.field = lib.mkOption {
+              type = lib.types.str;
+              description = "Response field carrying interleaved reasoning content.";
+            };
+          }
+        );
+        default = null;
+        description = "Interleaved-reasoning wiring, for models that stream a separate reasoning field.";
+      };
+      limit = lib.mkOption {
+        type = lib.types.submodule {
+          options = {
+            context = lib.mkOption {
+              type = lib.types.ints.positive;
+              description = "Max context tokens OpenCode will send to this model.";
+            };
+            output = lib.mkOption {
+              type = lib.types.ints.positive;
+              description = "Max output tokens OpenCode will request from this model.";
+            };
           };
         };
+        description = "Context/output token limits OpenCode enforces for this model.";
       };
     };
   };
-  # OpenCode configuration as JSON
-  # Docs: https://opencode.ai/docs/providers/
-  opencodeConfig = {
-    "$schema" = "https://opencode.ai/config.json";
-    mcp = {
-      "grocy-sf" = {
-        type = "remote";
-        url = "https://grocy-mcp-sf.allegedly.works/mcp";
+
+  opencodeProviderType = lib.types.submodule {
+    options = {
+      npm = lib.mkOption {
+        type = lib.types.str;
+        description = "npm package implementing this provider's AI SDK adapter.";
       };
-      "grocy-vallejo" = {
-        type = "remote";
-        url = "https://grocy-mcp-vallejo.allegedly.works/mcp";
+      name = lib.mkOption {
+        type = lib.types.str;
+        description = "Display name shown in the OpenCode provider picker.";
+      };
+      options = lib.mkOption {
+        type = lib.types.submodule {
+          options.baseURL = lib.mkOption {
+            type = lib.types.str;
+            description = "OpenAI-compatible base URL for this provider's server.";
+          };
+        };
+        description = "Provider-level options passed to the AI SDK adapter.";
+      };
+      models = lib.mkOption {
+        type = lib.types.attrsOf opencodeModelType;
+        default = { };
+        description = "Models exposed under this provider, keyed by model id.";
       };
     };
-    provider = {
-      # === vLLM: Tensor parallelism for better throughput ===
-      # Start server: ~/code/ducktape/experimental/local-llm/start-vllm-awq.sh
-      vllm = {
-        npm = "@ai-sdk/openai-compatible";
-        name = "vLLM (local, tensor parallel)";
-        options = {
-          baseURL = "http://0.0.0.0:8000/v1";
-        };
-        "models" = {
-          # Qwen3-Coder 30B AWQ 4-bit with tensor parallelism across 2x 5090
-          # AWQ quantization: ~8.5 GB/GPU weights (vs 28.5 GB bf16)
-          # FP8 KV cache: ~23 GB available per GPU = 262K context
-          # ⚠️ AWQ model does NOT support thinking mode (per model card)
-          # See: cluster/docs/inference/qwen3_coder_vram_analysis.md
-          "qwen3-coder-awq" = {
-            name = "Qwen3-Coder 30B AWQ (vLLM)";
-            reasoning = false; # AWQ model removes thinking support
-            tool_call = true;
-            limit = {
-              context = 262144;
-              output = 8192;
-            };
-          };
+  };
 
-          # DeepSeek R1 Distill Qwen 32B - reasoning + tools preserved
-          # Distilled from DeepSeek-R1, maintains thinking capability
-          # Start: ~/code/ducktape/experimental/local-llm/start-vllm-deepseek-r1.sh
-          "deepseek-r1-32b" = {
-            name = "DeepSeek R1 Distill Qwen 32B (vLLM)";
-            reasoning = true;
-            tool_call = true;
-            interleaved = {
-              field = "reasoning_content";
-            };
-            limit = {
-              context = 131072;
-              output = 8192;
-            };
-          };
+  # Drop attrset values assigned `null` (e.g. an unset `interleaved`) so they
+  # never render as a literal `"key": null` in opencode.json.
+  stripNulls =
+    value:
+    if builtins.isAttrs value then
+      lib.mapAttrs (_: stripNulls) (lib.filterAttrs (_: v: v != null) value)
+    else if builtins.isList value then
+      map stripNulls value
+    else
+      value;
 
-          # DeepSeek R1 Distill Llama 70B - best quality distillation
-          # Requires TP=2 (both GPUs), ~38 GB total
-          # Start: ~/code/ducktape/experimental/local-llm/start-vllm-deepseek-r1-70b.sh
-          "deepseek-r1-70b" = {
-            name = "DeepSeek R1 Distill Llama 70B (vLLM)";
-            reasoning = true;
-            tool_call = true;
-            interleaved = {
-              field = "reasoning_content";
-            };
-            limit = {
-              context = 65536; # Reduced to fit 64GB with 38GB weights
-              output = 8192;
-            };
-          };
-
-          # Qwen3 32B AWQ - general model with thinking + tools
-          # Good all-around model, not code-specialized
-          # Start: ~/code/ducktape/experimental/local-llm/start-vllm-qwen3-32b.sh
-          "qwen3-32b" = {
-            name = "Qwen3 32B AWQ (vLLM)";
-            reasoning = true;
-            tool_call = true;
-            interleaved = {
-              field = "reasoning_content";
-            };
-            limit = {
-              context = 40960; # Qwen3-32B-AWQ native limit
-              output = 8192;
-            };
-          };
-        };
-      };
-
-      # === Ollama: Easy setup, GGUF quantization ===
-      ollama = {
-        # NOTE: gpt-oss models have streaming response format issues with OpenCode
-        # The finishReason is returned as object instead of string
-        # See: https://github.com/anomalyco/opencode/issues/7439
-        npm = "@ai-sdk/openai-compatible";
-        name = "Ollama (local)";
-        options = {
-          baseURL = "http://localhost:11434/v1";
-        };
-        models = {
-          # === GPT-OSS - DISABLED: OpenCode streaming compatibility issue ===
-          # OpenAI's open-weight MoE models (Apache 2.0, reasoning + tools)
-          # Docs: https://ollama.com/library/gpt-oss
-          #
-          # BUG: gpt-oss returns finishReason as object instead of string in
-          # streaming responses, causing ZodError in OpenCode's processor.ts.
-          # Affects all providers (@ai-sdk/openai-compatible, ollama-ai-provider-v2).
-          # Issue: https://github.com/anomalyco/opencode/issues/7439
-          #
-          # Re-enable once OpenCode fixes streaming response parsing.
-          #
-          # "gpt-oss-120b-32k" = {
-          #   name = "GPT-OSS 120B 32k (local)";
-          #   # MoE: 117B params, 5.1B active, ~56GB MXFP4. Fits 2x5090 w/ 32k ctx.
-          #   # Create variant: ollama run gpt-oss:120b → /set parameter num_ctx 32768 → /save gpt-oss-120b-32k
-          #   reasoning = true;
-          #   tool_call = true;
-          #   limit = { context = 32768; output = 8192; };
-          # };
-          # "gpt-oss-20b-32k" = {
-          #   name = "GPT-OSS 20B 32k (local)";
-          #   # MoE: 14GB weights, fits easily on 64GB with large context.
-          #   # Create variant: ollama run gpt-oss:20b → /set parameter num_ctx 32768 → /save gpt-oss-20b-32k
-          #   reasoning = true;
-          #   tool_call = true;
-          #   limit = { context = 32768; output = 8192; };
-          # };
-
-          # === Qwen3-Coder - BOTH reasoning AND reliable tool calling ===
-
-          # Qwen3-Coder 30B with 131k context - recommended for large codebases
-          # Q4_K_M (19GB) + FP16 KV cache supports ~218k context on 2x5090
-          # See: cluster/docs/inference/qwen3_coder_vram_analysis.md
-          # Create variant:
-          #   cd ~/code/ducktape/experimental/local-llm
-          #   ollama create qwen3-coder-long -f Modelfile.qwen3-coder-long
-          "qwen3-coder-long" = {
-            name = "Qwen3-Coder 30B 131k (local)";
-            reasoning = true;
-            tool_call = true;
-            interleaved = {
-              field = "reasoning_content";
-            };
-            limit = {
-              context = 131072;
-              output = 8192;
-            };
-          };
-
-          # Qwen3-Coder 30B with 32k context - smaller memory footprint
-          # Unsloth fixed tool calling in Aug 2025
-          # Create variant:
-          #   ollama run qwen3-coder:30b
-          #   /set parameter num_ctx 32768
-          #   /save qwen3-coder-30b-32k
-          #   /bye
-          "qwen3-coder-30b-32k" = {
-            name = "Qwen3-Coder 30B 32k (local)";
-            reasoning = true;
-            tool_call = true;
-            interleaved = {
-              field = "reasoning_content";
-            };
-            limit = {
-              context = 32768;
-              output = 8192;
-            };
-          };
-
-          # === Qwen3 - reasoning works, tools BUGGY in Ollama ===
-
-          # Qwen3 32B with 32k context
-          # WARNING: Tool calling has parsing issues in Ollama
-          "qwen3:32b-32k" = {
-            name = "Qwen3 32B 32k (local)";
-            reasoning = true;
-            tool_call = true; # unreliable
-            interleaved = {
-              field = "reasoning_content";
-            };
-            limit = {
-              context = 32768;
-              output = 8192;
-            };
-          };
-          # Base Qwen3 32B (4k default context)
-          # WARNING: Tool calling has parsing issues in Ollama
-          "qwen3:32b" = {
-            name = "Qwen3 32B (local)";
-            reasoning = true;
-            tool_call = true; # unreliable
-            interleaved = {
-              field = "reasoning_content";
-            };
-            limit = {
-              context = 4096;
-              output = 8192;
-            };
-          };
-          # DeepSeek R1 32B - disabled: does not support tool calling
-          # "deepseek-r1:32b" = {
-          #   name = "DeepSeek R1 32B (local)";
-          #   reasoning = true;
-          #   tool_call = true;
-          #   interleaved = {
-          #     field = "reasoning_content";
-          #   };
-          #   limit = {
-          #     context = 131072;
-          #     output = 8192;
-          #   };
-          # };
-          # Qwen3 abliterated (uncensored) variant
-          # WARNING: Tool calling has parsing issues in Ollama
-          "huihui_ai/qwen3-abliterated:32b" = {
-            name = "Qwen3 32B Abliterated (local)";
-            reasoning = true;
-            tool_call = true; # unreliable
-            interleaved = {
-              field = "reasoning_content";
-            };
-            limit = {
-              context = 40960; # model's native context; fits in 32GB VRAM
-              output = 8192;
-            };
-          };
-
-          # === 70B models (require 2x 5090 / 64GB VRAM) ===
-          # === Llama - RELIABLE tools, NO reasoning/thinking ===
-
-          # Llama 3.3 70B - best overall for tool use, matches 405B performance
-          "llama3.3:70b" = {
-            name = "Llama 3.3 70B (local)";
-            reasoning = false;
-            tool_call = true;
-            limit = {
-              context = 32768; # safe limit; model supports 128k native
-              output = 8192;
-            };
-          };
-          # Llama 3.3 70B with extended context (no reasoning)
-          "llama3.3:70b-64k" = {
-            name = "Llama 3.3 70B 64k (local)";
-            reasoning = false;
-            tool_call = true;
-            limit = {
-              context = 65536; # aggressive but fits in 64GB with Q4
-              output = 8192;
-            };
-          };
-
-          # DeepSeek R1 70B - disabled: Ollama lacks tool calling templates
-          # Use MFDoom/deepseek-r1-tool-calling:70b for tool support
-          # "deepseek-r1:70b" = {
-          #   name = "DeepSeek R1 70B (local)";
-          #   reasoning = true;
-          #   tool_call = true;
-          #   interleaved = {
-          #     field = "reasoning_content";
-          #   };
-          #   limit = {
-          #     context = 32768;  # safe limit; model supports 128k native
-          #     output = 8192;
-          #   };
-          # };
-          # "deepseek-r1:70b-64k" = {
-          #   name = "DeepSeek R1 70B 64k (local)";
-          #   reasoning = true;
-          #   tool_call = true;
-          #   interleaved = {
-          #     field = "reasoning_content";
-          #   };
-          #   limit = {
-          #     context = 65536;  # aggressive but fits in 64GB with Q4
-          #     output = 8192;
-          #   };
-          # };
-
-          # Llama 3.1 70B Abliterated - uncensored, reliable tools, no reasoning
-          # Pull via: ollama pull krith/meta-llama-3.1-70b-instruct-abliterated:IQ3_M
-          "krith/meta-llama-3.1-70b-instruct-abliterated:IQ3_M" = {
-            name = "Llama 3.1 70B Abliterated (local)";
-            reasoning = false; # no thinking mode
-            tool_call = true; # reliable
-            limit = {
-              context = 32768; # safe limit; model supports 128k native
-              output = 8192;
-            };
-          };
-        };
-      };
-    }
-    // ruggedProvider;
+  opencodeConfig = stripNulls {
+    "$schema" = "https://opencode.ai/config.json";
+    mcp = lib.mapAttrs (name: server: {
+      type = "remote";
+      inherit (server) url;
+    }) mcpServers;
+    provider = cfg.providers;
   };
 in
 {
-  options.ducktape.opencode.ruggedLocalLlm = {
-    enable = lib.mkEnableOption "rugged-only OpenCode provider for the local Ollama/Gemma 4 service";
-
-    baseURL = lib.mkOption {
-      type = lib.types.str;
-      default = "http://127.0.0.1:11436/v1";
-      description = "OpenAI-compatible base URL for rugged's upstream Ollama service.";
-    };
-
-    litertBaseURL = lib.mkOption {
-      type = lib.types.str;
-      default = "http://127.0.0.1:9379/v1";
-      description = "OpenAI-compatible base URL for rugged's LiteRT-LM service.";
-    };
-
+  options.ducktape.opencode.providers = lib.mkOption {
+    type = lib.types.attrsOf opencodeProviderType;
+    default = { };
+    description = ''
+      OpenCode provider entries (https://opencode.ai/docs/providers/), keyed by
+      provider id. Host configs contribute their own local-LLM wiring here
+      instead of this module hardcoding per-host hardware.
+    '';
   };
 
   config = {

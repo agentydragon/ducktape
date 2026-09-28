@@ -3,26 +3,17 @@
 from __future__ import annotations
 
 import textwrap
-from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-)
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s import namespaces
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.gateway import https_route
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import Vpa
 
-OUTPUT_DIR = "cluster/k8s/website"
+OUTPUT_DIR = f"{GENERATED_ROOT}/website"
 _NAME = "website"
 _NAMESPACE = "website"
 _LABELS = {"app.kubernetes.io/name": _NAME}
@@ -146,14 +137,7 @@ _INDEX_HTML = textwrap.dedent(
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
-        chart,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={"goldilocks.fairwinds.com/enabled": "true", "goldilocks.fairwinds.com/vpa-update-mode": "auto"},
-        ),
-    )
+    namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO, agent_readable=None)
     k8s.KubeConfigMap(
         chart,
         "content",
@@ -169,7 +153,7 @@ def chart(app: App) -> Chart:
             replicas=2,
             selector=k8s.LabelSelector(match_labels=_LABELS),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}),
+                metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
                     containers=[
                         k8s.Container(
@@ -219,39 +203,26 @@ def chart(app: App) -> Chart:
             type="ClusterIP",
         ),
     )
-    HttpRoute(
+    https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=["www.allegedly.works", "allegedly.works"],
-            rules=[HttpRouteSpecRules(backend_refs=[HttpRouteSpecRulesBackendRefs(name=_NAME, port=80)])],
-        ),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        hostnames=["www.allegedly.works", "allegedly.works"],
+        backend=_NAME,
+        port=80,
+        hsts=False,
+        listener=None,
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def website(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, gateway: Kustomization) -> Kustomization:
+def website(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
     name = "website"
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            depends_on=[
-                # TLS is owned by the shared Gateway; Website only supplies an HTTPRoute.
-                flux_kustomization_depends_on(gateway)
-            ],
-        ),
+        directory,
+        timeout="5m",
+        # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+        depends_on=[flux_kustomization_depends_on(kyverno)],
     )

@@ -25,6 +25,7 @@ from cdk8s_plus_34 import (
     ConfigMap,
     ContainerPort,
     ContainerResources,
+    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
     Deployment,
@@ -54,22 +55,15 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecSelector,
-)
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s.agentplane import container_security, node_scheduling
+from cluster.cdk8s import node_scheduling, pod_policy
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console_config, database
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from haku.console.config import CONFIG_FILE_ENV
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.settings import Settings
@@ -143,7 +137,7 @@ class Console(Construct):
         # claim/exec RBAC on the haku-sandbox pool (haku/workspaces.py). No Secret, log, exec, or SandboxTemplate access
         # outside that pool.
         service_account = ServiceAccount(
-            self, "serviceaccount", metadata=metadata(NAME, NAMESPACE), automount_token=True
+            self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE), automount_token=True
         )
         self._add_rbac(service_account)
         env = self._container_env()
@@ -191,9 +185,9 @@ class Console(Construct):
         Role(
             self,
             "diagnostics-role",
-            metadata=metadata(
-                diagnostics,
-                NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=diagnostics,
+                namespace=NAMESPACE,
                 annotations={"description": "Read-only Console workload, event, and public ConfigMap metadata."},
             ),
             rules=[
@@ -207,9 +201,9 @@ class Console(Construct):
         RoleBinding(
             self,
             "diagnostics-rolebinding",
-            metadata=metadata(
-                diagnostics,
-                NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=diagnostics,
+                namespace=NAMESPACE,
                 annotations={"description": "Binds Haku and public-coder to narrow Console metadata diagnostics."},
             ),
             role=Role.from_role_name(self, "diagnostics-role-ref", diagnostics),
@@ -217,11 +211,14 @@ class Console(Construct):
             Group.from_name(self, "group-haku", "oidc-ksbx-groups:haku"),
             Group.from_name(self, "group-profile-haku", "haku:access-profile:haku"),
             ServiceAccount.from_service_account_name(self, "sa-haku", "haku", namespace_name="haku-sandbox"),
-            Group.from_name(self, "group-profile-public-coder", "haku:access-profile:public-coder"),
+            Group.from_name(self, "group-profile-public-coder", console_config.PUBLIC_CODER_GROUP),
         )
         # Consumer-owned referent identity for source-approved external credentials.
         ServiceAccount(
-            self, "external-creds-reader", metadata=metadata("external-creds-reader", NAMESPACE), automount_token=False
+            self,
+            "external-creds-reader",
+            metadata=ApiObjectMetadata(name="external-creds-reader", namespace=NAMESPACE),
+            automount_token=False,
         )
 
     def _secret(self, name: str) -> ISecret:
@@ -275,16 +272,6 @@ class Console(Construct):
                     env_name(Settings, "max_wait_for_result_ms"),
                     EnvValue.from_value(str(checked_value(Settings, "max_wait_for_result_ms", 60_000))),
                 ),
-                (
-                    env_name(Settings, "mcp_operator_oauth_token_timeout_seconds"),
-                    EnvValue.from_value(str(checked_value(Settings, "mcp_operator_oauth_token_timeout_seconds", 30))),
-                ),
-                # The static bearer for the cluster-internal ssh-mcp backend, delivered into this
-                # namespace by ssh-mcp. Resolved only while the console calls the backend; never
-                # mounted into the inner workload.
-                self._from_secret(
-                    BEARER_SECRET_NAME, BEARER_SECRET_KEY, "mcp", "servers", "ssh", "backend", "auth", "token"
-                ),
                 *database_env(self).items(),
                 # The static Agents' bearers; the durable Agent UUIDs and display names are in
                 # the config file.
@@ -292,36 +279,9 @@ class Console(Construct):
                 # public-coder-agent's bearer reaches only its iron-proxy; the OpenClaw
                 # container sees a non-secret placeholder.
                 self._from_secret("haku-console-public-coder-agent", "token", "static_agents", "public_coder", "token"),
-                # GitHub's hosted MCP has no Dynamic Client Registration; its organization-owned
-                # GitHub App is this pre-registered confidential client. Optional so the console
-                # deploys while the App is being registered.
-                self._from_secret(
-                    "haku-console-github-mcp-client-credentials",
-                    "client_id",
-                    "mcp",
-                    "servers",
-                    "github",
-                    "backend",
-                    "auth",
-                    "client_registration",
-                    "client_id",
-                    optional=True,
-                ),
-                self._from_secret(
-                    "haku-console-github-mcp-client-credentials",
-                    "client_secret",
-                    "mcp",
-                    "servers",
-                    "github",
-                    "backend",
-                    "auth",
-                    "client_registration",
-                    "client_secret",
-                    optional=True,
-                ),
-                # The Operator each static Agent acts as when it reaches an operator_oauth
-                # server: the controller-fed Authentik user id, resolved through the identity
-                # trust domain to a canonical Operator UUID and never live request authority.
+                # The Operator each static Agent acts as: the controller-fed Authentik user id,
+                # resolved through the identity trust domain to a canonical Operator UUID and never
+                # live request authority.
                 self._from_secret(oidc, "operator_subject", "static_agents", "haku", "operator_subject"),
                 self._from_secret(oidc, "operator_subject", "static_agents", "public_coder", "operator_subject"),
                 # Agent-facing MCP OAuth: an Authentik-backed OIDCProxy (DCR + PKCE) on /mcp,
@@ -364,16 +324,19 @@ class Console(Construct):
         supplied = [path for path in self._supplied if path[0] in ConsoleConfigFile.model_fields]
         content = settings_file(ConsoleConfigFile, console_config.config(), supplied=supplied)
         return ConfigMap(
-            self, "config", metadata=metadata(_CONFIG_MAP_NAME, NAMESPACE), data={"config.yaml": yaml_config(content)}
+            self,
+            "config",
+            metadata=ApiObjectMetadata(name=_CONFIG_MAP_NAME, namespace=NAMESPACE),
+            data={"config.yaml": yaml_config(content)},
         )
 
     def _add_deployment(self, service_account: ServiceAccount, env: dict[str, EnvValue], config_map: ConfigMap) -> None:
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                NAME,
-                NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=NAMESPACE,
                 labels=LABELS,
                 annotations={
                     # Only the API's own mounted ConfigMap and credentials, never reloader's
@@ -426,7 +389,7 @@ class Console(Construct):
             liveness=http_probe("/healthz", port=API_PORT, initial_delay_seconds=10, period_seconds=30),
             readiness=http_probe("/healthz", port=API_PORT, initial_delay_seconds=5, period_seconds=10),
             # The aspect py_binary launcher materializes its venv on the rootfs at startup.
-            security_context=container_security.WRITABLE_ROOT,
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         container.mount("/tmp", Volume.from_empty_dir(self, "tmp-volume", "tmp"))
         container.mount(_CONFIG_DIR, Volume.from_config_map(self, "config-volume", config_map), read_only=True)
@@ -438,14 +401,14 @@ class Console(Construct):
         )
         # Same zone as this console's Postgres and the public ingress: unpinned, a replica
         # landed 166ms from the database, which every read pays several round trips of.
-        node_scheduling.attract_to_zone(deployment)
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
+        pod_policy.place(deployment, node_scheduling.HIL_OVH)
+        pod_policy.harden(deployment)
 
     def _add_service(self) -> None:
         Service(
             self,
             "service",
-            metadata=metadata(NAME, NAMESPACE, labels=LABELS),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=LABELS),
             selector=Pods.select(self, "pods", labels=LABELS),
             ports=[
                 # The public route targets the static shell; this port serves nginx's
@@ -461,11 +424,9 @@ class Console(Construct):
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=metadata(NAME, NAMESPACE),
-            spec=ServiceMonitorSpec(
-                selector=ServiceMonitorSpecSelector(match_labels=LABELS),
-                endpoints=[ServiceMonitorSpecEndpoints(port="metrics", path="/metrics")],
-            ),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+            selector=ServiceMonitorSpecSelector(match_labels=LABELS),
+            endpoints=[Endpoint.plain(port="metrics")],
         )
 
     def _add_static(self) -> None:
@@ -473,7 +434,7 @@ class Console(Construct):
         deployment = Deployment(
             self,
             "static-deployment",
-            metadata=metadata(STATIC_NAME, NAMESPACE, labels=_STATIC_LABELS),
+            metadata=ApiObjectMetadata(name=STATIC_NAME, namespace=NAMESPACE, labels=_STATIC_LABELS),
             pod_metadata=ApiObjectMetadata(labels=_STATIC_LABELS),
             select=False,
             replicas=2,
@@ -505,15 +466,16 @@ class Console(Construct):
             # nginx's own SPA response, not /healthz, which is proxied to the API.
             liveness=http_probe("/", port=_STATIC_PORT, initial_delay_seconds=10, period_seconds=30),
             readiness=http_probe("/", port=_STATIC_PORT, initial_delay_seconds=5, period_seconds=10),
-            security_context=container_security.WRITABLE_ROOT,
+            # Writable: its root filesystem writes are unaudited.
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         # The entrypoint writes the envsubst-rendered config here before nginx starts.
         container.mount("/etc/nginx/conf.d", Volume.from_empty_dir(self, "nginx-conf-volume", "nginx-conf"))
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
+        pod_policy.harden(deployment)
         Service(
             self,
             "static-service",
-            metadata=metadata(STATIC_NAME, NAMESPACE, labels=_STATIC_LABELS),
+            metadata=ApiObjectMetadata(name=STATIC_NAME, namespace=NAMESPACE, labels=_STATIC_LABELS),
             selector=Pods.select(self, "static-pods", labels=_STATIC_LABELS),
             ports=[
                 ServicePort(name="http", port=_STATIC_SERVICE_PORT, target_port=_STATIC_PORT, protocol=Protocol.TCP)
@@ -527,8 +489,8 @@ class Console(Construct):
         https_route(
             self,
             "httproute",
-            metadata=metadata(NAME, NAMESPACE),
-            hostname=HOSTNAME,
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+            hostnames=[HOSTNAME],
             backend=STATIC_NAME,
             port=_STATIC_SERVICE_PORT,
             timeout="360s",
@@ -544,9 +506,9 @@ class Console(Construct):
         job = Job(
             self,
             "indexer-provisioner",
-            metadata=metadata(
-                _INDEXER_PROVISIONER_NAME,
-                NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=_INDEXER_PROVISIONER_NAME,
+                namespace=NAMESPACE,
                 annotations={
                     "description": (
                         "Applies the object GRANTs for haku_indexer (indexer-role.sql). The role itself is "
@@ -582,12 +544,14 @@ class Console(Construct):
                 cpu=CpuResources(request=Cpu.millis(10)),
                 memory=MemoryResources(request=Size.mebibytes(32), limit=Size.mebibytes(128)),
             ),
-            security_context=container_security.WRITABLE_ROOT,
+            # Writable: its root filesystem writes are unaudited.
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         sql = ConfigMap.from_config_map_name(self, "indexer-sql-ref", INDEXER_SQL_CONFIG_MAP)
         container.mount(_INDEXER_SQL_DIR, Volume.from_config_map(self, "indexer-sql-volume", sql), read_only=True)
-        node_scheduling.attract_to_zone(job)
-        ApiObject.of(job).add_json_patch(runtime_default_seccomp_patch())
+        pod_policy.place(job, node_scheduling.HIL_OVH)
+        pod_policy.harden(job)
+        # cdk8s-plus's Container has no terminationMessagePolicy option.
         ApiObject.of(job).add_json_patch(
             JsonPatch.add("/spec/template/spec/containers/0/terminationMessagePolicy", "FallbackToLogsOnError")
         )

@@ -1,0 +1,20 @@
+[
+  {
+    "repo": "Qwen/Qwen3.8-Flash-Next-FP8",
+    "revision": "236dfdf285828023ca3bcd3f37366c58a3469b13",
+    "safetensor_bytes": 185523317458,
+    "files": 131
+  },
+  {
+    "repo": "nvidia/Qwen3.8-Flash-Next-NVFP4",
+    "revision": "fc694b54fb0174e0913e6adf86691ef85a4ead47",
+    "safetensor_bytes": 132680249378,
+    "files": 11
+  },
+  {
+    "repo": "starkweatherdigital/qwen3.8-flash-next-nvfp4",
+    "revision": "1b304e5f99de0faaf43c3a959f2b4000294bf65c",
+    "safetensor_bytes": 109178481892,
+    "files": 133
+  }
+]

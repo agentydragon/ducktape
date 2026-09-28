@@ -256,3 +256,107 @@ fn gate_hard_errors_when_source_match_spec_has_unresolvable_sources() {
         "no file may be touched when the gate errors",
     );
 }
+
+/// Owner graph of [`graph_with_atomic_unit_and_sources`] plus one anonymous
+/// side-effect owner per ordinal in `anonymous_ordinals`.
+fn graph_with_anonymous_owners(anonymous_ordinals: &[usize]) -> String {
+    let mut graph: serde_json::Value =
+        serde_json::from_str(&graph_with_atomic_unit_and_sources()).unwrap();
+    let nodes = graph["nodes"].as_array_mut().unwrap();
+    for &ordinal in anonymous_ordinals {
+        nodes.push(serde_json::json!({
+            "id": format!("owner:{ordinal}"),
+            "statement_ordinal": ordinal,
+            "source_location": {
+                "source_path": "static/chunk.js",
+                "start_line": ordinal + 1,
+                "end_line": ordinal + 1
+            },
+            "declared_bindings": [],
+            "statement_kind": "side_effect",
+            "purity": { "kind": "pure" },
+            "destination": "home/atom"
+        }));
+    }
+    graph.to_string()
+}
+
+fn write_custom_fixture(
+    root: &Path,
+    graph_json: &str,
+    chunk_source: &str,
+    atom_yaml: &str,
+) -> (PathBuf, PathBuf) {
+    let modules = root.join("modules");
+    let graph = root.join("owner_graph.json");
+    write_text_file(&graph, graph_json);
+    write_text_file(&root.join("static/chunk.js"), chunk_source);
+    write_text_file(&modules.join("home/atom.yaml"), atom_yaml);
+    write_text_file(&modules.join("solo/gamma.yaml"), GAMMA_YAML);
+    (modules, graph)
+}
+
+fn assert_gate_error(out: &std::process::Output, expected: &str) {
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success() && stderr.contains(expected),
+        "expected the gate to fail with {expected:?}; stderr:\n{stderr}",
+    );
+}
+
+#[test]
+fn gate_rejects_source_match_that_matches_two_declarations() {
+    // `x` is an alpha-renamed wildcard, so the template matches both
+    // `const alpha = 1` and `const beta = 1`.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let (modules, graph) = write_custom_fixture(
+        root,
+        &graph_with_atomic_unit_and_sources(),
+        "const alpha = 1;\nconst beta = 1;\nconst gamma = 3;\n",
+        "source_matches:\n  - match: 'const x = 1;'\n    bindings:\n      - local: x\n        name: X\n",
+    );
+
+    let out = run_unassign(root, &modules, &graph, "gamma");
+
+    assert_gate_error(&out, "is ambiguous — matched 2 declarations (alpha, beta)");
+}
+
+#[test]
+fn gate_rejects_source_match_resolving_to_an_import_specifier() {
+    // An import specifier declares no chunk-top owner, so a claim on one
+    // names nothing the gate (or `run`) can place.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let (modules, graph) = write_custom_fixture(
+        root,
+        &graph_with_atomic_unit_and_sources(),
+        &format!("{CHUNK_SOURCE}import {{ dep }} from \"./dep.js\";\n"),
+        "members:\n  - selector: { binding: { name: alpha } }\n  - selector: { binding: { name: beta } }\n\
+         source_matches:\n  - match: 'import { dep } from \"./dep.js\";'\n    bindings:\n      - local: dep\n        name: Dep\n",
+    );
+
+    let out = run_unassign(root, &modules, &graph, "gamma");
+
+    assert_gate_error(&out, "binding `dep` does not map to an owner-graph node");
+}
+
+#[test]
+fn gate_rejects_anonymous_selector_matching_two_statements() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let (modules, graph) = write_custom_fixture(
+        root,
+        &graph_with_anonymous_owners(&[3, 4]),
+        &format!("{CHUNK_SOURCE}alpha.x = 1;\nalpha.x = 1;\n"),
+        "members:\n  - selector: { binding: { name: alpha } }\n  - selector: { binding: { name: beta } }\n\
+         anonymous_statements:\n  - match: 'alpha.x = 1;'\n",
+    );
+
+    let out = run_unassign(root, &modules, &graph, "gamma");
+
+    assert_gate_error(
+        &out,
+        "anonymous statement selector matched 2 source statements",
+    );
+}

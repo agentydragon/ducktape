@@ -22,16 +22,18 @@ contract.
   `namespace` field.
 - The consumer owns its `external-creds-reader` ServiceAccount and
   ExternalSecret.
-- The consumer Flux Kustomization depends on both `external-creds` and
-  `external-secrets-config`. Static suppliers do not depend on ESO or consumer
-  namespaces: a RoleBinding may name a ServiceAccount before that namespace or
-  identity exists.
+- The consumer Flux Kustomization depends on `external-secrets-operator`, which
+  serves the ExternalSecret CRD and ESO's admission webhook, and on neither
+  `external-secrets-config` nor `external-creds`: its ExternalSecret retries
+  until the store, the source Secret and its RoleBinding exist. Static suppliers
+  do not depend on ESO or consumer namespaces: a RoleBinding may name a
+  ServiceAccount before that namespace or identity exists.
 
 Approval stays at the source. Referencing the shared ClusterSecretStore does
 not grant access: the Kubernetes provider cannot read a canonical Secret
 unless `external-creds` contains a RoleBinding for that namespace's
-`external-creds-reader` ServiceAccount. The store's namespace conditions mirror
-the approved namespaces as defense in depth. The approved namespace remains the
+`external-creds-reader` ServiceAccount. As defense in depth, the store's namespace
+conditions are derived from the approved namespaces in `CREDENTIALS`. The approved namespace remains the
 trust boundary: workloads or operators able to use its approved identity can
 receive the credential.
 
@@ -40,8 +42,8 @@ receive the credential.
 Add a static credential by creating one encrypted source Secret under
 `cluster/k8s/external-creds` and adding its non-secret metadata to `CREDENTIALS`
 in `external_creds.py`. Add a consumer by adding its explicit
-`ApprovedConsumer` entry there, then add the ServiceAccount, ExternalSecret,
-and namespace to the shared store's conditions. A namespace needs only one
+`ApprovedConsumer` entry there, then add the ServiceAccount and ExternalSecret.
+A namespace needs only one
 `external-creds-reader` ServiceAccount even when it receives multiple approved
 credentials.
 

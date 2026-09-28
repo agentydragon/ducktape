@@ -7,11 +7,7 @@ overrides the workspace image's `unset` tag.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
-    SandboxTemplate,
-    SandboxTemplateSpec,
     SandboxTemplateSpecEnvVarsInjectionPolicy,
     SandboxTemplateSpecNetworkPolicyManagement,
     SandboxTemplateSpecPodTemplate,
@@ -34,56 +30,31 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpecVolumesEmptyDir,
     SandboxTemplateSpecPodTemplateSpecVolumesEmptyDirSizeLimit,
 )
-from agent_sandbox_sandboxwarmpool_crds.io.x_k8s.agents.extensions import (
-    SandboxWarmPool,
-    SandboxWarmPoolSpec,
-    SandboxWarmPoolSpecSandboxTemplateRef,
-    SandboxWarmPoolSpecUpdateStrategy,
-    SandboxWarmPoolSpecUpdateStrategyType,
-)
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromExtract,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMergePolicy,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
-from kyverno_cleanuppolicy_crds.io.kyverno import (
-    CleanupPolicy,
-    CleanupPolicySpec,
-    CleanupPolicySpecConditions,
-    CleanupPolicySpecConditionsAll,
-    CleanupPolicySpecConditionsAllOperator,
-    CleanupPolicySpecMatch,
-    CleanupPolicySpecMatchAny,
-    CleanupPolicySpecMatchAnyResources,
-)
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import forgejo_images
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s import agent_sandbox, external_creds, forgejo_images
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.forgejo import secret_copy
+from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.haku.namespace import NAMESPACE
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.kyverno.janitor import SANDBOX_KINDS, janitor
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
+from cluster.cdk8s.providers.external_secrets.external_secret import (
+    DataFrom,
+    ExternalSecret,
+    SecretStoreRef,
+    remote_data,
+)
 
 NAME = "haku-workspaces"
-OUTPUT_DIR = "cluster/k8s/haku/workspaces/app"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/haku/workspaces/app"
 TEMPLATE_NAME = "haku"
 
 _CONSOLE_ROLE = "haku-console-sandbox"
@@ -102,23 +73,12 @@ def _external_secrets(chart: Chart) -> None:
     ExternalSecret(
         chart,
         "forgejo-images-creds",
-        metadata=metadata(forgejo_images.SECRET_NAME, NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name="kubernetes-flux-system-secret-store",
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-            ),
-            target=ExternalSecretSpecTarget(
-                name=forgejo_images.SECRET_NAME,
-                template=ExternalSecretSpecTargetTemplate(
-                    type="kubernetes.io/dockerconfigjson",
-                    merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE,
-                ),
-            ),
-            data_from=[
-                ExternalSecretSpecDataFrom(extract=ExternalSecretSpecDataFromExtract(key=forgejo_images.SECRET_NAME))
-            ],
+        metadata=ApiObjectMetadata(name=forgejo_images.SECRET_NAME, namespace=NAMESPACE),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster("kubernetes-flux-system-secret-store"),
+        data_from=[DataFrom.from_extract(forgejo_images.SECRET_NAME)],
+        template=ExternalSecretSpecTargetTemplate(
+            type="kubernetes.io/dockerconfigjson", merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE
         ),
     )
     # Mirror the read-only ActivityWatch bearer into haku-sandbox so Haku can query the read route
@@ -130,44 +90,32 @@ def _external_secrets(chart: Chart) -> None:
     ExternalSecret(
         chart,
         "activitywatch-read-token",
-        metadata=metadata("activitywatch-read-token", NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name="kubernetes-activitywatch-secret-store",
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-            ),
-            target=ExternalSecretSpecTarget(name="activitywatch-read-token"),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key="token",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key="activitywatch-read-token", property="token"),
-                )
-            ],
-        ),
+        metadata=ApiObjectMetadata(name="activitywatch-read-token", namespace=NAMESPACE),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster("kubernetes-activitywatch-secret-store"),
+        data=[remote_data("activitywatch-read-token", "token")],
     )
     ExternalSecret(
         chart,
         "coinbase-api-credentials",
-        metadata=metadata("coinbase-api-credentials", NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name="kubernetes-external-creds-secret-store",
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-            ),
-            target=ExternalSecretSpecTarget(
-                name="haku-sandbox-coinbase-api-credentials",
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key=key,
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key="coinbase-api-credentials", property=key),
-                )
-                for key in ("api_key", "api_secret")
-            ],
-        ),
+        metadata=ApiObjectMetadata(name="coinbase-api-credentials", namespace=NAMESPACE),
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
+        data=[remote_data("coinbase-api-credentials", key) for key in ("api_key", "api_secret")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        target_name="haku-sandbox-coinbase-api-credentials",
+    )
+    # tf/gitops/haku-state's `haku` account: its git credentials, which Reflector mirrors on to
+    # the other haku-state git consumers, and the pull secret for Haku's own UI image.
+    reader = secret_copy.reader(chart, NAMESPACE)
+    secret_copy.secret_copy(
+        chart,
+        "haku-forgejo-git",
+        reader=reader,
+        mirror_namespaces=["haku-egress-proxy", "flux-system", "agentplane-index"],
+    )
+    secret_copy.secret_copy(
+        chart, "haku-forgejo-registry-pull", reader=reader, secret_type="kubernetes.io/dockerconfigjson"
     )
 
 
@@ -195,142 +143,137 @@ def _sandbox_template(chart: Chart) -> SandboxTemplate:
     return SandboxTemplate(
         chart,
         "sandbox-template",
-        metadata=metadata(TEMPLATE_NAME, NAMESPACE),
-        spec=SandboxTemplateSpec(
-            # Unmanaged so the controller doesn't stamp its own RFC1918-blocking policy that would
-            # fight the haku-egress-proxy fence applied at the namespace level (the existing
-            # haku-sandbox-force-proxy CCNP).
-            network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
-            # Claims may inject env, same as the runner templates: the claim-env rail is how a
-            # per-provision caller-bound token reaches the box (#5228 slice 1); without this the
-            # controller rejects claim env (`EnvVarsInjectionRejected`, fatal in the sandbox
-            # client). Injection authority stays Console's -- only Console creates claims against
-            # this pool.
-            env_vars_injection_policy=SandboxTemplateSpecEnvVarsInjectionPolicy.ALLOWED,
-            pod_template=SandboxTemplateSpecPodTemplate(
-                metadata=SandboxTemplateSpecPodTemplateMetadata(labels={"app.kubernetes.io/name": "haku-sandbox"}),
-                spec=SandboxTemplateSpecPodTemplateSpec(
-                    # Controller defaults DNS to public resolvers only; restore cluster DNS so
-                    # forgejo-http.forgejo (module fetch + haku-state clone) resolves.
-                    dns_policy="ClusterFirst",
-                    image_pull_secrets=[
-                        SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name=forgejo_images.SECRET_NAME)
-                    ],
-                    # No region nodeSelector: any always-on node (hil/home/proxmox) is fine now that
-                    # /workspace is an emptyDir (below) rather than a region-pinned PVC. Roaming
-                    # nodes (iguana, rugged) stay excluded on their own via their existing
-                    # `node-role.kubernetes.io/roaming=true:NoSchedule` taint -- no explicit
-                    # exclusion needed here.
-                    # TODO(operator, 2026-07-25): roaming nodes are often offline (see
-                    # cluster/README.md Node Types), so scheduling a sandbox there needs more
-                    # thought (claim durability across a node going away mid-session,
-                    # re-provisioning UX) before adding the toleration that would let a claim land
-                    # on one. Not done as part of this change.
-                    # No Kubernetes credential is mounted. `kubectl` reaches the API only through
-                    # haku-kube-api-proxy, which asks Console about every request before forwarding
-                    # it under the proxy's own in-cluster credential. Standing authority is
-                    # unchanged -- Console SARs the haku access-profile group, bound to the same
-                    # haku-sandbox-admin Role the mounted token carried (haku/rbac.py) -- so this
-                    # removes an exfiltratable credential rather than access. The per-claim setup
-                    # script writes the kubeconfig from the two env vars below.
-                    automount_service_account_token=False,
-                    security_context=SandboxTemplateSpecPodTemplateSpecSecurityContext(
-                        run_as_non_root=True,
-                        run_as_user=1000,
-                        run_as_group=1000,
-                        fs_group=1000,
-                        seccomp_profile=SandboxTemplateSpecPodTemplateSpecSecurityContextSeccompProfile(
-                            type="RuntimeDefault"
-                        ),
+        metadata=ApiObjectMetadata(name=TEMPLATE_NAME, namespace=NAMESPACE),
+        # Unmanaged so the controller doesn't stamp its own RFC1918-blocking policy that would
+        # fight the haku-egress-proxy fence applied at the namespace level (the existing
+        # haku-sandbox-force-proxy CCNP).
+        network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
+        # Claims may inject env, same as the runner templates: the claim-env rail is how a
+        # per-provision caller-bound token reaches the box (#5228 slice 1); without this the
+        # controller rejects claim env (`EnvVarsInjectionRejected`, fatal in the sandbox
+        # client). Injection authority stays Console's -- only Console creates claims against
+        # this pool.
+        env_vars_injection_policy=SandboxTemplateSpecEnvVarsInjectionPolicy.ALLOWED,
+        pod_template=SandboxTemplateSpecPodTemplate(
+            metadata=SandboxTemplateSpecPodTemplateMetadata(labels={"app.kubernetes.io/name": "haku-sandbox"}),
+            spec=SandboxTemplateSpecPodTemplateSpec(
+                # Controller defaults DNS to public resolvers only; restore cluster DNS so
+                # forgejo-http.forgejo (module fetch + haku-state clone) resolves.
+                dns_policy="ClusterFirst",
+                image_pull_secrets=[
+                    SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name=forgejo_images.SECRET_NAME)
+                ],
+                # No region nodeSelector: any always-on node (hil/home/proxmox) is fine now that
+                # /workspace is an emptyDir (below) rather than a region-pinned PVC. Roaming
+                # nodes (iguana, rugged) stay excluded on their own via their existing
+                # `node-role.kubernetes.io/roaming=true:NoSchedule` taint -- no explicit
+                # exclusion needed here.
+                # TODO(operator, 2026-07-25): roaming nodes are often offline (see
+                # cluster/README.md Node Types), so scheduling a sandbox there needs more
+                # thought (claim durability across a node going away mid-session,
+                # re-provisioning UX) before adding the toleration that would let a claim land
+                # on one. Not done as part of this change.
+                # No Kubernetes credential is mounted. `kubectl` reaches the API only through
+                # haku-kube-api-proxy, which asks Console about every request before forwarding
+                # it under the proxy's own in-cluster credential. Standing authority is
+                # unchanged -- Console SARs the haku access-profile group, bound to the same
+                # haku-sandbox-admin Role the mounted token carried (haku/rbac.py) -- so this
+                # removes an exfiltratable credential rather than access. The per-claim setup
+                # script writes the kubeconfig from the two env vars below.
+                automount_service_account_token=False,
+                security_context=SandboxTemplateSpecPodTemplateSpecSecurityContext(
+                    run_as_non_root=True,
+                    run_as_user=1000,
+                    run_as_group=1000,
+                    fs_group=1000,
+                    seccomp_profile=SandboxTemplateSpecPodTemplateSpecSecurityContextSeccompProfile(
+                        type="RuntimeDefault"
                     ),
-                    containers=[
-                        SandboxTemplateSpecPodTemplateSpecContainers(
-                            name="workspace",
-                            # image-pins/ sets the tag.
-                            image="git.allegedly.works/ducktape-ci/haku-sandbox-image:unset",
-                            command=["sleep", "infinity"],
-                            working_dir="/workspace",
-                            security_context=SandboxTemplateSpecPodTemplateSpecContainersSecurityContext(
-                                allow_privilege_escalation=False,
-                                capabilities=SandboxTemplateSpecPodTemplateSpecContainersSecurityContextCapabilities(
-                                    drop=["ALL"]
-                                ),
-                            ),
-                            env=[
-                                # The haku Forgejo credential is redeemed by the colocated egress
-                                # fence: this inert password is replaced only in Authorization
-                                # headers for the approved Forgejo origins. The per-claim
-                                # haku-sandbox-setup.sh writes the pair into ~/.netrc for both
-                                # in-cluster git fetches (the ducktape_haku module git_override on
-                                # every bazel invocation + the haku-state clone), while the real
-                                # credential stays in Console.
-                                SandboxTemplateSpecPodTemplateSpecContainersEnv(name="HAKU_GIT_USERNAME", value="haku"),
-                                SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                                    name="HAKU_GIT_PASSWORD", value="haku-forgejo-token-placeholder"
-                                ),
-                                # The haku-console agent bearer, so the CLI's console-MCP client
-                                # (`cli/console.py`, which prefers this env var over a kubectl
-                                # secret read) authenticates with no kubectl and no per-run token
-                                # fetch -- `bazel run //cli:haku -- read --all` works out of the
-                                # box. Same credential the agent already drives the console with;
-                                # keeping it on the pod env grants no authority the sandbox lacked.
-                                SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                                    name="HAKU_CONSOLE_TOKEN",
-                                    value_from=SandboxTemplateSpecPodTemplateSpecContainersEnvValueFrom(
-                                        secret_key_ref=SandboxTemplateSpecPodTemplateSpecContainersEnvValueFromSecretKeyRef(
-                                            name="haku-console-agent-api", key="token"
-                                        )
-                                    ),
-                                ),
-                                # Where `kubectl` sends everything, now that nothing is mounted.
-                                # Console authorizes each request against the bearer above;
-                                # haku-sandbox-setup.sh turns the pair into ~/.kube/config with the
-                                # bearer in a mode-0600 tokenFile. https, never http: client-go
-                                # attaches kubeconfig credentials only to a TLS server.
-                                SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                                    name="HAKU_KUBERNETES_PROXY_URL",
-                                    value="https://haku-kube-api-proxy.haku-console.svc.cluster.local:8443",
-                                ),
-                            ],
-                            resources=SandboxTemplateSpecPodTemplateSpecContainersResources(
-                                requests={
-                                    "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string(
-                                        "1"
-                                    ),
-                                    "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string(
-                                        "2Gi"
-                                    ),
-                                },
-                                limits={
-                                    "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("3"),
-                                    "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string(
-                                        "6Gi"
-                                    ),
-                                },
-                            ),
-                            volume_mounts=[
-                                SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
-                                    name="workspace", mount_path="/workspace"
-                                )
-                            ],
-                        )
-                    ],
-                    # emptyDir, not a PVC: /workspace only ever holds a shallow (--depth 1)
-                    # haku-state git checkout, which haku-sandbox-setup.sh unconditionally
-                    # fetch+reset --hard's on every claim, so nothing here needs to survive a pod
-                    # restart. A network filesystem also costs binding latency and makes Bazel's
-                    # project-file scan intermittently ENOENT against SeaweedFS.
-                    volumes=[
-                        SandboxTemplateSpecPodTemplateSpecVolumes(
-                            name="workspace",
-                            empty_dir=SandboxTemplateSpecPodTemplateSpecVolumesEmptyDir(
-                                size_limit=SandboxTemplateSpecPodTemplateSpecVolumesEmptyDirSizeLimit.from_string(
-                                    "30Gi"
-                                )
-                            ),
-                        )
-                    ],
                 ),
+                containers=[
+                    SandboxTemplateSpecPodTemplateSpecContainers(
+                        name="workspace",
+                        # image-pins/ sets the tag.
+                        image="git.allegedly.works/ducktape-ci/haku-sandbox-image:unset",
+                        command=["sleep", "infinity"],
+                        working_dir="/workspace",
+                        security_context=SandboxTemplateSpecPodTemplateSpecContainersSecurityContext(
+                            allow_privilege_escalation=False,
+                            capabilities=SandboxTemplateSpecPodTemplateSpecContainersSecurityContextCapabilities(
+                                drop=["ALL"]
+                            ),
+                        ),
+                        env=[
+                            # TODO(haku-egress): this placeholder has no redeemer. It was meant to
+                            # be replaced with the real haku Forgejo password in Authorization
+                            # headers by a colocated Console egress proxy that was never built
+                            # (haku/console/grants/http's decommission removed the last trace of
+                            # that design -- see its PR). The per-claim haku-sandbox-setup.sh
+                            # writes the pair into ~/.netrc for both in-cluster git fetches (the
+                            # ducktape_haku module git_override on every bazel invocation + the
+                            # haku-state clone), so those fetches currently present this literal
+                            # placeholder string as the password, unsubstituted.
+                            SandboxTemplateSpecPodTemplateSpecContainersEnv(name="HAKU_GIT_USERNAME", value="haku"),
+                            SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                                name="HAKU_GIT_PASSWORD", value="haku-forgejo-token-placeholder"
+                            ),
+                            # The haku-console agent bearer, so the CLI's console-MCP client
+                            # (`cli/console.py`, which prefers this env var over a kubectl
+                            # secret read) authenticates with no kubectl and no per-run token
+                            # fetch -- `bazel run //cli:haku -- read --all` works out of the
+                            # box. Same credential the agent already drives the console with;
+                            # keeping it on the pod env grants no authority the sandbox lacked.
+                            SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                                name="HAKU_CONSOLE_TOKEN",
+                                value_from=SandboxTemplateSpecPodTemplateSpecContainersEnvValueFrom(
+                                    secret_key_ref=SandboxTemplateSpecPodTemplateSpecContainersEnvValueFromSecretKeyRef(
+                                        name="haku-console-agent-api", key="token"
+                                    )
+                                ),
+                            ),
+                            # Where `kubectl` sends everything, now that nothing is mounted.
+                            # Console authorizes each request against the bearer above;
+                            # haku-sandbox-setup.sh turns the pair into ~/.kube/config with the
+                            # bearer in a mode-0600 tokenFile. https, never http: client-go
+                            # attaches kubeconfig credentials only to a TLS server.
+                            SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                                name="HAKU_KUBERNETES_PROXY_URL", value=kube_api_proxy.URL
+                            ),
+                        ],
+                        resources=SandboxTemplateSpecPodTemplateSpecContainersResources(
+                            requests={
+                                "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("1"),
+                                "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string(
+                                    "2Gi"
+                                ),
+                            },
+                            limits={
+                                "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("3"),
+                                "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string(
+                                    "6Gi"
+                                ),
+                            },
+                        ),
+                        volume_mounts=[
+                            SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
+                                name="workspace", mount_path="/workspace"
+                            )
+                        ],
+                    )
+                ],
+                # emptyDir, not a PVC: /workspace only ever holds a shallow (--depth 1)
+                # haku-state git checkout, which haku-sandbox-setup.sh unconditionally
+                # fetch+reset --hard's on every claim, so nothing here needs to survive a pod
+                # restart. A network filesystem also costs binding latency and makes Bazel's
+                # project-file scan intermittently ENOENT against SeaweedFS.
+                volumes=[
+                    SandboxTemplateSpecPodTemplateSpecVolumes(
+                        name="workspace",
+                        empty_dir=SandboxTemplateSpecPodTemplateSpecVolumesEmptyDir(
+                            size_limit=SandboxTemplateSpecPodTemplateSpecVolumesEmptyDirSizeLimit.from_string("30Gi")
+                        ),
+                    )
+                ],
             ),
         ),
     )
@@ -377,96 +320,43 @@ def chart(app: App) -> Chart:
     k8s.KubeServiceAccount(
         chart, "external-creds-reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=NAMESPACE)
     )
-    sandbox_template = _sandbox_template(chart)
     # One pre-warmed Haku sandbox so a SandboxClaim (from the sandbox-provisioning MCP) is ready
     # in seconds instead of a cold image pull + PVC bind. Costs one idle pod (1 cpu / 2Gi
     # requests) inside the namespace quota; bump replicas only if claims routinely outpace warmup.
-    SandboxWarmPool(
-        chart,
-        "warm-pool",
-        metadata=metadata("haku", NAMESPACE),
-        spec=SandboxWarmPoolSpec(
-            replicas=1,
-            update_strategy=SandboxWarmPoolSpecUpdateStrategy(type=SandboxWarmPoolSpecUpdateStrategyType.RECREATE),
-            sandbox_template_ref=SandboxWarmPoolSpecSandboxTemplateRef(name=sandbox_template.name),
-        ),
-    )
-    # Same 7-day backstop as the agent-workspaces janitor: a Sandbox/SandboxClaim whose owner
-    # forgot shutdownTime would otherwise pin quota forever. Reaping is at the CR level (the
-    # controller recreates a Sandbox's pod, so a pod-level janitor just churns). Warm-pool
-    # sandboxes reaped at 7d are recreated by the pool -- a harmless periodic refresh. Delete RBAC
-    # is the shared kyverno/policies/clusterrole-cleanup-controller-sandboxes.yaml (cluster-wide).
-    CleanupPolicy(
-        chart,
-        "janitor",
-        metadata=metadata("haku-workspace-janitor", NAMESPACE),
-        spec=CleanupPolicySpec(
-            schedule="45 * * * *",
-            match=CleanupPolicySpecMatch(
-                any=[
-                    CleanupPolicySpecMatchAny(
-                        resources=CleanupPolicySpecMatchAnyResources(
-                            kinds=["agents.x-k8s.io/v1beta1/Sandbox", "extensions.agents.x-k8s.io/v1beta1/SandboxClaim"]
-                        )
-                    )
-                ]
-            ),
-            conditions=CleanupPolicySpecConditions(
-                all=[
-                    CleanupPolicySpecConditionsAll(
-                        key="{{ time_since('', '{{ target.metadata.creationTimestamp }}', '') }}",
-                        operator=CleanupPolicySpecConditionsAllOperator.GREATER_THAN,
-                        value="168h",
-                    )
-                ]
-            ),
-        ),
+    agent_sandbox.warm_pool(chart, "warm-pool", template=_sandbox_template(chart))
+    janitor(
+        chart, "janitor", name="haku-workspace-janitor", namespace=NAMESPACE, schedule="45 * * * *", kinds=SANDBOX_KINDS
     )
     _console_rbac(chart)
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"], components=["./image-pins"]),
-    )
-
-
 def haku_workspaces(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     agent_sandbox_controller: Kustomization,
     haku_rbac: Kustomization,
     haku_egress_proxy: Kustomization,
     kyverno_policies: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     name = "haku-workspaces"
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=flux_kustomization_depends_on_many(
-                # shared CRDs + controller
-                agent_sandbox_controller,
-                # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs
-                haku_rbac,
-                # the fence haku-sandbox is opted into
-                haku_egress_proxy,
-                # CleanupPolicy CRD and cleanup-controller permissions
-                kyverno_policies,
-                # ESO CRDs and shared ClusterSecretStore
-                external_secrets_config,
-            ),
+        directory,
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(
+            # shared CRDs + controller
+            agent_sandbox_controller,
+            # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs
+            haku_rbac,
+            # destructive-if-out-of-order: the haku-sandbox egress fence must precede sandbox pods.
+            haku_egress_proxy,
+            # CleanupPolicy CRD and cleanup-controller permissions
+            kyverno_policies,
+            # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
+            external_secrets_operator,
         ),
         description="General Haku workspaces in haku-sandbox.",
     )

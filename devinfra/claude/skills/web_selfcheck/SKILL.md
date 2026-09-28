@@ -10,7 +10,7 @@ description: >-
 # Session Selfcheck
 
 This skill is the **runnable acceptance test** for the Rust hook daemon
-specification at <../../claude_hook/SPEC.md>.
+specification at `devinfra/claude/claude_hook/SPEC.md`.
 
 ## How to use this skill
 
@@ -297,7 +297,7 @@ informationally; only flag if a workflow genuinely needs local Docker.
 These are not in SPEC.md but catch real-world failure modes. Include them
 in the report under a separate "Diagnostics" heading.
 
-**Before running D1/D2**, skim <../../docs/web-setup-debug.md>
+**Before running D1/D2**, skim `devinfra/claude/docs/web-setup-debug.md`
 — it documents the historical failure modes (SHA-pinned setup URLs, the
 Firecracker "pin drift on persistent rootfs" class, the Nix 2.34.3 SIGABRT
 masking issue) and is the authoritative reference for
@@ -340,7 +340,7 @@ signal for a hook incompatibility is a schema/template error in `daemon.err.log`
 sessions with a persistent rootfs, `nix profile install` is a no-op when
 devtools is already installed, so the Rust dispatcher and Python statusline
 can remain at first-boot versions even though `nix/artifact-pins.json` moved
-forward. This is the class of failure described in <../../docs/web-setup-debug.md>
+forward. This is the class of failure described in `devinfra/claude/docs/web-setup-debug.md`
 "Pin drift on persistent rootfs". Typical symptom: SessionStart crashes
 with `'Undefined' object has no attribute '<field>'` in `daemon.err.log`,
 or silently missing env vars because `serde` ignores an unrecognized

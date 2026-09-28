@@ -1,7 +1,7 @@
 # Regenerate the cdk8s manifests on Renovate branches.
 #
 # Renovate bumps a pin in cluster/cdk8s/**/*.py (renovate.json5's cdk8s custom
-# manager), which leaves cluster/k8s/**/*.k8s.yaml stale and
+# manager), which leaves cluster/k8s/**/*.k8s.yaml or cluster/generated stale and
 # //cluster/cdk8s:test_generate_manifests red. This job runs the generator on
 # the pushed commit and pushes any change back as one follow-up commit.
 #
@@ -46,10 +46,10 @@ jobs:
       - name: Stage generated files
         id: stage
         run: |
-          git add -A cluster/k8s
-          if [[ -n "$(git status --porcelain --untracked-files=all -- ':!cluster/k8s')" ]]; then
+          git add -A cluster/k8s cluster/generated
+          if [[ -n "$(git status --porcelain --untracked-files=all -- ':!cluster/k8s' ':!cluster/generated')" ]]; then
             git status --short
-            echo "::error::the generator wrote outside cluster/k8s"
+            echo "::error::the generator wrote outside cluster/k8s and cluster/generated"
             exit 1
           fi
           if git diff --cached --quiet; then

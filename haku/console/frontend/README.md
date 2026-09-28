@@ -39,7 +39,7 @@ emitted `.js`, and vitest runs the emitted `.test.js`.
   stylesheet, which is class-prefixed and palette-scoped so it cannot restyle the console.
 - `open_external.ts` — `openExternal(url)`: opens a link in a new tab with the opener
   severed, shared by the embed shell (the `openLink` Agent UI bridge action) and the settings panel
-  (the MCP OAuth popup).
+  (the account-link popup).
 - `tool_arguments_field.tsx` / `icons.tsx` — shared tool-argument renderer (per-server
   preview or raw JSON) and the icon set, used by both the approvals panel and the history view.
   Icons are thin wrappers over **per-icon `@tabler` subpath imports**, never the barrel, which OOMs
@@ -61,7 +61,7 @@ emitted `.js`, and vitest runs the emitted `.test.js`.
   OpenAPI schema (the `:schema` target runs `//haku/console:export_schema_bin`), so
   the Pydantic models are the single source of truth for the wire contract. Includes the
   launch-routine helper, MCP approval queue helpers (`pending`, approve, deny), and
-  MCP operator-account association helpers.
+  provider account-connection helpers.
 - `confirm_dialog.tsx` — trusted top-layer confirmations for Agent UI bridge launches, geolocation
   grants, off-whitelist opens, and MCP tool-call approvals.
 - `styles.src.css` — `@import`s Tailwind + `@mantine/core` CSS; compiled by

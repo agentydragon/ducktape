@@ -53,7 +53,8 @@ Model with constructs, deploy with one props object per environment.
   `Volume.from_config_map(config_map)`, `Role.from_role_name(...)`; a network rule
   targets a workload through the constant the owning module exports
   (`cilium.endpoint_labels(namespace, egress.NAME)`), never the
-  string spelled again.
+  string spelled again. So a helper that builds an object returns it: the caller gets
+  something to reference instead of a name to repeat.
 - **The service's `Settings` is its deployment contract.** Flags, env vars and settings
   files are rendered through the binary's pydantic-settings model
   (`util/settings_contract.py`: `cli_args`, `env_name`, `settings_file`,
@@ -61,13 +62,36 @@ Model with constructs, deploy with one props object per environment.
   and its `CONFIG_FILE_ENV`; `cluster/cdk8s` owns where and how it runs. Nothing under
   `x/` or `haku/` imports `cluster/`. A project's own `deploy/` may hold a props-driven
   construct (tested with synthetic props); the cluster's instantiation of it lives here.
+  The general rule is that configuration is typed by its consumer's own schema. Where
+  that schema lives in another artifact, a model mirrors it and a test ties the two: a
+  tofu-controller module's inputs are a frozen pydantic model mirroring its
+  `variables.tf` (`gitops_terraform(variables=...)`, `test_terraform_vars.py`), since
+  tofu only warns on an undeclared variable.
+- **What the generator knows, it renders.** A value known at synth is written into the
+  object as a Python constant. Flux `postBuild` substitution is for a value only the
+  cluster has. Substituting a synth-time value costs a Kustomization and a `dependsOn`
+  edge on every consumer, and hides the applied value from the committed manifests and
+  `render_diff.py`, which see only `${VAR}`.
+- **A cluster-wide behavior is configured once, where it runs; objects carry only the
+  exceptions.** Restating the default on each object adds nothing when it matches, and
+  looks like it works where the mechanism never reads it. Reloader runs with
+  `autoReloadAll` (`reloader.py`) and reads only a workload's own metadata, never its
+  pod template: a workload that must not restart says `"false"` there, and the rest say
+  nothing. Alloy discovers every ServiceMonitor, PodMonitor and PrometheusRule without a
+  selector, so none carries a label for it.
+- **One shape per job.** Each job this layer does (build a kind, build one variant of a
+  field, amend a pod spec, declare a Flux node) has one mechanism. Before writing a
+  helper, find how the tree already does that job and use that shape; a second shape
+  for the same job is a review finding even when both work. Mechanisms multiply one
+  reasonable PR at a time, and each is another convention every reader must learn.
 - **One helper per repeated shape.** When the same dozen generated-struct lines appear
-  twice, name the shape once: `cilium.py` (`ingress_from_gateway`, `egress_to`,
-  `egress_to_fqdns`, `egress_via_gateway`, `dns_egress`, `fqdn_fence`,
-  `deny_all_egress`, ...), `gateway.https_route`, `probes.http_probe`,
-  `agentplane/migrate_container.py`, `agentplane/node_scheduling.py`,
-  `pod_spec_patches.py`, `api_resource.custom_resource`. Parameterize the variation the
-  call sites have (SNI list, listener, timeout), not variation nobody uses.
+  twice, name the shape once: `cilium.py` (`egress_via_gateway`, `dns_egress`,
+  `fqdn_fence`, ...) for this cluster's own facts, `providers/cilium/network_policy.py`'s
+  `EgressRule`/`IngressRule` for the generic shapes; `gateway.https_route`,
+  `probes.http_probe`, `agentplane/migrate_container.py`,
+  `node_scheduling.py`, `pod_policy.py`, `api_resource.custom_resource`.
+  Parameterize the variation the call sites have (SNI list, listener, timeout), not
+  variation nobody uses.
 - **A value that feeds two artifacts lives once.** The web-push hosts feed both the
   Action Service allowlist and its egress rule from one tuple in `staging.py`. When
   two artifacts must agree, derive both from one value; never write a test that reads
@@ -80,14 +104,22 @@ Model with constructs, deploy with one props object per environment.
 Every Flux `Kustomization` is one function in one shared chart, and its dependencies are
 its parameters. `generate_manifests.py` is the topological order, written out by hand.
 
-- **A node is `name(chart, artifact, *predecessors: Kustomization) -> Kustomization`.** It
-  builds its `KustomizationSpec` with the literals from its directory, reads `sourceRef`
-  and `path` off its artifact (`artifact_source_ref`, `artifact_path`), and returns
-  `flux.flux_kustomization(chart, name, spec=...)`. The entry point builds the artifact
-  (`artifact_generators.artifact(name, directory, *shared_bases)`) just before the call,
-  and passes every artifact to `write_artifact_generators` last; a parked node's
-  artifact is left out, since nothing packages a suspended directory. A node sourcing a
-  `GitRepository` directly takes no artifact. `dependsOn` is
+- **A node is `name(chart, directory: RenderedDirectory, *predecessors) -> Kustomization`**
+  and writes no file. It returns `flux.flux_kustomization(chart, name, directory, ...)`,
+  which derives `sourceRef`, `path` and `decryption` from the directory and applies our
+  defaults (listed once, in its docstring); the node passes only the `KustomizationSpec`
+  fields that differ, as keywords of the same names and types. The entry point builds the
+  artifact (`artifact_generators.artifact(name, directory, *shared_bases)`) just before
+  the call and writes the directory in the node's argument:
+  `generation.write_directory(root, artifact, *chart_builders, siblings=[...])`
+  synthesizes the charts and writes a `kustomization.yaml` listing them and the
+  hand-written siblings, so a component is written and joined in one statement. It passes
+  every artifact to `write_artifact_generators` last; a parked node's artifact is left
+  out, since nothing packages a suspended directory. A directory keeping a hand-written
+  `kustomization.yaml` is written by its module's `write_manifests` at the top of
+  `generate_manifests()`, and its node takes the artifact in place of a directory, as do
+  the nodes not yet converted to `write_directory`. A node sourcing a `GitRepository`
+  directly takes neither and passes that `sourceRef` and a `path` instead. `dependsOn` is
   `flux_kustomization_depends_on_many(predecessor, ...)`, which reads name and namespace
   off the constructs it is handed; the entry carries an explicit `namespace` for that
   reason. The predecessor is a value the caller already built, never a string, a
@@ -112,54 +144,74 @@ its parameters. `generate_manifests.py` is the topological order, written out by
   from its directory; the `ArtifactGenerator` from all artifacts, last. Building a
   Kustomization from the artifact inventory, or the inventory from the Kustomizations'
   `sourceRef` names, is the same mistake facing opposite ways.
-- **Repetition is not a reason to abstract yet.** Two hundred nodes say
-  `interval="10m"`; keep saying it. The operational fields (`interval`,
-  `retry_interval`, `timeout`, `prune`, `wait`, `suspend`) are per-node choices a reader
-  must see on the node, and Flux's own defaults differ from ours. A literal that is the
-  same _fact_ in two places (the node's name in `metadata` and in its own `sourceRef`)
-  becomes one local; a block that is the same _value_ everywhere (the SOPS `decryption`
-  entry) may become one module constant. Nothing else until every node it would touch is
-  in Python.
+- **A default is policy, not the common value.** `flux_kustomization` defaults a field
+  only where nearly every node agrees and the value is a stance we take for all of them;
+  a per-app choice (`timeout`, `decryption`, `health_checks`) stays on the node. `None`
+  leaves a field unset, so Flux's own default applies; Flux's defaults differ from ours.
+  A literal that is the same _fact_ in two places becomes one local; a block that is the
+  same _value_ everywhere (the SOPS `decryption` entry) may become one module constant.
 - **A node lives with its directory's generator once that directory is fully
   generated** (`aiquota.aiquota`, `litellm.keys.litellm_keys_tf`); until then it stays in
   `<area>/flux_kustomizations.py`, one package per area, and moves as part of the
   conversion. No interim flattening of those packages.
 - **Output routing is by `spec.path`**, with the handful of Kustomizations whose `path`
   is not their own directory listed explicitly in the writer. Keep those explicit.
+- **A directory's root is written once**: its module's `OUTPUT_DIR` (or a named constant
+  like `BASE_DIR`) is `f"{GENERATED_ROOT}/..."` or `f"{HAND_WRITTEN_ROOT}/..."`
+  (`manifest_roots.py`), and the artifact in `generate_manifests.py` takes that constant,
+  never the path spelled again. Moving a directory between roots is that one edit, plus
+  the committed files; `GENERATED_ROOT` is right exactly when the generator writes every
+  file the directory holds.
 
-The worked edge, `monitoring-crds -> cilium-monitoring`:
+The worked edge, `monitoring-crds -> ntfy`:
 
 ```python
 # monitoring/flux_kustomizations.py
 def monitoring_crds(chart: Chart) -> Kustomization:
-    name = "monitoring-crds"
-    return flux_kustomization(chart, name, spec=KustomizationSpec(..., prune=False))
-
-
-# monitoring/cilium_monitoring.py, beside the chart it deploys
-def cilium_monitoring(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
-) -> Kustomization:
-    name = "cilium-monitoring"
     return flux_kustomization(
         chart,
-        name,
-        spec=KustomizationSpec(
-            ...,
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            # The ServiceMonitor CRD.
-            depends_on=flux_kustomization_depends_on_many(monitoring_crds),
-        ),
+        "monitoring-crds",
+        KustomizationSpecSourceRef(kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, ...),
+        path="./example/prometheus-operator-crd-full",
+        interval="1h",
+        prune=False,  # Don't delete CRDs on uninstall (safety)
+        timeout="5m",
+    )
+
+
+# ntfy.py, beside the chart it deploys
+def ntfy(
+    flux_chart: Chart,
+    directory: RenderedDirectory,
+    cnpg: Kustomization,
+    external_secrets_operator: Kustomization,
+    monitoring_crds: Kustomization,
+    kyverno: Kustomization,
+) -> Kustomization:
+    return flux_kustomization(
+        flux_chart,
+        NAME,
+        directory,
+        timeout="10m",
+        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, monitoring_crds, kyverno),
     )
 
 
 # generate_manifests.py
 monitoring_crds_kustomization = monitoring_flux_kustomizations.monitoring_crds(flux_chart)
-monitoring_cilium_artifact = artifact("monitoring-cilium", cilium_monitoring.OUTPUT_DIR)
-cilium_monitoring.cilium_monitoring(flux_chart, monitoring_cilium_artifact, monitoring_crds_kustomization)
 ...
-write_artifact_generators(root, ducktape=[..., monitoring_cilium_artifact, ...], flux_system=[...])
+ntfy_artifact = artifact("ntfy", ntfy.OUTPUT_DIR)
+ntfy_kustomization = ntfy.ntfy(
+    flux_chart,
+    # The SOPS sibling turns on Flux decryption.
+    write_directory(root, ntfy_artifact, ntfy.chart, siblings=["credentials.sops.yaml"]),
+    cnpg_kustomization,
+    external_secrets_operator_kustomization,
+    monitoring_crds_kustomization,
+    kyverno_kustomization,
+)
+...
+write_artifact_generators(root, ducktape=[..., ntfy_artifact, ...], flux_system=[...])
 ```
 
 The one edge still written as a string is `artifact-generators -> flux-system`
@@ -173,9 +225,10 @@ indirection, stop and ask before changing the design.
 ## Testing a generator
 
 - **The snapshot is the only pin.** `//cluster/cdk8s:test_generate_manifests`
-  regenerates every generated file in memory and asserts equality with the committed
-  files, including the single `cluster/k8s/flux/kustomizations.k8s.yaml` chart; a change
-  to generated output is a diff in the PR that makes it.
+  regenerates in memory and asserts every written file equals the committed one at its
+  path, including the single `cluster/k8s/flux/kustomizations.k8s.yaml` chart, and that
+  `cluster/generated` holds nothing else; a change to generated output is a diff in the
+  PR that makes it. No list of files to keep: the data deps carry both whole trees.
 - **Invariants live beside the generator**: tests over the in-memory synth
   (`agentplane/conftest.py`'s `agentplane_manifests`), or
   **fleet rules** (`fleet_rules.py`, run by every synth through
@@ -259,9 +312,10 @@ image="busybox:1.38",
   container-level is typed.
 - `cdk8s_plus_34` defaults: `automount_token=False` on a ServiceAccount and
   `automount_service_account_token=False` on a workload, both to set for a TokenReview
-  caller; `readOnlyRootFilesystem`/`runAsNonRoot` hardened
-  (`agentplane/container_security.py` opts out where unaudited);
-  `allowPrivilegeEscalation: false` and `privileged: false` always emitted; the
+  caller; `readOnlyRootFilesystem`/`runAsNonRoot` hardened (a container whose writes
+  are unaudited states `read_only_root_filesystem=False`);
+  `allowPrivilegeEscalation: false` and `privileged: false` always emitted, capabilities
+  never (`pod_policy.harden` drops ALL where unset); the
   Deployment selector is `cdk8s.io/metadata.addr`, not `app.kubernetes.io/name`
   (`select=False` plus `deployment.select(LabelSelector.of(labels=...))` keeps a
   hand-written selector, which is immutable on the live Deployment;
@@ -270,8 +324,8 @@ image="busybox:1.38",
   affinity, not `nodeSelector`.
 - `add_container(env_from=[EnvFrom(config_map=...)])` takes the wrapper, not the
   ConfigMap.
-- `Chart(namespace=...)` would drop the `metadata(name, namespace)` call from every
-  object, but it injects the namespace into cluster-scoped objects too (ClusterRole,
+- `Chart(namespace=...)` would drop `namespace=` from every object's `ApiObjectMetadata`,
+  but it injects the namespace into cluster-scoped objects too (ClusterRole,
   Bundle) with no opt-out; usable only once cluster-scoped objects get their own chart.
 - Synth imports each service's `main` for its `Settings`, pulling the runtime in; synth
   tests are `size = "medium"` until a light `settings.py` per service exists
@@ -279,7 +333,7 @@ image="busybox:1.38",
 - `cdk8s import` names a multi-version CRD's _first listed_ version plainly and
   suffixes the others, regardless of which is the storage version: tofu-controller's
   `Terraform` is v1alpha1, the cluster's CRs are `TerraformV1Alpha2`
-  (`//cluster/cdk8s/crd_bindings/tofu_controller:test_terraform_import` pins it).
+  (`//cluster/cdk8s/providers/tofu_controller:test_terraform_import` pins it).
 
 ## Ecosystem (checked 2026-09-18)
 
@@ -313,12 +367,26 @@ typed alternative exists. Three tiers, in order:
 3. **CRD type** (own `apiVersion` group, e.g. `external-secrets.io`,
    `monitoring.coreos.com`): generate real bindings via `cdk8s_import`
    (`devinfra/js/cdk8s_import.bzl`;
-   `//cluster/cdk8s/crd_bindings/{flux,prometheus_operator,gateway_api,external_secrets,cilium}` are
-   the examples) — this is the same generator tier 2 already ran for you on the core
-   API, just pointed at the CRD's own schema instead.
+   `//cluster/cdk8s/providers/{flux,prometheus_operator,gateway_api,cilium,external_secrets,keda,cnpg}`
+   are the examples) — this is the same generator tier 2 already ran for you on the core
+   API, just pointed at the CRD's own schema instead. `providers/<name>/` is the layout
+   for every provider: the `cdk8s_import` declarations colocated with that CRD's generic,
+   cluster-topology-free wrapper functions, once it has one.
+
+   `providers/<name>/` holds only what the CRD schema itself defines — real typed
+   fields and their real variant shapes. It never holds a ducktape namespace, secret
+   name, hostname, or topology fact, nor one caller's specific use of a field the
+   schema leaves untyped (a plugin system's freeform `metadata: map[string]string`);
+   those stay in the ducktape-specific module that already knows them, passed in as a
+   parameter. Confirmed the hard way: `providers/keda`'s first draft wrapped the
+   `forgejo-runner` KEDA scaler's own `metadata` shape as if it were CRD structure —
+   it wasn't, that's haku-ci's own integration choice, and the fix moved it back to
+   `haku_ci/runner.py` (agentydragon/ducktape#7952). The skill's own conventions
+   (class shape, factories, references) are repo-agnostic; this placement rule is not
+   — it belongs here, not in the skill.
 
    Put each `cdk8s_import` declaration and any import smoke test in
-   `cluster/cdk8s/crd_bindings/<provider>/BUILD.bazel`. Keep pinned upstream CRD
+   `cluster/cdk8s/providers/<provider>/BUILD.bazel`. Keep pinned upstream CRD
    schemas in `MODULE.bazel`; generated Python bindings are Bazel outputs and are
    never checked in.
 
@@ -398,6 +466,10 @@ took `litellm` down (`InvalidImageName`), a real incident, not a theoretical one
 <https://fluxcd.io/flux/components/image/imageupdateautomations/> § "Field-specific
 update markers". Don't repeat this explanation per directory; point back here instead.
 
+A bare-tag field (an `*_IMAGE_TAG` env value) takes the placeholder too, and the Component
+copies the pinned tag into it with a block-style `replacements` rule that splits the
+container `image` on `:` (`images:` runs first); see `agents/airlock/image-pins`.
+
 Agentplane testing keeps its image pins inline in the hand-maintained root
 `kustomization.yaml`, since the Kustomization itself is part of the flat resource
 directory. Flux updates those `newTag:` markers in place; cdk8s generates only the
@@ -422,7 +494,7 @@ first. **Confirmed, not theoretical**: this race deleted `ha-mcp`'s entire names
 self-heal; a `PersistentVolumeClaim` can permanently lose its volume (depends on
 `reclaimPolicy`) and won't auto-rebind to an orphaned `PersistentVolume`.
 
-Fix: `//cluster/cdk8s/crd_bindings/flux:kustomization`'s `KustomizationSpec` has
+Fix: `//cluster/cdk8s/providers/flux:kustomization`'s `KustomizationSpec` has
 `deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN`. Land in two changes:
 
 1. Set `deletionPolicy: Orphan` on the _old_ Kustomization(s) being folded away, nothing

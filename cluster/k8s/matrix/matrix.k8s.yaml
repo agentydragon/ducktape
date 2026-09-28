@@ -13,15 +13,9 @@ metadata:
   namespace: matrix
 spec:
   affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - preference:
-            matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-          weight: 100
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname
   bootstrap:
     initdb:
@@ -133,8 +127,6 @@ spec:
       job:
         enabled: false
     synapse:
-      annotations:
-        reloader.stakater.com/auto: "true"
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
     workers:
@@ -245,8 +237,6 @@ spec:
       app.kubernetes.io/name: element-web
   template:
     metadata:
-      annotations:
-        reloader.stakater.com/auto: "true"
       labels:
         app.kubernetes.io/name: element-web
     spec:

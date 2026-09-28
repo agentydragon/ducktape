@@ -338,7 +338,7 @@ Loki runs in SimpleScalable mode — there is **no `deploy/loki`**. Query the re
 kubectl -n loki port-forward svc/loki-read 3100:3100 &
 END=$(date +%s); START=$((END-10800))   # last 3h
 curl -sG http://localhost:3100/loki/api/v1/query_range \
-  --data-urlencode 'query={namespace="augur", pod=~"budget-exporter.+"}' \
+  --data-urlencode 'query={namespace="agents-infra", pod=~"forgejo-token-rotation.+"}' \
   --data-urlencode "start=${START}000000000" --data-urlencode "end=${END}000000000" \
   --data-urlencode 'limit=300' --data-urlencode 'direction=forward'
 ```
@@ -355,8 +355,8 @@ Gotchas:
 - **No logs in Loki ⇒ the container never started.** A pod that died in
   `ContainerCreating` (slow/failed image pull) or was killed before its entrypoint ran
   emits zero lines — an empty Loki result for it points at the scheduling/pull/mount
-  phase, not the app. (This is exactly how the `budget-exporter` `DeadlineExceeded`
-  failures presented: no streams, because the cold ~334 MB image pull dominated.)
+  phase, not the app. A Job whose `activeDeadlineSeconds` runs out during a cold image
+  pull fails `DeadlineExceeded` with no streams at all.
 - Timestamps in the API are **nanoseconds** (hence the `000000000` suffix).
 
 Grafana also has Loki as a datasource for interactive log exploration (Explore view).
@@ -388,9 +388,9 @@ looks applied but never takes effect.
 
 **Why it never self-heals.** Three things compound:
 
-- `wait: true` makes Flux block on **every object it applies**, not just the ones named
-  in `healthChecks`. The unified `plaid-mcp` Kustomization health-checks the CNPG
-  `Cluster`, but can still wedge on a Job.
+- `wait: true` makes Flux block on **every object it applies** (and ignore
+  `healthChecks`), so the unified `plaid-mcp` Kustomization wedges on a Job as readily
+  as on its CNPG `Cluster`.
 - A Job's pod template is immutable, so re-applying an unchanged manifest is a no-op.
   Flux keeps applying; the Failed Job stays Failed.
 - `kustomize.toolkit.fluxcd.io/force: enabled` recreates an object when apply hits an

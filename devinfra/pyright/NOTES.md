@@ -35,7 +35,7 @@ Pyright discovers packages through:
 4. **`extraPaths` in config** — not configured
 
 Bazel stores pip packages at
-`<output_base>/external/rules_python++pip+pypi_313_<name>/site-packages/`
+`<output_base>/external/rules_python++pip+ducktape_pypi_314_<name>/site-packages/`
 where `<output_base>` is machine-specific (e.g.
 `~/.cache/bazel/_bazel_agentydragon/<hash>/`).
 

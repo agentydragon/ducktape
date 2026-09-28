@@ -1,9 +1,9 @@
 """Reconcile Grocy user permissions against a declarative policy file.
 
 Read-only is the default in every grocy household instance (DEFAULT_PERMISSIONS=none, see
-../app-base), so every auto-created user is born with no permissions. This reconciler converges
-each user listed in the policy to exactly its declared permission set, creating the user via
-reverse-proxy auth if absent; unlisted users are left untouched.
+cluster/cdk8s/grocy/app.py), so every auto-created user is born with no permissions. This
+reconciler converges each user listed in the policy to exactly its declared permission set,
+creating the user via reverse-proxy auth if absent; unlisted users are left untouched.
 
 Two triggers, same convergence: the one-shot Job at bootstrap (policy or image changes recreate it
 via the Flux force annotation, and the kustomization's healthcheck gates on its completion) and the

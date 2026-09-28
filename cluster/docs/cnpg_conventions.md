@@ -14,13 +14,24 @@ postgres deployments.
 
 Only these CNPG cluster profiles are permitted:
 
-| Profile            | Instances | Pin                                      | Storage                        | Anti-affinity                         |
-| ------------------ | --------- | ---------------------------------------- | ------------------------------ | ------------------------------------- |
-| **OVH-HA**         | 2         | `topology.kubernetes.io/zone: hil-ovh`   | `local-path-ovh-hdd` or `-ssd` | `topologyKey: kubernetes.io/hostname` |
-| **Proxmox-single** | 1         | `topology.kubernetes.io/region: proxmox` | `local-path-proxmox`           | n/a                                   |
+| Profile            | Instances | Pin                                      | Storage                        | Anti-affinity                      |
+| ------------------ | --------- | ---------------------------------------- | ------------------------------ | ---------------------------------- |
+| **OVH-HA**         | 2         | `topology.kubernetes.io/zone: hil-ovh`   | `local-path-ovh-hdd` or `-ssd` | required, `kubernetes.io/hostname` |
+| **Proxmox-single** | 1         | `topology.kubernetes.io/region: proxmox` | `local-path-proxmox`           | n/a                                |
 
 **OVH-HA**: For services co-located with the SeaweedFS cluster on the OVH
 nodes. Two instances on separate nodes.
+
+**Placement** (`cnpg.cluster` derives it; no site builds its own): pod
+anti-affinity is `required` on `kubernetes.io/hostname` for every Cluster, and
+a Cluster tolerates the control-plane taint exactly when its storage class is
+SSD (`SSD_STORAGE_CLASSES` in `cdk8s/local_path_provisioner.py`) — OVH's
+`tier=ssd` nodes are its control planes, its `tier=hdd` nodes its workers.
+A running instance's local-path PV pins it to its node, so before an instance
+on a class that loses the toleration can restart, rebuild it on a worker.
+**Gotcha:** PVs provisioned before `local-path-ovh` was pinned to `tier=hdd` can
+still sit on a control plane's NVMe; check where an instance's PV lives, not
+only its Cluster's class.
 
 **Proxmox-single**: For homelab services. Single instance co-located with the
 app on Proxmox. Relies on ZFS for local reliability; off-site backups via
@@ -59,6 +70,16 @@ In the kustomize `resources` list, always list the credentials Secret
 An app using a CNPG cluster must have its pods pinned to the same region
 (`topology.kubernetes.io/region`) as the database. No floating apps with
 pinned DBs or vice versa. This prevents cross-site write latency.
+
+### R6: A cloned cluster still names its application database
+
+A Cluster created by `pg_basebackup` or `recovery` keeps declaring `bootstrap.initdb`
+with the cloned `database`, `owner` and credentials `secret` after promotion, as
+`cluster/cdk8s/forgejo/db.py` does. Without a `bootstrap`, CNPG defaults to `initdb`
+database and owner `app` and keeps using them after creation: the metrics exporter runs
+its default queries against that database, and the primary's instance reconcile sets that
+owner's password from the secret. When the role does not exist, that reconcile fails and
+skips every later step.
 
 ## Current Compliance
 
@@ -99,9 +120,6 @@ Parked clusters (retained in Git; R2/R3 bind again on revival):
 
 - [ ] Set up off-site backups for Proxmox-single clusters (see "CNPG Backup
       Strategy" in <plan.md>)
-- [ ] Deduplicate CNPG cluster configs: extract shared fields (probes,
-      monitoring, liveness isolation check) into Kustomize bases or a shared
-      patch, so each service only specifies name/namespace/database/size
 - [ ] Machine-check R1: pre-commit or CI check that no `image: postgres:*`
       appears in StatefulSets/Deployments outside of CNPG
 - [ ] Machine-check R2: validate that every CNPG Cluster matches one of the

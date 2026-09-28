@@ -20,8 +20,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.models import SandboxIngestion
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.testing.replication_process import CommitBoundary, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
@@ -40,10 +40,10 @@ async def next_entry(stream: AsyncIterator[ServerSentEvent]) -> event_log_pb2.Ev
 
 
 async def wait_snapshot(
-    event_logs: EventLogStore, updates: ThreadUpdates, thread: UUID, cursor: int
+    event_logs: EventLogStore, updates: DatabaseUpdates, thread: UUID, cursor: int
 ) -> protocol_pb2.Attached:
     changed = asyncio.Event()
-    with updates.changes.subscribe(changed):
+    with updates.changes[Channel.THREADS].subscribe(changed):
         while True:
             changed.clear()
             snapshot = await event_logs.feed_state(thread)
@@ -58,7 +58,7 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
     store: ThreadStore,
     event_logs: EventLogStore,
     content: ContentStore,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     boundary: CommitBoundary,
 ) -> None:
     source = ReplicationSource()
@@ -156,7 +156,7 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
                 assert (await source.opened.get()).after_cursor == 0
                 replay = await source.opened.get()
                 assert replay.after_cursor == committed - 1
-                attached = await wait_snapshot(event_logs, thread_updates, thread.id, 6)
+                attached = await wait_snapshot(event_logs, database_updates, thread.id, 6)
                 assert attached == source.attached
                 assert await event_logs.last_cursor(thread.id) == committed
                 async with engine.connect() as database:

@@ -28,6 +28,5 @@ LITELLM_API_KEY=... bazelisk run //loom/gym:agent_eval_bin -- \
 ```
 
 Status: gym core landed; pipeline at plan stage — see <PLAN.md>.
-Augur's [optional model research](../finance/augur/plans/market_model_research.md)
-and historical [PM-reifier spike](../finance/augur/x/pm_reifier/README.md) provide
+Augur's historical [PM-reifier spike](../finance/augur/x/pm_reifier/README.md) provides
 context, not an obligation for every Augur provider to use prediction markets or an LLM.

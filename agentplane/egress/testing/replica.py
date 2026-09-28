@@ -13,10 +13,11 @@ import aiohttp
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.egress.main import Settings, async_main
+from agentplane.egress.upstream import PinnedDialEventLoop
 
 
 def _run(settings: Settings) -> None:
-    asyncio.run(async_main(settings))
+    asyncio.run(async_main(settings), loop_factory=PinnedDialEventLoop)
 
 
 @dataclass

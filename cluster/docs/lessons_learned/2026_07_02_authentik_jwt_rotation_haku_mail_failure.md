@@ -44,7 +44,7 @@ failed.
 `agents-infra` had **no `agent-rbac/` directory at all** — every agent
 identity (Claude web, Haku, agent-box Codex) only had
 `cluster-diagnostics-reader`, which deliberately excludes `pods/log` (see
-`agent-rbac-base/README.md`). `kubectl auth can-i get pods/log -n
+<../agent_rbac.md>). `kubectl auth can-i get pods/log -n
 agents-infra` misleadingly reports `yes` (it only checks whether _any_ rule
 matches the resource type, not the specific object), but actual
 `kubectl logs` calls 403'd unconditionally. `kubectl exec`/`port-forward`

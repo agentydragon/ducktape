@@ -26,7 +26,13 @@ def py_binary(imports = None, **kwargs):
         imports = repo_imports()
     _py_binary(imports = imports, **kwargs)
 
-def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, tags = None, imports = None, args = None, deps = None, env_inherit = None, shard_count = None, **kwargs):
+# The tag `//third_party/containers:ryuk` loads its image into the Docker daemon under, and
+# the Ryuk image every `requires_docker` test's testcontainers starts. Testcontainers' own
+# default (`testcontainers/ryuk:0.8.1`) is a tag nothing preloads, which the daemon pulls
+# from Docker Hub.
+RYUK_TAG = "testcontainers/ryuk:0.14.0"
+
+def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, tags = None, imports = None, args = None, deps = None, env = None, env_inherit = None, shard_count = None, **kwargs):
     """py_test with auto repo-root imports and sensible defaults.
 
     Args:
@@ -34,21 +40,22 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
         size: Test size. Defaults to 'small' (60s timeout). A target that times out on RBE
             without doing 60s of work is hitting executor I/O latency rather than its own
             cost -- size that target 'medium' where it happens, and see
-            debug/2026_08_rbe_small_test_timeouts.md before assuming the test is at fault.
+            devinfra/debug/2026_08_rbe_small_test_timeouts.md before assuming the test is at fault.
         requires_docker: Whether this test needs Docker. If True, adds the
-            "requires_docker" tag and env_inherit for Docker TLS vars.
+            "requires_docker" tag and sets RYUK_CONTAINER_IMAGE to RYUK_TAG.
         uses_syrupy: Whether this test uses syrupy snapshots. If True, wires
             BazelAmberExtension to copy updated .ambr files to undeclared outputs.
         tags: Additional tags. Must not include "requires_docker" (use the parameter).
         imports: Python import paths. Defaults to repo root.
         args: Extra args passed to the test binary.
         deps: Test dependencies.
-        env_inherit: Extra env vars to inherit. Docker vars are added automatically
-            when requires_docker is True.
-        shard_count: Split the test's cases across this many Bazel shards. Adds the
-            pytest-shard plugin, which is what reads the --shard-id/--num-shards
-            pytest_bazel derives from Bazel's shard environment; without it pytest
-            rejects those flags and the test fails at startup rather than sharding.
+        env: Extra env vars.
+        env_inherit: Extra env vars to inherit.
+        shard_count: Split the test's cases across this many Bazel shards, item i of
+            the collection on shard i mod shard_count. Loads util/testing/sharding.py,
+            which is what reads the --shard-id/--num-shards pytest_bazel derives from
+            Bazel's shard environment; without it pytest rejects those flags and the
+            test fails at startup rather than sharding.
             Shard only tests whose per-case cost dominates their per-process setup --
             a suite that recompiles the same program in every shard pays that cost
             per shard instead of once.
@@ -66,6 +73,7 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
     base_deps = list(deps or [])
     if requires_docker:
         base_tags = base_tags + ["requires_docker"]
+        env = {"RYUK_CONTAINER_IMAGE": RYUK_TAG} | (env or {})
 
         # docker_mtls is currently a dormant no-op (external-RBE docker-ci access
         # is not wired up); see util/testing/docker_mtls.py. Kept loaded so the
@@ -73,7 +81,8 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
         base_args = base_args + ["-p", "util.testing.docker_mtls"]
         base_deps = base_deps + ["//util/testing:docker_mtls"]
     if shard_count != None:
-        base_deps = base_deps + ["@pypi//pytest_shard"]
+        base_args = base_args + ["-p", "util.testing.sharding"]
+        base_deps = base_deps + ["//util/testing:sharding"]
         kwargs["shard_count"] = shard_count
     if uses_syrupy:
         base_args = base_args + [
@@ -92,6 +101,7 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
         imports = imports,
         args = base_args,
         deps = base_deps,
+        env = env,
         env_inherit = base_env_inherit if base_env_inherit else None,
         **kwargs
     )

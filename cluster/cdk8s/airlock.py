@@ -1,10 +1,9 @@
-"""Airlock's namespace, identity, session secret, Service, route and ingress policy
+"""Airlock's namespace, identity, session secret, Deployment, Service, route and ingress policy
 (cluster/k8s/agents/airlock).
 
-Hand-written beside the output (`kustomization.yaml` lists both): `deployment.yaml`, whose
-`AIRLOCK_IMAGE_TAG` env value carries a Flux image-automation marker that an `images:`
-Component cannot set; the SOPS client credentials; and `config.yaml`, rendered into the
-Deployment's ConfigMap.
+Hand-written beside the output: the SOPS client credentials; `config.yaml`, rendered into the
+Deployment's ConfigMap by `kustomization.yaml`; and `image-pins/kustomization.yaml`, which pins
+the image tag and copies it into `AIRLOCK_IMAGE_TAG`.
 """
 
 from __future__ import annotations
@@ -20,78 +19,118 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPorts,
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
-from external_secrets_clusterexternalsecret_crds.io.external_secrets import (
-    ClusterExternalSecret,
-    ClusterExternalSecretSpec,
-    ClusterExternalSecretSpecExternalSecretSpec,
-    ClusterExternalSecretSpecExternalSecretSpecDataFrom,
-    ClusterExternalSecretSpecExternalSecretSpecDataFromExtract,
-    ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef,
-    ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind,
-    ClusterExternalSecretSpecExternalSecretSpecTarget,
-)
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
-    ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTarget,
-    ExternalSecretSpecTargetCreationPolicy,
-    ExternalSecretSpecTargetTemplate,
-)
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
-from cluster.cdk8s import cilium
-from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
+from cluster.cdk8s import namespaces
+from cluster.cdk8s.env_helpers import secret_env_var
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
+from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
+from cluster.cdk8s.providers.external_secrets.external_secret import (
+    ClusterDataFrom,
+    ClusterExternalSecret,
+    ClusterSecretStoreRef,
+)
 
 NAME = "airlock"
-OUTPUT_DIR = "cluster/k8s/agents/airlock"
-# The hand-written deployment.yaml's pod labels.
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/airlock"
 _LABELS = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "server"}
 _PORT = 8765
 _SESSION_SECRET = "airlock-session-secret"
 _SECRET_WRITER = "airlock-secret-writer"
+# image-pins/ overrides the tag and copies it into AIRLOCK_IMAGE_TAG.
+_PLACEHOLDER_TAG = "unset"
+_CONFIG_MOUNT = "/etc/airlock"
+
+
+def _probe(path: str, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
+    return k8s.Probe(
+        http_get=k8s.HttpGetAction(path=path, port=k8s.IntOrString.from_number(_PORT)),
+        initial_delay_seconds=initial_delay_seconds,
+        period_seconds=period_seconds,
+    )
+
+
+def _deployment(chart: Chart) -> None:
+    k8s.KubeDeployment(
+        chart,
+        "deployment",
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAME, labels=_LABELS),
+        spec=k8s.DeploymentSpec(
+            replicas=1,
+            selector=k8s.LabelSelector(match_labels=_LABELS),
+            template=k8s.PodTemplateSpec(
+                metadata=k8s.ObjectMeta(labels=_LABELS),
+                spec=k8s.PodSpec(
+                    image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
+                    service_account_name=NAME,
+                    security_context=k8s.PodSecurityContext(fs_group=1000),
+                    containers=[
+                        k8s.Container(
+                            name=NAME,
+                            image=f"git.allegedly.works/ducktape-ci/airlock:{_PLACEHOLDER_TAG}",
+                            image_pull_policy="Always",
+                            ports=[k8s.ContainerPort(name="http", container_port=_PORT, protocol="TCP")],
+                            env=[
+                                k8s.EnvVar(name="AIRLOCK_IMAGE_TAG", value=_PLACEHOLDER_TAG),
+                                k8s.EnvVar(name="CONFIG_PATH", value=f"{_CONFIG_MOUNT}/config.yaml"),
+                                secret_env_var("AIRLOCK_OIDC_CLIENT_ID", "airlock-oidc-config", "client-id"),
+                                secret_env_var("AIRLOCK_OIDC_CLIENT_SECRET", "airlock-oidc-config", "client-secret"),
+                                secret_env_var("AIRLOCK_OIDC_SESSION_SECRET", _SESSION_SECRET, "session-secret"),
+                                secret_env_var("OURA_CLIENT_ID", "oura-client-credentials", "client_id"),
+                                secret_env_var("OURA_CLIENT_SECRET", "oura-client-credentials", "client_secret"),
+                                secret_env_var("GOOGLE_CLIENT_ID", "google-client-credentials", "client_id"),
+                                secret_env_var("GOOGLE_CLIENT_SECRET", "google-client-credentials", "client_secret"),
+                                # The `google-write` provider reuses this same GCP OAuth client
+                                # (config.yaml); scope is a per-authorize-flow parameter, not fixed to
+                                # the client registration.
+                                secret_env_var("GOOGLE_WRITE_CLIENT_ID", "google-client-credentials", "client_id"),
+                                secret_env_var(
+                                    "GOOGLE_WRITE_CLIENT_SECRET", "google-client-credentials", "client_secret"
+                                ),
+                                secret_env_var("BSC_CLIENT_ID", "bsc-client-credentials", "client_id"),
+                                secret_env_var("BSC_CLIENT_SECRET", "bsc-client-credentials", "client_secret"),
+                            ],
+                            volume_mounts=[k8s.VolumeMount(name="config", mount_path=_CONFIG_MOUNT, read_only=True)],
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "memory": k8s.Quantity.from_string("256Mi"),
+                                    "cpu": k8s.Quantity.from_string("100m"),
+                                },
+                                limits={
+                                    "memory": k8s.Quantity.from_string("512Mi"),
+                                    "cpu": k8s.Quantity.from_string("500m"),
+                                },
+                            ),
+                            liveness_probe=_probe("/healthz", 15, 20),
+                            readiness_probe=_probe("/healthz", 5, 10),
+                        )
+                    ],
+                    # Generated by kustomization.yaml's configMapGenerator.
+                    volumes=[k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name="airlock-config"))],
+                ),
+            ),
+        ),
+    )
 
 
 def _session_secret(chart: Chart) -> None:
     """Airlock's session-signing key is app-local. A key rotation invalidates existing browser
     sessions but does not need to update Authentik or another credential store."""
-    generator = Password(
-        chart,
-        "session-secret-generator",
-        metadata=metadata(_SESSION_SECRET, NAME),
-        spec=PasswordSpec(allow_repeat=True, digits=16, length=64, no_upper=False, symbols=0),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         chart,
         "session-secret",
-        metadata=metadata(_SESSION_SECRET, NAME),
-        spec=ExternalSecretSpec(
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    source_ref=ExternalSecretSpecDataFromSourceRef(
-                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                            api_version="generators.external-secrets.io/v1alpha1",
-                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                            name=generator.name,
-                        )
-                    )
-                )
-            ],
-            refresh_policy=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-            target=ExternalSecretSpecTarget(
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
-                immutable=True,
-                name=_SESSION_SECRET,
-                template=ExternalSecretSpecTargetTemplate(data={"session-secret": "{{ .password }}"}, type="Opaque"),
-            ),
-        ),
+        name=_SESSION_SECRET,
+        namespace=NAME,
+        key="session-secret",
+        length=64,
+        digits=16,
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
+        immutable=True,
     )
 
 
@@ -101,22 +140,10 @@ def _mirror(chart: Chart, name: str, namespaces: list[str]) -> None:
         chart,
         name,
         metadata=ApiObjectMetadata(name=name),
-        spec=ClusterExternalSecretSpec(
-            namespaces=namespaces,
-            external_secret_spec=ClusterExternalSecretSpecExternalSecretSpec(
-                refresh_interval="1m",
-                secret_store_ref=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef(
-                    name="kubernetes-airlock-secret-store",
-                    kind=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-                ),
-                target=ClusterExternalSecretSpecExternalSecretSpecTarget(name=name),
-                data_from=[
-                    ClusterExternalSecretSpecExternalSecretSpecDataFrom(
-                        extract=ClusterExternalSecretSpecExternalSecretSpecDataFromExtract(key=name)
-                    )
-                ],
-            ),
-        ),
+        namespaces=namespaces,
+        secret_store_ref=ClusterSecretStoreRef.cluster("kubernetes-airlock-secret-store"),
+        refresh_interval="1m",
+        data_from=[ClusterDataFrom.from_extract(name)],
     )
 
 
@@ -138,29 +165,25 @@ def _ingress_from(entity: CiliumNetworkPolicySpecIngressFromEntities) -> CiliumN
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAME,
-            labels={
-                "name": NAME,
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-            annotations={
-                # controlledValues has to be spelled out here: default-vpa-requests-only
-                # only adds the annotation when it is absent, so declaring any policy of
-                # your own opts the namespace out of the default entirely.
-                "goldilocks.fairwinds.com/vpa-resource-policy": (
-                    '{ "containerPolicies": [ { "containerName": "*", "controlledValues":'
-                    ' "RequestsOnly", "minAllowed": { "cpu": "100m", "memory": "128Mi" } } ] }\n'
-                )
-            },
-        ),
+        name=NAME,
+        vpa=Vpa.AUTO,
+        agent_readable=AgentReadable.LOGS,
+        labels={"name": NAME},
+        annotations={
+            # controlledValues has to be spelled out here: default-vpa-requests-only
+            # only adds the annotation when it is absent, so declaring any policy of
+            # your own opts the namespace out of the default entirely.
+            "goldilocks.fairwinds.com/vpa-resource-policy": (
+                '{ "containerPolicies": [ { "containerName": "*", "controlledValues":'
+                ' "RequestsOnly", "minAllowed": { "cpu": "100m", "memory": "128Mi" } } ] }\n'
+            )
+        },
     )
     _session_secret(chart)
+    _deployment(chart)
     k8s.KubeServiceAccount(chart, "serviceaccount", metadata=k8s.ObjectMeta(name=NAME, namespace=NAME))
     k8s.KubeRole(
         chart,
@@ -196,8 +219,8 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "httproute",
-        metadata=metadata(NAME, NAME),
-        hostname="airlock.allegedly.works",
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAME),
+        hostnames=["airlock.allegedly.works"],
         backend=NAME,
         port=_PORT,
         timeout="120s",
@@ -205,11 +228,11 @@ def chart(app: App) -> Chart:
         listener=None,
     )
     # Airlock serves only its browser OAuth broker over port 8765.
-    cilium.network_policy(
+    NetworkPolicy(
         chart,
         "ciliumnetworkpolicy",
-        metadata=metadata("airlock-ingress", NAME),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name="airlock-ingress", namespace=NAME),
+        endpoint_selector=_LABELS,
         ingress=[
             _ingress_from(CiliumNetworkPolicySpecIngressFromEntities.INGRESS),
             # Kubelet liveness/readiness probes originate from the node host.

@@ -1,10 +1,40 @@
 // @vitest-environment happy-dom
+import { create } from "@bufbuild/protobuf";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { api, threadObservations, displayableError, httpError } from "./client";
+import { CommandSchema } from "../../protocol/command_pb";
+import { api, command, threadObservations, displayableError, httpError } from "./client";
 import { restoreRouteAfterLogin } from "./operator_login";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+it("gives up on a command POST that gets no answer by its deadline", async () => {
+  // The deadline fires when the test says, not after elapsed time.
+  const deadline = new AbortController();
+  vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+  const middleware = {
+    // Never answers; rejects the way fetch does once the request's signal aborts.
+    onRequest({ request }: { request: Request }) {
+      return new Promise<Response>((_resolve, reject) =>
+        request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true })
+      );
+    },
+  };
+  api.use(middleware);
+  try {
+    const sent = command(
+      "test-thread",
+      create(CommandSchema, { commandId: "test-command", operation: { case: "stopRunnerSession", value: {} } })
+    );
+    deadline.abort(new DOMException("signal timed out", "TimeoutError"));
+    await expect(sent).rejects.toThrow("signal timed out");
+  } finally {
+    api.eject(middleware);
+  }
+});
 
 it.each(["before", "after"] as const)("preserves %s archive cursors above JS integer precision", async (direction) => {
   const requests: URL[] = [];

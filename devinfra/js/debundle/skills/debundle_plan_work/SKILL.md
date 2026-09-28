@@ -11,9 +11,9 @@ spec edits; this skill does not mutate YAML itself.
 
 ## Shared CLI Workflows
 
-@references/cli.md
-@references/selectors.md
-@references/spec_editing.md
+@references/docs/cli.md
+@references/docs/selectors.md
+@references/docs/spec_editing.md
 
 ## Setup Notes
 
@@ -42,23 +42,14 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
   coherent module-family peels, then give workers explicit `--item` lists or
   scoped `--module` / `--module-prefix` selectors for
   `debundle spec synthesize-selectors`.
-- Treat selector quality as a forward-compatibility problem, not only a
-  current-build problem. A synthesized selector that copies a long exact
-  function body, object literal, class body, or nested expression can be
-  over-narrow even when it uniquely matches today's chunk. A landable selector
-  should both match the current declaration and avoid pinning incidental
-  bodies, argument lists, object values, and unrelated siblings. Prefer worker
-  lanes that use minimized selectors with holes and stable anchors, and route
-  oververbose synthesis output back to Ducktape minimization/tooling before
-  scaling the pattern across many modules.
+- Hold planned selector work to `references/docs/selectors.md` § The contract and
+  the ladder: prefer lanes that land minimized selectors.
 - Use `coverage` and `atoms` when current YAML or atomic-unit closure is
   the question.
 - Use `describe` and `show-source` before recommending any assignment.
-- Treat `modules propose` output as planning evidence. Only reviewed
-  landable (`landable_today: true`) binding-only fresh/extension rows can
-  be fed to `bindings assign --batch`; merge and anonymous-statement rows
-  need the workflows in the shared guide, and `blocked_residual_dependency`
-  rows need their closure grown or manual co-location first.
+- Treat `modules propose` output as planning evidence. Which reviewed rows
+  `bindings assign --batch` takes, and what the rest need:
+  `references/docs/cli.md` § `--batch` JSON format.
 
 Prefer these commands over grepping generated output. The owner graph is
 the source of truth for cycle gates and residual dependencies; the embedded
@@ -67,8 +58,7 @@ queue is a heuristic projection from that DAG, not a serialized fact from
 `debundle run`.
 
 Selector planning should also record tooling gaps. If `synthesize-selectors`
-skips a large repeated shape, produces selectors that are too exact to be
-forward-compatible, or cannot express a concise stable anchor, recommend a
-Ducktape feature/fix before assigning many manual YAML edits. Do not plan lanes
-whose work is simply to hand-transcribe exact long generated selectors; that is
-minimization backlog, not finished selector stabilization.
+skips a large repeated shape, produces selectors that are too exact, or cannot
+express a concise stable anchor, recommend a Ducktape feature/fix before
+assigning many manual YAML edits; never plan lanes that hand-transcribe exact
+long generated selectors.

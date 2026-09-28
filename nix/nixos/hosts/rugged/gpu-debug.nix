@@ -4,7 +4,7 @@
 # (_iris_batch_flush -> abort), which on Wayland tears the whole session down to
 # GDM (tmux survives — the machine never reboots). Full forensics, including the
 # native backtraces shared across crashes, are in:
-#   debug/rugged/gnome_shell_iris_abort.md
+#   nix/debug/rugged/gnome_shell_iris_abort.md
 #
 # This module does two things:
 #   1. Mitigation — bump Mesa from the stable channel's 25.2.6 to nixpkgs-unstable
@@ -48,7 +48,7 @@ in
   # denominator in the note.
   # EXPERIMENT(2026-06-27): if crash-free over many resume cycles, selective fetch
   #   was the trigger — keep it, or escalate to xe.enable_psr=0 / revert if not.
-  #   Tracking: debug/rugged/gnome_shell_iris_abort.md
+  #   Tracking: nix/debug/rugged/gnome_shell_iris_abort.md
   boot.kernelParams = [ "xe.enable_psr2_sel_fetch=0" ];
 
   # --- Diagnostics for the next crash -----------------------------------------
@@ -56,7 +56,7 @@ in
   # iris logs the GPU submit failure (and errno) to stderr — which lands in the
   # journal under org.gnome.Shell@wayland.service — before it calls abort().
   # CLEANUP: remove MESA_DEBUG once the iris batch-flush abort is root-caused
-  #   (debug/rugged/gnome_shell_iris_abort.md). It is global session log noise.
+  #   (nix/debug/rugged/gnome_shell_iris_abort.md). It is global session log noise.
   environment.sessionVariables.MESA_DEBUG = "1";
 
   # Keep gnome-shell cores long enough to inspect (default rotates aggressively).

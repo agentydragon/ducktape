@@ -1,8 +1,9 @@
 """A service's `Settings` is its deployment contract: each field is a
 `--kebab-case` flag, an `<env_prefix>FIELD` environment variable (nested levels joined by
-`env_nested_delimiter`) and a key of the YAML settings file. Rendering a Deployment's flags,
-env var names and settings file through the model fails at synth on a renamed or dropped
-field, instead of as a CrashLoopBackOff on the cluster.
+`env_nested_delimiter`; a `validation_alias` is the whole name, without the prefix) and a
+key of the YAML settings file. Rendering a Deployment's flags, env var names and settings
+file through the model fails at synth on a renamed or dropped field, instead of as a
+CrashLoopBackOff on the cluster.
 """
 
 from __future__ import annotations
@@ -72,19 +73,24 @@ def env_name(settings: type[BaseSettings], field: str, *path: str) -> str:
     segment is a field of the nested model, except that a dict-valued field's key is taken
     verbatim (`env_name(Settings, "mcp_servers", "github", "client_id")`)."""
     annotation = _field_annotation(settings, field)
-    segments = [field]
     for segment in path:
         annotation = _without_none(_resolve(annotation)[0])
         if get_origin(annotation) is dict:
             annotation = get_args(annotation)[1]
         else:
             annotation = _field_annotation(annotation, segment)
-        segments.append(segment)
     config = settings.model_config
     delimiter = config.get("env_nested_delimiter")
-    if len(segments) > 1 and not delimiter:
+    if path and not delimiter:
         raise ValueError(f"{settings.__name__} nests no settings in environment variables")
-    return f"{config.get('env_prefix', '')}{(delimiter or '').join(segments)}".upper()
+    alias = settings.model_fields[field].validation_alias
+    if alias is None:
+        head = f"{config.get('env_prefix', '')}{field}"
+    elif isinstance(alias, str):
+        head = alias
+    else:
+        raise TypeError(f"{settings.__name__}.{field}'s alias {alias!r} is not one environment variable")
+    return (delimiter or "").join([head, *path]).upper()
 
 
 def cli_args(settings: type[BaseSettings], **values: object) -> list[str]:

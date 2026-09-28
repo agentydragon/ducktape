@@ -18,7 +18,7 @@
 set -euo pipefail
 
 REPO=${LLAMACPP_DIR:-$HOME/llama-cpp-main}
-GGUF=${DSV4_GGUF:-/var/lib/colibri/dsv4-iq2/UD-IQ2_XXS/DeepSeek-V4-Flash-UD-IQ2_XXS-00001-of-00003.gguf}
+GGUF=${DSV4_GGUF:-/var/lib/llm-models-ssd/dsv4-iq2/UD-IQ2_XXS/DeepSeek-V4-Flash-UD-IQ2_XXS-00001-of-00003.gguf}
 BACKEND=${1:?usage: run.sh {cpu|vulkan} [prompt]}
 PROMPT=${2:-"Write a Python function is_prime(n) with a docstring."}
 COMMON=(-m "$GGUF" -p "$PROMPT" -n 128 -t 24 -no-cnv --temp 0)

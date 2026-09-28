@@ -13,15 +13,9 @@ metadata:
   namespace: langfuse
 spec:
   affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - preference:
-            matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-          weight: 100
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
     tolerations:
       - effect: NoSchedule
         key: node-role.kubernetes.io/control-plane
@@ -41,7 +35,7 @@ spec:
         enabled: false
   storage:
     size: 10Gi
-    storageClass: local-path-ovh
+    storageClass: local-path-ovh-ssd
 ---
 apiVersion: v1
 kind: Secret
@@ -75,6 +69,38 @@ spec:
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: langfuse
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: langfuse
+    - group: seaweed.seaweedfs.com
+      kind: S3Identity
+      namespace: langfuse
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: langfuse
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: langfuse
+  namespace: langfuse
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
 metadata:
   annotations:
@@ -92,34 +118,6 @@ spec:
     accessKeyField: s3-access-key-id
     name: langfuse-seaweedfs-credentials
     secretKeyField: s3-secret-access-key
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: langfuse
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: langfuse
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: langfuse
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Identity
-metadata:
-  name: langfuse
-  namespace: seaweedfs
-spec:
-  reclaimPolicy: Retain
-  seaweedRef:
-    name: seaweedfs
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

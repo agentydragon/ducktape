@@ -4,7 +4,7 @@ Design for keeping a **warm Bazel server** — the JVM daemon with its Skyframe 
 graph resident in RAM — alive across CI jobs on the in-cluster `haku-ci` runner, so successive
 PRs skip loading, analysis, and unchanged-action execution instead of paying a full cold build
 every time. Founding constraint: no BuildBuddy/RBE or any external CI — `haku-state` source never
-leaves the cluster (`cluster/k8s/haku-ci/README.md`).
+leaves the cluster (`cluster/cdk8s/haku_ci/README.md`).
 
 ## Status: Tier 1/1.5 landed; Tier 2 deferred
 
@@ -16,7 +16,7 @@ saved) landed and took the `bazel` job from ~500–575 s cold to ~59–132 s. Ev
 each run still pays one serial ~45 s load+analyze phase (profile-confirmed; latency-bound, not
 resource-bound) — exactly what a server kept warm across runs (Tier 2) would remove.
 
-Current state is `cluster/k8s/haku-ci/`: the KEDA `ScaledJob` migration (one job per pod,
+Current state is `cluster/cdk8s/haku_ci/`: the KEDA `ScaledJob` migration (one job per pod,
 ducktape #3861) later traded Tier 1's cross-job PVC for a pod-local `emptyDir`, so cache warmth
 now spans only the Bazel invocations within one CI job — that README § "What this costs: Bazel
 cache locality" records the trade and names the fix if it proves too slow (a shared

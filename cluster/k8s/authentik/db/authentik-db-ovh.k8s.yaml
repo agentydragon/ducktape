@@ -5,20 +5,20 @@ metadata:
   namespace: authentik
 spec:
   affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - preference:
-            matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-          weight: 100
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
     tolerations:
       - effect: NoSchedule
         key: node-role.kubernetes.io/control-plane
         operator: Exists
     topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: authentik
+      owner: authentik
+      secret:
+        name: authentik-db-app
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
   instances: 2
   monitoring:
@@ -34,4 +34,4 @@ spec:
         enabled: false
   storage:
     size: 8Gi
-    storageClass: local-path-ovh
+    storageClass: local-path-ovh-ssd

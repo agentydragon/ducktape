@@ -27,7 +27,6 @@ from constructs import Construct
 
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.metadata import metadata
 
 
 @jsii.implements(IApiResource)
@@ -118,11 +117,12 @@ class NamespaceQuota(Construct):
                 annotations={"description": env.description},
             ),
         )
-        # Bounds what runner sandboxes take from the node: the app stamps a Sandbox
-        # per user request, each costing 2500m of limits.cpu (2 for the runner, 500m
-        # the LimitRange default for the egress sidecar) and a 10Gi state PVC.
-        # limits.cpu binds first, at roughly four concurrent sandboxes -- raise that,
-        # not a count, for more headroom.
+        # Bounds what runner sandboxes take from the node. Each costs 2500m of limits.cpu
+        # (2 for the runner, 500m the LimitRange default for the egress sidecar), about
+        # 4.1Gi of limits.memory and a 10Gi state PVC, and the namespace's own service
+        # Pods count against the same totals. Sized for those services plus four
+        # sandboxes at once, with room left for a rollout's surge Pods; for more
+        # headroom, raise the limits, not a count.
         #
         # Aggregate resources only. A cap per object kind bounds an untrusted creator,
         # and only Flux and the integration app create objects here.
@@ -139,8 +139,8 @@ class NamespaceQuota(Construct):
                 hard={
                     "requests.cpu": k8s.Quantity.from_string("4"),
                     "requests.memory": k8s.Quantity.from_string("8Gi"),
-                    "limits.cpu": k8s.Quantity.from_string("12"),
-                    "limits.memory": k8s.Quantity.from_string("24Gi"),
+                    "limits.cpu": k8s.Quantity.from_string("18"),
+                    "limits.memory": k8s.Quantity.from_string("28Gi"),
                     "requests.storage": k8s.Quantity.from_string("80Gi"),
                 }
             ),
@@ -191,14 +191,14 @@ class AgentRbac(Construct):
         Role(
             self,
             "role",
-            metadata=metadata("agentplane-testing-operator", env.namespace),
+            metadata=ApiObjectMetadata(name="agentplane-testing-operator", namespace=env.namespace),
             rules=[*_SANDBOX_RULES, _ACTION_POLICY_RULE, _TOKEN_RULE],
         )
 
         RoleBinding(
             self,
             "rolebinding",
-            metadata=metadata("agent-agentplane-testing-operator", env.namespace),
+            metadata=ApiObjectMetadata(name="agent-agentplane-testing-operator", namespace=env.namespace),
             role=Role.from_role_name(self, "role-ref", "agentplane-testing-operator"),
         ).add_subjects(
             # Haku and public-coder agent identities plus the interactive
@@ -210,4 +210,35 @@ class AgentRbac(Construct):
             Group.from_name(self, "public-coder-access-profile-group", "haku:access-profile:public-coder"),
             ServiceAccount.from_service_account_name(self, "haku-sandbox-sa", "haku", namespace_name="haku-sandbox"),
             Group.from_name(self, "kubectl-sandbox-users-group", "oidc-ksbx-groups:kubectl-sandbox-users"),
+        )
+
+
+class AcceptanceToken(Construct):
+    """Lets `agentplane-staging`'s `claude-ai` and `haku-agent` mint this namespace's app token,
+    so their sandboxes can run the acceptance suite's harness scenarios
+    (`agentplane/acceptance/README.md`), which ask the API server for nothing else. None of
+    `AgentRbac`'s Sandbox lifecycle, exec or ActionPolicy writes: the token is an identity for
+    the app, as `_TOKEN_RULE` says.
+    """
+
+    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
+        super().__init__(scope, id)
+        role = Role(
+            self,
+            "role",
+            metadata=ApiObjectMetadata(name="agentplane-acceptance-token", namespace=env.namespace),
+            rules=[_TOKEN_RULE],
+        )
+        RoleBinding(
+            self,
+            "rolebinding",
+            metadata=ApiObjectMetadata(name="claude-ai-acceptance-token", namespace=env.namespace),
+            role=role,
+        ).add_subjects(
+            ServiceAccount.from_service_account_name(
+                self, "claude-ai-sa", "claude-ai", namespace_name="agentplane-staging"
+            ),
+            ServiceAccount.from_service_account_name(
+                self, "haku-agent-sa", "haku-agent", namespace_name="agentplane-staging"
+            ),
         )

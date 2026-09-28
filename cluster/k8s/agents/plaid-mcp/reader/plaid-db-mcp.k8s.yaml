@@ -18,7 +18,6 @@ kind: Deployment
 metadata:
   annotations:
     description: Read-only Postgres MCP over the Plaid sync database, fronted by mcp-oauth-facade. The upstream MCP uses Streamable HTTP and connects with the plaid_ro role.
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: plaid-db-mcp
   name: plaid-db-mcp

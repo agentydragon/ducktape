@@ -14,6 +14,7 @@ import pytest_bazel
 from pydantic import JsonValue
 
 from agentplane.action_service.catalog import ActionIdentity
+from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.models import (
     MatchedPolicy,
     MatchedRepository,
@@ -43,7 +44,6 @@ from agentplane.action_service.policy_view import (
 from agentplane.action_service.providers import DecisionContext, ResolvedBinding
 from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
-from github_policy.visibility import RepositoryVisibilityService
 
 NAMESPACE = "agentplane-test"
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
@@ -206,7 +206,6 @@ def test_a_caller_reads_its_own_resolution_and_nothing_of_the_sets_it_cannot_use
     assert (echo.actions, echo.argument_schema) == ({"everything": ["echo"]}, SCHEMA_POLICY["schema"])
     assert isinstance(reads, ExactActionsView)
     assert reads.actions == {"everything": ["add", "echo"]}
-    assert (view.auto_deny_if, view.auto_deny_unless) == ([], [])
     assert "set-broken" not in view.model_dump_json()
     assert "set-missing" not in view.model_dump_json()
 

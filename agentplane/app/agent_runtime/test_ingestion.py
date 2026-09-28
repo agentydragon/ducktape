@@ -22,8 +22,8 @@ from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease, 
 from agentplane.app.agent_runtime.ingestion import Ingestion, event_batches
 from agentplane.app.agent_runtime.models import SandboxIngestion
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import notify
 from agentplane.app.conftest import SPEC, Replica, event_entry
+from agentplane.app.database_updates import Channel, notify
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import StreamClosedError
@@ -215,8 +215,8 @@ async def test_connection_loss_before_commit_keeps_events_projection_and_cursor_
     second = event_entry(2, model_changed=event_pb2.ModelChanged(model="test-committed-model"))
     engine = create_async_engine(db_url)
 
-    async def disconnect_before_commit(session: AsyncSession) -> None:
-        await notify(session)
+    async def disconnect_before_commit(session: AsyncSession, channel: Channel) -> None:
+        await notify(session, channel)
         assert await replica.event_logs.events(thread, limit=10) == [first]
         assert await replica.event_logs.last_cursor(thread) == 1
         assert await replica.event_logs.feed_state(thread) == before

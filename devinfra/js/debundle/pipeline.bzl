@@ -12,31 +12,19 @@ load("@bazel_skylib//lib:shell.bzl", "shell")
 
 def _debundle_pipeline_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.label.name + ".out")
-    selector_request_proto = ctx.actions.declare_file(ctx.label.name + ".selector_cpsat_request.pb")
-    selector_problem_log = ctx.actions.declare_file(ctx.label.name + ".selector_problem.log")
-    selector_problem_scratch = ctx.actions.declare_directory(ctx.label.name + ".selector_problem.out")
-    bin_dir = ctx.bin_dir.path
     plan = _debundle_pipeline_plan(ctx, out_dir.short_path)
-    selector_problem_plan = _debundle_pipeline_plan(ctx, selector_problem_scratch.short_path)
-    tools = [
-        ctx.executable.debundler,
-        ctx.executable.ortools_cpsat_solver,
-    ]
-    exec_env = _selector_solver_env(
-        ctx,
-        request_proto_dir = _shell_execroot_path(paths.join(out_dir.path, "debug/selector_cpsat_requests")),
-        summary_json_dir = _shell_execroot_path(paths.join(out_dir.path, "debug/selector_cpsat_summaries")),
-    )
-
     ctx.actions.run_shell(
         inputs = plan.inputs,
-        tools = tools,
+        tools = [
+            ctx.executable.debundler,
+            ctx.executable.ortools_cpsat_solver,
+        ],
         outputs = [out_dir],
-        command = "cd \"${{BAZEL_BINDIR}}\" && {exec_env}exec {command}".format(
-            exec_env = exec_env,
+        command = "cd \"${{BAZEL_BINDIR}}\" && DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER={solver} exec {command}".format(
+            solver = _shell_execroot_path(ctx.executable.ortools_cpsat_solver.path),
             command = plan.command,
         ),
-        env = {"BAZEL_BINDIR": bin_dir},
+        env = {"BAZEL_BINDIR": ctx.bin_dir.path},
         use_default_shell_env = True,
         # The debundler asserts that each vendor package's resolved subpath
         # canonicalizes to a location within the package root. Inside
@@ -49,94 +37,7 @@ def _debundle_pipeline_impl(ctx):
         progress_message = "Running debundle pipeline for %{label}",
         mnemonic = "DebundlePipeline",
     )
-
-    selector_problem_env = _selector_solver_env(
-        ctx,
-        _shell_execroot_path(selector_request_proto.path),
-        dump_only = True,
-    )
-    selector_request_proto_path = _shell_execroot_path(selector_request_proto.path)
-    selector_problem_scratch_path = _shell_execroot_path(selector_problem_scratch.path)
-    selector_problem_log_path = _shell_execroot_path(selector_problem_log.path)
-    ctx.actions.run_shell(
-        inputs = selector_problem_plan.inputs,
-        tools = tools,
-        outputs = [
-            selector_request_proto,
-            selector_problem_log,
-            selector_problem_scratch,
-        ],
-        command = """
-cd "${{BAZEL_BINDIR}}"
-mkdir -p {selector_problem_scratch}
-({exec_env}{command}) > {log} 2>&1 || true
-if test -s {request_proto}; then
-  exit 0
-fi
-cat {log} >&2
-if ! test -s {request_proto}; then
-  echo "selector CP-SAT request protobuf was not written: {request_proto}" >&2
-fi
-exit 1
-""".format(
-            exec_env = selector_problem_env,
-            command = selector_problem_plan.command,
-            log = selector_problem_log_path,
-            request_proto = selector_request_proto_path,
-            selector_problem_scratch = selector_problem_scratch_path,
-        ),
-        env = {"BAZEL_BINDIR": bin_dir},
-        use_default_shell_env = True,
-        execution_requirements = {"no-sandbox": "1"},
-        progress_message = "Dumping selector CP-SAT request for %{label}",
-        mnemonic = "DebundleSelectorProblem",
-    )
-
-    return [
-        DefaultInfo(files = depset([out_dir])),
-        OutputGroupInfo(selector_problem = depset([
-            selector_request_proto,
-            selector_problem_log,
-        ])),
-    ]
-
-def _selector_solver_env(
-        ctx,
-        request_proto_path = None,
-        summary_json_path = None,
-        request_proto_dir = None,
-        summary_json_dir = None,
-        dump_only = False):
-    exec_env = "{}={} ".format(
-        "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER",
-        _shell_execroot_path(ctx.executable.ortools_cpsat_solver.path),
-    )
-    if request_proto_path:
-        exec_env += "{}={} ".format(
-            "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_REQUEST_PROTO",
-            request_proto_path,
-        )
-    if summary_json_path:
-        exec_env += "{}={} ".format(
-            "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SUMMARY_JSON",
-            summary_json_path,
-        )
-    if request_proto_dir:
-        exec_env += "{}={} ".format(
-            "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_REQUEST_PROTO_DIR",
-            request_proto_dir,
-        )
-    if summary_json_dir:
-        exec_env += "{}={} ".format(
-            "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SUMMARY_JSON_DIR",
-            summary_json_dir,
-        )
-    if dump_only:
-        exec_env += "{}={} ".format(
-            "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_DUMP_ONLY",
-            shell.quote("1"),
-        )
-    return exec_env
+    return [DefaultInfo(files = depset([out_dir]))]
 
 def _debundle_pipeline_plan(ctx, out_root):
     bin_dir = ctx.bin_dir.path

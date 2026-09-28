@@ -18,10 +18,11 @@ from numpy.typing import NDArray
 from finance.augur.policy.sleeves import withdraw
 from finance.augur.sim.actions import Consume, DecisionActions, PayClaim
 from finance.augur.sim.books import AccountRef
+from finance.augur.sim.ids import AccountId, AgentId, AssetId
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.results import ConsumptionTarget, Finished
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.world import World
 
 
 @dataclass(frozen=True)
@@ -187,7 +188,9 @@ class SpendingPolicy:
     prefix; this policy never asks the engine to retry, cut spending or allocate for it.
     """
 
-    def __init__(self, rule: Callable[[Observations], list[int]], targets: dict[tuple[str, str], int]) -> None:
+    def __init__(
+        self, rule: Callable[[Observations], list[int]], targets: dict[tuple[AccountId, AssetId], int]
+    ) -> None:
         self.rule = rule
         self.targets = targets
 
@@ -201,9 +204,12 @@ class SpendingPolicy:
                 withdraw(
                     observation,
                     targets=self.targets,
-                    cash_account_id="checking",
+                    cash_account_id=AccountId("checking"),
                     amount=max(
-                        0, amount + sum(claim.amount_due for claim in claims) - dict(observation.accounts)["checking"]
+                        0,
+                        amount
+                        + sum(claim.amount_due for claim in claims)
+                        - dict(observation.accounts)[AccountId("checking")],
                     ),
                     cause_id=f"fund-{cause}",
                 )
@@ -226,8 +232,8 @@ class SpendingPolicy:
                         request_id=len(claims),
                         cause_id=cause,
                         component_id="annual_consumption",
-                        from_account=AccountRef(agent_id=observation.agent_id, account_id="checking"),
-                        to_account=AccountRef(agent_id="world", account_id="checking"),
+                        from_account=AccountRef(agent_id=observation.agent_id, account_id=AccountId("checking")),
+                        to_account=AccountRef(agent_id=AgentId("world"), account_id=AccountId("checking")),
                         amount=amount,
                     )
                 )
@@ -236,7 +242,7 @@ class SpendingPolicy:
 
 
 def run(
-    prepared: CompiledRun,
+    compose: Callable[[int], World],
     policy: Callable[[list[Decision]], list[DecisionActions]],
     rollout_ids: list[int],
     *,
@@ -244,10 +250,10 @@ def run(
     chunk_size: int | None = None,
     reverse: bool = False,
 ) -> Finished:
-    """Python owns the loop; chunks author one complete response before each advance."""
+    """Python owns the loop over a fresh world per path; chunks author one complete response before each advance."""
     if chunk_size is not None and chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
-    session = ActionSession(prepared, "retiree", rollout_ids, capture=capture)
+    session = ActionSession({id_: compose(id_) for id_ in rollout_ids}, AgentId("retiree"), capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

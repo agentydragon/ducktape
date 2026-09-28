@@ -19,8 +19,9 @@ resource "authentik_provider_oauth2" "forgejo" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://git.allegedly.works/user/oauth2/authentik/callback"
+      matching_mode     = "strict"
+      url               = "https://git.allegedly.works/user/oauth2/authentik/callback"
+      redirect_uri_type = "authorization"
     },
   ]
 }

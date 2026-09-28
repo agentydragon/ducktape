@@ -1,7 +1,7 @@
 """Tests for the materialize_examples migration.
 
 Covers the PG 18 search_path restriction during CREATE MATERIALIZED VIEW
-(see debug/pg18-matview-inlining.md for full root cause analysis).
+(see props/debug/pg18_matview_inlining.md for full root cause analysis).
 """
 
 from collections.abc import Generator

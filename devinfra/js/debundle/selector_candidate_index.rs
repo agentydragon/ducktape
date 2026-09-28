@@ -61,6 +61,27 @@ pub enum SelectorFeature {
     ImportSource(String),
 }
 
+/// How a diagnostic names the feature to a spec author.
+impl std::fmt::Display for SelectorFeature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TopLevelKind(kind) => write!(f, "top-level kind {kind:?}"),
+            Self::VarKind(VarKind::Var) => f.write_str("`var` declaration"),
+            Self::VarKind(VarKind::Let) => f.write_str("`let` declaration"),
+            Self::VarKind(VarKind::Const) => f.write_str("`const` declaration"),
+            Self::FunctionArity(arity) => write!(f, "function arity {arity}"),
+            Self::StringLiteral(value) => write!(f, "string literal {value:?}"),
+            Self::NumberLiteral(value) => write!(f, "number literal {value}"),
+            Self::BoolLiteral(value) => write!(f, "boolean literal {value}"),
+            Self::ObjectKey(key) => write!(f, "object key `{key}`"),
+            Self::ClassMember(name) => write!(f, "class member `{name}`"),
+            Self::MemberProperty(name) => write!(f, "property access `.{name}`"),
+            Self::CallCallee(callee) => write!(f, "call of `{callee}(...)`"),
+            Self::ImportSource(source) => write!(f, "import source {source:?}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct IndexedBindingCandidate {
     pub body_idx: usize,
@@ -977,7 +998,7 @@ mod tests {
                 .resolve_anonymous_groups("<test>", selector)
                 .unwrap()
                 .into_iter()
-                .flatten()
+                .flat_map(|group| group.body_indices)
                 .collect()
         })
     }

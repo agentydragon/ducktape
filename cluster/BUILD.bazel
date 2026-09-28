@@ -4,6 +4,42 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 exports_files([".tflint.hcl"])
 
+# Single generated files for focused consumers (the Terraform bootstrap's talos-ccm
+# HelmRelease, direct-file validation contracts).
+exports_files(
+    glob(["generated/**"]),
+    visibility = ["//cluster:__subpackages__"],
+)
+
+# Just the central ClusterPolicy manifests, so a per-policy test is not
+# invalidated by every unrelated manifest in the cluster (same reasoning as the
+# contract filegroups in //cluster/k8s). The retired Haku zone injector lives with its
+# package under //haku/x/zones/deploy and is intentionally outside this active filegroup.
+filegroup(
+    name = "kyverno_policy_files",
+    srcs = glob(["generated/kyverno/policies/*.yaml"]),
+    visibility = ["//cluster/validation/kyverno:__pkg__"],
+)
+
+# Every policy that injects proxy configuration into a sandbox namespace, run
+# through Kyverno by //cluster/validation/kyverno:test_proxy_injection.
+filegroup(
+    name = "proxy_injection_policy_files",
+    srcs = [
+        "generated/kyverno/policies/inject-haku-egress-proxy.k8s.yaml",
+        "generated/kyverno/policies/inject-mitmproxy.k8s.yaml",
+    ],
+    visibility = ["//cluster/validation/kyverno:__pkg__"],
+)
+
+# The closed-world generated tree (cluster/cdk8s/manifest_roots.py), whole: the parity test
+# fails on any file here the generator does not write.
+filegroup(
+    name = "generated_manifests",
+    srcs = glob(["generated/**"]),
+    visibility = ["//cluster:__subpackages__"],
+)
+
 py_library(
     name = "network_readiness",
     srcs = ["network_readiness.py"],

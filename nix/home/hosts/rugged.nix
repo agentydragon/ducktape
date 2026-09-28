@@ -14,6 +14,7 @@
     ../modules/kubeconfig.nix
     ../modules/talosconfig.nix
     ../modules/discord-minimized-autostart.nix
+    ./rugged-opencode.nix
   ];
 
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/rugged-forgejo.sops.key;
@@ -102,10 +103,6 @@
   ducktape.aiquota.enable = true;
   ducktape.aiquota.remoteApi.enable = true;
 
-  # TODO: expose this through an authenticated in-cluster route if rugged's
-  # local LLM becomes useful beyond the tablet itself.
-  ducktape.opencode.ruggedLocalLlm.enable = true;
-
   home.packages = [
     ducktapePackages.bebas-neue-font
     config.ducktape.githubApiProxy.desktopPackage
@@ -125,7 +122,7 @@
   # gnome-connections, which crashes on xrdp's drive-redirection channels — a
   # gtk-frdp bug). terminal=true so xfreerdp can prompt for the PAM password; the
   # RDP window opens after. wyrm2 is reached over Nebula (firewall-restricted to the
-  # nebula1 interface). See debug/atlas/remote-desktop-wyrm2.md.
+  # nebula1 interface). See nix/debug/wyrm2/remote_desktop_wyrm2.md.
   xdg.desktopEntries."wyrm2-rdp" = {
     name = "wyrm2 (RDP)";
     exec = "xfreerdp /v:10.42.0.20 /u:agentydragon /cert:tofu /dynamic-resolution";

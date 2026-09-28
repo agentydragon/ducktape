@@ -11,9 +11,8 @@ files beside the generated output.
 from __future__ import annotations
 
 import textwrap
-from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngress,
@@ -24,54 +23,31 @@ from cilium_crds.io.cilium import (
 )
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesMatches,
-    HttpRouteSpecRulesMatchesPath,
-    HttpRouteSpecRulesMatchesPathType,
-    HttpRouteSpecRulesTimeouts,
-)
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cilium
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
+from cluster.cdk8s import cilium, namespaces, node_scheduling
+from cluster.cdk8s.env_helpers import secret_env_var
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import SECRET_NAME
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.gateway import https_route
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
-OUTPUT_DIR = "cluster/k8s/cli-proxy-api"
-_NAME = "cli-proxy-api"
-_NAMESPACE = "cli-proxy-api"
-_LABELS = {"app.kubernetes.io/name": _NAME}
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cli-proxy-api"
+NAME = "cli-proxy-api"
+NAMESPACE = "cli-proxy-api"
+_LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/cli-proxy-api:unset"
-_PORT = 8317
+PORT = 8317
 _CONFIG_SECRET = "cli-proxy-api-config"
 _DATA_CLAIM = "cli-proxy-api-data"
 _ADMIN_OIDC_SECRET = "cli-proxy-api-admin-oidc"
-_KEY_FILES = ("client-key.sops.yaml", "management-key.sops.yaml")
+KEY_FILES = ("client-key.sops.yaml", "management-key.sops.yaml")
 
 _CONFIG = textwrap.dedent(
     """\
@@ -94,18 +70,7 @@ _CONFIG = textwrap.dedent(
 
 
 def _namespace(scope: Construct) -> None:
-    k8s.KubeNamespace(
-        scope,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
-    )
+    namespaces.namespace(scope, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
 
 
 def _data_claim(scope: Construct) -> None:
@@ -114,7 +79,7 @@ def _data_claim(scope: Construct) -> None:
     k8s.KubePersistentVolumeClaim(
         scope,
         "data",
-        metadata=k8s.ObjectMeta(name=_DATA_CLAIM, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_DATA_CLAIM, namespace=NAMESPACE),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
             storage_class_name="seaweedfs-ovh",
@@ -129,9 +94,9 @@ def _config(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "config",
-        metadata=metadata(
-            _CONFIG_SECRET,
-            _NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_CONFIG_SECRET,
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "CLIProxyAPI config.yaml rendered from the client-key Secret. Retry an upstream stream up "
@@ -140,43 +105,22 @@ def _config(scope: Construct) -> None:
                 )
             },
         ),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name="kubernetes-cli-proxy-api-secret-store",
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-            ),
-            target=ExternalSecretSpecTarget(
-                name=_CONFIG_SECRET,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                template=ExternalSecretSpecTargetTemplate(
-                    engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2, data={"config.yaml": _CONFIG}
-                ),
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key="client_key",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key="cli-proxy-api-client-key", property="client-key"),
-                )
-            ],
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster("kubernetes-cli-proxy-api-secret-store"),
+        data=[remote_data("cli-proxy-api-client-key", "client-key", secret_key="client_key")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        template=ExternalSecretSpecTargetTemplate(
+            engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2, data={"config.yaml": _CONFIG}
         ),
-    )
-
-
-def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
     )
 
 
 def _deployment(scope: Construct) -> None:
-    tcp_probe = k8s.TcpSocketAction(port=k8s.IntOrString.from_number(_PORT))
+    tcp_probe = k8s.TcpSocketAction(port=k8s.IntOrString.from_number(PORT))
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -198,11 +142,7 @@ def _deployment(scope: Construct) -> None:
                     # PVC, it can't tolerate that churn — each eviction breaks the auto-refresh worker's
                     # session. Allow the zone's otherwise-idle control-plane nodes as real overflow
                     # capacity instead of only ever bouncing between the two contended workers.
-                    tolerations=[
-                        k8s.Toleration(
-                            key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                        )
-                    ],
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     init_containers=[
                         k8s.Container(
                             name="init-auth-dir",
@@ -214,13 +154,15 @@ def _deployment(scope: Construct) -> None:
                     ],
                     containers=[
                         k8s.Container(
-                            name=_NAME,
+                            name=NAME,
                             image=_IMAGE,
                             args=["-config", "/config/config.yaml"],
                             env=[
-                                _secret_env("MANAGEMENT_PASSWORD", "cli-proxy-api-management", "management-password"),
+                                secret_env_var(
+                                    "MANAGEMENT_PASSWORD", "cli-proxy-api-management", "management-password"
+                                ),
                                 *(
-                                    _secret_env(key, _ADMIN_OIDC_SECRET, key)
+                                    secret_env_var(key, _ADMIN_OIDC_SECRET, key)
                                     for key in (
                                         "MANAGEMENT_OIDC_ISSUER",
                                         "MANAGEMENT_OIDC_CLIENT_ID",
@@ -230,7 +172,7 @@ def _deployment(scope: Construct) -> None:
                                     )
                                 ),
                             ],
-                            ports=[k8s.ContainerPort(name="http", container_port=_PORT, protocol="TCP")],
+                            ports=[k8s.ContainerPort(name="http", container_port=PORT, protocol="TCP")],
                             readiness_probe=k8s.Probe(tcp_socket=tcp_probe, initial_delay_seconds=5, period_seconds=10),
                             liveness_probe=k8s.Probe(tcp_socket=tcp_probe, initial_delay_seconds=30, period_seconds=30),
                             resources=k8s.ResourceRequirements(
@@ -266,49 +208,37 @@ def _service(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
         spec=k8s.ServiceSpec(
             selector=_LABELS,
             ports=[
-                k8s.ServicePort(
-                    name="http", port=_PORT, target_port=k8s.IntOrString.from_string("http"), protocol="TCP"
-                )
+                k8s.ServicePort(name="http", port=PORT, target_port=k8s.IntOrString.from_string("http"), protocol="TCP")
             ],
         ),
     )
 
 
 def _routes(scope: Construct) -> None:
-    HttpRoute(
+    # CLIProxyAPI streams model responses (incl. long Codex reasoning); allow long requests.
+    https_route(
         scope,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=["cli-proxy-api.allegedly.works"],
-            rules=[
-                # CLIProxyAPI streams model responses (incl. long Codex reasoning); allow long requests.
-                HttpRouteSpecRules(
-                    timeouts=HttpRouteSpecRulesTimeouts(request="600s", backend_request="600s"),
-                    matches=[
-                        HttpRouteSpecRulesMatches(
-                            path=HttpRouteSpecRulesMatchesPath(
-                                type=HttpRouteSpecRulesMatchesPathType.PATH_PREFIX, value="/v1"
-                            )
-                        )
-                    ],
-                    backend_refs=[HttpRouteSpecRulesBackendRefs(name=_NAME, port=_PORT)],
-                )
-            ],
-        ),
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+        hostnames=["cli-proxy-api.allegedly.works"],
+        backend=NAME,
+        port=PORT,
+        path_prefix="/v1",
+        timeout="600s",
+        hsts=False,
+        listener=None,
     )
     https_route(
         scope,
         "admin-route",
-        metadata=metadata("cli-proxy-api-admin", _NAMESPACE),
-        hostname="cli-proxy-api-admin.allegedly.works",
-        backend=_NAME,
-        port=_PORT,
+        metadata=ApiObjectMetadata(name="cli-proxy-api-admin", namespace=NAMESPACE),
+        hostnames=["cli-proxy-api-admin.allegedly.works"],
+        backend=NAME,
+        port=PORT,
         hsts=False,
         listener=None,
     )
@@ -316,22 +246,22 @@ def _routes(scope: Construct) -> None:
 
 def _network_policy(scope: Construct) -> None:
     # Gateway, LiteLLM, and AIQuota reach CLIProxyAPI; the backend authenticates requests.
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "network-policy",
-        metadata=metadata("cli-proxy-api-ingress", _NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name="cli-proxy-api-ingress", namespace=NAMESPACE),
+        endpoint_selector=_LABELS,
         ingress=[
             # cilium-envoy hostNetwork traffic carries reserved:ingress identity. Preserves the
             # existing cli-proxy-api.allegedly.works /v1 HTTPRoute, which routes straight to this
             # Service, unauthenticated, for LiteLLM's model traffic.
-            cilium.ingress_from_gateway(_PORT),
+            IngressRule.from_gateway(PORT),
             # LiteLLM's codex-*/chatgpt-* upstreams (litellm/config.py) call the
             # in-cluster Service by cluster DNS, not through the Gateway.
-            cilium.ingress_from(cilium.endpoint_labels("litellm", "litellm"), ports=[_PORT]),
+            IngressRule.from_endpoints(cilium.endpoint_labels("litellm", "litellm"), ports=[PORT]),
             # aiquota retrieves Claude and Codex subscription usage through the authenticated
             # CLIProxyAPI management endpoint.
-            cilium.ingress_from(cilium.endpoint_labels(_NAMESPACE, "aiquota"), ports=[_PORT]),
+            IngressRule.from_endpoints(cilium.endpoint_labels(NAMESPACE, "aiquota"), ports=[PORT]),
             # Kubelet readiness/liveness tcpSocket probes originate from the node host.
             CiliumNetworkPolicySpecIngress(
                 from_entities=[CiliumNetworkPolicySpecIngressFromEntities.HOST],
@@ -339,7 +269,7 @@ def _network_policy(scope: Construct) -> None:
                     CiliumNetworkPolicySpecIngressToPorts(
                         ports=[
                             CiliumNetworkPolicySpecIngressToPortsPorts(
-                                port=str(_PORT), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
+                                port=str(PORT), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
                             )
                         ]
                     )
@@ -350,7 +280,7 @@ def _network_policy(scope: Construct) -> None:
 
 
 def chart(app: App) -> Chart:
-    chart = Chart(app, _NAME, disable_resource_name_hashes=True)
+    chart = Chart(app, NAME, disable_resource_name_hashes=True)
     _namespace(chart)
     _data_claim(chart)
     _config(chart)
@@ -361,37 +291,19 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml", *_KEY_FILES], components=["./image-pins"]),
-    )
-
-
 def cli_proxy_api(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
-    gateway: Kustomization,
-    cert_manager_environment: Kustomization,
-    sso_providers_tf: Kustomization,
-    forgejo_images: Kustomization,
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
     name = "cli-proxy-api"
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="5m",
-            wait=True,
-            decryption=SOPS_DECRYPTION,
-            depends_on=flux_kustomization_depends_on_many(
-                external_secrets_config, gateway, cert_manager_environment, sso_providers_tf, forgejo_images
-            ),
+        directory,
+        retry_interval=None,
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(
+            external_secrets_operator,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment, HTTPRoute and Namespace.
+            kyverno,
         ),
     )

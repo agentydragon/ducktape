@@ -1,7 +1,7 @@
 """Render classified budget transactions as a Beancount ledger.
 
 This module is a *pure* projection: it turns already-classified transactions
-(one bucket per txn, produced by augur's budget SQL read model) into
+(one bucket per txn, produced by :mod:`finance.budget.sql_read_model`) into
 deterministic Beancount text. It does no I/O — fetching rows from the Plaid
 mirror and committing the result to a git repo live in the exporter runner.
 
@@ -34,7 +34,7 @@ from beancount.core import data
 from beancount.core.amount import Amount
 from beancount.parser import printer
 
-from finance.augur.budget.schema import BucketDef, BucketKind
+from finance.budget.schema import BucketDef, BucketKind
 
 _CENTS = Decimal("0.01")
 _GENERATED = "<augur-budget-exporter>"

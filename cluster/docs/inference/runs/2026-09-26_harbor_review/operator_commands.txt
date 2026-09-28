@@ -1,0 +1,65 @@
+commandline for qwen3.8 flash next:
+
+docker run -d \
+  --name llama-cpp \
+  --user 1001:100 \
+  --workdir /app \
+  --security-opt no-new-privileges \
+  --device nvidia.com/gpu=all \
+  --volume /var/lib/llm-models-ssd:/models:ro \
+  --publish 127.0.0.1:18080:8080 \
+  --publish 172.17.0.1:18080:8080 \
+  --env CUDA_VISIBLE_DEVICES=GPU-690929fc-97bf-9d39-d2f5-0322f1715b16,GPU-6154a49f-2cad-6b72-1e85-09b8006d08b5 \
+  --env CUDA_CACHE_PATH=/tmp/cuda-cache \
+  --env LLAMA_ARG_HOST=0.0.0.0 \
+  --entrypoint /app/llama-server \
+  ghcr.io/ggml-org/llama.cpp@sha256:014f721265464f38ccb247c1338d07d852c4bae7509a4b4734d07a2bbadc765c \
+    --model /models/Qwen3.8-Flash-Next-GGUF/UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf \
+    --alias qwen3.8-flash-next-q4 \
+    --host 0.0.0.0 \
+    --port 8080 \
+    --ctx-size 131072 \
+    --parallel 1 \
+    --threads 8 \
+    --threads-batch 8 \
+    --split-mode layer \
+    --fit-target 1024,1024 \
+    --flash-attn on \
+    --cache-type-k q8_0 \
+    --cache-type-v q8_0 \
+    --load-mode mmap \
+    --lazy-mode on \
+    --no-repack \
+    --metrics \
+    --reasoning-format deepseek
+
+----
+
+can use: more context size, more parallelism
+
+    --fit-target 8192,2048 \
+    ctx size was 32768
+
+----
+
+harbor run -d terminal-bench/terminal-bench@4.0.0 --agent mini-swe-agent --model openai/qwen3.8-flash-next-q4 --ae OPENAI_API_BASE=http://172.17.0.1:18080/v1 --ae OPENAI_API_KEY=none -n 1
+
+
+no parallel tool calls to avoid killing kv cache
+
+cat >/tmp/opencode.json <<'EOF'
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "llamacpp": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "llama.cpp local",
+      "options": { "baseURL": "http://127.0.0.1:18080/v1", "apiKey": "not-needed" },
+      "models": { "qwen3.8-flash-next-q4": { "name": "Qwen3.8 Flash Next Q4" } },
+      "parallelToolCalls": false
+    }
+  },
+  "model": "llamacpp/qwen3.8-flash-next-q4"
+}
+EOF
+OPENCODE_CONFIG=/tmp/opencode.json opencode

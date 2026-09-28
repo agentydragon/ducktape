@@ -1,0 +1,62 @@
+# Build agentplane's Nix runner image (agentplane/runner/image.nix) and push it to the Forgejo
+# registry, through nix-image.yml. The archive also goes to the Attic cache.
+name: Agentplane Runner Image
+
+on:
+  push:
+    branches: [devel]
+    paths:
+      - "agentplane/runner/image.nix"
+      - "agentplane/images/sandbox.nix"
+      - "nix/lib/nix-ld-image.nix"
+      # The runner arrives as a released wheel, so a runner change reaches the image when its
+      # pin moves.
+      - "nix/artifact-pins.json"
+      - "flake.lock"
+      - "nix/flake/packages.nix"
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/agentplane-runner-image.yml"
+      - ".github/workflows/nix-image.yml"
+  # Build-only on PRs, so a change to the image is proven to build before it merges.
+  pull_request:
+    paths:
+      # keep-sorted start
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/agentplane-runner-image.yml"
+      - ".github/workflows/nix-image.yml"
+      - "agentplane/images/sandbox.nix"
+      - "agentplane/runner/image.nix"
+      - "flake.lock"
+      - "nix/artifact-pins.json"
+      - "nix/flake/packages.nix"
+      - "nix/lib/nix-ld-image.nix"
+      # keep-sorted end
+  workflow_dispatch:
+
+concurrency:
+  group: agentplane-runner-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    uses: ./.github/workflows/nix-image.yml
+    with:
+      attr: agentplane-runner-image
+      image: git.allegedly.works/ducktape-ci/agentplane-runner
+      registry: forgejo
+      attic: true
+      # Starts each executable the runner SandboxTemplate names, once, as the image's own user.
+      # Nothing here runs a turn: that is //agentplane/acceptance, run by hand after a bump.
+      smoke: |
+        loaded="$(docker load -i "$(readlink -f result)")"
+        printf '%s\n' "$loaded"
+        image="$(printf '%s\n' "$loaded" | sed -n -e 's/^Loaded image: //p' -e 's/^Loaded image ID: //p' | tail -n 1)"
+        test -n "$image"
+        docker run --rm "$image" --help
+        docker run --rm --entrypoint /bin/claude "$image" --version
+        docker run --rm --entrypoint /bin/codex "$image" --version
+    secrets:
+      SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}

@@ -10,7 +10,8 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:flux_sources",
         "//cluster/cdk8s:generation",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
     ],
 )

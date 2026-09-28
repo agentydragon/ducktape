@@ -1,29 +1,39 @@
 # cdk8s for cluster manifests
 
-Python cdk8s (`cluster/cdk8s/`) generates resources under `cluster/k8s`. The Flux
+Python cdk8s (`cluster/cdk8s/`) generates resources under two roots
+(`cluster/cdk8s/manifest_roots.py`), mirroring one sub-path layout. A Flux Kustomization
+directory every file of which is generated lives under `cluster/generated`, a closed
+world: the parity test fails on any file there the generator does not write. A directory
+holding any hand-written file lives under `cluster/k8s`, its generated files beside the
+hand-written ones. A directory is never split across the roots, and never nested inside
+another Kustomization's path or artifact copy in the other root. The Flux
 Kustomization graph is one generated chart at `cluster/k8s/flux/kustomizations.k8s.yaml`;
 the neighboring `flux/kustomization.yaml` keeps bootstrap and source objects hand-written.
 Flux reads `devel` as it always has. Regenerate with `bb run //cluster/cdk8s:generate_manifests`
 (the binary writes into the checkout, so `bb run`, not `bbr run`);
-`//cluster/cdk8s:test_generate_manifests` regenerates in memory and fails CI on any drift
-from the committed files. Conventions for writing a generator: <../cdk8s/AGENTS.md>.
+`//cluster/cdk8s:test_generate_manifests` regenerates in memory and fails CI when a
+written file differs from, or is missing at, its committed path, or when `cluster/generated`
+holds a file the generator did not write. Conventions for writing a generator: <../cdk8s/AGENTS.md>.
 
 ## Shapes of a directory
 
-Nearly every directory under `cluster/k8s` is generated, rendered identically to the YAML
-it replaced (checked with `cluster/cdk8s/render_diff.py`, <../cdk8s/AGENTS.md> § Testing a
-generator).
+Most active Kubernetes resources under these two roots are generated. Hand-written
+overlays, application payloads and project-owned deployment packages remain; their
+treatment is tracked in [the remainder backlog](cdk8s_remainder.md).
+`cluster/cdk8s/render_diff.py` compares the final Kustomize resources across revisions,
+before postBuild substitution (<../cdk8s/AGENTS.md> § Testing a generator).
 
-1. **No `kustomization.yaml`**, where a Flux `spec.path` holds a single manifest file:
-   kustomize-controller generates the kustomization, listing every `.yaml`/`.yml` file
-   under the path recursively and a subdirectory holding a kustomization as a whole
-   (fluxcd/pkg `kustomize.scanManifests`). A directory another kustomization references
-   as a resource keeps its file; kustomize requires one there.
+1. **No `kustomization.yaml`**, in a generated directory not yet written by
+   `generation.write_directory`: kustomize-controller generates the kustomization, listing
+   every `.yaml`/`.yml` file under the path recursively and a subdirectory holding a
+   kustomization as a whole (fluxcd/pkg `kustomize.scanManifests`). A directory another
+   kustomization references as a resource keeps its file; kustomize requires one there.
 2. **Generated `kustomization.yaml`** (every one `.gitattributes` marks
    `linguist-generated=true`): `flux.kustomize_kustomization`, a Pydantic model (the plain
    `kustomize.config.k8s.io` Kustomization has a JSON Schema but no CRD for
    `cdk8s import` to ingest), listing one `<name>.k8s.yaml` per chart and the
-   hand-written siblings below.
+   hand-written siblings below. `generation.write_directory` writes it for every
+   directory it synthesizes, and a new component is written that way.
 3. **Hand-written `kustomization.yaml` over generated resources**, where the directory
    keeps something the generator does not own (a `configMapGenerator` with
    `configurations:` or `generatorOptions`, a remote-release patch, an object from
@@ -35,10 +45,12 @@ generator).
 Every directory's Flux Kustomization object is created in topo order by
 `generate_manifests.py` and emitted in the central Flux chart. `artifact-generators`
 imports the deployed source-watcher CRD; `generate_manifests.py` builds each consumer's
-artifact before its Kustomization node and hands them all to
-`artifact_generators.write_artifact_generators` last. A tofu-controller `Terraform` CR is
-built through `terraform.gitops_terraform`, and a Namespace written into the directory of
-the Kustomization that owns it through `generation.write_namespace`.
+artifact before its Kustomization node, writes the directory with
+`generation.write_directory` as the node's `RenderedDirectory` argument, and hands every
+artifact to `artifact_generators.write_artifact_generators` last. A tofu-controller
+`Terraform` CR is built through `terraform.tofu_state_terraform` (a `tf/gitops` module's
+through `terraform.gitops_terraform`), and a Namespace written into the directory of the
+Kustomization that owns it through `generation.write_namespace`.
 
 ### What stays hand-written
 
@@ -50,15 +62,9 @@ the Kustomization that owns it through `generation.write_namespace`.
   and the `kustomization.yaml` that carries the generator where it is hand-written.
 - `image-pins/` Components and the ConfigMaps whose data carries a `$imagepolicy` marker
   (§ Live image automation).
-- Objects whose kind has no binding yet: kubevirt `VirtualMachine`
-  (`agents/public-coder-agent/devbox`, `cpap-sync`) and CDI `StorageProfile`
-  (`kubevirt/cdi`).
-- One-offs: `gaffer-private-source/bridge.yaml` (a Flux Kustomization reconciling
-  another repository, outside the generated graph); and the `airlock` and
-  `study-casino` Deployments, which carry an image marker on an env value as well as on
-  `image:`.
 
-Open decisions on each of these are in <../cdk8s/PLAN.md>.
+Open work is in <../cdk8s/PLAN.md>; file-specific treatment and mixed-directory
+mechanism findings are in <cdk8s_remainder.md>.
 
 The `.k8s.yaml` suffix is cdk8s-only and Prettier ignores it so synthesis retains
 ownership of generated bytes; `.gitattributes` marks every generated file
@@ -79,21 +85,23 @@ up only on the interval (tofu-controller v0.16.5).
 
 A `.sops.yaml` Secret stays hand-written (cdk8s has no key material) in the same
 directory: the generated `kustomization.yaml` lists it as a sibling resource
-(`Environment.extra_resources`), and that directory's object in the central Flux chart
-carries the `decryption:` block when any such file is listed. `ExternalSecret` objects
-are generated outright; they carry only a pointer at a store key.
+(`write_directory(..., siblings=[...])`, agentplane's `Environment.extra_resources`), and
+that directory's object in the central Flux chart carries the `decryption:` block when any
+such file is listed; `flux_kustomization` derives it from the `RenderedDirectory`.
+`ExternalSecret` objects are generated outright; they carry only a pointer at a store key.
 
-Fleet rules resolve Pod Secret and ConfigMap references against objects in the same
-cdk8s chart, including controller-created targets such as an ExternalSecret target or
-a CNPG app Secret. References supplied by sibling Kustomize resources or other
-Kustomizations are outside that check; the owning `kustomization.yaml` lists sibling
-resources, and `depends_on` orders other Kustomizations.
+Fleet rules run only on charts registering `add_fleet_rules`. Their
+`resolved_references` check rejects some same-chart Secret/ConfigMap kind mismatches,
+including names derived from controller-created targets; it permits unknown references
+and does not distinguish namespaces. It does not establish reference existence.
+Whole-tree validation work is tracked in <../cdk8s/TODO.md>.
 
-A `configMapGenerator` input (`clickhouse/schema/schema.sql`, `aiquota/config.toml`)
+A `configMapGenerator` input (`clickhouse/schema/schema.sql`)
 stays hand-written the same way: the generated `kustomization.yaml` carries the
 generator entry (`flux.ConfigMapArgs`), keeping kustomize's content-hash
 name suffix and reference rewriting, and the construct mounting it references the
-entry's `name`.
+entry's `name`. Content rendered in Python goes into the same entry as `literals`
+(aiquota's `config.toml`).
 
 ### `dependsOn` rationale
 
@@ -106,8 +114,8 @@ The root `cluster/k8s/kustomization.yaml` includes `flux/`; the hand-written
 `cluster/k8s/flux/kustomization.yaml` includes the generated central chart and the
 hand-written bootstrap/source resources. `dependsOn` addresses Kustomizations by name;
 `cluster/validation`'s graph checks (`test_dependencies`, `test_crd_layering`,
-`test_flux_build`) run over rendered `kustomize build` output; kubeconform validates
-every `cluster/k8s/**/*.yaml`.
+`test_flux_build`) run over rendered `kustomize build` output of both roots; kubeconform
+validates every `cluster/{k8s,generated}/**/*.yaml`.
 
 ## One writer per byte range
 
@@ -128,7 +136,9 @@ Deployment carries the placeholder tag `unset`, and a hand-written
 `$imagepolicy`. Where a tag is also data a Pod reads (the console reports its own and its
 static shell's image tags), it lives in a hand-written sibling ConfigMap carrying the
 marker (`haku/console/{image,static}-metadata.yaml`), listed as a resource in the root
-Kustomization and referenced by name from the workload.
+Kustomization and referenced by name from the workload. A KubeVirt `VirtualMachine`'s
+`containerDisk` image is outside the `images:` transformer's default field specs, so its
+Component also lists a `kustomizeconfig` naming that path (`cpap-sync/image-pins`).
 
 Argo CD Image Updater would need the identical carve-out: its `git` write-back mode
 writes a separate file, and its default `argocd` mode stores the override on the live
@@ -142,10 +152,12 @@ Flux-vs-Argo question in neither direction.
 an `http_file` in `MODULE.bazel` pinned by sha256 to the version the cluster deploys
 (the same tag as the operator's `GitRepository` or Terraform install). The jsii-backed
 Python bindings are build-time output, never committed. Put each import declaration and
-its optional smoke test in `cluster/cdk8s/crd_bindings/<provider>/BUILD.bazel`; keep
-upstream CRD source pins in `MODULE.bazel`. Current providers are
-`//cluster/cdk8s/crd_bindings/{flux,prometheus_operator,gateway_api,external_secrets,cilium,cert_manager,cnpg,agent_sandbox,tofu_controller,source_watcher,seaweedfs,grafana_operator,kyverno,volsync,kubevirt,keda,clickhouse,external_snapshotter}`.
-`//agentplane/crds` owns its CRD constructs directly and is a separate case.
+its optional smoke test in `cluster/cdk8s/providers/<provider>/BUILD.bazel`, beside the
+CRD's generic wrapper modules; keep upstream CRD source pins in `MODULE.bazel`. Current
+providers are
+`//cluster/cdk8s/providers/{agent_sandbox,cert_manager,cilium,clickhouse,cnpg,external_secrets,external_snapshotter,flux,gateway_api,grafana_operator,keda,kubevirt,kyverno,prometheus_operator,redis_operator,seaweedfs,source_watcher,tofu_controller,volsync}`.
+`//agentplane/crds` declares the imports of Agentplane's first-party CRDs beside their
+YAML; `providers/agentplane` holds only their wrappers.
 
 The `source_watcher` import extracts `ArtifactGenerator` from the CRD bundle in
 `cluster/k8s/flux/flux-system/gotk-components.yaml`, keeping the binding aligned with the
@@ -153,17 +165,17 @@ Flux version deployed by the repository.
 
 - `cdk8s import` takes one CRD per invocation; a bundled multi-document file
   (external-secrets) goes through the `devinfra/k8s/extract_crd.py` genrule first.
+  KubeVirt and CDI publish no YAML for the CRDs their operators create at runtime; the
+  same genrule extracts them from the generated Go files that embed them
+  (`crd_go_key`), wrapping KubeVirt's schema-only entries in a CRD (`crd_wrap_kind`).
 - A CRD group with a dash (`external-secrets.io`) keeps it in the jsii assembly's npm
   name but not in the Python package directory; `jsii_module_path` carries the second
   spelling.
 - Core kinds need no import: `cdk8s_plus_34`'s fluent layer and its `k8s` submodule
   cover them (<../cdk8s/AGENTS.md> § Typed constructs over raw dicts).
 
-## Regenerating without Bazel network access
+## Toolchain failures
 
-`bbr build`/`bbr test` always work. When local `bb run` cannot fetch an external
-archive, a throwaway venv (`pip install` the versions pinned in
-`requirements_bazel.txt`, then `python3 -m cluster.cdk8s.generate_manifests` with
-`JSII_NODE=/usr/local/bin/node` and `JSII_SILENCE_WARNING_DEPRECATED_NODE_VERSION=1`)
-regenerates the files; confirm them with
-`bbr test //cluster/cdk8s:test_generate_manifests` afterwards.
+Use the Nix devshell and the repository's Bazel workflow. Missing tools or BuildBuddy
+connectivity failures follow the recovery procedure in the root `AGENTS.md`; a
+standalone venv is not an alternative generation toolchain.

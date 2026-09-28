@@ -22,8 +22,9 @@ resource "authentik_provider_oauth2" "headlamp" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://headlamp.allegedly.works/oidc-callback"
+      matching_mode     = "strict"
+      url               = "https://headlamp.allegedly.works/oidc-callback"
+      redirect_uri_type = "authorization"
     },
   ]
 }

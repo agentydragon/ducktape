@@ -1,5 +1,5 @@
 // Open an external link in a new tab with the opener severed. Shared by the embed shell
-// (openLink Agent UI bridge action) and the Settings panel (MCP OAuth popup).
+// (openLink Agent UI bridge action) and the Settings panel (account-link popup).
 //
 // `noopener`/`noreferrer` force window.open() to return null even when the tab opened, so
 // open a same-origin blank tab first. The handle is the only reliable popup-block signal;

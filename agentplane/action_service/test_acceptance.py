@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 from typing import Any, cast
+from uuid import uuid4
 
 import httpx
 import pytest_bazel
@@ -18,6 +19,8 @@ from agentplane.action_service.catalog import (
     ActionGroup,
     ActionIdentity,
     McpExecutorBinding,
+    McpHealth,
+    McpUnavailableReason,
 )
 from agentplane.action_service.db import ActionStore, make_sessionmaker
 from agentplane.action_service.models import (
@@ -434,6 +437,8 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
             arguments={"case": "safe"},
         ),
         CALLER_A,
+        request_id=uuid4(),
+        vote=None,
     )
     _, should_dispatch = await store.decide(
         pending_view.id,
@@ -461,6 +466,8 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
             arguments={"case": "unsafe"},
         ),
         CALLER_A,
+        request_id=uuid4(),
+        vote=None,
     )
     await store.decide(
         inflight_view.id,
@@ -543,11 +550,16 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
         ]
         assert "github-mcp-account" not in groups.text
 
-        # /v1/action-groups accepts either bearer scheme: the response is identical and
-        # non-sensitive to both, so an operator (e.g. the settings page) reads it too.
+        # /v1/action-groups accepts either bearer scheme, and only an operator's (e.g. the settings
+        # page's) keeps a health detail, which may name the backend.
+        catalog.groups["github"].health = McpHealth(
+            reason=McpUnavailableReason.CONNECT_FAILED, detail="ConnectError: test-only backend detail"
+        )
+        as_workload = await client.get("/v1/action-groups", headers=_workload("workload-a"))
         as_operator = await client.get("/v1/action-groups", headers=_operator())
         assert as_operator.status_code == 200
-        assert as_operator.json() == groups.json()
+        assert as_workload.json()[0]["health"]["detail"] is None
+        assert as_operator.json()[0]["health"]["detail"] == "ConnectError: test-only backend detail"
         assert "github-mcp-account" not in as_operator.text
 
         unauthenticated = await client.get("/v1/action-groups")

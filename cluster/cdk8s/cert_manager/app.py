@@ -6,49 +6,24 @@ ServiceMonitors for the controller and webhook metrics Services the chart create
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-)
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecHealthChecks,
-    KustomizationSpecPostBuild,
-    KustomizationSpecPostBuildSubstituteFrom,
-    KustomizationSpecPostBuildSubstituteFromKind,
-)
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecSelector,
-)
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref, https_helm_repository
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
 NAME = "cert-manager"
 NAMESPACE = "cert-manager"
-OUTPUT_DIR = "cluster/k8s/cert-manager/app"
-_CONTROL_PLANE_TOLERATION = {
-    "key": "node-role.kubernetes.io/control-plane",
-    "effect": "NoSchedule",
-    "operator": "Exists",
-}
+OUTPUT_DIR = f"{GENERATED_ROOT}/cert-manager/app"
+_REPOSITORY_NAME = "jetstack"
+_REPOSITORY_NAMESPACE = "flux-system"
+# trust-manager installs from this repository too, from its own chart.
+JETSTACK_SOURCE_REF = helm_repository_source_ref(_REPOSITORY_NAME, _REPOSITORY_NAMESPACE)
 
 
 def _values() -> dict[str, object]:
@@ -68,11 +43,10 @@ def _values() -> dict[str, object]:
         # in the admission path belong on the always-on control-plane bare metal, as
         # kyverno and external-secrets already are. Widened, not pinned — no nodeSelector
         # or affinity, so every worker stays a candidate.
-        "tolerations": [_CONTROL_PLANE_TOLERATION],
+        "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
         "crds": {"enabled": True},
         # Default ClusterIssuer for Ingress resources without explicit annotation.
-        # Driven by cert-manager-issuer-config ConfigMap via Flux postBuild substitution.
-        "ingressShim": {"defaultIssuerName": "${LETSENCRYPT_ISSUER}", "defaultIssuerKind": "ClusterIssuer"},
+        "ingressShim": {"defaultIssuerName": LETSENCRYPT_ISSUER, "defaultIssuerKind": "ClusterIssuer"},
         # Gateway API support — enables gateway-shim controller that watches Gateway
         # resources for cert-manager.io/cluster-issuer annotations.
         # Since v1.15 the old --feature-gates=ExperimentalGatewayAPISupport flag is
@@ -89,7 +63,7 @@ def _values() -> dict[str, object]:
         "prometheus": {"enabled": True, "servicemonitor": {"enabled": False}},
         "resources": {"limits": {"cpu": "100m", "memory": "128Mi"}, "requests": {"cpu": "10m", "memory": "32Mi"}},
         "webhook": {
-            "tolerations": [_CONTROL_PLANE_TOLERATION],
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
             # Additional DNS names for the webhook certificate.
             "extraArgs": [
                 "--dynamic-serving-dns-names=cert-manager-webhook,cert-manager-webhook.cert-manager,"
@@ -98,7 +72,7 @@ def _values() -> dict[str, object]:
             "resources": {"limits": {"cpu": "100m", "memory": "128Mi"}, "requests": {"cpu": "10m", "memory": "32Mi"}},
         },
         "cainjector": {
-            "tolerations": [_CONTROL_PLANE_TOLERATION],
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
             "resources": {
                 "limits": {
                     "cpu": "100m",
@@ -116,14 +90,12 @@ def _service_monitor(chart: Chart, name: str, *, component: str, port: str) -> N
     ServiceMonitor(
         chart,
         name,
-        metadata=metadata(name, NAMESPACE),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(
-                match_labels={"app.kubernetes.io/instance": NAME, "app.kubernetes.io/component": component}
-            ),
-            # ServiceMonitor.port matches the Service port name, not the targetPort.
-            endpoints=[ServiceMonitorSpecEndpoints(port=port, path="/metrics")],
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
+        selector=ServiceMonitorSpecSelector(
+            match_labels={"app.kubernetes.io/instance": NAME, "app.kubernetes.io/component": component}
         ),
+        # ServiceMonitor.port matches the Service port name, not the targetPort.
+        endpoints=[Endpoint.plain(port=port)],
     )
 
 
@@ -134,87 +106,34 @@ def chart(app: App) -> Chart:
         "namespace",
         metadata=k8s.ObjectMeta(name=NAMESPACE, labels={"rbac.ducktape.io/agent-readable-logs": "true"}),
     )
-    repository = HelmRepository(
+    helm_release(
         chart,
-        "repository",
-        metadata=metadata("jetstack", "flux-system"),
-        spec=HelmRepositorySpec(interval="24h", url="https://charts.jetstack.io"),
-    )
-    HelmRelease(
-        chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="cert-manager",
-                    # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
-                    version="v1.21.2",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                    interval="12h",
-                )
-            ),
-            values=_values(),
+        NAME,
+        NAMESPACE,
+        repository=https_helm_repository(
+            chart, _REPOSITORY_NAME, _REPOSITORY_NAMESPACE, url="https://charts.jetstack.io"
         ),
+        chart="cert-manager",
+        # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
+        version="v1.21.2",
+        interval="30m",
+        chart_interval="12h",
+        install=RETRY_FAILED_INSTALL,
+        values=_values(),
     )
     _service_monitor(chart, "cert-manager", component="controller", port="tcp-prometheus-servicemonitor")
     _service_monitor(chart, "cert-manager-webhook", component="webhook", port="metrics")
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def cert_manager(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    cert_manager_issuer_config: Kustomization,
-    reflector: Kustomization,
-    monitoring_crds: Kustomization,
-) -> Kustomization:
+def cert_manager(chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            # Health check ensures cert-manager pods are ready before dependents try to create Certificates
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="cert-manager", namespace=NAMESPACE
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="cert-manager-webhook", namespace=NAMESPACE
-                ),
-            ],
-            post_build=KustomizationSpecPostBuild(
-                substitute_from=[
-                    KustomizationSpecPostBuildSubstituteFrom(
-                        kind=KustomizationSpecPostBuildSubstituteFromKind.CONFIG_MAP, name="cert-manager-issuer-config"
-                    )
-                ]
-            ),
-            depends_on=flux_kustomization_depends_on_many(
-                cert_manager_issuer_config,
-                # Produces the namespace-local ConfigMap that postBuild reads.
-                reflector,
-                # the ServiceMonitor/PodMonitor CRD
-                monitoring_crds,
-            ),
+        directory,
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(
+            # the ServiceMonitor/PodMonitor CRD
+            monitoring_crds
         ),
     )

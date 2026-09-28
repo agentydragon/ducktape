@@ -4,6 +4,6 @@ images:
   - name: git.allegedly.works/ducktape-ci/tana-desktop
     newTag: devel-20260828070925-20a40e4 # {"$imagepolicy": "flux-system:tana-mcp:tag"}
   - name: git.allegedly.works/ducktape-ci/tana-firebase-resigner
-    newTag: devel-20260920203825-8d4d08a # {"$imagepolicy": "flux-system:tana-firebase-resigner:tag"}
+    newTag: devel-20260924010807-5ce04fd # {"$imagepolicy": "flux-system:tana-firebase-resigner:tag"}
   - name: git.allegedly.works/ducktape-ci/mcp-oauth-facade
-    newTag: devel-20260921002547-0e0af92 # {"$imagepolicy": "flux-system:mcp-oauth-facade:tag"}
+    newTag: devel-20260924235435-6cd31d1 # {"$imagepolicy": "flux-system:mcp-oauth-facade:tag"}

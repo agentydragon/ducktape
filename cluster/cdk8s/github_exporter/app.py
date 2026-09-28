@@ -14,40 +14,32 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
 )
 from grafana_grafanadashboard_crds.org.integreatly.grafana import (
-    GrafanaDashboard,
-    GrafanaDashboardSpec,
     GrafanaDashboardSpecConfigMapRef,
     GrafanaDashboardSpecInstanceSelector,
 )
 from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsRelabelings,
     ServiceMonitorSpecEndpointsScheme,
     ServiceMonitorSpecSelector,
 )
 
-from cluster.cdk8s import forgejo_images
+from cluster.cdk8s import external_creds, forgejo_images
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 
-_OUTPUT_DIR = "cluster/k8s/github-exporter"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/github-exporter"
 _NAMESPACE = "monitoring"
 _ACCOUNTS = ("agentydragon", "agentydragon-agent")
 # The external-creds source Secret each account's token is copied from.
@@ -74,26 +66,13 @@ def _token_external_secret(chart: Chart, account: str) -> None:
     ExternalSecret(
         chart,
         f"token-{account}",
-        metadata=metadata(_token_secret(account), _NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-                name="kubernetes-external-creds-secret-store",
-            ),
-            target=ExternalSecretSpecTarget(
-                name=_token_secret(account),
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=ExternalSecretSpecTargetTemplate(type="Opaque"),
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key="token",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key=_TOKEN_SOURCES[account], property="token"),
-                )
-            ],
-        ),
+        metadata=ApiObjectMetadata(name=_token_secret(account), namespace=_NAMESPACE),
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
+        data=[remote_data(_TOKEN_SOURCES[account], "token")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=ExternalSecretSpecTargetTemplate(type="Opaque"),
     )
 
 
@@ -243,13 +222,11 @@ def _service_monitor(chart: Chart, app: str, endpoint: ServiceMonitorSpecEndpoin
     ServiceMonitor(
         chart,
         f"{app}-monitor",
-        metadata=metadata(app, _NAMESPACE),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(
-                match_labels={"app.kubernetes.io/name": app, "app.kubernetes.io/component": "quota"}
-            ),
-            endpoints=[endpoint],
+        metadata=ApiObjectMetadata(name=app, namespace=_NAMESPACE),
+        selector=ServiceMonitorSpecSelector(
+            match_labels={"app.kubernetes.io/name": app, "app.kubernetes.io/component": "quota"}
         ),
+        endpoints=[endpoint],
     )
 
 
@@ -304,15 +281,13 @@ def chart(app: App) -> Chart:
     GrafanaDashboard(
         chart,
         "dashboard",
-        metadata=metadata("github-exporter", _NAMESPACE),
-        spec=GrafanaDashboardSpec(
-            folder="GitHub",
-            instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels={"dashboards": "grafana"}),
-            config_map_ref=GrafanaDashboardSpecConfigMapRef(name="github-exporter-dashboard", key="dashboard.json"),
-        ),
+        metadata=ApiObjectMetadata(name="github-exporter", namespace=_NAMESPACE),
+        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels={"dashboards": "grafana"}),
+        folder="GitHub",
+        config_map_ref=GrafanaDashboardSpecConfigMapRef(name="github-exporter-dashboard", key="dashboard.json"),
     )
     return chart
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, _OUTPUT_DIR, chart)
+    write_charts(root, OUTPUT_DIR, chart)

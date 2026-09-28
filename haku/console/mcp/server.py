@@ -70,32 +70,21 @@ from haku.console.mcp.approval import (
 )
 from haku.console.mcp.catalog_reconciler import OperatorCatalogReconciler
 from haku.console.mcp.guidance import SERVER_INSTRUCTIONS, approval_request_preamble
-from haku.console.mcp.operator_oauth import McpOperatorAuthStatus, PostgresMcpOperatorOAuthStore
 from haku.console.mcp.tool_call_service import (
     AgentActorRequiredError,
-    BackendAccountNotConnectedError,
     ToolCallApplicationService,
     ToolCallNotFoundError,
     ToolCallStateConflictError,
 )
 from haku.console.mcp_config import (
-    DynamicOAuthClientRegistration,
-    InProcessBackend,
     InProcessCredential,
     McpServerEntry,
     McpServerNotFoundError,
-    NoCredential,
-    OperatorConnectionCredential,
-    PreregisteredOAuthClient,
-    RemoteMcpBackend,
-    RemoteServerOAuthAuth,
-    StaticBearerAuth,
     _load_servers,
     server_tool_prefix,
 )
-from haku.console.oauth.provider_connection import PostgresProviderConnectionStore, ProviderConnectionStatus
 from haku.console.settings import Settings
-from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
+from haku.console.tool_call_actor import OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
     MCP_TOOL_CALL_META_KEY,
     MCP_TOOL_META_KEY,
@@ -141,8 +130,6 @@ class ConsoleMcpContext:
 
     settings: Settings
     tool_calls: ToolCallApplicationService
-    oauth_store: PostgresMcpOperatorOAuthStore
-    provider_store: PostgresProviderConnectionStore
     dispatcher: McpServerDispatcher
     catalogs: OperatorCatalogReconciler
 
@@ -188,70 +175,20 @@ def _mcp_tool_call_response(record: ToolCallRecord, settings: Settings) -> McpTo
     return response
 
 
-class StaticBearerAuthStatus(BaseModel):
-    """Safe reflection of static-bearer auth: the secret's environment reference is omitted."""
-
-    kind: Literal["static_bearer"] = "static_bearer"
-
-
-class DynamicOAuthClientRegistrationStatus(BaseModel):
-    kind: Literal["dynamic"] = "dynamic"
-    client_name: str
-
-
-class PreregisteredOAuthClientStatus(BaseModel):
-    """Safe projection of a pre-registered client: omit its client id and secret."""
-
-    kind: Literal["preregistered"] = "preregistered"
-    token_endpoint_auth_method: Literal["client_secret_basic", "client_secret_post"] | None = None
-
-
-type OAuthClientRegistrationStatus = Annotated[
-    DynamicOAuthClientRegistrationStatus | PreregisteredOAuthClientStatus, Field(discriminator="kind")
-]
-
-
-class RemoteServerOAuthAuthStatus(BaseModel):
-    kind: Literal["remote_server_oauth"] = "remote_server_oauth"
-    client_registration: OAuthClientRegistrationStatus
-    scopes: list[str] | None = None
-
-
-type RemoteMcpAuthStatus = Annotated[
-    RemoteServerOAuthAuthStatus | StaticBearerAuthStatus | NoCredential, Field(discriminator="kind")
-]
-
-
-class RemoteMcpBackendStatus(BaseModel):
-    kind: Literal["remote_mcp"] = "remote_mcp"
-    url: str
-    auth: RemoteMcpAuthStatus
-
-
 class InProcessBackendStatus(BaseModel):
     kind: Literal["in_process"] = "in_process"
     credential: InProcessCredential
 
 
-type McpBackendStatus = Annotated[RemoteMcpBackendStatus | InProcessBackendStatus, Field(discriminator="kind")]
-
-
 class McpServerConnectionStatus(BaseModel):
     """Persisted connection state for one configured MCP server.
 
-    This deliberately says nothing about current reachability or upstream tools: answering either
-    question would require network I/O and, for OAuth-backed servers, could rotate credentials.
+    This deliberately says nothing about current tool availability: answering that means
+    reflecting the server, which `get_mcp_server_status` does.
     """
 
     server_id: str
-    backend: McpBackendStatus
-    connection: McpOperatorAuthStatus | ProviderConnectionStatus | None = Field(
-        description=(
-            "The persisted, non-secret operator connection status. This uses the same safe status "
-            "shape as the console's OAuth/provider APIs, including connection and token-expiry times. "
-            "It is null when this authentication kind has no separately linked operator connection."
-        )
-    )
+    backend: InProcessBackendStatus
 
 
 class McpServerConnectionStatusResponse(BaseModel):
@@ -263,29 +200,6 @@ class McpServerProbeResponse(BaseModel):
 
     connection: McpServerConnectionStatus
     server: ServerMetadata
-
-
-def _backend_status(backend: RemoteMcpBackend | InProcessBackend) -> McpBackendStatus:
-    match backend:
-        case RemoteMcpBackend(auth=StaticBearerAuth()):
-            return RemoteMcpBackendStatus(url=backend.url, auth=StaticBearerAuthStatus())
-        case RemoteMcpBackend(auth=RemoteServerOAuthAuth() as auth):
-            match auth.client_registration:
-                case DynamicOAuthClientRegistration() as registration:
-                    projected: OAuthClientRegistrationStatus = DynamicOAuthClientRegistrationStatus(
-                        client_name=registration.client_name
-                    )
-                case PreregisteredOAuthClient() as registration:
-                    projected = PreregisteredOAuthClientStatus(
-                        token_endpoint_auth_method=registration.token_endpoint_auth_method
-                    )
-            return RemoteMcpBackendStatus(
-                url=backend.url, auth=RemoteServerOAuthAuthStatus(client_registration=projected, scopes=auth.scopes)
-            )
-        case RemoteMcpBackend():
-            return RemoteMcpBackendStatus(url=backend.url, auth=backend.auth)
-        case InProcessBackend():
-            return InProcessBackendStatus(credential=backend.credential)
 
 
 class _ApprovalRequestEnvelopeBase(BaseModel):
@@ -339,51 +253,16 @@ def _tool_call_url(settings: Settings, tool_call_id: str) -> str:
     return tool_call_console_url(settings.public_base_url, tool_call_id)
 
 
-async def _passive_server_connection_statuses(
-    context: ConsoleMcpContext, actor: RuntimeActor
-) -> McpServerConnectionStatusResponse:
-    """Read connection rows without refreshing tokens or contacting an MCP/provider endpoint."""
-    servers = _load_servers(context.settings)
-    oauth_statuses = {
-        status.server_id: status
-        for status in (
-            await context.oauth_store.list_statuses(servers=servers, operator_id=actor.operator_id, username="operator")
-        ).associations
-    }
-    provider_statuses = {
-        status.connection: status
-        for status in (await context.provider_store.list_statuses(operator_id=actor.operator_id)).connections
-    }
-    result: list[McpServerConnectionStatus] = []
-    for server in servers:
-        match server.backend:
-            case RemoteMcpBackend(auth=RemoteServerOAuthAuth()):
-                oauth_status = oauth_statuses.get(server.id)
-                result.append(
-                    McpServerConnectionStatus(
-                        server_id=server.id, backend=_backend_status(server.backend), connection=oauth_status
-                    )
-                )
-            case InProcessBackend(credential=OperatorConnectionCredential(connection=connection)):
-                provider_status = provider_statuses.get(connection)
-                result.append(
-                    McpServerConnectionStatus(
-                        server_id=server.id, backend=_backend_status(server.backend), connection=provider_status
-                    )
-                )
-            case RemoteMcpBackend():
-                result.append(
-                    McpServerConnectionStatus(
-                        server_id=server.id, backend=_backend_status(server.backend), connection=None
-                    )
-                )
-            case InProcessBackend():
-                result.append(
-                    McpServerConnectionStatus(
-                        server_id=server.id, backend=_backend_status(server.backend), connection=None
-                    )
-                )
-    return McpServerConnectionStatusResponse(servers=result)
+def _passive_server_connection_statuses(context: ConsoleMcpContext) -> McpServerConnectionStatusResponse:
+    """Read persisted server backend configuration without contacting a provider endpoint."""
+    return McpServerConnectionStatusResponse(
+        servers=[
+            McpServerConnectionStatus(
+                server_id=server.id, backend=InProcessBackendStatus(credential=server.backend.credential)
+            )
+            for server in _load_servers(context.settings)
+        ]
+    )
 
 
 def _is_passthrough(policies: AutoApprovalPolicyRegistry, actor: RuntimeActor, server_id: str, tool_name: str) -> bool:
@@ -395,15 +274,9 @@ def _is_passthrough(policies: AutoApprovalPolicyRegistry, actor: RuntimeActor, s
     )
 
 
-def _is_agent_tool_blocked(server: McpServerEntry, actor: RuntimeActor, tool_name: str) -> bool:
-    """Return whether deploy policy removes an upstream tool from an Agent's surface."""
-    return isinstance(actor, AgentActor) and server.blocks_agent_tool(tool_name)
-
-
 def _exposed_metadata(
     metadata: ServerMetadata,
     *,
-    server: McpServerEntry,
     policies: AutoApprovalPolicyRegistry,
     actor: RuntimeActor,
     include_schemas: bool,
@@ -440,7 +313,7 @@ def _exposed_metadata(
             }
         )
 
-    tools = [exposed(tool) for tool in metadata.state.tools if not _is_agent_tool_blocked(server, actor, tool.name)]
+    tools = [exposed(tool) for tool in metadata.state.tools]
     return metadata.model_copy(update={"state": metadata.state.model_copy(update={"tools": tools})})
 
 
@@ -555,10 +428,6 @@ async def _dispatch(
     parse or a second dispatch is how an approval bypass gets built by accident, since the policy
     decision lives inside ``submit_and_wait``.
     """
-    server = next((candidate for candidate in _load_servers(context.settings) if candidate.id == server_id), None)
-    if server is not None and _is_agent_tool_blocked(server, actor, tool_name):
-        raise ToolError(f"MCP tool {server_id!r}/{tool_name!r} is not available to Agents")
-
     # A browser Operator is always a direct caller, even if a stale or hand-built proxy supplied
     # the approval-required flag. Keep the caller-dependent wire contract true at the dispatch
     # boundary rather than allowing envelope validation to run before execute_direct.
@@ -582,12 +451,7 @@ async def _dispatch(
         if isinstance(actor, OperatorActor):
             return _direct_to_result(await context.tool_calls.execute_direct(req=req, actor=actor))
         record = await context.tool_calls.submit_and_wait(req=req, actor=actor)
-    except (
-        BackendAccountNotConnectedError,
-        McpServerNotFoundError,
-        ToolCallNotFoundError,
-        ToolCallStateConflictError,
-    ) as error:
+    except (McpServerNotFoundError, ToolCallNotFoundError, ToolCallStateConflictError) as error:
         raise ToolError(str(error)) from error
     return _record_to_result(record, context.settings)
 
@@ -703,7 +567,7 @@ def _unavailable_server_message(server_id: str, reason: str) -> str:
     return (
         f"MCP server {server_id!r} is unavailable: {reason.rstrip().rstrip('.') or 'unknown availability error'}. "
         f"Use get_mcp_server_status(server_id={server_id!r}) to check it; "
-        "reconnect the server in the console if its OAuth connection has expired or been revoked."
+        "connect the server's account in the console if it needs one."
     )
 
 
@@ -756,13 +620,12 @@ class OperatorToolProvider(Provider):
                 actor=actor,
             )
             for tool in meta.tools
-            if not _is_agent_tool_blocked(server, actor, tool.name)
         ]
 
     async def _list_tools(self) -> Sequence[Tool]:
         actor = await self._actor_resolver.resolve()
         # Snapshot reads are async only because FastMCP's Provider contract is async. They perform
-        # no downstream or OAuth I/O; gather preserves configured server order.
+        # no server or credential I/O; gather preserves configured server order.
         reflected = await asyncio.gather(
             *(self._server_tools(server, actor) for server in _load_servers(self._context.settings))
         )
@@ -777,8 +640,6 @@ class OperatorToolProvider(Provider):
         if isinstance(meta, DegradedReflection):
             return None
         for upstream_tool in meta.tools:
-            if _is_agent_tool_blocked(server, actor, upstream_tool.name):
-                continue
             tool = _build_proxy_tool(
                 self._context,
                 server.id,
@@ -842,18 +703,14 @@ def build_console_mcp(
 
     @mcp.tool(annotations=_READ_ONLY_META)
     async def list_mcp_servers(actor: RuntimeActor = current_actor_dependency) -> McpServerConnectionStatusResponse:
-        """List configured MCP servers and their persisted connection state.
+        """List configured MCP servers and their persisted backend configuration.
 
         This is a passive status read: it never refreshes a token, contacts an authorization server,
-        or calls a downstream MCP server. OAuth/provider connection objects mirror the console's
-        persisted non-secret status structures, including connection and token-expiry times. The
-        nested backend object mirrors the safe server configuration shape so callers can distinguish
-        remote MCP transports from in-process implementations; static bearer secret references are
-        omitted. A real
-        discovery or execution attempt may refresh an expired token or prove that reconnect is needed.
-        Cataloged provider accounts whose OAuth client is absent remain visible as ``unprovisioned``.
+        or reflects a server; the nested backend object names the server's credential kind. A real
+        execution attempt may still fail (e.g. an unlinked login identity).
         """
-        return await _passive_server_connection_statuses(context, actor)
+        del actor
+        return _passive_server_connection_statuses(context)
 
     @mcp.tool(annotations=_READ_ONLY_META)
     async def get_mcp_server_status(
@@ -861,32 +718,22 @@ def build_console_mcp(
     ) -> McpServerProbeResponse:
         """Actively reflect one configured MCP server's current tool availability.
 
-        Unlike ``list_mcp_servers``, this may refresh the operator's linked OAuth token and contact
-        the remote MCP server. It returns persisted linkage plus a structured degraded result when
-        that cannot succeed, so agents can distinguish credential failures from downstream tool
-        discovery failures. Tool names, titles, descriptions, icons, and annotations are returned by
+        Unlike ``list_mcp_servers``, this reflects the server's tools now. It returns persisted linkage
+        plus a structured degraded result when that cannot succeed, so agents can distinguish
+        credential failures from tool discovery failures. Tool names, titles, descriptions, icons, and annotations are returned by
         default; set ``include_tool_schemas`` to include the potentially large input/output schemas.
         """
         server = next((candidate for candidate in _load_servers(context.settings) if candidate.id == server_id), None)
         if server is None:
             raise ToolError(f"unknown configured MCP server {server_id!r}")
         connection = next(
-            status
-            for status in (await _passive_server_connection_statuses(context, actor)).servers
-            if status.server_id == server_id
+            status for status in _passive_server_connection_statuses(context).servers if status.server_id == server_id
         )
-        reflection = await metadata_for_operator(
-            operator_id=actor.operator_id,
-            server=server,
-            dispatcher=context.dispatcher,
-            oauth_store=context.oauth_store,
-            provider_store=context.provider_store,
-        )
+        reflection = await metadata_for_operator(server=server, dispatcher=context.dispatcher)
         return McpServerProbeResponse(
             connection=connection,
             server=_exposed_metadata(
                 server_metadata_response(server_id, reflection),
-                server=server,
                 policies=policies,
                 actor=actor,
                 include_schemas=include_tool_schemas,

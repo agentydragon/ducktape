@@ -17,7 +17,6 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Callable, Coroutine, Mapping, Sequence
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -25,7 +24,7 @@ from uuid import UUID, uuid4
 import jsonschema
 
 from agentplane.action_service.catalog import ActionCatalog, ActionIdentity, UnknownActionError
-from agentplane.action_service.db import ActionConflictError, ActionStore
+from agentplane.action_service.db import ActionStore
 from agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
@@ -44,10 +43,10 @@ from agentplane.action_service.models import (
     Principal,
     ProviderOutcome,
     ProviderVerdict,
+    ProviderVote,
     UnknownOutcomeReason,
-    Verdict,
 )
-from agentplane.action_service.policy_evaluation import resolve_bindings
+from agentplane.action_service.policy_evaluation import auto_approvable, resolve_bindings
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.policy_view import (
     CallerActionPolicyView,
@@ -77,12 +76,6 @@ DEFAULT_DRAIN_TIMEOUT = timedelta(seconds=20)
 DEFAULT_STOP_TIMEOUT = timedelta(seconds=5)
 
 
-@dataclass(frozen=True)
-class _ProviderVote:
-    provider: str
-    outcome: ProviderOutcome
-
-
 class ExecutionOutcomeUnknownError(Exception):
     """The adapter cannot prove whether the external effect started, so replay is forbidden."""
 
@@ -97,6 +90,20 @@ class UnsupportedActionError(Exception):
 
 class InvalidActionArgumentsError(Exception):
     """Arguments do not match the advertised Action schema; nothing was persisted."""
+
+
+class UndecidedRequestError(Exception):
+    """No policy decides the request at admission, so `submit_decided` persisted nothing; the text
+    is each provider's reason."""
+
+
+def _decisive(votes: Sequence[ProviderVote]) -> ProviderVote | None:
+    """A deny if any, else an allow if any; `None` defers to the human path."""
+    for verdict in (ProviderVerdict.DENY, ProviderVerdict.ALLOW):
+        for vote in votes:
+            if vote.outcome.verdict is verdict:
+                return vote
+    return None
 
 
 class _StoreBackedLease:
@@ -278,6 +285,27 @@ class ActionService:
         *,
         external_grant: ExternalGrantProvenance | None = None,
     ) -> ActionRequestView:
+        return await self._submit(body, principal, external_grant=external_grant, decided_only=False)
+
+    async def submit_decided(
+        self,
+        body: ActionRequestInput,
+        principal: CallerPrincipal,
+        *,
+        external_grant: ExternalGrantProvenance | None = None,
+    ) -> ActionRequestView:
+        """Submit only a request a policy decides at admission. Anything else raises
+        `UndecidedRequestError` before a row exists, so no one is asked and nothing is left to cancel."""
+        return await self._submit(body, principal, external_grant=external_grant, decided_only=True)
+
+    async def _submit(
+        self,
+        body: ActionRequestInput,
+        principal: CallerPrincipal,
+        *,
+        external_grant: ExternalGrantProvenance | None,
+        decided_only: bool,
+    ) -> ActionRequestView:
         if self.draining:
             raise ServiceDrainingError("Action Service is draining")
         self._resolve_executor(body.action)
@@ -286,8 +314,20 @@ class ActionService:
             jsonschema.validate(body.arguments, action.input_schema)
         except jsonschema.ValidationError:
             raise InvalidActionArgumentsError("arguments do not match the advertised Action schema") from None
-        view = await self._store.submit(body, principal, external_grant=external_grant)
-        return await self._auto_decide(view, body, principal, external_grant)
+        request_id = uuid4()
+        votes = await self._auto_decide(request_id, body, principal)
+        vote = _decisive(votes)
+        if vote is None and decided_only:
+            raise UndecidedRequestError(
+                "; ".join(each.outcome.reason_description or each.outcome.reason_code for each in votes)
+                or "no decision provider is configured"
+            )
+        view = await self._store.submit(
+            body, principal, request_id=request_id, vote=vote, external_grant=external_grant
+        )
+        if vote is not None and vote.outcome.verdict is ProviderVerdict.ALLOW:
+            self._schedule(view.id)
+        return view
 
     def _resolve_executor(self, identity: ActionIdentity) -> Executor:
         group_key, action_key = identity.group, identity.name
@@ -301,60 +341,25 @@ class ActionService:
         return executor
 
     async def _auto_decide(
-        self,
-        view: ActionRequestView,
-        body: ActionRequestInput,
-        principal: CallerPrincipal,
-        external_grant: ExternalGrantProvenance | None,
-    ) -> ActionRequestView:
+        self, request_id: UUID, body: ActionRequestInput, principal: CallerPrincipal
+    ) -> list[ProviderVote]:
         """Evaluate configured synchronous providers once, against the policy objects as they stand
-        now; defer to the human path on no decisive outcome."""
-        if not self._providers:
-            return view
+        now, before the request is persisted: an auto-decided request is never observable as
+        pending, so nothing (the operator queue, Web Push) treats it as waiting for a human.
+
+        Every provider runs to completion first, so deny dominance never depends on which one
+        happens to answer fastest."""
         caller = principal.account
         context = DecisionContext(
-            request_id=view.id,
+            request_id=request_id,
             action=body.action,
             arguments=body.arguments,
             caller=caller,
             bindings=resolve_bindings(self._policies, caller, self._clock()),
         )
-        vote = await self._evaluate_providers(context)
-        if vote is None:
-            return await self._store.get(view.id, principal)
-        try:
-            decided, should_dispatch = await self._store.decide_by_provider(
-                view.id,
-                principal,
-                verdict=Verdict.ALLOW if vote.outcome.verdict is ProviderVerdict.ALLOW else Verdict.DENY,
-                provider=vote.provider,
-                idempotency_key=f"auto:{view.id}",
-                expected_version=view.version,
-                reason_code=vote.outcome.reason_code,
-                reason_description=vote.outcome.reason_description,
-                policy_evidence=vote.outcome.evidence,
-            )
-        except ActionConflictError:
-            # A human Decision or caller cancellation may commit during provider evaluation.
-            logger.info("auto-provider decision for %s was stale; another transition already won", view.id)
-            return await self._store.get(view.id, principal)
-        if should_dispatch:
-            self._schedule(view.id)
-        return decided
+        return list(await asyncio.gather(*(self._ask(provider, context) for provider in self._providers)))
 
-    async def _evaluate_providers(self, context: DecisionContext) -> _ProviderVote | None:
-        """Run every configured provider to completion first, so deny dominance never depends on
-        which provider happens to answer fastest."""
-        votes = await asyncio.gather(*(self._ask(provider, context) for provider in self._providers))
-        for vote in votes:
-            if vote.outcome.verdict is ProviderVerdict.DENY:
-                return vote
-        for vote in votes:
-            if vote.outcome.verdict is ProviderVerdict.ALLOW:
-                return vote
-        return None
-
-    async def _ask(self, provider: DecisionProvider, context: DecisionContext) -> _ProviderVote:
+    async def _ask(self, provider: DecisionProvider, context: DecisionContext) -> ProviderVote:
         try:
             outcome = await asyncio.wait_for(provider.decide(context), timeout=self._provider_timeout_seconds)
         except TimeoutError:
@@ -365,7 +370,11 @@ class ActionService:
             # or project it. Unavailability is not an allow — it defers like a silent no-opinion.
             logger.exception("decision provider %s raised; treating as no_opinion", provider.name)
             outcome = ProviderOutcome(verdict=ProviderVerdict.NO_OPINION, reason_code=PROVIDER_UNAVAILABLE_REASON)
-        return _ProviderVote(provider=provider.name, outcome=outcome)
+        return ProviderVote(provider=provider.name, outcome=outcome)
+
+    def auto_approvable(self, principal: CallerPrincipal) -> frozenset[ActionIdentity]:
+        """The Actions the caller's bindings could auto-approve now, for some arguments."""
+        return auto_approvable(resolve_bindings(self._policies, principal.account, self._clock()))
 
     def caller_action_policy(
         self, principal: CallerPrincipal, external_grant: ExternalGrantProvenance | None

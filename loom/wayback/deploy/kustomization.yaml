@@ -1,19 +1,21 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespace.yaml
-  - rolebinding-namespace-diagnostics-reader.yaml
-  - postgres-cluster.yaml
-  - token.sops.yaml
+  # keep-sorted start
   - bucket.yaml
-  - iam.yaml
-  - forgejo-images-creds-eso.yaml
   - deployment.yaml
-  - input-config.yaml
-  - filler-deployment.yaml
   - filler-config.yaml
+  - filler-deployment.yaml
   - filler-service.yaml
   - filler-servicemonitor.yaml
-  - service.yaml
+  - forgejo-images-creds-eso.yaml
   - httproute.yaml
+  - iam.yaml
+  - input-config.yaml
+  - namespace.yaml
+  - postgres-cluster.yaml
+  - rolebinding-namespace-diagnostics-reader.yaml
+  - service.yaml
   - servicemonitor.yaml
+  - token.sops.yaml
+  # keep-sorted end

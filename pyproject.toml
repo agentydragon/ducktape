@@ -178,6 +178,7 @@ dependencies = [
 
     # llm/html
     "markdown>=3.5.2",
+    "markdown-it-py>=4.2.0",
     "markdownify>=0.11.0",
     "lxml>=6.1.3",
 

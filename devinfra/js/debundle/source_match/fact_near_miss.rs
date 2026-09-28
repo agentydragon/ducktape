@@ -43,8 +43,16 @@ fn fact_exact_groups(
     let index_of = |item: &ModuleItem| item_index(item).unwrap_or_else(empty_index);
     let needle_indices: Vec<Index> = needle_body.iter().map(index_of).collect();
     let subject_indices: Vec<Index> = runtime_module.body.iter().map(index_of).collect();
-    selector_match::match_top_level_sequence_indexed(&needle_indices, &subject_indices, mode)
-        .unwrap_or_default()
+    selector_match::match_top_level_sequence_indexed(
+        &needle_indices,
+        &subject_indices,
+        mode,
+        &free_identifiers(&needle_indices),
+    )
+    .unwrap_or_default()
+    .into_iter()
+    .map(|matched| matched.site)
+    .collect()
 }
 
 /// A rootless [`Index`] (no facts): it matches nothing, mirroring the resolver's
@@ -282,33 +290,68 @@ pub fn fact_source_match_body_debt(
     )?;
     let mode = selector_mode(selector);
     let exact_groups = fact_exact_groups(runtime_module, &parsed.body, mode);
-    let [needle] = parsed.body.as_slice() else {
-        return Ok(SourceMatchBodyDebt {
-            exact_groups,
-            near_misses: Vec::new(),
-        });
-    };
-    if module_item_list_hole_name(needle).is_some() {
-        return Ok(SourceMatchBodyDebt {
-            exact_groups,
-            near_misses: Vec::new(),
-        });
-    }
     let exact_body_indices = exact_groups
         .iter()
         .flat_map(|group| group.iter().flatten().copied())
         .collect::<BTreeSet<_>>();
+    let near_misses = near_misses_among(
+        runtime_module,
+        &parsed.body,
+        mode,
+        (0..runtime_module.body.len()).filter(|body_idx| !exact_body_indices.contains(body_idx)),
+        min_score,
+        limit,
+    )?;
+    Ok(SourceMatchBodyDebt {
+        exact_groups,
+        near_misses,
+    })
+}
+
+/// The near misses of `parsed`'s template among the top-level statements
+/// `candidates` of `runtime_module`: see [`near_misses_among`].
+pub fn fact_near_misses(
+    runtime_module: &Module,
+    parsed: &ParsedSourceMatchSelector,
+    candidates: impl IntoIterator<Item = usize>,
+    min_score: usize,
+    limit: usize,
+) -> Result<Vec<SourceMatchNearMiss>> {
+    near_misses_among(
+        runtime_module,
+        parsed.body(),
+        selector_mode(parsed.selector()),
+        candidates,
+        min_score,
+        limit,
+    )
+}
+
+/// Each of `candidates` (body indices) the one-statement template `body`
+/// does not match, with its first structural divergence
+/// ([`fact_first_mismatch_reason`]), when it scores `>= min_score`. Rows are
+/// sorted `(score desc, body_idx asc)` and truncated to `limit` (0 = no
+/// limit). A template of several statements, or of holes only, has none.
+fn near_misses_among(
+    runtime_module: &Module,
+    body: &[ModuleItem],
+    mode: Mode,
+    candidates: impl IntoIterator<Item = usize>,
+    min_score: usize,
+    limit: usize,
+) -> Result<Vec<SourceMatchNearMiss>> {
+    let [needle] = body else {
+        return Ok(Vec::new());
+    };
+    if module_item_list_hole_name(needle).is_some() {
+        return Ok(Vec::new());
+    }
     let Some(needle_index) = item_index(needle) else {
-        return Ok(SourceMatchBodyDebt {
-            exact_groups,
-            near_misses: Vec::new(),
-        });
+        return Ok(Vec::new());
     };
     let mut near_misses = Vec::new();
-    for (body_idx, candidate) in runtime_module.body.iter().enumerate() {
-        if exact_body_indices.contains(&body_idx) {
-            continue;
-        }
+    for body_idx in candidates {
+        let candidate = &runtime_module.body[body_idx];
         let Some(reason) = fact_first_mismatch_reason(needle, &needle_index, candidate, mode)?
         else {
             continue;
@@ -316,13 +359,12 @@ pub fn fact_source_match_body_debt(
         if reason.score < min_score {
             continue;
         }
-        let declared_bindings = declared_bindings(candidate)
-            .into_iter()
-            .map(|binding| binding.binding_name)
-            .collect::<Vec<_>>();
         near_misses.push(SourceMatchNearMiss {
             body_idx,
-            declared_bindings,
+            declared_bindings: declared_bindings(candidate)
+                .into_iter()
+                .map(|binding| binding.binding_name)
+                .collect(),
             score: reason.score,
             reason: reason.reason,
         });
@@ -336,10 +378,7 @@ pub fn fact_source_match_body_debt(
     if limit > 0 {
         near_misses.truncate(limit);
     }
-    Ok(SourceMatchBodyDebt {
-        exact_groups,
-        near_misses,
-    })
+    Ok(near_misses)
 }
 
 /// The scored first structural divergence between `needle` and `candidate`:
@@ -361,8 +400,14 @@ pub(crate) fn fact_first_mismatch_reason(
         return Ok(None);
     };
     // The fact matcher is the non-match oracle; a match means no near-miss row.
-    if selector_match::matches_indexed(needle_index, &candidate_index, mode)
-        .map_err(|unsupported| anyhow::anyhow!("fact near-miss: {}", unsupported.reason))?
+    if selector_match::matches_indexed(
+        needle_index,
+        &candidate_index,
+        mode,
+        &free_identifiers([needle_index]),
+    )
+    .map_err(|unsupported| anyhow::anyhow!("fact near-miss: {}", unsupported.reason))?
+    .is_some()
     {
         return Ok(None);
     }
@@ -673,10 +718,15 @@ fn first_var_decl_divergence(
     // Declarator alignment over facts (wrapper symmetry + keyword already hold at
     // this point, so a `None` is purely a declarator-list mismatch — exactly
     // `match_var_declarator_slice_with_alignment().is_none()` on the AST side).
-    let aligns =
-        selector_match::var_declarator_alignment_indexed(needle_index, candidate_index, mode, None)
-            .map_err(|unsupported| anyhow::anyhow!("fact near-miss: {}", unsupported.reason))?
-            .is_some();
+    let aligns = selector_match::var_declarator_alignment_indexed(
+        needle_index,
+        candidate_index,
+        mode,
+        &[],
+        &free_identifiers([needle_index]),
+    )
+    .map_err(|unsupported| anyhow::anyhow!("fact near-miss: {}", unsupported.reason))?
+    .is_some();
     if aligns {
         return Ok(MismatchReason {
             score: 35,
@@ -731,6 +781,7 @@ fn first_pinned_var_declarator_divergence(
         candidate_index,
         cdecls,
         mode,
+        &free_identifiers([needle_index]),
     )
     .map_err(|unsupported| anyhow::anyhow!("fact near-miss: {}", unsupported.reason))?;
     let pinned_indices = needle_var
@@ -787,6 +838,7 @@ fn first_class_divergence(
 ) -> Result<MismatchReason> {
     let nmembers = needle_index.children(nclass);
     let cmembers = candidate_index.children(cclass);
+    let free = free_identifiers([needle_index]);
     let mut candidate_start = 0;
     for &nmember in nmembers {
         if selector_match::is_class_rest_member(needle_index, nmember) {
@@ -804,8 +856,15 @@ fn first_class_divergence(
             }
             found_label = true;
             candidate_start = candidate_idx + 1;
-            if !selector_match::nodes_match(needle_index, nmember, candidate_index, cmember, mode)
-                .map_err(|unsupported| anyhow::anyhow!("fact near-miss: {}", unsupported.reason))?
+            if !selector_match::nodes_match(
+                needle_index,
+                nmember,
+                candidate_index,
+                cmember,
+                mode,
+                &free,
+            )
+            .map_err(|unsupported| anyhow::anyhow!("fact near-miss: {}", unsupported.reason))?
             {
                 return Ok(MismatchReason {
                     score: 65,

@@ -1,5 +1,5 @@
-"""Forgejo: the Helm release, its git volume, S3 bucket and credentials, metrics token, route,
-public SSH listener, disruption budget and ServiceMonitor.
+"""Forgejo: the Helm release, its git volume, S3 bucket, identity and credentials, metrics
+token, route, public SSH listener, disruption budget and ServiceMonitor.
 
 Hand-written beside the generated output: `forgejo-admin-password.sops.yaml`.
 """
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_envoyconfig_crds.io.cilium import (
     CiliumEnvoyConfig,
@@ -17,27 +17,11 @@ from cilium_envoyconfig_crds.io.cilium import (
     CiliumEnvoyConfigSpecNodeSelector,
 )
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
-    ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
-    ExternalSecretSpecTargetTemplate,
 )
 from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallRemediation,
     HelmReleaseSpecUpgrade,
@@ -45,47 +29,21 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecValuesFrom,
     HelmReleaseSpecValuesFromKind,
 )
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecEndpointsBearerTokenSecret,
-    ServiceMonitorSpecSelector,
-)
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket,
-    BucketSpec,
-    BucketSpecAccess,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
-from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
-    ResourceReferenceGrant,
-    ResourceReferenceGrantSpec,
-    ResourceReferenceGrantSpecFrom,
-    ResourceReferenceGrantSpecTo,
-)
-from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
-    S3CredentialsSpecIdentityRef,
-    S3CredentialsSpecReclaimPolicy,
-    S3CredentialsSpecSeaweedRef,
-    S3CredentialsSpecSecretRef,
-)
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.helm import helm_release, oci_helm_repository
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.seaweedfs import s3
 
-_OUTPUT_DIR = "cluster/k8s/forgejo/app"
+_OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/app"
 _NAME = "forgejo"
 _NAMESPACE = "forgejo"
-_SEAWEEDFS = "seaweedfs"
-_SEAWEED_GROUP = "seaweed.seaweedfs.com"
 _S3_CREDENTIALS_SECRET = "forgejo-s3-credentials"
 _METRICS_TOKEN = "forgejo-metrics-token"
 _GIT_CLAIM = "forgejo-git-rwx-ssd"
@@ -103,9 +61,10 @@ def _git_storage(scope: Construct) -> None:
     # On the SeaweedFS SSD tier (seaweedfs-ovh-ssd, KS-GAME NVMe) since the 2026-07
     # git-latency migration; the repos were copied here from the original HDD RWX claim
     # (forgejo-git-rwx on seaweedfs-ovh) via a one-time VolSync rsync-TLS cutover, now
-    # retired. SeaweedFS RWX multi-mount and the cross-node git filesystem semantics it
-    # depends on (immediate write visibility, atomic exclusive-create for *.lock, atomic
-    # rename) were verified on this cluster before the HA cutover.
+    # retired. Gotcha: `weed mount` does not make O_EXCL exclusive across mounts, so git's
+    # *.lock files do not serialize ref updates between replicas on different nodes, and a
+    # collision can leave the ref empty:
+    # cluster/docs/lessons_learned/2026_09_23_forgejo_cross_mount_ref_lock_zeroed_main.md.
     k8s.KubePersistentVolumeClaim(
         scope,
         "git-storage",
@@ -123,95 +82,35 @@ def _git_storage(scope: Construct) -> None:
 
 
 def _object_storage(scope: Construct) -> None:
-    Bucket(
+    bucket = s3.Bucket(
         scope,
         "bucket",
-        metadata=metadata(
-            _NAME, _NAMESPACE, annotations={"description": "Forgejo packages, LFS, attachments, and artifacts."}
-        ),
-        spec=BucketSpec(
-            name=_NAME,
-            # The physical bucket is already populated; adopt it instead of treating it
-            # as a conflicting bucket during the Flux ownership handoff.
-            adopt_existing=True,
-            cluster_ref=BucketSpecClusterRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
-            access=[
-                BucketSpecAccess(
-                    user=_NAME,
-                    actions=[
-                        BucketSpecAccessActions.READ,
-                        BucketSpecAccessActions.WRITE,
-                        BucketSpecAccessActions.LIST,
-                        BucketSpecAccessActions.TAGGING,
-                    ],
-                )
-            ],
-        ),
+        name=_NAME,
+        namespace=_NAMESPACE,
+        adopt_existing=True,
+        description="Forgejo packages, LFS, attachments, and artifacts.",
     )
-    S3Credentials(
-        scope,
-        "s3-credentials",
-        metadata=metadata(_NAME, _NAMESPACE, annotations={"description": "Forgejo's SeaweedFS S3 credentials."}),
-        spec=S3CredentialsSpec(
-            seaweed_ref=S3CredentialsSpecSeaweedRef(name=_SEAWEEDFS, namespace=_SEAWEEDFS),
-            # The IAM username is cluster-global. Without a same-namespace S3Identity,
-            # the operator treats this as the existing SeaweedFS identity named forgejo.
-            identity_ref=S3CredentialsSpecIdentityRef(name=_NAME),
-            # Same-namespace targets are created and owned by S3Credentials.
-            secret_ref=S3CredentialsSpecSecretRef(
-                name=_S3_CREDENTIALS_SECRET, access_key_field="accessKey", secret_key_field="secretKey"
-            ),
-            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-        ),
-    )
-    ResourceReferenceGrant(
-        scope,
-        "reference-grant",
-        metadata=metadata(_NAME, _SEAWEEDFS),
-        spec=ResourceReferenceGrantSpec(
-            from_=[
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="Bucket", namespace=_NAMESPACE),
-                ResourceReferenceGrantSpecFrom(group=_SEAWEED_GROUP, kind="S3Credentials", namespace=_NAMESPACE),
-            ],
-            to=[ResourceReferenceGrantSpecTo(group=_SEAWEED_GROUP, kind="Seaweed", name=_SEAWEEDFS)],
-        ),
+    identity = s3.Identity(scope, "identity", name=_NAME, namespace=_NAMESPACE)
+    bucket.grant_read_write(identity)
+    identity.credentials(
+        namespace=_NAMESPACE,
+        secret=_S3_CREDENTIALS_SECRET,
+        key_fields=s3.SecretKeyFields(access_key="accessKey", secret_key="secretKey"),
+        description="Forgejo's SeaweedFS S3 credentials.",
     )
 
 
 def _metrics_token(scope: Construct) -> None:
     """ESO owns a stable Forgejo metrics bearer token. CreatedOnce avoids rotating the token
     without coordinating a Forgejo restart and Prometheus scrape cutover."""
-    generator = Password(
-        scope,
-        "metrics-token-generator",
-        metadata=metadata(_METRICS_TOKEN, _NAMESPACE),
-        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         scope,
         "metrics-token",
-        metadata=metadata(_METRICS_TOKEN, _NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_policy=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-            target=ExternalSecretSpecTarget(
-                name=_METRICS_TOKEN,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"token": "{{ .password }}"}),
-            ),
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    source_ref=ExternalSecretSpecDataFromSourceRef(
-                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                            api_version="generators.external-secrets.io/v1alpha1",
-                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                            name=generator.name,
-                        )
-                    )
-                )
-            ],
-        ),
+        name=_METRICS_TOKEN,
+        namespace=_NAMESPACE,
+        key="token",
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
 
 
@@ -223,8 +122,8 @@ def _values() -> dict[str, object]:
     return {
         "global": {"imageRegistry": ""},
         # HA: two replicas sharing the RWX git PVC. Both pods mount the same SeaweedFS
-        # volume concurrently (RWX multi-mount + cross-node git lock/rename semantics
-        # verified 2026-06-28), so a rolling update is safe — the old RWO Recreate-only
+        # volume concurrently (RWX multi-mount; git ref locks do not hold across the two
+        # mounts, see _git_storage), so a rolling update is safe — the old RWO Recreate-only
         # deadlock (RollingUpdate + RWO = stuck init container) no longer applies. Session
         # and issue search live in Postgres, and cache/queue in the shared valkey
         # (../cache), so neither replica holds per-instance state.
@@ -237,21 +136,9 @@ def _values() -> dict[str, object]:
         },
         # Pin to OVH kimsufi nodes: required by the seaweedfs-ovh CSI (OVH-only) and
         # co-located with the OVH-HA forgejo-db (cnpg_conventions R5).
-        "nodeSelector": {"topology.kubernetes.io/zone": "hil-ovh"},
+        "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
         "affinity": {
-            # Prefer ordinary workers when this workload tolerates control planes.
-            "nodeAffinity": {
-                "preferredDuringSchedulingIgnoredDuringExecution": [
-                    {
-                        "weight": 100,
-                        "preference": {
-                            "matchExpressions": [
-                                {"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}
-                            ]
-                        },
-                    }
-                ]
-            },
+            "nodeAffinity": node_scheduling.PREFER_WORKERS.node_affinity,
             # Keep the two replicas on different hosts so a single node loss can't take
             # both down. Required (not preferred): with two off-CP workers they land one
             # each; if a worker is gone the second can still schedule elsewhere (the off-CP
@@ -310,7 +197,7 @@ def _values() -> dict[str, object]:
                 # default to per-instance backends (memory / leveldb on the pod's PVC):
                 # with >1 replica each instance would keep its own cache (stale reads) and,
                 # worse, two leveldb queues on one shared volume would corrupt. Both move
-                # to the shared, replicated forgejo-valkey-ovh (cluster/k8s/forgejo/cache)
+                # to the shared, replicated forgejo-valkey-ovh (cluster/generated/forgejo/cache)
                 # so the deployment can scale to 2 replicas. (Switching the queue backend
                 # abandons any in-flight leveldb queue items on the next restart — fine for
                 # this instance's transient queues: webhook deliveries, mirror syncs.)
@@ -324,7 +211,7 @@ def _values() -> dict[str, object]:
                 # replicas and needs no rebuildable filesystem state.
                 "indexer": {"ISSUE_INDEXER_TYPE": "db"},
                 # In-cluster CI (Forgejo Actions). Enables the server-side feature; a
-                # registered act_runner (cluster/k8s/haku-ci) executes workflows. Used so
+                # registered act_runner (cluster/cdk8s/haku_ci) executes workflows. Used so
                 # Haku can build its own UI image from haku-state source entirely
                 # in-cluster — haku-state may hold private operator data, so its builds must
                 # never go to BuildBuddy/RBE or any external CI. See haku/PLAN.md.
@@ -366,11 +253,7 @@ def _values() -> dict[str, object]:
             ],
         },
         # Trust cluster CA bundle (includes Let's Encrypt staging CA)
-        "deployment": {
-            # Reloader: auto-restart pods when secrets change
-            "annotations": {"reloader.stakater.com/auto": "true"},
-            "env": [{"name": "SSL_CERT_FILE", "value": "/etc/ssl/certs/cluster-ca/ca-certificates.crt"}],
-        },
+        "deployment": {"env": [{"name": "SSL_CERT_FILE", "value": "/etc/ssl/certs/cluster-ca/ca-certificates.crt"}]},
         # Mount CA bundle (includes Let's Encrypt staging CA when in staging mode)
         "extraVolumes": [{"name": "cluster-ca", "configMap": {"name": "cluster-internal-ca-bundle"}}],
         "extraContainerVolumeMounts": [_CLUSTER_CA_MOUNT],
@@ -428,49 +311,31 @@ def _values() -> dict[str, object]:
 
 
 def _helm_release(scope: Construct) -> None:
-    repository = HelmRepository(
+    helm_release(
         scope,
-        "helm-repository",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=HelmRepositorySpec(
-            type=HelmRepositorySpecType.OCI, interval="24h", url="oci://code.forgejo.org/forgejo-helm"
-        ),
-    )
-    HelmRelease(
-        scope,
-        "helm-release",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="15m",
-            # Extended timeout (PostgreSQL + PVC binding + init containers)
-            timeout="15m",
-            # Runtime prerequisites may become ready after admission; keep retrying while
-            # they converge.
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=-1)),
-            upgrade=HelmReleaseSpecUpgrade(remediation=HelmReleaseSpecUpgradeRemediation(retries=-1)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart=_NAME,
-                    # renovate: datasource=docker depName=code.forgejo.org/forgejo-helm/forgejo
-                    version="17.1.6",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values_from=[
-                HelmReleaseSpecValuesFrom(
-                    kind=HelmReleaseSpecValuesFromKind.SECRET,
-                    name="forgejo-db-ssd-creds",
-                    values_key="password",
-                    # The Forgejo chart is a fork of the Gitea chart and keeps the `gitea:` values key.
-                    target_path="gitea.config.database.PASSWD",
-                )
-            ],
-            values=_values(),
-        ),
+        _NAME,
+        _NAMESPACE,
+        repository=oci_helm_repository(scope, _NAME, _NAMESPACE, url="oci://code.forgejo.org/forgejo-helm"),
+        chart=_NAME,
+        # renovate: datasource=docker depName=code.forgejo.org/forgejo-helm/forgejo
+        version="17.1.6",
+        interval="15m",
+        # Extended timeout (PostgreSQL + PVC binding + init containers)
+        timeout="15m",
+        # Runtime prerequisites may become ready after admission; keep retrying while
+        # they converge.
+        install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=-1)),
+        upgrade=HelmReleaseSpecUpgrade(remediation=HelmReleaseSpecUpgradeRemediation(retries=-1)),
+        values_from=[
+            HelmReleaseSpecValuesFrom(
+                kind=HelmReleaseSpecValuesFromKind.SECRET,
+                name="forgejo-db-ssd-creds",
+                values_key="password",
+                # The Forgejo chart is a fork of the Gitea chart and keeps the `gitea:` values key.
+                target_path="gitea.config.database.PASSWD",
+            )
+        ],
+        values=_values(),
     )
 
 
@@ -490,7 +355,9 @@ def _ssh_listener(scope: Construct) -> None:
     CiliumEnvoyConfig(
         scope,
         "ssh-listener",
-        metadata=metadata(service, _NAMESPACE, annotations={"cec.cilium.io/use-original-source-address": "false"}),
+        metadata=ApiObjectMetadata(
+            name=service, namespace=_NAMESPACE, annotations={"cec.cilium.io/use-original-source-address": "false"}
+        ),
         spec=CiliumEnvoyConfigSpec(
             node_selector=CiliumEnvoyConfigSpecNodeSelector(match_labels={"topology.kubernetes.io/region": "hil"}),
             backend_services=[
@@ -535,8 +402,8 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
-        hostname="git.allegedly.works",
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        hostnames=["git.allegedly.works"],
         backend="forgejo-http",
         port=3000,
         hsts=False,
@@ -560,18 +427,10 @@ def chart(app: App) -> Chart:
     ServiceMonitor(
         chart,
         "service-monitor",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=ServiceMonitorSpec(
-            # Helm release name; robust regardless of the chart's app name label.
-            selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/instance": _NAME}),
-            endpoints=[
-                ServiceMonitorSpecEndpoints(
-                    port="http",
-                    path="/metrics",
-                    bearer_token_secret=ServiceMonitorSpecEndpointsBearerTokenSecret(name=_METRICS_TOKEN, key="token"),
-                )
-            ],
-        ),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        # Helm release name; robust regardless of the chart's app name label.
+        selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/instance": _NAME}),
+        endpoints=[Endpoint.bearer_token_secret(port="http", secret_name=_METRICS_TOKEN, key="token")],
     )
     _metrics_token(chart)
     _ssh_listener(chart)

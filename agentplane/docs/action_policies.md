@@ -16,7 +16,7 @@ the external-caller principal.
 
 | Kind                  | Spec                                                                           |
 | --------------------- | ------------------------------------------------------------------------------ |
-| `ActionPolicySet`     | `autoApproveIf`, `autoDenyIf`, `autoDenyUnless`: lists of typed policies       |
+| `ActionPolicySet`     | `autoApproveIf`: a list of typed policies                                      |
 | `ActionPolicyBinding` | `subject` (`{namespace, name}` of a ServiceAccount), `policySets`, `expiresAt` |
 
 **Every caller is a Kubernetes ServiceAccount.** One principal then carries native permissions
@@ -35,10 +35,9 @@ new kind, never a DSL. Kinds that consult state outside the arguments arrive wit
 need them, as `github_public_repository` did with its live visibility lookup.
 
 **A policy set is the shared unit** and the only thing a subject references; a one-off grant is a
-small set of its own. `autoApproveIf` auto-approves a matching request, `autoDenyIf` auto-denies
-one, `autoDenyUnless` auto-denies a request matching none of its policies; deny wins over approve,
-and a request matching nothing takes the human path. Only `autoApproveIf` decides today
-(`DENY_LISTS` in the [task DAG](../plans/task_dag.md)).
+small set of its own. `autoApproveIf` auto-approves a matching request; a request matching nothing
+takes the human path. A set has no deny form -- see [Rejected](#rejected) and the `DENY_LISTS` entry
+in [`plans/task_dag.md`](../plans/task_dag.md).
 
 **A binding joins one subject to sets, by reference only.** A subject may have many bindings; the
 effective policy is the union of the unexpired bindings' sets. `expiresAt` makes an expired binding
@@ -75,6 +74,15 @@ The Decision records binding names and `resourceVersion`s, set generations, and 
 that matched, so it explains itself after the objects change. Until the informer has synced, every
 caller is human-only; an object that fails validation contributes nothing and reports `Ready=False`
 with the message in its status, so a bad runtime edit is visible in `kubectl get`.
+
+Evaluation finishes before the request is persisted, and an auto-decision commits in the same
+transaction as the insert. A request is therefore never observable as `decision_pending` unless it
+is waiting for a human, so nothing that watches for pending requests -- the operator queue, Web
+Push -- surfaces one a policy is about to decide. The cost is that a caller cannot find or cancel
+its request while evaluation runs; it holds the submit call instead, and a lost response is
+recovered by idempotency key once the request commits. Every policy is blocking in this sense; a
+non-blocking kind, whose request is persisted and shown to the operator while the policy runs,
+would need its own state, so that `decision_pending` keeps meaning a human is being asked.
 
 ## Example
 
@@ -133,5 +141,24 @@ binding revision they used.
 - **Preset language on the binding** (a `<sandbox>-<preset>` name or a preset field). The service
   would then hold something only the app defines and nothing reads; the binding carries only the
   app's managed-by label, and the preset stays on the Sandbox's own annotation.
+- **`autoDenyIf` and `autoDenyUnless` as accepted-but-unevaluated fields.** A set once carried two
+  more lists that `autoApproveIf` shared its schema anchor with, were parsed and validated, were
+  reported to callers and to the Sandbox page, and decided nothing. `Ready=True` said the spec
+  parsed, so a deny-only set was indistinguishable in `kubectl get` from a fence, and
+  `get_action_policy` told an agent its denials were real when nothing enforced them -- the one
+  surface where a reader is guaranteed not to double-check, and the opposite of the guarantee this
+  page makes, that what the view reports and what a Decision decides cannot drift. An inert control
+  is worse than an absent one, so the fields are gone; `v1alpha1` makes each cheap to add back when
+  an evaluator exists to make it true. What a re-add has to settle first is in the `DENY_LISTS`
+  entry of [`plans/task_dag.md`](../plans/task_dag.md): whether a deny belongs on the set at all,
+  since a set is the _shared_ unit and a deny is per-subject, and the two cases that look like a
+  deny -- hiding a tool the operator will never approve, and refusing what the caller's own
+  identity already covers -- are a catalog question and a caller-side one rather than policy kinds.
 - **Re-evaluating policy at dispatch.** An approval a later object edit could withdraw is a
   different contract from a human approval; dispatch re-checks caller authority only.
+- **Persisting the request before evaluation and deciding in a second transaction.** The request
+  is committed as `decision_pending` for the length of the evaluation, and every reader of pending
+  requests sees it: Web Push notified the operator about requests the policy approved
+  milliseconds later, as a notification with nothing left to decide. A separate "policy pending"
+  state fixes that too, but every reader of the state then has to handle it, and a crash
+  mid-evaluation leaves a row that needs a sweep; deciding first leaves nothing behind.

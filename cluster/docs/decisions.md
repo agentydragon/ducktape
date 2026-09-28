@@ -160,7 +160,7 @@ All secrets are SOPS (age-encrypted in git, decrypted by Flux). ESO is still ins
 but only with the Kubernetes provider, mirroring a small number of secrets
 cross-namespace — rotator-published tokens out of `flux-system`, shared agent
 credentials out of `claude-sandbox`, Airlock OAuth tokens, CLIProxyAPI keys (stores in
-`k8s/external-secrets/config/`). Stakater Reloader restarts pods on changes. Vault was
+`generated/external-secrets/config/`). Stakater Reloader restarts pods on changes. Vault was
 decommissioned 2026-04-19: much higher bootstrap operational complexity, raft being
 annoying on a 3-replica Vault, and its extra features not actually helping — SOPS + ESO
 and friends are enough.
@@ -305,12 +305,12 @@ See the facade Deployment in `cluster/cdk8s/tana_mcp.py` for a working example
 - **OpenClaw gateway / OpenShell** (2026-07-31): manifests deleted rather than parked.
   The gateway was unused and wedged (no exec traffic, idle orphaned sandboxes), and the
   operator could not be egress-confined (`docs/personal_agents/findings/` F3). OpenClaw
-  as an agent runtime is alive: `public-coder-agent` (the reference agent — same
-  `ghcr.io/agentydragon/openclaw` image, plain Deployment, `sandbox.mode: "off"`) and
-  `haku-openclaw-spike` (its own OpenClaw build) run today, and the `openclaw`
-  ImageRepository/ImagePolicy are kept for that image. The former `openclaw-gateway` and
-  `openclaw-sandbox` namespaces were retired after their retained credentials moved to
-  `agents/shared-secrets`; see <../archive/2026_08_openclaw_namespace_retirement.md>.
+  as an agent runtime is alive: `public-coder-agent` (the reference agent — its own
+  OpenClaw build, `git.allegedly.works/ducktape-ci/public-coder-agent`, plain Deployment,
+  `sandbox.mode: "off"`) and `haku-openclaw-spike` (its own OpenClaw build) run today.
+  The former `openclaw-gateway` and `openclaw-sandbox` namespaces were retired after their
+  retained credentials moved to `agents/shared-secrets`; see
+  <../archive/2026_08_openclaw_namespace_retirement.md>.
   Evaluated alternatives: `docs/personal_agents/verdicts.md`.
 - **LiteLLM ChatGPT sub-instance** (`litellm-chatgpt`, deleted 2026-08-06): a second
   LiteLLM Deployment holding its own ChatGPT/Codex OAuth session on a PVC, serving the
@@ -426,9 +426,9 @@ manifests stay with their project under `deploy/` (see <../AGENTS.md> § "Parked
   them with runtime-managed credentials before reactivation.
 - **budget (Fava)**: `cluster/k8s/parked/budget/` — decommissioned read-only Beancount
   ledger viewer. Its `budget` namespace remains active at
-  `cluster/k8s/forgejo/budget-namespace/` because the active ledger Terraform
-  Kustomization writes credentials there. The underlying ledger data (a Forgejo git
-  repo provisioned by `cluster/k8s/forgejo/budget-ledger/`) is untouched. Its Authentik
+  `cluster/generated/forgejo/budget-namespace/` because it holds the ESO copy of the ledger's
+  git credentials (`budget-ledger-git-creds`). The underlying ledger data (a Forgejo git
+  repo provisioned by `cluster/generated/forgejo/budget-ledger/`) is untouched. Its Authentik
   SSO blueprint was tombstoned (`fava-sso-retire.yaml`, replacing `fava-sso.yaml`) per
   <sso.md> § "Deleting Authentik providers or applications".
 - **augur-evidence**: `cluster/k8s/parked/augur-evidence/` — retired Forgejo evidence

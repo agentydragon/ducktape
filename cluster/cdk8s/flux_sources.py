@@ -8,16 +8,18 @@ a node in the generated Flux chart.
 
 from __future__ import annotations
 
+import textwrap
 from pathlib import Path
 
-from cdk8s import App, Chart
-from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitRepositorySpec, GitRepositorySpecRef
+from cdk8s import ApiObjectMetadata, App, Chart
+from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef
 
 from cluster.cdk8s.flux import NAMESPACE
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
-OUTPUT_DIR = "cluster/k8s/flux/sources"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux/sources"
 # renovate: datasource=github-tags depName=external-secrets/external-secrets
 _EXTERNAL_SECRETS_TAG = "v2.10.0"
 # renovate: datasource=github-tags depName=prometheus-operator/prometheus-operator
@@ -29,12 +31,19 @@ EXTERNAL_SNAPSHOTTER_TAG = "v8.6.0"
 _SSHPIPER_TAG = "v1.6.1"
 
 
-def _source(chart: Chart, name: str, *, url: str, tag: str, description: str | None = None) -> GitRepository:
+def _source(
+    chart: Chart, name: str, *, url: str, tag: str, ignore: str | None = None, description: str | None = None
+) -> GitRepository:
     return GitRepository(
         chart,
         name,
-        metadata=metadata(name, NAMESPACE, annotations={"description": description} if description else None),
-        spec=GitRepositorySpec(interval="1h", url=url, ref=GitRepositorySpecRef(tag=tag)),
+        metadata=ApiObjectMetadata(
+            name=name, namespace=NAMESPACE, annotations={"description": description} if description else None
+        ),
+        interval="1h",
+        url=url,
+        ref=GitRepositorySpecRef(tag=tag),
+        ignore=ignore,
     )
 
 
@@ -61,18 +70,23 @@ def chart(app: App) -> Chart:
         url="https://github.com/kubernetes-csi/external-snapshotter.git",
         tag=EXTERNAL_SNAPSHOTTER_TAG,
     )
-    GitRepository(
+    _source(
         chart,
         "sshpiper-source",
-        metadata=metadata("sshpiper-source", NAMESPACE),
-        spec=GitRepositorySpec(
-            interval="1h",
-            url="https://github.com/tg123/sshpiper.git",
-            ref=GitRepositorySpecRef(tag=_SSHPIPER_TAG),
-            # Keep only the CRD. In particular, plugin/kubernetes/sample.yaml is an example
-            # Pipe, not a production route to apply. Flux generates a kustomization.yaml for
-            # this plain-YAML path.
-            ignore="/*\n!/plugin\n/plugin/*\n!/plugin/kubernetes\n/plugin/kubernetes/*\n!/plugin/kubernetes/crd.yaml\n",
+        url="https://github.com/tg123/sshpiper.git",
+        tag=_SSHPIPER_TAG,
+        # Keep only the CRD. In particular, plugin/kubernetes/sample.yaml is an example
+        # Pipe, not a production route to apply. Flux generates a kustomization.yaml for
+        # this plain-YAML path.
+        ignore=textwrap.dedent(
+            """\
+            /*
+            !/plugin
+            /plugin/*
+            !/plugin/kubernetes
+            /plugin/kubernetes/*
+            !/plugin/kubernetes/crd.yaml
+            """
         ),
     )
     return chart

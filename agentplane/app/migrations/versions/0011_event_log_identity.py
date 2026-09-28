@@ -16,14 +16,16 @@ depends_on = None
 
 # Every table whose `thread_id` keys what was recorded for an event log.
 _RECORDED = (
+    # keep-sorted start
     "event",
     "feed_state",
     "thread_checkpoint",
     "thread_entity",
-    "thread_payload_manifest",
-    "thread_payload_chunk",
     "thread_evidence",
     "thread_native_link",
+    "thread_payload_chunk",
+    "thread_payload_manifest",
+    # keep-sorted end
 )
 _IDENTITY = ("sandbox", "session_id", "harness", "model", "cwd", "created_at")
 

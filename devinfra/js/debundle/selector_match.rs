@@ -1,7 +1,7 @@
-//! P2 (matching over the facts): a structural homomorphism from a selector
+//! The shape matcher's kernel: a structural homomorphism from a selector
 //! needle's `chunk_facts` projection onto a candidate's, anchored at the
-//! top-level statement. This is the Datalog-side matcher the resolver will use;
-//! it operates over the AST-facts EDB, never by re-walking ASTs.
+//! top-level statement. It operates over the facts, never by re-walking ASTs;
+//! `source_match::chunk_resolver` runs it per candidate.
 //!
 //! Faithful subset: exact- and alpha-identifier structure with
 //! **expression-position single-node holes** (`ANYTHING` / `EXPR` / `STMT`
@@ -18,17 +18,11 @@
 //! semantics across identifier modes, holes, and declarator alignment are pinned
 //! by `selector_match_differential_test`.
 //!
-//! This per-`(needle, subject)` homomorphism is the **kernel match relation**,
-//! not a rival "N separate solves" design: the one global evaluation (the plan's
-//! P4) composes it, and for a cross-ref-free selector set the global solve
-//! decomposes by connected components into exactly these independent matches.
-//! The run-hole placement is
-//! realized here as a direct (greedy + backtracking) search; the equivalent
-//! relational chain-join — the form that folds into the global fixpoint, with
-//! cross-gap alpha-binding coupling fail-closed — is the P3/P4 native-lowering
-//! shape recorded in the plan.
+//! Run-hole placement is a direct greedy-plus-backtracking search. Why matching
+//! is not encoded as solver constraints: <docs/selector_resolution.md>
+//! § Rejected: tree matching as solver constraints.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use chunk_facts::{ChunkFacts, NodeId, NodeKind};
 use regex::Regex;
@@ -44,6 +38,14 @@ use source_match_holes::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unsupported {
     pub reason: &'static str,
+}
+
+/// One successful match: where it landed (`site`: an alignment, a window start,
+/// a declarator) and what each of the needle's free identifiers bound to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Matched<T> {
+    pub site: T,
+    pub free_bindings: BTreeMap<String, String>,
 }
 
 /// Identifier-matching mode (mirrors `SourceMatchIdentifierMode`). `Exact`
@@ -80,42 +82,85 @@ pub enum Token {
     Ident(Box<str>),
 }
 
+/// Which JS scope an [`AlphaScope`] frame models.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FrameKind {
+    /// The template root or a function/arrow/constructor/setter body: the scope
+    /// `var` declarations hoist to.
+    Function,
+    /// A `catch` clause's param + body.
+    Catch,
+    /// A block, loop head, `switch` body, or the name of a named function/class
+    /// expression: holds `let`/`const`/`class` bindings only.
+    Lexical,
+}
+
 /// One lexical frame's bijective needle↔subject identifier map.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 struct AlphaScope {
+    kind: FrameKind,
     forward: HashMap<String, String>,
     backward: HashMap<String, String>,
 }
 
-/// Scope-aware bijective needle↔subject identifier binding accumulated during
-/// alpha matching — a stack of lexical frames. References (`match_ref`) resolve
-/// against the visible stack
-/// (innermost-out); bindings (`match_binding`) consult only the current frame so a
-/// binding may shadow an outer same-spelled one. A function/arrow/constructor/
-/// setter/catch node pushes a frame around its params + body, so same-spelled
-/// locals in sibling scopes (e.g. a param reused across two functions) stay
-/// independent — without this the flat bijection conflated them and under-matched.
-/// Cloneable so run-hole placement can snapshot/restore across backtracking.
-#[derive(Clone)]
-struct Bindings {
-    scopes: Vec<AlphaScope>,
-}
-
-impl Default for Bindings {
-    fn default() -> Self {
+impl AlphaScope {
+    fn new(kind: FrameKind) -> Self {
         Self {
-            scopes: vec![AlphaScope::default()],
+            kind,
+            forward: HashMap::new(),
+            backward: HashMap::new(),
         }
     }
 }
 
-impl Bindings {
-    fn push_scope(&mut self) {
-        self.scopes.push(AlphaScope::default());
+/// Scope-aware bijective needle↔subject identifier binding accumulated during
+/// alpha matching — a stack of lexical frames mirroring JS scoping, so
+/// same-spelled locals in sibling scopes (a param reused across two functions, a
+/// `const` reused across two blocks) stay independent. References (`match_ref`)
+/// resolve against the visible stack innermost-out; bindings (`match_binding`)
+/// consult only their own frame, so a binding may shadow an outer one. A `var`
+/// binding lands in the innermost [`FrameKind::Function`] frame, as JS hoists it.
+/// A template's **free** identifiers (referenced, never declared in the
+/// template) bind like any other reference; what each bound to is recorded
+/// alongside the frames, for [`Bindings::free_bindings`].
+/// Cloneable so run-hole placement can snapshot/restore across backtracking.
+#[derive(Clone)]
+struct Bindings<'f> {
+    scopes: Vec<AlphaScope>,
+    /// Matching the declarators of a `var` declaration: its bindings hoist.
+    in_var_decl: bool,
+    /// The template's free identifiers (`source_match::free_identifiers`).
+    free: &'f BTreeSet<String>,
+    /// Each free name bound so far → its subject name, or `None` once it bound
+    /// two different ones (in two frames, e.g. sibling function bodies). Not a
+    /// root-frame binding: <docs/selector_resolution.md> § "Rejected: binding
+    /// free template names in the root frame".
+    free_seen: BTreeMap<String, Option<String>>,
+}
+
+impl<'f> Bindings<'f> {
+    fn new(free: &'f BTreeSet<String>) -> Self {
+        Self {
+            scopes: vec![AlphaScope::new(FrameKind::Function)],
+            in_var_decl: false,
+            free,
+            free_seen: BTreeMap::new(),
+        }
+    }
+
+    fn push_scope(&mut self, kind: FrameKind) {
+        self.scopes.push(AlphaScope::new(kind));
     }
 
     fn pop_scope(&mut self) {
         self.scopes.pop();
+    }
+
+    fn innermost(&self, pick: impl Fn(FrameKind) -> bool) -> usize {
+        self.scopes
+            .iter()
+            .rposition(|scope| pick(scope.kind))
+            .expect("the root frame is a function frame")
     }
 
     /// Match an identifier **reference**: consult the visible scope stack
@@ -123,6 +168,8 @@ impl Bindings {
     /// mapping is honored in **either** mode — that is how a `target_binding`
     /// prebind forces one needle name onto one subject name even under `Exact`
     /// (where the unbound fallback is exact spelling, not a fresh alpha pair).
+    /// An unbound reference names something outside the template; it binds in
+    /// the innermost non-lexical frame.
     fn match_ref(&mut self, needle: &str, subject: &str, mode: Mode) -> bool {
         for scope in self.scopes.iter().rev() {
             if let Some(mapped) = scope.forward.get(needle) {
@@ -132,79 +179,124 @@ impl Bindings {
                 return false;
             }
         }
-        self.resolve_unbound(needle, subject, mode)
+        let frame = self.innermost(|kind| kind != FrameKind::Lexical);
+        let bound = self.resolve_unbound(frame, needle, subject, mode);
+        if bound {
+            self.record_free(needle, subject);
+        }
+        bound
     }
 
-    /// Match an identifier **binding** (declaration): consult only the current
-    /// frame, so it may shadow an outer binding of the same spelling.
+    fn record_free(&mut self, needle: &str, subject: &str) {
+        if !self.free.contains(needle) {
+            return;
+        }
+        match self.free_seen.get_mut(needle) {
+            Some(seen) => {
+                if seen.as_deref() != Some(subject) {
+                    *seen = None;
+                }
+            }
+            None => {
+                self.free_seen
+                    .insert(needle.to_string(), Some(subject.to_string()));
+            }
+        }
+    }
+
+    /// Match an identifier **binding** (declaration): consult only the frame it
+    /// declares into, so it may shadow an outer binding of the same spelling.
     fn match_binding(&mut self, needle: &str, subject: &str, mode: Mode) -> bool {
-        let scope = self.scopes.last().expect("always a root scope");
+        let frame = if self.in_var_decl {
+            self.innermost(|kind| kind == FrameKind::Function)
+        } else {
+            self.scopes.len() - 1
+        };
+        let scope = &self.scopes[frame];
         if let Some(mapped) = scope.forward.get(needle) {
             return mapped == subject;
         }
         if scope.backward.contains_key(subject) {
             return false;
         }
-        self.resolve_unbound(needle, subject, mode)
+        self.resolve_unbound(frame, needle, subject, mode)
     }
 
     /// Resolve a needle↔subject pair that neither side has mapped yet: under
-    /// `AlphaAll` bind them as a fresh alpha pair; under `Exact` require identical
-    /// spellings (no new binding). The pre-binding gate (`match_ref`/`match_binding`)
-    /// already short-circuited a known mapping, so this only sees genuinely-free
-    /// names.
-    fn resolve_unbound(&mut self, needle: &str, subject: &str, mode: Mode) -> bool {
+    /// `AlphaAll` bind them as a fresh alpha pair in `frame`; under `Exact`
+    /// require identical spellings (no new binding). The pre-binding gate
+    /// (`match_ref`/`match_binding`) already short-circuited a known mapping, so
+    /// this only sees genuinely-free names.
+    fn resolve_unbound(&mut self, frame: usize, needle: &str, subject: &str, mode: Mode) -> bool {
         match mode {
             Mode::Exact => needle == subject,
             Mode::AlphaAll => {
-                let scope = self.scopes.last_mut().expect("always a root scope");
-                scope
-                    .forward
-                    .insert(needle.to_string(), subject.to_string());
-                scope
-                    .backward
-                    .insert(subject.to_string(), needle.to_string());
+                self.bind(frame, needle, subject);
                 true
             }
         }
     }
 
-    /// Force a needle↔subject mapping in the current frame before matching (the
+    fn bind(&mut self, frame: usize, needle: &str, subject: &str) {
+        let scope = &mut self.scopes[frame];
+        scope
+            .forward
+            .insert(needle.to_string(), subject.to_string());
+        scope
+            .backward
+            .insert(subject.to_string(), needle.to_string());
+    }
+
+    /// Force needle↔subject mappings in the root frame before matching (the
     /// `target_binding` alpha coupling). Honors an existing mapping; fails if
     /// either side is already mapped incompatibly. Used in both identifier modes.
-    fn prebind(&mut self, needle: &str, subject: &str) -> bool {
-        let scope = self.scopes.last_mut().expect("always a root scope");
-        match (scope.forward.get(needle), scope.backward.get(subject)) {
-            (Some(mapped), _) => mapped == subject,
-            (None, Some(_)) => false,
-            (None, None) => {
-                scope
-                    .forward
-                    .insert(needle.to_string(), subject.to_string());
-                scope
-                    .backward
-                    .insert(subject.to_string(), needle.to_string());
-                true
+    fn prebind(&mut self, pairs: &[(&str, &str)]) -> bool {
+        debug_assert_eq!(self.scopes.len(), 1, "prebinding precedes any push");
+        pairs.iter().all(|&(needle, subject)| {
+            let root = &self.scopes[0];
+            match (root.forward.get(needle), root.backward.get(subject)) {
+                (Some(mapped), _) => mapped == subject,
+                (None, Some(_)) => false,
+                (None, None) => {
+                    self.bind(0, needle, subject);
+                    self.record_free(needle, subject);
+                    true
+                }
             }
-        }
+        })
+    }
+
+    /// What each free identifier bound to in this match, for the free names that
+    /// bound one subject name throughout.
+    fn free_bindings(&self) -> BTreeMap<String, String> {
+        self.free_seen
+            .iter()
+            .filter_map(|(name, subject)| Some((name.clone(), subject.clone()?)))
+            .collect()
     }
 }
 
-/// Node kinds that introduce a lexical scope for their params + body:
-/// function/arrow bodies, catch clauses, setter and constructor params.
-fn introduces_alpha_scope(kind: NodeKind) -> bool {
-    matches!(
-        kind,
+/// The alpha frame a node opens around its children, if any.
+fn alpha_frame(kind: NodeKind) -> Option<FrameKind> {
+    match kind {
         NodeKind::Function
-            | NodeKind::AsyncFunction
-            | NodeKind::GeneratorFunction
-            | NodeKind::AsyncGeneratorFunction
-            | NodeKind::Arrow
-            | NodeKind::AsyncArrow
-            | NodeKind::Constructor
-            | NodeKind::Setter
-            | NodeKind::Catch
-    )
+        | NodeKind::AsyncFunction
+        | NodeKind::GeneratorFunction
+        | NodeKind::AsyncGeneratorFunction
+        | NodeKind::Arrow
+        | NodeKind::AsyncArrow
+        | NodeKind::Constructor
+        | NodeKind::Setter => Some(FrameKind::Function),
+        NodeKind::Catch => Some(FrameKind::Catch),
+        NodeKind::Block
+        | NodeKind::For
+        | NodeKind::ForIn
+        | NodeKind::ForOf
+        | NodeKind::Switch
+        | NodeKind::FnExpr
+        | NodeKind::ClassExpr => Some(FrameKind::Lexical),
+        _ => None,
+    }
 }
 
 /// A node-indexed view of one statement's `ChunkFacts`, owning its string labels
@@ -397,6 +489,15 @@ impl Index {
         self.kind_of(id).as_tag()
     }
 
+    pub fn node_kind(&self, id: NodeId) -> NodeKind {
+        self.kind_of(id)
+    }
+
+    /// Node ids are dense: every node is one of `0..node_count()`.
+    pub fn node_count(&self) -> usize {
+        self.kind.len()
+    }
+
     pub fn children(&self, id: NodeId) -> &[NodeId] {
         self.children_of(id)
     }
@@ -429,8 +530,9 @@ pub fn nodes_match(
     subject: &Index,
     sid: NodeId,
     mode: Mode,
+    free: &BTreeSet<String>,
 ) -> Result<bool, Unsupported> {
-    let mut bindings = Bindings::default();
+    let mut bindings = Bindings::new(free);
     homo(needle, nid, subject, sid, mode, &mut bindings)
 }
 
@@ -455,8 +557,9 @@ pub fn pinned_declarator_matches_in_order(
     subject: &Index,
     sdecls: &[NodeId],
     mode: Mode,
+    free: &BTreeSet<String>,
 ) -> Result<Vec<(usize, usize)>, Unsupported> {
-    let mut bindings = Bindings::default();
+    let mut bindings = Bindings::new(free);
     let mut subject_start = 0;
     let mut matches = Vec::new();
     for (needle_idx, &ndecl) in ndecls.iter().enumerate() {
@@ -546,7 +649,7 @@ fn is_run_hole_keyword(name: &str) -> bool {
 /// hole, for instance, projects to a `prop_name` fact, but it matches *absence*
 /// of members, not a real `ANYTHING`-named property — indexing it would require
 /// a token no real subject carries.
-fn is_hole_keyword(name: &str) -> bool {
+pub fn is_hole_keyword(name: &str) -> bool {
     [
         ANYTHING_HOLE_KEYWORD,
         EXPR_HOLE_KEYWORD,
@@ -629,18 +732,45 @@ fn is_run_hole_carrier(index: &Index, parent_kind: NodeKind, child: NodeId) -> b
             }
         }
         // `const DECLARATORS` / `ANYTHING` — a declarator whose name binding is
-        // the keyword.
+        // the keyword. An `ANYTHING` declarator is a run only when its
+        // initializer carries nothing (absent, or itself a hole, as in
+        // `const ANYTHING = ANYTHING`); otherwise it floats (see
+        // [`is_floating_declarator`]).
         NodeKind::VarDecl => {
             ck == NodeKind::VarDeclarator && {
                 let kids = index.children_of(child);
                 !kids.is_empty()
                     && index.kind_of(kids[0]) == NodeKind::BindingIdent
                     && (node_ident_hole(index, kids[0], DECLARATORS_HOLE_KEYWORD)
-                        || node_ident_hole(index, kids[0], ANYTHING_HOLE_KEYWORD))
+                        || (node_ident_hole(index, kids[0], ANYTHING_HOLE_KEYWORD)
+                            && !has_informative_init(index, child)))
             }
         }
         _ => false,
     }
+}
+
+/// A declarator whose initializer is more than a placeholder: present and not
+/// itself a hole.
+fn has_informative_init(index: &Index, declarator: NodeId) -> bool {
+    index
+        .children_of(declarator)
+        .get(1)
+        .is_some_and(|&init| !is_single_node_hole(index, init))
+}
+
+/// `ANYTHING = <init>` with an informative initializer: one declarator of any
+/// name whose initializer must match, with any declarators around it. It is
+/// placed as its own segment that never anchors either end of the list, so
+/// `const ANYTHING = x.y;` finds `x.y` inside `const a = 1, b = x.y, c = 2;`.
+fn is_floating_declarator(index: &Index, parent_kind: NodeKind, child: NodeId) -> bool {
+    parent_kind == NodeKind::VarDecl
+        && index.kind_of(child) == NodeKind::VarDeclarator
+        && index.children_of(child).first().is_some_and(|&name| {
+            index.kind_of(name) == NodeKind::BindingIdent
+                && node_ident_hole(index, name, ANYTHING_HOLE_KEYWORD)
+        })
+        && has_informative_init(index, child)
 }
 
 /// Number of leading children that are *not* part of a run-hole-bearing list and
@@ -915,15 +1045,71 @@ fn homo(
         }
     }
 
-    // A function/arrow/constructor/setter/catch node scopes its params + body, so
-    // same-spelled locals in sibling scopes stay independent (alpha shadowing).
-    if mode == Mode::AlphaAll && introduces_alpha_scope(nkind) {
-        bindings.push_scope();
-        let result = match_children(needle, nid, nkind, subject, sid, mode, bindings);
-        bindings.pop_scope();
-        return result;
+    if mode != Mode::AlphaAll {
+        return match_children(needle, nid, nkind, subject, sid, mode, bindings);
     }
-    match_children(needle, nid, nkind, subject, sid, mode, bindings)
+    // `var` declarators bind into the enclosing function frame; a nested
+    // function or class expression starts over.
+    let outer_in_var_decl = bindings.in_var_decl;
+    if nkind == NodeKind::VarDecl {
+        bindings.in_var_decl = needle.operator_of(nid) == Some("var");
+    }
+    let result = match alpha_frame(nkind) {
+        Some(frame) => {
+            if frame == FrameKind::Function
+                || matches!(nkind, NodeKind::FnExpr | NodeKind::ClassExpr)
+            {
+                bindings.in_var_decl = false;
+            }
+            bindings.push_scope(frame);
+            let result = if matches!(nkind, NodeKind::FnExpr | NodeKind::ClassExpr) {
+                match_named_expression(needle, nid, subject, sid, mode, bindings)
+            } else {
+                match_children(needle, nid, nkind, subject, sid, mode, bindings)
+            };
+            bindings.pop_scope();
+            result
+        }
+        None => match_children(needle, nid, nkind, subject, sid, mode, bindings),
+    };
+    bindings.in_var_decl = outer_in_var_decl;
+    result
+}
+
+/// A named function/class expression's name is bound in its own frame, visible
+/// only inside the expression: `const f = function g() { g(); }` does not see an
+/// outer `g`. Children are `[name?, function-or-class]`.
+fn match_named_expression(
+    needle: &Index,
+    nid: NodeId,
+    subject: &Index,
+    sid: NodeId,
+    mode: Mode,
+    bindings: &mut Bindings,
+) -> Result<bool, Unsupported> {
+    let (nkids, skids) = (needle.children_of(nid), subject.children_of(sid));
+    if nkids.len() != skids.len() {
+        return Ok(false);
+    }
+    let (Some((&nbody, nname)), Some((&sbody, sname))) = (nkids.split_last(), skids.split_last())
+    else {
+        return Ok(true);
+    };
+    if let (Some(&nname), Some(&sname)) = (nname.first(), sname.first()) {
+        match (needle.ident_of(nname), subject.ident_of(sname)) {
+            (Some(n), Some(s)) if !is_single_node_hole(needle, nname) => {
+                if !bindings.match_binding(n, s, mode) {
+                    return Ok(false);
+                }
+            }
+            _ => {
+                if !homo(needle, nname, subject, sname, mode, bindings)? {
+                    return Ok(false);
+                }
+            }
+        }
+    }
+    homo(needle, nbody, subject, sbody, mode, bindings)
 }
 
 /// Match the children of two same-kind nodes: a positional prefix (callee /
@@ -953,7 +1139,10 @@ fn match_children(
     }
     let nlist = &nchildren[nprefix..];
     let slist = &schildren[sprefix..];
-    if nlist.iter().any(|&c| is_run_hole_carrier(needle, nkind, c)) {
+    if nlist
+        .iter()
+        .any(|&c| is_run_hole_carrier(needle, nkind, c) || is_floating_declarator(needle, nkind, c))
+    {
         return match_list_with_holes(needle, nlist, subject, slist, nkind, mode, bindings);
     }
     if nlist.len() != slist.len() {
@@ -970,11 +1159,14 @@ fn match_children(
 /// Partition `0..len` into maximal runs of non-hole positions — the fixed
 /// segments placed as an ordered subsequence with run-hole gaps — plus the
 /// anchoring flags (`anchored_left`/`anchored_right` = the first/last position is
-/// a fixed anchor). Position `i` is a hole iff `is_hole(i)`. An all-holes list
-/// yields no segments. Shared by the list / declarator / top-level placement paths.
+/// a fixed anchor). Position `i` is a hole iff `is_hole(i)`; a floating position
+/// (`is_floating(i)`) is a singleton segment with gaps allowed on both sides. An
+/// all-holes list yields no segments. Shared by the list / declarator /
+/// top-level placement paths.
 fn segment_partition(
     len: usize,
     is_hole: impl Fn(usize) -> bool,
+    is_floating: impl Fn(usize) -> bool,
 ) -> (Vec<(usize, usize)>, bool, bool) {
     let mut segments = Vec::new();
     let mut idx = 0;
@@ -984,13 +1176,18 @@ fn segment_partition(
             continue;
         }
         let start = idx;
-        while idx < len && !is_hole(idx) {
+        if is_floating(idx) {
             idx += 1;
+        } else {
+            while idx < len && !is_hole(idx) && !is_floating(idx) {
+                idx += 1;
+            }
         }
         segments.push((start, idx - start));
     }
-    let anchored_left = len > 0 && !is_hole(0);
-    let anchored_right = len > 0 && !is_hole(len - 1);
+    let anchored = |i: usize| !is_hole(i) && !is_floating(i);
+    let anchored_left = len > 0 && anchored(0);
+    let anchored_right = len > 0 && anchored(len - 1);
     (segments, anchored_left, anchored_right)
 }
 
@@ -1006,9 +1203,11 @@ fn match_list_with_holes(
     mode: Mode,
     bindings: &mut Bindings,
 ) -> Result<bool, Unsupported> {
-    let (segments, anchored_left, anchored_right) = segment_partition(nlist.len(), |i| {
-        is_run_hole_carrier(needle, parent_kind, nlist[i])
-    });
+    let (segments, anchored_left, anchored_right) = segment_partition(
+        nlist.len(),
+        |i| is_run_hole_carrier(needle, parent_kind, nlist[i]),
+        |i| is_floating_declarator(needle, parent_kind, nlist[i]),
+    );
     if segments.is_empty() {
         return Ok(true);
     }
@@ -1094,7 +1293,8 @@ fn align_var_declarators(
 ) -> Result<Option<Vec<Option<usize>>>, Unsupported> {
     let mut alignment = vec![None; ndecls.len()];
     let is_hole = |d: NodeId| is_run_hole_carrier(needle, NodeKind::VarDecl, d);
-    if !ndecls.iter().any(|&d| is_hole(d)) {
+    let is_floating = |d: NodeId| is_floating_declarator(needle, NodeKind::VarDecl, d);
+    if !ndecls.iter().any(|&d| is_hole(d) || is_floating(d)) {
         if ndecls.len() != sdecls.len() {
             return Ok(None);
         }
@@ -1106,8 +1306,11 @@ fn align_var_declarators(
         }
         return Ok(Some(alignment));
     }
-    let (segments, anchored_left, anchored_right) =
-        segment_partition(ndecls.len(), |i| is_hole(ndecls[i]));
+    let (segments, anchored_left, anchored_right) = segment_partition(
+        ndecls.len(),
+        |i| is_hole(ndecls[i]),
+        |i| is_floating(ndecls[i]),
+    );
     // An all-holes declarator list pins nothing (no positions to align).
     if segments.is_empty() {
         return Ok(Some(alignment));
@@ -1206,9 +1409,9 @@ fn place_declarator_segments(
 /// Match two var-decl statements and, on success, return the greedy-leftmost
 /// declarator alignment (needle declarator index → subject declarator index,
 /// `None` for a `DECLARATORS`-hole-absorbed needle position); `None` if they do
-/// not match. `prebind` pins one needle identifier to one subject identifier
-/// before matching (alpha-mode coupling), so the caller can force the target
-/// binding's identity — a no-op under `Exact`. This composes the whole-statement
+/// not match. `prebind` pins needle identifiers to subject identifiers in the
+/// root frame before matching, so the caller can force the target binding's
+/// identity (in either mode). This composes the whole-statement
 /// var-decl match (wrapper symmetry, `var`/`let`/`const` kind, declarator
 /// alignment): a `Some` result *is* a faithful match. Fail-closed on an
 /// unsupported needle construct.
@@ -1216,9 +1419,16 @@ pub fn var_declarator_alignment(
     needle: &ChunkFacts,
     subject: &ChunkFacts,
     mode: Mode,
-    prebind: Option<(&str, &str)>,
-) -> Result<Option<Vec<Option<usize>>>, Unsupported> {
-    var_declarator_alignment_indexed(&Index::build(needle), &Index::build(subject), mode, prebind)
+    prebind: &[(&str, &str)],
+    free: &BTreeSet<String>,
+) -> Result<Option<Matched<Vec<Option<usize>>>>, Unsupported> {
+    var_declarator_alignment_indexed(
+        &Index::build(needle),
+        &Index::build(subject),
+        mode,
+        prebind,
+        free,
+    )
 }
 
 /// Like [`var_declarator_alignment`], but over **prebuilt** indices, so the
@@ -1229,13 +1439,14 @@ pub fn var_declarator_alignment_indexed(
     needle: &Index,
     subject: &Index,
     mode: Mode,
-    prebind: Option<(&str, &str)>,
-) -> Result<Option<Vec<Option<usize>>>, Unsupported> {
+    prebind: &[(&str, &str)],
+    free: &BTreeSet<String>,
+) -> Result<Option<Matched<Vec<Option<usize>>>>, Unsupported> {
     if let Some(reason) = unsupported_needle_construct(needle) {
         return Err(Unsupported { reason });
     }
     Ok(var_declarator_alignment_prepared(
-        needle, subject, mode, prebind,
+        needle, subject, mode, prebind, free,
     ))
 }
 
@@ -1251,8 +1462,9 @@ pub fn var_declarator_alignment_prepared(
     needle: &Index,
     subject: &Index,
     mode: Mode,
-    prebind: Option<(&str, &str)>,
-) -> Option<Vec<Option<usize>>> {
+    prebind: &[(&str, &str)],
+    free: &BTreeSet<String>,
+) -> Option<Matched<Vec<Option<usize>>>> {
     let (Some((nwrap, nvd)), Some((swrap, svd))) = (var_decl_node(needle), var_decl_node(subject))
     else {
         return None;
@@ -1262,15 +1474,13 @@ pub fn var_declarator_alignment_prepared(
     if nwrap != swrap || needle.operator_of(nvd) != subject.operator_of(svd) {
         return None;
     }
-    let mut bindings = Bindings::default();
-    if let Some((n, s)) = prebind
-        && !bindings.prebind(n, s)
-    {
+    let mut bindings = Bindings::new(free);
+    if !bindings.prebind(prebind) {
         return None;
     }
     // The needle is probed-supported, so no sub-node descent can error (see
     // [`nodes_match`]); unwrap the infallible alignment.
-    align_var_declarators(
+    let alignment = align_var_declarators(
         needle,
         needle.children_of(nvd),
         subject,
@@ -1278,7 +1488,11 @@ pub fn var_declarator_alignment_prepared(
         mode,
         &mut bindings,
     )
-    .expect("needle construct already probed as supported")
+    .expect("needle construct already probed as supported")?;
+    Some(Matched {
+        site: alignment,
+        free_bindings: bindings.free_bindings(),
+    })
 }
 
 fn collect_subtree(index: &Index, node: NodeId, out: &mut HashSet<NodeId>) {
@@ -1295,9 +1509,10 @@ fn collect_subtree(index: &Index, node: NodeId, out: &mut HashSet<NodeId>) {
 /// `STR_LITERAL_MATCHING_RE(...)` predicate's callee + argument (the matcher
 /// handles the whole `Call`, never the bare callee identifier). Shared by the
 /// faithful-subset guard ([`unsupported_needle_construct`]) and the exact-mode
-/// identifier discriminator ([`needle_required_tokens`]) so the two agree exactly
+/// identifier discriminator ([`needle_required_tokens`]), and the free-identifier
+/// classifier (`source_match::free_identifiers`), so they agree exactly
 /// on which identifiers are real comparisons versus absorbed placeholders.
-fn consumed_nodes(index: &Index) -> HashSet<NodeId> {
+pub fn consumed_nodes(index: &Index) -> HashSet<NodeId> {
     let mut consumed: HashSet<NodeId> = HashSet::new();
     for (parent, kids) in index.children.iter().enumerate() {
         let parent_kind = index.kind_of(parent as NodeId);
@@ -1342,19 +1557,31 @@ fn unsupported_needle_construct(index: &Index) -> Option<&'static str> {
 /// subject statement under `mode`, with single-node and run holes as described
 /// in the module docs. Errors (fail-closed) on un-lowered constructs (the regex
 /// predicate, a misplaced run hole) rather than returning a weaker match. Both
-/// inputs are single-statement `ChunkFacts`.
-pub fn matches(needle: &ChunkFacts, subject: &ChunkFacts, mode: Mode) -> Result<bool, Unsupported> {
-    matches_indexed(&Index::build(needle), &Index::build(subject), mode)
+/// inputs are single-statement `ChunkFacts`; `free` is the needle's free
+/// identifiers (`source_match::free_identifiers`).
+pub fn matches(
+    needle: &ChunkFacts,
+    subject: &ChunkFacts,
+    mode: Mode,
+    free: &BTreeSet<String>,
+) -> Result<bool, Unsupported> {
+    Ok(matches_indexed(&Index::build(needle), &Index::build(subject), mode, free)?.is_some())
 }
 
 /// Like [`matches`], but over **prebuilt** indices, so a caller resolving many
 /// needles against one chunk body builds each subject `Index` once (cached in
-/// `ChunkResolver`) rather than per `(needle, subject)` pair.
-pub fn matches_indexed(needle: &Index, subject: &Index, mode: Mode) -> Result<bool, Unsupported> {
+/// `ChunkResolver`) rather than per `(needle, subject)` pair. A match returns its
+/// free identifiers' bindings.
+pub fn matches_indexed(
+    needle: &Index,
+    subject: &Index,
+    mode: Mode,
+    free: &BTreeSet<String>,
+) -> Result<Option<BTreeMap<String, String>>, Unsupported> {
     if let Some(reason) = unsupported_needle_construct(needle) {
         return Err(Unsupported { reason });
     }
-    Ok(matches_prepared(needle, subject, mode))
+    Ok(matches_prepared(needle, subject, mode, free))
 }
 
 /// Like [`matches_indexed`], but **without** re-running the needle-only
@@ -1366,15 +1593,19 @@ pub fn matches_indexed(needle: &Index, subject: &Index, mode: Mode) -> Result<bo
 /// it once the needle is known-supported is behavior-preserving — the check is a
 /// pure function of the needle, identical across subjects — and makes the result
 /// infallible.
-pub fn matches_prepared(needle: &Index, subject: &Index, mode: Mode) -> bool {
-    let (Some(&n_root), Some(&s_root)) = (needle.roots.first(), subject.roots.first()) else {
-        return false;
-    };
-    let mut bindings = Bindings::default();
+pub fn matches_prepared(
+    needle: &Index,
+    subject: &Index,
+    mode: Mode,
+    free: &BTreeSet<String>,
+) -> Option<BTreeMap<String, String>> {
+    let (&n_root, &s_root) = (needle.roots.first()?, subject.roots.first()?);
+    let mut bindings = Bindings::new(free);
     // Probed-supported needle: a sub-node descent of an already-probed needle never
     // newly errors (see [`nodes_match`]), so the match is infallible here.
     homo(needle, n_root, subject, s_root, mode, &mut bindings)
         .expect("needle construct already probed as supported")
+        .then(|| bindings.free_bindings())
 }
 
 /// A **sound** per-candidate prefilter for the single-statement `matches` scan:
@@ -1613,10 +1844,11 @@ pub fn match_top_level_sequence(
     needles: &[ChunkFacts],
     subject_items: &[ChunkFacts],
     mode: Mode,
-) -> Result<Vec<Vec<Option<usize>>>, Unsupported> {
+    free: &BTreeSet<String>,
+) -> Result<Vec<Matched<Vec<Option<usize>>>>, Unsupported> {
     let needle_idx: Vec<Index> = needles.iter().map(Index::build).collect();
     let subject_idx: Vec<Index> = subject_items.iter().map(Index::build).collect();
-    match_top_level_sequence_indexed(&needle_idx, &subject_idx, mode)
+    match_top_level_sequence_indexed(&needle_idx, &subject_idx, mode, free)
 }
 
 /// Like [`match_top_level_sequence`], but over **prebuilt** subject indices so a
@@ -1626,10 +1858,13 @@ pub fn match_top_level_sequence_indexed(
     needle_idx: &[Index],
     subject_idx: &[Index],
     mode: Mode,
-) -> Result<Vec<Vec<Option<usize>>>, Unsupported> {
-    let (segments, _, _) = segment_partition(needle_idx.len(), |i| {
-        is_module_stmt_list_hole(&needle_idx[i])
-    });
+    free: &BTreeSet<String>,
+) -> Result<Vec<Matched<Vec<Option<usize>>>>, Unsupported> {
+    let (segments, _, _) = segment_partition(
+        needle_idx.len(),
+        |i| is_module_stmt_list_hole(&needle_idx[i]),
+        |_| false,
+    );
     // A fixed (non-hole) needle statement must be faithfully supported.
     for &(start, len) in &segments {
         for item in &needle_idx[start..start + len] {
@@ -1644,7 +1879,7 @@ pub fn match_top_level_sequence_indexed(
     }
     let mut alignment = vec![None; needle_idx.len()];
     let mut matches = Vec::new();
-    let mut bindings = Bindings::default();
+    let mut bindings = Bindings::new(free);
     place_top_level(
         needle_idx,
         subject_idx,
@@ -1674,7 +1909,8 @@ pub fn match_fixed_window_sequence_indexed(
     needle_idx: &[Index],
     subject_idx: &[Index],
     mode: Mode,
-) -> Result<Vec<usize>, Unsupported> {
+    free: &BTreeSet<String>,
+) -> Result<Vec<Matched<usize>>, Unsupported> {
     for needle in needle_idx {
         if let Some(reason) = unsupported_needle_construct(needle) {
             return Err(Unsupported { reason });
@@ -1686,7 +1922,7 @@ pub fn match_fixed_window_sequence_indexed(
         return Ok(starts);
     }
     for start in 0..=(subject_idx.len() - n) {
-        let mut bindings = Bindings::default();
+        let mut bindings = Bindings::new(free);
         let mut matched = true;
         for offset in 0..n {
             let needle = &needle_idx[offset];
@@ -1702,7 +1938,10 @@ pub fn match_fixed_window_sequence_indexed(
             }
         }
         if matched {
-            starts.push(start);
+            starts.push(Matched {
+                site: start,
+                free_bindings: bindings.free_bindings(),
+            });
         }
     }
     Ok(starts)
@@ -1725,7 +1964,8 @@ pub fn match_single_declarator_target_windows_indexed(
     subject_idx: &[Index],
     target_idx: usize,
     mode: Mode,
-) -> Result<Vec<(usize, usize)>, Unsupported> {
+    free: &BTreeSet<String>,
+) -> Result<Vec<Matched<(usize, usize)>>, Unsupported> {
     for needle in needle_idx {
         if let Some(reason) = unsupported_needle_construct(needle) {
             return Err(Unsupported { reason });
@@ -1737,8 +1977,8 @@ pub fn match_single_declarator_target_windows_indexed(
         return Ok(matches);
     }
     for window_start in 0..=(subject_idx.len() - n) {
-        let mut bindings = Bindings::default();
-        let mut found: Vec<usize> = Vec::new();
+        let mut bindings = Bindings::new(free);
+        let mut found = Vec::new();
         match_declarator_target_window(
             needle_idx,
             subject_idx,
@@ -1750,11 +1990,10 @@ pub fn match_single_declarator_target_windows_indexed(
             None,
             &mut found,
         )?;
-        matches.extend(
-            found
-                .into_iter()
-                .map(|decl| (window_start + target_idx, decl)),
-        );
+        matches.extend(found.into_iter().map(|found| Matched {
+            site: (window_start + target_idx, found.site),
+            free_bindings: found.free_bindings,
+        }));
     }
     Ok(matches)
 }
@@ -1774,11 +2013,14 @@ fn match_declarator_target_window(
     mode: Mode,
     bindings: &mut Bindings,
     chosen_decl: Option<usize>,
-    found: &mut Vec<usize>,
+    found: &mut Vec<Matched<usize>>,
 ) -> Result<(), Unsupported> {
     if item_idx == needles.len() {
         if let Some(decl) = chosen_decl {
-            found.push(decl);
+            found.push(Matched {
+                site: decl,
+                free_bindings: bindings.free_bindings(),
+            });
         }
         return Ok(());
     }
@@ -1849,10 +2091,13 @@ fn place_top_level(
     mode: Mode,
     bindings: &mut Bindings,
     alignment: &mut [Option<usize>],
-    matches: &mut Vec<Vec<Option<usize>>>,
+    matches: &mut Vec<Matched<Vec<Option<usize>>>>,
 ) -> Result<(), Unsupported> {
     let Some(&(needle_start, seg_len)) = segments.get(seg_idx) else {
-        matches.push(alignment.to_vec());
+        matches.push(Matched {
+            site: alignment.to_vec(),
+            free_bindings: bindings.free_bindings(),
+        });
         return Ok(());
     };
     let remaining: usize = segments[seg_idx..].iter().map(|(_, len)| len).sum();

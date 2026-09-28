@@ -243,10 +243,11 @@ without an app delivery queue. The current bridge implements this archived-admis
 boundary; browser-local recovery and pending presentation are separate acceptance work.
 
 A timeout preserves the browser's local submission as “awaiting saved confirmation.”
-Reload catches up and matches by id; retry uses the same id against the same surviving
-execution scope. Local persistence serves recovery of an unconfirmed submission; it
-does not promise server delivery after closing the tab. Retry into a replacement
-scope requires the separate successor-delivery decision.
+Reload catches up and matches by id, and delivers each command it has not seen admitted
+once more; that delivery, a return online after a failed attempt, and Retry all use the
+same id against the same surviving execution scope. Local persistence serves recovery of
+an unconfirmed submission; it does not promise server delivery after closing the tab.
+Retry into a replacement scope requires the separate successor-delivery decision.
 
 #### Runner queues a model change
 

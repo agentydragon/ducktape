@@ -58,6 +58,12 @@ class _CatalogSettings(_Catalog, BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CONTRACT_TEST_", env_nested_delimiter="__")
 
 
+class _AliasedSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="CONTRACT_TEST_")
+
+    api_key: str | None = Field(default=None, validation_alias="CONTRACT_TEST_APIKEY")
+
+
 def test_env_names_follow_the_model_through_optional_and_dict_fields() -> None:
     assert env_name(_Settings, "listen_port") == "CONTRACT_TEST_LISTEN_PORT"
     assert env_name(_Settings, "push", "private_key_pem") == "CONTRACT_TEST_PUSH__PRIVATE_KEY_PEM"
@@ -70,6 +76,11 @@ def test_env_names_follow_a_pep695_discriminated_union_to_the_member_that_has_th
     )
     with pytest.raises(KeyError):
         env_name(_CatalogSettings, "backends", "tana", "auth", "tokn")
+
+
+def test_an_aliased_field_is_read_under_the_name_env_name_gives(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(env_name(_AliasedSettings, "api_key"), "from-env")
+    assert _AliasedSettings().api_key == "from-env"
 
 
 @pytest.mark.parametrize("path", [("listen_port", "nested"), ("no_such_field",), ("push", "no_such_field")])

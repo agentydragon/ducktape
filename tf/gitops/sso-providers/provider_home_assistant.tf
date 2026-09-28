@@ -21,8 +21,9 @@ resource "authentik_provider_oauth2" "home_assistant" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://home.allegedly.works/auth/oidc/callback"
+      matching_mode     = "strict"
+      url               = "https://home.allegedly.works/auth/oidc/callback"
+      redirect_uri_type = "authorization"
     },
   ]
 }

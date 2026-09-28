@@ -1,132 +1,112 @@
-# Artificial Analysis Intelligence Index — cited rows
+# Artificial Analysis — selected model snapshots
 
-`cited_models_2026_08_23.csv` holds the rows <../ai_subscription_comparison.md> quotes,
-so its per-model numbers can be checked rather than taken on trust.
+Source and attribution: [Artificial Analysis](https://artificialanalysis.ai/).
+These are selected comparison rows, not a mirror of AA's full dataset. Retain that
+scope when refreshing; API access does not itself grant redistribution rights.
 
-**Only the cited rows are here, not the corpus.** Artificial Analysis sells
-redistribution rights and states that free access is "for exploration and internal
-workflows only"; a public mirror of all 169 rows is close to the product. Quoting the
-rows actually used keeps that document checkable without republishing the dataset. The
-population-level findings below therefore state their result and the recipe that
-reproduces it, rather than shipping the data behind them.
+## Current snapshot: 2026-09-24
 
-## Provenance
+<cited_models_2026_09_24.csv> refreshes the model/effort slugs cited in
+<../ai_subscription_comparison.md> and adds all published GPT-6 Luna, Sol, and Astra
+efforts. It contains **56 measured rows: 39 from the historical cohort and 17 GPT-6
+rows**. Fourteen historical slugs no longer have a measured current index and are
+excluded, not filled with their August scores:
 
-- **Source:** <https://artificialanalysis.ai/leaderboards/models>
-- **Fetched:** 2026-08-23
-- **Attribution:** all index scores, prices and eval results here are Artificial
-  Analysis's, and their use requires crediting <https://artificialanalysis.ai/>.
-- **Index:** Artificial Analysis Intelligence Index, nine evals — `gdpval-aa`,
-  `tau3-banking`, `terminalbench-v2-1`, `scicode`, `humanitys-last-exam`,
-  `gpqa-diamond`, `critpt`, `omniscience`,
-  `artificial-analysis-long-context-reasoning`. Methodology:
-  <https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index>
-
-**Why this is scraped rather than pulled from the data API.** AA publishes one
-(<https://artificialanalysis.ai/data-api/docs>). Checked against the live free tier on
-2026-08-28 — `GET /api/v2/language/models/free`, four pages of 200, 624 rows — it
-supplies more than expected and still cannot produce this table:
-
-| Needed here                              | Free tier                                              |
-| ---------------------------------------- | ------------------------------------------------------ |
-| One row per model per reasoning effort   | **yes** — `claude-opus-5-xhigh`, `gpt-5-6-luna-low`, … |
-| Intelligence, coding and agentic indices | **yes**, but rounded to one decimal                    |
-| All four list prices                     | **yes**, rounded — a $0.0028 cache price reports `0.0` |
-| Cost per task split into four cache legs | **no** — only `cost_per_task.total_cost`, a scalar     |
-| Per-task token counts                    | **no**                                                 |
-| The nine raw eval scores                 | **no** — `evaluations` carries only the three indices  |
-
-The scalar cost is the disqualifying one: `tokens_per_task`,
-`cache_read_share_of_input`, `effective_usd_per_m_tokens` and
-`cache_accounting_coherent` all come from inverting the four legs separately, and a
-total cannot be inverted. The 1-decimal rounding would also coarsen every index in this
-file, and the raw eval columns would be lost outright.
-
-The free tier is additionally "for exploration and internal workflows only", with
-redistribution reserved to a commercial licence — a live consideration for this file,
-which is why only the cited rows are committed.
-
-The records ship inside the leaderboard page's Next.js flight payload. To refresh,
-fetch the HTML and pull the model objects out of it:
-
-```python
-import json, re
-chunks = re.findall(r'self\.__next_f\.push\(\[1,"(.*?)"\]\)', html, re.S)
-blob = "".join(chunks).encode().decode("unicode_escape", errors="replace")
-# then brace-match forward from each `{"id":"<uuid>","name":"` to get one JSON object per model
+```text
+claude-sonnet-5-non-reasoning
+glm-4-6-reasoning
+glm-4-7
+glm-5-2-non-reasoning
+gpt-5
+gpt-5-4
+gpt-5-6-sol-non-reasoning
+gemini-3-7-flash-low
+gemini-3-7-flash-medium
+gemma-4-31b-non-reasoning
+gemma-4-31b
+kimi-k3-low
+mimo-v2-5-0424
+gpt-oss-120b-low
 ```
 
-## Population
+- Fetched from <https://artificialanalysis.ai/leaderboards/models> on 2026-09-24.
+- Index methodology: **v4.3.2**, as published at
+  <https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index>.
+- Scores and costs are copied from the same leaderboard response without rounding.
+  Blank means unavailable, not zero. Estimated index rows are excluded.
+- Costs are API list-price costs per benchmark-weighted index task, **not** costs
+  per successful task, costs per Terminal-Bench task, or subscription usage charges.
 
-**53 rows, 24 models** — every model <../ai_subscription_comparison.md> names, at every
-reasoning-effort setting AA scored it at. One row per model **per effort setting**:
-`Claude Opus 5 (max)` and `Claude Opus 5 (medium)` are separate rows of the same model,
-and the spread between them is large enough that collapsing them loses the point.
+Do not compare index scores or task costs across these dated snapshots as a model
+improvement/regression: the evaluation mix changed. In particular, September uses
+Terminal-Bench 4.0, not August's 2.1.
 
-The snapshot they came from held **169 rows — every model with a measured index**,
-matching the leaderboard's own count ("out of 169 models ranked"). AA also carries ~434
-models with an _estimated_ index; those were excluded, and none has a cost figure
-anyway. Any claim in the document quantified over "169 models" refers to that snapshot,
-not to this file; re-run the recipe above to check one.
+### GPT-6 cost/effort comparison
 
-Within this file, `cost_per_task_usd` is empty for 1 row AA scored but did not price,
-and 5 rows carry `cache_accounting_coherent=no`.
+Selected rows from the CSV; Terminal-Bench is a separate score, not the workload
+whose cost appears in the adjacent column. These are reference points for agent
+routing, not estimates of success on our repository tasks.
 
-## Columns
+| Model / effort | Index | Index cost/task | Terminal-Bench 4.0 |
+| -------------- | ----: | --------------: | -----------------: |
+| Luna high      | 32.15 |        $0.02862 |              4.55% |
+| Luna xhigh     | 33.88 |        $0.04171 |              8.08% |
+| Luna max       | 37.26 |        $0.06809 |             12.63% |
+| Sol low        | 33.90 |        $0.13224 |              9.09% |
+| Sol medium     | 39.78 |        $0.24820 |             18.69% |
+| Sol high       | 42.82 |        $0.37463 |             26.26% |
+| Astra low      | 45.78 |        $0.81751 |             41.92% |
+| Astra high     | 50.92 |        $1.72525 |             54.04% |
 
-| Column                          | Meaning                                                                                                                   |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `intelligence_index`            | The nine-eval aggregate, 0-100                                                                                            |
-| `coding_index`, `agentic_index` | AA's coding and agentic sub-aggregates                                                                                    |
-| `cost_per_task_usd`             | API cost of one index task, weighted across the nine evals — the chart's x-axis                                           |
-| `suite_cost_usd`                | API cost of running the whole index suite once                                                                            |
-| `price_1m_*`                    | List price per 1M tokens, including cache read and cache write                                                            |
-| `cost_*_usd`                    | AA's per-task cost split into non-cached input, cache reads, cache writes, output — these four sum to `cost_per_task_usd` |
-| `tokens_per_task`               | **Derived**, not published: each `cost_*_usd` leg divided by its matching price, summed                                   |
-| `cache_accounting_coherent`     | `no` where AA books cache writes but zero cache reads — see below                                                         |
-| `cache_read_share_of_input`     | Cache reads as a fraction of input tokens per task (0-1)                                                                  |
-| `effective_usd_per_m_tokens`    | **Derived**: `cost_per_task_usd` / `tokens_per_task` — the real blended rate, cache included                              |
-| `gdpval_aa` … `aa_lcr`          | The nine raw eval scores, 0-1 (`omniscience` is 0-100)                                                                    |
+Luna max costs **51.5% as much as Sol low**, with higher scores on both listed
+metrics in this snapshot. Sol high costs **13.09x Luna high**; Astra high costs
+**60.28x Luna high**. Those are observed benchmark-task cost ratios, not the
+20x/100x ratios of their input/output token list prices. Different effort settings
+and token consumption matter.
 
-## The derived columns
+### Export schema and refresh
 
-AA publishes cost per task but not tokens per task. The last three columns invert the
-cost model to recover it: `cost.nonCacheInput / price1mInputTokens`,
-`cost.cacheRead / cacheHitPrice`, `cost.cacheWrite / cacheWritePrice` and
-`cost.output / price1mOutputTokens`, summed. Where a cache price is absent the input
-price is used.
+The September public leaderboard no longer exposes the August export's four cost
+legs or token totals. This snapshot omits `suite_cost_usd`, `cost_*_usd`, derived
+token/cache accounting, and the coding/agentic sub-indices rather than reusing stale
+values. Only seven raw evaluation fields are available here; this is not a full
+export of the ten-evaluation v4.3.2 suite.
 
-**The derivation is validated by an independent field.** Its output leg reproduces
-AA's separately published `intelligenceIndexOutputTokensPerTask` exactly, to the
-token, for every model checked — so the inversion is recovering AA's real accounting
-rather than approximating it.
+The AA key is in
+<../../cluster/k8s/external-creds/analysis-ai.sops.yaml>, under `stringData.api-key`.
+On this refresh it authenticated as **Free**: `/api/v2/language/models` returned
+403 (Pro required), while `/api/v2/language/models/free` returned four pages of 200,
+673 rows total, with `intelligence_index_version: 4.3`. The API omits patch versions.
+Its rounded index and cost/task values were used to cross-check the selected rows;
+the CSV retains the public page's precision. See <https://artificialanalysis.ai/data-api/docs>.
+Never log the decrypted key or place it in command-line arguments.
 
-Do **not** instead divide `intelligenceIndexTokenCounts` totals by an inferred task
-count. Those totals and the per-task figures use different weightings across the nine
-evals, and doing so understates tokens per task by 2.5-6.7x depending on the model.
+To reproduce the selection, fetch the leaderboard HTML and JSON-decode the string
+argument of each `self.__next_f.push([1, ...])`. Concatenate those strings, parse
+the JSON payload after each Flight record's colon, and recursively decode nested
+JSON strings. Model rows have `slug` and `intelligenceIndex`; exclude null indices
+and `intelligenceIndexIsEstimated: true`. Select the 53 August CSV slugs plus
+`gpt-6-*`, then sort by slug. Do not decode strings with `unicode_escape` or split
+CSV rows naively on commas: names can contain commas.
 
-Cache reads run 86-96% of input tokens for most models, so any figure quoted in tokens
-is meaningless without the cache behaviour beside it.
+| CSV field                                             | Leaderboard field                                |
+| ----------------------------------------------------- | ------------------------------------------------ |
+| `model`, `slug`, `creator`                            | `name`, `slug`, `modelCreatorName`               |
+| `intelligence_index`                                  | `intelligenceIndex`                              |
+| `cost_per_task_usd`                                   | `intelligenceIndexCostPerTask`                   |
+| `price_1m_input_usd`, `price_1m_output_usd`           | `price1mInputTokens`, `price1mOutputTokens`      |
+| `price_1m_cache_read_usd`, `price_1m_cache_write_usd` | `cacheHitPrice`, `cacheWritePrice`               |
+| `context_window_tokens`                               | `contextWindowTokens`                            |
+| `gdpval_aa`, `terminalbench_v4_0`, `scicode`          | `gdpvalNormalized`, `terminalBench40`, `scicode` |
+| `hle`, `critpt`, `omniscience`, `aa_lcr`              | `hle`, `critpt`, `omniscience`, `lcr`            |
 
-## Where the cache accounting is incoherent
+Map null and Flight's `$undefined` sentinel to blank, preserving numeric zero.
+Evaluation scores use 0–1 except the index (0–100) and AA-Omniscience (which can be
+negative). Reasoning effort is part of AA's model name and slug, not a Boolean.
+Record the methodology version again on every refresh; a date alone is insufficient.
 
-**39 of the 169 models in the source snapshot book a nonzero `cost.cacheWrite` against
-exactly zero `cost.cacheRead`** — 5 of them are in this file. A loop that writes a cache and never reads it does not describe
-anything real, so for those models AA has evidently attributed the replayed context to
-writes. In six of them the contradiction is explicit in AA's own fields: a
-`cacheHitDiscountPercent` of 80% sits beside a `cacheHitPrice` equal to the
-undiscounted input price. Cache writes are 88.5-99.6% of input cost across the affected
-set (median 98.7%), so the token split is dominated by whichever fallback price is
-assumed.
+## Historical snapshot: 2026-08-23
 
-Affected rows carry `cache_accounting_coherent=no` and leave `tokens_per_task`,
-`cache_read_share_of_input` and `effective_usd_per_m_tokens` **blank**. Their
-`cost_per_task_usd` and index scores are unaffected and remain usable.
-
-Do not read a 0.0% cache share as "this model has no prompt caching". `GLM-4.7
-(Reasoning)` is flagged here, and <../zai_api.md> records a direct measurement that it
-caches: `cached_tokens` goes `0` to `12544` on a follow-up call sharing a ~12.5k-token
-prefix.
-
-Everything is **API list price**. A subscription's economics do not follow from it —
-that conversion is what the comparison document exists to do.
+<cited_models_2026_08_23.csv> remains unchanged because the dated subscription
+analysis calculates its tables from those figures. Its distinct schema, population,
+and cost-accounting caveats are documented in <snapshot_2026_08_23.md>.

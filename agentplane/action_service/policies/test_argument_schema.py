@@ -9,10 +9,10 @@ import pytest_bazel
 from pydantic import JsonValue, ValidationError
 
 from agentplane.action_service.catalog import ActionIdentity
+from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.policies.argument_schema import ArgumentSchema
 from agentplane.action_service.policies.kind import Matched, NotMatched
 from agentplane.action_service.policies.registry import evaluate
-from github_policy.visibility import RepositoryVisibilityService
 
 ECHO = ActionIdentity(group="everything", name="echo")
 POLICY = ArgumentSchema.model_validate(

@@ -3,10 +3,10 @@
 Authentik SSO is configured by native blueprints under
 `cluster/k8s/authentik/app/blueprints/`. This module parses those blueprints —
 including authentik's custom `!Find`/`!KeyOf` YAML tags, which `yaml.SafeLoader`
-rejects — and holds the checks over them: that every blueprint file is wired into
-the configMap, every proxy provider is assigned to an outpost, and every outpost
-provider reference is syntactically valid and does not target an explicitly retired
-provider. Providers owned by Terraform are intentionally allowed in the outpost list.
+rejects — and holds the checks over them: that every proxy provider is assigned to
+an outpost, and that every outpost provider reference is syntactically valid and does
+not target an explicitly retired provider. Providers owned by Terraform are
+intentionally allowed in the outpost list.
 """
 
 from __future__ import annotations
@@ -16,39 +16,6 @@ from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
-
-
-def check_blueprint_completeness(k8s_dir: Path) -> list[str]:
-    """Check that all blueprint YAML files are listed in the authentik configMapGenerator."""
-    authentik_kust = k8s_dir / "authentik" / "app" / "kustomization.yaml"
-    blueprints_dir = k8s_dir / "authentik" / "app" / "blueprints"
-
-    if not authentik_kust.exists():
-        raise FileNotFoundError(f"Expected {authentik_kust} to exist")
-    if not blueprints_dir.exists():
-        raise FileNotFoundError(f"Expected {blueprints_dir} to exist")
-
-    with authentik_kust.open() as f:
-        doc = yaml.safe_load(f)
-
-    listed_files: set[str] = set()
-    for generator in doc.get("configMapGenerator", []):
-        if generator.get("name") == "authentik-sso-blueprints":
-            listed_files = {Path(f).name for f in generator.get("files", [])}
-            break
-
-    on_disk = {p.name for p in blueprints_dir.glob("*.yaml")}
-    unlisted = sorted(on_disk - listed_files)
-
-    if unlisted:
-        return [
-            f"Authentik blueprint not listed in configMapGenerator: {name}. "
-            f"Add 'blueprints/{name}' to the authentik-sso-blueprints files list "
-            f"in k8s/authentik/app/kustomization.yaml."
-            for name in unlisted
-        ]
-
-    return []
 
 
 class _BlueprintLoader(yaml.SafeLoader):

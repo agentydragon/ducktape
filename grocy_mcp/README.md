@@ -150,7 +150,7 @@ bbr test //grocy_mcp:test_server
 
 Same shape as <../authentik_mcp_poc/archive/2026_05_24_historical_runbook.md>'s
 "Verification in the cluster" section. After Flux reconciles the per-household grocy namespace →
-`agent-machine-access-tf` → grocy MCP app:
+`authentik-tf` → grocy MCP app:
 
 ```bash
 curl -i https://grocy-mcp-sf.allegedly.works/mcp

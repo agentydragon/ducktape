@@ -43,7 +43,7 @@ def test_app_helmrelease_can_share_operator_instances(
         },
         build_results=[
             KustomizeBuildResult(
-                kustomization_path=tmp_path / "test-app/kustomization.yaml",
+                kustomization_path=tmp_path / "cluster/k8s/test-app/kustomization.yaml",
                 resources=[
                     K8sResource(kind="HelmRelease", apiVersion="helm.toolkit.fluxcd.io/v2"),
                     K8sResource(kind=kind, apiVersion=api_version),
@@ -66,7 +66,7 @@ def test_operator_cannot_satisfy_its_own_helm_install_dependency(tmp_path: Path,
         flux_kustomizations={"test-operator": FluxKustomizationSpec(path=f"./cluster/k8s/{subdir}")},
         build_results=[
             KustomizeBuildResult(
-                kustomization_path=tmp_path / subdir / "kustomization.yaml",
+                kustomization_path=tmp_path / "cluster/k8s" / subdir / "kustomization.yaml",
                 resources=[
                     K8sResource(kind="HelmRelease", apiVersion="helm.toolkit.fluxcd.io/v2"),
                     K8sResource(kind="TestInstance", apiVersion="test.example/v1"),
@@ -87,12 +87,35 @@ def test_directly_applied_provider_has_no_helm_install_boundary(tmp_path: Path) 
         flux_kustomizations={"test-provider": FluxKustomizationSpec(path="./cluster/k8s/test-provider")},
         build_results=[
             KustomizeBuildResult(
-                kustomization_path=tmp_path / "test-provider/kustomization.yaml",
+                kustomization_path=tmp_path / "cluster/k8s/test-provider/kustomization.yaml",
                 resources=[K8sResource(kind="TestInstance", apiVersion="test.example/v1")],
             )
         ],
     )
     assert validate_operator_dependencies(cluster, tmp_path, {"TestInstance": "test-provider"}) == []
+
+
+def test_custom_kind_without_provider_fails(tmp_path: Path) -> None:
+    cluster = ParsedCluster(
+        flux_kustomizations={"test-app": FluxKustomizationSpec(path="./cluster/k8s/test-app")},
+        build_results=[
+            KustomizeBuildResult(
+                kustomization_path=tmp_path / "cluster/k8s/test-app/kustomization.yaml",
+                resources=[
+                    K8sResource(kind="ConfigMap", apiVersion="v1"),
+                    K8sResource(kind="Deployment", apiVersion="apps/v1"),
+                    K8sResource(kind="HelmRelease", apiVersion="helm.toolkit.fluxcd.io/v2"),
+                    K8sResource(kind="CiliumNetworkPolicy", apiVersion="cilium.io/v2"),
+                    K8sResource(kind="TestInstance", apiVersion="test.example/v1"),
+                    K8sResource(kind="TestInstance", apiVersion="test.example/v1"),
+                ],
+            )
+        ],
+    )
+    errors = validate_operator_dependencies(cluster, tmp_path, {})
+    assert len(errors) == 1
+    assert "test-app uses TestInstance (test.example/v1)" in errors[0]
+    assert "no OPERATOR_CRDS entry" in errors[0]
 
 
 if __name__ == "__main__":

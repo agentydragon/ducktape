@@ -6,7 +6,7 @@ The proposed `loom` pipeline converts prediction-market marginals plus dated
 evidence into forecastable worlds. Augur is a prospective consumer, not the owner:
 the proposed bridge maps generic artifacts into Augur's own bundles. These
 pipeline proposals do not gate Augur's current experiments or override its
-[model-adoption roadmap](../finance/augur/plans/roadmap.md).
+[plan](../finance/augur/PLAN.md).
 
 ## Current State
 
@@ -106,5 +106,5 @@ Current gym/Wayback operations remain with the local trackers linked below.
 - `wayback/cache/PLAN.md`: cache service design/status.
 - `docs/archive_org_apis.md`: Internet Archive API behavior notes.
 - `plans/market_harvest.md`: market source survey and harvest design.
-- `../finance/augur/plans/market_model_research.md`: optional marginal-to-joint
-  and sparse-company research questions, under Augur's existing adoption gates.
+- `../finance/augur/docs/calibration.md` and `../finance/augur/docs/private_equity_model.md`:
+  what matching market quotes and sparse company fits do and do not establish.

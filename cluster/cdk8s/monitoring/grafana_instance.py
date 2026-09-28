@@ -11,31 +11,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
-from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecMonitoring,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecStorage,
-)
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-)
+from cdk8s import ApiObjectMetadata, App, Chart
+from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb, ClusterSpecBootstrapInitdbSecret
 from grafana_grafana_crds.org.integreatly.grafana import (
-    Grafana,
-    GrafanaSpec,
     GrafanaSpecClient,
     GrafanaSpecDeployment,
     GrafanaSpecDeploymentSpec,
     GrafanaSpecDeploymentSpecTemplate,
-    GrafanaSpecDeploymentSpecTemplateMetadata,
     GrafanaSpecDeploymentSpecTemplateSpec,
     GrafanaSpecDeploymentSpecTemplateSpecContainers,
     GrafanaSpecDeploymentSpecTemplateSpecContainersEnv,
@@ -43,55 +25,51 @@ from grafana_grafana_crds.org.integreatly.grafana import (
     GrafanaSpecDeploymentSpecTemplateSpecContainersEnvValueFromSecretKeyRef,
 )
 from grafana_grafanadashboard_crds.org.integreatly.grafana import (
-    GrafanaDashboard,
-    GrafanaDashboardSpec,
     GrafanaDashboardSpecConfigMapRef,
     GrafanaDashboardSpecDatasources,
     GrafanaDashboardSpecGrafanaCom,
     GrafanaDashboardSpecInstanceSelector,
 )
 from grafana_grafanadatasource_crds.org.integreatly.grafana import (
-    GrafanaDatasource,
-    GrafanaDatasourceSpec,
     GrafanaDatasourceSpecDatasource,
     GrafanaDatasourceSpecInstanceSelector,
 )
 
-from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref
+from cluster.cdk8s import cnpg, node_scheduling
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.grafana_operator.grafana import Grafana
+from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
+from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
 
 _NAME = "grafana"
 _NAMESPACE = "monitoring"
-_OUTPUT_DIR = "cluster/k8s/monitoring/grafana-instance"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/grafana-instance"
 _DB_NAME = "grafana-db-ovh"
+# The credentials CNPG generated for the retired `grafana-db`, which this cluster was cloned
+# from; the role's password came with the clone.
+_DB_CREDENTIALS_SECRET = "grafana-db-app"
 # The label the Grafana CR carries and every dashboard and datasource selects.
 _INSTANCE_LABELS = {"dashboards": _NAME}
 
 
 def _database(chart: Chart) -> None:
-    Cluster(
+    cnpg.cluster(
         chart,
         "database",
-        metadata=metadata(_DB_NAME, _NAMESPACE),
-        spec=ClusterSpec(
-            instances=2,
-            # renovate: datasource=docker
-            image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
-                )
-            ),
-            affinity=ClusterSpecAffinity(
-                node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
-                topology_key="kubernetes.io/hostname",
-                # Prefer ordinary workers when this workload tolerates control planes.
-                node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
-            ),
-            storage=ClusterSpecStorage(storage_class="local-path-ovh", size="2Gi"),
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
+        name=_DB_NAME,
+        namespace=_NAMESPACE,
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        storage_class="local-path-ovh",
+        size="2Gi",
+        # Created by pg_basebackup from the retired grafana-db, so this never initializes
+        # anything. It names the application database and role CNPG uses: the metrics
+        # exporter's default queries run against the database, and CNPG keeps the role's
+        # password in sync with the Secret Grafana also authenticates with. Without it CNPG
+        # defaults to `app`, which does not exist here.
+        initdb=ClusterSpecBootstrapInitdb(
+            database=_NAME, owner=_NAME, secret=ClusterSpecBootstrapInitdbSecret(name=_DB_CREDENTIALS_SECRET)
         ),
     )
 
@@ -109,108 +87,103 @@ def _grafana(chart: Chart) -> None:
     Grafana(
         chart,
         "grafana",
-        metadata=metadata(_NAME, _NAMESPACE, labels=_INSTANCE_LABELS),
-        spec=GrafanaSpec(
-            client=GrafanaSpecClient(use_kube_auth=True),
-            config={
-                "server": {"root_url": "https://grafana.allegedly.works"},
-                "security": {
-                    # Expanded at runtime from GF_SECURITY_ADMIN_{USER,PASSWORD} env vars below.
-                    # init-time only: Grafana writes the admin user to PostgreSQL on first boot.
-                    "admin_user": "${GF_SECURITY_ADMIN_USER}",
-                    "admin_password": "${GF_SECURITY_ADMIN_PASSWORD}",
-                },
-                "database": {
-                    "type": "postgres",
-                    "host": f"{_DB_NAME}-rw.monitoring.svc.cluster.local:5432",
-                    "name": _NAME,
-                    "user": _NAME,
-                    "password": "${GF_DATABASE_PASSWORD}",
-                    "ssl_mode": "require",
-                },
-                "plugins": {"preinstall": "grafana-clock-panel,grafana-clickhouse-datasource@4.20.0"},
-                "auth.generic_oauth": {
-                    "enabled": "true",
-                    "name": "Authentik",
-                    "scopes": "openid email profile",
-                    "auth_url": "https://auth.allegedly.works/application/o/authorize/",
-                    "token_url": "http://authentik-server.authentik/application/o/token/",
-                    "api_url": "http://authentik-server.authentik/application/o/userinfo/",
-                    "client_id": "${GF_AUTH_GENERIC_OAUTH_CLIENT_ID}",
-                    "client_secret": "${GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}",
-                    "role_attribute_path": "contains(groups[*], 'Grafana Admins') && 'Admin' || 'Viewer'",
-                    "allow_sign_up": "true",
-                },
-                "auth.jwt": {
-                    # Operator authenticates via K8s projected service account token (audience:
-                    # operator.grafana.com). No admin password required for automation.
-                    "enabled": "true",
-                    "header_name": "Authorization",
-                    "username_claim": "sub",
-                    "email_claim": "sub",
-                    # auto_sign_up: creates the operator's K8s identity as a Grafana user on first
-                    # auth. Scoped to JWT auth only — does not affect Authentik OAuth logins.
-                    "auto_sign_up": "true",
-                    "jwk_set_url": "https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT_HTTPS}/openid/v1/jwks",
-                    "jwk_set_bearer_token_file": "/var/run/secrets/kubernetes.io/serviceaccount/token",
-                    "expect_claims": '{"aud": "operator.grafana.com"}',
-                    "role_attribute_path": (
-                        "contains(sub, 'system:serviceaccount:monitoring:grafana-operator') && 'GrafanaAdmin' || 'None'"
-                    ),
-                },
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE, labels=_INSTANCE_LABELS),
+        client=GrafanaSpecClient(use_kube_auth=True),
+        config={
+            "server": {"root_url": "https://grafana.allegedly.works"},
+            "security": {
+                # Expanded at runtime from GF_SECURITY_ADMIN_{USER,PASSWORD} env vars below.
+                # init-time only: Grafana writes the admin user to PostgreSQL on first boot.
+                "admin_user": "${GF_SECURITY_ADMIN_USER}",
+                "admin_password": "${GF_SECURITY_ADMIN_PASSWORD}",
             },
-            deployment=GrafanaSpecDeployment(
-                spec=GrafanaSpecDeploymentSpec(
-                    template=GrafanaSpecDeploymentSpecTemplate(
-                        metadata=GrafanaSpecDeploymentSpecTemplateMetadata(
-                            annotations={"reloader.stakater.com/auto": "true"}
-                        ),
-                        spec=GrafanaSpecDeploymentSpecTemplateSpec(
-                            containers=[
-                                GrafanaSpecDeploymentSpecTemplateSpecContainers(
-                                    name=_NAME,
-                                    env=[
-                                        # Extend Go TLS trust to include the cluster CA (required for JWKS
-                                        # endpoint verification). SSL_CERT_DIR is a Go standard env var —
-                                        # overrides the default cert dir search list.
-                                        GrafanaSpecDeploymentSpecTemplateSpecContainersEnv(
-                                            name="SSL_CERT_DIR",
-                                            value="/etc/ssl/certs:/var/run/secrets/kubernetes.io/serviceaccount",
-                                        ),
-                                        # Secret key names don't match GF_* env var names — explicit mapping.
-                                        _secret_env("GF_SECURITY_ADMIN_USER", "grafana-admin-password", "admin-user"),
-                                        _secret_env(
-                                            "GF_SECURITY_ADMIN_PASSWORD", "grafana-admin-password", "admin-password"
-                                        ),
-                                        _secret_env("GF_DATABASE_PASSWORD", "grafana-db-app", "password"),
-                                        _secret_env(
-                                            "GF_AUTH_GENERIC_OAUTH_CLIENT_ID",
-                                            "grafana-oidc-config",
-                                            "GF_AUTH_GENERIC_OAUTH_CLIENT_ID",
-                                        ),
-                                        _secret_env(
-                                            "GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET",
-                                            "grafana-oidc-config",
-                                            "GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET",
-                                        ),
-                                    ],
-                                )
-                            ]
-                        ),
+            "database": {
+                "type": "postgres",
+                "host": f"{_DB_NAME}-rw.monitoring.svc.cluster.local:5432",
+                "name": _NAME,
+                "user": _NAME,
+                "password": "${GF_DATABASE_PASSWORD}",
+                "ssl_mode": "require",
+            },
+            "plugins": {"preinstall": "grafana-clock-panel,grafana-clickhouse-datasource@4.20.0"},
+            "auth.generic_oauth": {
+                "enabled": "true",
+                "name": "Authentik",
+                "scopes": "openid email profile",
+                "auth_url": "https://auth.allegedly.works/application/o/authorize/",
+                "token_url": "http://authentik-server.authentik/application/o/token/",
+                "api_url": "http://authentik-server.authentik/application/o/userinfo/",
+                "client_id": "${GF_AUTH_GENERIC_OAUTH_CLIENT_ID}",
+                "client_secret": "${GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}",
+                "role_attribute_path": "contains(groups[*], 'Grafana Admins') && 'Admin' || 'Viewer'",
+                "allow_sign_up": "true",
+            },
+            "auth.jwt": {
+                # Operator authenticates via K8s projected service account token (audience:
+                # operator.grafana.com). No admin password required for automation.
+                "enabled": "true",
+                "header_name": "Authorization",
+                "username_claim": "sub",
+                "email_claim": "sub",
+                # auto_sign_up: creates the operator's K8s identity as a Grafana user on first
+                # auth. Scoped to JWT auth only — does not affect Authentik OAuth logins.
+                "auto_sign_up": "true",
+                "jwk_set_url": "https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT_HTTPS}/openid/v1/jwks",
+                "jwk_set_bearer_token_file": "/var/run/secrets/kubernetes.io/serviceaccount/token",
+                "expect_claims": '{"aud": "operator.grafana.com"}',
+                "role_attribute_path": (
+                    "contains(sub, 'system:serviceaccount:monitoring:grafana-operator') && 'GrafanaAdmin' || 'None'"
+                ),
+            },
+        },
+        deployment=GrafanaSpecDeployment(
+            spec=GrafanaSpecDeploymentSpec(
+                template=GrafanaSpecDeploymentSpecTemplate(
+                    spec=GrafanaSpecDeploymentSpecTemplateSpec(
+                        containers=[
+                            GrafanaSpecDeploymentSpecTemplateSpecContainers(
+                                name=_NAME,
+                                env=[
+                                    # Extend Go TLS trust to include the cluster CA (required for JWKS
+                                    # endpoint verification). SSL_CERT_DIR is a Go standard env var —
+                                    # overrides the default cert dir search list.
+                                    GrafanaSpecDeploymentSpecTemplateSpecContainersEnv(
+                                        name="SSL_CERT_DIR",
+                                        value="/etc/ssl/certs:/var/run/secrets/kubernetes.io/serviceaccount",
+                                    ),
+                                    # Secret key names don't match GF_* env var names — explicit mapping.
+                                    _secret_env("GF_SECURITY_ADMIN_USER", "grafana-admin-password", "admin-user"),
+                                    _secret_env(
+                                        "GF_SECURITY_ADMIN_PASSWORD", "grafana-admin-password", "admin-password"
+                                    ),
+                                    _secret_env("GF_DATABASE_PASSWORD", _DB_CREDENTIALS_SECRET, "password"),
+                                    _secret_env(
+                                        "GF_AUTH_GENERIC_OAUTH_CLIENT_ID",
+                                        "grafana-oidc-config",
+                                        "GF_AUTH_GENERIC_OAUTH_CLIENT_ID",
+                                    ),
+                                    _secret_env(
+                                        "GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET",
+                                        "grafana-oidc-config",
+                                        "GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET",
+                                    ),
+                                ],
+                            )
+                        ]
                     )
                 )
-            ),
+            )
         ),
     )
-    HttpRoute(
+    https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=["grafana.allegedly.works"],
-            rules=[HttpRouteSpecRules(backend_refs=[HttpRouteSpecRulesBackendRefs(name="grafana-service", port=3000)])],
-        ),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        hostnames=["grafana.allegedly.works"],
+        backend="grafana-service",
+        port=3000,
+        hsts=False,
+        listener=None,
     )
 
 
@@ -218,11 +191,9 @@ def _datasource(chart: Chart, name: str, datasource: GrafanaDatasourceSpecDataso
     GrafanaDatasource(
         chart,
         f"datasource-{name}",
-        metadata=metadata(name, _NAMESPACE),
-        spec=GrafanaDatasourceSpec(
-            instance_selector=GrafanaDatasourceSpecInstanceSelector(match_labels=_INSTANCE_LABELS),
-            datasource=datasource,
-        ),
+        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
+        instance_selector=GrafanaDatasourceSpecInstanceSelector(match_labels=_INSTANCE_LABELS),
+        datasource=datasource,
     )
 
 
@@ -278,6 +249,21 @@ def _datasources(chart: Chart) -> None:
             },
         ),
     )
+    # The Alertmanager that Mimir's ruler sends to: its alert groups and silences in
+    # Grafana, without exposing Alertmanager itself.
+    _datasource(
+        chart,
+        "alertmanager",
+        GrafanaDatasourceSpecDatasource(
+            name="Alertmanager",
+            type="alertmanager",
+            access="proxy",
+            url="http://alertmanager-operated.monitoring.svc.cluster.local:9093",
+            is_default=False,
+            editable=True,
+            json_data={"implementation": "prometheus", "handleGrafanaManagedAlerts": False},
+        ),
+    )
 
 
 def _dashboard(
@@ -293,20 +279,18 @@ def _dashboard(
     GrafanaDashboard(
         chart,
         f"dashboard-{name}",
-        metadata=metadata(name, _NAMESPACE),
-        spec=GrafanaDashboardSpec(
-            instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=_INSTANCE_LABELS),
-            datasources=[
-                GrafanaDashboardSpecDatasources(input_name=input_name, datasource_name=datasource)
-                for input_name, datasource in datasources.items()
-            ]
-            if datasources
-            else None,
-            config_map_ref=GrafanaDashboardSpecConfigMapRef(name=f"{name}-dashboard", key=f"{name}.json")
-            if config_map
-            else None,
-            grafana_com=grafana_com,
-        ),
+        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
+        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=_INSTANCE_LABELS),
+        datasources=[
+            GrafanaDashboardSpecDatasources(input_name=input_name, datasource_name=datasource)
+            for input_name, datasource in datasources.items()
+        ]
+        if datasources
+        else None,
+        config_map_ref=GrafanaDashboardSpecConfigMapRef(name=f"{name}-dashboard", key=f"{name}.json")
+        if config_map
+        else None,
+        grafana_com=grafana_com,
     )
 
 
@@ -376,4 +360,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, _OUTPUT_DIR, chart)
+    write_charts(root, OUTPUT_DIR, chart)

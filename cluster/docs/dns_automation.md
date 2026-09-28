@@ -23,7 +23,7 @@ cert-manager Route 53 solver manages ACME challenge TXT records.
 | apex     | `allegedly.works.`   | OVH gateway node IPs | 300 |
 
 The gateway and API node IPs are the `public_nodes` var on the generated Terraform CR
-(`k8s/dns-automation/dns-records.k8s.yaml`), rendered from `nebula-mesh.json`
+(`generated/dns-automation/dns-records.k8s.yaml`), rendered from `nebula-mesh.json`
 (<mesh_membership.md>).
 
 ## Key Files
@@ -31,7 +31,7 @@ The gateway and API node IPs are the `public_nodes` var on the generated Terrafo
 | File                                                      | Purpose                                                                   |
 | --------------------------------------------------------- | ------------------------------------------------------------------------- |
 | `tf/gitops/dns-records/main.tf`                           | Route 53 records + domain delegation                                      |
-| `k8s/dns-automation/dns-records.k8s.yaml`                 | tofu-controller Terraform resource (generated, `cdk8s/dns_automation.py`) |
+| `generated/dns-automation/dns-records.k8s.yaml`           | tofu-controller Terraform resource (generated, `cdk8s/dns_automation.py`) |
 | `k8s/external-creds/aws-route53-dns-automation.sops.yaml` | Canonical AWS IAM Secret for DNS automation (SOPS)                        |
 | `k8s/external-creds/aws-route53-cert-manager.sops.yaml`   | Canonical AWS IAM Secret for cert-manager (SOPS)                          |
 | `cdk8s/dns_automation.py`                                 | ESO destination Secret for Terraform in `flux-system`                     |

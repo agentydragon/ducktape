@@ -5,8 +5,6 @@ import { type ConfigResponse, displayableError, fetchConfig } from "./client";
 import { AgentNamesProvider } from "./agent_names";
 import { HakuUiEmbed } from "./haku_ui_embed";
 import { ApprovalsEmbedPage } from "./approvals_embed_page";
-import { OAuthResultPage } from "./oauth_result_page";
-import { useOAuthResultAnnouncement } from "./oauth_result_announcement";
 import { useConsoleView } from "./routing";
 
 // The trusted outer shell: a full-page frame for Haku's own UI (a sandboxed cross-origin iframe)
@@ -16,8 +14,7 @@ import { useConsoleView } from "./routing";
 export default function App(): JSX.Element {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { view, agentEnrollmentId, oauthResultId, toolCallId, navigate } = useConsoleView();
-  useOAuthResultAnnouncement(view);
+  const { view, agentEnrollmentId, toolCallId, navigate } = useConsoleView();
 
   useEffect(() => {
     if (view === "approvalsEmbed") return;
@@ -33,9 +30,6 @@ export default function App(): JSX.Element {
       alive = false;
     };
   }, [view]);
-
-  if (view === "oauthResult" && oauthResultId !== null)
-    return <OAuthResultPage key={oauthResultId} resultId={oauthResultId} />;
 
   if (view === "approvalsEmbed")
     return (

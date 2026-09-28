@@ -56,11 +56,17 @@ async def test_run_returns_successful_turn_outputs() -> None:
         for cursor, event in enumerate(
             [
                 event_pb2.Event(
+                    native=event_pb2.Native(direction=event_pb2.DIRECTION_TO_HARNESS, line='{"test": "input"}')
+                ),
+                event_pb2.Event(
                     item_completed=event_pb2.ItemCompleted(
                         item_id="test-tool", tool=event_pb2.ToolResult(output="test tool output", succeeded=True)
                     )
                 ),
                 event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id="test-answer", text="test answer")),
+                event_pb2.Event(
+                    native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"test": "result"}')
+                ),
                 event_pb2.Event(
                     turn_completed=event_pb2.TurnCompleted(turn_id="test-turn", status=event_pb2.TURN_STATUS_COMPLETED)
                 ),
@@ -78,6 +84,7 @@ async def test_run_returns_successful_turn_outputs() -> None:
     assert turn.status == event_pb2.TURN_STATUS_COMPLETED
     assert turn.tool_outputs == ["test tool output"]
     assert turn.answer == "test answer"
+    assert turn.native == ['{"test": "result"}']
     client.command.assert_awaited_once()
     assert client.command.call_args.args[0] == thread_id
     assert client.command.call_args.args[1].submit_input.text == "test prompt"

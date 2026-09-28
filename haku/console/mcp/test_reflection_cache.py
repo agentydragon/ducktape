@@ -1,4 +1,4 @@
-"""Upstream catalog reuse: TTL, single-flight, and the credential boundary."""
+"""Catalog reuse: TTL, single-flight, and the config boundary."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ from haku.console.mcp.reflection_cache import ReflectedCatalog, ReflectionCache,
 NEVER_EXPIRES = 3600.0
 
 
-def _key(server_id: str = "grocy", credential: str = "token-a") -> ReflectionCacheKey:
-    return ReflectionCacheKey(server_id=server_id, config_fingerprint="cfg", credential_fingerprint=credential)
+def _key(server_id: str = "grocy", config: str = "cfg") -> ReflectionCacheKey:
+    return ReflectionCacheKey(server_id=server_id, config_fingerprint=config)
 
 
 def _tools(*names: str) -> list[mcp_types.Tool]:
@@ -51,16 +51,6 @@ async def test_zero_ttl_reflects_again_on_the_next_request() -> None:
     await cache.reflect(_key(), reflect)
 
     assert reflect.calls == 2
-
-
-async def test_reflection_can_override_the_default_ttl() -> None:
-    cache = ReflectionCache(0.0)
-    reflect = _CountingReflector()
-
-    await cache.reflect(_key(), reflect, ttl_seconds=NEVER_EXPIRES)
-    await cache.reflect(_key(), reflect)
-
-    assert reflect.calls == 1
 
 
 async def test_concurrent_reflections_of_one_server_collapse_into_a_single_upstream_call() -> None:
@@ -117,31 +107,12 @@ async def test_a_caller_mutating_a_returned_tool_cannot_corrupt_the_cache() -> N
     assert reflect.calls == 1
 
 
-async def test_a_different_credential_does_not_reuse_the_cached_catalog() -> None:
-    """The fail-closed property: reflection is request-local so a client cannot keep calling tools
-    after its Operator disconnects a server. A catalog must never outlive the credential that read
-    it."""
-    cache = ReflectionCache(NEVER_EXPIRES)
-    first = _CountingReflector(_tools("operator_a_tool"))
-    second = _CountingReflector(_tools("operator_b_tool"))
-
-    await cache.reflect(_key(credential="token-a"), first)
-    other = await cache.reflect(_key(credential="token-b"), second)
-
-    assert [tool.name for tool in other.tools] == ["operator_b_tool"]
-    assert second.calls == 1
-
-
 async def test_a_changed_server_config_does_not_reuse_the_cached_catalog() -> None:
     cache = ReflectionCache(NEVER_EXPIRES)
     reflect = _CountingReflector()
 
-    await cache.reflect(
-        ReflectionCacheKey(server_id="grocy", config_fingerprint="a", credential_fingerprint="t"), reflect
-    )
-    await cache.reflect(
-        ReflectionCacheKey(server_id="grocy", config_fingerprint="b", credential_fingerprint="t"), reflect
-    )
+    await cache.reflect(_key(config="a"), reflect)
+    await cache.reflect(_key(config="b"), reflect)
 
     assert reflect.calls == 2
 

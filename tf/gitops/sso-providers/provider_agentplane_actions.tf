@@ -1,10 +1,12 @@
 # Action-only JWT-bearer target. See agentplane/docs/operator_federation.md for
 # the pinned Authentik/provider source proving the shared subject mode and grant.
 # Native provider federation preserves the AccessToken's database user; the
-# target provider policy is the authorization boundary.
+# target provider policy is the authorization boundary. The client_id is the Action
+# audience and the application slug its issuer path, both pinned by
+# `cluster/cdk8s/agentplane/staging.py`.
 resource "authentik_provider_oauth2" "agentplane_actions" {
-  name                  = "agentplane-actions"
-  client_id             = "agentplane-actions"
+  name                  = "agentplane-staging-actions"
+  client_id             = "agentplane-staging-actions"
   client_type           = "confidential"
   authorization_flow    = data.authentik_flow.implicit_consent.id
   invalidation_flow     = data.authentik_flow.invalidation.id
@@ -24,8 +26,8 @@ resource "authentik_provider_oauth2" "agentplane_actions" {
 # `meta_hide = true`; this action-only federation target is not a user-facing
 # launcher entry. Verify this changes presentation only.
 resource "authentik_application" "agentplane_actions" {
-  name              = "Agentplane Actions"
-  slug              = "agentplane-actions"
+  name              = "Agentplane staging Actions"
+  slug              = "agentplane-staging-actions"
   protocol_provider = authentik_provider_oauth2.agentplane_actions.id
   meta_description  = "Action decisions with the operator's own federated Authentik identity"
 }

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { SandboxView, ThreadView } from "./client";
 import type { ThreadsSnapshot } from "./live";
 import { Sidebar } from "./sidebar";
+import { DEGRADED_AFTER_MS } from "./stream_status";
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(request: Request) => Promise<Response>>();
@@ -22,6 +23,7 @@ beforeEach(() => vi.stubGlobal("fetch", fetchMock));
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.useRealTimers();
   vi.clearAllMocks();
   window.localStorage.clear();
   vi.unstubAllGlobals();
@@ -75,12 +77,14 @@ async function pushSnapshot(stream: EventTarget, value: ThreadsSnapshot): Promis
 async function render(
   threads: ThreadView[],
   sandboxes: Record<string, SandboxView>,
-  options: { initialPath?: string; settingsOpen?: boolean; mobileOpen?: boolean } = {}
-): Promise<{ onOpenSettings: ReturnType<typeof vi.fn>; onMobileClose: ReturnType<typeof vi.fn>; stream: EventTarget }> {
+  options: { initialPath?: string; settingsOpen?: boolean; open?: boolean } = {}
+): Promise<{ onOpenSettings: ReturnType<typeof vi.fn>; onClose: ReturnType<typeof vi.fn>; stream: EventTarget }> {
   const streams: EventTarget[] = [];
   vi.stubGlobal(
     "EventSource",
     class extends EventTarget {
+      // An error is the network's, which the browser retries: the source stays CONNECTING.
+      readyState = 0;
       constructor(url: string) {
         super();
         expect(url).toBe("/live/threads");
@@ -95,7 +99,7 @@ async function render(
   fetchMock.mockImplementation((request: Request) => {
     const url = new URL(request.url);
     if (url.pathname === "/models") {
-      return Promise.resolve(Response.json({ HARNESS_CLAUDE: [], HARNESS_CODEX: [] }));
+      return Promise.resolve(Response.json({ models: [], harnesses: { HARNESS_CLAUDE: [], HARNESS_CODEX: [] } }));
     }
     if (/^\/threads\/[^/]+\/(un)?archive$/.test(url.pathname)) {
       return Promise.resolve(new Response(null, { status: 204 }));
@@ -106,7 +110,7 @@ async function render(
   document.body.append(container);
   root = createRoot(container);
   const onOpenSettings = vi.fn();
-  const onMobileClose = vi.fn();
+  const onClose = vi.fn();
   await act(async () =>
     root.render(
       <MantineProvider env="test">
@@ -114,8 +118,8 @@ async function render(
           <Sidebar
             settingsOpen={options.settingsOpen ?? false}
             onOpenSettings={onOpenSettings}
-            mobileOpen={options.mobileOpen ?? false}
-            onMobileClose={onMobileClose}
+            open={options.open ?? false}
+            onClose={onClose}
           />
           <Routes>
             <Route path="*" element={<LocationProbe />} />
@@ -124,7 +128,7 @@ async function render(
       </MantineProvider>
     )
   );
-  return { onOpenSettings, onMobileClose, stream: streams[0] };
+  return { onOpenSettings, onClose, stream: streams[0] };
 }
 
 function rows(): HTMLElement[] {
@@ -186,14 +190,21 @@ it("keeps retained rows but withdraws live indicators when any update source is 
     }),
   ];
   const sandboxes = { "test-sandbox": sandbox("test-sandbox") };
+  vi.useFakeTimers({ now: new Date(2026, 0, 1, 17, 21, 4) });
   const { stream } = await render(threads, sandboxes);
+  // A drop shorter than the grace is a blip, and changes nothing on screen.
   await act(async () => stream.dispatchEvent(new Event("error")));
-  expect(container.textContent).toContain("Not connected to the live stream");
+  expect(container.querySelector("[data-connection]")).toBeNull();
+  expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(1);
+  await act(async () => vi.advanceTimersByTime(DEGRADED_AFTER_MS));
+  expect(container.querySelector('[data-connection="degraded"]')?.getAttribute("aria-label")).toBe(
+    "Threads: reconnecting since 17:21:04 · attempt 1"
+  );
   expect(container.textContent).toContain("Retained thread");
   expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(0);
 
   await pushSnapshot(stream, { ...snapshot(threads, sandboxes), updates_connected: false });
-  expect(container.textContent).not.toContain("Not connected to the live stream");
+  expect(container.querySelector("[data-connection]")).toBeNull();
   expect(container.textContent).toContain("Thread updates disconnected");
   expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(0);
 
@@ -263,12 +274,12 @@ it("opens the details of a provisioning Sandbox with no Threads", async () => {
 });
 
 it.each([false, true])(
-  "links a Sandbox name to its details without changing Thread navigation (mobile=%s)",
-  async (mobileOpen) => {
-    const { onMobileClose } = await render(
+  "links a Sandbox name to its details without changing Thread navigation (open=%s)",
+  async (open) => {
+    await render(
       [thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" })],
       { "demo-a1b2": sandbox("demo-a1b2") },
-      { initialPath: "/threads/t-1", mobileOpen }
+      { initialPath: "/threads/t-1", open }
     );
     const link = container.querySelector('a[href="/sandboxes/demo-a1b2"]');
     if (!(link instanceof HTMLAnchorElement)) throw new Error("missing Sandbox details link");
@@ -276,7 +287,6 @@ it.each([false, true])(
 
     await act(async () => link.click());
     expect(location()).toBe("/sandboxes/demo-a1b2");
-    expect(onMobileClose).toHaveBeenCalledOnce();
 
     await act(async () => row("First thread").click());
     expect(location()).toBe("/threads/t-1");
@@ -418,44 +428,72 @@ it("persists the resized width across a remount", async () => {
   expect(sidebarWidth()).toBe(256);
 });
 
-function backdrop(): HTMLElement | null {
-  return container.querySelector(".agentplane-sidebar-backdrop");
+function closeButton(): HTMLElement {
+  const found = container.querySelector('button[aria-label="Close navigation"]');
+  if (!(found instanceof HTMLButtonElement)) throw new Error("missing close button");
+  return found;
 }
 
-it("renders a backdrop and the mobile-open class only while mobileOpen is true", async () => {
-  await render([], {}, { mobileOpen: false });
-  expect(backdrop()).toBeNull();
-  expect(container.querySelector("nav.agentplane-sidebar")?.className).not.toContain("agentplane-sidebar-mobile-open");
-
-  await act(async () => root.unmount());
-  container.remove();
-  await render([], {}, { mobileOpen: true });
-  expect(backdrop()).not.toBeNull();
-  expect(container.querySelector("nav.agentplane-sidebar")?.className).toContain("agentplane-sidebar-mobile-open");
-});
-
-it("closes the mobile drawer on backdrop click and on Escape", async () => {
-  const { onMobileClose } = await render([], {}, { mobileOpen: true });
-
-  await act(async () => backdrop()?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-  expect(onMobileClose).toHaveBeenCalledOnce();
-
-  await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
-  expect(onMobileClose).toHaveBeenCalledTimes(2);
-});
-
-it("closes the mobile drawer when opening a thread, the Sandboxes stub, or a footer icon", async () => {
-  const { onMobileClose: closeOnOpenThread } = await render(
-    [thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" })],
-    { "demo-a1b2": sandbox("demo-a1b2") },
-    { mobileOpen: true }
+/** `Sidebar` reads the phone breakpoint itself via `matchMedia`, independent of the fixed 1024px
+ * width happy-dom reports for `window.innerWidth` -- so a test picks phone-vs-desktop behavior by
+ * stubbing this, not by resizing anything. */
+function stubPhoneWidth(phone: boolean): void {
+  vi.stubGlobal(
+    "matchMedia",
+    (query: string) =>
+      ({
+        matches: phone,
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }) as unknown as MediaQueryList
   );
-  await act(async () => row("First thread").click());
-  expect(closeOnOpenThread).toHaveBeenCalledOnce();
+}
+
+it("applies the open class only while open is true", async () => {
+  await render([], {}, { open: false });
+  expect(container.querySelector("nav.agentplane-sidebar")?.className).not.toContain("agentplane-sidebar-open");
 
   await act(async () => root.unmount());
   container.remove();
-  const { onMobileClose: closeOnFooter } = await render([], {}, { mobileOpen: true });
-  await act(async () => footerButton("Sandboxes").click());
-  expect(closeOnFooter).toHaveBeenCalledOnce();
+  await render([], {}, { open: true });
+  expect(container.querySelector("nav.agentplane-sidebar")?.className).toContain("agentplane-sidebar-open");
+});
+
+it("closes on its own close button regardless of width, but on Escape only at phone width", async () => {
+  stubPhoneWidth(false);
+  const { onClose: desktopClose } = await render([], {}, { open: true });
+  await act(async () => closeButton().click());
+  expect(desktopClose).toHaveBeenCalledOnce();
+  await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+  expect(desktopClose).toHaveBeenCalledOnce();
+
+  await act(async () => root.unmount());
+  container.remove();
+  stubPhoneWidth(true);
+  const { onClose: phoneClose } = await render([], {}, { open: true });
+  await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+  expect(phoneClose).toHaveBeenCalledOnce();
+});
+
+it("closes the phone-width overlay, but leaves the desktop column open, on opening a thread, the Sandboxes stub, or a footer icon", async () => {
+  for (const phone of [true, false]) {
+    stubPhoneWidth(phone);
+    const { onClose: closeOnOpenThread } = await render(
+      [thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" })],
+      { "demo-a1b2": sandbox("demo-a1b2") },
+      { open: true }
+    );
+    await act(async () => row("First thread").click());
+    expect(closeOnOpenThread).toHaveBeenCalledTimes(phone ? 1 : 0);
+
+    await act(async () => root.unmount());
+    container.remove();
+    const { onClose: closeOnFooter } = await render([], {}, { open: true });
+    await act(async () => footerButton("Sandboxes").click());
+    expect(closeOnFooter).toHaveBeenCalledTimes(phone ? 1 : 0);
+
+    await act(async () => root.unmount());
+    container.remove();
+  }
 });

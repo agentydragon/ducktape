@@ -57,7 +57,7 @@ def test_configured_groups_and_actions_are_discoverable() -> None:
     catalog = _catalog()
 
     assert isinstance(catalog.groups["github"].executor, McpExecutorBinding)
-    views = {view.key: view for view in catalog.group_views()}
+    views = {view.key: view for view in catalog.group_views(with_detail=False)}
 
     assert views.keys() == {"github", "calendar"}
     github = views["github"]
@@ -74,7 +74,7 @@ def test_configured_groups_and_actions_are_discoverable() -> None:
 def test_executor_backend_configuration_never_reaches_a_view() -> None:
     catalog = _catalog()
 
-    rendered = "\n".join(view.model_dump_json() for view in catalog.group_views())
+    rendered = "\n".join(view.model_dump_json() for view in catalog.group_views(with_detail=False))
 
     assert "github-mcp-account" not in rendered
     assert "github-mcp.internal.example" not in rendered
@@ -93,6 +93,20 @@ def test_server_id_must_match_its_own_group_key() -> None:
 
     with pytest.raises(ValidationError, match="not-github"):
         ActionCatalog(groups=yaml.safe_load(bad_yaml))
+
+
+def test_a_direct_tool_group_key_cannot_hold_the_name_separator() -> None:
+    group = yaml.safe_load(
+        textwrap.dedent("""
+            title: x
+            description: x
+            executor: {kind: mcp, description: x}
+            """)
+    )
+    # The key is fine where no tool name is split at it.
+    ActionCatalog(groups={"test__group": group})
+    with pytest.raises(ValidationError, match="must not contain"):
+        ActionCatalog.model_validate({"groups": {"test__group": {**group, "direct_tools": ["act"]}}})
 
 
 def test_namespaced_action_lookup_resolves_the_configured_definition() -> None:

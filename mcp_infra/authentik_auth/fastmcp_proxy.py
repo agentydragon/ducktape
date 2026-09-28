@@ -113,7 +113,7 @@ class RetryableRefreshOIDCProxy(OIDCProxy):
     its refresh token is revoked — claude.ai correctly treats it as terminal, flips
     the connector to "Reconnect", and never retries. A single Authentik restart
     (503) or DNS blip therefore permanently killed connectors
-    (see debug/2026_06_claude_ai_connector_deauth.md).
+    (see cluster/debug/2026_06_claude_ai_connector_deauth.md).
 
     This subclass retries transient upstream failures briefly, and if they persist
     answers HTTP 503 + Retry-After (via Starlette's default HTTPException handler)

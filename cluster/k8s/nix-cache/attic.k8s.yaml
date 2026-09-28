@@ -33,19 +33,9 @@ metadata:
   namespace: nix-cache
 spec:
   affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - preference:
-            matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-          weight: 100
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
-    tolerations:
-      - effect: NoSchedule
-        key: node-role.kubernetes.io/control-plane
-        operator: Exists
+    podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname
   bootstrap:
     initdb:
@@ -82,14 +72,36 @@ spec:
   name: attic
 ---
 apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: nix-cache
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: nix-cache
+    - group: seaweed.seaweedfs.com
+      kind: S3Identity
+      namespace: nix-cache
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: nix-cache
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
   name: attic
-  namespace: seaweedfs
+  namespace: nix-cache
 spec:
   reclaimPolicy: Retain
   seaweedRef:
     name: seaweedfs
+    namespace: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
@@ -108,29 +120,9 @@ spec:
     name: attic-s3-credentials
     secretKeyField: AWS_SECRET_ACCESS_KEY
 ---
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: nix-cache
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: nix-cache
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: nix-cache
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   name: attic
   namespace: nix-cache
 spec:

@@ -3,33 +3,17 @@ and the background controller's extra RoleBinding read access."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-)
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "kyverno"
-OUTPUT_DIR = "cluster/k8s/kyverno/app"
+OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/app"
 _FLUX_NAMESPACE = "flux-system"
-_CONTROL_PLANE = "node-role.kubernetes.io/control-plane"
 
 
 def _values() -> dict[str, object]:
@@ -48,8 +32,8 @@ def _values() -> dict[str, object]:
             # admission controller is the acute one: its webhook gates API writes, so
             # losing it is a cluster-wide outage rather than degraded reporting.
             "priorityClassName": "system-cluster-critical",
-            "nodeSelector": {_CONTROL_PLANE: ""},
-            "tolerations": [{"key": _CONTROL_PLANE, "operator": "Exists", "effect": "NoSchedule"}],
+            "nodeSelector": {node_scheduling.CONTROL_PLANE_TAINT_KEY: ""},
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
             # Soft anti-affinity: prefer spreading replicas across control-plane nodes.
             # Replaces topologySpreadConstraints whose labelSelector didn't match
             # (pods have instance=kyverno-kyverno, not instance=kyverno), causing
@@ -139,35 +123,19 @@ def _values() -> dict[str, object]:
 def chart(app: App) -> Chart:
     chart = Chart(app, "kyverno", disable_resource_name_hashes=True)
     namespace = k8s.KubeNamespace(chart, "namespace", metadata=k8s.ObjectMeta(name=NAME))
-    repository = HelmRepository(
+    helm_release(
         chart,
-        "repository",
-        metadata=metadata(NAME, _FLUX_NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://kyverno.github.io/kyverno/"),
-    )
-    HelmRelease(
-        chart,
-        "release",
-        metadata=metadata(NAME, _FLUX_NAMESPACE),
-        spec=HelmReleaseSpec(
-            target_namespace=namespace.name,
-            interval="15m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="kyverno",
-                    # MODULE.bazel pins the kyverno.io CRD bindings to this chart's appVersion.
-                    # renovate: datasource=helm depName=kyverno registryUrl=https://kyverno.github.io/kyverno/
-                    version="3.9.1",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values=_values(),
-        ),
+        NAME,
+        _FLUX_NAMESPACE,
+        repository=https_helm_repository(chart, NAME, _FLUX_NAMESPACE, url="https://kyverno.github.io/kyverno/"),
+        chart="kyverno",
+        # MODULE.bazel pins the kyverno.io CRD bindings to this chart's appVersion.
+        # renovate: datasource=helm depName=kyverno registryUrl=https://kyverno.github.io/kyverno/
+        version="3.9.1",
+        interval="15m",
+        install=RETRY_FAILED_INSTALL,
+        target_namespace=namespace.name,
+        values=_values(),
     )
     return chart
 
@@ -202,66 +170,17 @@ def background_controller_rbac_chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart, background_controller_rbac_chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(
-            resources=["kyverno.k8s.yaml", "clusterrole-background-controller-rolebindings.k8s.yaml"]
-        ),
-    )
-
-
-def kyverno(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
+def kyverno(chart: Chart, directory: RenderedDirectory) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m0s",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="10m0s",
-            wait=True,
-            # No dependsOn: kyverno manages its own TLS via internal certmanager-controller
-            # (certManager.enabled: false in the values above). No cert-manager dependency.
-            #
-            # Health check strategy — all three must pass before downstream dependsOn fires:
-            #
-            # The critical gate is the VWC check. With internal cert management, kyverno's
-            # webhook-controller creates the VWC dynamically ONLY AFTER the TLS server is
-            # ready (see the certManager comment above for source code references). So VWC
-            # existence is a true readiness signal — it means the webhook can serve HTTPS.
-            #
-            # Note: Flux/kstatus treats VWC as "unknown" status = pass (flux2#4346), so
-            # this check only verifies existence, not deep health. But with internal certs
-            # that's sufficient — the VWC won't exist until the webhook is operational.
-            # With certManager.enabled=true, this check would be useless because the Helm
-            # chart doesn't template the VWC (it's always dynamic), but the Deployment
-            # readiness probe would pass before the VWC is created, creating a race.
-            #
-            # wait: true is critical — without it, dependsOn only waits for YAML to be
-            # applied, not for resources to be healthy.
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=_FLUX_NAMESPACE
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apiextensions.k8s.io/v1",
-                    kind="CustomResourceDefinition",
-                    name="clusterpolicies.kyverno.io",
-                    namespace="",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="kyverno-admission-controller", namespace=NAME
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="admissionregistration.k8s.io/v1",
-                    kind="ValidatingWebhookConfiguration",
-                    name="kyverno-resource-validating-webhook-cfg",
-                    namespace="",
-                ),
-            ],
-        ),
+        directory,
+        interval="10m0s",
+        timeout="10m0s",
+        # No dependsOn: kyverno manages its own TLS via internal certmanager-controller
+        # (certManager.enabled: false in the values above). No cert-manager dependency.
+        #
+        # Gotcha: `wait` does not cover the resource VWC. kyverno's webhook-controller
+        # creates it at runtime (see the certManager note above), so it is not an
+        # applied object and dependents can reach admission before it exists.
     )

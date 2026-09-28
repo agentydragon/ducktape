@@ -1,20 +1,22 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespace.yaml
+  # keep-sorted start
+  - cnp-dispatcher.yaml
+  - cnp-workers-litellm.yaml
+  - credentials.yaml
   # Role passwordSecrets before the Cluster that references them.
   - db-role-secrets.yaml
-  - postgres-cluster.yaml
   - dispatcher-database.yaml
-  - litellm-deployment.yaml
-  - litellm-service.yaml
-  - cnp-workers-litellm.yaml
-  - serviceaccount.yaml
-  - rbac-zone-zai.yaml
-  - credentials.yaml
   - dispatcher-deployment.yaml
   - dispatcher-service.yaml
-  - cnp-dispatcher.yaml
+  - litellm-deployment.yaml
+  - litellm-service.yaml
+  - namespace.yaml
+  - postgres-cluster.yaml
+  - rbac-zone-zai.yaml
+  - serviceaccount.yaml
+  # keep-sorted end
 configMapGenerator:
   - name: workers-litellm-config
     namespace: haku-dispatch

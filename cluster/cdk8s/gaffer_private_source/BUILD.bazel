@@ -9,7 +9,8 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
     ],
 )
@@ -20,9 +21,8 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:generation",
-        "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/flux:gitrepository",
-        "//cluster/cdk8s/crd_bindings/flux:imageupdateautomation",
+        "//cluster/cdk8s:image_automation",
+        "//cluster/cdk8s:manifest_roots",
         "@pypi//cdk8s",
     ],
 )

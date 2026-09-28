@@ -10,8 +10,8 @@ base branch.
 
 Shared CLI workflows land here for gate and `--dry-run` behavior:
 
-@references/cli.md
-@references/spec_editing.md
+@references/docs/cli.md
+@references/docs/spec_editing.md
 
 Read other bundled references as needed:
 
@@ -61,6 +61,10 @@ resolution. If the design is wrong, report it.
   of removals.
 - Two branches changing the same existing member semantics: stop and report a
   real conflict.
+- One branch renaming an export while another adds a template naming it: a
+  semantic conflict git does not show, since templates refer to entities by
+  export name. Run source-only `spec validate` on the merged spec and fix the
+  template on the renaming side.
 - Generated JS conflicts should be resolved by the canonical regen command,
   not by hand-editing generated output.
 

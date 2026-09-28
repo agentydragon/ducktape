@@ -42,17 +42,18 @@ the parametrized `model` fixture is the only place that knows the model API dial
 fixtures live in `testing/`: `scripted_model.py` is the neutral vocabulary (`Text`, `Reasoning`,
 `ShellCall`, and the request markers), `claude_model.py` and `codex_model.py` speak the two
 dialects, and `launches.py` wires the pinned binaries to a scripted upstream. `test_restart.py`
-runs the runner as its own process so a crash takes its harnesses with it. `test_image.py` runs
-the built runner image as a container (Docker, so on RBE) through one scripted turn per harness;
-`test_image_packaging.py` inspects its OCI layout for the harnesses, their tools, and the
-entrypoint.
+runs the runner as its own process so a crash takes its harnesses with it. No test here runs the
+image (<image.nix>), which carries nixpkgs' harnesses rather than these pinned ones; its header
+says what to run after a bump.
 
 `test_journal.py` gates real SQLite commits and injects failure/cancellation before or after commit,
 checking transaction visibility, atomic coalesced receipts, immutable ids, and replay without cursor
-reuse. `test_journal_process.py` kills a real writer and replays its exact published prefix from a
-new process; `test_restart.py` also exercises the real runner and both native harnesses. These are
-not physical power-loss tests. `test_store.py` retains a separate fsync-boundary storage image for
-session metadata and directory discovery.
+reuse. `test_session.py` drives the stdout reader with a scripted process: a burst commits once, a
+lone line does not wait for more, and nothing is written to the harness or handed to a request
+before the frames it follows commit. `test_journal_process.py` kills a real writer and replays its
+exact published prefix from a new process; `test_restart.py` also exercises the real runner and
+both native harnesses. These are not physical power-loss tests. `test_store.py` retains a separate
+fsync-boundary storage image for session metadata and directory discovery.
 
 ## SQLite storage
 
@@ -69,6 +70,18 @@ supervisor terminates and reaps the native harness process group while retaining
 the replacement cannot start until native work is fenced. A child that remains in the group keeps
 the inherited lock even after its harness leader exits. See <SPEC.md#durability-and-restart> for
 the supported-storage and escaped-process boundary.
+
+The stdout reader commits in groups (`Journal.batch`): the lines one pipe read delivered and the
+Events derived from them share a transaction, so a burst of output costs one commit rather than one
+per Event. It commits early before writing to the harness, so the record precedes the write, and
+before waiting on the session lock.
+
+The adapter's `on_frame`, called by the reader in frame order, records every Event derived from the
+harness's output, and each such Event names its Native sources. A command whose effect a reply
+proves (Codex's `turn/start`, Claude's `set_model`) keeps what the reply means under the request's
+native id before sending it, and `on_frame` records the effect when the reply arrives. The requester
+still waits for the reply, only to dispatch normal commands one at a time; it gets the reply once
+the batch recording it and its translation commits.
 
 Keep `journal.sqlite` and any recovery journal together on the surviving state volume. The checked-in
 staging/testing templates mount `/state` from `local-path-ovh-hdd` PVCs. Network filesystems

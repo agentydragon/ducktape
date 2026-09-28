@@ -1,4 +1,4 @@
-"""HTTP contract for unified grant inspection and revocation."""
+"""HTTP contract for grant inspection and revocation."""
 
 from __future__ import annotations
 
@@ -19,17 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
 from haku.console.conftest import DEFAULT_ACCESS_PROFILE_ID, default_agent_binding, insert_approved_tool_call
 from haku.console.grants.catalog import GrantCatalog
-from haku.console.grants.http.models import (
-    GrantSpec as HttpGrantSpec,
-    HttpMethod,
-    HttpOrigin,
-    HttpRequestCoverage,
-    HttpScheme,
-)
-from haku.console.grants.http.service import GrantService as HttpGrantService
 from haku.console.grants.kubernetes.authorization import KubernetesSubjectAccessReviewClient
 from haku.console.grants.kubernetes.models import Grant, NamespacesGrantScope, Rule
-from haku.console.grants.kubernetes.service import GrantService as KubernetesGrantService
+from haku.console.grants.kubernetes.service import GrantService
 from haku.console.grants.principal import AgentGrantPrincipal
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
@@ -44,8 +36,7 @@ class _Console:
 
     client: TestClient
     sessions: async_sessionmaker[AsyncSession]
-    grants: KubernetesGrantService
-    http_grants: HttpGrantService
+    grants: GrantService
     agent_id: UUID
     binding_id: UUID
 
@@ -61,13 +52,12 @@ def console(make_operator_client: Callable[..., Any]) -> Iterator[_Console]:
     with make_operator_client(operator_external_user_key="default-op") as client:
         app = cast(FastAPI, client.app)
         sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
-        kubernetes_grants = cast(KubernetesGrantService, app.state.kubernetes_grants)
+        kubernetes_grants = cast(GrantService, app.state.kubernetes_grants)
         # The regular app fixture has no Kubernetes config. Install the production catalog with a
         # config-file authority so this route exercises both catalog sources without duplicating
         # its database projection in a test double.
         app.state.grant_catalog = GrantCatalog(
             kubernetes_grants=kubernetes_grants,
-            http_grants=cast(HttpGrantService, app.state.http_grants),
             kubernetes_config=KubernetesAuthorizationConfig(
                 subjects_by_access_profile={DEFAULT_ACCESS_PROFILE_ID: _SUBJECT}
             ),
@@ -76,12 +66,7 @@ def console(make_operator_client: Callable[..., Any]) -> Iterator[_Console]:
         assert client.portal is not None
         agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
         yield _Console(
-            client=client,
-            sessions=sessions,
-            grants=kubernetes_grants,
-            http_grants=cast(HttpGrantService, app.state.http_grants),
-            agent_id=agent_id,
-            binding_id=binding_id,
+            client=client, sessions=sessions, grants=kubernetes_grants, agent_id=agent_id, binding_id=binding_id
         )
 
 
@@ -104,35 +89,6 @@ def _seed_grant(console: _Console) -> Grant:
             rules=(Rule(api_groups={""}, resources={"pods/log"}, verbs={"get"}),),
             expires_at=datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=25),
         )
-
-    return console.call(create)
-
-
-def _seed_http_grant(console: _Console) -> UUID:
-    source_tool_call_id = console.call(
-        partial(
-            insert_approved_tool_call,
-            console.sessions,
-            binding_id=console.binding_id,
-            now=datetime.datetime.now(datetime.UTC),
-            server_id="grants",
-        )
-    )
-
-    async def create() -> UUID:
-        (grant,) = await console.http_grants.create_grants(
-            owner_agent_id=console.agent_id,
-            grant_principal=AgentGrantPrincipal(agent_id=console.agent_id),
-            source_tool_call_id=source_tool_call_id,
-            grants=(
-                HttpGrantSpec(
-                    origin=HttpOrigin(scheme=HttpScheme.HTTPS, host="grocy.example", port=443),
-                    coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})),
-                ),
-            ),
-            expires_at=datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=25),
-        )
-        return grant.grant_id
 
     return console.call(create)
 
@@ -198,19 +154,6 @@ def test_revoke_accepts_a_blank_reason(console: _Console) -> None:
     assert response.status_code == 200
     assert response.json()["grants"][0]["validity"]["status"] == "ended"
     assert response.json()["grants"][0]["validity"]["end_reason"] is None
-
-
-def test_lists_http_database_grants_through_the_generic_route(console: _Console) -> None:
-    grant_id = _seed_http_grant(console)
-
-    response = console.client.get("/api/grants")
-
-    assert response.status_code == 200
-    assert {
-        record["source"]["id"]
-        for record in response.json()["grants"]
-        if record["source"]["kind"] == "database" and record["coverage"]["kind"] == "http"
-    } == {str(grant_id)}
 
 
 def test_lists_one_exact_declared_principal_when_requested(console: _Console) -> None:

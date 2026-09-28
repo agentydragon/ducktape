@@ -79,14 +79,13 @@ use crate::{
 /// fails to prove. Yields nothing when neither route singles the target out (a
 /// genuine alpha-duplicate); the caller reports it as debt, never a full-AST pin.
 fn read_off_candidates(
-    index: &ChunkSelectorIndex,
+    index: &ChunkSelectorIndex<'_>,
     decl: &IndexedDeclaration,
     target: &SynthesizedTargetBinding,
     render_with: &impl Fn(&BTreeSet<AnchorSpan>) -> Result<String>,
     limit: usize,
 ) -> Result<Vec<SpecializedSelector>> {
     let item = index
-        .parsed
         .module
         .body
         .get(decl.body_idx)
@@ -198,7 +197,7 @@ fn read_off_candidates(
 }
 
 fn finish_minimized_selector(
-    index: &ChunkSelectorIndex,
+    index: &ChunkSelectorIndex<'_>,
     decl: &IndexedDeclaration,
     target: &SynthesizedTargetBinding,
     source: String,
@@ -229,7 +228,7 @@ fn finish_minimized_selector(
 /// none of the windows prove — the target then stays name-pinned as residual
 /// debt, never a full-AST pin.
 fn render_via_neighbor_context(
-    index: &ChunkSelectorIndex,
+    index: &ChunkSelectorIndex<'_>,
     decl: &IndexedDeclaration,
     target: &SynthesizedTargetBinding,
     target_scaffold: &str,
@@ -238,7 +237,7 @@ fn render_via_neighbor_context(
         .shape_index
         .context_neighbor_anchor_candidates(decl.body_idx)
     {
-        let Some(neighbor_item) = index.parsed.module.body.get(candidate.neighbor_body_idx) else {
+        let Some(neighbor_item) = index.module.body.get(candidate.neighbor_body_idx) else {
             continue;
         };
         let neighbor_kept = kept_spans_for_anchor_set(neighbor_item, &candidate.anchor_set);

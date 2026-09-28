@@ -1,7 +1,11 @@
 # Terminology Rename Plan
 
 Remove "factor" terminology in favor of precise graph-theoretic and
-descriptive names.
+descriptive names. "Factorize" is overloaded today: factorization/assembly
+produces the authoritative owner partition (`factor_assembly.rs`), while
+`peel/factorize.rs` produces advisory planner proposals from the serialized
+atomic DAG (surfaced as `debundle modules propose`). Until the rename lands,
+docs say which one they mean.
 
 ## Graph Vocabulary
 
@@ -70,15 +74,13 @@ Plus one mapping and one heuristic:
 
 ## Docs to Update
 
-- `docs/design.md`: ~15 references to `ChunkFactorization`, `FactorizationReport`, `validate_factorization`, `factor_assembly`
-- `TODO.md`: `peel/factorize.rs` reference
-- `README.md`: any `ChunkFactorization` references
+- `docs/design.md`: references to `ChunkFactorization`, `FactorizationReport`, `validate_factorization`, `factor_assembly`
 - `x/graph_planner_factorization.md`: rename or update
 
 ## Output Schema (JSON field renames)
 
 These are external API — consumers parse these JSON files. The rename
-will be an atomic cutover: update `ducktape` and `the private downstream repo`
+will be an atomic cutover: update Ducktape and the downstream consumers
 together in one commit span, no compatibility shims.
 
 `owner_graph.json` (from `OwnerGraphReport`):

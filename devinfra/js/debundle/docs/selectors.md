@@ -46,11 +46,10 @@ Default to this ladder when writing or repairing selectors:
    unique, use the hole form.
 5. When the entity has no distinctive shape of its own — a bare delegator, one
    of several byte-identical helper copies, an empty subclass, a re-export
-   alias — pin it by a **relation** to something already pinned. See
-   "Relational selectors" below. A relation to a stable anchor is stronger than
-   a name pin and stronger than borrowing an unrelated neighbour's shape.
+   alias — pin it through another pinned entity (tier 4 of § Anchor strength
+   tiers).
 6. Use `selector.binding.name` only for already-stable semantic names or as
-   temporary debt that will be visible in `debundle spec selector-debt`.
+   selector debt (§ Selector debt).
 
 The minimizer is a suggester and uniqueness oracle, not the final authority on
 forward compatibility. It can rank concise candidates and prove what they match
@@ -66,8 +65,12 @@ distinctive — and for shapeless delegators, empty subclasses, registry targets
 and bundler-helper copies it never is — pin the entity by an invariant
 **relation** instead. These live under `members[].selector` and are one-of with
 `binding`; each names another spec member by its readable `name:`, written
-`@Name` in prose, and resolves through the owner graph in the same joint solve
-as every other selector.
+`@Name` in prose. They match through facts derived from the chunk, not through
+templates (<../SPEC.md> § Matching), in the same joint program as every other
+selector. An anchor names a member anywhere in the chunk, except that
+`intrinsic_alias`'s `referenced_by` names a member of the entity's own module:
+esbuild emits a byte-identical helper per module, so the helpers' readable names
+repeat across modules.
 
 | Selector              | Pins the entity that…                                       | Required fields               |
 | --------------------- | ----------------------------------------------------------- | ----------------------------- |
@@ -78,7 +81,7 @@ as every other selector.
 | `makes_decorate_call` | is the callee decorating `@class`                           | `class`                       |
 | `intrinsic_alias`     | aliases `Object.<property>` and is read by `@referenced_by` | `property`, `referenced_by`   |
 
-All six take an optional `kind:` (`function_declaration`, `class_declaration`,
+Each takes an optional `kind:` (`function_declaration`, `class_declaration`,
 `variable_declarator`, …) to disambiguate when several owners stand in the
 relation.
 
@@ -106,8 +109,13 @@ intrinsic method names — while adjacency to an unrelated declaration is exactl
 what a rebuild destroys.
 
 What the relational language cannot express yet: negation, counting/uniqueness,
-transitive reachability, combining a shape and a relation for one target, and
-referring to `@Name` from inside a `source_match` body. Those are open
+transitive reachability, a relational selector kind combined with a shape in
+one member, and sub-owner targets. A template can already name a relationally
+pinned entity (§ Naming other entities), which covers "has this shape and
+references @Anchor".
+Selectors resolve at owner granularity (one top-level statement), so a property
+inside one declaration's object literal — a getter of a returned accessor
+object — is not a place of its own; pin the whole declaration. Those are open
 selector-language work.
 
 ## Matcher pitfalls
@@ -119,38 +127,89 @@ selector-language work.
 - **A single-statement `else`/`if`/`for`/while body takes `STMT`, not `STMT_LIST`**;
   `STMT_LIST` is for a block body.
 - **The declaration keyword must match the source** (`var`/`let`/`const`).
-- **`match-selector` proves only today's single-selector match.** A holed
-  skeleton like `function X(ANYTHING){STMT_LIST}` matches 1000+ nodes because
-  `X` and the params alpha-rename; uniqueness must come from a kept literal or
-  rich signature, not a holed shape. A unique `match-selector` result proves the
-  candidate's current chunk match, not forward compatibility or whole-spec
-  safety. The byte-identical regen gate (e.g. `regen_js_test`) is the
-  authoritative arbiter of whether a selector is safe to land.
+- **A free chunk spelling can collide with an export name.** A template that
+  keeps a minified name (`cx()`) references whichever entity is exported as
+  `cx`; if that entity binds elsewhere, the template is `conflict` with it.
+  Write the entity's readable name, or declare the name in the template. An
+  `ambiguous_reference` `invalid` means several other modules export the name.
+- **A holed skeleton is not unique.** `function X(ANYTHING){STMT_LIST}`
+  matches 1000+ nodes because `X` and the params alpha-rename; uniqueness must
+  come from a kept literal or rich signature.
+- **`match-selector` proves only today's match of one selector alone** — not
+  forward compatibility, nor whole-spec safety. The byte-identical regen gate
+  (e.g. `regen_js_test`) is the authoritative arbiter of whether a selector is
+  safe to land.
 
 ## Anchor strength tiers (strongest → weakest)
 
-Anchor a name-pin on the most stable identity available, and hole the mechanism so
-the anchor is identity, not a body photograph:
+Anchor on the entity's identity — what a behavior-preserving refactor keeps and
+a minifier cannot rewrite — and hole the mechanism, so the anchor is identity,
+not a body photograph:
 
-1. **Self-emitted literal** — error/log/event strings, thrown `Error` messages,
-   URL/route prefixes, `Symbol.for("…")`, regex literals. Minifier-immune; strongest.
+1. **Self-emitted literal** — a string the entity emits about itself (a
+   `getName`/`get type` returning its name, `static displayName`, an error
+   `name`/message, an action `type`, an event/route/MIME/i18n/registration key,
+   a log string), a URL/route prefix, `Symbol.for("…")`, a regex literal; or the
+   stable prefix of an otherwise volatile string, via `STR_LITERAL_MATCHING_RE`.
+   Minifier-immune; strongest.
 2. **Rich destructured-param signature** — `{ onOpenCommandLine, onMove, … }`;
    distinctive prop/param names survive minification.
-3. **Stable member/property fingerprint** — `.startSpan`/`.setAttribute`,
-   distinctive option-bag keys or method names.
-4. **Relation to an already-pinned entity** — `cross_ref`, `reads_member`,
-   `member_of_module`, `passed_to_call`, `makes_decorate_call`,
-   `intrinsic_alias`. For boilerplate with no self-identity (esbuild
-   decorate-helper trios, empty subclasses, registry targets) this is the
-   strongest anchor available, because the relation's fields are names the
-   bundler does not rewrite.
+3. **Stable member/property fingerprint** — public member or method names that
+   name behavior (`.startSpan`/`.setAttribute`, `fetchAcl`, `dispatch`), distinctive
+   option-bag keys, API/operation identities (GraphQL op names). Property names
+   are exact anchors, so they help only when the build keeps them.
+4. **Another pinned entity** — a template reference by its readable name
+   (`new Widget(ANYTHING)`, § Naming other entities), a statement that uses an
+   entity with no distinctive body (§ Pinning by use site), or a relational
+   selector (§ Relational selectors). For boilerplate with no self-identity
+   (esbuild decorate-helper trios, empty subclasses, registry targets) this is
+   the strongest anchor available.
 5. **Adjacent-class / sibling-declaration anchor** — a `source_matches[]` entry
    with `DECLARATORS_AFTER` keyed off an adjacent named class. Last resort:
-   adjacency is what a rebuild reorders. Prefer tier 4 when a relation exists.
+   adjacency is what a rebuild reorders. Prefer tier 4 when it applies.
 
-Reject as if stable (leave a name-pin with a `note:` instead): hashed chunk URLs
-(`import("./index-<hash>.js")`), registration-roster / long-body photographs,
-neighbor-borrowed literals, and discriminators only unique deep in a nest.
+Reject as if stable (leave selector debt instead):
+
+- control-flow and body internals — loop/`switch` shape, statement sequences,
+  nested expression trees, registration-roster and long-body photographs;
+- positional or structural shape with no kept value (arity, declaration
+  order), and discriminators unique only deep in a nest;
+- uniqueness borrowed from an unrelated neighbour, including neighbour-borrowed
+  literals;
+- uniqueness that holds only because other selectors claimed the alternatives
+  or named it (`resolved_by: elimination` or `referenced_by`, a warning naming
+  the claimers or referrers): it breaks as soon as one of them moves. `match-selector` resolves a selector alone, so a
+  candidate it proves unique does not have this problem;
+- bare numbers (`0`, `1`), booleans, ubiquitous literals, and a generic object
+  key with its value holed (`{ name: ANYTHING }`);
+- minified identifiers: they alpha-rename, and one spelled like another
+  entity's export name becomes a reference to it (§ Matcher pitfalls);
+- content hashes and generated ids, the most volatile thing in a bundle —
+  hashed CSS-module class names (`Button-module_root__a1b2c3`), hashed chunk or
+  asset URLs (`import("./index-<hash>.js")`, `/static/app.7f3e9c.js`), build-id
+  query params, cache-busting suffixes. Pin the stable prefix and hole or
+  regex-anchor the tail; never the hash.
+
+## Selector debt
+
+A binding with no anchor stable enough to trust keeps its name pin, which
+`debundle spec selector-debt` lists, with an `annotations.<export_name>.note`
+naming the concrete matcher or tooling capability it waits on — per export,
+also for a binding claimed through a grouped `source_matches[]` entry. A
+truthful name pin beats an incidental `source_match` that looks stable and
+isn't. Use `note:`, not `comment:`: `note:` never emits into generated JS, so
+it leaves the output byte-identical.
+
+```yaml
+annotations:
+  ExportName:
+    note: |
+      blocked on Ducktape support for <specific matcher/tooling capability needed here>
+```
+
+Before writing one, check that the selector language of this document — holes,
+references, pinning by use site, relational selectors — cannot already express
+the anchor; a note for a pattern it covers is stale.
 
 ## Bulk conversion loop
 
@@ -169,24 +228,27 @@ For broad old-spec conversion passes, use an automation-first loop:
 
    Module groups are computed after `--min-score` filtering and before
    `--limit`, so they are suitable for choosing high-yield, reviewable peels.
+   The report ranks name-only selectors by how minified the bound name looks,
+   groups `source_match` bodies copied verbatim across claims (the copies a
+   contextual selector should replace), and with
+   `--against <prior-spec-modules>` flags members whose readable `name:` held
+   while their `selector.binding.name` drifted between two spec versions. It reads only the
+   modules tree, so it is a cheap pre-pass.
 
 2. Pick a large but coherent bucket: usually one module, a module-prefix family,
    or an explicit item list produced from the debt JSON. Prefer hundreds of
    related selectors over hand-written one-offs, but keep each patch scoped to
    files a reviewer can reason about.
 3. Run `debundle spec synthesize-selectors` in dry-run JSON mode for that
-   bucket. Use `--item` for explicit export lists when available; current
-   implementations prune item/module filters before scanning unrelated YAML.
+   bucket, with `--item` for explicit export lists when available.
 4. Apply only after the JSON summary shows a useful hit rate and bounded skip
    reasons, and after spot-checking that the proposed selectors are concise
    enough to be forward-compatible. After `--apply`, run `git diff --check`,
    the target regen/gate, and another `selector-debt` summary to measure the
    debt delta.
-5. Treat repeated skip reasons or oververbose generated selectors as Ducktape
-   feature backlog. Do not land broad batches of exact long selectors merely
-   because they pass today's uniqueness proof; add minimization tooling or a
-   narrower supported selector form before spelling large unstable source
-   bodies.
+5. Route repeated skip reasons or oververbose generated selectors to Ducktape
+   as minimization-tooling backlog rather than landing batches of exact long
+   selectors (§ The contract and the ladder).
 
 When several source-backed claims repeat the same multi-declarator selector, run
 `debundle spec selector-debt --source-file <chunk.js> --modules <modules-dir>`.
@@ -207,27 +269,12 @@ debundle spec synthesize-selectors \
 
 Dry-run is the default. Add `--apply` only after inspecting the JSON summary.
 The command builds a per-chunk declaration/binding index, groups requested
-exports that come from the same top-level declaration, renders the simplest
-currently-supported selector form for that group, and then proves uniqueness
-with normal `source_match` resolution. For synthesis work, "simplest" means the
-lowest-cost forward-compatible selector, not a byte-for-byte copy of the
-current source: prefer holes and stable anchors over incidental implementation
-detail whenever uniqueness is preserved. The report includes the matched
-top-level statement index, candidate count, group id, rewritten holes, files
-scanned, members scanned, and a structured skip reason for any item it cannot
-prove.
-
-Treat the generated `match:` body as a draft that still needs selector-quality
-review. Passing the production matcher only proves today's code is addressed;
-it does not prove that exact parameter destructuring, helper call arguments,
-object property values, or nested statement bodies are durable. When dry-run or
-apply output is visibly overpinned, prefer `ANYTHING`, `EXPR`, `ARGS`,
-`STMT_LIST`, `CASE_REST`, or `DECLARATORS`
-minimization where the matcher supports it. If the concise selector cannot be expressed yet, leave
-the binding as selector debt and record a generic minimization gap rather than
-committing a hand-maintained exact long selector.
-
-The first automated forms are intentionally narrow:
+exports that come from the same top-level declaration, renders the lowest-cost
+selector for that group — holes and stable anchors over incidental detail
+wherever uniqueness holds — and proves uniqueness with normal `source_match`
+resolution. The report includes the matched top-level statement index,
+candidate count, group id, rewritten holes, files scanned, members scanned, and
+a structured skip reason for any item it cannot prove. Automated forms:
 
 - single requested function or class declarations become `source_matches[]`
   entries with one binding claim;
@@ -236,14 +283,14 @@ The first automated forms are intentionally narrow:
   runs collapsed to `DECLARATORS_BEFORE`, `DECLARATORS_BETWEEN`, and
   `DECLARATORS_AFTER`.
 
-This is the first indexed subset of the broader minimization problem. Synthesis
-should move toward producing minimized selectors directly: stable initializer
-atoms, object-property keys, callee/member paths, literals, and
-statement/object/argument holes should be used to avoid pinning unimportant
-current code. Apply mode uses targeted text edits so unrelated YAML ordering,
-comments, and neighboring members remain stable; still review the diff because
-generated selectors may expose a missing minimization feature or require a more
-concise hole form before they are worth landing.
+Treat the generated `match:` body as a draft: passing the matcher proves only
+that today's code is addressed. Minimize visibly overpinned output with holes;
+where the concise selector cannot be expressed yet, leave selector debt rather
+than committing an exact long selector.
+
+`--apply` re-emits each changed YAML file whole in the debundler's canonical
+form, dropping `#` comments. Run the repo formatter (`pre-commit` / prettier)
+before reading the diff; the formatted diff shows the semantic change.
 
 ## `source_matches` for stable declarations
 
@@ -258,16 +305,53 @@ source_matches:
 ```
 
 When a dry run spends too long resolving selectors, profile the debundler with
-`perf`, Callgrind, or another sampling profiler. The selector diagnostics report
-keeps selector previews and stable hashes for repair workflows, but production
-resolution no longer has per-selector stderr timing hooks.
+`perf`, Callgrind, or another sampling profiler. Each outcome in the selector
+diagnostics report carries a `selector_preview` for repair workflows.
 
-`source_matches[].match` treats binding/value identifiers in the selector as
-alpha-renamable placeholders while keeping literals, operators, member
-property names, object keys, and AST structure significant. This is useful for
-matching `function(x, y) { return x * z; }` against the same structure after
-minifier parameter names drift. Alpha-equivalent identifier matching is the
-public policy; do not spell an `identifiers` field in YAML.
+Identifiers in the template alpha-rename; literals, operators, member property
+names, object keys and AST structure stay significant (<../SPEC.md>
+§ Matching). There is no `identifiers` field to spell in YAML.
+
+### Naming other entities
+
+A free identifier (used, never declared in the template) that is another
+entity's export name is a **reference**: the template matches only where that
+identifier is the entity's own binding (full rule, including globals:
+<../SPEC.md> § Matching). So once a `Widget` class has a selector,
+
+```yaml
+source_matches:
+  - match: const defaultWidget = new Widget(ANYTHING);
+    bindings:
+      - defaultWidget
+```
+
+claims the instance of that class, not of any class. An entity unique only
+this way is `resolved_by: own_references`; one whose matches all construct
+another class is `conflict` with `Widget`.
+
+References work in every template: `source_match` members, `source_matches[]`
+and anonymous statements, and name any entity, whether pinned by name, shape
+or relation.
+
+### Pinning by use site
+
+An entity with no distinctive body, such as one of several byte-identical
+decorate-helper copies, is pinned through a statement that uses it: list the
+free identifier in `bindings[]`, and the entity is the top-level declaration it
+binds to there (<../SPEC.md> § Matching).
+
+```yaml
+source_matches:
+  - match: 'decorate([mark("A")], Alpha.prototype, "alphaLabel", 1);'
+    bindings:
+      - local: decorate
+        name: alphaDecorator
+```
+
+A claim of free identifiers only leaves the matched statement unclaimed; one
+template may also claim its own declarations beside them
+(`const value = increment(1);` claiming `value` and `increment`).
 
 ## Binding claims and context windows
 
@@ -432,11 +516,6 @@ statement. Prefer a small selector whose distinguished target is the anonymous
 statement itself, using stable literals/properties or relation atoms to make
 that target unique.
 
-At top level in an anonymous-statement selector, `STMT_LIST;` absorbs a run of
-module-body statements that should be used only as skipped context. Treat
-top-level statement-list holes as a compatibility surface: they pin by source
-order, which a rebuild reorders.
-
 Do not solve ambiguity with opaque hashes. A selector should be readable
 enough for a reviewer to audit and edit. When an anonymous statement needs
 nearby declarations to be unique, prefer a relation-shaped selector or a
@@ -490,9 +569,12 @@ position:
 - As an object-literal shorthand property, it absorbs a run of key/value
   properties or spreads:
   `{ required: EXPR, ANYTHING, other: EXPR }`.
-- As a variable declarator (`const ANYTHING = null, selected = ...;`), it
-  behaves like anonymous `DECLARATORS` and absorbs a run of sibling
-  declarators. The initializer is ignored, as with `DECLARATORS`.
+- As a variable declarator whose initializer is a hole
+  (`const ANYTHING = ANYTHING, selected = ...;`), it behaves like
+  anonymous `DECLARATORS` and absorbs a run of sibling declarators. With any
+  other initializer (`const ANYTHING = config.limit;`) it is one declarator
+  whose name is a hole and whose initializer must match, found anywhere among
+  the statement's declarators (minifiers merge consecutive declarations).
 - As a class field with no initializer (`class K { ANYTHING; method() {} }`),
   it absorbs a run of class members.
 
@@ -548,9 +630,8 @@ absorbed sequence for cross-occurrence equality.
   ```
 
 - `STMT_LIST;` (or `STMT_LIST_name;`) in a block body matches any run of
-  statements, including none. Top-level `STMT_LIST` support for anonymous
-  statements is a compatibility surface; avoid new selectors that require
-  source-order indexing.
+  statements, including none. An anonymous-statement selector is one top-level
+  statement; a top-level `STMT_LIST` is rejected.
 - `ANYTHING` (or `ANYTHING_name`) as an object-literal shorthand property
   matches any run of key/value properties or spreads. Use it to pin only the
   stable keys needed to make the selector unique, without overpinning generated
@@ -612,8 +693,10 @@ Either way the match is ordered — it is _not_ an unordered "contains these
 somewhere" match, and pinning `close` before `open` would not match a class
 that defines `open` first. When more than one alignment is possible the
 leftmost is used; that interior choice never changes _which_ declaration
-matched, and a selector that matches more than one top-level declaration is
-still a hard error.
+matched. A selector that matches more than one top-level declaration is
+`ambiguous` unless other entities' claims eliminate the rest, which resolves it
+with `resolved_by: elimination` and a warning, or a template naming it picks
+one, `resolved_by: referenced_by` and a warning (<../SPEC.md> § Outcomes).
 
 For class fingerprints, keep method bodies as loose as the selector permits.
 If a stable method name and order are the real anchors, put `STMT_LIST;` in the

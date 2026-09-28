@@ -8,9 +8,7 @@ Secrets.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     Capability,
     ContainerPort,
@@ -32,72 +30,27 @@ from cdk8s_plus_34 import (
     Service,
     ServicePort,
 )
-from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecBootstrap,
-    ClusterSpecBootstrapInitdb,
-    ClusterSpecMonitoring,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecStorage,
-)
 from constructs import Construct
-from external_secret_store_crds.io.external_secrets import (
-    ClusterSecretStore,
-    ClusterSecretStoreSpec,
-    ClusterSecretStoreSpecConditions,
-    ClusterSecretStoreSpecProvider,
-    ClusterSecretStoreSpecProviderKubernetes,
-    ClusterSecretStoreSpecProviderKubernetesAuth,
-    ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount,
-    ClusterSecretStoreSpecProviderKubernetesServer,
-    ClusterSecretStoreSpecProviderKubernetesServerCaProvider,
-    ClusterSecretStoreSpecProviderKubernetesServerCaProviderType,
-)
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
     ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecSelector,
-)
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import fleet_rules
-from cluster.cdk8s.agentplane import node_scheduling
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
-from cluster.cdk8s.flux import (
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    health_checks,
-    kustomize_kustomization,
-)
+from cluster.cdk8s import cnpg, fleet_rules, node_scheduling, pod_policy
+from cluster.cdk8s.external_secrets.kubernetes_store import ESO_SERVICE_ACCOUNT, cluster_secret_store
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import sops_decryption, write_yaml
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
 NAME = "ntfy"
-OUTPUT_DIR = "cluster/k8s/ntfy"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ntfy"
 NAMESPACE = NAME
 HOSTNAME = "ntfy.allegedly.works"
 PORT = 2586
@@ -117,34 +70,16 @@ def _secret_env(scope: Construct, id: str, *, name: str, key: str) -> EnvValue:
 
 def _secret_store(scope: Construct) -> None:
     """Keep the shared credential source store owned by the ntfy package."""
-    ClusterSecretStore(
+    cluster_secret_store(
         scope,
         "secret-store",
         metadata=ApiObjectMetadata(
             name=SECRET_STORE,
             annotations={"description": "Scoped ESO access to ntfy credentials for ntfy, Flux, and Alertmanager."},
         ),
-        spec=ClusterSecretStoreSpec(
-            conditions=[ClusterSecretStoreSpecConditions(namespaces=[NAMESPACE, "flux-system", "monitoring"])],
-            provider=ClusterSecretStoreSpecProvider(
-                kubernetes=ClusterSecretStoreSpecProviderKubernetes(
-                    auth=ClusterSecretStoreSpecProviderKubernetesAuth(
-                        service_account=ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(
-                            name="external-secrets", namespace="external-secrets-system"
-                        )
-                    ),
-                    remote_namespace=NAMESPACE,
-                    server=ClusterSecretStoreSpecProviderKubernetesServer(
-                        ca_provider=ClusterSecretStoreSpecProviderKubernetesServerCaProvider(
-                            type=ClusterSecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
-                            name="kube-root-ca.crt",
-                            key="ca.crt",
-                            namespace="default",
-                        )
-                    ),
-                )
-            ),
-        ),
+        namespaces=[NAMESPACE, "flux-system", "monitoring"],
+        remote_namespace=NAMESPACE,
+        service_account=ESO_SERVICE_ACCOUNT,
     )
 
 
@@ -153,9 +88,9 @@ def _auth_external_secret(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "auth-external-secret",
-        metadata=metadata(
-            _AUTH_SECRET,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_AUTH_SECRET,
+            namespace=NAMESPACE,
             annotations={
                 "description": "Derives ntfy bcrypt users and declarative tokens from SOPS values.",
                 # Sprig bcrypt uses a fresh salt on every render. Keep this ExternalSecret
@@ -164,49 +99,28 @@ def _auth_external_secret(scope: Construct) -> None:
                 "ntfy.ducktape.io/auth-generation": "1",
             },
         ),
-        spec=ExternalSecretSpec(
-            refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name=SECRET_STORE, kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE
-            ),
-            target=ExternalSecretSpecTarget(
-                name=_AUTH_SECRET,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=ExternalSecretSpecTargetTemplate(
-                    engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
-                    type="Opaque",
-                    data={
-                        "NTFY_AUTH_USERS": (
-                            '{{ htpasswd "alertmanager" .alertmanager_password "bcrypt" }}:user,'
-                            '{{ htpasswd "android" .android_password "bcrypt" }}:user'
-                        ),
-                        "NTFY_AUTH_TOKENS": (
-                            "alertmanager:{{ .alertmanager_token }}:alertmanager,android:{{ .android_token }}:android"
-                        ),
-                    },
+        refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
+        secret_store_ref=SecretStoreRef.cluster(SECRET_STORE),
+        data=[
+            remote_data(_AUTH_SOURCE_SECRET, "alertmanager-password", secret_key="alertmanager_password"),
+            remote_data(_AUTH_SOURCE_SECRET, "alertmanager-token", secret_key="alertmanager_token"),
+            remote_data(_AUTH_SOURCE_SECRET, "android-password", secret_key="android_password"),
+            remote_data(_AUTH_SOURCE_SECRET, "android-token", secret_key="android_token"),
+        ],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=ExternalSecretSpecTargetTemplate(
+            engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
+            type="Opaque",
+            data={
+                "NTFY_AUTH_USERS": (
+                    '{{ htpasswd "alertmanager" .alertmanager_password "bcrypt" }}:user,'
+                    '{{ htpasswd "android" .android_password "bcrypt" }}:user'
                 ),
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key="alertmanager_password",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(
-                        key=_AUTH_SOURCE_SECRET, property="alertmanager-password"
-                    ),
+                "NTFY_AUTH_TOKENS": (
+                    "alertmanager:{{ .alertmanager_token }}:alertmanager,android:{{ .android_token }}:android"
                 ),
-                ExternalSecretSpecData(
-                    secret_key="alertmanager_token",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key=_AUTH_SOURCE_SECRET, property="alertmanager-token"),
-                ),
-                ExternalSecretSpecData(
-                    secret_key="android_password",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key=_AUTH_SOURCE_SECRET, property="android-password"),
-                ),
-                ExternalSecretSpecData(
-                    secret_key="android_token",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key=_AUTH_SOURCE_SECRET, property="android-token"),
-                ),
-            ],
+            },
         ),
     )
 
@@ -216,64 +130,37 @@ def _alertmanager_webhook_secret(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "alertmanager-webhook-external-secret",
-        metadata=metadata(
-            "alertmanager-ntfy-webhook",
-            "monitoring",
+        metadata=ApiObjectMetadata(
+            name="alertmanager-ntfy-webhook",
+            namespace="monitoring",
             annotations={
                 "description": "Alertmanager bearer credential for the self-hosted ntfy instance",
                 "ntfy.ducktape.io/auth-generation": "1",
             },
         ),
-        spec=ExternalSecretSpec(
-            refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name=SECRET_STORE, kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE
-            ),
-            target=ExternalSecretSpecTarget(
-                name="alertmanager-ntfy-webhook",
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=ExternalSecretSpecTargetTemplate(
-                    engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
-                    type="Opaque",
-                    data={"address": f"https://{HOSTNAME}/alerts", "token": "{{ .alertmanager_token }}"},
-                ),
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key="alertmanager_token",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key=_AUTH_SOURCE_SECRET, property="alertmanager-token"),
-                )
-            ],
+        refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
+        secret_store_ref=SecretStoreRef.cluster(SECRET_STORE),
+        data=[remote_data(_AUTH_SOURCE_SECRET, "alertmanager-token", secret_key="alertmanager_token")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=ExternalSecretSpecTargetTemplate(
+            engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
+            type="Opaque",
+            data={"address": f"https://{HOSTNAME}/alerts", "token": "{{ .alertmanager_token }}"},
         ),
     )
 
 
 def _database(scope: Construct) -> None:
-    Cluster(
+    cnpg.cluster(
         scope,
         "database",
-        metadata=metadata(_DATABASE_CLUSTER, NAMESPACE),
-        spec=ClusterSpec(
-            instances=2,
-            # renovate: datasource=docker
-            image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
-                )
-            ),
-            affinity=ClusterSpecAffinity(
-                enable_pod_anti_affinity=True,
-                pod_anti_affinity_type="required",
-                node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
-                topology_key="kubernetes.io/hostname",
-                node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
-            ),
-            storage=ClusterSpecStorage(storage_class="local-path-ovh-hdd", size="2Gi"),
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-            bootstrap=ClusterSpecBootstrap(initdb=ClusterSpecBootstrapInitdb(database=NAME, owner=NAME)),
-        ),
+        name=_DATABASE_CLUSTER,
+        namespace=NAMESPACE,
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        storage_class="local-path-ovh-hdd",
+        size="2Gi",
+        initdb=cnpg.same_owner_initdb(NAME),
     )
 
 
@@ -295,21 +182,25 @@ class Ntfy(Construct):
         _alertmanager_webhook_secret(self)
         deployment = self._add_deployment()
         self._add_service(deployment)
-        https_route(self, "httproute", metadata=metadata("ntfy", NAMESPACE), hostname=HOSTNAME, backend=NAME, port=PORT)
+        https_route(
+            self,
+            "httproute",
+            metadata=ApiObjectMetadata(name="ntfy", namespace=NAMESPACE),
+            hostnames=[HOSTNAME],
+            backend=NAME,
+            port=PORT,
+        )
         self._add_service_monitor()
 
     def _add_deployment(self) -> Deployment:
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                NAME,
-                NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=NAMESPACE,
                 labels=_LABELS,
-                annotations={
-                    "description": "Single ntfy server backed by the two-instance ntfy PostgreSQL cluster.",
-                    "reloader.stakater.com/auto": "true",
-                },
+                annotations={"description": "Single ntfy server backed by the two-instance ntfy PostgreSQL cluster."},
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=1,
@@ -351,14 +242,14 @@ class Ntfy(Construct):
                 read_only_root_filesystem=True,
             ),
         )
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
+        pod_policy.harden(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
         Service(
             self,
             "service",
-            metadata=metadata(NAME, NAMESPACE, labels=_LABELS),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_LABELS),
             selector=deployment,
             ports=[ServicePort(name="http", port=PORT, target_port=PORT, protocol=Protocol.TCP)],
         )
@@ -367,11 +258,9 @@ class Ntfy(Construct):
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=metadata(NAME, NAMESPACE, labels={"release": "kube-prometheus-stack", **_LABELS}),
-            spec=ServiceMonitorSpec(
-                selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-                endpoints=[ServiceMonitorSpecEndpoints(port="http", path="/metrics")],
-            ),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_LABELS),
+            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
+            endpoints=[Endpoint.plain(port="http")],
         )
 
 
@@ -384,52 +273,23 @@ def chart(app: App) -> Chart:
 
 def ntfy(
     flux_chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    root: Path,
+    directory: RenderedDirectory,
     cnpg: Kustomization,
-    external_secrets_config: Kustomization,
-    gateway: Kustomization,
+    external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
-    """Generate ntfy's namespace, CNPG cluster, auth ESO, and app resources.
-
-    The SOPS source Secret remains hand-written in this flat directory; the generated
-    Kustomization lists them and therefore enables Flux SOPS decryption.
-    """
-    out_dir = root / OUTPUT_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    rendered_chart = chart(app)
-    app.synth()
-
-    resources = ["ntfy.k8s.yaml", "credentials.sops.yaml"]
-    kustomization = flux_kustomization(
+    return flux_kustomization(
         flux_chart,
         NAME,
+        directory,
         description="Self-hosted ntfy for Android and cluster alert notifications.",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="10m",
-            decryption=sops_decryption(resources),
-            health_checks=health_checks(
-                rendered_chart,
-                (
-                    "Namespace",
-                    "ClusterSecretStore",
-                    "Cluster",
-                    "ExternalSecret",
-                    "Deployment",
-                    "HTTPRoute",
-                    "ServiceMonitor",
-                ),
-            ),
-            depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_config, gateway, monitoring_crds),
+        timeout="10m",
+        depends_on=flux_kustomization_depends_on_many(
+            cnpg,
+            external_secrets_operator,
+            monitoring_crds,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+            kyverno,
         ),
     )
-    write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=resources))
-    return kustomization

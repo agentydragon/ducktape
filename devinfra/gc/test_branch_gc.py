@@ -98,6 +98,28 @@ def test_branch_advanced_past_merged_head_is_review(repo: GitRepo) -> None:
     assert "beyond it" in result.reason
 
 
+def test_closed_pr_with_nothing_beyond_its_head_is_prunable(repo: GitRepo) -> None:
+    # The PR was closed unmerged; nothing was committed on the branch since. Removing it
+    # loses nothing a human hasn't already decided not to pursue.
+    wt = repo.worktree("wt", "feature")
+    wt.commit("f", "A\n", "abandoned attempt")
+    head = repo.rev("feature")
+    result = _classify(repo, "feature", pr=PrInfo(11, PrState.CLOSED, head_sha=head))
+    assert isinstance(result, bg.PrunableBranch)
+    assert "nothing beyond the closed head" in result.reason
+
+
+def test_branch_advanced_past_closed_head_is_review(repo: GitRepo) -> None:
+    wt = repo.worktree("wt", "feature")
+    wt.commit("f", "A\n", "the closed PR's tip")
+    head = repo.rev("feature")
+    wt.commit("extra", "more\n", "work after the PR was closed")
+    result = _classify(repo, "feature", pr=PrInfo(11, PrState.CLOSED, head_sha=head))
+    assert isinstance(result, bg.ReviewBranch)
+    assert "closed PR #11" in result.reason
+    assert "beyond it" in result.reason
+
+
 def test_open_pr_is_kept(repo: GitRepo) -> None:
     wt = repo.worktree("wt", "feature")
     wt.commit("novel", "unique\n", "work in review")

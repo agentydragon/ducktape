@@ -60,7 +60,7 @@ types accept one edge (measures its projected length) or two edges (measures dis
 **You MUST set `dim.X` and `dim.Y`** — they default to `(0, 0)` (view center), so all text
 overlaps without explicit placement.
 
-See <parametric_sketch.py> for a full example. See <build_bearing_block_techdraw.py> for 3D
+See <examples/bracket/parametric_sketch.py> for a full example. See <examples/bearing_block/build_techdraw.py> for 3D
 `References3D` dimensions on a Part Design body.
 
 ## Vertex-referenced dimensions (hole center to edge/corner)
@@ -91,7 +91,7 @@ dim.Type = "DistanceY"
 dim.References2D = [(view, "Vertex14"), (view, "Vertex17")]  # hole center to corner
 ```
 
-See <build_bearing_block_techdraw.py> for the full implementation including `find_vertex()`
+See <examples/bearing_block/build_techdraw.py> for the full implementation including `find_vertex()`
 and `find_circle_center_vertex()` helpers.
 
 ## 3D-referenced dimensions (References3D) — AVOID
@@ -113,7 +113,7 @@ dim.References2D = [(front, f"Edge{boss_outline_idx}")]
 dim.FormatSpec = "⌀%.0w"  # shows "⌀40" for a 40mm boss
 ```
 
-See <build_bearing_block_techdraw.py> `BossDiameter` for the full implementation.
+See <examples/bearing_block/build_techdraw.py> `BossDiameter` for the full implementation.
 
 ## Chamfer dimensions
 
@@ -161,7 +161,7 @@ for i, e in enumerate(view.getVisibleEdges()):
 parallel edges. It requires 2+ edge references and does NOT work on a single circle — use
 `makeCosmeticLine` for circle center crosses instead.
 
-See <build_bearing_block_techdraw.py> for both patterns on the top view.
+See <examples/bearing_block/build_techdraw.py> for both patterns on the top view.
 
 ## Annotations
 

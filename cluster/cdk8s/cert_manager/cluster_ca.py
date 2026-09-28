@@ -6,37 +6,38 @@ namespace.
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TypedDict
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cert_manager_clusterissuer_crds.io.cert_manager import (
-    ClusterIssuer,
-    ClusterIssuerSpec,
-    ClusterIssuerSpecCa,
-    ClusterIssuerSpecSelfSigned,
-)
+from cert_manager_clusterissuer_crds.io.cert_manager import ClusterIssuerSpecCa, ClusterIssuerSpecSelfSigned
 from cert_manager_crds.io.cert_manager import (
-    Certificate,
-    CertificateSpec,
     CertificateSpecIssuerRef,
     CertificateSpecPrivateKey,
     CertificateSpecPrivateKeyAlgorithm,
 )
 from trust_manager_crds.io.cert_manager.trust import (
-    Bundle,
-    BundleSpec,
     BundleSpecSources,
     BundleSpecSourcesSecret,
     BundleSpecTarget,
     BundleSpecTargetConfigMap,
 )
 
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
+from cluster.cdk8s.providers.cert_manager.bundle import Bundle
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate
+from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
 
 NAME = "cluster-ca"
-OUTPUT_DIR = "cluster/k8s/cert-manager/cluster-ca/base"
-_ROOT_CA_SECRET = "cluster-root-ca-secret"
+ROOT_CA_SECRET = "cluster-root-ca-secret"
+
+
+class _LongLivedCa(TypedDict):
+    duration: str
+    renew_before: str
+
+
+# Every long-lived CA Certificate this cluster signs, spread as `Certificate(..., **LONG_LIVED_CA)`.
+LONG_LIVED_CA: _LongLivedCa = {"duration": "87600h", "renew_before": "8760h"}  # 10 years / 1 year
 
 
 def chart(app: App) -> Chart:
@@ -45,44 +46,35 @@ def chart(app: App) -> Chart:
         chart,
         "bootstrap",
         metadata=ApiObjectMetadata(name="cluster-ca-bootstrap"),
-        spec=ClusterIssuerSpec(self_signed=ClusterIssuerSpecSelfSigned()),
+        self_signed=ClusterIssuerSpecSelfSigned(),
     )
     Certificate(
         chart,
         "root-ca",
-        metadata=metadata("cluster-root-ca", "cert-manager"),
-        spec=CertificateSpec(
-            is_ca=True,
-            common_name="cluster-root-ca",
-            secret_name=_ROOT_CA_SECRET,
-            duration="87600h",  # 10 years
-            renew_before="8760h",  # 1 year
-            private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.RSA, size=4096),
-            issuer_ref=CertificateSpecIssuerRef(name=bootstrap.name, kind="ClusterIssuer"),
-        ),
+        metadata=ApiObjectMetadata(name="cluster-root-ca", namespace="cert-manager"),
+        is_ca=True,
+        common_name="cluster-root-ca",
+        secret_name=ROOT_CA_SECRET,
+        **LONG_LIVED_CA,
+        private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.RSA, size=4096),
+        issuer_ref=CertificateSpecIssuerRef(name=bootstrap.name, kind="ClusterIssuer"),
     )
     # Issues internal service certificates from the root CA.
     ClusterIssuer(
         chart,
         "internal",
         metadata=ApiObjectMetadata(name="cluster-internal-ca"),
-        spec=ClusterIssuerSpec(ca=ClusterIssuerSpecCa(secret_name=_ROOT_CA_SECRET)),
+        ca=ClusterIssuerSpecCa(secret_name=ROOT_CA_SECRET),
     )
     Bundle(
         chart,
         "bundle",
         metadata=ApiObjectMetadata(name="cluster-internal-ca-bundle"),
-        spec=BundleSpec(
-            sources=[
-                BundleSpecSources(secret=BundleSpecSourcesSecret(name=_ROOT_CA_SECRET, key="ca.crt")),
-                # The active issuer's root, from `config/base`; Flux postBuild substitutes it.
-                BundleSpecSources(secret=BundleSpecSourcesSecret(name="${LETSENCRYPT_ISSUER}-root-ca", key="ca.crt")),
-            ],
-            target=BundleSpecTarget(config_map=BundleSpecTargetConfigMap(key="ca-certificates.crt")),
-        ),
+        sources=[
+            BundleSpecSources(secret=BundleSpecSourcesSecret(name=ROOT_CA_SECRET, key="ca.crt")),
+            # The active issuer's root, from `config`.
+            BundleSpecSources(secret=BundleSpecSourcesSecret(name=f"{LETSENCRYPT_ISSUER}-root-ca", key="ca.crt")),
+        ],
+        target=BundleSpecTarget(config_map=BundleSpecTargetConfigMap(key="ca-certificates.crt")),
     )
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)

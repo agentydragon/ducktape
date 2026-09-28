@@ -105,7 +105,7 @@
     # renders + NVENC-encodes on a passed-through RTX 5090. Not in Debian,
     # and upstream's Cloudsmith apt repo ships no amd64 builds (Raspberry Pi
     # arches only) — Flathub is the supported x86_64 path.
-    # See debug/atlas/gpu-strategy.md.
+    # See debug/atlas/gpu_strategy.md.
     - name: Install flatpak
       ansible.builtin.apt:
         name: flatpak
@@ -287,7 +287,7 @@
         # clearcpuid=510: Disable AMD Idle HLT Intercept (X86_FEATURE_IDLE_HLT,
         # CPUID 0x8000000A_EDX[30]). This feature (merged kernel 6.15) causes
         # guest vCPU stalls and spurious NMIs on AMD Zen 5. See
-        # debug/kernel-6.18-amd-kvm-stall.md.
+        # debug/kernel_6_18_amd_kvm_stall.md.
         # CLEANUP(added 2026-03-31): Remove once a pve-kernel containing the
         # RHBZ#2448303 fix (AMD Idle HLT Intercept) ships and atlas runs it.
         content: >-
@@ -354,7 +354,7 @@
     # pv_native_safe_halt when halt polling is enabled. halt_poll_ns=0
     # fixes idle stalls but does NOT fully fix stalls under load — there
     # are likely multiple bug paths. Still worth applying as a partial
-    # mitigation. See debug/kernel-6.18-amd-kvm-stall.md.
+    # mitigation. See debug/kernel_6_18_amd_kvm_stall.md.
     # CLEANUP(added 2026-03-30): Remove once a pve-kernel containing the
     # RHBZ#2448303 fix (AMD Idle HLT Intercept) ships and atlas runs it.
     - name: Disable KVM halt polling (kernel 6.18 AMD stall workaround)
@@ -477,7 +477,7 @@
     # 2025, known open issues like openzfs/zfs#16695), or actual hardware
     # corruption that DIO verify is correctly catching. Disabling DIO as a
     # trial to see if the problem goes away.
-    # See debug/wyrm2-io-error-2026-04-08/README.md for investigation.
+    # See debug/wyrm2_io_error_2026_04_08/README.md for investigation.
     - name: Disable ZFS Direct I/O on VM image dataset
       community.general.zfs:
         name: rpool/var-lib-vz

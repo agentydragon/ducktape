@@ -1,5 +1,5 @@
 """`kubeapi.allegedly.works`: the Gateway route and the nginx reverse proxy that bridges HTTP
-to HTTPS in front of the Kubernetes API (`cluster/k8s/kube-api-proxy/README.md`).
+to HTTPS in front of the Kubernetes API (`cluster/cdk8s/kube_api_proxy.md`).
 
 Cilium Gateway API doesn't support backend TLS re-encryption (no BackendTLSPolicy, no
 `appProtocol: https`), so nginx accepts plain HTTP from the Gateway after TLS termination and
@@ -8,22 +8,17 @@ proxies to the apiserver over HTTPS, preserving the Authorization header.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import Kustomization, flux_kustomization
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "kube-api-proxy"
 NAMESPACE = "default"
-OUTPUT_DIR = "cluster/k8s/kube-api-proxy"
+OUTPUT_DIR = f"{GENERATED_ROOT}/kube-api-proxy"
 _PROXY = "kubeapi-proxy"
 _CONFIG_MAP = "kubeapi-proxy-config"
 _ROUTE = "kubeapi-allegedly-works"
@@ -76,13 +71,11 @@ def _deployment(chart: Chart) -> None:
             name=_PROXY,
             namespace=NAMESPACE,
             annotations={
-                # Restart pods when the config changes (subPath mounts don't hot-reload).
-                "reloader.stakater.com/auto": "true",
                 "description": (
                     "nginx reverse proxy: HTTP 8080 → HTTPS kubernetes.default.svc:443.\n"
                     "Bridges the gap between Cilium Gateway (TLS terminate) and the\n"
                     "apiserver (requires HTTPS). Used by kubeapi.allegedly.works route.\n"
-                ),
+                )
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -99,6 +92,8 @@ def _deployment(chart: Chart) -> None:
                             image="nginxinc/nginx-unprivileged:1.31-alpine",
                             ports=[k8s.ContainerPort(container_port=_PORT)],
                             volume_mounts=[
+                                # A subPath mount doesn't hot-reload: Reloader's `autoReloadAll`
+                                # rolls the pods when the config changes.
                                 k8s.VolumeMount(
                                     name="config",
                                     mount_path="/etc/nginx/nginx.conf",
@@ -150,9 +145,9 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(
-            _ROUTE,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_ROUTE,
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "HTTPRoute for the Kubernetes API at kubeapi.allegedly.works. The Cilium\n"
@@ -168,7 +163,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        hostname="kubeapi.allegedly.works",
+        hostnames=["kubeapi.allegedly.works"],
         backend=_PROXY,
         port=_PORT,
         hsts=False,
@@ -194,27 +189,16 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def kube_api_proxy(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
+def kube_api_proxy(chart: Chart, directory: RenderedDirectory) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name=_PROXY, namespace=NAMESPACE
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="gateway.networking.k8s.io/v1", kind="HTTPRoute", name=_ROUTE, namespace=NAMESPACE
-                ),
-            ],
-        ),
+        directory,
+        wait=None,
+        health_checks=[
+            KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=_PROXY, namespace=NAMESPACE),
+            KustomizationSpecHealthChecks(
+                api_version="gateway.networking.k8s.io/v1", kind="HTTPRoute", name=_ROUTE, namespace=NAMESPACE
+            ),
+        ],
     )

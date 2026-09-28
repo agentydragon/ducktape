@@ -49,3 +49,24 @@ diff --git a/internal/managementasset/BUILD.bazel b/internal/managementasset/BUI
      srcs = ["updater_test.go"],
      embed = [":managementasset"],
      deps = ["//internal/config"],
+diff --git a/internal/logging/BUILD.bazel b/internal/logging/BUILD.bazel
+--- a/internal/logging/BUILD.bazel
++++ b/internal/logging/BUILD.bazel
+@@ -62,3 +62,17 @@
+         "@com_github_sirupsen_logrus//hooks/test",
+     ],
+ )
++
++# Upstream timing coverage is independently runnable: `logging_test` also holds an upstream
++# recovery test written against gin v1.10.1, and this module resolves gin v1.12.0.
++go_test(
++    name = "upstream_timing_test",
++    srcs = ["upstream_timing_test.go"],
++    embed = [":logging"],
++    deps = [
++        "@com_github_gin_gonic_gin//:gin",
++        "@com_github_sirupsen_logrus//:logrus",
++        "@com_github_sirupsen_logrus//hooks/test",
++    ],
++    visibility = ["//visibility:public"],
++)

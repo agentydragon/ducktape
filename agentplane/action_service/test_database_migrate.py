@@ -58,15 +58,15 @@ def _seed_at_0005(connection: Connection) -> None:
 
 
 def _seed_linkage_at_0016(connection: Connection) -> None:
-    """A linked MCP server with its shared token state, in the 0016 shape that still has `provider`."""
+    """A linked MCP server whose token refresh was refused, in the 0016 shape that still has `provider`."""
     token_state = UUID("00000000-0000-4000-8000-000000000003")
     connection.execute(
         text(
             """
             INSERT INTO mcp_oauth_token_state
                 (id, server_id, access_token, token_type, scope, token_revision, updated_at,
-                 refresh_failure_count)
-            VALUES (:token_state, :server, :token, 'Bearer', '[]', 1, now(), 0)
+                 refresh_failure_count, refresh_failure_action)
+            VALUES (:token_state, :server, :token, 'Bearer', '[]', 1, now(), 2, 'reconnect')
             """
         ).bindparams(token_state=token_state, server=LINKAGE, token=ACCESS_TOKEN)
     )
@@ -121,13 +121,15 @@ def _round_trip(connection: Connection) -> None:
     _seed_linkage_at_0016(connection)
     command.upgrade(config, "head")
     assert _linked_access_token(connection) == ACCESS_TOKEN
+    # `0018` clears a refresh failure that predates recorded errors, and the next sweep retries.
+    assert connection.scalar(text("SELECT refresh_failure_action FROM mcp_oauth_token_state")) is None
     command.downgrade(config, "0016_structured_principals")
     assert connection.scalar(text("SELECT provider FROM mcp_server_linkage")) == LINKAGE
     assert _linked_access_token(connection) == ACCESS_TOKEN
     command.upgrade(config, "head")
 
     # Check the changed tables, not unrelated migration-only request/execution indexes.
-    changed = {"action_decision", "action_event", "action_request", "mcp_server_linkage"}
+    changed = {"action_decision", "action_event", "action_request", "mcp_oauth_token_state", "mcp_server_linkage"}
     context = MigrationContext.configure(
         connection,
         opts={

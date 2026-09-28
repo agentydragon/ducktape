@@ -2,11 +2,13 @@
 
 import asyncio
 from typing import cast
+from uuid import uuid4
 
 import pytest
 import pytest_bazel
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.catalog import ActionIdentity
@@ -16,6 +18,9 @@ from agentplane.action_service.models import (
     CallerPrincipal,
     DecisionInput,
     OperatorPrincipal,
+    ProviderOutcome,
+    ProviderVerdict,
+    ProviderVote,
     Verdict,
 )
 from agentplane.action_service.push import (
@@ -67,6 +72,8 @@ async def test_replica_delivery_and_recovery(engine: AsyncEngine, db_url: str) -
             title="test title for push",
         ),
         CALLER,
+        request_id=uuid4(),
+        vote=None,
     )
     recorded: list[tuple[str, str]] = []
     first = RecordingNotifier(engine, db_url, recorded, fail=True)
@@ -97,6 +104,33 @@ async def test_replica_delivery_and_recovery(engine: AsyncEngine, db_url: str) -
         await second.close()
 
 
+async def test_auto_approved_request_is_never_pushed(engine: AsyncEngine, db_url: str) -> None:
+    sessions = make_sessionmaker(engine)
+    await PushSubscriptionStore(sessions).save(
+        operator=OPERATOR, endpoint="https://push.example/a", p256dh="test", auth="test", user_agent="test"
+    )
+    await ActionStore(sessions).submit(
+        ActionRequestInput(
+            action=ActionIdentity(group="test", name="echo"),
+            arguments={},
+            idempotency_key="auto-approved",
+            title="test title for auto-approved",
+        ),
+        CALLER,
+        request_id=uuid4(),
+        vote=ProviderVote(
+            provider="test-policy", outcome=ProviderOutcome(verdict=ProviderVerdict.ALLOW, reason_code="test-allow")
+        ),
+    )
+    recorded: list[tuple[str, str]] = []
+    notifier = RecordingNotifier(engine, db_url, recorded)
+    try:
+        assert not await notifier.reconcile()
+        assert not recorded
+    finally:
+        await notifier.close()
+
+
 async def test_registration_owner_cannot_be_overwritten(engine: AsyncEngine) -> None:
     store = PushSubscriptionStore(make_sessionmaker(engine))
     args = {"endpoint": "https://push.example/a", "p256dh": "test", "auth": "test", "user_agent": "test"}
@@ -116,7 +150,7 @@ def test_push_identity_signs_only_for_reviewed_push_hosts() -> None:
         .decode()
     )
     settings = WebPushSettings(
-        private_key_pem=private_key,
+        private_key_pem=SecretStr(private_key),
         subject="mailto:push@agentplane.test",
         public_base_url="https://app.example",
         allowed_push_hosts=frozenset({"push.example"}),

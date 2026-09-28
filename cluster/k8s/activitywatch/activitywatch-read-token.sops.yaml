@@ -1,11 +1,15 @@
 # Read-only bearer for the central ActivityWatch read route. The bearer-proxy
 # sidecar (5603) checks it; the emberstack reflector mirrors this Secret into
-# haku-egress-proxy and haku-console so the egress fences can substitute it for the
-# Haku sandbox's placeholder (cluster/k8s/agents/haku-egress-proxy/claude-iron.yaml
-# and cluster/k8s/haku/console/config.yaml). Distinct from
+# haku-console so its colocated egress fence can substitute it for the Haku
+# sandbox's placeholder. Distinct from
 # the write token so read and write are separate credentials -- and unlike the write
 # token, no desktop reads it, so it is encrypted only to Flux (cluster-secrets) +
 # admin via the generic cluster/k8s rule. Rotate by re-minting and re-encrypting.
+#
+# CLEANUP(added 2026-09-24): drop haku-egress-proxy from the reflection
+#   annotations and the description below at the next re-encrypt; nothing there
+#   reads the reflected copy. The document MAC covers annotation values, so they
+#   cannot be edited without the cluster age key.
 apiVersion: v1
 kind: Secret
 metadata:
