@@ -116,18 +116,16 @@ class _FakePlaidApi:
         raise AssertionError("unexpected sync call in smoke test")
 
     def institutions_search(self, request: InstitutionsSearchRequest) -> SimpleNamespace:
-        return SimpleNamespace(to_dict=lambda: {"institutions": [{"institution_id": "ins_3", "name": "Chase"}]})
+        return SimpleNamespace(institutions=[SimpleNamespace(institution_id="ins_3", name="Chase")])
 
     def institutions_get_by_id(self, request: InstitutionsGetByIdRequest) -> SimpleNamespace:
         return SimpleNamespace(
-            to_dict=lambda: {
-                "institution": {
-                    "institution_id": "ins_3",
-                    "name": "Chase",
-                    "url": "https://chase.example",
-                    "products": ["auth", "transactions", "identity", "liabilities"],
-                }
-            }
+            institution=SimpleNamespace(
+                institution_id="ins_3",
+                name="Chase",
+                url="https://chase.example",
+                products=["auth", "transactions", "identity", "liabilities"],
+            )
         )
 
 
