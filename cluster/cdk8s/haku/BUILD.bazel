@@ -198,6 +198,7 @@ py_library(
         ":namespace",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/providers/flux:notification",
         "//cluster/cdk8s/providers/flux:receiver",
         "@pypi//cdk8s",
     ],
