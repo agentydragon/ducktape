@@ -11,23 +11,29 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitRepositorySpec, GitRepositorySpecRef
+from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef
 
 from cluster.cdk8s.flux import NAMESPACE
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux/sources"
 
 
-def _source(chart: Chart, name: str, *, url: str, tag: str, description: str | None = None) -> GitRepository:
+def _source(
+    chart: Chart, name: str, *, url: str, tag: str, ignore: str | None = None, description: str | None = None
+) -> GitRepository:
     return GitRepository(
         chart,
         name,
         metadata=ApiObjectMetadata(
             name=name, namespace=NAMESPACE, annotations={"description": description} if description else None
         ),
-        spec=GitRepositorySpec(interval="1h", url=url, ref=GitRepositorySpecRef(tag=tag)),
+        interval="1h",
+        url=url,
+        ref=GitRepositorySpecRef(tag=tag),
+        ignore=ignore,
     )
 
 
@@ -51,19 +57,15 @@ def chart(app: App) -> Chart:
         url="https://github.com/kubernetes-csi/external-snapshotter.git",
         tag="v8.6.0",
     )
-    GitRepository(
+    _source(
         chart,
         "sshpiper-source",
-        metadata=ApiObjectMetadata(name="sshpiper-source", namespace=NAMESPACE),
-        spec=GitRepositorySpec(
-            interval="1h",
-            url="https://github.com/tg123/sshpiper.git",
-            ref=GitRepositorySpecRef(tag="v1.6.1"),
-            # Keep only the CRD. In particular, plugin/kubernetes/sample.yaml is an example
-            # Pipe, not a production route to apply. Flux generates a kustomization.yaml for
-            # this plain-YAML path.
-            ignore="/*\n!/plugin\n/plugin/*\n!/plugin/kubernetes\n/plugin/kubernetes/*\n!/plugin/kubernetes/crd.yaml\n",
-        ),
+        url="https://github.com/tg123/sshpiper.git",
+        tag="v1.6.1",
+        # Keep only the CRD. In particular, plugin/kubernetes/sample.yaml is an example
+        # Pipe, not a production route to apply. Flux generates a kustomization.yaml for
+        # this plain-YAML path.
+        ignore="/*\n!/plugin\n/plugin/*\n!/plugin/kubernetes\n/plugin/kubernetes/*\n!/plugin/kubernetes/crd.yaml\n",
     )
     return chart
 

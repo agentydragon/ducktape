@@ -7,8 +7,6 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
-    GitRepository,
-    GitRepositorySpec,
     GitRepositorySpecProvider,
     GitRepositorySpecRef,
     GitRepositorySpecSecretRef,
@@ -38,15 +36,14 @@ from flux_imageupdateautomation_crds.io.fluxcd.toolkit.image import (
     ImageUpdateAutomationSpecUpdateStrategy,
 )
 
+from cluster.cdk8s import ducktape_flux
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
 _OPENCLAW = "openclaw"
 NAMESPACE = "flux-system"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux-image-automation-ghcr"
-
-
-_BRANCH = "devel"
 
 
 def automation_chart(app: App) -> Chart:
@@ -63,14 +60,12 @@ def automation_chart(app: App) -> Chart:
                 "App Secret exists."
             },
         ),
-        spec=GitRepositorySpec(
-            interval="1m",
-            provider=GitRepositorySpecProvider.GITHUB,
-            ref=GitRepositorySpecRef(branch=_BRANCH),
-            secret_ref=GitRepositorySpecSecretRef(name="ducktape-automation-github-app"),
-            sparse_checkout=[f"{HAND_WRITTEN_ROOT}/"],
-            url="https://github.com/agentydragon/ducktape.git",
-        ),
+        interval="1m",
+        provider=GitRepositorySpecProvider.GITHUB,
+        ref=GitRepositorySpecRef(branch=ducktape_flux.BRANCH),
+        secret_ref=GitRepositorySpecSecretRef(name="ducktape-automation-github-app"),
+        sparse_checkout=[f"{HAND_WRITTEN_ROOT}/"],
+        url=ducktape_flux.REPOSITORY_URL,
     )
     ImageUpdateAutomation(
         chart,
@@ -83,7 +78,7 @@ def automation_chart(app: App) -> Chart:
             ),
             git=ImageUpdateAutomationSpecGit(
                 checkout=ImageUpdateAutomationSpecGitCheckout(
-                    ref=ImageUpdateAutomationSpecGitCheckoutRef(branch=_BRANCH)
+                    ref=ImageUpdateAutomationSpecGitCheckoutRef(branch=ducktape_flux.BRANCH)
                 ),
                 commit=ImageUpdateAutomationSpecGitCommit(
                     author=ImageUpdateAutomationSpecGitCommitAuthor(
@@ -99,7 +94,7 @@ def automation_chart(app: App) -> Chart:
                         "{{ end -}}"
                     ),
                 ),
-                push=ImageUpdateAutomationSpecGitPush(branch=_BRANCH),
+                push=ImageUpdateAutomationSpecGitPush(branch=ducktape_flux.BRANCH),
             ),
             update=ImageUpdateAutomationSpecUpdate(
                 strategy=ImageUpdateAutomationSpecUpdateStrategy.SETTERS, path=f"./{HAND_WRITTEN_ROOT}"
