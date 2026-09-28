@@ -49,8 +49,8 @@ def construct_products(
         else:
             if spec.yield_curve not in paths.corporate_yields:
                 raise ValueError(
-                    f"{spec.symbol} prices off {spec.yield_curve}, which {paths.model_id} cannot produce: "
-                    "these paths have no credit factor or observed corporate yield"
+                    f"{spec.symbol} prices off {spec.yield_curve}, which these market paths cannot produce: "
+                    "they have no credit factor or observed corporate yield"
                 )
             reference_yield = paths.corporate_yields[spec.yield_curve]
         price, distribution = constant_maturity_fund_paths(
@@ -62,10 +62,9 @@ def construct_products(
         blocks.append((SecurityDistributionKey(symbol=spec.symbol), distribution))
     if equity is not None:
         if paths.equity_total_return_index is None:
-            raise ValueError(f"{paths.model_id} has no equity total-return path for {equity.symbol}")
+            raise ValueError(f"these market paths have no equity total-return path for {equity.symbol}")
         blocks.append((SecurityKey(symbol=equity.symbol), equity.initial_price_usd * paths.equity_total_return_index))
     return SampledExogenousBundle(
         levels=assemble_level_frames(blocks, rollout_count=paths.rollout_count, horizon_months=paths.horizon_months),
-        model_id=paths.model_id,
         provenance={**paths.provenance, "instruments": tuple(spec.symbol for spec in instruments)},
     )

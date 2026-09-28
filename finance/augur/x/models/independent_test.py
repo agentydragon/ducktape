@@ -87,7 +87,6 @@ def test_independent_model_samples_levels_and_events(example_config: Independent
     }
     # IndependentModel doesn't sample PE channels — the typed PE bundle stays empty.
     assert sampled.private_equity.is_empty()
-    assert sampled.model_id == "independent"
 
 
 def test_independent_provider_config_roundtrips_through_discriminated_union(
