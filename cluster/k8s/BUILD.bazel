@@ -1,7 +1,7 @@
 filegroup(
     name = "source_watcher_crd_bundle",
     srcs = ["flux/flux-system/gotk-components.yaml"],
-    visibility = ["//cluster/cdk8s/crd_bindings/source_watcher:__pkg__"],
+    visibility = ["//cluster/cdk8s/providers/source_watcher:__pkg__"],
 )
 
 filegroup(
@@ -54,6 +54,12 @@ filegroup(
         "//cluster/cdk8s:__subpackages__",
         "//cluster/validation:__pkg__",
     ],
+)
+
+filegroup(
+    name = "qwen38_chat_template",
+    srcs = ["ollama/qwen38-chat-template.jinja"],
+    visibility = ["//cluster/cdk8s/ollama:__pkg__"],
 )
 
 filegroup(

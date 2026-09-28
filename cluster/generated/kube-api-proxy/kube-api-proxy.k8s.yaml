@@ -78,7 +78,6 @@ metadata:
       nginx reverse proxy: HTTP 8080 → HTTPS kubernetes.default.svc:443.
       Bridges the gap between Cilium Gateway (TLS terminate) and the
       apiserver (requires HTTPS). Used by kubeapi.allegedly.works route.
-    reloader.stakater.com/auto: "true"
   name: kubeapi-proxy
   namespace: default
 spec:

@@ -8,8 +8,8 @@ import pytest_bazel
 import respx
 
 from homeassistant.provisioner.endpoint import HomeAssistantEndpoint
-from homeassistant.provisioner.onboarding.onboard import configure_http, onboard
-from homeassistant.provisioner.onboarding.settings import HttpConfig, Settings
+from homeassistant.provisioner.onboarding.onboard import configure_core, configure_http, onboard
+from homeassistant.provisioner.onboarding.settings import CoreConfig, HomeLocation, HttpConfig, Settings
 
 # The httpx2_mock fixture comes from the auto-loaded pytest-httpx2 plugin.
 # gazelle:include_dep @pypi//pytest_httpx2
@@ -36,14 +36,19 @@ def settings(endpoint: HomeAssistantEndpoint) -> Settings:
             ssl_profile="modern",
             use_x_frame_options=True,
         ),
+        core_config=CoreConfig(time_zone="Etc/GMT+5"),
     )
 
 
-def disable_http_configuration(monkeypatch):
-    async def fake_configure_http(*args) -> None:
+def disable_admin_configuration(monkeypatch):
+    """The onboarding tests follow its HTTP requests; the settings it converges over the websocket
+    have their own tests below."""
+
+    async def skip(*args) -> None:
         pass
 
-    monkeypatch.setattr("homeassistant.provisioner.onboarding.onboard.configure_http", fake_configure_http)
+    monkeypatch.setattr("homeassistant.provisioner.onboarding.onboard.configure_http", skip)
+    monkeypatch.setattr("homeassistant.provisioner.onboarding.onboard.configure_core", skip)
 
 
 def assert_request_paths(router: respx.Router, paths: list[str]) -> None:
@@ -59,7 +64,7 @@ def http_status_error(status: HTTPStatus) -> httpx2.HTTPStatusError:
 async def test_fresh_install_creates_owner_and_completes_onboarding(
     monkeypatch, httpx2_mock: respx.Router, home_assistant_client, settings
 ):
-    disable_http_configuration(monkeypatch)
+    disable_admin_configuration(monkeypatch)
     httpx2_mock.get("/api/").respond(status_code=HTTPStatus.UNAUTHORIZED)
     httpx2_mock.get("/api/onboarding").respond(json=[{"step": "user", "done": False}])
     owner = httpx2_mock.post("/api/onboarding/users").respond(json={"auth_code": "owner-code"})
@@ -103,7 +108,7 @@ async def test_fresh_install_creates_owner_and_completes_onboarding(
 async def test_partial_run_logs_in_and_finishes_remaining_steps(
     monkeypatch, httpx2_mock: respx.Router, home_assistant_client, settings
 ):
-    disable_http_configuration(monkeypatch)
+    disable_admin_configuration(monkeypatch)
     httpx2_mock.get("/api/").respond(status_code=HTTPStatus.UNAUTHORIZED)
     httpx2_mock.get("/api/onboarding").respond(
         json=[
@@ -151,7 +156,7 @@ async def test_partial_run_logs_in_and_finishes_remaining_steps(
 async def test_completed_onboarding_converges_http_configuration(
     monkeypatch, httpx2_mock: respx.Router, home_assistant_client, settings
 ):
-    disable_http_configuration(monkeypatch)
+    disable_admin_configuration(monkeypatch)
     httpx2_mock.get("/api/").respond(status_code=HTTPStatus.UNAUTHORIZED)
     httpx2_mock.get("/api/onboarding").respond(status_code=HTTPStatus.NOT_FOUND)
     httpx2_mock.post("/auth/login_flow").respond(json={"flow_id": "login-flow"})
@@ -168,7 +173,7 @@ async def test_completed_onboarding_converges_http_configuration(
 async def test_onboarding_404_is_only_accepted_after_the_api_is_ready(
     monkeypatch, httpx2_mock: respx.Router, home_assistant_client, settings
 ):
-    disable_http_configuration(monkeypatch)
+    disable_admin_configuration(monkeypatch)
     httpx2_mock.get("/api/").mock(
         side_effect=[http_status_error(HTTPStatus.NOT_FOUND), http_status_error(HTTPStatus.UNAUTHORIZED)]
     )
@@ -202,7 +207,7 @@ async def test_configure_http_is_idempotent(monkeypatch, home_assistant_client, 
 
     await configure_http(home_assistant_client, settings.http_config, settings.owner_username, "secret-password")
 
-    assert calls == [{"id": 1, "type": "http/config"}]
+    assert calls == [{"type": "http/config"}]
 
 
 async def test_configure_http_restarts_and_promotes(monkeypatch, home_assistant_client, settings):
@@ -224,7 +229,7 @@ async def test_configure_http_restarts_and_promotes(monkeypatch, home_assistant_
     monkeypatch.setattr(home_assistant_client, "websocket_command", fake_websocket_command)
 
     async def wait_until_ready():
-        return None
+        return frozenset()
 
     async def login(username, password):
         home_assistant_client._access_token = "refreshed-token"
@@ -235,10 +240,58 @@ async def test_configure_http_restarts_and_promotes(monkeypatch, home_assistant_
     await configure_http(home_assistant_client, settings.http_config, settings.owner_username, "secret-password")
 
     assert calls == [
-        ("bootstrap-token", {"id": 1, "type": "http/config"}),
-        ("bootstrap-token", {"id": 1, "type": "http/config/configure", "config": settings.http_config.model_dump()}),
-        ("refreshed-token", {"id": 1, "type": "http/config/promote"}),
+        ("bootstrap-token", {"type": "http/config"}),
+        ("bootstrap-token", {"type": "http/config/configure", "config": settings.http_config.model_dump()}),
+        ("refreshed-token", {"type": "http/config/promote"}),
     ]
+
+
+def fake_core_api(monkeypatch, home_assistant_client, current: dict[str, object]) -> list[dict[str, object]]:
+    """Answers `get_config` with `current`, records every command, and applies each update to it."""
+    calls: list[dict[str, object]] = []
+
+    async def fake_websocket_command(message: dict[str, object]) -> object:
+        calls.append(message)
+        if message["type"] == "get_config":
+            return dict(current)
+        if message["type"] == "config/core/update":
+            current.update({key: value for key, value in message.items() if key != "type"})
+            return None
+        raise AssertionError(f"unexpected message: {message}")
+
+    monkeypatch.setattr(home_assistant_client, "websocket_command", fake_websocket_command)
+    return calls
+
+
+# What a freshly onboarded Home Assistant reports: its defaults, which onboarding by API accepts.
+FRESH_CORE_CONFIG = {"time_zone": "UTC", "latitude": 0.0, "longitude": 0.0, "location_name": "Home"}
+
+
+async def test_configure_core_sets_the_time_zone_and_leaves_an_undeclared_location(monkeypatch, home_assistant_client):
+    calls = fake_core_api(monkeypatch, home_assistant_client, dict(FRESH_CORE_CONFIG))
+
+    await configure_core(home_assistant_client, CoreConfig(time_zone="Etc/GMT+5"))
+
+    assert calls == [{"type": "get_config"}, {"type": "config/core/update", "time_zone": "Etc/GMT+5"}]
+
+
+async def test_configure_core_sets_a_declared_location(monkeypatch, home_assistant_client):
+    calls = fake_core_api(monkeypatch, home_assistant_client, dict(FRESH_CORE_CONFIG))
+    location = HomeLocation(latitude=12.5, longitude=-45.25)
+
+    await configure_core(home_assistant_client, CoreConfig(time_zone="Etc/GMT+5", location=location))
+
+    assert calls[-1] == {"type": "config/core/update", "time_zone": "Etc/GMT+5", "latitude": 12.5, "longitude": -45.25}
+
+
+async def test_configure_core_is_idempotent(monkeypatch, home_assistant_client):
+    current = {**FRESH_CORE_CONFIG, "time_zone": "Etc/GMT+5", "latitude": 12.5, "longitude": -45.25}
+    calls = fake_core_api(monkeypatch, home_assistant_client, current)
+    location = HomeLocation(latitude=12.5, longitude=-45.25)
+
+    await configure_core(home_assistant_client, CoreConfig(time_zone="Etc/GMT+5", location=location))
+
+    assert calls == [{"type": "get_config"}]
 
 
 if __name__ == "__main__":

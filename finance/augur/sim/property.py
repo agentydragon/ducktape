@@ -3,25 +3,95 @@
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Self
 
+from finance.augur.model.series import LocationId
 from finance.augur.sim.accounting import Accounting, TransferOutcome
 from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting, PropertyState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import gain_account
+from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.mortgage import Mortgage, MortgageTerms
-from finance.augur.sim.prepared import (
-    PreparedScenario,
-    _CapitalImprovement,
-    _PrimaryResidence,
-    _PrimaryResidenceEvent,
-    _PropertyPurchase,
-    _PropertySale,
-    _RentedFraction,
-)
+from finance.augur.sim.situs import SitusLaw
+
+
+@dataclass(frozen=True, kw_only=True)
+class MortgageFinancing:
+    liability_id: LiabilityId
+    lender_agent_id: AgentId
+    lender_account_id: AccountId
+    principal: int
+    annual_interest_rate_ppb: int
+    term_months: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class Parcel:
+    """Where a property is for tax purposes, the law of its situs from its tax rate area up, and the
+    seller's assessed value on the roll of the fiscal year it is bought in.
+
+    `prior_assessed_value` is None when the buyer does not know it; that fiscal year is then billed on
+    the price from the month after the purchase, which is what its regular and supplemental bills sum
+    to up to the supplemental proration's rounding.
+    """
+
+    situs: SitusLaw
+    prior_assessed_value: int | None
+
+
+@dataclass(frozen=True, kw_only=True)
+class ScheduledPurchase:
+    """`market` is the region whose `home_value:` and `rent:` series price the property.
+
+    `buyer_closing_cost` is paid to the seller at closing; with the buyer's share of the transfer tax,
+    which the parcel's authority bills, it is capitalized into the property's basis.
+    """
+
+    month: int
+    cause_id: str
+    property_id: PropertyId
+    parcel: Parcel
+    market: LocationId
+    buyer_agent_id: AgentId
+    buyer_account_id: AccountId
+    seller_agent_id: AgentId
+    seller_account_id: AccountId
+    purchase_price: int
+    down_payment: int
+    buyer_closing_cost: int
+    rented_fraction_ppb: int
+    land_value_fraction_ppb: int
+    mortgage: MortgageFinancing | None
+    # Seller-paid by default.
+    buyer_transfer_tax_share_ppb: int = 0
+
+
+@dataclass(frozen=True, kw_only=True)
+class ScheduledSale:
+    """A sale at the property's market value, less commissions and escrow/title fees withheld at closing
+    and the seller's share of the transfer tax, which the parcel's authority bills."""
+
+    month: int
+    property_id: PropertyId
+    commission_ppb: int
+    escrow_title_ppb: int
+    # Seller-paid by default.
+    buyer_transfer_tax_share_ppb: int = 0
+
+
+@dataclass(frozen=True, kw_only=True)
+class PrimaryResidence:
+    agent_id: AgentId
+    property_id: PropertyId
+
+
+@dataclass(frozen=True, kw_only=True)
+class PrimaryResidenceEvent:
+    month: int
+    agent_id: AgentId
+    property_id: PropertyId | None
 
 
 @dataclass
@@ -34,11 +104,12 @@ class Property:
 class Purchase:
     month: int
     cause_id: str
-    property_id: str
-    location_id: str
-    buyer_agent_id: str
+    property_id: PropertyId
+    market: LocationId
+    buyer_agent_id: AgentId
     purchase_price: int
     closing_cost: int
+    transfer_tax: int
     adjusted_basis: int
     stake_contribution: int
     equity_ledger: int
@@ -47,8 +118,11 @@ class Purchase:
 @dataclass(frozen=True)
 class Sale:
     month: int
-    property_id: str
+    property_id: PropertyId
     gross_proceeds: int
+    commission: int
+    escrow_title: int
+    transfer_tax: int
     mortgage_payoff: int
     net_cash_to_owner: int
     realized_gain: int
@@ -60,59 +134,66 @@ class Sale:
 @dataclass(frozen=True)
 class Residence:
     month: int
-    agent_id: str
-    property_id: str | None
+    agent_id: AgentId
+    property_id: PropertyId | None
     is_primary_residence: bool
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class RentedFraction:
     month: int
-    property_id: str
+    property_id: PropertyId
     rented_fraction_ppb: int
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class CapitalImprovement:
     month: int
-    property_id: str
+    property_id: PropertyId
     amount: int
-    description: str
+    description: str | None = None
 
 
 @dataclass(frozen=True)
 class Origination:
     month: int
     cause_id: str
-    liability_id: str
-    agent_id: str
-    payment_account_id: str
-    counterparty_agent_id: str
-    counterparty_account_id: str
-    property_id: str
+    liability_id: LiabilityId
+    agent_id: AgentId
+    payment_account_id: AccountId
+    counterparty_agent_id: AgentId
+    counterparty_account_id: AccountId
+    property_id: PropertyId
     principal: int
     annual_interest_rate_ppb: int
     term_months: int
     monthly_payment: int
 
 
-def asset_account(purchase: _PropertyPurchase) -> AccountRef:
-    return AccountRef(agent_id=purchase.buyer_agent_id, account_id=f"asset:property:{purchase.property_id}")
+def seller_share(transfer_tax: int, buyer_share_ppb: int) -> int:
+    """The seller's part of a transfer tax the buyer pays `buyer_share_ppb` of."""
+    return transfer_tax - mul_div(transfer_tax, buyer_share_ppb, MONEY_FACTOR_SCALE, "buyer's transfer tax")
 
 
-def principal(accounting: Accounting, purchase: _PropertyPurchase) -> int:
+def asset_account(purchase: ScheduledPurchase) -> AccountRef:
+    return AccountRef(agent_id=purchase.buyer_agent_id, account_id=AccountId(f"asset:property:{purchase.property_id}"))
+
+
+def principal(accounting: Accounting, purchase: ScheduledPurchase) -> int:
     loan = purchase.mortgage
     if loan is None:
         return 0
     return checked_count(
         -accounting.ledger.balance(
-            AccountRef(agent_id=purchase.buyer_agent_id, account_id=f"liability:mortgage:{loan.liability_id}")
+            AccountRef(
+                agent_id=purchase.buyer_agent_id, account_id=AccountId(f"liability:mortgage:{loan.liability_id}")
+            )
         ),
         "money negation",
     )
 
 
-def mortgage_terms(purchase: _PropertyPurchase) -> MortgageTerms:
+def mortgage_terms(purchase: ScheduledPurchase) -> MortgageTerms:
     financing = purchase.mortgage
     if financing is None:
         raise ValueError("purchase has no mortgage financing")
@@ -132,39 +213,114 @@ def mortgage_terms(purchase: _PropertyPurchase) -> MortgageTerms:
 class Housing:
     """The scenario's housing tables `Properties` reads; the default `Housing()` is a world with no property domain."""
 
-    purchases: tuple[_PropertyPurchase, ...] = ()
-    sales: tuple[_PropertySale, ...] = ()
-    initial_residences: tuple[_PrimaryResidence, ...] = ()
-    residence_events: tuple[_PrimaryResidenceEvent, ...] = ()
-    rented_fraction_events: tuple[_RentedFraction, ...] = ()
-    capital_improvements: tuple[_CapitalImprovement, ...] = ()
+    purchases: tuple[ScheduledPurchase, ...] = ()
+    sales: tuple[ScheduledSale, ...] = ()
+    initial_residences: tuple[PrimaryResidence, ...] = ()
+    residence_events: tuple[PrimaryResidenceEvent, ...] = ()
+    rented_fraction_events: tuple[RentedFraction, ...] = ()
+    capital_improvements: tuple[CapitalImprovement, ...] = ()
 
-    @classmethod
-    def from_scenario(cls, scenario: PreparedScenario) -> Self:
-        return cls(
-            purchases=scenario._scheduled_property_purchases,
-            sales=scenario._property_sales,
-            initial_residences=scenario._initial_primary_residences,
-            residence_events=scenario._primary_residence_events,
-            rented_fraction_events=scenario._property_rented_fraction_events,
-            capital_improvements=scenario._capital_improvement_events,
+    def check(self, horizon_months: int) -> None:
+        """One purchase per property inside the horizon; its lifecycle strictly after it and frozen
+        by its sale; a primary residence only on property its agent bought and still holds."""
+        purchases: dict[PropertyId, ScheduledPurchase] = {}
+        liabilities: set[LiabilityId] = set()
+        for purchase in self.purchases:
+            if purchase.property_id in purchases:
+                raise ValueError(f"duplicate property purchase {purchase.property_id!r}")
+            if not 0 <= purchase.month < horizon_months:
+                raise ValueError(
+                    f"property purchase {purchase.cause_id!r} has month {purchase.month}, "
+                    f"outside the horizon [0, {horizon_months})"
+                )
+            if purchase.mortgage is not None:
+                if purchase.mortgage.liability_id in liabilities:
+                    raise ValueError(f"duplicate mortgage liability {purchase.mortgage.liability_id!r}")
+                liabilities.add(purchase.mortgage.liability_id)
+            purchases[purchase.property_id] = purchase
+        sold: dict[PropertyId, int] = {}
+        for sale in self.sales:
+            if sale.property_id in sold:
+                raise ValueError(
+                    f"multiple sales of {sale.property_id!r}: months {sold[sale.property_id]} and {sale.month}"
+                )
+            sold[sale.property_id] = sale.month
+        lifecycle: tuple[ScheduledSale | RentedFraction | CapitalImprovement, ...] = (
+            *self.sales,
+            *self.rented_fraction_events,
+            *self.capital_improvements,
         )
+        for event in lifecycle:
+            bought = purchases.get(event.property_id)
+            if bought is None:
+                raise ValueError(
+                    f"lifecycle event at month {event.month} references unknown property {event.property_id!r}"
+                )
+            if not bought.month < event.month < horizon_months:
+                raise ValueError(
+                    f"lifecycle event for {event.property_id!r} at month {event.month} must fire strictly after "
+                    f"its purchase month {bought.month} and inside the horizon [0, {horizon_months})"
+                )
+            sale_month = sold.get(event.property_id)
+            if not isinstance(event, ScheduledSale) and sale_month is not None and event.month >= sale_month:
+                raise ValueError(
+                    f"lifecycle event for {event.property_id!r} at month {event.month} does not precede its sale "
+                    f"at month {sale_month}; the property is frozen after sale"
+                )
+        initial: set[AgentId] = set()
+        for residence in self.initial_residences:
+            if residence.agent_id in initial:
+                raise ValueError(f"multiple initial primary residences for {residence.agent_id!r}")
+            initial.add(residence.agent_id)
+            _check_residence(residence.agent_id, residence.property_id, 0, purchases, sold)
+        assigned: set[tuple[AgentId, int]] = set()
+        for change in self.residence_events:
+            if not 0 <= change.month < horizon_months:
+                raise ValueError(
+                    f"primary residence event for {change.agent_id!r} has month {change.month}, "
+                    f"outside the horizon [0, {horizon_months})"
+                )
+            if (change.agent_id, change.month) in assigned:
+                raise ValueError(f"multiple primary residence events for {change.agent_id!r} at month {change.month}")
+            assigned.add((change.agent_id, change.month))
+            if change.property_id is not None:
+                _check_residence(change.agent_id, change.property_id, change.month, purchases, sold)
+
+
+def _check_residence(
+    agent_id: AgentId,
+    property_id: PropertyId,
+    month: int,
+    purchases: Mapping[PropertyId, ScheduledPurchase],
+    sold: Mapping[PropertyId, int],
+) -> None:
+    purchase = purchases.get(property_id)
+    if purchase is None:
+        raise ValueError(f"primary residence references unknown property {property_id!r}")
+    if purchase.buyer_agent_id != agent_id:
+        raise ValueError(f"primary residence assigns {property_id!r} to {agent_id!r}, who did not buy it")
+    if month < purchase.month or (property_id in sold and month > sold[property_id]):
+        raise ValueError(f"primary residence assigns {property_id!r} at month {month}, while it is not held")
 
 
 class PropertyStatement(Statement):
-    """What a property tells the contracts attached to it: whether it is held and how much is let."""
+    """What a property tells the contracts attached to it: whether it is held, how much is let, whether
+    its owner lives there, and the cost of the construction completed on it this month."""
 
-    property_id: str
+    property_id: PropertyId
     active: bool
     purchase_month: int
     rented_fraction_ppb: int
+    owner_occupied: bool
+    new_construction: int
+    transfer_tax: int
 
 
 class Properties:
     def __init__(self, housing: Housing, accounting: Accounting) -> None:
         self.housing = housing
-        self.properties: dict[str, Property] = {}
-        self.primary: dict[str, str | None] = {row.agent_id: row.property_id for row in housing.initial_residences}
+        self.properties: dict[PropertyId, Property] = {}
+        self.primary: dict[AgentId, str | None] = {row.agent_id: row.property_id for row in housing.initial_residences}
         # This month's outcomes, cleared by `begin_month`; property state lives in `properties`.
         self.purchases: list[Purchase] = []
         self.sales: list[Sale] = []
@@ -177,10 +333,12 @@ class Properties:
                 asset_account(purchase),
                 gain_account(purchase.buyer_agent_id),
                 AccountRef(
-                    agent_id=purchase.buyer_agent_id, account_id=f"expense:property-basis:{purchase.property_id}"
+                    agent_id=purchase.buyer_agent_id,
+                    account_id=AccountId(f"expense:property-basis:{purchase.property_id}"),
                 ),
                 AccountRef(
-                    agent_id=purchase.seller_agent_id, account_id=f"equity:property-sale:{purchase.property_id}"
+                    agent_id=purchase.seller_agent_id,
+                    account_id=AccountId(f"equity:property-sale:{purchase.property_id}"),
                 ),
             ):
                 accounting.ledger.ensure_account(account)
@@ -194,7 +352,7 @@ class Properties:
                     (loan.lender_agent_id, "equity:mortgage-funding"),
                 ):
                     accounting.ledger.ensure_account(
-                        AccountRef(agent_id=agent, account_id=f"{prefix}:{loan.liability_id}")
+                        AccountRef(agent_id=agent, account_id=AccountId(f"{prefix}:{loan.liability_id}"))
                     )
 
     def begin_month(self) -> None:
@@ -208,7 +366,7 @@ class Properties:
         ):
             outcomes.clear()
 
-    def statement(self, property_id: str, month: int) -> PropertyStatement | None:
+    def statement(self, property_id: PropertyId, month: int) -> PropertyStatement | None:
         """None for a property the world never held; a sold one reports inactive."""
         property_ = self.properties.get(property_id)
         if property_ is None:
@@ -219,13 +377,27 @@ class Properties:
             active=property_.state.active,
             purchase_month=property_.state.purchase_month,
             rented_fraction_ppb=property_.state.rented_fraction_ppb,
+            owner_occupied=self.owner_occupied(property_.state),
+            new_construction=sum(
+                improvement.amount for improvement in self.improvements if improvement.property_id == property_id
+            ),
+            transfer_tax=sum(row.transfer_tax for row in self.purchases if row.property_id == property_id)
+            + sum(row.transfer_tax for row in self.sales if row.property_id == property_id),
+        )
+
+    def owner_occupied(self, state: PropertyState) -> bool:
+        """Held, not wholly let, and its owner's primary residence."""
+        return (
+            state.active
+            and state.rented_fraction_ppb < MONEY_FACTOR_SCALE
+            and self.primary.get(state.owner_agent_id) == state.property_id
         )
 
     def snapshots(self) -> list[PropertyState]:
         return [property_.state for property_ in self.properties.values()]
 
-    def market_value(self, purchase: _PropertyPurchase, market: MarketPath, month: int) -> int:
-        series = f"home_value:{purchase.location_id}"
+    def market_value(self, purchase: ScheduledPurchase, market: MarketPath, month: int) -> int:
+        series = f"home_value:{purchase.market}"
         return mul_div(
             purchase.purchase_price,
             market.value(series, month),
@@ -241,8 +413,13 @@ class Properties:
             self.residences.append(Residence(month, event.agent_id, event.property_id, event.property_id is not None))
 
     def lifecycle(
-        self, accounting: Accounting, market: MarketPath, month: int, mortgages: Mapping[str, Mortgage]
-    ) -> list[str]:
+        self,
+        accounting: Accounting,
+        market: MarketPath,
+        month: int,
+        mortgages: Mapping[LiabilityId, Mortgage],
+        section_121_exclusions: Mapping[AgentId, int],
+    ) -> list[LiabilityId]:
         ids = sorted(
             {event.property_id for event in self.housing.rented_fraction_events if event.month == month}
             | {
@@ -253,7 +430,7 @@ class Properties:
             | {sale.property_id for sale in self.housing.sales if sale.month == month}
         )
         purchases = {purchase.property_id: purchase for purchase in self.housing.purchases}
-        paid_off = []
+        paid_off: list[LiabilityId] = []
         for id_ in ids:
             property_ = self.properties.get(id_)
             if property_ is None or not property_.state.active:
@@ -263,7 +440,7 @@ class Properties:
                     property_.state = property_.state.model_copy(
                         update={"rented_fraction_ppb": event.rented_fraction_ppb}
                     )
-                    self.rented_fractions.append(RentedFraction(month, id_, event.rented_fraction_ppb))
+                    self.rented_fractions.append(event)
             for improvement in self.housing.capital_improvements:
                 if improvement.month != month or improvement.property_id != id_:
                     continue
@@ -285,10 +462,10 @@ class Properties:
                     )
                 )
                 property_.state = property_.state.model_copy(update={"building_basis": basis})
-                self.improvements.append(CapitalImprovement(month, id_, improvement.amount, ""))
+                self.improvements.append(improvement)
             for sale in self.housing.sales:
                 if sale.month == month and sale.property_id == id_ and property_.state.active:
-                    payoff = self.sell(accounting, market, purchases[id_], sale, mortgages)
+                    payoff = self.sell(accounting, market, purchases[id_], sale, mortgages, section_121_exclusions)
                     if payoff is not None:
                         paid_off.append(payoff)
         return paid_off
@@ -297,18 +474,18 @@ class Properties:
         self,
         accounting: Accounting,
         market: MarketPath,
-        purchase: _PropertyPurchase,
-        sale: _PropertySale,
-        mortgages: Mapping[str, Mortgage],
-    ) -> str | None:
+        purchase: ScheduledPurchase,
+        sale: ScheduledSale,
+        mortgages: Mapping[LiabilityId, Mortgage],
+        section_121_exclusions: Mapping[AgentId, int],
+    ) -> LiabilityId | None:
         property_ = self.properties[sale.property_id]
         state = property_.state
-        gross = mul_div(
-            self.market_value(purchase, market, sale.month),
-            MONEY_FACTOR_SCALE - sale.closing_cost_ppb,
-            MONEY_FACTOR_SCALE,
-            "property sale proceeds",
-        )
+        value = self.market_value(purchase, market, sale.month)
+        commission = mul_div(value, sale.commission_ppb, MONEY_FACTOR_SCALE, "sale commission")
+        escrow_title = mul_div(value, sale.escrow_title_ppb, MONEY_FACTOR_SCALE, "sale escrow and title")
+        gross = checked_count(value - commission - escrow_title, "property sale proceeds")
+        transfer_tax = seller_share(purchase.parcel.situs.transfer_tax(value), sale.buyer_transfer_tax_share_ppb)
         loan = purchase.mortgage
         payoff = 0
         paid_off = None
@@ -321,26 +498,17 @@ class Properties:
                 paid_off = loan.liability_id
         net_cash = checked_count(gross - payoff, "money subtraction")
         capex = checked_count(state.building_basis - state.building_basis_initial, "money subtraction")
-        # Sale gain excludes capitalized buyer closing costs under the current contract.
-        adjusted = checked_count(
-            checked_count(purchase.purchase_price + capex, "money addition") - state.cumulative_depreciation,
-            "money subtraction",
-        )
-        gain = checked_count(gross - adjusted, "money subtraction")
+        property_basis = checked_count(state.adjusted_basis + capex, "money addition")
+        adjusted = checked_count(property_basis - state.cumulative_depreciation, "money subtraction")
+        # The ledger's gain account takes the sale before the seller's transfer tax, which leaves as
+        # a bill like every tax payment; the amount realized for tax is net of it.
+        booked = checked_count(gross - adjusted, "money subtraction")
+        gain = checked_count(booked - transfer_tax, "money subtraction")
         recapture = min(max(0, gain), state.cumulative_depreciation)
         remainder = max(0, checked_count(gain - recapture, "money subtraction"))
-        profile = next(
-            (profile for profile in accounting.tax.profiles if profile.agent_id == purchase.buyer_agent_id), None
-        )
-        cap = 0 if profile is None else profile.section_121_exclusion
+        cap = section_121_exclusions.get(purchase.buyer_agent_id, 0)
         exclusion = min(remainder, cap) if sum(property_.occupied_window) >= 24 else 0
         long_gain = checked_count(remainder - exclusion, "money subtraction")
-        property_basis = checked_count(state.adjusted_basis + capex, "money addition")
-        writeoff = checked_count(
-            checked_count(state.adjusted_basis - purchase.purchase_price, "money subtraction")
-            + state.cumulative_depreciation,
-            "money addition",
-        )
         postings = [
             Posting(
                 account=AccountRef(agent_id=purchase.buyer_agent_id, account_id=purchase.buyer_account_id),
@@ -349,30 +517,34 @@ class Properties:
             Posting(account=asset_account(purchase), amount=checked_count(-property_basis, "money negation")),
             Posting(
                 account=AccountRef(
-                    agent_id=purchase.buyer_agent_id, account_id=f"expense:property-basis:{purchase.property_id}"
+                    agent_id=purchase.buyer_agent_id,
+                    account_id=AccountId(f"expense:property-basis:{purchase.property_id}"),
                 ),
-                amount=writeoff,
+                amount=state.cumulative_depreciation,
             ),
-            Posting(account=gain_account(purchase.buyer_agent_id), amount=checked_count(-gain, "money negation")),
+            Posting(account=gain_account(purchase.buyer_agent_id), amount=checked_count(-booked, "money negation")),
         ]
         if loan is not None and paid_off is not None:
             postings.extend(
                 [
                     Posting(
                         account=AccountRef(
-                            agent_id=purchase.buyer_agent_id, account_id=f"liability:mortgage:{loan.liability_id}"
+                            agent_id=purchase.buyer_agent_id,
+                            account_id=AccountId(f"liability:mortgage:{loan.liability_id}"),
                         ),
                         amount=payoff,
                     ),
                     Posting(
                         account=AccountRef(
-                            agent_id=loan.lender_agent_id, account_id=f"asset:mortgage-receivable:{loan.liability_id}"
+                            agent_id=loan.lender_agent_id,
+                            account_id=AccountId(f"asset:mortgage-receivable:{loan.liability_id}"),
                         ),
                         amount=checked_count(-payoff, "money negation"),
                     ),
                     Posting(
                         account=AccountRef(
-                            agent_id=loan.lender_agent_id, account_id=f"equity:mortgage-funding:{loan.liability_id}"
+                            agent_id=loan.lender_agent_id,
+                            account_id=AccountId(f"equity:mortgage-funding:{loan.liability_id}"),
                         ),
                         amount=payoff,
                     ),
@@ -391,34 +563,53 @@ class Properties:
         if self.primary.get(purchase.buyer_agent_id) == sale.property_id:
             self.primary[purchase.buyer_agent_id] = None
         self.sales.append(
-            Sale(sale.month, sale.property_id, gross, payoff, net_cash, gain, recapture, exclusion, long_gain)
+            Sale(
+                sale.month,
+                sale.property_id,
+                gross,
+                commission,
+                escrow_title,
+                transfer_tax,
+                payoff,
+                net_cash,
+                gain,
+                recapture,
+                exclusion,
+                long_gain,
+            )
         )
         return paid_off
 
-    def purchase(self, accounting: Accounting, month: int, originations: Mapping[str, Mortgage]) -> list[str]:
+    def purchase(
+        self, accounting: Accounting, month: int, originations: Mapping[LiabilityId, Mortgage]
+    ) -> list[LiabilityId]:
         originated = []
         for purchase in self.housing.purchases:
             if purchase.month != month:
                 continue
             loan = purchase.mortgage
             debt = 0 if loan is None else loan.principal
-            adjusted = checked_count(purchase.purchase_price + purchase.buyer_closing_cost, "money addition")
-            building = checked_count(
-                mul_div(
-                    purchase.purchase_price,
-                    MONEY_FACTOR_SCALE - purchase.land_value_fraction_ppb,
-                    MONEY_FACTOR_SCALE,
-                    "property building basis",
-                )
-                + purchase.buyer_closing_cost,
-                "money addition",
+            tax = purchase.parcel.situs.transfer_tax(purchase.purchase_price)
+            transfer_tax = checked_count(
+                tax - seller_share(tax, purchase.buyer_transfer_tax_share_ppb), "buyer's transfer tax"
+            )
+            adjusted = checked_count(
+                purchase.purchase_price + purchase.buyer_closing_cost + transfer_tax, "money addition"
+            )
+            # IRS Publication 527, "Basis of Depreciable Property": settlement costs are part of the cost,
+            # which is divided between land and building.
+            building = mul_div(
+                adjusted,
+                MONEY_FACTOR_SCALE - purchase.land_value_fraction_ppb,
+                MONEY_FACTOR_SCALE,
+                "property building basis",
             )
             stake = checked_count(purchase.down_payment + purchase.buyer_closing_cost, "money addition")
             equity = checked_count(purchase.purchase_price - debt, "money subtraction")
             buyer = AccountRef(agent_id=purchase.buyer_agent_id, account_id=purchase.buyer_account_id)
             seller = AccountRef(agent_id=purchase.seller_agent_id, account_id=purchase.seller_account_id)
             clearing = AccountRef(
-                agent_id=purchase.seller_agent_id, account_id=f"equity:property-sale:{purchase.property_id}"
+                agent_id=purchase.seller_agent_id, account_id=AccountId(f"equity:property-sale:{purchase.property_id}")
             )
             postings = [
                 Posting(account=buyer, amount=checked_count(-stake, "money negation")),
@@ -426,6 +617,17 @@ class Properties:
                 Posting(account=asset_account(purchase), amount=adjusted),
                 Posting(account=clearing, amount=checked_count(-stake, "money negation")),
             ]
+            if transfer_tax:
+                # The buyer's transfer tax leaves as its bill; its basis is capitalized here.
+                postings.append(
+                    Posting(
+                        account=AccountRef(
+                            agent_id=purchase.buyer_agent_id,
+                            account_id=AccountId(f"expense:property-basis:{purchase.property_id}"),
+                        ),
+                        amount=checked_count(-transfer_tax, "money negation"),
+                    )
+                )
             origination = None
             if loan is not None:
                 mortgage = originations.get(loan.liability_id)
@@ -435,20 +637,22 @@ class Properties:
                     [
                         Posting(
                             account=AccountRef(
-                                agent_id=purchase.buyer_agent_id, account_id=f"liability:mortgage:{loan.liability_id}"
+                                agent_id=purchase.buyer_agent_id,
+                                account_id=AccountId(f"liability:mortgage:{loan.liability_id}"),
                             ),
                             amount=checked_count(-debt, "money negation"),
                         ),
                         Posting(
                             account=AccountRef(
                                 agent_id=loan.lender_agent_id,
-                                account_id=f"asset:mortgage-receivable:{loan.liability_id}",
+                                account_id=AccountId(f"asset:mortgage-receivable:{loan.liability_id}"),
                             ),
                             amount=debt,
                         ),
                         Posting(
                             account=AccountRef(
-                                agent_id=loan.lender_agent_id, account_id=f"equity:mortgage-funding:{loan.liability_id}"
+                                agent_id=loan.lender_agent_id,
+                                account_id=AccountId(f"equity:mortgage-funding:{loan.liability_id}"),
                             ),
                             amount=checked_count(-debt, "money negation"),
                         ),
@@ -472,7 +676,7 @@ class Properties:
                 postings.append(Posting(account=clearing, amount=debt))
             state = PropertyState(
                 property_id=purchase.property_id,
-                location_id=purchase.location_id,
+                market=purchase.market,
                 owner_agent_id=purchase.buyer_agent_id,
                 purchase_month=month,
                 adjusted_basis=adjusted,
@@ -500,10 +704,11 @@ class Properties:
                     month,
                     purchase.cause_id,
                     purchase.property_id,
-                    purchase.location_id,
+                    purchase.market,
                     purchase.buyer_agent_id,
                     purchase.purchase_price,
                     purchase.buyer_closing_cost,
+                    transfer_tax,
                     adjusted,
                     stake,
                     equity,
@@ -514,11 +719,7 @@ class Properties:
     def accrue(self, accounting: Accounting, month: int) -> None:
         for property_ in self.properties.values():
             state = property_.state
-            occupied = (
-                state.active
-                and state.rented_fraction_ppb < MONEY_FACTOR_SCALE
-                and self.primary.get(state.owner_agent_id) == state.property_id
-            )
+            occupied = self.owner_occupied(state)
             property_.occupied_window[month % 60] = occupied
             occupied_months = state.owner_occupied_months + int(occupied)
             if occupied_months >= 1 << 32:

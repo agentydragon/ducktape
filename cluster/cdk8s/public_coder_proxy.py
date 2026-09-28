@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -37,11 +37,12 @@ from cluster.cdk8s import cilium, external_creds, public_coder_devbox
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAME = "public-coder-agent-proxy"
@@ -83,10 +84,9 @@ def _external_secrets(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "brave-search-api-key",
-        name=brave,
-        namespace=NAMESPACE,
-        refresh="1m",
-        store=external_creds.STORE,
+        metadata=ApiObjectMetadata(name=brave, namespace=NAMESPACE),
+        refresh_interval="1m",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data(brave, "api-key")],
         # The existing target is Reflector-created. Orphan lets ESO sync it without
         # requiring an owner reference it does not currently have; the short interval
@@ -237,19 +237,12 @@ def _substitutions() -> list[dict]:
 
 
 def _config_map(scope: Construct) -> k8s.KubeConfigMap:
-    # No content-hash name suffix: the Deployment's `reloader.stakater.com/auto` is what rolls
-    # the proxy when this changes.
+    # No content-hash name suffix: Reloader's `autoReloadAll` rolls the proxy when this changes.
     return k8s.KubeConfigMap(
         scope,
         "config",
         metadata=k8s.ObjectMeta(name="public-coder-agent-proxy-config", namespace=NAMESPACE),
         data={_CONFIG_FILE: yaml_config(_iron_config())},
-    )
-
-
-def _secret_env(name: str, secret_name: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret_name, key=key))
     )
 
 
@@ -265,14 +258,14 @@ def _container(aiquota_bearer: k8s.SecretKeySelector) -> k8s.Container:
         env=[
             # The real GitHub credential lives here and nowhere else. It reaches the agent's
             # traffic only as a substitution performed here.
-            _secret_env(_GITHUB_TOKEN_ENV, "public-coder-agent-github-token", "GITHUB_TOKEN"),
+            secret_env_var(_GITHUB_TOKEN_ENV, "public-coder-agent-github-token", "GITHUB_TOKEN"),
             # Dedicated Haku Console bearer, held by the proxy rather than the agent. iron.yaml
             # substitutes it only for the exact public Haku host's Authorization header.
-            _secret_env(_HAKU_CONSOLE_TOKEN_ENV, "haku-console-public-coder-agent", "token"),
+            secret_env_var(_HAKU_CONSOLE_TOKEN_ENV, "haku-console-public-coder-agent", "token"),
             # The agent sees only the corresponding placeholder. This password is valid solely for
             # the native read-only public_coder_analytics ClickHouse account and is substituted by
             # iron.yaml on the private ClusterIP host.
-            _secret_env(_CLICKHOUSE_PASSWORD_ENV, client.PUBLIC_CODER_CREDENTIALS, client.PASSWORD_KEY),
+            secret_env_var(_CLICKHOUSE_PASSWORD_ENV, client.PUBLIC_CODER_CREDENTIALS, client.PASSWORD_KEY),
             # The same bearer used by aiquota-api. It is reflected here solely for iron-proxy to
             # substitute into the agent's placeholder on the two read endpoints; the OpenClaw
             # workload never receives it.
@@ -281,11 +274,11 @@ def _container(aiquota_bearer: k8s.SecretKeySelector) -> k8s.Container:
             # non-secret placeholder that is swapped only for Brave's X-Subscription-Token header
             # on its API host. Synced into this namespace from the external-creds source at
             # cluster/k8s/external-creds/brave-search-api-key.sops.yaml.
-            _secret_env(_BRAVE_API_KEY_ENV, "brave-search-api-key", "api-key"),
+            secret_env_var(_BRAVE_API_KEY_ENV, "brave-search-api-key", "api-key"),
             # Matrix password login is the one credential that lives in a JSON body rather than
             # Authorization. iron.yaml swaps the app's placeholder only on the Matrix login
             # endpoint.
-            _secret_env(_MATRIX_PASSWORD_ENV, "public-coder-agent-matrix-bot-password", "password"),
+            secret_env_var(_MATRIX_PASSWORD_ENV, "public-coder-agent-matrix-bot-password", "password"),
         ],
         ports=[
             k8s.ContainerPort(name="proxy", container_port=PROXY_PORT),
@@ -309,9 +302,7 @@ def _deployment(scope: Construct, config_map: k8s.KubeConfigMap, aiquota_bearer:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=NAME, namespace=NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=LABELS),
@@ -374,13 +365,13 @@ def _ingress_policy(scope: Construct, app_namespace: str, app_labels: dict[str, 
     the OpenClaw Agent pod and its KubeVirt devbox. In particular, namespace co-tenancy is not
     authority to use this Service, and the metrics port remains closed until a reviewed scraper
     needs it."""
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "ingress",
-        metadata=metadata("allow-public-coder-agent-proxy-ingress", NAMESPACE),
-        selector=LABELS,
+        metadata=ApiObjectMetadata(name="allow-public-coder-agent-proxy-ingress", namespace=NAMESPACE),
+        endpoint_selector=LABELS,
         ingress=[
-            cilium.ingress_from(
+            IngressRule.from_endpoints(
                 _endpoint(app_namespace, app_labels),
                 _endpoint(public_coder_devbox.NAMESPACE, public_coder_devbox.POD_LABELS),
                 ports=[PROXY_PORT],
@@ -411,11 +402,11 @@ def _egress_policy(scope: Construct) -> None:
     NetworkPolicy, which permits egress solely to this proxy. That is what makes the substitution
     unavoidable rather than advisory.
     """
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "egress",
-        metadata=metadata("allow-public-coder-agent-proxy-egress", NAMESPACE),
-        selector=LABELS,
+        metadata=ApiObjectMetadata(name="allow-public-coder-agent-proxy-egress", namespace=NAMESPACE),
+        endpoint_selector=LABELS,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
             # `world` alone does not mean "everywhere". Cilium carves the cluster's own nodes out
@@ -428,11 +419,11 @@ def _egress_policy(scope: Construct) -> None:
             # `reserved:host`. Widening a CIDR/FQDN rule cannot substitute --
             # `policy-cidr-match-mode` is unset cluster-wide, so CIDR-derived selectors never match
             # node IPs. See cluster/docs/cilium_network_policy.md.
-            cilium.egress_to_entities("world", "remote-node", "host", ports=[443, 80]),
+            EgressRule.to_entities(Entity.WORLD, Entity.REMOTE_NODE, Entity.HOST, ports=[443, 80]),
             # The agent's normalized analytics reads leave the app through this Iron proxy, then
             # use the private ClickHouse HTTP ClusterIP service. Do not grant this egress to the
             # app Pod itself.
-            cilium.egress_to(_endpoint(client.NAMESPACE, client.LABELS), client.HTTP_PORT),
+            EgressRule.to_endpoints(_endpoint(client.NAMESPACE, client.LABELS), client.HTTP_PORT),
             # The confined configuration, for restoration: TCP 443 by toFQDNs to the GitHub hosts
             # (clone, push to forks, and open pull requests via the REST API) github.com,
             # api.github.com, codeload.github.com, objects.githubusercontent.com,

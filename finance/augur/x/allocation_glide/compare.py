@@ -14,33 +14,26 @@ from typing import Literal
 
 import numpy as np
 
-from finance.augur.model.series import InflationKey, SecurityKey
+from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AgentId
-from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedIndexedAmount,
-    PreparedLot,
-    PreparedObligation,
-    PreparedSeries,
-)
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME
+from finance.augur.sim.market_path import IndexedAmount, MarketPath, Series
+from finance.augur.sim.money import USD
 from finance.augur.sim.results import Finished, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 from finance.augur.x.allocation_glide.policy import decide
 
 QUANTUM = Decimal("0.01")
 RETIREE = AgentId("test-retiree")
-COUNTERPARTY = "test-world"
-GROWTH = SecurityKey(symbol="test-growth")
-STEADY = SecurityKey(symbol="test-steady")
+COUNTERPARTY = AgentId("test-world")
+GROWTH = SecurityKey(symbol=SecuritySymbol("test-growth"))
+STEADY = SecurityKey(symbol=SecuritySymbol("test-steady"))
 HORIZON_MONTHS = 60
 
 
@@ -48,7 +41,7 @@ HORIZON_MONTHS = 60
 class Situation:
     """What every path shares: the three stipulated paths and the horizon; the books are declared per path."""
 
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     rollout_count: int
 
 
@@ -63,8 +56,7 @@ def situation() -> Situation:
         [(GROWTH, growth), (STEADY, steady), (InflationKey(), cpi)], rollout_count=3, horizon_months=HORIZON_MONTHS
     )
     return Situation(
-        series=compile_series(paths, rollout_count=3, horizon_months=HORIZON_MONTHS, currency_quantum=QUANTUM),
-        rollout_count=3,
+        series=compile_series(paths, rollout_count=3, horizon_months=HORIZON_MONTHS, currency=USD), rollout_count=3
     )
 
 
@@ -77,49 +69,41 @@ def compose(case: Situation, rollout_id: int) -> World:
     )
     for name, balance in ((RETIREE, Decimal(10_000)), (COUNTERPARTY, Decimal(0))):
         world.declare_account(
-            PreparedAccount(
-                account=AccountRef(agent_id=name, account_id="checking"),
-                opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
-            )
+            account=AccountRef(agent_id=name, account_id=AccountId("checking")),
+            opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
         )
     for asset in (GROWTH, STEADY):
         scale = quantity_scale_for_asset(asset)
         world.declare_pool(
-            PreparedHoldingPool(
-                agent_id=RETIREE, account_id="checking", asset_id=str(asset.symbol), quantity_scale=scale
-            )
+            agent_id=RETIREE, account_id=AccountId("checking"), asset_id=AssetId(asset.symbol), quantity_scale=scale
         )
-        world.hold(
-            PreparedLot(
-                lot_id=f"test-opening-{asset.symbol}",
-                agent_id=RETIREE,
-                account_id="checking",
-                asset_id=str(asset.symbol),
-                purchase_month=-24,
-                quantity_scale=scale,
-                units=int(quantity_to_quanta(500, scale=scale)),
-                basis=int(currency_amount_to_quanta(Decimal(50_000), quantum=QUANTUM)),
-            )
+        world.hold_lot(
+            lot_id=LotId(f"test-opening-{asset.symbol}"),
+            agent_id=RETIREE,
+            account_id=AccountId("checking"),
+            asset_id=AssetId(asset.symbol),
+            purchase_month=-24,
+            quantity_scale=scale,
+            units=quantity_to_quanta(500, scale=scale),
+            basis=int(currency_amount_to_quanta(Decimal(50_000), quantum=QUANTUM)),
         )
     for month in range(0, HORIZON_MONTHS, 12):
         world.track(
             Biller(
-                PreparedObligation(
-                    month=month,
-                    obligation_id="test-consumption",
-                    obligation_type="cash_spend",
-                    from_account=AccountRef(agent_id=RETIREE, account_id="checking"),
-                    to_account=AccountRef(agent_id=COUNTERPARTY, account_id="checking"),
-                    amount_due=PreparedIndexedAmount(
-                        base_amount=int(currency_amount_to_quanta(Decimal(6_000), quantum=QUANTUM)),
-                        series_id=InflationKey().wire_id,
-                        base_month_index=0,
-                        adjustment_period_months=12,
-                    ),
-                    property_id=None,
-                    deduction_category=None,
-                    deductible_fraction_ppb=1_000_000_000,
-                )
+                schedule=Once(month=month),
+                obligation_id="test-consumption",
+                obligation_type="cash_spend",
+                from_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
+                to_account=AccountRef(agent_id=COUNTERPARTY, account_id=AccountId("checking")),
+                amount_due=IndexedAmount(
+                    base_amount=int(currency_amount_to_quanta(Decimal(6_000), quantum=QUANTUM)),
+                    series_id=InflationKey().wire_id,
+                    base_month_index=0,
+                    adjustment_period_months=12,
+                ),
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=1_000_000_000,
             )
         )
     return world

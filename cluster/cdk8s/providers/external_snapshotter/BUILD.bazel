@@ -1,0 +1,14 @@
+# gazelle:resolve py external_snapshotter_volumesnapshotclass_crds //cluster/cdk8s/providers/external_snapshotter:volumesnapshotclass
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+
+# The CRD also lists v1beta1, no longer served.
+cdk8s_import(
+    name = "volumesnapshotclass",
+    crd = "@external_snapshotter_volumesnapshotclass_crd//file",
+    crd_name = "volumesnapshotclasses.snapshot.storage.k8s.io",
+    crd_version = "v1",
+    module_name = "external_snapshotter_volumesnapshotclass_crds",
+    module_path = "io/k8s/storage/snapshot",
+    visibility = ["//visibility:public"],
+)

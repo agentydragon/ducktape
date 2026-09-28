@@ -64,6 +64,60 @@ def test_untracked_file_is_kept(repo: GitRepo, proc: Path) -> None:
     assert isinstance(_classify(repo, wt.path, proc), wg.RetainedWorktree)
 
 
+def test_dirty_tracked_deletion_is_kept(repo: GitRepo, proc: Path) -> None:
+    """A tracked file deleted out from under the worktree (not just modified) must still be
+    caught by the tracked-only fast path, not just a tracked modification."""
+    wt = repo.worktree("wt", "feature")
+    (wt.path / "base").unlink()
+    result = _classify(repo, wt.path, proc)
+    assert isinstance(result, wg.RetainedWorktree)
+    assert result.reason == "uncommitted changes"
+
+
+def _record_status_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Patch `pygit2.Repository.status` to record each call's `untracked_files` mode while
+    still delegating to the real implementation."""
+    calls: list[str] = []
+    real_status = wg.pygit2.Repository.status
+
+    def recording_status(self: object, untracked_files: str = "all", **kwargs: object) -> dict[str, int]:
+        calls.append(untracked_files)
+        result: dict[str, int] = real_status(self, untracked_files=untracked_files, **kwargs)
+        return result
+
+    monkeypatch.setattr(wg.pygit2.Repository, "status", recording_status)
+    return calls
+
+
+def test_tracked_only_dirty_check_skips_the_untracked_walk(
+    repo: GitRepo, proc: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A worktree already dirty via a tracked change must never pay for the separate,
+    much more expensive full status call that also walks for untracked files."""
+    wt = repo.worktree("wt", "feature")
+    (wt.path / "base").write_text("dirty\n")
+    calls = _record_status_calls(monkeypatch)
+
+    _classify(repo, wt.path, proc)
+
+    assert calls == ["no"]
+
+
+def test_clean_on_tracked_files_falls_back_to_the_full_status(
+    repo: GitRepo, proc: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A worktree clean on tracked files must still fall back to the full scan, so an
+    untracked file is not missed."""
+    wt = repo.worktree("wt", "feature")
+    (wt.path / "scratch").write_text("x\n")
+    calls = _record_status_calls(monkeypatch)
+
+    result = _classify(repo, wt.path, proc)
+
+    assert calls == ["no", "all"]
+    assert isinstance(result, wg.RetainedWorktree)
+
+
 def test_dirty_with_open_pr_notes_the_pr(repo: GitRepo, proc: Path) -> None:
     wt = repo.worktree("wt", "feature")
     (wt.path / "base").write_text("dirty\n")
@@ -117,6 +171,16 @@ def test_merged_pr_overrides_unmerged_git(repo: GitRepo, proc: Path) -> None:
     result = _classify(repo, wt.path, proc, pr_states={"feature": PrInfo(42, PrState.MERGED)})
     assert isinstance(result, wg.PrunableWorktree)
     assert "PR #42 merged" in result.reason
+
+
+def test_closed_pr_overrides_unmerged_git(repo: GitRepo, proc: Path) -> None:
+    # A PR was closed unmerged; the worktree is clean. Nothing is lost by removing the
+    # worktree either way — its branch (whatever it holds) stays reachable through the ref.
+    wt = repo.worktree("wt", "feature")
+    wt.commit("novel", "unique\n", "abandoned attempt")
+    result = _classify(repo, wt.path, proc, pr_states={"feature": PrInfo(11, PrState.CLOSED)})
+    assert isinstance(result, wg.PrunableWorktree)
+    assert "closed PR #11" in result.reason
 
 
 def test_open_pr_is_kept(repo: GitRepo, proc: Path) -> None:

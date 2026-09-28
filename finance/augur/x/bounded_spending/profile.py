@@ -9,6 +9,7 @@ import pstats
 import resource
 from pathlib import Path
 
+from finance.augur.sim.ids import AccountId, AssetId
 from finance.augur.sim.results import Finished
 from finance.augur.x.bounded_spending.python_policy import BatchPolicy, Parameters, ScalarAdapter, SpendingPolicy, run
 from finance.augur.x.bounded_spending.stress_paths import equity_only
@@ -36,7 +37,9 @@ def main() -> None:
         policy = (
             ScalarAdapter(parameters, ids) if args.authoring == "scalar" else BatchPolicy(parameters, args.rollouts)
         )
-        return run(compose, SpendingPolicy(policy, {("brokerage", "STOCKS"): 1}), ids, capture=args.capture)
+        return run(
+            compose, SpendingPolicy(policy, {(AccountId("brokerage"), AssetId("STOCKS")): 1}), ids, capture=args.capture
+        )
 
     profiler = cProfile.Profile()
     output = profiler.runcall(execute)

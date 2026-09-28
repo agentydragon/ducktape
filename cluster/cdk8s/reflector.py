@@ -2,18 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from collections.abc import Sequence
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "reflector"
 NAMESPACE = "reflector-system"
@@ -21,20 +17,27 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/reflector"
 _VERSION = "10.0.65"
 
 
+def mirror_annotations(namespaces: Sequence[str]) -> dict[str, str]:
+    """Annotations on a source Secret or ConfigMap that make Reflector keep a copy in each of `namespaces`."""
+    value = ",".join(namespaces)
+    return {
+        "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
+        "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": value,
+        "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
+        "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": value,
+    }
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     k8s.KubeNamespace(chart, "namespace", metadata=k8s.ObjectMeta(name=NAMESPACE))
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=metadata("emberstack", NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://emberstack.github.io/helm-charts"),
-    )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(
+            chart, "emberstack", NAMESPACE, url="https://emberstack.github.io/helm-charts"
+        ),
         chart="reflector",
         version=_VERSION,
         interval="15m",
@@ -56,9 +59,5 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def reflector(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    return flux_kustomization(chart, NAME, artifact, timeout="5m")
+def reflector(chart: Chart, directory: RenderedDirectory) -> Kustomization:
+    return flux_kustomization(chart, NAME, directory, timeout="5m")

@@ -12,14 +12,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from decimal import Decimal
 
-from finance.augur.model.series import PrivateEquityEventKindCode, PrivateEquityRegimeCode
+from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
-from finance.augur.sim.prepared import PreparedSeries
+from finance.augur.sim.market_path import Series
 
 QUANTUM = Decimal("0.01")
 
 type Money = Sequence[Decimal] | Decimal
-type Rate = Sequence[float] | float
+type Rate = Sequence[Decimal | int] | Decimal | int
 type Code = Sequence[int] | int
 
 
@@ -29,7 +29,7 @@ def _money(channel: Money, snapshots: int) -> tuple[int, ...]:
 
 
 def _rates(channel: Rate, snapshots: int) -> tuple[int, ...]:
-    values = [channel] * snapshots if isinstance(channel, float) else list(channel)
+    values = [channel] * snapshots if isinstance(channel, Decimal | int) else list(channel)
     return tuple(rate_to_ppb(value) for value in values)
 
 
@@ -39,20 +39,20 @@ def _codes(channel: Code, snapshots: int) -> tuple[int, ...]:
 
 
 def issuer_protocol(
-    issuer_id: str,
+    issuer_id: IssuerId,
     *,
     horizon_months: int,
     mark_usd: Money,
     regime: Code = PrivateEquityRegimeCode.PRIVATE_OPERATING,
     event_kind: Code = PrivateEquityEventKindCode.NONE,
     sale_opportunity: Code = 0,
-    sale_capacity: Rate = 1.0,
-    eligible: Rate = 1.0,
-    forced_sale: Rate = 0.0,
+    sale_capacity: Rate = 1,
+    eligible: Rate = 1,
+    forced_sale: Rate = 0,
     liquidity_blocked: Code = 0,
     forced_recovery_usd: Money = Decimal(0),
     company_valuation_usd: Money = Decimal(0),
-) -> tuple[PreparedSeries, ...]:
+) -> tuple[Series, ...]:
     """The issuer's ten channels; every default is "nothing in the way"."""
 
     snapshots = horizon_months + 1
@@ -69,7 +69,7 @@ def issuer_protocol(
         "company_valuation": _money(company_valuation_usd, snapshots),
     }
     return tuple(
-        PreparedSeries(series_id=f"private_equity_{channel}:{issuer_id}", snapshots=snapshots, values=values)
+        Series(series_id=f"private_equity_{channel}:{issuer_id}", snapshots=snapshots, values=values)
         for channel, values in channels.items()
     )
 

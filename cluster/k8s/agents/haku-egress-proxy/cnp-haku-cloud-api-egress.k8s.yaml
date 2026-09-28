@@ -30,8 +30,10 @@ spec:
               - matchName: ftp.gnu.org
               - matchName: ghcr.io
               - matchName: github.com
+              - matchName: go.dev
               - matchName: haku-mailbox.allegedly.works
               - matchName: index.crates.io
+              - matchName: mirrors.kernel.org
               - matchName: nixos.org
               - matchName: nodejs.org
               - matchName: objects.githubusercontent.com
@@ -75,7 +77,9 @@ spec:
         - matchName: codeload.github.com
         - matchName: ftp.gnu.org
         - matchName: github.com
+        - matchName: go.dev
         - matchName: index.crates.io
+        - matchName: mirrors.kernel.org
         - matchName: nodejs.org
         - matchName: objects.githubusercontent.com
         - matchName: raw.githubusercontent.com

@@ -268,9 +268,9 @@ def _wait_for_calibration_page(page: Page) -> None:
 # mid-horizon lifecycle events: set rented to 50% at month 24, a $50k capital improvement at month
 # 60, and a sale at month 120 with 6% closing cost. The horizon (240 months) rides the tab-shared
 # `?h=` control; every other knob inherits `productInputDefaults`. Encoded in the same `?scenarios=`
-# base+overrides codec (v2) as the comparison case, just with no variants.
+# base+overrides codec (v3) as the comparison case, just with no variants.
 _PROPERTY_LIFECYCLE_SCENARIOS = {
-    "v": 2,
+    "v": 3,
     "base": {
         "label": "Base",
         "input": {
@@ -289,7 +289,7 @@ _PROPERTY_LIFECYCLE_URL = "/product?" + urlencode(
     {"scenarios": json.dumps(_PROPERTY_LIFECYCLE_SCENARIOS), "h": "240", "n": "32"}
 )
 
-# Three-scenario "rent vs. buy A vs. buy B" comparison in the base+overrides codec (v2). The Base
+# Three-scenario "rent vs. buy A vs. buy B" comparison in the base+overrides codec (v3). The Base
 # scenario "Rent" sets only the fields that differ from the product defaults (the codec merges the
 # rest over `productInputDefaults`); each variant buys a different fixture property and stops paying
 # outside rent. So the editor spreadsheet shows three columns with a per-scenario "Property to buy"
@@ -297,7 +297,7 @@ _PROPERTY_LIFECYCLE_URL = "/product?" + urlencode(
 # mix of Base, inherited (muted), and overridden (bold + ↩) cells. The whole set rides the
 # URL-encoded `?scenarios=` param.
 _COMPARISON_SCENARIOS = {
-    "v": 2,
+    "v": 3,
     "base": {"label": "Rent", "input": {"monthlyRent": 3000}},
     "variants": [
         {
@@ -330,7 +330,7 @@ _COMPARISON_URL = "/product?" + urlencode({"scenarios": json.dumps(_COMPARISON_S
 # market-path-dependent (hence partial). The target allocation is left unset, so it seeds from the
 # fixture holdings and every sellable position can fund the band.
 _FAILURE_SCENARIOS = {
-    "v": 2,
+    "v": 3,
     "base": {"label": "Aggressive drawdown", "input": {"monthlySpend": 9000, "cashCeiling": 40000}},
     "variants": [],
 }

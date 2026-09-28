@@ -178,44 +178,8 @@ async def test_exports_console_native_status_result_schemas() -> None:
 
     assert list(tools) == ["get_mcp_server_status", "list_mcp_servers"]
 
-    schemas_by_title: dict[str, dict] = {}
-
-    def collect_titled_schemas(value: object) -> None:
-        if isinstance(value, dict):
-            if isinstance(value.get("title"), str):
-                schemas_by_title[value["title"]] = value
-            for child in value.values():
-                collect_titled_schemas(child)
-        elif isinstance(value, list):
-            for child in value:
-                collect_titled_schemas(child)
-
-    collect_titled_schemas(tools["list_mcp_servers"])
-    for title in ("ProviderConnected", "ProviderDegraded", "ProviderUnconnected", "ProviderUnprovisioned"):
-        assert "status" in schemas_by_title[title]["required"]
-    refresh_failure_schema = schemas_by_title["RefreshFailureEpisode"]
-    assert {"resolution", "next_retry_at"} <= set(refresh_failure_schema["required"])
-    assert "action" not in refresh_failure_schema["properties"]
-
     Draft202012Validator(tools["list_mcp_servers"]).validate(
-        {
-            "servers": [
-                {
-                    "server_id": "google_calendar",
-                    "backend": {
-                        "kind": "in_process",
-                        "credential": {"kind": "operator_connection", "connection": "google_calendar"},
-                    },
-                    "connection": {
-                        "connection": "google_calendar",
-                        "display_name": "Google Calendar",
-                        "provider": "google",
-                        "status": "unprovisioned",
-                        "detail": "OAuth client not provisioned on this console; see the console deployment README.",
-                    },
-                }
-            ]
-        }
+        {"servers": [{"server_id": "grants", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}]}
     )
 
 

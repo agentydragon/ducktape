@@ -1,4 +1,4 @@
-"""Home Assistant's backup bucket: the SeaweedFS identity, tenant-local Bucket and S3Credentials,
+"""Home Assistant's backup bucket: the tenant-local SeaweedFS identity, Bucket and S3Credentials,
 the grant letting them reference the SeaweedFS cluster, and the ESO wiring that composes the
 Restic repository Secret.
 
@@ -9,29 +9,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
 )
-from external_secrets_secretstore_crds.io.external_secrets import (
-    SecretStore,
-    SecretStoreSpec,
-    SecretStoreSpecProvider,
-    SecretStoreSpecProviderKubernetes,
-    SecretStoreSpecProviderKubernetesAuth,
-    SecretStoreSpecProviderKubernetesAuthServiceAccount,
-    SecretStoreSpecProviderKubernetesServer,
-    SecretStoreSpecProviderKubernetesServerCaProvider,
-    SecretStoreSpecProviderKubernetesServerCaProviderType,
-)
 
+from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.seaweedfs import s3
 
@@ -50,7 +39,7 @@ _REPOSITORY_SECRET = "home-assistant-config-restic-tenant"
 def _repository(scope: Construct) -> None:
     """Compose the operator-owned S3 credentials with the existing SOPS-managed Restic fields
     without changing the old rollback Secret during the handoff."""
-    k8s.KubeServiceAccount(
+    reader = k8s.KubeServiceAccount(
         scope, "secret-reader-sa", metadata=k8s.ObjectMeta(name=_SECRET_READER, namespace=_NAMESPACE)
     )
     k8s.KubeRole(
@@ -73,37 +62,15 @@ def _repository(scope: Construct) -> None:
         role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_SECRET_READER),
         subjects=[k8s.Subject(kind="ServiceAccount", name=_SECRET_READER, namespace=_NAMESPACE)],
     )
-    SecretStore(
-        scope,
-        "secret-store",
-        metadata=metadata(_SECRET_STORE, _NAMESPACE),
-        spec=SecretStoreSpec(
-            provider=SecretStoreSpecProvider(
-                kubernetes=SecretStoreSpecProviderKubernetes(
-                    server=SecretStoreSpecProviderKubernetesServer(
-                        ca_provider=SecretStoreSpecProviderKubernetesServerCaProvider(
-                            type=SecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
-                            name="kube-root-ca.crt",
-                            key="ca.crt",
-                        )
-                    ),
-                    auth=SecretStoreSpecProviderKubernetesAuth(
-                        service_account=SecretStoreSpecProviderKubernetesAuthServiceAccount(
-                            name=_SECRET_READER, namespace=_NAMESPACE
-                        )
-                    ),
-                    remote_namespace=_NAMESPACE,
-                )
-            )
-        ),
+    secret_store(
+        scope, "secret-store", metadata=ApiObjectMetadata(name=_SECRET_STORE, namespace=_NAMESPACE), reader=reader
     )
     ExternalSecret(
         scope,
         "repository",
-        name=_REPOSITORY_SECRET,
-        namespace=_NAMESPACE,
-        refresh="1h",
-        store=SecretStoreRef.namespaced(_SECRET_STORE),
+        metadata=ApiObjectMetadata(name=_REPOSITORY_SECRET, namespace=_NAMESPACE),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.namespaced(_SECRET_STORE),
         data=[
             remote_data(secret, key)
             for key, secret in (
@@ -121,7 +88,7 @@ def _repository(scope: Construct) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    identity = s3.Identity(chart, "identity", name=_NAME)
+    identity = s3.Identity(chart, "identity", name=_NAME, namespace=_NAMESPACE)
     bucket = s3.Bucket(
         chart,
         "bucket",

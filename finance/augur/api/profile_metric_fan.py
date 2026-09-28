@@ -17,7 +17,7 @@ from finance.augur.api.catalog import build_catalog
 from finance.augur.api.config import Config, load_augur_config
 from finance.augur.api.portfolio_sources import resolve_portfolio_sources
 from finance.augur.model.exogenous import Sampler
-from finance.augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
+from finance.augur.product.scenarios import locations_by_id, resolve_primary_agent_id
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import MetricName, ProjectionSamplingRequest, ScenarioKey, SpendIndex
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
@@ -45,7 +45,7 @@ def main() -> int:
         primary_agent_id=resolve_primary_agent_id(config),
         security_distributions=config.security_distributions,
         known_location_ids=catalog.location_ids,
-        locations=sim_locations_from_config(config.locations),
+        locations=locations_by_id(config.locations),
         properties_by_id=catalog.properties_by_id,
         models=_profile_models(config),
         max_rollout_samples=config.max_rollout_samples,

@@ -10,22 +10,26 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch, Size
+from cdk8s_plus_34 import (
+    PersistentVolume,
+    PersistentVolumeAccessMode,
+    PersistentVolumeClaim,
+    PersistentVolumeReclaimPolicy,
+    k8s,
+)
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
-    ExternalSecretSpecTargetTemplate,
-    ExternalSecretSpecTargetTemplateMetadata,
 )
 
+from cluster.cdk8s import namespaces
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.namespaces import Vpa
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ollama"
 _NAME = "ollama"
@@ -34,31 +38,29 @@ _LABELS = {"app.kubernetes.io/name": _NAME}
 _OLLAMA_PORT = 11434
 _AUTH_PROXY_PORT = 11435
 _MODELS_CLAIM = "llm-models"
+_SSD_MODELS_CLAIM = "qwen38-iq4-ssd"
+_SSD_MODELS_VOLUME = "wyrm2-qwen38-iq4-ssd"
 _DIRECT_TOKEN = "ollama-direct-token"
 # Both rendered by the hand-written kustomization.yaml's configMapGenerator.
 _AUTH_PROXY_CONFIG_MAP = "ollama-auth-proxy"
 _SCRIPTS_CONFIG_MAP = "gpt-oss-scripts"
-# Host inference experiments own the GPUs; retain models and routing for resumption.
-_PAUSED_FOR_HOST_EXPERIMENTS = True
+# Pause this Deployment before exclusive host inference experiments.
+_PAUSED_FOR_HOST_EXPERIMENTS = False
 
 
 def _namespace(scope: Construct) -> None:
-    k8s.KubeNamespace(
+    namespaces.namespace(
         scope,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                # `auto` mode rewrites pod limits at admission time using the VPA's
-                # idle-history recommendations. For a bursty LLM workload that sits at
-                # ~50 MiB until a model loads (then needs tens of GiB) this caused the
-                # ollama pod to ship with a 1 GiB memory limit and OOM on every model
-                # load. Stay opted-in for recommendation reports, but don't let
-                # goldilocks mutate pods.
-                "goldilocks.fairwinds.com/vpa-update-mode": "off",
-            },
-        ),
+        name=_NAMESPACE,
+        # `auto` mode rewrites pod limits at admission time using the VPA's
+        # idle-history recommendations. For a bursty LLM workload that sits at
+        # ~50 MiB until a model loads (then needs tens of GiB) this caused the
+        # ollama pod to ship with a 1 GiB memory limit and OOM on every model
+        # load. Stay opted-in for recommendation reports, but don't let
+        # goldilocks mutate pods.
+        vpa=Vpa.RECOMMEND,
+        agent_readable=None,
     )
 
 
@@ -79,19 +81,87 @@ def _models_claim(scope: Construct) -> None:
     )
 
 
+def _ssd_models(scope: Construct) -> None:
+    # Existing host-managed ext4 filesystem, not a dynamically provisioned LVM LV.
+    # Capacity advertises this directory; it is not a filesystem quota.
+    volume = PersistentVolume(
+        scope,
+        "ssd-models-volume",
+        metadata=ApiObjectMetadata(
+            name=_SSD_MODELS_VOLUME, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
+        ),
+        storage=Size.gibibytes(90),
+        access_modes=[PersistentVolumeAccessMode.READ_WRITE_ONCE],
+        reclaim_policy=PersistentVolumeReclaimPolicy.RETAIN,
+        storage_class_name="",
+    )
+    # The fluent PV has no local source or node-affinity fields.
+    ApiObject.of(volume).add_json_patch(
+        JsonPatch.add(
+            "/spec/local", k8s.LocalVolumeSource(path="/var/lib/llm-models-ssd/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS")
+        ),
+        JsonPatch.add(
+            "/spec/nodeAffinity",
+            k8s.VolumeNodeAffinity(
+                required=k8s.NodeSelector(
+                    node_selector_terms=[
+                        k8s.NodeSelectorTerm(
+                            match_expressions=[
+                                k8s.NodeSelectorRequirement(
+                                    key="kubernetes.io/hostname", operator="In", values=["wyrm2"]
+                                )
+                            ]
+                        )
+                    ]
+                )
+            ),
+        ),
+    )
+    claim = PersistentVolumeClaim(
+        scope,
+        "ssd-models-claim",
+        metadata=ApiObjectMetadata(
+            name=_SSD_MODELS_CLAIM, namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
+        ),
+        access_modes=[PersistentVolumeAccessMode.READ_WRITE_ONCE],
+        storage_class_name="",
+        storage=Size.gibibytes(90),
+        volume=volume,
+    )
+    volume.bind(claim)
+    # cdk8s-plus bind() renders only the name; PV claimRef also needs the namespace.
+    ApiObject.of(volume).add_json_patch(JsonPatch.add("/spec/claimRef/namespace", _NAMESPACE))
+
+
 def _ollama_container() -> k8s.Container:
     probe_action = k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_string("ollama"))
     return k8s.Container(
         name="ollama",
-        image="ollama/ollama:0.34.0",
+        image="ollama/ollama:0.34.4",
         ports=[k8s.ContainerPort(name="ollama", container_port=_OLLAMA_PORT, protocol="TCP")],
         env=[
             k8s.EnvVar(name="OLLAMA_MODELS", value="/models"),
+            # SSD blobs are externally managed read-only symlinks. Keep startup GC
+            # from unlinking them before the bootstrap Job registers the model.
+            k8s.EnvVar(name="OLLAMA_NOPRUNE", value="true"),
+            k8s.EnvVar(name="OLLAMA_NUM_PARALLEL", value="1"),
+            k8s.EnvVar(name="OLLAMA_MAX_LOADED_MODELS", value="1"),
+            # This NVIDIA-only service uses CUDA in PCI bus order. Verify the
+            # child runner's CUDA_VISIBLE_DEVICES before interpreting fit margins.
+            k8s.EnvVar(name="OLLAMA_VULKAN", value="false"),
+            k8s.EnvVar(name="CUDA_DEVICE_ORDER", value="PCI_BUS_ID"),
+            # 2/0 GiB passed short requests but GPU1 OOMed during 145K prefill.
+            # Leave runtime allocation room on both GPUs plus desktop headroom.
+            k8s.EnvVar(name="LLAMA_ARG_FIT_TARGET", value="4096,2048"),
             k8s.EnvVar(name="OLLAMA_HOST", value=f"0.0.0.0:{_OLLAMA_PORT}"),
             k8s.EnvVar(name="NVIDIA_VISIBLE_DEVICES", value="all"),
             k8s.EnvVar(name="OLLAMA_KV_CACHE_TYPE", value="q8_0"),
             k8s.EnvVar(name="OLLAMA_FLASH_ATTENTION", value="1"),
             k8s.EnvVar(name="OLLAMA_CONTEXT_LENGTH", value="131072"),
+            # Default 5m is shorter than a cold read of the 112GB qwen3.8-flash-next-q4
+            # weights off HDD-backed lvm-proxmox-hdd; Ollama abandons the load attempt
+            # (and does not retry) once this elapses.
+            k8s.EnvVar(name="OLLAMA_LOAD_TIMEOUT", value="30m"),
         ],
         resources=k8s.ResourceRequirements(
             requests={
@@ -101,7 +171,10 @@ def _ollama_container() -> k8s.Container:
             },
             limits={"nvidia.com/gpu": k8s.Quantity.from_number(2), "memory": k8s.Quantity.from_string("40Gi")},
         ),
-        volume_mounts=[k8s.VolumeMount(name="models", mount_path="/models")],
+        volume_mounts=[
+            k8s.VolumeMount(name="models", mount_path="/models"),
+            k8s.VolumeMount(name="ssd-models", mount_path="/ssd-models", read_only=True),
+        ],
         liveness_probe=k8s.Probe(http_get=probe_action, initial_delay_seconds=30, period_seconds=30),
         readiness_probe=k8s.Probe(http_get=probe_action, initial_delay_seconds=10, period_seconds=10),
     )
@@ -134,9 +207,7 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=0 if _PAUSED_FOR_HOST_EXPERIMENTS else 1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -147,8 +218,27 @@ def _deployment(scope: Construct) -> None:
                     runtime_class_name="nvidia",
                     node_selector={"feature.node.kubernetes.io/pci-10de.present": "true"},
                     tolerations=[k8s.Toleration(key="nvidia.com/gpu", operator="Exists", effect="PreferNoSchedule")],
+                    init_containers=[
+                        k8s.Container(
+                            name="link-ssd-models",
+                            image="ollama/ollama:0.34.4",
+                            command=["/bin/sh", "/scripts/link-ssd-models.sh"],
+                            volume_mounts=[
+                                k8s.VolumeMount(name="models", mount_path="/models"),
+                                k8s.VolumeMount(name="ssd-models", mount_path="/ssd-models", read_only=True),
+                                k8s.VolumeMount(name="scripts", mount_path="/scripts", read_only=True),
+                            ],
+                        )
+                    ],
                     containers=[_ollama_container(), _auth_proxy_container()],
                     volumes=[
+                        k8s.Volume(
+                            name="ssd-models",
+                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(
+                                claim_name=_SSD_MODELS_CLAIM, read_only=True
+                            ),
+                        ),
+                        k8s.Volume(name="scripts", config_map=k8s.ConfigMapVolumeSource(name=_SCRIPTS_CONFIG_MAP)),
                         k8s.Volume(
                             name="models",
                             persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_MODELS_CLAIM),
@@ -236,36 +326,80 @@ def _setup_job(scope: Construct) -> None:
     k8s.KubeJob(
         scope,
         "setup-gpt-oss",
-        # Versioned so a changed bootstrap model list creates a fresh Job.
-        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v4", namespace=_NAMESPACE),
+        # Explicit version bumps own reruns; Reloader would delete a running Job
+        # when the scripts ConfigMap changes.
+        metadata=k8s.ObjectMeta(
+            name="setup-gpt-oss-v8", namespace=_NAMESPACE, annotations={"reloader.stakater.com/auto": "false"}
+        ),
         spec=k8s.JobSpec(
-            ttl_seconds_after_finished=86400,
             template=k8s.PodTemplateSpec(
                 spec=k8s.PodSpec(
                     restart_policy="OnFailure",
-                    node_selector={"topology.kubernetes.io/region": "proxmox"},
+                    node_selector={"kubernetes.io/hostname": "wyrm2"},
                     volumes=[
                         k8s.Volume(
                             name="scripts",
                             config_map=k8s.ConfigMapVolumeSource(name=_SCRIPTS_CONFIG_MAP, default_mode=0o755),
-                        )
+                        ),
+                        k8s.Volume(
+                            name="models",
+                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_MODELS_CLAIM),
+                        ),
+                        k8s.Volume(
+                            name="ssd-models",
+                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_SSD_MODELS_CLAIM),
+                        ),
+                    ],
+                    init_containers=[
+                        k8s.Container(
+                            name="link-ssd-models",
+                            image="ollama/ollama:0.34.4",
+                            command=["/bin/sh", "/scripts/link-ssd-models.sh"],
+                            volume_mounts=[
+                                k8s.VolumeMount(name="models", mount_path="/models"),
+                                k8s.VolumeMount(name="ssd-models", mount_path="/ssd-models", read_only=True),
+                                k8s.VolumeMount(name="scripts", mount_path="/scripts", read_only=True),
+                            ],
+                        ),
+                        # Native sidecar exits when the setup container finishes.
+                        # Import touches blob mtimes, requiring a writable mount here.
+                        # No GPU resources/runtime and no generation requests: the
+                        # serving Deployment keeps its SSD mount read-only.
+                        k8s.Container(
+                            name="registration-api",
+                            image="ollama/ollama:0.34.4",
+                            args=["serve"],
+                            restart_policy="Always",
+                            env=[
+                                k8s.EnvVar(name="OLLAMA_HOST", value="127.0.0.1:11434"),
+                                k8s.EnvVar(name="OLLAMA_MODELS", value="/models"),
+                                k8s.EnvVar(name="OLLAMA_NOPRUNE", value="true"),
+                                k8s.EnvVar(name="OLLAMA_NO_CLOUD", value="true"),
+                            ],
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "cpu": k8s.Quantity.from_string("100m"),
+                                    "memory": k8s.Quantity.from_string("128Mi"),
+                                },
+                                limits={"cpu": k8s.Quantity.from_number(1), "memory": k8s.Quantity.from_string("1Gi")},
+                            ),
+                            volume_mounts=[
+                                k8s.VolumeMount(name="models", mount_path="/models"),
+                                k8s.VolumeMount(name="ssd-models", mount_path="/ssd-models"),
+                            ],
+                        ),
                     ],
                     containers=[
                         k8s.Container(
                             name="setup",
-                            # curl + busybox awk; we hit /api/pull directly (no ollama CLI needed).
                             image="curlimages/curl:8.22.0",
                             command=["/scripts/setup-gpt-oss-v2.sh"],
-                            env=[
-                                k8s.EnvVar(
-                                    name="OLLAMA_HOST", value=f"http://ollama.ollama.svc.cluster.local:{_OLLAMA_PORT}"
-                                )
-                            ],
-                            volume_mounts=[k8s.VolumeMount(name="scripts", mount_path="/scripts")],
+                            env=[k8s.EnvVar(name="OLLAMA_HOST", value="http://127.0.0.1:11434")],
+                            volume_mounts=[k8s.VolumeMount(name="scripts", mount_path="/scripts", read_only=True)],
                         )
                     ],
                 )
-            ),
+            )
         ),
     )
 
@@ -274,34 +408,22 @@ def _direct_token(scope: Construct) -> None:
     """ESO owns a fresh direct-Ollama bearer token. The separate name makes this cutover
     safe: Flux can prune the Terraform-owned Secret only after every consumer has switched
     to this target."""
-    generator = Password(
-        scope,
-        "direct-token-generator",
-        metadata=metadata(_DIRECT_TOKEN, _NAMESPACE),
-        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         scope,
         "direct-token",
         name=_DIRECT_TOKEN,
         namespace=_NAMESPACE,
+        key="token",
         # A direct-API credential is generated once, not periodically rotated.
         refresh="8760h",
-        data_from=[DataFrom.from_password_generator(generator.name)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        template=ExternalSecretSpecTargetTemplate(
-            type="Opaque",
-            metadata=ExternalSecretSpecTargetTemplateMetadata(
-                annotations={
-                    "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                    "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "claude-sandbox",
-                    "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                    "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "claude-sandbox",
-                }
-            ),
-            data={"token": "{{ .password }}"},
-        ),
+        target_annotations={
+            "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "claude-sandbox",
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "claude-sandbox",
+        },
     )
 
 
@@ -309,13 +431,14 @@ def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     _namespace(chart)
     _models_claim(chart)
+    _ssd_models(chart)
     _deployment(chart)
     _service(chart)
     https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
-        hostname="ollama.allegedly.works",
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        hostnames=["ollama.allegedly.works"],
         backend=_NAME,
         port=_AUTH_PROXY_PORT,
         timeout="600s",

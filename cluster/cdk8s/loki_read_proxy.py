@@ -9,23 +9,15 @@ beside the output overrides it via Flux's image-automation marker.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cilium
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
+from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
-from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 
 NAME = "loki-read-proxy"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/loki-read-proxy"
@@ -173,9 +165,7 @@ def _deployment(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
-    k8s.KubeNamespace(
-        chart, "namespace", metadata=k8s.ObjectMeta(name=NAME, labels={"goldilocks.fairwinds.com/enabled": "false"})
-    )
+    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.DISABLED, agent_readable=None)
     _deployment(chart)
     k8s.KubeService(
         chart,
@@ -193,12 +183,12 @@ def chart(app: App) -> Chart:
     # static allowlist, so this ingress fence is their access control; token-bearing requests
     # are additionally authorized by the caller's Kubernetes RBAC. Egress is restricted too, so
     # a compromised proxy cannot pivot anywhere else either.
-    cilium.network_policy(
+    NetworkPolicy(
         chart,
         "cilium-network-policy",
-        metadata=metadata(
-            NAME,
-            NAME,
+        metadata=ApiObjectMetadata(
+            name=NAME,
+            namespace=NAME,
             annotations={
                 "description": (
                     "Ingress to the Loki read proxy only from haku-sandbox pods; egress only to loki-read,"
@@ -207,14 +197,14 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        selector=_LABELS,
+        endpoint_selector=_LABELS,
         # Haku agent sandboxes → proxy (namespace-filtered log reads)
-        ingress=[cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": "haku-sandbox"}, ports=[_PORT])],
+        ingress=[IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": "haku-sandbox"}, ports=[_PORT])],
         egress=[
             # kube-dns (resolve loki-read.loki.svc)
             cilium.dns_egress(),
             # loki-read (UPSTREAM_URL) — bypasses loki-gateway's nginx entirely (ducktape#4750).
-            cilium.egress_to(
+            EgressRule.to_endpoints(
                 {
                     "app.kubernetes.io/name": "loki",
                     "app.kubernetes.io/component": "read",
@@ -223,27 +213,19 @@ def chart(app: App) -> Chart:
                 3100,
             ),
             # kube-apiserver: SelfSubjectAccessReview with the caller's bearer token.
-            cilium.egress_to_entities("kube-apiserver", ports=[443, 6443]),
+            EgressRule.to_entities(Entity.KUBE_APISERVER, ports=[443, 6443]),
         ],
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"], components=["./image-pins"]),
-    )
-
-
 def loki_read_proxy(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
         description=(

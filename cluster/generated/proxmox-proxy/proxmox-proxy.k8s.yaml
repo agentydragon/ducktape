@@ -23,8 +23,6 @@ spec:
     type: Recreate
   template:
     metadata:
-      annotations:
-        reloader.stakater.com/auto: "true"
       labels:
         app.kubernetes.io/name: proxmox-proxy
     spec:

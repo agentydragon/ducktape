@@ -8,7 +8,7 @@ RBAC-like rules inside an explicit scope.
 from __future__ import annotations
 
 import datetime
-from collections.abc import Iterable
+from collections.abc import Iterable, Set
 from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
@@ -53,25 +53,25 @@ class Rule(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    api_groups: frozenset[str] = Field(default_factory=frozenset)
-    resources: frozenset[str] = Field(default_factory=frozenset)
-    verbs: frozenset[NON_EMPTY] = Field(min_length=1)
-    resource_names: frozenset[str] = Field(default_factory=frozenset)
-    non_resource_urls: frozenset[str] = Field(default_factory=frozenset)
+    api_groups: Set[str] = Field(default_factory=frozenset)
+    resources: Set[str] = Field(default_factory=frozenset)
+    verbs: Set[NON_EMPTY] = Field(min_length=1)
+    resource_names: Set[str] = Field(default_factory=frozenset)
+    non_resource_urls: Set[str] = Field(default_factory=frozenset)
 
     @field_validator("api_groups", "resources", "resource_names", "non_resource_urls")
     @classmethod
-    def normalize_values(cls, value: frozenset[str], info: ValidationInfo) -> frozenset[str]:
+    def normalize_values(cls, value: Set[str], info: ValidationInfo) -> frozenset[str]:
         assert info.field_name is not None
         return _clean_values(value, info.field_name, allow_empty=info.field_name == "api_groups")
 
     @field_validator("verbs")
     @classmethod
-    def normalize_verbs(cls, value: frozenset[str]) -> frozenset[str]:
+    def normalize_verbs(cls, value: Set[str]) -> frozenset[str]:
         return _clean_values(value, "verbs")
 
     @field_serializer("api_groups", "resources", "verbs", "resource_names", "non_resource_urls")
-    def serialize_values(self, value: frozenset[str]) -> list[str]:
+    def serialize_values(self, value: Set[str]) -> list[str]:
         return sorted(value)
 
     @model_validator(mode="after")
@@ -90,18 +90,18 @@ class NamespacesGrantScope(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     kind: Literal[GrantScopeKind.NAMESPACES] = GrantScopeKind.NAMESPACES
-    namespaces: frozenset[NON_EMPTY] = Field(min_length=1)
+    namespaces: Set[NON_EMPTY] = Field(min_length=1)
 
     @field_validator("namespaces")
     @classmethod
-    def normalize_namespaces(cls, value: frozenset[str]) -> frozenset[str]:
+    def normalize_namespaces(cls, value: Set[str]) -> frozenset[str]:
         namespaces = _clean_values(value, "namespaces")
         if "*" in namespaces:
             raise ValueError("use all_namespaces instead of a namespace wildcard")
         return namespaces
 
     @field_serializer("namespaces")
-    def serialize_namespaces(self, value: frozenset[str]) -> list[str]:
+    def serialize_namespaces(self, value: Set[str]) -> list[str]:
         return sorted(value)
 
 

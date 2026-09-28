@@ -13,11 +13,9 @@ from finance.augur.sim import capture, results
 from finance.augur.sim.actions import Action, DecisionActions
 from finance.augur.sim.agent import EconomicAgent, assemble
 from finance.augur.sim.books import AccountRef, TaxAccrual, TaxPaymentOutcome, TaxSettlementOutcome
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AgentId, AssetId
 from finance.augur.sim.observations import Decision, Observation
-from finance.augur.sim.prepared import CompiledRun
-from finance.augur.sim.validation import validate
-from finance.augur.sim.world import Capture, World, validate_actor
+from finance.augur.sim.world import Capture, World
 
 
 class _Delegate(EconomicAgent):
@@ -34,7 +32,7 @@ class _Delegate(EconomicAgent):
 class _Record:
     """What `ActionSession` promises per path, read from world state after every step."""
 
-    def __init__(self, world: World, actor: str, mode: Capture) -> None:
+    def __init__(self, world: World, actor: AgentId, mode: Capture) -> None:
         self.world = world
         self.actor = actor
         self.mode = mode
@@ -43,7 +41,7 @@ class _Record:
             for account in world.accounting.declared
             if account.agent_id == actor
         ]
-        self.holdings: dict[tuple[AccountRef, str], list[int]] = {}
+        self.holdings: dict[tuple[AccountRef, AssetId], list[int]] = {}
         self.bond_terms = [] if world.bonds is None else [bond for bond in world.bonds.terms if bond.agent_id == actor]
         self.bonds = [
             results.BondSeries(
@@ -69,9 +67,9 @@ class _Record:
                 value = world.bonds.held_principal(bond, world.month, mark)
                 series.values.append(0 if value is None else value)
         keys = {
-            (AccountRef(agent_id=lot.spec.agent_id, account_id=lot.spec.account_id), lot.spec.asset_id)
+            (AccountRef(agent_id=lot.agent_id, account_id=lot.account_id), lot.asset_id)
             for lot in world.holdings.lots
-            if lot.spec.agent_id == self.actor
+            if lot.agent_id == self.actor
         }
         keys.update(
             (AccountRef(agent_id=row.owner_agent_id, account_id=row.account_id), row.asset_id)
@@ -120,8 +118,6 @@ class _Record:
         trace = None
         if self.financial is not None:
             financial = self.financial.financial()
-            if financial is None:
-                raise RuntimeError("detailed capture requires financial output")
             trace = results.Trace(
                 events=capture.event_log(financial),
                 books=financial.months,
@@ -140,13 +136,13 @@ class ActionSession:
     preserving earlier effects; no retries or engine-selected rescue actions occur.
     """
 
-    def __init__(self, worlds: Mapping[int, World], actor: str, *, capture: Capture = "forensic") -> None:
+    def __init__(self, worlds: Mapping[int, World], actor: AgentId, *, capture: Capture = "forensic") -> None:
         """Own composed, unstarted worlds keyed by path id; each gets a delegate household for `actor`."""
         if not worlds:
             raise ValueError("a session needs at least one world")
         if capture not in ("summary", "dense", "forensic"):
             raise ValueError("capture must be summary, dense or forensic")
-        self._actor = AgentId(actor)
+        self._actor = actor
         self._month = 0
         self._started = False
         self._closed = False
@@ -157,28 +153,6 @@ class ActionSession:
             world._track(delegate)
             self._delegates[rollout_id] = delegate
         self._records = {id_: _Record(world, actor, capture) for id_, world in self._paths.items()}
-
-    @classmethod
-    def from_run(
-        cls, run: CompiledRun, actor: str, rollout_ids: list[int], *, capture: Capture = "forensic"
-    ) -> ActionSession:
-        """The import adapter: one world per selected path of a prepared run, validated first."""
-        if not isinstance(run, CompiledRun):
-            raise TypeError("execution requires a CompiledRun, not serialized input")
-        if (
-            not rollout_ids
-            or len(set(rollout_ids)) != len(rollout_ids)
-            or any(
-                not isinstance(id_, int) or isinstance(id_, bool) or not 0 <= id_ < run.rollout_count
-                for id_ in rollout_ids
-            )
-        ):
-            raise ValueError("selected rollout IDs must be unique, nonempty and in range")
-        if capture not in ("summary", "dense", "forensic"):
-            raise ValueError("capture must be summary, dense or forensic")
-        validate_actor(run, actor)
-        validate(run)
-        return cls({rollout_id: World.from_run(run, rollout_id) for rollout_id in rollout_ids}, actor, capture=capture)
 
     def _active(self) -> dict[int, World]:
         return {id_: path for id_, path in self._paths.items() if not path.finished}

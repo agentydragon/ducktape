@@ -1,0 +1,50 @@
+[
+  {
+    "name": "Qwen3.8-Flash-Next",
+    "slug": "qwen3-8-flash-next",
+    "intelligenceIndex": 39.8223021864741,
+    "terminalBench40": 0.252525252525253,
+    "scicode": 0.505787037037037,
+    "hle": 0.380444856348471,
+    "omniscienceAccuracy": 0.245,
+    "lcr": 0.796666666666667,
+    "gdpvalNormalized": 0.556065,
+    "critpt": 0.111428571428571
+  },
+  {
+    "name": "GPT-6 Luna (max)",
+    "slug": "gpt-6-luna",
+    "intelligenceIndex": 37.2559686869738,
+    "terminalBench40": 0.126262626262626,
+    "scicode": 0.546296296296296,
+    "hle": 0.385078776645042,
+    "omniscienceAccuracy": 0.43783333333333335,
+    "lcr": 0.833333333333333,
+    "gdpvalNormalized": 0.43354499999999996,
+    "critpt": 0.194285714285714
+  },
+  {
+    "name": "Claude Opus 5.5 (Adaptive Reasoning, Low Effort, Default Fallback)",
+    "slug": "claude-opus-5-5-low",
+    "intelligenceIndex": 42.3077781466168,
+    "terminalBench40": 0.313131313131313,
+    "scicode": 0.585648148148148,
+    "hle": 0.483317886932345,
+    "omniscienceAccuracy": 0.6353333333333333,
+    "lcr": 0.806666666666667,
+    "gdpvalNormalized": 0.361755,
+    "critpt": 0.177142857142857
+  },
+  {
+    "name": "Claude Opus 5.5 (Adaptive Reasoning, Max Effort, Default Fallback)",
+    "slug": "claude-opus-5-5",
+    "intelligenceIndex": 57.6223698102963,
+    "terminalBench40": 0.595959595959596,
+    "scicode": 0.668981481481482,
+    "hle": 0.613531047265987,
+    "omniscienceAccuracy": 0.6621666666666667,
+    "lcr": 0.846666666666667,
+    "gdpvalNormalized": 0.673085,
+    "critpt": 0.317142857142857
+  }
+]

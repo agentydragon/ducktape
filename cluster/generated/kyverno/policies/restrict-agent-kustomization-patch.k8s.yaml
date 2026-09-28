@@ -55,4 +55,4 @@ spec:
               message: Only the reconcile.fluxcd.io/requestedAt annotation may be changed.
         message: |
           Agent service accounts may only patch the reconcile.fluxcd.io/requestedAt annotation. Changes to spec or other annotations are not permitted.
-  validationFailureAction: Enforce
+  validationFailureAction: enforce

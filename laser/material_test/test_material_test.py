@@ -170,12 +170,13 @@ def test_project_xml_valid():
 
 
 def _minimal_config(**kwargs) -> GridConfig:
-    base = {
-        "x": AxisConfig(param=CutParam.POWER_PCT, values=[10, 20, 30]),
-        "y": AxisConfig(param=CutParam.SPEED_MM_S, values=[50, 100]),
-    }
-    base.update(kwargs)
-    return GridConfig(**base)
+    return GridConfig.model_validate(
+        {
+            "x": AxisConfig(param=CutParam.POWER_PCT, values=[10, 20, 30]),
+            "y": AxisConfig(param=CutParam.SPEED_MM_S, values=[50, 100]),
+            **kwargs,
+        }
+    )
 
 
 def test_grid_config_minimal():

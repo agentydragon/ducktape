@@ -23,8 +23,8 @@ Use a new output directory. The sweep crosses initial annual spending rates of
 70/30. Spending bounds apply around the previous annual amount indexed by CPI;
 they are not permanent floor/ceiling lifestyle tiers. `situation.py:situation` accepts
 caller-supplied paths and `situation.py:compose` declares the household's books,
-its annual bill and its tax authority straight onto one `World` per path, with no
-`Scenario`; the CLI supplies three deterministic stress cases, not probability
+its annual bill and its tax authority straight onto one `World` per path; the CLI
+supplies three deterministic stress cases, not probability
 samples or a fitted market forecast.
 
 The synthetic situation starts with USD 10,000 cash and 500 units each of

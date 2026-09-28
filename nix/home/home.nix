@@ -49,6 +49,10 @@ let
   # $GEMINI_LITELLM_KEY. See ./claude_code/gemini-claude.nix.
   geminiClaude = import ./claude_code/gemini-claude.nix { inherit pkgs config; };
 
+  # `antigravity-claude`: Claude Code on Google's Antigravity OAuth session (via
+  # CLIProxyAPI) through the cluster LiteLLM proxy. See ./claude_code/antigravity-claude.nix.
+  antigravityClaude = import ./claude_code/antigravity-claude.nix { inherit pkgs config; };
+
   mkHomeGtkBookmark =
     { path, title }:
     "file://${config.home.homeDirectory}/${path} ${title}";
@@ -146,6 +150,10 @@ in
     litellm_gemini_key = {
       sopsFile = ../../tf/gitops/litellm-keys/litellm-gemini-clients-key.yaml;
       key = "litellm_gemini_key";
+    };
+    litellm_antigravity_key = {
+      sopsFile = ../../tf/gitops/litellm-keys/litellm-antigravity-clients-key.yaml;
+      key = "litellm_antigravity_key";
     };
     litellm_claude_subscription_key = {
       sopsFile = ../../tf/gitops/litellm-keys/litellm-claude-subscription-clients-key.yaml;
@@ -380,6 +388,7 @@ in
       codexClaude
       tanaClaude
       geminiClaude
+      antigravityClaude
       litellmClaude
 
       go

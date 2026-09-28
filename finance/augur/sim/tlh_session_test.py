@@ -1,62 +1,44 @@
 """The real session posts opaque component effects without owning its model state."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 
-import numpy as np
 import pytest
 import pytest_bazel
-from pydantic import ValidationError
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.action_projection import metric_arrays
 from finance.augur.sim.actions import Action, Contribute, DecisionActions, Liquidate, Withdraw
-from finance.augur.sim.books import AccountRef, TlhPortfolioState
-from finance.augur.sim.compiler.execution import compile_run
-from finance.augur.sim.compiler.tax import compile_profile
-from finance.augur.sim.external_series import ExternalSeriesContext
-from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, quantity_scale_for_asset
+from finance.augur.sim.books import AccountRef, Book, TlhPortfolioState
+from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, PortfolioId
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable, TransferIncomeCategory, Treasury
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import (
-    CompiledRun,
-    PreparedAccount,
-    PreparedDistribution,
-    PreparedDistributionSlice,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedSeries,
-    PreparedTlhPortfolio,
-)
-from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction
-from finance.augur.sim.scenario import (
-    ORDINARY_INCOME,
-    Agent,
-    Currency,
-    InitialAccountBalance,
-    InitialLot,
-    InterestIncome,
-    Scenario,
-    TaxProfile,
-    TlhPortfolioSpec,
-)
+from finance.augur.sim.market_path import MarketPath, Series
+from finance.augur.sim.money import Currency
+from finance.augur.sim.observations import Observation
+from finance.augur.sim.results import Executed, Finished, InvalidRequest, Rejected, RejectedAction
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tlh import TlhAssumptions, TlhMarketUpdate, TlhPortfolio
+from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.tlh import TlhAssumptions, TlhMarketUpdate, TlhOpeningCohort, TlhPortfolio
 from finance.augur.sim.world import Capture, World
 
+MANAGED = PortfolioId("managed")
+
 ASSET = SecurityKey(symbol=SecuritySymbol("managed-index"))
-SCALE = quantity_scale_for_asset(ASSET)
 # Whole-dollar money, so a portfolio mark is the number the assertions name.
-QUANTUM = Decimal(1)
-OWNER = "owner"
-OTHER = "other"
-IRS = "irs"
-CHECKING = "checking"
-FEDERAL = "federal_us"
+WHOLE_DOLLARS = Currency(code="USD", quantum=Decimal(1))
+OWNER = AgentId("owner")
+OTHER = AgentId("other")
+IRS = AgentId("irs")
+CHECKING = AccountId("checking")
+FEDERAL = JurisdictionId("federal_us")
 
 
-def ref(agent_id: str) -> AccountRef:
+def ref(agent_id: AgentId) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
@@ -79,7 +61,8 @@ class Situation:
     rollouts: int = 1
     harvest: bool = True
     prices: tuple[int, ...] | None = None
-    distributions: tuple[PreparedDistribution, ...] = ()
+    # How the index's payouts into the owner's checking split by income, in ppb; `None` declares no distribution.
+    payout_split: Mapping[TransferIncomeCategory, int] | None = None
     interest_sources: tuple[InterestIncome, ...] = ()
     distribution_rates: tuple[Decimal, ...] = ()
     taxed: bool = True
@@ -89,17 +72,13 @@ class Situation:
     def snapshots(self) -> int:
         return self.horizon + 1
 
-    def series(self) -> tuple[PreparedSeries, ...]:
+    def series(self) -> tuple[Series, ...]:
         prices = self.prices if self.prices is not None else (1,) * self.snapshots
-        rows = [
-            PreparedSeries(
-                series_id=f"security:{ASSET.symbol}", snapshots=self.snapshots, values=prices * self.rollouts
-            )
-        ]
+        rows = [Series(series_id=f"security:{ASSET.symbol}", snapshots=self.snapshots, values=prices * self.rollouts)]
         if self.distribution_rates:
             # Per-unit payouts in prepared rate units: money quanta on the money-factor grid.
             rows.append(
-                PreparedSeries(
+                Series(
                     series_id=f"security_distribution:{ASSET.symbol}",
                     snapshots=self.snapshots,
                     values=tuple(int(rate * MONEY_FACTOR_SCALE) for rate in self.distribution_rates) * self.rollouts,
@@ -108,17 +87,8 @@ class Situation:
         return tuple(rows)
 
 
-def cohort() -> PreparedLot:
-    return PreparedLot(
-        lot_id="imported",
-        agent_id=OWNER,
-        account_id=CHECKING,
-        asset_id=str(ASSET.symbol),
-        purchase_month=-24,
-        quantity_scale=SCALE,
-        units=100 * SCALE,
-        basis=100,
-    )
+# $100 of the index bought two years ago at a $100 basis.
+COHORT = TlhOpeningCohort(value=100, cost_basis=100, purchase_month_index=-24)
 
 
 def compose(case: Situation, rollout_id: int) -> World:
@@ -126,39 +96,45 @@ def compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series(), rollout_id, rollout_count=case.rollouts),
         horizon_months=case.horizon,
         income_sources=(ORDINARY_INCOME, *case.interest_sources),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=FEDERAL, level=load_jurisdiction(FEDERAL).level),)
-        if case.taxed
-        else (),
     )
     for agent_id, balance in ((OWNER, case.cash), (OTHER if case.bystander else IRS, 0)):
-        world.declare_account(PreparedAccount(account=ref(agent_id), opening_balance=balance))
+        world.declare_account(account=ref(agent_id), opening_balance=balance)
     if case.taxed:
         world.track(
             TaxAuthority(
                 compile_profile(
                     TaxProfile(agent_id=OWNER, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS),
                     {FEDERAL: load_jurisdiction(FEDERAL)},
-                    quantum=QUANTUM,
-                )
+                    currency=WHOLE_DOLLARS,
+                ),
+                indexation=FixedNominalLaw(),
             )
         )
     world.declare_portfolio(
-        PreparedTlhPortfolio(
-            portfolio_id="managed",
-            owner_agent_id=OWNER,
-            account_id=CHECKING,
-            asset_id=str(ASSET.symbol),
-            quantity_scale=SCALE,
-            initial_cohorts=(cohort(),),
-            assumptions=assumptions(harvest=case.harvest),
-        )
+        portfolio_id=MANAGED,
+        owner_agent_id=OWNER,
+        account_id=CHECKING,
+        asset_id=AssetId(ASSET.symbol),
+        initial_cohorts=(COHORT,),
+        assumptions=assumptions(harvest=case.harvest),
     )
-    for distribution in case.distributions:
-        world.declare_distribution(distribution)
+    if case.payout_split is not None:
+        world.declare_distribution(
+            agent_id=OWNER,
+            holding_account_id=CHECKING,
+            asset_id=AssetId(ASSET.symbol),
+            to_account_id=CHECKING,
+            tax_character=case.payout_split,
+        )
     return world
 
 
-def session(case: Situation, actor: str = OWNER, *, capture: Capture = "forensic") -> ActionSession:
+def portfolios(book: Book) -> list[TlhPortfolioState]:
+    assert book.tlh_portfolios is not None
+    return book.tlh_portfolios
+
+
+def session(case: Situation, actor: AgentId = OWNER, *, capture: Capture = "forensic") -> ActionSession:
     return ActionSession(
         {rollout_id: compose(case, rollout_id) for rollout_id in range(case.rollouts)}, actor, capture=capture
     )
@@ -176,7 +152,7 @@ def test_managed_opening_is_not_an_ordinary_lot_and_sale_follows_same_month_loss
         result = live.advance(
             [
                 DecisionActions(
-                    0, 0, [Liquidate(cause_id="sell", agent_id=OWNER, portfolio_id="managed", cash_account_id=CHECKING)]
+                    0, 0, [Liquidate(cause_id="sell", agent_id=OWNER, portfolio_id=MANAGED, cash_account_id=CHECKING)]
                 )
             ]
         )
@@ -186,13 +162,13 @@ def test_managed_opening_is_not_an_ordinary_lot_and_sale_follows_same_month_loss
     [rollout] = result.rollouts
     assert rollout.stop is None
     assert rollout.trace is not None
-    assert rollout.trace.books[0].tlh_portfolios[0].reported_tax_basis == 100
+    assert portfolios(rollout.trace.books[0])[0].reported_tax_basis == 100
     assert rollout.summary.ending_book.tlh_portfolios == [
         TlhPortfolioState(
-            portfolio_id="managed",
+            portfolio_id=MANAGED,
             owner_agent_id=OWNER,
             account_id=CHECKING,
-            asset_id=str(ASSET.symbol),
+            asset_id=AssetId(ASSET.symbol),
             value=0,
             reported_tax_basis=0,
         )
@@ -202,6 +178,31 @@ def test_managed_opening_is_not_an_ordinary_lot_and_sale_follows_same_month_loss
     [gain] = rollout.summary.ending_book.capital_gains
     assert (gain.short_term_gain, gain.long_term_gain) == (-1, 1)
     assert all(sum(posting.amount for posting in entry.postings) == 0 for entry in rollout.trace.journal)
+
+
+def first_observation(case: Situation) -> Observation:
+    live = session(case)
+    try:
+        batch = live.start()
+    finally:
+        live.close()
+    assert not isinstance(batch, Finished)
+    [decision] = batch
+    return decision.observation
+
+
+@pytest.mark.parametrize(("harvest", "short_term_gain"), [(True, -1), (False, 0)])
+def test_the_months_modeled_harvest_is_in_that_months_tax_records(harvest: bool, short_term_gain: int) -> None:
+    # The portfolio advances before the mail is posted: its statement and the tax records agree.
+    observation = first_observation(Situation(horizon=1, harvest=harvest))
+    [portfolio] = observation.tlh_portfolios
+    assert observation.tax_records is not None
+    assert (observation.tax_records.short_term_gain, observation.tax_records.long_term_gain) == (short_term_gain, 0)
+    assert portfolio.reported_tax_basis == COHORT.cost_basis + short_term_gain
+
+
+def test_an_untaxed_owner_has_no_tax_records() -> None:
+    assert first_observation(Situation(horizon=1, taxed=False)).tax_records is None
 
 
 def test_rejected_contribution_preserves_harvest_and_earlier_withdrawal_without_future_policy_calls() -> None:
@@ -216,16 +217,16 @@ def test_rejected_contribution_preserves_harvest_and_earlier_withdrawal_without_
                     0,
                     [
                         Withdraw(
-                            cause_id="cash", agent_id=OWNER, portfolio_id="managed", cash_account_id=CHECKING, amount=10
+                            cause_id="cash", agent_id=OWNER, portfolio_id=MANAGED, cash_account_id=CHECKING, amount=10
                         ),
                         Contribute(
                             cause_id="too-much",
                             agent_id=OWNER,
-                            portfolio_id="managed",
+                            portfolio_id=MANAGED,
                             cash_account_id=CHECKING,
                             amount=11,
                         ),
-                        Liquidate(cause_id="never", agent_id=OWNER, portfolio_id="managed", cash_account_id=CHECKING),
+                        Liquidate(cause_id="never", agent_id=OWNER, portfolio_id=MANAGED, cash_account_id=CHECKING),
                     ],
                 ),
                 DecisionActions(1, 0, []),
@@ -243,7 +244,7 @@ def test_rejected_contribution_preserves_harvest_and_earlier_withdrawal_without_
     assert stopped.trace is not None
     assert len(stopped.trace.books) == 2
     assert [type(receipt.outcome) for receipt in stopped.trace.receipts] == [Executed, Rejected]
-    [portfolio] = stopped.summary.ending_book.tlh_portfolios
+    [portfolio] = portfolios(stopped.summary.ending_book)
     assert (portfolio.value, portfolio.reported_tax_basis) == (90, 89)
     assert stopped.summary.cash[0].values == [0, 10]
     assert stopped.summary.ending_book.capital_gains[0].short_term_gain == -1
@@ -263,7 +264,7 @@ def test_invalid_withdrawal_changes_no_component_state(amount: int) -> None:
                         Withdraw(
                             cause_id="invalid",
                             agent_id=OWNER,
-                            portfolio_id="managed",
+                            portfolio_id=MANAGED,
                             cash_account_id=CHECKING,
                             amount=amount,
                         )
@@ -276,7 +277,7 @@ def test_invalid_withdrawal_changes_no_component_state(amount: int) -> None:
         live.close()
     [rollout] = result.rollouts
     assert rollout.stop == RejectedAction(month=0, action_index=0)
-    [portfolio] = rollout.summary.ending_book.tlh_portfolios
+    [portfolio] = portfolios(rollout.summary.ending_book)
     assert (portfolio.value, portfolio.reported_tax_basis) == (100, 100)
     assert rollout.summary.cash[0].values[-1] == 0
 
@@ -290,9 +291,7 @@ def test_another_actors_component_is_neither_observed_nor_redeemable() -> None:
         result = live.advance(
             [
                 DecisionActions(
-                    0,
-                    0,
-                    [Liquidate(cause_id="steal", agent_id=OWNER, portfolio_id="managed", cash_account_id=CHECKING)],
+                    0, 0, [Liquidate(cause_id="steal", agent_id=OWNER, portfolio_id=MANAGED, cash_account_id=CHECKING)]
                 )
             ]
         )
@@ -301,7 +300,7 @@ def test_another_actors_component_is_neither_observed_nor_redeemable() -> None:
         live.close()
     [rollout] = result.rollouts
     assert rollout.stop == RejectedAction(month=0, action_index=0)
-    assert rollout.summary.ending_book.tlh_portfolios[0].value == 100
+    assert portfolios(rollout.summary.ending_book)[0].value == 100
 
 
 def test_model_defect_closes_session_instead_of_becoming_a_rejected_action(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -318,65 +317,16 @@ def test_model_defect_closes_session_instead_of_becoming_a_rejected_action(monke
     live.close()
 
 
-def _scenario(*, horizon: int) -> Scenario:
-    """The same managed sleeve as an authored scenario, for the prepared-input path below."""
-    return Scenario(
-        agents=[Agent(agent_id=OWNER), Agent(agent_id=IRS)],
-        initial_cash=[
-            InitialAccountBalance(agent_id=agent_id, account_id=CHECKING, balance=Decimal(0))
-            for agent_id in (OWNER, IRS)
-        ],
-        tax_profiles=[TaxProfile(agent_id=OWNER, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS)],
-        horizon_months=horizon,
-        currency=Currency(quantum=QUANTUM),
-        tlh_portfolios=[
-            TlhPortfolioSpec(
-                portfolio_id="managed",
-                owner_agent_id=OWNER,
-                account_id=CHECKING,
-                asset=ASSET,
-                initial_lots=[
-                    InitialLot(
-                        lot_id="imported",
-                        agent_id=OWNER,
-                        account_id=CHECKING,
-                        asset=ASSET,
-                        purchase_month_index=-24,
-                        quantity=100.0,
-                        cost_basis=Decimal(100),
-                    )
-                ],
-                assumptions=assumptions(harvest=True),
-            )
-        ],
-    )
-
-
-def _projection_run(prices: tuple[float, ...]) -> CompiledRun:
-    """`metric_arrays` reads a `CompiledRun`, so this one assertion keeps the prepared-input path."""
-    horizon = len(prices) - 1
-    return compile_run(
-        _scenario(horizon=horizon),
-        rollout_count=1,
-        external_series=ExternalSeriesContext.from_level_blocks(
-            [(ASSET, np.asarray([prices], dtype=np.float64))], rollout_count=1, horizon_months=horizon
-        ),
-        jurisdictions={FEDERAL: load_jurisdiction(FEDERAL)},
-        locations={},
-    )
-
-
 @pytest.mark.parametrize("capture", ["summary", "dense", "forensic"])
 @pytest.mark.parametrize("reject", [False, True])
 def test_closing_marks_and_product_projection_do_not_advance_the_model_early(capture: Capture, reject: bool) -> None:
-    run = _projection_run((1.0, 2.0))
-    live = ActionSession.from_run(run, OWNER, [0], capture=capture)
+    live = session(Situation(horizon=1, prices=(1, 2)), capture=capture)
     try:
         live.start()
         actions: list[Action] = (
             [
                 Withdraw(
-                    cause_id="unfundable", agent_id=OWNER, portfolio_id="managed", cash_account_id=CHECKING, amount=101
+                    cause_id="unfundable", agent_id=OWNER, portfolio_id=MANAGED, cash_account_id=CHECKING, amount=101
                 )
             ]
             if reject
@@ -387,32 +337,26 @@ def test_closing_marks_and_product_projection_do_not_advance_the_model_early(cap
     finally:
         live.close()
     [rollout] = result.rollouts
-    [portfolio] = rollout.summary.ending_book.tlh_portfolios
+    [portfolio] = portfolios(rollout.summary.ending_book)
     assert portfolio.value == (100 if reject else 200)
     assert portfolio.reported_tax_basis == 99
     assert rollout.summary.ending_book.capital_gains[0].short_term_gain == -1
-    metrics = metric_arrays(run, result.rollouts, primary_agent_id=OWNER)
+    metrics = metric_arrays(
+        result.rollouts, primary_agent_id=OWNER, horizon_months=1, currency_code="USD", currency_quantum="1"
+    )
     assert metrics.base_series[1][:, 0].tolist() == [100, 100 if reject else 200]
 
 
-def test_managed_subquantum_distribution_keeps_cash_and_issuer_character() -> None:
+def test_managed_subquantum_distribution_keeps_cash_and_interest_character() -> None:
     case = Situation(
         horizon=1,
         harvest=False,
         distribution_rates=(Decimal("0.015"), Decimal(0)),
-        distributions=(
-            PreparedDistribution(
-                agent_id=OWNER,
-                holding_account_id=CHECKING,
-                asset_id=str(ASSET.symbol),
-                to_account_id=CHECKING,
-                tax_character=(
-                    PreparedDistributionSlice(fraction_ppb=500_000_000, issuer_jurisdiction_id=FEDERAL),
-                    PreparedDistributionSlice(fraction_ppb=500_000_000, issuer_jurisdiction_id=None),
-                ),
-            ),
-        ),
-        interest_sources=(InterestIncome(issuer_jurisdiction_id=FEDERAL), InterestIncome(issuer_jurisdiction_id=None)),
+        payout_split={
+            InterestIncome(character=Treasury()): 500_000_000,
+            InterestIncome(character=Taxable()): 500_000_000,
+        },
+        interest_sources=(InterestIncome(character=Treasury()), InterestIncome(character=Taxable())),
     )
     live = session(case)
     try:
@@ -425,15 +369,16 @@ def test_managed_subquantum_distribution_keeps_cash_and_issuer_character() -> No
         live.close()
     [rollout] = result.rollouts
     assert rollout.trace is not None
-    assert [(row.issuer_jurisdiction_id, row.units, row.amount) for row in rollout.trace.distributions] == [
-        (FEDERAL, None, 1),
-        (None, None, 1),
+    assert rollout.trace.distributions is not None
+    assert [(row.income_source, row.units, row.amount) for row in rollout.trace.distributions] == [
+        ("interest:treasury", None, 1),
+        ("interest:taxable", None, 1),
     ]
-    assert rollout.summary.ending_book.tlh_portfolios[0].value == 100
+    assert portfolios(rollout.summary.ending_book)[0].value == 100
     assert {(row.income_source, row.income) for row in rollout.summary.ending_book.income} == {
         ("ordinary", 0),  # The income ledger retains every declared source, including zero buckets.
-        ("interest:federal_us", 1),
-        ("interest:corporate", 1),
+        ("interest:treasury", 1),
+        ("interest:taxable", 1),
     }
 
 
@@ -450,7 +395,7 @@ def test_contribution_is_first_harvested_in_the_next_month() -> None:
                     0,
                     [
                         Contribute(
-                            cause_id="new", agent_id=OWNER, portfolio_id="managed", cash_account_id=CHECKING, amount=100
+                            cause_id="new", agent_id=OWNER, portfolio_id=MANAGED, cash_account_id=CHECKING, amount=100
                         )
                     ],
                 )
@@ -464,18 +409,42 @@ def test_contribution_is_first_harvested_in_the_next_month() -> None:
         live.close()
     [rollout] = result.rollouts
     assert rollout.trace is not None
-    assert rollout.trace.books[1].tlh_portfolios[0].reported_tax_basis == 199
+    assert portfolios(rollout.trace.books[1])[0].reported_tax_basis == 199
     assert rollout.summary.ending_book.capital_gains[0].short_term_gain == -3
 
 
-def test_removed_or_misplaced_fields_cannot_silently_disable_the_model() -> None:
-    scenario = _scenario(horizon=2)
-    for name, value in (("harvest_policies", []), ("currency_quantum", "1")):
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-            Scenario.model_validate({**scenario.model_dump(), name: value})
-    [portfolio] = scenario.tlh_portfolios
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        TlhPortfolioSpec.model_validate({**portfolio.model_dump(), "cumulative_harvest": 1})
+def test_a_contribution_into_a_worthless_index_is_rejected_not_parked() -> None:
+    live = session(Situation(cash=10, harvest=False, prices=(1, 0, 0)))
+    try:
+        live.start()
+        live.advance([DecisionActions(0, 0, [])])
+        result = live.advance(
+            [
+                DecisionActions(
+                    0,
+                    1,
+                    [
+                        Contribute(
+                            cause_id="into-nothing",
+                            agent_id=OWNER,
+                            portfolio_id=MANAGED,
+                            cash_account_id=CHECKING,
+                            amount=10,
+                        )
+                    ],
+                )
+            ]
+        )
+        assert isinstance(result, Finished)
+    finally:
+        live.close()
+    [rollout] = result.rollouts
+    assert rollout.stop == RejectedAction(month=1, action_index=0)
+    assert rollout.trace is not None
+    assert rollout.trace.receipts[-1].outcome == Rejected(
+        reason=InvalidRequest(detail="a worthless index takes no TLH contribution")
+    )
+    assert rollout.summary.cash[0].values[-1] == 10
 
 
 if __name__ == "__main__":

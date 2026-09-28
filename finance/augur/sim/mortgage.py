@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from finance.augur.sim.actor import Actor, MonthOpened, Statement
 from finance.augur.sim.books import AccountRef, MortgageState, Record
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
+from finance.augur.sim.ids import LiabilityId, PropertyId
 from finance.augur.sim.money import round_ratio
 from finance.augur.sim.observations import Claim
 
@@ -33,8 +34,8 @@ def _count(value: int, name: str) -> int:
 class MortgageTerms:
     """Fixed contract facts, including the amount borrowed rather than today's balance."""
 
-    liability_id: str
-    property_id: str
+    liability_id: LiabilityId
+    property_id: PropertyId
     borrower: AccountRef
     lender: AccountRef
     origination_month: int

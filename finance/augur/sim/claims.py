@@ -1,12 +1,33 @@
 """Current-month contractual demands; registering one neither funds nor settles it."""
 
 from dataclasses import dataclass
+from enum import StrEnum
 
 from finance.augur.sim import observations
 from finance.augur.sim.actions import ClaimId
 from finance.augur.sim.books import AccountRef, Record
-from finance.augur.sim.compiler.tax import PreparedTaxProfile
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.mortgage import InstallmentDue, MortgagePayment
+from finance.augur.sim.tax import TaxProfile
+
+
+class ObligationType(StrEnum):
+    """Closed set of `obligation_type` values that flow through dense engine event tables.
+
+    Sim and product callers should use these enum members at construction sites and at
+    filter sites in decoded `obligation_settlements` / `obligation_failures` frames.
+    """
+
+    CASH_SPEND = "cash_spend"
+    OUTSIDE_RENT = "outside_rent"
+    ESTIMATED_TAX = "estimated_tax"
+    TAX_TRUE_UP = "tax_true_up"
+    MORTGAGE_PAYMENT = "mortgage_payment"
+    PROPERTY_TAX = "property_tax"
+    TRANSFER_TAX = "transfer_tax"
+    HOA_DUES = "hoa_dues"
+    HOMEOWNERS_INSURANCE = "homeowners_insurance"
+    PROPERTY_MAINTENANCE = "property_maintenance"
 
 
 @dataclass(frozen=True)
@@ -16,22 +37,31 @@ class OrdinaryDeduction:
 
 @dataclass(frozen=True)
 class TaxPayment:
-    profile: PreparedTaxProfile
+    profile: TaxProfile
 
 
 @dataclass(frozen=True)
 class TaxTrueUp:
-    profile: PreparedTaxProfile
+    profile: TaxProfile
     year_end_month: int
 
 
 @dataclass(frozen=True)
-class PropertyTax:
-    owner: str
+class AdValoremTax:
+    """Real property tax on assessed value: the owner's itemizable, the rented share an expense."""
+
+    owner: AgentId
     rented_fraction: int
 
 
-type Effect = OrdinaryDeduction | TaxPayment | TaxTrueUp | MortgagePayment | PropertyTax | None
+@dataclass(frozen=True)
+class TransferTax:
+    """A transfer tax paid on a purchase or a sale: basis or a selling expense, never a deduction."""
+
+    owner: AgentId
+
+
+type Effect = OrdinaryDeduction | TaxPayment | TaxTrueUp | MortgagePayment | AdValoremTax | TransferTax | None
 
 
 class Demand(Record):
@@ -52,7 +82,7 @@ class AssessmentDue(observations.Claim):
 
 
 class PropertyTaxDue(observations.Claim):
-    """A property's monthly tax, addressed to its owner."""
+    """A property's monthly tax or a transfer tax on it, addressed to its owner."""
 
 
 type Due = BillDue | AssessmentDue | InstallmentDue | PropertyTaxDue
@@ -74,14 +104,14 @@ class Claims:
     month: int
     entries: list[Claim]
 
-    def due(self, actor: str) -> list[tuple[ClaimId, Claim]]:
+    def due(self, actor: AgentId) -> list[tuple[ClaimId, Claim]]:
         return [
             (ClaimId(month=self.month, index=index), claim)
             for index, claim in enumerate(self.entries)
             if not claim.paid and claim.from_account.agent_id == actor
         ]
 
-    def dues(self, actor: str) -> list[Due]:
+    def dues(self, actor: AgentId) -> list[Due]:
         """This month's unpaid demands on `actor`, typed by what raised them."""
         dues: list[Due] = []
         for id_, claim in self.due(actor):
@@ -91,7 +121,7 @@ class Claims:
                     kind = InstallmentDue
                 case TaxPayment() | TaxTrueUp():
                     kind = AssessmentDue
-                case PropertyTax():
+                case AdValoremTax() | TransferTax():
                     kind = PropertyTaxDue
                 case OrdinaryDeduction() | None:
                     kind = BillDue

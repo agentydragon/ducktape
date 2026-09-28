@@ -13,16 +13,32 @@ Ducktape's cluster generator (`cluster/cdk8s/`) is Python cdk8s: the `cdk8s` cor
 
 Moving a wrapper into the right directory, or colocating it with its `cdk8s_import` bindings, proves the layout and the Bazel/gazelle mechanics — nothing more. It says nothing about whether the code inside actually follows cdk8s-plus's conventions. Check the shape below against the actual classes and functions every time, including on a pure relocation, and including when the move itself required no other changes. A slice chosen specifically because it needs no design decisions only tests the plumbing; it never validates the thing this skill exists for, so don't mistake completing one for having applied this skill.
 
+## Where Python cdk8s can't copy cdk8s-plus
+
+cdk8s-plus is the model for the class shapes on this page. Two differences between its TypeScript and this repo's Python decide where the shapes deviate from it:
+
+- **The generated binding is the currency.** A wrapper takes and produces the generated types themselves. It doesn't re-expose a struct as a subset of its fields, and it doesn't wrap one in a type the consuming slot won't accept. Then a hand-built value always fits where a helper's would, and nothing the binding can express is lost behind a wrapper that forwarded less. cdk8s-plus can wrap freely because its own classes consume its own types; here the consumer is almost always a generated binding.
+- **Build complete, once.** cdk8s-plus renders specs lazily from mutable state, and Python can't follow it there. A `Lazy` works only in an `any`-typed slot; in a typed struct field it fails jsii's type check with a `TypeError`. And a generated struct is copied into the object at construction, so changing it afterwards changes nothing in the output. Build each object from complete inputs in one call. cdk8s-plus's real accumulators (`add_container`, `mount`, `env.add_variable`, `Role.allow`) can still be called later; anything else amended after construction is an `add_json_patch`, the escape hatch below, not a way to build.
+
 ## The shape to write: a class named after the kind
 
 A resource that becomes its own Kubernetes object is a **class named after the kind**, constructed as `Kind(scope, id, ...)` — never a verb-prefixed function (`add_kind(...)`, `create_kind(...)`). Constructing a cdk8s construct already adds it to the tree; there is no separate "add" step to name. This is cdk8s-plus's own pattern without exception: `Deployment(scope, id, props)`, `Service(scope, id, props)`, `ConfigMap(scope, id, props)` — a class you instantiate, not a function you call.
 
-Where the wrapper is a thin friendliness layer over exactly one resource, subclass the generated CRD binding directly and call `super().__init__(scope, id, metadata=..., spec=...)` from a friendlier `__init__` — this is how cdk8s-plus's own `ConfigMap`/`Secret`/`Namespace` relate to their generated `ApiObject` base, not composition through an internally-held instance.
+cdk8s-plus's own `ConfigMap`/`Secret`/`Namespace`/`Service` do **not** subclass their generated `ApiObject` (`KubeConfigMap`, `KubeSecret`, ...) — checked directly against `cdk8s-plus`'s TS source (`base.ts`, `secret.ts`, `namespace.ts`, `service.ts`): each is a plain `Construct` (`class Secret extends base.Resource` → `base.Resource extends Construct`) that builds the generated object as an internally-held child, conventionally id'd `"Resource"` (`this.apiObject = new k8s.KubeSecret(this, 'Resource', {...})`), and never discards the reference — `base.Resource`'s own `.name`/`.metadata`/`.apiVersion` getters proxy through it. Where the wrapper genuinely manages more than one resource, or needs the "declared here" vs. "referenced elsewhere" split below, follow that same shape: a `Construct` holding the generated object as `self._resource` (or similar), not a bare side effect of the constructor call.
 
-None of this needs mutable state or a builder pattern. A plain `__init__` (and, for variant constructors, `@classmethod` factories — see below) works identically on top of a frozen, `cdk8s_import`-generated dataclass as it does on top of cdk8s-plus's own hand-written types. "The generated bindings are frozen" is not a reason to fall back to free functions.
+A single-shot wrapper over exactly **one** CRD object with no such split may still subclass the generated binding directly and call `super().__init__(scope, id, metadata=..., spec=...)` from a friendlier `__init__` (`cnpg.Cluster`, `redis_operator.RedisReplication` in this repo) — that's a valid, established simplification for the trivial case, not itself wrong. It just isn't literally cdk8s-plus's own pattern, and it stops working the moment the wrapper needs a second child object or a referenced-elsewhere sibling: you can't subclass two things, and you can't cleanly represent "sometimes this doesn't build one at all."
+
+Whichever shape you pick: never discard the return value of an object you construct inside a wrapper. `Identity(self, "Resource", ...)` with the result unused — while a sibling `Bucket` in the same file correctly kept `self._resource = _Bucket(...)` — is a real bug found in review, not a style nit: nothing later can reference, patch, or inspect that object except by walking the construct tree. The same goes for a helper function: one that builds an object returns it (`-> ExternalSecret`, not `-> None`), so the caller references what was built instead of spelling its name again.
+
+### A "declared here" type and a "referenced elsewhere" type are siblings, never superclass and subclass
+
+A kind that sometimes gets declared in this chart and sometimes only referenced (already declared by another Kustomization, or predating this operator) is cdk8s-plus's `Secret`/`ImportedSecret` shape: **two independent classes**, connected only by a static factory on the declaring class (`Secret.from_secret_name(scope, id, name) -> ISecret`, returning an `ImportedSecret` that implements the same interface but is never a superclass or subclass of `Secret`). Modeling this as `Declared(Referenced)` inheritance — the referenced-elsewhere type as the base class, the declaring type as its subclass — claims an IS-A relationship that doesn't hold (a referenced identity has no CR to declare; a declared one isn't "a reference plus extra") and makes the base class's fields load-bearing for a subclass that isn't a reference at all. Found exactly this shape in review (`Identity(IdentityRef)`): the fix was two independent classes sharing their duplicated logic through a private helper function (this skill's own "one helper per repeated shape", not inheritance-for-code-reuse), with `Identity.from_identity_name(...)` added for symmetry with `Secret.from_secret_name`/`ServiceAccount.from_service_account_name`. This repo skips cdk8s-plus's `I<Kind>` TS interfaces (STYLE.md already calls `typing.Protocol` a smell by default) — the referenced-elsewhere class itself is the shared type other signatures accept (`Bucket.grant(user: IdentityRef | Identity | str)`), which is the correct Python simplification, not a gap.
+
+None of this needs mutable state or a builder pattern. A plain `__init__` (and, for schema variants, `@staticmethod` factories — see below) works identically on top of a frozen, `cdk8s_import`-generated dataclass as it does on top of cdk8s-plus's own hand-written types. "The generated bindings are frozen" is not a reason to fall back to free functions.
 
 Within the class:
 
+- `metadata: ApiObjectMetadata` is one keyword, passed to the binding unchanged — not `name=`, `namespace=`, `labels=` and `annotations=` fanned out (the currency rule above). The caller builds `ApiObjectMetadata(...)` from `cdk8s`.
 - Keyword parameters ≈ the generated `<Kind>Spec`'s fields, same names and types, so a caller reading `__init__`'s signature is reading the spec.
 - State this repo's chosen defaults as real Python defaults, and name them as policy in one docstring line ("Our policy: ..."), not silently.
 - `None` means "leave the field unset, let the CRD's/operator's own default apply" — never overload it with a real default value.
@@ -40,7 +56,9 @@ Reserve a bare string parameter for a reference to something genuinely outside t
 
 ## Group variant constructors under one type
 
-Where a value can be built several different ways — several sources for the same spec field, several shapes of the same rule — that's **one class, several named `@classmethod` factories**, never a scatter of independently-named top-level functions. This is cdk8s-plus's own pattern for exactly this shape: `Volume.from_config_map(...)`, `.from_secret(...)`, `.from_empty_dir(...)`; `EnvValue.from_value(...)`, `.from_secret_value(...)`, `.from_field_ref(...)` — one type, many named doors in. Two functions that return the same struct type with only a discriminant field differing (a "kind" flag, an enum value) are a tell that they belong under one class as two factories, not two unrelated functions.
+Where a value can be built several different ways — several sources for the same spec field, several shapes of the same rule — that's **one class, several named `@staticmethod` factories**, never a scatter of independently-named top-level functions. This is cdk8s-plus's own pattern for exactly this shape: `Volume.from_config_map(...)`, `.from_secret(...)`, `.from_empty_dir(...)`; `EnvValue.from_value(...)`, `.from_secret_value(...)`, `.from_field_ref(...)` — one type, many named doors in. Two functions that return the same struct type with only a discriminant field differing (a "kind" flag, an enum value) are a tell that they belong under one class as two factories, not two unrelated functions.
+
+**Deviation:** each factory returns the generated struct for that field (`Rule.alert(...) -> PrometheusRuleSpecGroupsRules`, `SecretStoreRef.cluster(name) -> ExternalSecretSpecSecretStoreRef`), not an instance of the class — the currency rule above. An instance would need a `.to_spec()` unwrap at every call site. The class only groups the factories: no `__init__`, no fields.
 
 Check whether this repo already has a class doing this for another CRD and match its granularity rather than inventing a different one.
 
@@ -52,9 +70,29 @@ Check whether this repo already has a class doing this for another CRD and match
 
 `container.mount()` earns its keep because a pod is built across many separate calls over its lifetime — containers and volumes get added one at a time, sometimes long after construction, and the actual aggregation happens later, at synthesis. Most wrappers aren't built that way: every value the object needs arrives in one constructor call, with no caller ever adding to it afterward. A single-shot wrapper wants a single-shot `__init__` that builds the whole spec immediately — internal mutable state and a deferred synthesis step are overhead with nothing left to defer. Reach for the incremental shape only when real callers actually build the object piece by piece; don't add it speculatively just because a resource elsewhere in the codebase happens to need it.
 
+Confirming the incremental shape only answers _whether_ to reach for `add_json_patch` on a later call — it says nothing about _what_ to patch with. The patch's value is still bound by the same typed-constructs rule as everything else on this page: build it from the CRD's generated struct for that field, never a raw dict, and check for that struct before assuming one doesn't exist (a well-typed, fixed-shape schema field almost always has one, even for an item appended one at a time rather than supplied all at once in the constructor).
+
 ## Derive a shared identity once, don't ask two objects to agree on a string
 
 Where a wrapper builds two objects (or two parts of one object) that must reference each other by a value with no Kubernetes meaning of its own — a workload's own pod-template labels and its own selector, a generated name a sibling resource must also carry — derive that value once from the construct's own identity and write it everywhere it's needed, rather than a user-supplied string or a hand-rolled hash either side could get subtly wrong. cdk8s's own `Names` helper (`Names.to_label_value(construct)`, `.to_dns_label(scope, extra=[...])`) is the exact primitive `cdk8s_plus_34`'s `Workload` base class uses to keep a resource's selector and its own pod template's labels from ever drifting apart, and it reappears wherever cdk8s-plus needs a stable name with no other natural source (aggregated `ClusterRole` label keys, an auto-generated `Volume` name). Two objects that must agree on a value belong on one shared derivation, never on two independently-typed string constants.
+
+## A caller-facing layer earns each function by changing something
+
+Splitting one wrapper into a schema-generic half and a caller-specific half (the
+placement question this skill's own repo may answer elsewhere) creates a second
+failure mode distinct from the ones above: carrying a function into the caller-specific
+half that doesn't actually need to be there. A function belongs in the caller-specific
+layer only if it binds something the generic layer doesn't know — a fixed label
+convention, a specific set of values, a workaround only one deployment needs. A
+function with the same name, the same signature, and the same docstring as the generic
+thing it calls adds nothing: it's a re-export wearing a definition. Delete it and have
+its callers import the generic name directly — the general rule "import a symbol from
+the module that defines it, not one that merely re-exports it" applies with full force
+here. This is easy to miss when the split is mechanical (moving CRD-schema code into
+one file, keeping every existing caller-facing function name for continuity, even the
+ones that turn out to need nothing caller-specific once the generic half exists).
+Check every remaining function in the caller-specific half against this test before
+calling the split done, not just the ones that looked complicated.
 
 ## Escape hatch stays tiered — don't over-build the wrapper
 
@@ -62,7 +100,7 @@ A new wrapper's `__init__` doesn't need every field on day one. An uncovered fie
 
 ### A factory groups schema variance, not one caller's use of the escape hatch
 
-A `@classmethod` factory (above) earns its place on **real, typed variance the CRD
+A factory (above) earns its place on **real, typed variance the CRD
 schema itself defines** — an enum-discriminated field, alternate typed sub-structs. A
 CRD that leaves a field genuinely untyped (a plugin system's freeform
 `metadata: map[string]string`, an opaque values blob) has no schema-level shape to name
@@ -91,6 +129,37 @@ the schema is the tell that the CRD itself treats the two cases as synonyms — 
 fix is to accept the generated enum's own casing, not bypass the generated field over a
 cosmetic mismatch. Reach for `add_json_patch` only once you've confirmed the field
 truly isn't reachable from the constructor at all.
+
+## Build a Kubernetes quantity from `Cpu`/`Size`, never a hand-typed string
+
+A CRD-generated resources field (`<Kind>...ResourcesRequests`/`...ResourcesLimits`, or any
+other field typed as a Kubernetes `Quantity` — storage sizes included) only takes its value
+through `.from_string(...)`/`.from_number(...)` — there is no way to hand it `cdk8s_plus_34`'s
+own `ContainerResources`/`CpuResources`/`MemoryResources` directly, since those are
+`cdk8s_plus_34.Container`'s own types, not the CRD's. That is not a reason to fall back to a
+literal string (`"50m"`, `"512Mi"`) at the call site: build a `Cpu`/`Size` value and format it,
+then hand the CRD's constructor the resulting string instead of one hand-typed by eye.
+
+- **CPU**: `cdk8s_plus_34.Cpu.millis(50).amount` — `amount` is a public field, already the exact
+  wire string (`Cpu.units(1).amount` gives `"1"`).
+- **Memory, ephemeral storage, or any other `Size`-typed quantity**: `cdk8s.Size.mebibytes(512).as_string()`
+  (or `.gibibytes(...)`/`.kibibytes(...)`/etc.) — `as_string()` formats the amount in whatever
+  unit it was constructed with (`"512Mi"`, `"1Gi"`), which is already a valid Kubernetes
+  `Quantity`. **Not** `f"{size.to_mebibytes()}Mi"`: `to_mebibytes()`/`to_gibibytes()`/etc. convert
+  to a _different_ unit and default to `SizeRoundingBehavior.FAIL`, raising at synth time for any
+  value that isn't a whole number in the target unit (`Size.kibibytes(1500).to_mebibytes()`
+  throws; `Size.mebibytes(500).as_string()` never does). There is no reason to force a unit
+  conversion nobody asked for — `as_string()` is the direct, always-safe formatter.
+
+`cdk8s_plus_34.Container`'s own `_toKube()` does force memory/ephemeral-storage into whole
+mebibytes/gibibytes before formatting (`container.ts`), which is why `EphemeralStorageResources`
+only accepts whole gibibytes (this repo's own gotcha above). That is a quirk of `Container`'s
+internal representation, not a pattern to imitate in a new wrapper: `Container`'s own
+`resources=` keeps passing `Cpu`/`Size` objects straight through (`CpuResources(request=Cpu.millis(50))`,
+already the established pattern throughout this repo, e.g. `agentplane/actions.py`) and does the
+mebibyte/gibibyte forcing itself, internally. A raw CRD field has no such internal step and no
+requirement to match `Container`'s unit choice — `as_string()` in whatever unit the caller
+constructed is correct and simpler.
 
 ## Don't invent a mechanism cdk8s/Kubernetes doesn't already have
 

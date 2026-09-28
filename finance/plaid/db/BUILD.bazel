@@ -46,6 +46,7 @@ py_library(
     visibility = [
         "//finance/augur:__subpackages__",
         "//finance/beancount_export:__pkg__",
+        "//finance/budget:__pkg__",
         "//finance/plaid:__subpackages__",
     ],
     deps = [
@@ -67,7 +68,7 @@ py_library(
 filegroup(
     name = "migrations",
     srcs = glob(["migrations/**"]),
-    visibility = ["//finance/augur:__subpackages__"],
+    visibility = ["//finance/budget:__pkg__"],
 )
 
 py_test(

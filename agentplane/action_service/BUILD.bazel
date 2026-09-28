@@ -928,6 +928,7 @@ py_test(
         "//:conftest",
         "//agentplane:subjects",
         "@pypi//cryptography",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

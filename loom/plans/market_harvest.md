@@ -412,8 +412,8 @@ The shared floor is implemented (2026-06):
   `/v0/bets?contractId=`, and `/v0/comments?contractId=`. Bets append
   incrementally; comments rewrite deterministically because upstream comments
   can be edited or deleted.
-- The roster is deployment config (a ConfigMap-mounted YAML, schema
-  `finance.evidence.markets.MarketRoster`), unioned with every market the
+- The roster (`finance/scraper/market-roster.yaml`, schema
+  `finance.evidence.markets.MarketRoster`) is unioned with every market the
   calibration catalogs reference (`--catalog`).
 - The shared platform record models and loaders live in
   `finance/scraper/` (mirror sync in `market_mirror.py`), the platform record
@@ -422,21 +422,18 @@ The shared floor is implemented (2026-06):
   clients and the read-through valkey cache were deleted: calibration reads the
   mirror via `finance/augur/calibration/evidence_clients.py`.
 - `test_market_seed_tasks` asserts the curated gym panel's markets stay covered
-  by the production roster.
+  by that roster.
 
 Storage split:
 
 - **augur-evidence git = the canonical mirror.** Same pattern as the FRED/Yahoo
-  scrapes: the scraper CronJob commits dated raw files; consumers
-  `ensure_checkout()`. Bets as append-only JSONL diff cleanly. Git history
-  timestamps every sync, so checking out an old commit is the as-of view for
-  still-unresolved markets.
+  scrapes: the scraper commits dated raw files (its cluster CronJob is parked, so
+  none land on a schedule); consumers `ensure_checkout()`. Bets as append-only
+  JSONL diff cleanly. Git history timestamps every sync, so checking out an old
+  commit is the as-of view for still-unresolved markets.
 - **Bucket (`s3://loom-gym/harvest/raw/`)** = bulk one-shot archives (the 2024
   dump lives there) and the overflow home if per-market mirrors outgrow git
   comfort.
-- ~~Valkey~~ (removed 2026-06): the calibration server now reads the git mirror
-  directly (git-sync sidecar keeps the checkout <=1m behind), so the volatile
-  cache layer is gone.
 
 Remaining mirror follow-ups: skip-resolved hardening if the roster grows enough
 that no-op resolved-market checks matter, and roster growth from G1/H3 harvest.

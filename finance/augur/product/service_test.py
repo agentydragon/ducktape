@@ -12,11 +12,17 @@ from more_itertools import one
 
 from finance.augur.api.config import Config
 from finance.augur.api.finance import FinanceSnapshot
+from finance.augur.api.portfolio import (
+    HoldingTaxLotConfig,
+    PortfolioAccountConfig,
+    PortfolioConfig,
+    SecurityHoldingConfig,
+    TlhCohort,
+    TlhPortfolioSpec,
+)
 from finance.augur.api.wire import CatalogResponse
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, Sampler
-from finance.augur.model.independent import IndependentProviderConfig
-from finance.augur.model.provider_config import CompositeProviderConfig, MirroringProviderConfig
 from finance.augur.model.series import (
     HomeValueKey,
     InflationKey,
@@ -38,9 +44,20 @@ from finance.augur.model.testing import (
     int_matrix_with_step,
     level_matrix_with_step,
 )
+from finance.augur.policy.cash_band_household import CashBandHousehold, ManagedSleeve, SecuritySleeve
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.product import service
 from finance.augur.product.conftest import MakeProductService
-from finance.augur.product.scenarios import build_scenario, resolve_primary_agent_id
+from finance.augur.product.holdings import Holdings, opening_holdings
+from finance.augur.product.metrics import ProductMetricFanSummary, ProductTerminalSummary
+from finance.augur.product.scenarios import (
+    PRIMARY_ACCOUNT_ID,
+    Home,
+    Situation,
+    build_situation,
+    locations_by_id,
+    resolve_primary_agent_id,
+)
 from finance.augur.product.simulation import simulate_product_metrics
 from finance.augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS
 from finance.augur.product.wire import (
@@ -50,6 +67,7 @@ from finance.augur.product.wire import (
     HoaDuesPaymentEvent,
     HoldingSaleEvent,
     HomeownersInsurancePaymentEvent,
+    ManagedSleeveWeight,
     MetricName,
     MonthlyExpenseEvent,
     MortgageFinancing,
@@ -68,16 +86,28 @@ from finance.augur.product.wire import (
     RolloutFailureEvent,
     RolloutRequest,
     ScenarioKey,
+    SecuritySleeveWeight,
     SetPrimaryResidenceEventWire,
     SetPrimaryResidenceMarkerEvent,
     SetRentedFractionEventWire,
     SleeveWeight,
+    SpendIndex,
 )
-from finance.augur.sim.external_series import ExternalSeriesContext
-from finance.augur.sim.product_metrics import ProductMetricFanSummary, ProductTerminalSummary
+from finance.augur.sim.books import AccountRef
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId, PropertyId
+from finance.augur.sim.market_path import IndexedAmount, MarketPath
 from finance.augur.sim.quantiles import currency_quantiles
-from finance.augur.sim.scenario import Agent, InitialAccountBalance, InitialLot, Scenario, SeriesIndexedAmount
-from finance.augur.sim.testing.case import Case
+from finance.augur.sim.schedule import Once, Recurring
+from finance.augur.sim.tlh import TlhAssumptions
+from finance.augur.sim.world import World
+from finance.augur.x.models.independent import IndependentProviderConfig
+from finance.augur.x.models.provider_config import CompositeProviderConfig, MirroringProviderConfig
+
+LOCATION_A = LocationId("location_a")
+TEST_MANAGED = PortfolioId("test-managed")
+LOCATION_A_PROPERTY = PropertyId("location_a_property")
+VOO = SecuritySymbol("VOO")
+BTC = SecuritySymbol("btc")
 
 
 @dataclass
@@ -146,6 +176,21 @@ def _quanta_int(value: object) -> int:
     return int(value)
 
 
+def _no_holdings(primary_agent_id: AgentId) -> Holdings:
+    return opening_holdings(
+        PortfolioConfig(),
+        (),
+        tlh_portfolios=(),
+        primary_agent_id=primary_agent_id,
+        payout_account_id=PRIMARY_ACCOUNT_ID,
+    )
+
+
+def _home(situation: Situation) -> Home:
+    assert situation.home is not None
+    return situation.home
+
+
 def _with_fixed_cash(config: Config, cash: Decimal | int | str) -> Config:
     fixed = config.portfolio_sources.fixed
     snapshot = fixed.snapshot or FinanceSnapshot(as_of_date="1970-01-01")
@@ -164,7 +209,11 @@ def scenario_key() -> ScenarioKey:
 
 
 def _scenario_key(
-    *, model_id: str = "current_model", horizon_months: int = 3, monthly_spend: int = 1_000, spend_index: str = "none"
+    *,
+    model_id: str = "current_model",
+    horizon_months: int = 3,
+    monthly_spend: Decimal = Decimal(1_000),
+    spend_index: SpendIndex = SpendIndex.NONE,
 ) -> ScenarioKey:
     """Build the ordinary product-test scenario; policy/rent/property cases stay explicit."""
 
@@ -275,26 +324,18 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled(
         product.rollout(_rollout_request(scenario_key))
 
 
-def test_product_metrics_fail_when_holding_price_series_is_missing() -> None:
-    scenario = Scenario(
-        agents=[Agent(agent_id="agent_a")],
-        initial_cash=[InitialAccountBalance(agent_id="agent_a", account_id="checking", balance=0)],
-        initial_lots=[
-            InitialLot(
-                lot_id="unpriced_lot",
-                agent_id="agent_a",
-                asset=SecurityKey(symbol=SecuritySymbol("missing")),
-                purchase_month_index=-1,
-                quantity=2.0,
-                cost_basis=2,
-            )
-        ],
-        tax_profiles=[],
-        horizon_months=1,
+def test_a_holding_no_series_prices_is_refused_where_its_pool_is_declared() -> None:
+    world = World(MarketPath((), 0, rollout_count=1), horizon_months=1)
+    world.declare_account(
+        account=AccountRef(agent_id=AgentId("agent_a"), account_id=AccountId("checking")), opening_balance=0
     )
-    case = Case(scenario=scenario, rollout_count=1, paths=ExternalSeriesContext())
-    with pytest.raises(ValueError, match="security:missing"):
-        simulate_product_metrics(case.compiled_run, primary_agent_id="agent_a")
+    with pytest.raises(ValueError, match="missing public security series for 'missing'"):
+        world.declare_pool(
+            agent_id=AgentId("agent_a"),
+            account_id=AccountId("checking"),
+            asset_id=AssetId("missing"),
+            quantity_scale=1_000_000,
+        )
 
 
 def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
@@ -307,8 +348,8 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
     assert counting_model.sample_requests[0].required_level_series == frozenset(
         {
-            SecurityKey(symbol=SecuritySymbol("VOO")),
-            SecurityKey(symbol=SecuritySymbol("btc")),
+            SecurityKey(symbol=VOO),
+            SecurityKey(symbol=BTC),
             SecurityKey(symbol=SecuritySymbol("eth")),
             # Demanded by the config's TIPS rung, not by anything priced: an inflation-indexed
             # bond's principal rides CPI, so it needs the path even though a bond has no price
@@ -317,7 +358,6 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
         }
     )
     assert counting_model.sample_requests[0].required_private_equity_issuers == frozenset({"private_holding_a"})
-    assert fan.model_id == "composite"
     assert fan.currency_code == "USD"
     assert fan.currency_quantum == "0.01"
     assert fan.metric == "cash"
@@ -355,7 +395,6 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     )
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8)]
-    assert terminal_distribution.model_id == "composite"
     assert terminal_distribution.currency_code == "USD"
     assert terminal_distribution.currency_quantum == "0.01"
     assert terminal_distribution.metric == "cash"
@@ -374,7 +413,6 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     detail = product.rollout(_rollout_request(scenario_key))
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8), (7,)]
-    assert detail.model_id == "composite"
     assert detail.rollout.seed == 7
     assert detail.currency_code == "USD"
     assert detail.currency_quantum == "0.01"
@@ -419,8 +457,13 @@ def test_fan_and_selected_rollout_metrics_share_one_reducer(
     product: service.ProductService, scenario_key: ScenarioKey
 ) -> None:
     seeds = (7, 8)
-    run, _model_id = product._compile_product_run(scenario_key, seeds)
-    metrics = simulate_product_metrics(run, primary_agent_id=product._primary_agent_id)
+    situation, worlds = product._worlds(scenario_key, seeds)
+    metrics = simulate_product_metrics(
+        worlds,
+        horizon_months=situation.horizon_months,
+        currency=situation.currency,
+        primary_agent_id=product._primary_agent_id,
+    )
     expected_metrics = metrics.metric_arrays()
     expected_failed = metrics.failed_month
     percentiles = (0.0, 25.0, 50.0, 75.0, 100.0)
@@ -431,9 +474,7 @@ def test_fan_and_selected_rollout_metrics_share_one_reducer(
     for name, expected_series in expected_metrics.items():
         if name == "month_index":
             continue
-        summary, _model_id = product._simulate_product_summary(
-            scenario_key, seeds, metric=name, percentiles=percentiles
-        )
+        summary = product._simulate_product_summary(scenario_key, seeds, metric=name, percentiles=percentiles)
         assert summary.failed_count == int((expected_failed >= 0).sum())
         expected_monthly_percentiles = np.asarray(
             [currency_quantiles(month, percentiles) for month in expected_series], dtype=np.int64
@@ -461,7 +502,7 @@ def test_concurrent_fan_and_terminal_requests_run_serially(
 
     def slow_simulate_product_summary(
         scenario: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...] | None
-    ) -> tuple[ProductMetricFanSummary | ProductTerminalSummary, str]:
+    ) -> ProductMetricFanSummary | ProductTerminalSummary:
         nonlocal active_simulations, max_active_simulations
         with active_lock:
             active_simulations += 1
@@ -506,14 +547,13 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
     model = ConstantFrameModel(
         levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
         private_equity={issuer_id: PrivateEquityChannels(mark_usd_per_unit=mark_by_rollout)},
-        model_id="pe_mark_by_rollout_fixture",
     )
     product = make_product_service(model)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=2,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
     )
 
@@ -524,7 +564,6 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
     )
 
     assert [request.rollout_seeds for request in model.sample_requests] == [(101, 102, 103)]
-    assert distribution.model_id == "pe_mark_by_rollout_fixture"
     assert distribution.terminal_metric_percentiles == {
         "percentile": [0.0, 50.0, 100.0],
         "value_quanta": [_usd_quanta(value) for value in [10_000.0, 20_000.0, 30_000.0]],
@@ -545,7 +584,6 @@ def test_selected_detail_executes_financially_once(
         ConstantFrameModel(
             levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
             private_equity={IssuerId("private_holding_a"): PrivateEquityChannels(mark_usd_per_unit=25.0)},
-            model_id="flat_selected_detail",
         )
     )
     original = service.execute
@@ -750,8 +788,8 @@ def test_failed_rollout_preserves_stop_book_without_post_stop_values(product: se
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=3,
-        monthly_spend=300_000,
-        spend_index="none",
+        monthly_spend=Decimal(300_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
     )
 
@@ -800,7 +838,7 @@ def test_a_scenario_with_no_target_allocation_never_sells_and_fails_the_month(pr
     used to work starts failing.
     """
 
-    scenario = _scenario_key(horizon_months=1, monthly_spend=300_000)
+    scenario = _scenario_key(horizon_months=1, monthly_spend=Decimal(300_000))
 
     detail = product.rollout(_rollout_request(scenario))
 
@@ -819,17 +857,20 @@ def test_product_zero_weight_excludes_a_holding_instead_of_requesting_its_exit(
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=1,
-        monthly_spend=300_000,
-        spend_index="none",
+        monthly_spend=Decimal(300_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(
-            sleeve_weights=(SleeveWeight(symbol="VOO", weight=0), SleeveWeight(symbol="btc", weight=btc_weight))
+            sleeve_weights=(
+                SecuritySleeveWeight(symbol=VOO, weight=0),
+                SecuritySleeveWeight(symbol=BTC, weight=btc_weight),
+            )
         ),
     )
     detail = product.rollout(_rollout_request(scenario))
     sales = [event for event in detail.rollout.events if isinstance(event, HoldingSaleEvent)]
     if btc_weight:
         sale = one(sales)
-        assert sale.asset == SecurityKey(symbol=SecuritySymbol("btc"))
+        assert sale.asset == SecurityKey(symbol=BTC)
         assert sale.proceeds_quanta == _usd_quanta(48_125)
         assert not detail.rollout.failed
     else:
@@ -848,16 +889,16 @@ def test_a_zero_width_band_sells_exactly_what_the_month_needs(product: service.P
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=1,
-        monthly_spend=300_000,
-        spend_index="none",
+        monthly_spend=Decimal(300_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(
-            cash_floor=0,
-            cash_ceiling=0,
+            cash_floor=Decimal(0),
+            cash_ceiling=Decimal(0),
             cash_band_index_to_inflation=False,
             sleeve_weights=(
-                SleeveWeight(symbol="VOO", weight=1),
-                SleeveWeight(symbol="btc", weight=1),
-                SleeveWeight(symbol="eth", weight=1),
+                SecuritySleeveWeight(symbol=VOO, weight=1),
+                SecuritySleeveWeight(symbol=BTC, weight=1),
+                SecuritySleeveWeight(symbol=SecuritySymbol("eth"), weight=1),
             ),
         ),
     )
@@ -902,8 +943,8 @@ def test_product_rollout_includes_private_equity_protocol_event_and_forced_sale(
             ScenarioKey(
                 model_id="current_model",
                 horizon_months=2,
-                monthly_spend=1_000,
-                spend_index="none",
+                monthly_spend=Decimal(1_000),
+                spend_index=SpendIndex.NONE,
                 funding_policy=FundingPolicy(sleeve_weights=()),
             )
         )
@@ -951,7 +992,6 @@ def test_product_rollout_collapse_revalues_unsold_private_equity(make_product_se
                     liquidity_blocked=event_matrix_with_step(default=False, override=True, month=1),
                 )
             },
-            model_id="collapsed_pe_fixture",
         )
     )
 
@@ -960,8 +1000,8 @@ def test_product_rollout_collapse_revalues_unsold_private_equity(make_product_se
             ScenarioKey(
                 model_id="current_model",
                 horizon_months=2,
-                monthly_spend=1_000,
-                spend_index="none",
+                monthly_spend=Decimal(1_000),
+                spend_index=SpendIndex.NONE,
                 funding_policy=FundingPolicy(sleeve_weights=()),
             )
         )
@@ -1000,7 +1040,6 @@ def test_product_rollout_includes_private_equity_opportunity_trace(make_product_
                     ),
                 )
             },
-            model_id="tender_opportunity_fixture",
         )
     )
 
@@ -1009,8 +1048,8 @@ def test_product_rollout_includes_private_equity_opportunity_trace(make_product_
             ScenarioKey(
                 model_id="current_model",
                 horizon_months=2,
-                monthly_spend=1_000,
-                spend_index="none",
+                monthly_spend=Decimal(1_000),
+                spend_index=SpendIndex.NONE,
                 funding_policy=FundingPolicy(sleeve_weights=()),
             )
         )
@@ -1044,13 +1083,13 @@ def test_product_cash_band_refills_to_the_ceiling_from_the_overweight_sleeve(pro
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=1,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(
-            cash_floor=260_000,
-            cash_ceiling=280_000,
+            cash_floor=Decimal(260_000),
+            cash_ceiling=Decimal(280_000),
             cash_band_index_to_inflation=False,
-            sleeve_weights=(SleeveWeight(symbol="VOO", weight=1), SleeveWeight(symbol="btc", weight=1)),
+            sleeve_weights=(SecuritySleeveWeight(symbol=VOO, weight=1), SecuritySleeveWeight(symbol=BTC, weight=1)),
         ),
     )
 
@@ -1065,7 +1104,7 @@ def test_product_cash_band_refills_to_the_ceiling_from_the_overweight_sleeve(pro
     assert isinstance(sale, HoldingSaleEvent)
     assert isinstance(expense, MonthlyExpenseEvent)
     assert sale.proceeds_quanta == _usd_quanta(29_125.0)
-    assert sale.asset == SecurityKey(symbol=SecuritySymbol("VOO"))
+    assert sale.asset == SecurityKey(symbol=VOO)
     assert expense.amount_paid_quanta == _usd_quanta(1_000.0)
 
 
@@ -1077,13 +1116,13 @@ def test_product_cash_band_sells_nothing_while_cash_sits_inside_it(product: serv
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=1,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(
-            cash_floor=100_000,
-            cash_ceiling=300_000,
+            cash_floor=Decimal(100_000),
+            cash_ceiling=Decimal(300_000),
             cash_band_index_to_inflation=False,
-            sleeve_weights=(SleeveWeight(symbol="VOO", weight=1), SleeveWeight(symbol="btc", weight=1)),
+            sleeve_weights=(SecuritySleeveWeight(symbol=VOO, weight=1), SecuritySleeveWeight(symbol=BTC, weight=1)),
         ),
     )
 
@@ -1093,14 +1132,98 @@ def test_product_cash_band_sells_nothing_while_cash_sits_inside_it(product: serv
     assert detail.rollout.monthly_metrics["cash_quanta"] == [_usd_quanta(value) for value in [250_000.0, 250_875.0]]
 
 
+def test_a_managed_sleeve_weight_lowers_to_its_portfolio_and_draws_on_its_account(
+    augur_config: Config, catalog: CatalogResponse
+) -> None:
+    """A managed weight names the TLH portfolio by id; a security weight on its index names nothing held.
+
+    The portfolio's account joins the ordinary lots' accounts as a source, the opening book
+    holds no lot of the index, and the index symbol alone does not reach the portfolio.
+    """
+
+    owner = resolve_primary_agent_id(augur_config)
+    ordinary = SecurityHoldingConfig(
+        position_id="test-ordinary",
+        account_id=AccountId("test_ordinary_brokerage"),
+        symbol=SecuritySymbol("test-other"),
+        unit_value=Decimal(100),
+        lots=(
+            HoldingTaxLotConfig(
+                lot_id=LotId("test-ordinary"),
+                holding_period_months_at_start=12,
+                quantity=10.0,
+                cost_basis=Decimal(1_000),
+            ),
+        ),
+    )
+    managed = TlhPortfolioSpec(
+        portfolio_id=TEST_MANAGED,
+        owner_agent_id=owner,
+        account_id=AccountId("test_managed_brokerage"),
+        asset=SecurityKey(symbol=SecuritySymbol("test-index")),
+        initial_cohorts=[TlhCohort(value=Decimal(3_000), cost_basis=Decimal(3_000), purchase_month_index=-24)],
+        assumptions=TlhAssumptions(
+            peak_annual_yield=0,
+            floor_annual_yield=0,
+            maturity_decay_exponent=1,
+            drawdown_sensitivity=0,
+            short_term_fraction=1,
+        ),
+    )
+
+    def lowered(*sleeves: SleeveWeight) -> Situation:
+        return build_situation(
+            ScenarioKey(
+                model_id="current_model",
+                horizon_months=1,
+                monthly_spend=Decimal(1_000),
+                spend_index=SpendIndex.NONE,
+                funding_policy=FundingPolicy(sleeve_weights=sleeves),
+            ),
+            primary_agent_id=owner,
+            initial_cash=Decimal(1_000),
+            holdings=opening_holdings(
+                PortfolioConfig(
+                    accounts=(PortfolioAccountConfig(account_id=ordinary.account_id, owner_agent_id=owner),),
+                    holdings=(ordinary,),
+                ),
+                (),
+                tlh_portfolios=(managed,),
+                primary_agent_id=owner,
+                payout_account_id=PRIMARY_ACCOUNT_ID,
+            ),
+            properties_by_id=catalog.properties_by_id,
+            locations=locations_by_id(augur_config.locations),
+        )
+
+    situation = lowered(
+        ManagedSleeveWeight(portfolio_id=TEST_MANAGED, weight=3),
+        SecuritySleeveWeight(symbol=SecuritySymbol("test-other"), weight=1),
+    )
+    household = situation.household()
+    lot = one(situation.lots)
+    assert lot.lot_id == "test-ordinary"
+    assert isinstance(household, CashBandHousehold)
+    assert household.sleeves == (
+        ManagedSleeve(portfolio_id=TEST_MANAGED, weight=3),
+        SecuritySleeve(asset_id=lot.asset_id, weight=1),
+    )
+    assert household.source_account_ids == ("test_ordinary_brokerage", "test_managed_brokerage")
+    assert isinstance(
+        lowered(SecuritySleeveWeight(symbol=SecuritySymbol("test-index"), weight=1)).household(), ClaimPayer
+    )
+    with pytest.raises(ValueError, match="unknown TLH portfolio 'test-absent'"):
+        lowered(ManagedSleeveWeight(portfolio_id=PortfolioId("test-absent"), weight=1))
+
+
 def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income(
     product: service.ProductService,
 ) -> None:
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=12,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
     )
 
@@ -1119,15 +1242,15 @@ def test_product_rollout_includes_federal_and_california_tax_events_for_holding_
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=13,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(
-            cash_floor=260_000,
+            cash_floor=Decimal(260_000),
             # A ceiling far above the floor so the single refill is large enough to realize a
             # gain worth taxing; the fixture's VOO lots carry ~$100/unit of appreciation.
-            cash_ceiling=760_000,
+            cash_ceiling=Decimal(760_000),
             cash_band_index_to_inflation=False,
-            sleeve_weights=(SleeveWeight(symbol="VOO", weight=1), SleeveWeight(symbol="btc", weight=1)),
+            sleeve_weights=(SecuritySleeveWeight(symbol=VOO, weight=1), SecuritySleeveWeight(symbol=BTC, weight=1)),
         ),
     )
 
@@ -1162,10 +1285,10 @@ def test_outside_rent_emits_yearly_re_pegged_obligation(
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=14,
-        monthly_spend=1_000,
-        spend_index="none",
-        monthly_rent=3_000,
-        rental_location_id="location_a",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
+        monthly_rent=Decimal(3_000),
+        rental_location_id=LOCATION_A,
         funding_policy=FundingPolicy(sleeve_weights=()),
     )
 
@@ -1185,7 +1308,7 @@ def test_outside_rent_emits_yearly_re_pegged_obligation(
     # Within year 1 the amount stays flat.
     assert len({event.amount_paid_quanta for event in year_one}) == 1
     # Required-level-series for the request should include the location-keyed rent series.
-    assert RentKey(location_id=LocationId("location_a")) in counting_model.sample_requests[0].required_level_series
+    assert RentKey(location_id=LOCATION_A) in counting_model.sample_requests[0].required_level_series
 
     # Year-0 cash drops by spend + rent = 4000 each month deterministically. Asserted as a
     # per-month DELTA rather than a 12-month total: the fixture's bond rungs pay coupons in
@@ -1215,10 +1338,10 @@ def test_outside_rent_rejects_unknown_location(product: service.ProductService) 
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=3,
-        monthly_spend=1_000,
-        spend_index="none",
-        monthly_rent=3_000,
-        rental_location_id="not_a_real_location",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
+        monthly_rent=Decimal(3_000),
+        rental_location_id=LocationId("not_a_real_location"),
     )
 
     with pytest.raises(ValueError, match=r"unknown rental_location_id"):
@@ -1228,7 +1351,11 @@ def test_outside_rent_rejects_unknown_location(product: service.ProductService) 
 def test_scenario_key_rejects_rent_without_location() -> None:
     with pytest.raises(ValueError, match=r"rental_location_id is required"):
         ScenarioKey(
-            model_id="current_model", horizon_months=3, monthly_spend=1_000, spend_index="none", monthly_rent=3_000
+            model_id="current_model",
+            horizon_months=3,
+            monthly_spend=Decimal(1_000),
+            spend_index=SpendIndex.NONE,
+            monthly_rent=Decimal(3_000),
         )
 
 
@@ -1237,9 +1364,9 @@ def test_scenario_key_rejects_location_without_rent() -> None:
         ScenarioKey(
             model_id="current_model",
             horizon_months=3,
-            monthly_spend=1_000,
-            spend_index="none",
-            rental_location_id="location_a",
+            monthly_spend=Decimal(1_000),
+            spend_index=SpendIndex.NONE,
+            rental_location_id=LOCATION_A,
         )
 
 
@@ -1248,11 +1375,11 @@ def mortgage_purchase_scenario() -> ScenarioKey:
     return ScenarioKey(
         model_id="current_model",
         horizon_months=2,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id="location_a_property",
+            property_id=LOCATION_A_PROPERTY,
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
             is_primary_residence=True,
         ),
@@ -1286,28 +1413,30 @@ def test_property_purchase_emits_purchase_mortgage_and_property_tax_events(
         assert _usd_from_quanta(event.amount_quanta) == pytest.approx(monthly_payment)
         assert int(event.interest_quanta) + int(event.principal_quanta) == int(event.amount_quanta)
 
-    property_taxes = [event for event in detail.rollout.events if event.kind == "property_tax_payment"]
-    monthly_property_tax = 900_000.0 * 0.01 / 12.0
-    assert property_taxes
-    for tax_event in property_taxes:
-        assert isinstance(tax_event, PropertyTaxPaymentEvent)
-        assert _usd_from_quanta(tax_event.amount_due_quanta) == pytest.approx(monthly_property_tax)
-        assert tax_event.amount_paid_quanta == tax_event.amount_due_quanta
-        assert tax_event.shortfall_quanta == _usd_quanta(0.0)
+    # Location A's situs is San Francisco, and the app's month 0 is January 2024. February is the
+    # eighth month of FY 2023-24, billed on the $900,000 price at 1.17769382% with no exemption (the
+    # owner was not there on its lien date): $10,599.24 a year, of which February pays the eighth
+    # cumulative twelfth, $7,066.16 - $6,182.89 = $883.27.
+    [tax_event] = [event for event in detail.rollout.events if event.kind == "property_tax_payment"]
+    assert isinstance(tax_event, PropertyTaxPaymentEvent)
+    assert tax_event.month_index == 1
+    assert tax_event.amount_due_quanta == _usd_quanta(883.27)
+    assert tax_event.amount_paid_quanta == tax_event.amount_due_quanta
+    assert tax_event.shortfall_quanta == _usd_quanta(0.0)
 
 
-def test_product_lowers_primary_residence_assignments_to_sim_scenario(
+def test_product_lowers_primary_residence_assignments_to_housing(
     augur_config: Config, catalog: CatalogResponse
 ) -> None:
     primary_agent_id = resolve_primary_agent_id(augur_config)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=36,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id="location_a_property",
+            property_id=LOCATION_A_PROPERTY,
             financing=CashFinancing(),
             is_primary_residence=True,
             lifecycle_events=(
@@ -1317,18 +1446,21 @@ def test_product_lowers_primary_residence_assignments_to_sim_scenario(
         ),
     )
 
-    sim_scenario = build_scenario(
-        scenario,
-        primary_agent_id=primary_agent_id,
-        initial_cash=Decimal(1200000),
-        initial_lots=(),
-        properties_by_id=catalog.properties_by_id,
+    home = _home(
+        build_situation(
+            scenario,
+            primary_agent_id=primary_agent_id,
+            initial_cash=Decimal(1200000),
+            holdings=_no_holdings(primary_agent_id),
+            properties_by_id=catalog.properties_by_id,
+            locations=locations_by_id(augur_config.locations),
+        )
     )
 
-    assert [(row.agent_id, row.property_id) for row in sim_scenario.initial_primary_residences] == [
+    assert [(row.agent_id, row.property_id) for row in home.housing.initial_residences] == [
         (primary_agent_id, "location_a_property")
     ]
-    assert [(row.month, row.agent_id, row.property_id) for row in sim_scenario.primary_residence_events] == [
+    assert [(row.month, row.agent_id, row.property_id) for row in home.housing.residence_events] == [
         (12, primary_agent_id, None),
         (24, primary_agent_id, "location_a_property"),
     ]
@@ -1341,53 +1473,58 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=12,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id="location_a_property",
+            property_id=LOCATION_A_PROPERTY,
             financing=CashFinancing(),
             is_primary_residence=True,
-            initial_rental=RentalIncomePlan(full_property_monthly_rent=6_000, fraction_rented=0.5, vacancy_pct=0.10),
+            initial_rental=RentalIncomePlan(
+                full_property_monthly_rent=Decimal(6_000), fraction_rented=0.5, vacancy_pct=0.10
+            ),
             rental_management=RentalManagement(management_fee_pct=8.0, leasing_fee_months=1.0, avg_tenancy_months=24),
         ),
     )
 
-    sim_scenario = build_scenario(
-        scenario,
-        primary_agent_id=primary_agent_id,
-        initial_cash=Decimal(1200000),
-        initial_lots=(),
-        properties_by_id=catalog.properties_by_id,
+    home = _home(
+        build_situation(
+            scenario,
+            primary_agent_id=primary_agent_id,
+            initial_cash=Decimal(1200000),
+            holdings=_no_holdings(primary_agent_id),
+            properties_by_id=catalog.properties_by_id,
+            locations=locations_by_id(augur_config.locations),
+        )
     )
 
     rent_transfer = one(
         transfer
-        for transfer in sim_scenario.recurring_property_cashflows
-        if transfer.cause_id == "rental_income:location_a_property"
+        for transfer in home.cashflows
+        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "rental_income:location_a_property"
     )
     assert rent_transfer.property_id == "location_a_property"
-    assert isinstance(rent_transfer.amount, SeriesIndexedAmount)
-    assert rent_transfer.amount.base_amount == pytest.approx(6_000.0 * 0.5 * 0.90)
-    assert rent_transfer.amount.series == RentKey(location_id=LocationId("location_a"))
+    assert isinstance(rent_transfer.amount, IndexedAmount)
+    assert rent_transfer.amount.base_amount == _quanta_int(_usd_quanta(6_000.0 * 0.5 * 0.90))
+    assert rent_transfer.amount.series_id == RentKey(location_id=LOCATION_A).wire_id
 
     management_fee = one(
         transfer
-        for transfer in sim_scenario.recurring_property_cashflows
-        if transfer.cause_id == "management_fee:location_a_property"
+        for transfer in home.cashflows
+        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "management_fee:location_a_property"
     )
     assert management_fee.property_id == "location_a_property"
-    assert isinstance(management_fee.amount, SeriesIndexedAmount)
-    assert management_fee.amount.base_amount == pytest.approx(6_000.0 * 0.5 * 0.90 * 0.08)
+    assert isinstance(management_fee.amount, IndexedAmount)
+    assert management_fee.amount.base_amount == _quanta_int(_usd_quanta(6_000.0 * 0.5 * 0.90 * 0.08))
 
     leasing_fee = one(
         transfer
-        for transfer in sim_scenario.scheduled_property_cashflows
-        if transfer.cause_id == "leasing_fee:location_a_property:m0"
+        for transfer in home.cashflows
+        if isinstance(transfer.schedule, Once) and transfer.cause_id == "leasing_fee:location_a_property:m0"
     )
     assert leasing_fee.property_id == "location_a_property"
-    assert isinstance(leasing_fee.amount, SeriesIndexedAmount)
-    assert leasing_fee.amount.base_amount == pytest.approx(6_000.0 * 0.5)
+    assert isinstance(leasing_fee.amount, IndexedAmount)
+    assert leasing_fee.amount.base_amount == _quanta_int(_usd_quanta(6_000.0 * 0.5))
 
 
 def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
@@ -1397,14 +1534,16 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=12,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id="location_a_property",
+            property_id=LOCATION_A_PROPERTY,
             financing=CashFinancing(),
             is_primary_residence=True,
-            initial_rental=RentalIncomePlan(full_property_monthly_rent=6_000, fraction_rented=0.25, vacancy_pct=0.10),
+            initial_rental=RentalIncomePlan(
+                full_property_monthly_rent=Decimal(6_000), fraction_rented=0.25, vacancy_pct=0.10
+            ),
             rental_management=RentalManagement(management_fee_pct=8.0, leasing_fee_months=1.0, avg_tenancy_months=24),
             lifecycle_events=(
                 SetRentedFractionEventWire(month=3, rented_fraction=0.75),
@@ -1414,58 +1553,75 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
         ),
     )
 
-    sim_scenario = build_scenario(
-        scenario,
-        primary_agent_id=primary_agent_id,
-        initial_cash=Decimal(1200000),
-        initial_lots=(),
-        properties_by_id=catalog.properties_by_id,
+    home = _home(
+        build_situation(
+            scenario,
+            primary_agent_id=primary_agent_id,
+            initial_cash=Decimal(1200000),
+            holdings=_no_holdings(primary_agent_id),
+            properties_by_id=catalog.properties_by_id,
+            locations=locations_by_id(augur_config.locations),
+        )
     )
 
     rent_transfers = [
         transfer
-        for transfer in sim_scenario.recurring_property_cashflows
-        if transfer.cause_id == "rental_income:location_a_property"
+        for transfer in home.cashflows
+        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "rental_income:location_a_property"
     ]
     assert {transfer.property_id for transfer in rent_transfers} == {"location_a_property"}
-    assert [(transfer.start_month, transfer.end_month) for transfer in rent_transfers] == [(0, 2), (3, 5), (8, 11)]
+    assert [transfer.schedule for transfer in rent_transfers] == [
+        Recurring(start_month=start, end_month=end) for start, end in ((0, 2), (3, 5), (8, 11))
+    ]
     rent_amounts = []
     for rent_transfer in rent_transfers:
-        assert isinstance(rent_transfer.amount, SeriesIndexedAmount)
+        assert isinstance(rent_transfer.amount, IndexedAmount)
         rent_amounts.append(rent_transfer.amount.base_amount)
-        assert rent_transfer.amount.series == RentKey(location_id=LocationId("location_a"))
-    assert rent_amounts == pytest.approx([6_000.0 * 0.25 * 0.90, 6_000.0 * 0.75 * 0.90, 6_000.0 * 0.5 * 0.90])
+        assert rent_transfer.amount.series_id == RentKey(location_id=LOCATION_A).wire_id
+    assert rent_amounts == [
+        _quanta_int(_usd_quanta(amount))
+        for amount in (6_000.0 * 0.25 * 0.90, 6_000.0 * 0.75 * 0.90, 6_000.0 * 0.5 * 0.90)
+    ]
 
     management_fees = [
         transfer
-        for transfer in sim_scenario.recurring_property_cashflows
-        if transfer.cause_id == "management_fee:location_a_property"
+        for transfer in home.cashflows
+        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "management_fee:location_a_property"
     ]
     assert {transfer.property_id for transfer in management_fees} == {"location_a_property"}
-    assert [(transfer.start_month, transfer.end_month) for transfer in management_fees] == [(0, 2), (3, 5), (8, 11)]
+    assert [transfer.schedule for transfer in management_fees] == [
+        Recurring(start_month=start, end_month=end) for start, end in ((0, 2), (3, 5), (8, 11))
+    ]
     fee_amounts = []
     for management_fee in management_fees:
-        assert isinstance(management_fee.amount, SeriesIndexedAmount)
+        assert isinstance(management_fee.amount, IndexedAmount)
         fee_amounts.append(management_fee.amount.base_amount)
-    assert fee_amounts == pytest.approx(
-        [6_000.0 * 0.25 * 0.90 * 0.08, 6_000.0 * 0.75 * 0.90 * 0.08, 6_000.0 * 0.5 * 0.90 * 0.08]
-    )
+    assert fee_amounts == [
+        _quanta_int(_usd_quanta(amount))
+        for amount in (6_000.0 * 0.25 * 0.90 * 0.08, 6_000.0 * 0.75 * 0.90 * 0.08, 6_000.0 * 0.5 * 0.90 * 0.08)
+    ]
 
-    leasing_fees = sorted(
-        (
-            transfer
-            for transfer in sim_scenario.scheduled_property_cashflows
-            if transfer.cause_id.startswith("leasing_fee:location_a_property:")
-        ),
-        key=lambda transfer: transfer.month,
-    )
+    leasing_fees = [
+        transfer
+        for _, transfer in sorted(
+            (
+                (transfer.schedule.month, transfer)
+                for transfer in home.cashflows
+                if isinstance(transfer.schedule, Once)
+                and transfer.cause_id.startswith("leasing_fee:location_a_property:")
+            ),
+            key=lambda fee: fee[0],
+        )
+    ]
     assert {transfer.property_id for transfer in leasing_fees} == {"location_a_property"}
-    assert [transfer.month for transfer in leasing_fees] == [0, 3, 8]
+    assert [transfer.schedule for transfer in leasing_fees] == [Once(month=month) for month in (0, 3, 8)]
     leasing_amounts = []
     for leasing_fee in leasing_fees:
-        assert isinstance(leasing_fee.amount, SeriesIndexedAmount)
+        assert isinstance(leasing_fee.amount, IndexedAmount)
         leasing_amounts.append(leasing_fee.amount.base_amount)
-    assert leasing_amounts == pytest.approx([6_000.0 * 0.25, 6_000.0 * 0.75, 6_000.0 * 0.5])
+    assert leasing_amounts == [
+        _quanta_int(_usd_quanta(amount)) for amount in (6_000.0 * 0.25, 6_000.0 * 0.75, 6_000.0 * 0.5)
+    ]
 
 
 def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_rental(
@@ -1475,35 +1631,38 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=6,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id="location_a_property",
+            property_id=LOCATION_A_PROPERTY,
             financing=CashFinancing(),
             is_primary_residence=True,
             lifecycle_events=(SetRentedFractionEventWire(month=3, rented_fraction=0.5),),
         ),
     )
 
-    sim_scenario = build_scenario(
-        scenario,
-        primary_agent_id=primary_agent_id,
-        initial_cash=Decimal(1200000),
-        initial_lots=(),
-        properties_by_id=catalog.properties_by_id,
+    home = _home(
+        build_situation(
+            scenario,
+            primary_agent_id=primary_agent_id,
+            initial_cash=Decimal(1200000),
+            holdings=_no_holdings(primary_agent_id),
+            properties_by_id=catalog.properties_by_id,
+            locations=locations_by_id(augur_config.locations),
+        )
     )
 
     rent_transfer = one(
         transfer
-        for transfer in sim_scenario.recurring_property_cashflows
-        if transfer.cause_id == "rental_income:location_a_property"
+        for transfer in home.cashflows
+        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "rental_income:location_a_property"
     )
     assert rent_transfer.property_id == "location_a_property"
-    assert (rent_transfer.start_month, rent_transfer.end_month) == (3, 5)
-    assert isinstance(rent_transfer.amount, SeriesIndexedAmount)
-    assert rent_transfer.amount.base_amount == pytest.approx(4_200.0 * 0.5 * 0.95)
-    assert rent_transfer.amount.series == RentKey(location_id=LocationId("location_a"))
+    assert rent_transfer.schedule == Recurring(start_month=3, end_month=5)
+    assert isinstance(rent_transfer.amount, IndexedAmount)
+    assert rent_transfer.amount.base_amount == _quanta_int(_usd_quanta(4_200.0 * 0.5 * 0.95))
+    assert rent_transfer.amount.series_id == RentKey(location_id=LOCATION_A).wire_id
 
 
 def test_future_rental_lifecycle_requires_rent_series_at_product_api(
@@ -1514,11 +1673,11 @@ def test_future_rental_lifecycle_requires_rent_series_at_product_api(
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=6,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id="location_a_property",
+            property_id=LOCATION_A_PROPERTY,
             financing=CashFinancing(),
             is_primary_residence=True,
             lifecycle_events=(SetRentedFractionEventWire(month=3, rented_fraction=0.5),),
@@ -1528,7 +1687,7 @@ def test_future_rental_lifecycle_requires_rent_series_at_product_api(
     detail = product.rollout(_rollout_request(scenario))
 
     assert detail.rollout.failed is False
-    assert RentKey(location_id=LocationId("location_a")) in counting_model.sample_requests[0].required_level_series
+    assert RentKey(location_id=LOCATION_A) in counting_model.sample_requests[0].required_level_series
 
 
 def test_primary_residence_event_emits_rollout_marker(
@@ -1539,11 +1698,11 @@ def test_primary_residence_event_emits_rollout_marker(
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=3,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id="location_a_property",
+            property_id=LOCATION_A_PROPERTY,
             financing=CashFinancing(),
             is_primary_residence=True,
             lifecycle_events=(SetPrimaryResidenceEventWire(month=1, is_primary_residence=False),),
@@ -1588,7 +1747,7 @@ def test_property_purchase_metrics_track_value_balance_and_equity(
         == liquid_net_worth_quanta + home_equity_quanta + private_equity_value_quanta + bond_value_quanta
     )
     # Required-level-series should include the location's home-value series.
-    assert HomeValueKey(location_id=LocationId("location_a")) in counting_model.sample_requests[0].required_level_series
+    assert HomeValueKey(location_id=LOCATION_A) in counting_model.sample_requests[0].required_level_series
 
 
 def test_cash_property_purchase_omits_mortgage_payments(
@@ -1599,11 +1758,11 @@ def test_cash_property_purchase_omits_mortgage_payments(
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=2,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id="location_a_property", financing=CashFinancing(), is_primary_residence=True
+            property_id=LOCATION_A_PROPERTY, financing=CashFinancing(), is_primary_residence=True
         ),
     )
 
@@ -1627,11 +1786,11 @@ def test_property_purchase_emits_hoa_dues_when_property_has_monthly_hoa(
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=3,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id="location_b_property",
+            property_id=PropertyId("location_b_property"),
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
             is_primary_residence=True,
         ),
@@ -1656,11 +1815,11 @@ def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(product: s
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=3,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id="location_a_property",
+            property_id=LOCATION_A_PROPERTY,
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
             is_primary_residence=True,
         ),
@@ -1671,33 +1830,34 @@ def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(product: s
     assert [event for event in detail.rollout.events if event.kind == "hoa_dues_payment"] == []
 
 
-def test_build_scenario_wires_property_expenses_to_payees(augur_config: Config, catalog: CatalogResponse) -> None:
+def test_build_situation_wires_property_expenses_to_payees(augur_config: Config, catalog: CatalogResponse) -> None:
     primary_agent_id = resolve_primary_agent_id(augur_config)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=12,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id="location_b_property",
+            property_id=PropertyId("location_b_property"),
             financing=CashFinancing(),
             is_primary_residence=True,
-            initial_rental=RentalIncomePlan(full_property_monthly_rent=3_100, fraction_rented=0.25),
+            initial_rental=RentalIncomePlan(full_property_monthly_rent=Decimal(3_100), fraction_rented=0.25),
         ),
     )
 
-    sim_scenario = build_scenario(
+    situation = build_situation(
         scenario,
         primary_agent_id=primary_agent_id,
         initial_cash=Decimal(600_000),
-        initial_lots=(),
+        holdings=_no_holdings(primary_agent_id),
         properties_by_id=catalog.properties_by_id,
+        locations=locations_by_id(augur_config.locations),
     )
 
     expense_obligations = [
         obligation
-        for obligation in sim_scenario.recurring_obligations
+        for obligation in situation.obligations
         if obligation.obligation_id in {"hoa_dues", "homeowners_insurance", "property_maintenance"}
     ]
     assert [obligation.obligation_id for obligation in expense_obligations] == [
@@ -1705,21 +1865,18 @@ def test_build_scenario_wires_property_expenses_to_payees(augur_config: Config, 
         "homeowners_insurance",
         "property_maintenance",
     ]
-    assert [(obligation.to_agent_id, obligation.to_account_id) for obligation in expense_obligations] == [
-        ("hoa", "checking"),
-        ("insurer", "checking"),
-        ("maintenance_vendor", "checking"),
-    ]
-    assert all(obligation.agent_id == primary_agent_id for obligation in expense_obligations)
+    assert [
+        (obligation.to_account.agent_id, obligation.to_account.account_id) for obligation in expense_obligations
+    ] == [("hoa", "checking"), ("insurer", "checking"), ("maintenance_vendor", "checking")]
+    assert all(obligation.from_account.agent_id == primary_agent_id for obligation in expense_obligations)
     assert all(obligation.property_id == "location_b_property" for obligation in expense_obligations)
-    assert [obligation.deductible_fraction for obligation in expense_obligations] == pytest.approx([0.25] * 3)
-    expense_amounts: list[Decimal] = []
+    assert [obligation.deductible_fraction_ppb for obligation in expense_obligations] == [250_000_000] * 3
+    expense_amounts: list[int] = []
     for obligation in expense_obligations:
-        assert isinstance(obligation.amount_due, SeriesIndexedAmount)
+        assert isinstance(obligation.amount_due, IndexedAmount)
         expense_amounts.append(obligation.amount_due.base_amount)
-    assert expense_amounts == [Decimal(150), Decimal(182), Decimal("487.50")]
-    assert {agent.agent_id for agent in sim_scenario.agents} >= {"hoa", "insurer", "maintenance_vendor"}
-    assert {balance.agent_id for balance in sim_scenario.initial_cash} >= {"hoa", "insurer", "maintenance_vendor"}
+    assert expense_amounts == [_quanta_int(_usd_quanta(amount)) for amount in (150, 182, 487.50)]
+    assert {account.agent_id for account, _ in situation.accounts} >= {"hoa", "insurer", "maintenance_vendor"}
 
 
 def test_property_purchase_emits_homeowners_insurance_at_default_pct(product: service.ProductService) -> None:
@@ -1727,11 +1884,11 @@ def test_property_purchase_emits_homeowners_insurance_at_default_pct(product: se
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=3,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id="location_a_property",
+            property_id=LOCATION_A_PROPERTY,
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
             is_primary_residence=True,
         ),
@@ -1753,11 +1910,11 @@ def test_property_purchase_with_zero_insurance_pct_omits_insurance(product: serv
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=2,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id="location_a_property", financing=CashFinancing(), is_primary_residence=True
+            property_id=LOCATION_A_PROPERTY, financing=CashFinancing(), is_primary_residence=True
         ),
         annual_insurance_pct=0.0,
     )
@@ -1772,11 +1929,11 @@ def test_property_purchase_emits_maintenance_at_default_pct(product: service.Pro
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=3,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id="location_a_property",
+            property_id=LOCATION_A_PROPERTY,
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
             is_primary_residence=True,
         ),
@@ -1798,11 +1955,11 @@ def test_property_purchase_with_zero_maintenance_pct_omits_maintenance(product: 
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=2,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id="location_a_property", financing=CashFinancing(), is_primary_residence=True
+            property_id=LOCATION_A_PROPERTY, financing=CashFinancing(), is_primary_residence=True
         ),
         annual_maintenance_pct=0.0,
     )
@@ -1816,10 +1973,10 @@ def test_property_purchase_rejects_unknown_property(product: service.ProductServ
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=2,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         property_purchase=PropertyPurchase(
-            property_id="ghost_property", financing=CashFinancing(), is_primary_residence=True
+            property_id=PropertyId("ghost_property"), financing=CashFinancing(), is_primary_residence=True
         ),
     )
 
@@ -1830,18 +1987,18 @@ def test_property_purchase_rejects_unknown_property(product: service.ProductServ
 def test_primary_residence_mortgage_emits_mortgage_interest_deduction_policy(
     counting_model: CountingModel, augur_config: Config, make_product_service: MakeProductService
 ) -> None:
-    """A mortgaged primary residence builds one MortgageInterestDeductionPolicy on the sim
-    Scenario; tax_accrual events surface a non-zero mortgage_interest_deduction."""
+    """A mortgaged primary residence declares one mortgage interest deduction on each world;
+    tax_accrual events surface a non-zero mortgage_interest_deduction."""
     config = _with_fixed_cash(augur_config, 400_000)
     product = make_product_service(counting_model, config=config)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=13,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id="location_a_property",
+            property_id=LOCATION_A_PROPERTY,
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
             is_primary_residence=True,
         ),
@@ -1866,11 +2023,11 @@ def test_secondary_residence_mortgage_omits_mortgage_interest_deduction(
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=13,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id="location_a_property",
+            property_id=LOCATION_A_PROPERTY,
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
             is_primary_residence=False,
         ),
@@ -1897,11 +2054,11 @@ def test_cash_property_purchase_omits_mortgage_interest_deduction(
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=13,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id="location_a_property", financing=CashFinancing(), is_primary_residence=True
+            property_id=LOCATION_A_PROPERTY, financing=CashFinancing(), is_primary_residence=True
         ),
     )
 

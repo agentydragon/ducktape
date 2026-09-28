@@ -61,11 +61,10 @@ def describe_table(table_name: str) -> RelationDefinition | None:
 
     check_constraints = [
         CheckConstraintDescription(
-            name=c.name or "",
-            expression=str(c.sqltext.compile(dialect=_PG_DIALECT, compile_kwargs={"literal_binds": True})),
+            name=c.name, expression=str(c.sqltext.compile(dialect=_PG_DIALECT, compile_kwargs={"literal_binds": True}))
         )
         for c in table.constraints
-        if isinstance(c, CheckConstraint) and c.name
+        if isinstance(c, CheckConstraint) and isinstance(c.name, str) and c.name
     ]
 
     return RelationDefinition(

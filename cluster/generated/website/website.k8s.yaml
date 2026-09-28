@@ -137,8 +137,6 @@ spec:
       app.kubernetes.io/name: website
   template:
     metadata:
-      annotations:
-        reloader.stakater.com/auto: "true"
       labels:
         app.kubernetes.io/name: website
     spec:

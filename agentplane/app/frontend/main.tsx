@@ -1,9 +1,9 @@
 import "@mantine/core/styles.css";
 
-import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
 import { restoreRouteAfterLogin } from "./operator_login";
+import { ThemeProvider } from "./theme";
 
 import App from "./app";
 
@@ -13,7 +13,7 @@ if (!container) throw new Error("missing #root");
 restoreRouteAfterLogin();
 
 createRoot(container).render(
-  <MantineProvider defaultColorScheme="auto">
+  <ThemeProvider>
     <App />
-  </MantineProvider>
+  </ThemeProvider>
 );

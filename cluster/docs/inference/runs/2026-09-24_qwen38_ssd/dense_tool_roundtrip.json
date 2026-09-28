@@ -1,0 +1,195 @@
+[
+  {
+    "request": {
+      "model": "qwen3.8-27b-q8",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Use tools to inspect the test workspace. Do not invent file contents."
+        },
+        {
+          "role": "user",
+          "content": "Read sanity.txt using read_file, then report the verification code from it exactly."
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "description": "Read a file in the isolated test workspace.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": ["path"],
+              "additionalProperties": false
+            }
+          }
+        }
+      ],
+      "tool_choice": "auto",
+      "max_tokens": 4096,
+      "temperature": 1.0,
+      "top_p": 0.95,
+      "top_k": 20,
+      "min_p": 0.0,
+      "chat_template_kwargs": {
+        "enable_thinking": true,
+        "reasoning_effort": "medium"
+      }
+    },
+    "response": {
+      "choices": [
+        {
+          "finish_reason": "tool_calls",
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "The user is asking to read sanity.txt and report the verification code. Let's read the file.\n",
+            "tool_calls": [
+              {
+                "type": "function",
+                "function": {
+                  "name": "read_file",
+                  "arguments": "{\"path\":\"sanity.txt\"}"
+                },
+                "id": "7k0gCXjlpN8kfLc7XlZbOfZNZhc3pnt1"
+              }
+            ]
+          }
+        }
+      ],
+      "created": 1790295885,
+      "model": "qwen3.8-27b-q8",
+      "system_fingerprint": "b11151-bd4f514db",
+      "object": "chat.completion",
+      "usage": {
+        "completion_tokens": 50,
+        "prompt_tokens": 306,
+        "total_tokens": 356,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "id": "chatcmpl-9hxXWGzK4TPljJhhkcIyIJU38LSbjpdR",
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 306,
+        "prompt_ms": 187.29,
+        "prompt_per_token_ms": 0.6120588235294118,
+        "prompt_per_second": 1633.8298894762136,
+        "predicted_n": 50,
+        "predicted_ms": 966.256,
+        "predicted_per_token_ms": 19.719510204081633,
+        "predicted_per_second": 50.711198688546304
+      }
+    }
+  },
+  {
+    "request": {
+      "model": "qwen3.8-27b-q8",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Use tools to inspect the test workspace. Do not invent file contents."
+        },
+        {
+          "role": "user",
+          "content": "Read sanity.txt using read_file, then report the verification code from it exactly."
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "reasoning_content": "The user is asking to read sanity.txt and report the verification code. Let's read the file.\n",
+          "tool_calls": [
+            {
+              "type": "function",
+              "function": {
+                "name": "read_file",
+                "arguments": "{\"path\":\"sanity.txt\"}"
+              },
+              "id": "7k0gCXjlpN8kfLc7XlZbOfZNZhc3pnt1"
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "7k0gCXjlpN8kfLc7XlZbOfZNZhc3pnt1",
+          "name": "read_file",
+          "content": "verification_code=SSD-5090-7C2E"
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "description": "Read a file in the isolated test workspace.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": ["path"],
+              "additionalProperties": false
+            }
+          }
+        }
+      ],
+      "tool_choice": "auto",
+      "max_tokens": 4096,
+      "temperature": 1.0,
+      "top_p": 0.95,
+      "top_k": 20,
+      "min_p": 0.0,
+      "chat_template_kwargs": {
+        "enable_thinking": true,
+        "reasoning_effort": "medium"
+      }
+    },
+    "response": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "The verification code is: **SSD-5090-7C2E**",
+            "reasoning_content": "The file contains verification_code=SSD-5090-7C2E. Report exactly.\n"
+          }
+        }
+      ],
+      "created": 1790295886,
+      "model": "qwen3.8-27b-q8",
+      "system_fingerprint": "b11151-bd4f514db",
+      "object": "chat.completion",
+      "usage": {
+        "completion_tokens": 45,
+        "prompt_tokens": 386,
+        "total_tokens": 431,
+        "prompt_tokens_details": {
+          "cached_tokens": 355
+        }
+      },
+      "id": "chatcmpl-ODq9NUbGPrz0WQ8gunP5KKQPIwvZ2MXP",
+      "timings": {
+        "cache_n": 355,
+        "prompt_n": 31,
+        "prompt_ms": 143.689,
+        "prompt_per_token_ms": 4.635129032258065,
+        "prompt_per_second": 215.7437242934393,
+        "predicted_n": 45,
+        "predicted_ms": 865.811,
+        "predicted_per_token_ms": 19.677522727272727,
+        "predicted_per_second": 50.819405158862615
+      }
+    }
+  }
+]

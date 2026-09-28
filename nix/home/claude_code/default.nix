@@ -591,7 +591,7 @@ in
           "### User-specific"
           "**Primary use of Claude Code**: software development — personal infrastructure monorepo (Bazel/Nix/k8s/Rust/Python) plus props ML-eval-pipeline development, agent trace debugging, and Claude Code container reverse-engineering"
           "**Trusted repo**: this repo, agentydragon/ducktape, working dir /home/agentydragon/code/ducktape, and its two remotes (github.com/agentydragon/ducktape [public — only this repo's own work should be pushed there] and git.allegedly.works/agentydragon/ducktape.git); confidential/secret material must never be committed to either regardless of visibility"
-          "**Org-specific CLIs**: bb / bbr / bbapi (Bazel/BuildBuddy wrappers), direnv, kubectl (atlas cluster), talosctl, sops, nixos-rebuild, tana-claude, gemini-claude, z-claude, aiquota, codex, ghreq"
+          "**Org-specific CLIs**: bb / bbr / bbapi (Bazel/BuildBuddy wrappers), direnv, kubectl (atlas cluster), talosctl, sops, nixos-rebuild, tana-claude, gemini-claude, antigravity-claude, z-claude, aiquota, codex, ghreq"
           "routine under /home/agentydragon/code/ducktape/ prefix: Bazel builds/tests, gazelle BUILD regen, props critic/grader dev workflow, kubectl reads against the atlas cluster namespaces listed above, Forgejo/GitHub read operations"
         ];
         allow = [

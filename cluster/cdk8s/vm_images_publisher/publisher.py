@@ -14,6 +14,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.seaweedfs import s3
@@ -30,9 +31,9 @@ def _credentials_secret(identity: str) -> str:
 
 
 def _identity(scope: Construct, name: str) -> s3.Identity:
-    """A cluster-global S3Identity plus the publisher-local S3Credentials the operator mints
-    its key pair into (Secret `<name>-s3-credentials` in this namespace)."""
-    identity = s3.Identity(scope, name, name=name)
+    """A publisher-local S3Identity plus the S3Credentials the operator mints its key pair
+    into (Secret `<name>-s3-credentials` in this namespace)."""
+    identity = s3.Identity(scope, name, name=name, namespace=NAME)
     identity.credentials(namespace=NAME, secret=_credentials_secret(name), key_fields=None)
     return identity
 
@@ -97,7 +98,7 @@ def _cron_job(scope: Construct) -> None:
                                             k8s.NodeSelectorTerm(
                                                 match_expressions=[
                                                     k8s.NodeSelectorRequirement(
-                                                        key="node-role.kubernetes.io/control-plane",
+                                                        key=node_scheduling.CONTROL_PLANE_TAINT_KEY,
                                                         operator="DoesNotExist",
                                                     )
                                                 ]

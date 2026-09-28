@@ -10,6 +10,7 @@ import numpy as np
 
 from finance.augur.sim.books import JournalEntry, Record
 from finance.augur.sim.holdings import Disposition
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.results import ConsumptionTarget, Payment, Stop, UnpaidClaim
 from finance.augur.sim.world import World
@@ -17,7 +18,7 @@ from finance.augur.x.bounded_spending.python_policy import Parameters
 from finance.augur.x.joint_spending_allocation.policy import JointHousehold
 from finance.augur.x.joint_spending_allocation.situation import Situation, compose, sample, situation
 
-RETIREE = "retiree"
+RETIREE = AgentId("retiree")
 
 
 class Month(Record):

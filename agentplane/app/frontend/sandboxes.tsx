@@ -19,12 +19,12 @@ import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertica
 import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { readiness } from "./action_policy";
+import { readiness } from "./actions/policy";
 import {
   api,
   displayableError,
   models,
-  type ActionPolicySetView,
+  modelsForHarness,
   type Condition,
   type ModelCatalog,
   type NewSandbox,
@@ -32,6 +32,7 @@ import {
   type SandboxView,
   type ThreadDefaults,
 } from "./client";
+import type { ActionPolicySetView } from "./actions/client";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
 import { StaleNotice } from "./stream_status";
@@ -101,7 +102,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [thread, setThread] = useState<ThreadDefaults>(EMPTY_THREAD);
   const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
-  const modelOptions = thread.harness ? (modelCatalog?.[thread.harness] ?? []) : [];
+  const modelOptions = thread.harness && modelCatalog ? modelsForHarness(modelCatalog, thread.harness) : [];
   // The namespace's policies; ticking some grants them to this sandbox alone.
   const [policies, setPolicies] = useState<string[]>([]);
   const [templates, setTemplates] = useState<string[]>([]);
@@ -163,9 +164,9 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     if (!modelCatalog) return;
     setThread((current) => {
       if (!current.harness) return current;
-      const offered = modelCatalog[current.harness];
-      if (current.model && offered.includes(current.model)) return current;
-      return { ...current, model: offered[0] ?? null };
+      const offered = modelsForHarness(modelCatalog, current.harness);
+      if (current.model && offered.some((option) => option.model === current.model)) return current;
+      return { ...current, model: offered[0]?.model ?? null };
     });
   }, [modelCatalog, thread.harness, thread.model]);
 
@@ -268,7 +269,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           disabled={
             !form.slug ||
             !form.template ||
-            Boolean(selectedPreset && (!thread.model || !modelOptions.includes(thread.model)))
+            Boolean(selectedPreset && (!thread.model || !modelOptions.some((option) => option.model === thread.model)))
           }
         >
           New sandbox
@@ -306,7 +307,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
             label="Model"
             searchable
             allowDeselect={false}
-            data={modelOptions}
+            data={modelOptions.map((option) => ({ value: option.model, label: option.display_name }))}
             value={thread.model ?? null}
             onChange={(model) => setThread({ ...thread, model })}
             disabled={modelOptions.length === 0}

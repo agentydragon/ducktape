@@ -12,22 +12,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecSelector,
-)
+from cdk8s import ApiObjectMetadata, App, Chart, Size
+from cdk8s_plus_34 import Cpu, k8s
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.plaid_mcp.app import NAMESPACE
+from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/reader"
@@ -40,12 +36,6 @@ _UPSTREAM_PORT = 8000
 _HTTP_PORT = 8765
 _METRICS_PORT = 9090
 _VALKEY = "plaid-valkey-kimsufi"
-
-
-def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
-    )
 
 
 def _container_security_context() -> k8s.SecurityContext:
@@ -72,8 +62,7 @@ def _deployment(chart: Chart) -> None:
                 "description": (
                     "Read-only Postgres MCP over the Plaid sync database, fronted by mcp-oauth-facade. The"
                     " upstream MCP uses Streamable HTTP and connects with the plaid_ro role."
-                ),
-                "reloader.stakater.com/auto": "true",
+                )
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -101,7 +90,7 @@ def _deployment(chart: Chart) -> None:
                             ],
                             ports=[k8s.ContainerPort(name="upstream", container_port=_UPSTREAM_PORT, protocol="TCP")],
                             # The read-only credentials db.py mints.
-                            env=[_secret_env("AIRMAN_MCP_DATABASE_URL", "plaid-mcp-db-readonly", "DATABASE_URL")],
+                            env=[secret_env_var("AIRMAN_MCP_DATABASE_URL", "plaid-mcp-db-readonly", "DATABASE_URL")],
                             resources=k8s.ResourceRequirements(
                                 requests={
                                     "memory": k8s.Quantity.from_string("128Mi"),
@@ -124,8 +113,8 @@ def _deployment(chart: Chart) -> None:
                             ],
                             env_from=[k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=_CONFIG_MAP))],
                             env=[
-                                _secret_env("MCP_FACADE_AUTH__OIDC_CLIENT_ID", _OIDC_SECRET, "client_id"),
-                                _secret_env("MCP_FACADE_AUTH__OIDC_CLIENT_SECRET", _OIDC_SECRET, "client_secret"),
+                                secret_env_var("MCP_FACADE_AUTH__OIDC_CLIENT_ID", _OIDC_SECRET, "client_id"),
+                                secret_env_var("MCP_FACADE_AUTH__OIDC_CLIENT_SECRET", _OIDC_SECRET, "client_secret"),
                             ],
                             resources=k8s.ResourceRequirements(
                                 requests={
@@ -187,9 +176,9 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "httproute",
-        metadata=metadata(
-            _NAME,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_NAME,
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "Authentik-gated Postgres MCP for querying the synced Plaid database through the read-only"
@@ -197,19 +186,19 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        hostname="plaid-db.allegedly.works",
+        hostnames=["plaid-db.allegedly.works"],
         backend=_NAME,
         port=_HTTP_PORT,
         timeout="60s",
         hsts=False,
         listener=None,
     )
-    cilium.network_policy(
+    NetworkPolicy(
         chart,
         "ingress-policy",
-        metadata=metadata(
-            "plaid-db-mcp-ingress",
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name="plaid-db-mcp-ingress",
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "Default-deny ingress for plaid-db-mcp pods. Only Gateway ingress may reach the OAuth facade;"
@@ -217,11 +206,11 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        selector=_LABELS,
+        endpoint_selector=_LABELS,
         ingress=[
-            cilium.ingress_from_gateway(_HTTP_PORT),
+            IngressRule.from_gateway(_HTTP_PORT),
             # monitoring: Prometheus metrics scraping
-            cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_METRICS_PORT]),
+            IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_METRICS_PORT]),
         ],
     )
     valkey_instance(
@@ -229,12 +218,12 @@ def chart(app: App) -> Chart:
         name=_VALKEY,
         namespace=NAMESPACE,
         description="Kimsufi Valkey for the Plaid DB MCP OAuth facade state",
-        memory_request="64Mi",
-        cpu_limit="200m",
-        memory_limit="128Mi",
+        memory_request=Size.mebibytes(64),
+        cpu_limit=Cpu.millis(200),
+        memory_limit=Size.mebibytes(128),
         max_memory_percent_of_limit=None,
         storage_class="local-path-ovh",
-        storage_size="1Gi",
+        storage_size=Size.gibibytes(1),
     )
     return chart
 
@@ -244,11 +233,9 @@ def servicemonitor_chart(app: App) -> Chart:
     ServiceMonitor(
         chart,
         "servicemonitor",
-        metadata=metadata(_NAME, NAMESPACE),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-            endpoints=[ServiceMonitorSpecEndpoints(port="metrics", path="/metrics", scrape_timeout="10s")],
-        ),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
+        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
+        endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
     return chart
 

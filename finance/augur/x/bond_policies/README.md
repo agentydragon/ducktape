@@ -30,8 +30,8 @@ transaction costs, defaults, inflation, and interest on cash are absent.
   set to zero to match the experiment's start-before-first-coupon convention.
   Comparison with a dated arm therefore changes coupon timing and rollover
   frequency as well as valuation. It does not isolate one source of disagreement.
-- `run.py` composes each spending cell straight onto `World`s, one per path, with
-  no `Scenario`: a `Situation` holds the compiled unit-price and coupon series
+- `run.py` composes each spending cell straight onto `World`s, one per path: a
+  `Situation` holds the compiled unit-price and coupon series
   every path shares, and `compose(case, rollout_id)` declares the checking
   accounts, the strategy lot, its coupon distribution and the annual claims.
   `ActionSession` then drives those worlds from Python. The shared
@@ -45,7 +45,7 @@ transaction costs, defaults, inflation, and interest on cash are absent.
   idle cash **inside the investment**, or use proceeds to buy replacement bonds
   when rolling. Principal is not labeled coupon income.
 
-This is a unitized investment model, not tradable `BondHolding` support or
+This is a unitized investment model, not tradable held-bond (`World.hold_bond`) support or
 a model of an actual ETF. Redeeming units before maturity liquidates a proportional
 part of the investment exposure. Only the zero-withdrawal `hold` control literally
 retains every initial bond to maturity; the spending cells test that construction

@@ -6,32 +6,16 @@ forced through, its root CA and the trust bundle its clients read (trust model a
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from cilium_clusterwide_crds.io.cilium import (
-    CiliumClusterwideNetworkPolicy,
-    CiliumClusterwideNetworkPolicySpec,
-    CiliumClusterwideNetworkPolicySpecEgress,
-    CiliumClusterwideNetworkPolicySpecEgressToEndpoints,
-    CiliumClusterwideNetworkPolicySpecEgressToEntities,
-    CiliumClusterwideNetworkPolicySpecEgressToPorts,
-    CiliumClusterwideNetworkPolicySpecEgressToPortsPorts,
-    CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumClusterwideNetworkPolicySpecEndpointSelector,
-    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions,
-    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator,
-)
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpecDeletionPolicy
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import cilium, egress_fences
+from cluster.cdk8s import cilium, egress_fences, namespaces
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
-from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "mitmproxy"
 NAMESPACE = egress_fences.MITMPROXY_NAMESPACE
@@ -87,9 +71,7 @@ class Mitmproxy(Construct):
         k8s.KubeDeployment(
             self,
             "deployment",
-            metadata=k8s.ObjectMeta(
-                name=NAME, namespace=NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-            ),
+            metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_LABELS),
             spec=k8s.DeploymentSpec(
                 replicas=1,
                 selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -212,66 +194,26 @@ class Mitmproxy(Construct):
         also loom/gym/TODO.md (the loom eval's per-sandbox archive clamp rests on the same
         assumption).
         """
-
-        def port(
-            number: int,
-            protocol: CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol = (
-                CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-            ),
-        ) -> CiliumClusterwideNetworkPolicySpecEgressToPortsPorts:
-            return CiliumClusterwideNetworkPolicySpecEgressToPortsPorts(port=str(number), protocol=protocol)
-
-        CiliumClusterwideNetworkPolicy(
+        cilium.force_proxy_egress(
             self,
             "sandbox-egress",
-            metadata=ApiObjectMetadata(name="sandbox-force-proxy-egress"),
-            spec=CiliumClusterwideNetworkPolicySpec(
-                endpoint_selector=CiliumClusterwideNetworkPolicySpecEndpointSelector(
-                    match_expressions=[
-                        CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions(
-                            key="k8s:io.kubernetes.pod.namespace",
-                            operator=CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator.IN,
-                            values=list(SANDBOX_NAMESPACES),
-                        )
-                    ]
-                ),
-                egress=[
-                    CiliumClusterwideNetworkPolicySpecEgress(
-                        to_endpoints=[
-                            CiliumClusterwideNetworkPolicySpecEgressToEndpoints(match_labels=cilium.KUBE_DNS_LABELS)
-                        ],
-                        to_ports=[
-                            CiliumClusterwideNetworkPolicySpecEgressToPorts(
-                                ports=[
-                                    port(53, CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol.UDP),
-                                    port(53),
-                                ]
-                            )
-                        ],
-                    ),
-                    # Pod-to-service traffic, which bypasses the proxy via NO_PROXY.
-                    CiliumClusterwideNetworkPolicySpecEgress(
-                        to_entities=[CiliumClusterwideNetworkPolicySpecEgressToEntities.CLUSTER]
-                    ),
-                    CiliumClusterwideNetworkPolicySpecEgress(
-                        to_entities=[CiliumClusterwideNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER],
-                        to_ports=[CiliumClusterwideNetworkPolicySpecEgressToPorts(ports=[port(6443)])],
-                    ),
-                    # All external internet traffic goes through here.
-                    CiliumClusterwideNetworkPolicySpecEgress(
-                        to_endpoints=[
-                            CiliumClusterwideNetworkPolicySpecEgressToEndpoints(
-                                match_labels={
-                                    "k8s:io.kubernetes.pod.namespace": NAMESPACE,
-                                    "k8s:app.kubernetes.io/name": NAME,
-                                }
-                            )
-                        ],
-                        to_ports=[CiliumClusterwideNetworkPolicySpecEgressToPorts(ports=[port(_PROXY_PORT)])],
-                    ),
-                ],
-            ),
+            name="sandbox-force-proxy-egress",
+            namespaces=SANDBOX_NAMESPACES,
+            proxy_namespace=NAMESPACE,
+            proxy_name=NAME,
+            proxy_port=_PROXY_PORT,
+            # Pod-to-service traffic, which bypasses the proxy via NO_PROXY.
+            cluster_ports=None,
+            kube_apiserver=True,
         )
+
+
+def namespace_chart(app: App) -> Chart:
+    chart = Chart(app, "namespace", disable_resource_name_hashes=True)
+    namespaces.namespace(
+        chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=None, labels={"name": NAMESPACE}
+    )
+    return chart
 
 
 def chart(app: App) -> Chart:
@@ -281,28 +223,12 @@ def chart(app: App) -> Chart:
 
 
 def agents_mitmproxy(
-    flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path, cert_manager_trust: Kustomization
+    flux_chart: Chart, directory: RenderedDirectory, cert_manager_trust: Kustomization
 ) -> Kustomization:
-    """Write the directory and return its Flux node."""
-    write_namespace(
-        root,
-        OUTPUT_DIR,
-        name=NAMESPACE,
-        labels={
-            "goldilocks.fairwinds.com/enabled": "true",
-            "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-            "name": NAMESPACE,
-        },
-    )
-    write_charts(root, OUTPUT_DIR, egress_fences.mitmproxy_cloud_api, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=["namespace.k8s.yaml", f"{NAME}.k8s.yaml", "cnp-cloud-api-egress.k8s.yaml"]),
-    )
     return flux_kustomization(
         flux_chart,
         "agents-mitmproxy",
-        artifact,
+        directory,
         retry_interval=None,
         wait=None,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,

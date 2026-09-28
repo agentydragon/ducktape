@@ -21,6 +21,7 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpecVolumesEmptyDir,
     SandboxTemplateSpecPodTemplateSpecVolumesEmptyDirSizeLimit,
 )
+from cdk8s import ApiObjectMetadata
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecIngress
 from constructs import Construct
 
@@ -28,8 +29,8 @@ from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import egress, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 
 # The command box's SandboxTemplate, and both boxes' Pod name label and fence. The egress proxy's
 # policy spells it too (egress.py), since this module imports that one.
@@ -111,15 +112,15 @@ class CommandSandbox(Construct):
             volumes=[_BUILD_HOME],
         )
         # DNS and the egress proxy out, nothing in: `exec` reaches a box through the API server.
-        cilium.network_policy(
+        NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=metadata(NAME, namespace),
-            selector=_LABELS,
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            endpoint_selector=_LABELS,
             ingress=[CiliumNetworkPolicySpecIngress()],
             egress=[
                 cilium.dns_egress(),
-                cilium.egress_to(cilium.endpoint_labels(namespace, egress.NAME), egress.PROXY_PORT),
+                EgressRule.to_endpoints(cilium.endpoint_labels(namespace, egress.NAME), egress.PROXY_PORT),
             ],
         )
 
@@ -137,9 +138,9 @@ def _template(
     SandboxTemplate(
         scope,
         id,
-        name=name,
-        namespace=env.namespace,
-        annotations={DESCRIPTION_ANNOTATION: description},
+        metadata=ApiObjectMetadata(
+            name=name, namespace=env.namespace, annotations={DESCRIPTION_ANNOTATION: description}
+        ),
         # The CiliumNetworkPolicy beside it is the box's fence.
         network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
         pod_template=SandboxTemplateSpecPodTemplate(

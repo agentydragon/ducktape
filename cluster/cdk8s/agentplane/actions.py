@@ -10,6 +10,7 @@ from cdk8s_plus_34 import (
     ConfigMap,
     ContainerPort,
     ContainerResources,
+    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
     Deployment,
@@ -32,8 +33,8 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.action_service.main import CONFIG_FILE_ENV, Settings
-from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import container_security, database, llm_ingress, node_scheduling
+from cluster.cdk8s import cilium, node_scheduling, pod_policy
+from cluster.cdk8s.agentplane import database, llm_ingress
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
@@ -41,9 +42,8 @@ from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name, settings_file
 
@@ -89,7 +89,10 @@ class Actions(Construct):
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the Action
         # Service calls TokenReview as itself, so it needs its own mounted token.
         return ServiceAccount(
-            self, "serviceaccount", metadata=metadata(_NAME, self.env.namespace), automount_token=True
+            self,
+            "serviceaccount",
+            metadata=ApiObjectMetadata(name=_NAME, namespace=self.env.namespace),
+            automount_token=True,
         )
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
@@ -110,7 +113,7 @@ class Actions(Construct):
         Role(
             self,
             "role",
-            metadata=metadata(_NAME, namespace),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=namespace),
             rules=[
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch"]),
                 RolePolicyRule(
@@ -148,14 +151,17 @@ class Actions(Construct):
             ],
         )
         RoleBinding(
-            self, "rolebinding", metadata=metadata(_NAME, namespace), role=Role.from_role_name(self, "role-ref", _NAME)
+            self,
+            "rolebinding",
+            metadata=ApiObjectMetadata(name=_NAME, namespace=namespace),
+            role=Role.from_role_name(self, "role-ref", _NAME),
         ).add_subjects(service_account)
 
     def _add_settings(self) -> ConfigMap:
         return ConfigMap(
             self,
             "settings",
-            metadata=metadata("agentplane-actions-settings", self.env.namespace),
+            metadata=ApiObjectMetadata(name="agentplane-actions-settings", namespace=self.env.namespace),
             data={"settings.yaml": yaml_config(settings_file(Settings, self.env.actions.settings))},
         )
 
@@ -206,9 +212,9 @@ class Actions(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                _NAME,
-                namespace,
+            metadata=ApiObjectMetadata(
+                name=_NAME,
+                namespace=namespace,
                 labels=_LABELS,
                 annotations={
                     "secret.reloader.stakater.com/reload": secret_reload,
@@ -250,7 +256,8 @@ class Actions(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            security_context=container_security.WRITABLE_ROOT,
+            # Writable: its root filesystem writes are unaudited.
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
 
         oauth_secret = Secret.from_secret_name(self, "mcp-oauth-secret", "agentplane-mcp-oauth")
@@ -289,15 +296,15 @@ class Actions(Construct):
             # settings volume (runc: "not a directory").
             deployment.containers[0].mount(f"/run/secrets/{mount.name}", bearer_volume, read_only=True)
 
-        node_scheduling.attract_to_zone(deployment)
-        apply_pod_spec_patches(deployment)
+        pod_policy.place(deployment, node_scheduling.HIL_OVH)
+        pod_policy.harden(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
         Service(
             self,
             "service",
-            metadata=metadata(_NAME, self.env.namespace),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=self.env.namespace),
             selector=deployment,
             ports=[ServicePort(name="http", port=CONTAINER_PORT, target_port=CONTAINER_PORT, protocol=Protocol.TCP)],
         )
@@ -308,8 +315,8 @@ class Actions(Construct):
         https_route(
             self,
             "httproute",
-            metadata=metadata(f"{_NAME}-mcp", self.env.namespace),
-            hostname=self.env.actions.hostname,
+            metadata=ApiObjectMetadata(name=f"{_NAME}-mcp", namespace=self.env.namespace),
+            hostnames=[self.env.actions.hostname],
             backend=_NAME,
             port=CONTAINER_PORT,
             paths=_MCP_PATHS,
@@ -318,22 +325,24 @@ class Actions(Construct):
 
     def _add_network_policy(self) -> None:
         namespace = self.env.namespace
-        cilium.network_policy(
+        NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=metadata(_NAME, namespace),
-            selector=_LABELS,
+            metadata=ApiObjectMetadata(name=_NAME, namespace=namespace),
+            endpoint_selector=_LABELS,
             ingress=[
-                cilium.ingress_from_gateway(CONTAINER_PORT),
-                cilium.ingress_from(cilium.endpoint_labels(namespace, "agentplane-egress"), ports=[CONTAINER_PORT]),
-                cilium.ingress_from(cilium.endpoint_labels(namespace, "agentplane-app"), ports=[CONTAINER_PORT]),
+                IngressRule.from_gateway(CONTAINER_PORT),
+                IngressRule.from_endpoints(
+                    cilium.endpoint_labels(namespace, "agentplane-egress"), ports=[CONTAINER_PORT]
+                ),
+                IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "agentplane-app"), ports=[CONTAINER_PORT]),
             ],
             egress=[
                 cilium.dns_egress(resolves=["*"]),
                 # Claude's credentialless CIMD document; no wildcard hosts, ports, or redirects.
-                cilium.egress_to_fqdns("claude.ai"),
-                cilium.egress_to_entities("kube-apiserver"),
-                cilium.egress_to(
+                EgressRule.to_fqdns("claude.ai"),
+                EgressRule.to_entities(Entity.KUBE_APISERVER),
+                EgressRule.to_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
                     database.POSTGRES_PORT,
                 ),

@@ -1,7 +1,7 @@
 """Real component settlement survives dense capture and the product timeline.
 
-Stipulated flat $1 units and a 12% annual reduced-form loss yield give one $1
-modeled loss at month zero. These are trace/accounting controls, not a forecast.
+A flat index and a 12% annual reduced-form loss yield give the $100 opening
+cohort one $1 modeled loss at month zero. These are trace/accounting controls, not a forecast.
 """
 
 from decimal import Decimal
@@ -10,66 +10,75 @@ from typing import Literal
 import pytest
 import pytest_bazel
 
-from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.action_projection import metric_arrays
 from finance.augur.product.projection import project_product_rollout
 from finance.augur.product.wire import HoldingSaleEvent, TlhFinancialEffectEvent
 from finance.augur.sim.actions import Contribute, DecisionActions, Liquidate, Withdraw
+from finance.augur.sim.books import AccountRef
 from finance.augur.sim.events import TlhOperation
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, PortfolioId
+from finance.augur.sim.income import ORDINARY_INCOME
+from finance.augur.sim.jurisdictions import load_jurisdiction
+from finance.augur.sim.market_path import MarketPath, Series
+from finance.augur.sim.money import Currency
 from finance.augur.sim.results import Finished
-from finance.augur.sim.scenario import Currency, InitialLot, TaxProfile, TlhPortfolioSpec
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.testing.case import Case, levels, scenario
-from finance.augur.sim.testing.fixtures import checking
-from finance.augur.sim.tlh import TlhAssumptions
+from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
+from finance.augur.sim.world import World
+
+OWNER = AgentId("owner")
+FEDERAL_US = JurisdictionId("federal_us")
+
+ASSET = AssetId("test-managed-index")
+# Money is counted in whole dollars here, so the stipulated $1 price is one quantum.
+WHOLE_DOLLARS = Currency(code="USD", quantum=Decimal(1))
+FEDERAL = load_jurisdiction(FEDERAL_US)
 
 
-@pytest.fixture
-def case() -> Case:
-    asset = SecurityKey(symbol=SecuritySymbol("test-managed-index"))
-    return Case(
-        scenario=scenario(
-            checking(("owner", Decimal(10)), ("irs", Decimal(0))),
-            tax_profiles=[TaxProfile(agent_id="owner", jurisdiction_ids=["federal_us"], tax_authority_agent_id="irs")],
-            horizon_months=1,
-            currency=Currency(quantum=Decimal(1)),
-            tlh_portfolios=[
-                TlhPortfolioSpec(
-                    portfolio_id="managed",
-                    owner_agent_id="owner",
-                    account_id="checking",
-                    asset=asset,
-                    initial_lots=[
-                        InitialLot(
-                            lot_id="imported",
-                            agent_id="owner",
-                            account_id="checking",
-                            asset=asset,
-                            purchase_month_index=-24,
-                            quantity=100,
-                            cost_basis=Decimal(100),
-                        )
-                    ],
-                    assumptions=TlhAssumptions(
-                        peak_annual_yield=0.12,
-                        floor_annual_yield=0,
-                        maturity_decay_exponent=1,
-                        drawdown_sensitivity=0,
-                        short_term_fraction=1,
-                    ),
-                )
-            ],
-        ),
-        rollout_count=1,
-        series={asset: levels([[Decimal(1), Decimal(1)]])},
+def compose(price: int) -> World:
+    """The owner's $10 and a managed cohort of 100 index units bought for $100 two years ago, at `price` throughout."""
+    world = World(
+        MarketPath((Series(series_id=f"security:{ASSET}", snapshots=2, values=(price, price)),), 0, rollout_count=1),
+        horizon_months=1,
+        income_sources=(ORDINARY_INCOME,),
     )
+    for agent_id, balance in ((OWNER, 10), (AgentId("irs"), 0)):
+        world.declare_account(
+            account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")), opening_balance=balance
+        )
+    world.track(
+        TaxAuthority(
+            compile_profile(
+                TaxProfile(agent_id=OWNER, jurisdiction_ids=[FEDERAL_US], tax_authority_agent_id=AgentId("irs")),
+                {FEDERAL_US: FEDERAL},
+                currency=WHOLE_DOLLARS,
+            ),
+            indexation=FixedNominalLaw(),
+        )
+    )
+    world.declare_portfolio(
+        portfolio_id=PortfolioId("managed"),
+        owner_agent_id=OWNER,
+        account_id=AccountId("checking"),
+        asset_id=ASSET,
+        initial_cohorts=(TlhOpeningCohort(value=100 * price, cost_basis=100, purchase_month_index=-24),),
+        assumptions=TlhAssumptions(
+            peak_annual_yield=0.12,
+            floor_annual_yield=0,
+            maturity_decay_exponent=1,
+            drawdown_sensitivity=0,
+            short_term_fraction=1,
+        ),
+    )
+    return world
 
 
 @pytest.mark.parametrize("capture", ["dense", "forensic"])
-def test_tlh_cash_and_separate_realizations_reach_product_timeline(
-    case: Case, capture: Literal["dense", "forensic"]
-) -> None:
-    session = ActionSession.from_run(case.compiled_run, "owner", [0], capture=capture)
+def test_tlh_cash_and_separate_realizations_reach_product_timeline(capture: Literal["dense", "forensic"]) -> None:
+    session = ActionSession({0: compose(price=1)}, OWNER, capture=capture)
     try:
         assert not isinstance(session.start(), Finished)
         result = session.advance(
@@ -80,16 +89,16 @@ def test_tlh_cash_and_separate_realizations_reach_product_timeline(
                     [
                         Contribute(
                             cause_id="deposit",
-                            agent_id="owner",
-                            portfolio_id="managed",
-                            cash_account_id="checking",
+                            agent_id=OWNER,
+                            portfolio_id=PortfolioId("managed"),
+                            cash_account_id=AccountId("checking"),
                             amount=10,
                         ),
                         Withdraw(
                             cause_id="withdraw",
-                            agent_id="owner",
-                            portfolio_id="managed",
-                            cash_account_id="checking",
+                            agent_id=OWNER,
+                            portfolio_id=PortfolioId("managed"),
+                            cash_account_id=AccountId("checking"),
                             amount=100,
                         ),
                     ],
@@ -113,10 +122,12 @@ def test_tlh_cash_and_separate_realizations_reach_product_timeline(
     ]
     projected = project_product_rollout(
         events,
-        metric_arrays(case.compiled_run, result.rollouts, primary_agent_id="owner"),
+        metric_arrays(
+            result.rollouts, primary_agent_id=OWNER, horizon_months=1, currency_code="USD", currency_quantum="1"
+        ),
         rollout_id=0,
-        primary_agent_id="owner",
-        asset_label_by_id={},
+        primary_agent_id=OWNER,
+        asset_labels={},
     )
     assert not any(isinstance(event, HoldingSaleEvent) for event in projected.events)
     effects = [event for event in projected.events if isinstance(event, TlhFinancialEffectEvent)]
@@ -139,13 +150,9 @@ def test_tlh_cash_and_separate_realizations_reach_product_timeline(
     assert bool(rollout.trace.journal) == (capture == "forensic")
 
 
-def test_zero_cash_liquidation_is_still_a_redemption(case: Case) -> None:
-    worthless = Case(
-        scenario=case.scenario,
-        rollout_count=1,
-        series={asset: levels([[Decimal(0), Decimal(0)]]) for asset in case.series},
-    )
-    session = ActionSession.from_run(worthless.compiled_run, "owner", [0], capture="dense")
+def test_zero_cash_liquidation_is_still_a_redemption() -> None:
+    # A statement at a zero mark reports every cohort at zero value, its basis intact.
+    session = ActionSession({0: compose(price=0)}, OWNER, capture="dense")
     try:
         assert not isinstance(session.start(), Finished)
         result = session.advance(
@@ -156,9 +163,9 @@ def test_zero_cash_liquidation_is_still_a_redemption(case: Case) -> None:
                     [
                         Liquidate(
                             cause_id="close-worthless",
-                            agent_id="owner",
-                            portfolio_id="managed",
-                            cash_account_id="checking",
+                            agent_id=OWNER,
+                            portfolio_id=PortfolioId("managed"),
+                            cash_account_id=AccountId("checking"),
                         )
                     ],
                 )

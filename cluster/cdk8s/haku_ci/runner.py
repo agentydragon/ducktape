@@ -6,23 +6,9 @@ egress fence forcing their external traffic through haku-egress-proxy. See READM
 from __future__ import annotations
 
 import shlex
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import ConfigMap, k8s
-from cilium_clusterwide_crds.io.cilium import (
-    CiliumClusterwideNetworkPolicy,
-    CiliumClusterwideNetworkPolicySpec,
-    CiliumClusterwideNetworkPolicySpecEgress,
-    CiliumClusterwideNetworkPolicySpecEgressToEndpoints,
-    CiliumClusterwideNetworkPolicySpecEgressToEntities,
-    CiliumClusterwideNetworkPolicySpecEgressToPorts,
-    CiliumClusterwideNetworkPolicySpecEgressToPortsPorts,
-    CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumClusterwideNetworkPolicySpecEndpointSelector,
-    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions,
-    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator,
-)
+from cdk8s_plus_34 import ConfigMap
 from keda_scaledjob_crds.sh import keda
 from keda_scaledjob_crds.sh.keda import (
     ScaledJobSpecJobTargetRefTemplateSpecContainers as Container,
@@ -41,22 +27,25 @@ from keda_scaledjob_crds.sh.keda import (
     ScaledJobSpecJobTargetRefTemplateSpecInitContainersResourcesRequests as InitRequest,
     ScaledJobSpecJobTargetRefTemplateSpecInitContainersSecurityContext as InitSecurityContext,
     ScaledJobSpecJobTargetRefTemplateSpecInitContainersStartupProbe as InitStartupProbe,
-    ScaledJobSpecJobTargetRefTemplateSpecInitContainersStartupProbeTcpSocket as InitProbeTcpSocket,
-    ScaledJobSpecJobTargetRefTemplateSpecInitContainersStartupProbeTcpSocketPort as InitProbePort,
+    ScaledJobSpecJobTargetRefTemplateSpecInitContainersStartupProbeHttpGet as InitProbeHttpGet,
+    ScaledJobSpecJobTargetRefTemplateSpecInitContainersStartupProbeHttpGetPort as InitProbePort,
     ScaledJobSpecJobTargetRefTemplateSpecInitContainersVolumeMounts as InitMount,
     ScaledJobSpecJobTargetRefTemplateSpecVolumes as Volume,
     ScaledJobSpecJobTargetRefTemplateSpecVolumesConfigMap as VolumeConfigMap,
     ScaledJobSpecJobTargetRefTemplateSpecVolumesEmptyDir as EmptyDir,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from keda_triggerauthentication_crds.sh.keda import (
+    TriggerAuthentication,
+    TriggerAuthenticationSpec,
+    TriggerAuthenticationSpecSecretTargetRef,
+)
 
-from cluster.cdk8s import cilium
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.haku_ci import runner_config
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.keda.trigger_authentication import TriggerAuthentication
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 
 NAME = "haku-ci"
 NAMESPACE = "haku-ci"
@@ -218,70 +207,24 @@ def _add_egress_fence(chart: Chart) -> None:
     default-deny egress, so this replaces the old per-namespace CiliumNetworkPolicy (which listed
     direct external FQDNs).
     """
-
-    def ports(
-        *numbers: int,
-        protocol: CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol = (
-            CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-        ),
-    ) -> list[CiliumClusterwideNetworkPolicySpecEgressToPortsPorts]:
-        return [CiliumClusterwideNetworkPolicySpecEgressToPortsPorts(port=str(n), protocol=protocol) for n in numbers]
-
-    CiliumClusterwideNetworkPolicy(
+    cilium.force_proxy_egress(
         chart,
         "force-proxy-egress",
-        metadata=ApiObjectMetadata(name="haku-ci-force-proxy-egress"),
-        spec=CiliumClusterwideNetworkPolicySpec(
-            endpoint_selector=CiliumClusterwideNetworkPolicySpecEndpointSelector(
-                match_expressions=[
-                    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions(
-                        key="k8s:io.kubernetes.pod.namespace",
-                        operator=CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator.IN,
-                        values=[NAMESPACE],
-                    )
-                ]
-            ),
-            egress=[
-                # DNS resolution (CoreDNS in kube-system)
-                CiliumClusterwideNetworkPolicySpecEgress(
-                    to_endpoints=[
-                        CiliumClusterwideNetworkPolicySpecEgressToEndpoints(match_labels=cilium.KUBE_DNS_LABELS)
-                    ],
-                    to_ports=[
-                        CiliumClusterwideNetworkPolicySpecEgressToPorts(
-                            ports=[
-                                *ports(53, protocol=CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol.UDP),
-                                *ports(53),
-                            ]
-                        )
-                    ],
-                ),
-                # All cluster-internal traffic (bypasses the proxy via NO_PROXY). This is how the
-                # runner reaches the in-cluster Forgejo git + OCI registry (forgejo-http.forgejo:3000)
-                # it clones source from, pushes images to, and long-polls for jobs, plus the
-                # oci-cache Zot mirror for dind base-image pulls.
-                # GOTCHA: Cilium's socket-LB translates a ClusterIP:port to backend podIP:targetPort
-                # *before* egress policy is enforced, so the port here must be the backend
-                # targetPort, not the Service port. oci-cache's Service is :80 but its pods listen on
-                # 5000 -- hence 5000, not 80, is what unblocks dind->oci-cache.
-                CiliumClusterwideNetworkPolicySpecEgress(
-                    to_entities=[CiliumClusterwideNetworkPolicySpecEgressToEntities.CLUSTER],
-                    to_ports=[CiliumClusterwideNetworkPolicySpecEgressToPorts(ports=ports(80, 443, 3000, 5000))],
-                ),
-                # haku-egress-proxy -- all external internet traffic must go through here.
-                CiliumClusterwideNetworkPolicySpecEgress(
-                    to_endpoints=[
-                        CiliumClusterwideNetworkPolicySpecEgressToEndpoints(
-                            match_labels={
-                                "k8s:io.kubernetes.pod.namespace": "haku-egress-proxy",
-                                "k8s:app.kubernetes.io/name": "haku-egress-proxy",
-                            }
-                        )
-                    ],
-                    to_ports=[CiliumClusterwideNetworkPolicySpecEgressToPorts(ports=ports(8080))],
-                ),
-            ],
-        ),
+        name="haku-ci-force-proxy-egress",
+        namespaces=[NAMESPACE],
+        proxy_namespace="haku-egress-proxy",
+        proxy_name="haku-egress-proxy",
+        proxy_port=8080,
+        # All cluster-internal traffic (bypasses the proxy via NO_PROXY). This is how the
+        # runner reaches the in-cluster Forgejo git + OCI registry (forgejo-http.forgejo:3000)
+        # it clones source from, pushes images to, and long-polls for jobs, plus the
+        # oci-cache Zot mirror for dind base-image pulls.
+        # GOTCHA: Cilium's socket-LB translates a ClusterIP:port to backend podIP:targetPort
+        # *before* egress policy is enforced, so the port here must be the backend
+        # targetPort, not the Service port. oci-cache's Service is :80 but its pods listen on
+        # 5000 -- hence 5000, not 80, is what unblocks dind->oci-cache.
+        cluster_ports=[80, 443, 3000, 5000],
+        kube_apiserver=False,
     )
 
 
@@ -300,7 +243,11 @@ def _dind() -> InitContainer:
 
     The startupProbe gates the runner on dockerd actually listening -- under a Deployment a
     too-early runner just crash-looped until dind was up, but with restartPolicy: Never that first
-    crash would fail the whole Job.
+    crash would fail the whole Job. It probes `httpGet /_ping` rather than a bare `tcpSocket`
+    connect: dockerd opens its listener before it can serve requests, so a TCP-only check can pass
+    while an actual API call still gets "connection reset by peer" (observed: runner start raced
+    dind and failed this way). `_ping` is the same endpoint the runner's own docker client calls
+    first, so the probe only succeeds once the daemon can genuinely answer it.
 
     privileged: true is the documented requirement for docker:dind-rootless -- it provides /dev
     (incl. /dev/net/tun for RootlessKit) and disables the mount masks that otherwise hide those
@@ -346,7 +293,7 @@ def _dind() -> InitContainer:
             *(InitEnv(name=name, value=value) for name, value in {**_PROXY_ENV, "SSL_CERT_FILE": _CA_FILE}.items()),
         ],
         startup_probe=InitStartupProbe(
-            tcp_socket=InitProbeTcpSocket(port=InitProbePort.from_number(_DOCKER_PORT)),
+            http_get=InitProbeHttpGet(path="/_ping", port=InitProbePort.from_number(_DOCKER_PORT)),
             period_seconds=2,
             failure_threshold=90,
         ),
@@ -467,20 +414,26 @@ def _add_runner(chart: Chart) -> None:
     # No name-suffix hash: each ScaledJob pod is a fresh one-CI-job Job, so the next job reads the
     # new config on its own and there is nothing to roll.
     config = ConfigMap(
-        chart, "runner-config", metadata=metadata(_CONFIG_MAP, NAMESPACE), data={_CONFIG_FILE: _config().to_yaml()}
+        chart,
+        "runner-config",
+        metadata=ApiObjectMetadata(name=_CONFIG_MAP, namespace=NAMESPACE),
+        data={_CONFIG_FILE: _config().to_yaml()},
     )
     # Forgejo's /metrics endpoint exposes no Actions queue-depth metric. KEDA's native
     # forgejo-runner scaler instead polls Forgejo's authenticated, repo-scoped runner-jobs endpoint,
     # filtered to this runner label. Its result is exactly the number of jobs presently waiting for
     # a haku-ci runner.
-    trigger_auth = TriggerAuthentication.from_secret_key(
+    trigger_auth = TriggerAuthentication(
         chart,
         "trigger-authentication",
-        name=_AUTH,
-        namespace=NAMESPACE,
-        parameter="token",
-        secret_name=FORGEJO_TOKEN_SECRET,
-        secret_key=FORGEJO_TOKEN_KEY,
+        metadata=ApiObjectMetadata(name=_AUTH, namespace=NAMESPACE),
+        spec=TriggerAuthenticationSpec(
+            secret_target_ref=[
+                TriggerAuthenticationSpecSecretTargetRef(
+                    parameter="token", name=FORGEJO_TOKEN_SECRET, key=FORGEJO_TOKEN_KEY
+                )
+            ]
+        ),
     )
     # ScaledJob, NOT ScaledObject -- this is the whole point.
     #
@@ -498,7 +451,7 @@ def _add_runner(chart: Chart) -> None:
     keda.ScaledJob(
         chart,
         "scaled-job",
-        metadata=metadata(_RUNNER, NAMESPACE, labels=_LABELS),
+        metadata=ApiObjectMetadata(name=_RUNNER, namespace=NAMESPACE, labels=_LABELS),
         spec=keda.ScaledJobSpec(
             # One pod per queued job, up to four concurrently. No minimum: between bursts there are
             # no runner pods at all, which was already true under the ScaledObject
@@ -598,47 +551,52 @@ def chart(app: App) -> Chart:
     # registry/git push creds. But the runner executes Haku-authored build steps (its workflow +
     # Dockerfile), so it IS agent-controlled compute and is egress-fenced like haku-sandbox. See
     # README.md.
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                "name": NAMESPACE,
-                "rbac.ducktape.io/agent-readable-logs": "true",
-                # The runner's resources are set deliberately; no VPA recommendations wanted.
-                "goldilocks.fairwinds.com/enabled": "false",
-                # Enforce the privileged Pod Security level. The dind sidecar runs privileged (the
-                # documented requirement for docker:dind-rootless -- it provides /dev/net/tun and
-                # disables the mount masks RootlessKit needs; the daemon itself still runs rootless
-                # as UID 1000). baseline/restricted forbid both privileged and its Unconfined
-                # seccomp, so the namespace must enforce privileged. Safe because haku-ci is
-                # operator-only (Haku has no RBAC here; only Flux applies), so the loosened level
-                # grants Haku nothing.
-                "pod-security.kubernetes.io/enforce": "privileged",
-                "pod-security.kubernetes.io/warn": "privileged",
-                "pod-security.kubernetes.io/audit": "privileged",
-            },
-        ),
+        name=NAMESPACE,
+        # The runner's resources are set deliberately; no VPA recommendations wanted.
+        vpa=Vpa.DISABLED,
+        agent_readable=AgentReadable.LOGS,
+        labels={
+            "name": NAMESPACE,
+            # Enforce the privileged Pod Security level. The dind sidecar runs privileged (the
+            # documented requirement for docker:dind-rootless -- it provides /dev/net/tun and
+            # disables the mount masks RootlessKit needs; the daemon itself still runs rootless
+            # as UID 1000). baseline/restricted forbid both privileged and its Unconfined
+            # seccomp, so the namespace must enforce privileged. Safe because haku-ci is
+            # operator-only (Haku has no RBAC here; only Flux applies), so the loosened level
+            # grants Haku nothing.
+            "pod-security.kubernetes.io/enforce": "privileged",
+            "pod-security.kubernetes.io/warn": "privileged",
+            "pod-security.kubernetes.io/audit": "privileged",
+        },
     )
     _add_egress_fence(chart)
+    # The registration token tf/gitops/haku-state reads from haku-state's runner API.
+    secret_copy.secret_copy(chart, _REGISTRATION_SECRET, reader=secret_copy.reader(chart, NAMESPACE))
     _add_runner(chart)
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def haku_ci(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, keda_kustomization: Kustomization) -> Kustomization:
+def haku_ci(
+    chart: Chart,
+    directory: RenderedDirectory,
+    keda_kustomization: Kustomization,
+    external_secrets_operator: Kustomization,
+) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         timeout="5m",
-        # The runner pod stays pending until its registration-token Secret is provisioned by
-        # tf/gitops/haku-state -- don't block on health.
+        # The runner pod stays pending until tf/gitops/haku-state has written its
+        # registration-token Secret for this chart to copy -- don't block on health.
         wait=False,
-        # Supplies the ScaledJob and TriggerAuthentication CRDs.
-        depends_on=flux_kustomization_depends_on_many(keda_kustomization),
+        depends_on=flux_kustomization_depends_on_many(
+            # Supplies the ScaledJob and TriggerAuthentication CRDs.
+            keda_kustomization,
+            # Supplies the ExternalSecret and ClusterSecretStore CRDs.
+            external_secrets_operator,
+        ),
     )

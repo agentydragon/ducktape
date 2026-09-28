@@ -4,12 +4,13 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.ledger import Ledger
 from finance.augur.sim.money import MAX_COUNT
 
-CASH = AccountRef(agent_id="test_household", account_id="cash")
-BASIS = AccountRef(agent_id="test_household", account_id="asset_basis:test_fund")
-GAIN = AccountRef(agent_id="test_household", account_id="income:realized_gain")
+CASH = AccountRef(agent_id=AgentId("test_household"), account_id=AccountId("cash"))
+BASIS = AccountRef(agent_id=AgentId("test_household"), account_id=AccountId("asset_basis:test_fund"))
+GAIN = AccountRef(agent_id=AgentId("test_household"), account_id=AccountId("income:realized_gain"))
 
 
 @pytest.fixture
@@ -68,7 +69,9 @@ def test_unknown_account_does_not_commit_a_successful_prefix(ledger: Ledger) -> 
                 cause_id="unknown",
                 postings=[
                     Posting(account=CASH, amount=1),
-                    Posting(account=AccountRef(agent_id="test_missing", account_id="cash"), amount=-1),
+                    Posting(
+                        account=AccountRef(agent_id=AgentId("test_missing"), account_id=AccountId("cash")), amount=-1
+                    ),
                 ],
             )
         )

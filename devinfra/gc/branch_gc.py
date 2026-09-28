@@ -11,7 +11,10 @@ deleting its ref loses nothing, established by either
     of commits back, so merging today conflicts even though the work landed long ago; or
   * a merged GitHub PR whose merged tip the branch has not advanced beyond — the
     squash-merge case that survives even when later default-branch divergence defeats the
-    git tree-equality check.
+    git tree-equality check; or
+  * a closed-not-merged GitHub PR whose head the branch has not advanced beyond — closing a
+    PR is a human decision not to land the work, so once nothing has been added since, the
+    branch adds nothing a future PR couldn't recreate from scratch just as easily.
 
 A branch checked out in a worktree cannot be deleted while that worktree exists (git refuses
 even `-D`), so classification depends on the worktree scan: a branch held by a retained
@@ -78,11 +81,12 @@ def branch_holders(repo: Path) -> dict[str, Path]:
     return {wt.branch: wt.path for wt in git_repo.list_worktrees(repo) if wt.branch}
 
 
-def _tip_within_merged_head(pg: pygit2.Repository, branch_oid: pygit2.Oid, pr: PrInfo) -> bool:
-    """True when the branch tip is at, or an ancestor of, the SHA the PR merged.
+def _tip_within_pr_head(pg: pygit2.Repository, branch_oid: pygit2.Oid, pr: PrInfo) -> bool:
+    """True when the branch tip is at, or an ancestor of, the PR's head SHA.
 
-    That means the branch added nothing past the squash-merge point. Needs the merged head
-    object present locally to reason about ancestry; if it was never fetched, defer.
+    For a merged PR that means the branch added nothing past the squash-merge point; for a
+    closed-not-merged PR it means nothing was committed after the PR was abandoned. Needs the
+    head object present locally to reason about ancestry; if it was never fetched, defer.
     """
     if pr.head_sha is None:
         return False
@@ -113,16 +117,16 @@ def classify_branch(
     checkout = holder.worktree.path if isinstance(holder, PrunableWorktree) else None
     branch_oid = pg.branches.local[name].peel(pygit2.Commit).id
     if content_in_main(pg, branch_oid, main):
-        annotation = f" ({pr_phrase(pr)})" if pr is not None and pr.state is PrState.MERGED else ""
+        annotation = f" ({pr_phrase(pr)})" if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED) else ""
         return PrunableBranch(branch, f"changes already in {main}{annotation}", checkout)
-    if pr is not None and pr.state is PrState.MERGED and _tip_within_merged_head(pg, branch_oid, pr):
-        return PrunableBranch(branch, f"{pr_phrase(pr)}; nothing beyond the merged head", checkout)
+    if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED) and _tip_within_pr_head(pg, branch_oid, pr):
+        return PrunableBranch(branch, f"{pr_phrase(pr)}; nothing beyond the {pr.state.value} head", checkout)
     # Last, because it is the only check here that shells out: ~200ms, worth paying for the
     # handful of branches otherwise bound for REVIEW but not for every branch in the repo.
     # The cheaper tests above also name a more specific reason when they apply.
     if patches_landed_in_main(Path(pg.path), name, main):
         return PrunableBranch(branch, f"every commit has an equivalent already on {main}", checkout)
-    if pr is not None and pr.state is PrState.MERGED:
+    if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED):
         return ReviewBranch(branch, f"{pr_phrase(pr)} but branch has commits beyond it")
     return ReviewBranch(branch, f"commits not in {main}")
 

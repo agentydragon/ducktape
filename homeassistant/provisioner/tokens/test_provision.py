@@ -91,9 +91,9 @@ async def test_replacing_revokes_same_named_long_lived_tokens_before_minting(mon
 
     assert await replace_long_lived_token(home_assistant_client, TOKEN.client_name) == "fresh-token"
     assert sent == [
-        {"id": 1, "type": "auth/refresh_tokens"},
-        {"id": 1, "type": "auth/delete_refresh_token", "refresh_token_id": "stale"},
-        {"id": 1, "type": "auth/long_lived_access_token", "client_name": TOKEN.client_name, "lifespan": LIFESPAN_DAYS},
+        {"type": "auth/refresh_tokens"},
+        {"type": "auth/delete_refresh_token", "refresh_token_id": "stale"},
+        {"type": "auth/long_lived_access_token", "client_name": TOKEN.client_name, "lifespan": LIFESPAN_DAYS},
     ]
 
 
@@ -159,10 +159,9 @@ async def test_a_missing_read_only_user_is_created_local_only_in_the_read_only_g
     await reset_read_only_user(home_assistant_client, "reader", "fresh-password")
 
     assert sent == [
-        {"id": 1, "type": "config/auth/list"},
-        {"id": 1, "type": "config/auth/create", "name": "reader", "group_ids": [READ_ONLY_GROUP], "local_only": True},
+        {"type": "config/auth/list"},
+        {"type": "config/auth/create", "name": "reader", "group_ids": [READ_ONLY_GROUP], "local_only": True},
         {
-            "id": 1,
             "type": "config/auth_provider/homeassistant/create",
             "user_id": "created-user",
             "username": "reader",
@@ -180,16 +179,9 @@ async def test_an_existing_read_only_user_is_confined_again_and_given_the_new_pa
     await reset_read_only_user(home_assistant_client, "reader", "fresh-password")
 
     assert sent == [
-        {"id": 1, "type": "config/auth/list"},
+        {"type": "config/auth/list"},
+        {"type": "config/auth/update", "user_id": "reader-id", "group_ids": [READ_ONLY_GROUP], "local_only": True},
         {
-            "id": 1,
-            "type": "config/auth/update",
-            "user_id": "reader-id",
-            "group_ids": [READ_ONLY_GROUP],
-            "local_only": True,
-        },
-        {
-            "id": 1,
             "type": "config/auth_provider/homeassistant/admin_change_password",
             "user_id": "reader-id",
             "password": "fresh-password",

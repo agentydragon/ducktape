@@ -229,18 +229,6 @@ class McpOAuthConfig(BaseModel):
         )
 
 
-class ProviderOAuthClientConfig(BaseModel):
-    """A pre-registered OAuth client for a per-Operator provider connection.
-
-    The console runs the authorization-code + PKCE flow with this client and self-refreshes
-    the resulting per-Operator tokens. The secret lives only in the haku-console namespace
-    (Haku cannot read it) and is never persisted to the database.
-    """
-
-    client_id: str
-    client_secret: SecretStr
-
-
 class WebPushConfig(BaseModel):
     """VAPID identity for Web Push notifications of pending approvals (RFC 8292).
 
@@ -349,8 +337,6 @@ class ConsoleProcessConfig(BaseModel):
     # Canonical Operator identity trust contract. Required in every harness; see
     # ``OperatorIdentityConfig`` for why this is distinct from either OIDC client.
     operator_identity: OperatorIdentityConfig
-    # Optional standing Kubernetes authorization policy. Absent means the
-    # internal Kubernetes authorization endpoint remains fail-closed.
 
     @model_validator(mode="after")
     def _operator_auth_requires_canonical_public_origin(self) -> Self:

@@ -1,117 +1,68 @@
 """Mortgage settlement binds servicing facts to the ledger and selected payer cash."""
 
-from collections.abc import Callable
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from decimal import Decimal
 
 import pytest
 import pytest_bazel
 
+from finance.augur.model.series import LocationId
 from finance.augur.sim.actions import ClaimId, PayClaim
 from finance.augur.sim.agent import assemble
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.capture import FinancialCapture
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.ids import AccountId, LiabilityId, PropertyId
+from finance.augur.sim.market_path import Series
 from finance.augur.sim.mortgage import Mortgage, MortgagePayment, MortgageTerms
-from finance.augur.sim.prepared import (
-    CompiledRun,
-    PreparedLocation,
-    PreparedObligation,
-    PreparedSeries,
-    _MortgageFinancing,
-    _PropertyPurchase,
-    _PropertySale,
-    _PropertyTax,
-)
-from finance.augur.sim.property import Housing
+from finance.augur.sim.property import Housing, MortgageFinancing, ScheduledPurchase, ScheduledSale
+from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Executed
-from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, prepared_scenario
+from finance.augur.sim.schedule import Once
+from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, opening, world_on
+from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, flat_parcel
 from finance.augur.sim.world import World
 
 
+@dataclass(frozen=True)
+class Situation:
+    """A financed month-2 purchase sold in month 5, an ordinary bill and a property tax, on the market's paths."""
+
+    purchase: ScheduledPurchase
+    sale: ScheduledSale
+    home_values: Series
+    rollout_count: int = 1
+
+
 @pytest.fixture
-def run() -> CompiledRun:
-    base = prepared_scenario()
-    scenario = replace(
-        base,
-        horizon_months=6,
-        tax_profiles=(),
-        accounts=tuple(
-            replace(
-                account,
-                opening_balance=200_000 if account.account == CASH else 3000 if account.account == RESERVE else 0,
-            )
-            for account in base.accounts
-        ),
-        locations=(
-            PreparedLocation(
-                location_id="test-market",
-                display_name="Test market",
-                jurisdiction_ids=(),
-                annual_property_tax_rate_ppb=0,
-                annual_special_assessment=0,
+def case() -> Situation:
+    return Situation(
+        purchase=ScheduledPurchase(
+            month=2,
+            cause_id="test-purchase",
+            property_id=PropertyId("test-home"),
+            parcel=flat_parcel(Decimal("0.012")),
+            market=LocationId("test-market"),
+            buyer_agent_id=HOUSEHOLD,
+            buyer_account_id=AccountId("checking"),
+            seller_agent_id=WORLD,
+            seller_account_id=AccountId("cash"),
+            purchase_price=100_000,
+            down_payment=40_000,
+            buyer_closing_cost=0,
+            rented_fraction_ppb=0,
+            land_value_fraction_ppb=200_000_000,
+            mortgage=MortgageFinancing(
+                liability_id=LiabilityId("test-mortgage"),
+                lender_agent_id=WORLD,
+                lender_account_id=AccountId("cash"),
+                principal=60_000,
+                annual_interest_rate_ppb=0,
+                term_months=60,
             ),
         ),
-        _scheduled_property_purchases=(
-            _PropertyPurchase(
-                month=2,
-                cause_id="test-purchase",
-                property_id="test-home",
-                location_id="test-market",
-                buyer_agent_id=HOUSEHOLD,
-                buyer_account_id="checking",
-                seller_agent_id=WORLD,
-                seller_account_id="cash",
-                purchase_price=100_000,
-                down_payment=40_000,
-                buyer_closing_cost=0,
-                rented_fraction_ppb=0,
-                land_value_fraction_ppb=200_000_000,
-                mortgage=_MortgageFinancing(
-                    liability_id="test-mortgage",
-                    lender_agent_id=WORLD,
-                    lender_account_id="cash",
-                    principal=60_000,
-                    annual_interest_rate_ppb=0,
-                    term_months=60,
-                ),
-            ),
-        ),
-        _property_sales=(_PropertySale(month=5, property_id="test-home", closing_cost_ppb=0),),
-        obligations=(
-            PreparedObligation(
-                month=3,
-                obligation_id="ordinary",
-                obligation_type="rent",
-                from_account=CASH,
-                to_account=EXOGENOUS,
-                amount_due=2,
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=0,
-            ),
-        ),
-        _property_tax_policies=(
-            _PropertyTax(
-                property_id="test-home",
-                owner_agent_id=HOUSEHOLD,
-                from_account_id="checking",
-                tax_authority_agent_id=WORLD,
-                tax_authority_account_id="cash",
-                annual_tax_rate_ppb=12_000_000,
-                start_month=3,
-                end_month=None,
-            ),
-        ),
-    )
-    return CompiledRun(
-        currency_code="USD",
-        currency_quantum="0.01",
-        rollout_count=1,
-        scenario=scenario,
-        series=(
-            PreparedSeries(series_id="home_value:test-market", snapshots=7, values=(50, 100, 200, 240, 300, 360, 800)),
-        ),
+        sale=ScheduledSale(month=5, property_id=PropertyId("test-home"), commission_ppb=0, escrow_title_ppb=0),
+        home_values=Series(series_id="home_value:test-market", snapshots=7, values=(50, 100, 200, 240, 300, 360, 800)),
     )
 
 
@@ -119,8 +70,8 @@ def run() -> CompiledRun:
 def mortgage() -> Mortgage:
     return Mortgage(
         MortgageTerms(
-            liability_id="test-mortgage",
-            property_id="test-home",
+            liability_id=LiabilityId("test-mortgage"),
+            property_id=PropertyId("test-home"),
             borrower=CASH,
             lender=EXOGENOUS,
             origination_month=2,
@@ -131,22 +82,43 @@ def mortgage() -> Mortgage:
     )
 
 
-def composed(run: CompiledRun) -> World:
-    """The fixture's world declared piece by piece, as an experiment would write it."""
-    scenario = run.scenario
-    world = World(
-        MarketPath.from_run(run, 0),
-        horizon_months=scenario.horizon_months,
-        income_sources=scenario.income_sources,
-        jurisdictions=scenario.jurisdictions,
+def composed(case: Situation, rollout: int = 0) -> World:
+    """The situation's world declared piece by piece, as an experiment would write it."""
+    world = world_on(
+        (case.home_values,),
+        horizon_months=6,
+        rollout_id=rollout,
+        rollout_count=case.rollout_count,
+        accounts=opening({CASH: 200_000, RESERVE: 3000}),
+        taxpayers=(),
     )
-    for account in scenario.accounts:
-        world.declare_account(account)
-    world.track(Biller(scenario.obligations[0]))
+    world.track(
+        Biller(
+            schedule=Once(month=3),
+            obligation_id="ordinary",
+            obligation_type="rent",
+            from_account=CASH,
+            to_account=EXOGENOUS,
+            amount_due=2,
+            property_id=None,
+            deduction_category=None,
+            deductible_fraction_ppb=0,
+        )
+    )
     world.declare_housing(
-        Housing(purchases=scenario._scheduled_property_purchases, sales=scenario._property_sales),
-        scenario._property_tax_policies,
-        scenario.locations,
+        Housing(purchases=(case.purchase,), sales=(case.sale,)),
+        (
+            PropertyTaxPolicy(
+                property_id=PropertyId("test-home"),
+                owner_agent_id=HOUSEHOLD,
+                from_account_id=AccountId("checking"),
+                tax_authority_agent_id=WORLD,
+                tax_authority_account_id=AccountId("cash"),
+                start_year=START_YEAR,
+                start_month=3,
+                end_month=None,
+            ),
+        ),
     )
     return world
 
@@ -182,14 +154,13 @@ def fingerprint(world: World) -> tuple[object, ...]:
     )
 
 
-@pytest.mark.parametrize("build", [lambda run: World.from_run(run, 0), composed], ids=["from_run", "composed"])
 def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff(
-    run: CompiledRun, mortgage: Mortgage, build: Callable[[CompiledRun], World]
+    case: Situation, mortgage: Mortgage
 ) -> None:
-    world = build(run)
-    assert world.mortgage_principal("test-mortgage") == 0
+    world = composed(case)
+    assert world.mortgage_principal(LiabilityId("test-mortgage")) == 0
     for month, ending_principal in enumerate((0, 0, 60_000, 59_000, 58_000, 0)):
-        active = {"test-mortgage": mortgage} if month >= 2 else {}
+        active = {LiabilityId("test-mortgage"): mortgage} if month >= 2 else {}
         originated, paid_off = world.prepare_month(month, active if month == 2 else {}, active)
         assert originated == (["test-mortgage"] if month == 2 else [])
         assert paid_off == (["test-mortgage"] if month == 5 else [])
@@ -201,7 +172,7 @@ def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff
                 ["rent", "mortgage_payment", "property_tax"] if month == 3 else ["mortgage_payment", "property_tax"]
             )
             claim = next(claim for claim in observation.claims if claim.obligation_type == "mortgage_payment")
-            checking = world.account_balance(HOUSEHOLD, "checking")
+            checking = world.account_balance(HOUSEHOLD, AccountId("checking"))
             assert not [row for row in world.accounting.mortgage_payments if row.month == month]
             action = PayClaim(
                 request_id=1,
@@ -214,41 +185,48 @@ def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff
             assert [row.liability_id for row in world.accounting.mortgage_payments if row.month == month] == [
                 "test-mortgage"
             ]
-            assert world.account_balance(HOUSEHOLD, "checking") == checking
-            assert not world.settle_claims().failed
+            assert world.account_balance(HOUSEHOLD, AccountId("checking")) == checking
+            others = [other for other in observation.claims if other is not claim]
+            for index, other in enumerate(others, start=1):
+                action = PayClaim(
+                    request_id=index + 1,
+                    cause_id=other.cause_id,
+                    claim=ClaimId(month=other.month, index=other.index),
+                    from_account=other.from_account,
+                    amount=other.amount_due,
+                )
+                assert isinstance(world.apply(HOUSEHOLD, action, index), Executed)
             assert quote is not None
-            mortgage.record_payment(quote, world.mortgage_principal("test-mortgage"))
+            mortgage.record_payment(quote, world.mortgage_principal(LiabilityId("test-mortgage")))
         if paid_off:
             mortgage.payoff()
-        assert world.mortgage_principal("test-mortgage") == ending_principal
+        assert world.mortgage_principal(LiabilityId("test-mortgage")) == ending_principal
         world.close_books(failed=False, mortgages=list(active.values()))
     # No month was opened through `open_month`, so every month's outcomes are still in the buffers.
     capture = FinancialCapture(world, capture="forensic")
     capture.record()
     financial = capture.financial()
-    assert financial is not None
     assert len(financial.mortgage_payments) == 2
     assert all(row.from_account_id == "savings" for row in financial.mortgage_payments)
-    assert (financial.property_sales[0].mortgage_payoff, financial.property_sales[0].net_cash_to_owner) == (
-        58_000,
-        122_000,
-    )
-    assert world.account_balance(HOUSEHOLD, "savings") == 1000
+    assert financial.properties is not None
+    sale = financial.properties.sales[0]
+    assert (sale.mortgage_payoff, sale.net_cash_to_owner) == (58_000, 122_000)
+    assert world.account_balance(HOUSEHOLD, AccountId("savings")) == 1000
     assert all(sum(posting.amount for posting in entry.postings) == 0 for entry in financial.journal)
 
 
-def test_mid_horizon_property_mark_and_sale_share_the_purchase_anchor(run: CompiledRun) -> None:
-    purchase = run.scenario._scheduled_property_purchases[0]
-    purchase = replace(purchase, down_payment=100_000, mortgage=None)
-    scenario = replace(run.scenario, _scheduled_property_purchases=(purchase,))
-    run = replace(
-        run,
+def test_mid_horizon_property_mark_and_sale_share_the_purchase_anchor(case: Situation) -> None:
+    purchase = replace(case.purchase, down_payment=100_000, mortgage=None)
+    case = replace(
+        case,
+        purchase=purchase,
         rollout_count=2,
-        scenario=scenario,
-        series=(replace(run.series[0], values=(50, 100, 200, 240, 300, 360, 800, 500, 7, 200, 240, 300, 360, 800)),),
+        home_values=replace(
+            case.home_values, values=(50, 100, 200, 240, 300, 360, 800, 500, 7, 200, 240, 300, 360, 800)
+        ),
     )
     for rollout in range(2):
-        world = World.from_run(run, rollout)
+        world = composed(case, rollout)
         properties = world.properties
         assert properties is not None
         for month in range(6):
@@ -263,30 +241,22 @@ def test_mid_horizon_property_mark_and_sale_share_the_purchase_anchor(run: Compi
             world.close_books(failed=False, mortgages=[])
         sale = properties.sales[0]
         assert (sale.gross_proceeds, sale.net_cash_to_owner, sale.realized_gain) == (180_000, 180_000, 80_000)
-        assert world.account_balance(HOUSEHOLD, "checking") == 280_000
+        assert world.account_balance(HOUSEHOLD, AccountId("checking")) == 280_000
 
 
 @pytest.mark.parametrize("bad_payoff", ["missing", "inactive", "wrong_contract"])
 def test_invalid_mortgage_effects_do_not_change_cash_or_principal(
-    run: CompiledRun, mortgage: Mortgage, bad_payoff: str
+    case: Situation, mortgage: Mortgage, bad_payoff: str
 ) -> None:
-    purchase = replace(run.scenario._scheduled_property_purchases[0], month=0)
-    run = replace(
-        run,
-        scenario=replace(
-            run.scenario,
-            _scheduled_property_purchases=(purchase,),
-            _property_sales=(replace(run.scenario._property_sales[0], month=1),),
-        ),
-    )
+    case = replace(case, purchase=replace(case.purchase, month=0), sale=replace(case.sale, month=1))
     mortgage = Mortgage(replace(mortgage.terms, origination_month=0))
-    world = World.from_run(run, 0)
+    world = composed(case)
     before = fingerprint(world)
     with pytest.raises(ValueError, match="mortgage origination"):
         world.prepare_month(0, {}, {})
     assert fingerprint(world) == before
-    assert world.mortgage_principal("test-mortgage") == 0
-    world.prepare_month(0, {"test-mortgage": mortgage}, {})
+    assert world.mortgage_principal(LiabilityId("test-mortgage")) == 0
+    world.prepare_month(0, {LiabilityId("test-mortgage"): mortgage}, {})
     world.assemble_claims([])
     world.close_books(failed=False, mortgages=[mortgage])
     invalid = deepcopy(mortgage)
@@ -296,9 +266,9 @@ def test_invalid_mortgage_effects_do_not_change_cash_or_principal(
         invalid = Mortgage(replace(mortgage.terms, origination_principal=60_001))
     before = fingerprint(world)
     with pytest.raises(ValueError, match="mortgage payoff"):
-        world.prepare_month(1, {}, {} if bad_payoff == "missing" else {"test-mortgage": invalid})
+        world.prepare_month(1, {}, {} if bad_payoff == "missing" else {LiabilityId("test-mortgage"): invalid})
     assert fingerprint(world) == before
-    assert world.mortgage_principal("test-mortgage") == 60_000
+    assert world.mortgage_principal(LiabilityId("test-mortgage")) == 60_000
     with pytest.raises(ValueError, match="invalid mortgage installment"):
         world.assemble_claims([installment(mortgage, 1, 60_000, 60_001)])
     assert fingerprint(world) == before
@@ -307,43 +277,25 @@ def test_invalid_mortgage_effects_do_not_change_cash_or_principal(
 
 def test_a_building_basis_rounds_in_the_engine_not_in_the_authoring() -> None:
     """Authored money is exact; the land share multiplies it here, rounding to the quantum once."""
-    run_ = replace(
-        prepared_scenario(),
+    world = world_on(
+        (Series(series_id="home_value:test-market", snapshots=2, values=(10_001, 10_001)),),
         horizon_months=1,
-        tax_profiles=(),
-        locations=(
-            PreparedLocation(
-                location_id="test-market",
-                display_name="Test market",
-                jurisdiction_ids=(),
-                annual_property_tax_rate_ppb=0,
-                annual_special_assessment=0,
-            ),
-        ),
+        accounts=opening({CASH: 200_00}),
+        taxpayers=(),
     )
-    world = World(
-        MarketPath(
-            (PreparedSeries(series_id="home_value:test-market", snapshots=2, values=(10_001, 10_001)),),
-            0,
-            rollout_count=1,
-        ),
-        horizon_months=1,
-        income_sources=run_.income_sources,
-    )
-    for account in run_.accounts:
-        world.declare_account(replace(account, opening_balance=200_00 if account.account == CASH else 0))
     world.declare_housing(
         Housing(
             purchases=(
-                _PropertyPurchase(
+                ScheduledPurchase(
                     month=0,
                     cause_id="test-purchase",
-                    property_id="test-home",
-                    location_id="test-market",
+                    property_id=PropertyId("test-home"),
+                    parcel=UNTAXED,
+                    market=LocationId("test-market"),
                     buyer_agent_id=HOUSEHOLD,
-                    buyer_account_id="checking",
+                    buyer_account_id=AccountId("checking"),
                     seller_agent_id=WORLD,
-                    seller_account_id="cash",
+                    seller_account_id=AccountId("cash"),
                     purchase_price=10_001,
                     down_payment=10_001,
                     buyer_closing_cost=0,
@@ -352,13 +304,12 @@ def test_a_building_basis_rounds_in_the_engine_not_in_the_authoring() -> None:
                     mortgage=None,
                 ),
             )
-        ),
-        locations=run_.locations,
+        )
     )
     world.prepare_month(0, {}, {})
     properties = world.properties
     assert properties is not None
-    assert properties.properties["test-home"].state.building_basis == 8001
+    assert properties.properties[PropertyId("test-home")].state.building_basis == 8001
 
 
 if __name__ == "__main__":

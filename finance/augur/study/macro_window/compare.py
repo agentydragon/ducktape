@@ -30,11 +30,11 @@ from pathlib import Path
 
 import numpy as np
 
-from finance.augur.fit.macro_var import MacroVarFit
-from finance.augur.fit.structural_macro import MacroFitWindow, fit_structural_macro_defaults
 from finance.augur.model.historical_windows import MACRO_HISTORY_SOURCES
-from finance.augur.model.structural_macro import StructuralMacroFittedDefaults
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
+from finance.augur.x.models.macro_var import MacroVarFit
+from finance.augur.x.models.structural_macro import StructuralMacroFittedDefaults
+from finance.augur.x.models.structural_macro_fit import MacroFitWindow, fit_structural_macro_defaults
 from finance.evidence import sources
 
 logger = logging.getLogger(__name__)

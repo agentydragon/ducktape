@@ -630,7 +630,12 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
         }
         all_fields = list(RequestField)
         receipt = Receipt.model_validate(
-            await _call_mcp(http, bearer, "request_action", {"request": request, "include_fields": all_fields})
+            await _call_mcp(
+                http,
+                bearer,
+                "request_action",
+                {"request": request, "include_fields": all_fields, "respond_with": "receipt"},
+            )
         )
         assert receipt.id is not None
         assert receipt.external_grant == grant.provenance()

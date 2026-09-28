@@ -1,5 +1,6 @@
-import { Button, Drawer, Group, Stack, Text } from "@mantine/core";
+import { ActionIcon, Button, Drawer, Group, Stack, Text } from "@mantine/core";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
+import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
 
 import {
   threadObservationEntry,
@@ -158,12 +159,35 @@ export function ChronologicalDebugProvider({
   );
 }
 
-export function ChronologicalDebugLink({ observationCursor }: { observationCursor?: string }): JSX.Element {
+/** Opens the chronological debug drawer, at `cursor` if given. Throws outside a
+ * `ChronologicalDebugProvider` subtree. */
+export function useOpenChronologicalDebug(): (cursor?: string) => void {
   const open = useContext(OpenDebug);
-  if (open === null) throw new Error("ChronologicalDebugLink requires ChronologicalDebugProvider");
+  if (open === null) throw new Error("useOpenChronologicalDebug requires ChronologicalDebugProvider");
+  return open;
+}
+
+/** Sits at the right of an observation's own row (its raw-frames disclosure summary, or the plain
+ * text standing in for one) rather than as a separate full-row link below it. A native `title`, not
+ * a Mantine `Tooltip`, matches `EvidenceToggle`'s reasoning in `projected_session.tsx`. Guards
+ * against the default action when it renders inside a `<summary>`: without `preventDefault`, the
+ * click would also toggle the enclosing `<details>`. */
+export function ChronologicalDebugIcon({ observationCursor }: { observationCursor: string }): JSX.Element {
+  const open = useOpenChronologicalDebug();
   return (
-    <Button variant="subtle" size="compact-xs" onClick={() => open(observationCursor)}>
-      {observationCursor === undefined ? "Debug history" : "Inspect chronological context"}
-    </Button>
+    <ActionIcon
+      size="xs"
+      variant="subtle"
+      color="gray"
+      aria-label="Inspect chronological context"
+      title="Inspect chronological context"
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        open(observationCursor);
+      }}
+    >
+      <IconHistory size={14} />
+    </ActionIcon>
   );
 }

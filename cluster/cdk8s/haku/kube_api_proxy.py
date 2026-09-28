@@ -11,7 +11,7 @@ to an https server -- against plain HTTP kubectl sends every request unauthentic
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     Capability,
     ContainerPort,
@@ -36,21 +36,16 @@ from cdk8s_plus_34 import (
     ServicePort,
     Volume,
 )
-from cert_manager_crds.io.cert_manager import (
-    CertificateSpecIssuerRef,
-    CertificateSpecPrivateKey,
-    CertificateSpecPrivateKeyAlgorithm,
-)
+from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef
 from constructs import Construct
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, pod_policy
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.cert_manager.certificate import Certificate
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 
 NAME = "haku-kube-api-proxy"
 HOSTNAME = "haku-kubeapi.allegedly.works"
@@ -74,12 +69,11 @@ class KubeApiProxy(Construct):
         Certificate(
             self,
             "certificate",
-            name=_TLS_SECRET,
-            namespace=namespace,
+            metadata=ApiObjectMetadata(name=_TLS_SECRET, namespace=namespace),
             secret_name=_TLS_SECRET,
             duration="2160h",
             renew_before="720h",
-            private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA, size=256),
+            private_key=CertificatePrivateKey.ecdsa_p256(),
             common_name=_SERVICE_FQDN,
             dns_names=[_SERVICE_FQDN, f"{NAME}.{namespace}.svc"],
             # Every sandbox trust bundle already carries cluster-root-ca, so kubeconfigs
@@ -91,9 +85,9 @@ class KubeApiProxy(Construct):
         service_account = ServiceAccount(
             self,
             "serviceaccount",
-            metadata=metadata(
-                NAME,
-                namespace,
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=namespace,
                 annotations={
                     "description": "Executes only Kubernetes requests authorized synchronously by Haku Console."
                 },
@@ -104,7 +98,7 @@ class KubeApiProxy(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(NAME, namespace, labels=LABELS),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace, labels=LABELS),
             selector=Pods.select(self, "pods", labels=LABELS),
             ports=[
                 ServicePort(name="http", port=_HTTP_PORT, target_port=_HTTP_PORT, protocol=Protocol.TCP),
@@ -117,14 +111,14 @@ class KubeApiProxy(Construct):
         https_route(
             self,
             "httproute",
-            metadata=metadata(
-                "haku-kubeapi-allegedly-works",
-                namespace,
+            metadata=ApiObjectMetadata(
+                name="haku-kubeapi-allegedly-works",
+                namespace=namespace,
                 annotations={
                     "description": "Dedicated TLS-terminated Kubernetes API route for Haku-authorized Agent traffic."
                 },
             ),
-            hostname=HOSTNAME,
+            hostnames=[HOSTNAME],
             backend=NAME,
             port=_HTTP_PORT,
             timeout="3600s",
@@ -136,15 +130,11 @@ class KubeApiProxy(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                NAME,
-                console.NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=console.NAMESPACE,
                 labels=LABELS,
-                annotations={
-                    "description": "Fail-closed Haku Agent Kubernetes authorization boundary.",
-                    # cert-manager rotates the TLS Secret; the listener loads it once at start.
-                    "reloader.stakater.com/auto": "true",
-                },
+                annotations={"description": "Fail-closed Haku Agent Kubernetes authorization boundary."},
             ),
             pod_metadata=ApiObjectMetadata(labels=LABELS),
             select=False,
@@ -205,14 +195,14 @@ class KubeApiProxy(Construct):
                 memory=MemoryResources(request=Size.mebibytes(32), limit=Size.mebibytes(128)),
             ),
             security_context=ContainerSecurityContextProps(
-                allow_privilege_escalation=False,
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-                read_only_root_filesystem=True,
+                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]), read_only_root_filesystem=True
             ),
         )
+        # cert-manager rotates the TLS Secret; the listener loads it once at start, so Reloader's
+        # `autoReloadAll` rolls the pods on rotation.
         tls = Secret.from_secret_name(self, "tls-secret", _TLS_SECRET)
         container.mount(_TLS_DIR, Volume.from_secret(self, "tls-volume", tls), read_only=True)
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
+        pod_policy.harden(deployment)
 
     def _add_network_policy(self) -> None:
         # Selecting the proxy makes both directions default-deny: ingress from the Gateway on
@@ -220,21 +210,21 @@ class KubeApiProxy(Construct):
         # kubeconfigs authenticate, and it mounts no ServiceAccount token, so this is its only
         # kubectl path); egress to DNS for the console's name only, kube-apiserver, and the
         # public-TLS console authorization endpoint.
-        cilium.network_policy(
+        NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=metadata(NAME, console.NAMESPACE),
-            selector=LABELS,
+            metadata=ApiObjectMetadata(name=NAME, namespace=console.NAMESPACE),
+            endpoint_selector=LABELS,
             ingress=[
-                cilium.ingress_from_gateway(_HTTP_PORT),
-                cilium.ingress_from(
+                IngressRule.from_gateway(_HTTP_PORT),
+                IngressRule.from_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": "haku-sandbox", "k8s:app.kubernetes.io/name": "haku-sandbox"},
                     ports=[_TLS_PORT],
                 ),
             ],
             egress=[
                 cilium.dns_egress(protocols=("ANY",), resolves=[console.HOSTNAME]),
-                cilium.egress_to_entities("kube-apiserver", ports=[443, 6443]),
+                EgressRule.to_entities(Entity.KUBE_APISERVER, ports=[443, 6443]),
                 # The console's public origin resolves to Gateway node addresses; the process
                 # is configured with exactly one authorization URL and rejects redirects.
                 cilium.egress_via_gateway(console.HOSTNAME),

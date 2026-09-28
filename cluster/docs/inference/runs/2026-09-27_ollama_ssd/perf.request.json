@@ -1,0 +1,13 @@
+{
+  "model": "qwen3.8-flash-next-iq4xs",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Write a detailed technical explanation of how a compiler transforms source code into machine code, covering parsing, types, optimization, register allocation and linking. Aim for at least 1500 words."
+    }
+  ],
+  "think": false,
+  "stream": false,
+  "keep_alive": "30m",
+  "options": { "num_predict": 1024, "seed": 42 }
+}

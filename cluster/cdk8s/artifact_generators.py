@@ -9,7 +9,6 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    Kustomization,
     KustomizationSpecDependsOn,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
@@ -23,7 +22,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import (
     ArtifactGeneratorSpecSourcesKind,
 )
 
-from cluster.cdk8s.flux import NAMESPACE, flux_kustomization
+from cluster.cdk8s.flux import NAMESPACE, Kustomization, flux_kustomization
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 _ARTIFACT_GENERATORS_DIR = f"{GENERATED_ROOT}/artifact-generators"

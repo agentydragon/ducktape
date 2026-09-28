@@ -8,11 +8,9 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/kubevirt",
-        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s/providers/kubevirt",
         "@pypi//cdk8s",
     ],
 )
@@ -23,12 +21,11 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
-        "//cluster/cdk8s/crd_bindings/kubevirt:cdi",
-        "//cluster/cdk8s/crd_bindings/kubevirt:storageprofile",
-        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/kubevirt:cdi",
+        "//cluster/cdk8s/providers/kubevirt:storageprofile",
         "@pypi//cdk8s",
     ],
 )
@@ -40,7 +37,20 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
-        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "virtual_machine",
+    srcs = ["virtual_machine.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/kubevirt:virtual_machine",
+        "//cluster/cdk8s/providers/kubevirt:virtualmachine",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
     ],
 )

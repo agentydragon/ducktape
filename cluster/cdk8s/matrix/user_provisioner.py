@@ -7,21 +7,13 @@ cluster/k8s/matrix/user-provisioner/image-pins/kustomization.yaml overrides it a
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
+from cluster.cdk8s.env_helpers import secret_env_var
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
-from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.matrix.matrix import NAMESPACE, SYNAPSE
 
@@ -29,12 +21,6 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/matrix/user-provisioner"
 _NAME = "matrix-user-provisioner"
 # Script baked in via Bazel (//cluster/provisioners/matrix_user_provisioner:image).
 _IMAGE = "git.allegedly.works/ducktape-ci/matrix-user-provisioner:unset"
-
-
-def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
-    )
 
 
 def chart(app: App) -> Chart:
@@ -62,11 +48,11 @@ def chart(app: App) -> Chart:
                             image=_IMAGE,
                             image_pull_policy="Always",
                             env=[
-                                _secret_env(
+                                secret_env_var(
                                     "REGISTRATION_SECRET", "synapse-registration-secret", "registration_shared_secret"
                                 ),
-                                _secret_env("ADMIN_PASSWORD", "synapse-admin-credentials", "password"),
-                                _secret_env(
+                                secret_env_var("ADMIN_PASSWORD", "synapse-admin-credentials", "password"),
+                                secret_env_var(
                                     "PUBLIC_CODER_AGENT_BOT_PASSWORD",
                                     "public-coder-agent-matrix-bot-password",
                                     "password",
@@ -81,26 +67,14 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml"], components=["./image-pins"]),
-    )
-
-
 def matrix_user_provisioner(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
-    matrix: Kustomization,
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, matrix: Kustomization
 ) -> Kustomization:
     name = "matrix-user-provisioner"
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         wait=None,
         timeout="5m",
         # The job registers users against Synapse's admin API, so it must not start
@@ -113,8 +87,7 @@ def matrix_user_provisioner(
             )
         ],
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config,
-            forgejo_images,
+            external_secrets_operator,
             # Synapse is deployed and healthy; also carries the registration shared secret, admin and bot passwords
             matrix,
         ),

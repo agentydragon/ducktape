@@ -4,17 +4,85 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import assert_never
 
-from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxRules
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
-from finance.augur.sim.jurisdictions import JurisdictionLevel
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
+from finance.augur.sim.income import (
+    ORDINARY_INCOME,
+    InterestCharacter,
+    InterestIncome,
+    Municipal,
+    OrdinaryIncome,
+    QualifiedDividendIncome,
+    Taxable,
+    TransferIncomeCategory,
+    Treasury,
+)
+from finance.augur.sim.jurisdictions import InterestExemptions, StatutoryAmount
 from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
-from finance.augur.sim.scenario import ORDINARY_INCOME, TransferIncomeCategory
+
+
+@dataclass(frozen=True)
+class TaxBracket:
+    """One marginal slice: inclusive upper edge in currency quanta, or no upper bound."""
+
+    upper: int | None
+    rate_ppb: int
+
+
+@dataclass(frozen=True)
+class ThresholdTax:
+    """A flat rate on the part of an income measure above `threshold` quanta."""
+
+    rate_ppb: int
+    threshold: int
+
+
+@dataclass(frozen=True)
+class TaxRules:
+    """One jurisdiction's rules resolved for a taxpayer's filing status; money is integer quanta."""
+
+    jurisdiction_id: JurisdictionId
+    exempt_interest: InterestExemptions
+    ordinary_brackets: tuple[TaxBracket, ...]
+    long_term_capital_gain_brackets: tuple[TaxBracket, ...]
+    standard_deduction: int
+    max_capital_loss_ordinary_offset: int
+    # Positive caps federal-style unrecaptured depreciation; zero uses ordinary brackets.
+    section_1250_rate_ppb: int
+    # The tax year the amounts are law for, and those of them statute adjusts for inflation.
+    law_year: int
+    indexed: frozenset[StatutoryAmount]
+    # Whether the owner's ad-valorem real property tax is itemized here without a cap.
+    itemizes_real_property_tax: bool
+    # Over modified adjusted gross income, on the lesser of the excess and net investment income.
+    net_investment_income_tax: ThresholdTax | None = None
+    # Over taxable income.
+    taxable_income_surtax: ThresholdTax | None = None
+
+
+@dataclass(frozen=True)
+class TaxProfile:
+    """A taxpayer's payment routing, quantized allowances and ordered jurisdiction rules."""
+
+    agent_id: AgentId
+    tax_authority_agent_id: AgentId
+    payment_account_id: AccountId
+    tax_authority_account_id: AccountId
+    prior_year_tax: int
+    section_121_exclusion: int
+    jurisdictions: tuple[TaxRules, ...]
 
 
 @dataclass
 class TaxFacts:
     taxable_ordinary_income: int = 0
+    # Outside capital-loss netting; stacked with net long-term gain where the rules have its brackets.
+    qualified_dividends: int = 0
+    # The part of `taxable_ordinary_income` and `qualified_dividends` from sources
+    # `is_investment_income` selects.
+    investment_income: int = 0
     short_term_gain: int = 0
     long_term_gain: int = 0
     section_1250_recapture: int = 0
@@ -41,10 +109,13 @@ class TaxAssessment:
     long_term_gain: int
     ordinary_loss_offset: int
     ordinary_taxable: int
+    # Net long-term gain plus qualified dividends: what the long-term capital-gain brackets rate.
     long_term_capital_gain_taxable: int
     ordinary_tax: int
     capital_gain_tax: int
     section_1250_tax: int
+    net_investment_income_tax: int
+    taxable_income_surtax: int
     total_tax: int
     capital_loss_carryforward: int
 
@@ -54,24 +125,24 @@ class IncomeLedger:
 
     def __init__(self, sources: Sequence[TransferIncomeCategory]) -> None:
         self.sources = tuple(sources)
-        self.by_source: dict[tuple[str, TransferIncomeCategory], int] = {}
+        self.by_source: dict[tuple[AgentId, TransferIncomeCategory], int] = {}
 
-    def enroll(self, agent_id: str) -> None:
+    def enroll(self, agent_id: AgentId) -> None:
         for source in self.sources:
             self.by_source[(agent_id, source)] = 0
 
-    def accrue(self, agent_id: str, source: TransferIncomeCategory, amount: int) -> None:
+    def accrue(self, agent_id: AgentId, source: TransferIncomeCategory, amount: int) -> None:
         key = (agent_id, source)
         if key in self.by_source:
             self.by_source[key] = checked_count(self.by_source[key] + amount, "money addition")
 
-    def deduct_from_ordinary(self, agent_id: str, amount: int) -> None:
+    def deduct_from_ordinary(self, agent_id: AgentId, amount: int) -> None:
         self.accrue(agent_id, ORDINARY_INCOME, checked_count(-amount, "money negation"))
 
-    def ordinary(self, agent_id: str) -> int:
+    def ordinary(self, agent_id: AgentId) -> int:
         return self.by_source.get((agent_id, ORDINARY_INCOME), 0)
 
-    def reset(self, agent_id: str) -> None:
+    def reset(self, agent_id: AgentId) -> None:
         for key in self.by_source:
             if key[0] == agent_id:
                 self.by_source[key] = 0
@@ -84,15 +155,36 @@ class IncomeLedger:
         return clone
 
 
-def taxes_interest_from(rules: PreparedTaxRules, issuer_id: str | None, issuer_level: JurisdictionLevel | None) -> bool:
-    if issuer_id is None or issuer_level is None:
+def taxes_interest_from(rules: TaxRules, character: InterestCharacter) -> bool:
+    exempt = rules.exempt_interest
+    match character:
+        case Treasury():
+            return not exempt.treasury
+        case Municipal(state=state):
+            return exempt.municipal != "all" and state not in exempt.municipal
+        case Taxable():
+            return True
+        case _:
+            assert_never(character)
+
+
+def is_investment_income(source: TransferIncomeCategory) -> bool:
+    """Whether a source's taxable amount is gross investment income (IRS Form 8960 lines 1-2).
+
+    `OrdinaryIncome` is not: it merges wages with rent, which the form counts on line 4a, so
+    net rental income is missing from net investment income and a rental arm's NIIT is
+    understated.
+    """
+    # TODO: give net rental income its own category and count it here (Form 8960 line 4a),
+    # with the housing tax slice.
+    if isinstance(source, InterestIncome | QualifiedDividendIncome):
         return True
-    if issuer_id == rules.jurisdiction_id:
-        return not rules.exempts_own_issue
-    return issuer_level not in rules.exempt_interest_from_levels
+    if isinstance(source, OrdinaryIncome):
+        return False
+    assert_never(source)
 
 
-def validate_brackets(brackets: Sequence[PreparedTaxBracket]) -> None:
+def validate_brackets(brackets: Sequence[TaxBracket]) -> None:
     if not brackets:
         raise ValueError("tax brackets are empty")
     previous = -1
@@ -110,7 +202,7 @@ def validate_brackets(brackets: Sequence[PreparedTaxBracket]) -> None:
         raise ValueError("tax bracket upper edges are not strictly increasing")
 
 
-def validate_rules(rules: PreparedTaxRules) -> None:
+def validate_rules(rules: TaxRules) -> None:
     if rules.standard_deduction < 0:
         raise ValueError("standard_deduction must be nonnegative")
     if rules.max_capital_loss_ordinary_offset < 0:
@@ -120,13 +212,19 @@ def validate_rules(rules: PreparedTaxRules) -> None:
     validate_brackets(rules.ordinary_brackets)
     if rules.long_term_capital_gain_brackets:
         validate_brackets(rules.long_term_capital_gain_brackets)
+    for tax in (rules.net_investment_income_tax, rules.taxable_income_surtax):
+        if tax is not None:
+            if not 0 <= tax.rate_ppb <= MONEY_FACTOR_SCALE:
+                raise ValueError("tax rate is outside [0, 1000000000]")
+            if tax.threshold < 0:
+                raise ValueError("an additional tax's threshold must be nonnegative")
 
 
-def apply_brackets(amount: int, brackets: Sequence[PreparedTaxBracket]) -> int:
+def apply_brackets(amount: int, brackets: Sequence[TaxBracket]) -> int:
     return apply_stacked_brackets(amount, 0, brackets)
 
 
-def apply_stacked_brackets(amount: int, lower_stack: int, brackets: Sequence[PreparedTaxBracket]) -> int:
+def apply_stacked_brackets(amount: int, lower_stack: int, brackets: Sequence[TaxBracket]) -> int:
     validate_brackets(brackets)
     total = checked_count(lower_stack + amount, "money addition")
     previous = 0
@@ -168,7 +266,7 @@ def _taxable(ordinary: int, short: int, long: int, offset: int, deduction: int) 
     return max(0, checked_count(total - deduction, "money subtraction"))
 
 
-def assess(facts: TaxFacts, rules: PreparedTaxRules) -> TaxAssessment:
+def assess(facts: TaxFacts, rules: TaxRules) -> TaxAssessment:
     validate_rules(rules)
     gains = net_capital_gains(
         facts.short_term_gain,
@@ -180,7 +278,8 @@ def assess(facts: TaxFacts, rules: PreparedTaxRules) -> TaxAssessment:
     ordinary = facts.taxable_ordinary_income
     if rules.section_1250_rate_ppb == 0:
         ordinary = checked_count(ordinary + facts.section_1250_recapture, "money addition")
-    total_taxable = _taxable(ordinary, gains.short_term, gains.long_term, gains.ordinary_offset, deduction)
+    preferential = checked_count(gains.long_term + facts.qualified_dividends, "money addition")
+    total_taxable = _taxable(ordinary, gains.short_term, preferential, gains.ordinary_offset, deduction)
     if rules.long_term_capital_gain_brackets:
         ordinary_taxable = _taxable(ordinary, gains.short_term, 0, gains.ordinary_offset, deduction)
         capital_taxable = checked_count(total_taxable - ordinary_taxable, "money subtraction")
@@ -199,6 +298,35 @@ def assess(facts: TaxFacts, rules: PreparedTaxRules) -> TaxAssessment:
         )
         recapture_tax = min(implied_tax, cap)
     capital_tax = checked_count(capital_tax + recapture_tax, "money addition")
+    # Adjusted gross income (MAGI without foreign exclusions) and taxable income count recapture
+    # at its ordinary amount, whether or not its own rate taxes it apart.
+    gross = checked_count(facts.taxable_ordinary_income + facts.section_1250_recapture, "money addition")
+    adjusted_gross_income = _taxable(gross, gains.short_term, preferential, gains.ordinary_offset, 0)
+    # Form 8960 line 5a is the return's net gain, a net loss entering only as its allowed offset.
+    # TODO: subtract Form 8960 line 9 deductions (investment interest, state income tax allocable
+    # to NII); without them NIIT is overstated for a California resident.
+    net_investment_income = _taxable(
+        checked_count(facts.investment_income + facts.section_1250_recapture, "money addition"),
+        gains.short_term,
+        gains.long_term,
+        gains.ordinary_offset,
+        0,
+    )
+    investment_tax = 0
+    if (niit := rules.net_investment_income_tax) is not None:
+        excess = max(0, adjusted_gross_income - niit.threshold)
+        investment_tax = mul_div(
+            min(net_investment_income, excess), niit.rate_ppb, MONEY_FACTOR_SCALE, "net investment income tax"
+        )
+    surtax = 0
+    if (surcharge := rules.taxable_income_surtax) is not None:
+        taxable_income = _taxable(gross, gains.short_term, preferential, gains.ordinary_offset, deduction)
+        surtax = mul_div(
+            max(0, taxable_income - surcharge.threshold),
+            surcharge.rate_ppb,
+            MONEY_FACTOR_SCALE,
+            "taxable income surtax",
+        )
     return TaxAssessment(
         short_term_gain=gains.short_term,
         long_term_gain=gains.long_term,
@@ -208,6 +336,10 @@ def assess(facts: TaxFacts, rules: PreparedTaxRules) -> TaxAssessment:
         ordinary_tax=ordinary_tax,
         capital_gain_tax=capital_tax,
         section_1250_tax=recapture_tax,
-        total_tax=checked_count(ordinary_tax + capital_tax, "money addition"),
+        net_investment_income_tax=investment_tax,
+        taxable_income_surtax=surtax,
+        total_tax=checked_count(
+            checked_count(ordinary_tax + capital_tax, "money addition") + investment_tax + surtax, "money addition"
+        ),
         capital_loss_carryforward=gains.carryforward,
     )

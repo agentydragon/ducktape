@@ -31,6 +31,9 @@ spec:
       kind: Bucket
       namespace: monitoring
     - group: seaweed.seaweedfs.com
+      kind: S3Identity
+      namespace: monitoring
+    - group: seaweed.seaweedfs.com
       kind: S3Credentials
       namespace: monitoring
   to:
@@ -42,11 +45,12 @@ apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
   name: tempo
-  namespace: seaweedfs
+  namespace: monitoring
 spec:
   reclaimPolicy: Retain
   seaweedRef:
     name: seaweedfs
+    namespace: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials

@@ -47,7 +47,7 @@ historical Decision or invoking an executor. Revocation does not stop already cl
 
 ## Action policies
 
-An `ActionPolicySet` holds typed policies in `autoApproveIf`, `autoDenyIf` and `autoDenyUnless`;
+An `ActionPolicySet` holds typed policies in `autoApproveIf`;
 an `ActionPolicyBinding` joins one subject -- a namespaced ServiceAccount, which is what a
 workload's Pod runs as and what an external Connection acts as -- to sets by name, optionally until
 `expiresAt`. Both are namespaced Kubernetes objects the
@@ -79,7 +79,7 @@ The request is persisted only once evaluation has finished, together with any au
 request is observable as pending only while it waits for a human.
 
 A caller can read an effective policy: the bindings admission would resolve now for its own
-subject, or for a ServiceAccount it names, the sets that resolved, and the three lists
+subject, or for a ServiceAccount it names, the sets that resolved, and the `autoApproveIf` entries
 in evaluation order, each entry named as a Decision's evidence names the matching policy. The read
 and the Decision come from one resolution, so they cannot disagree; the answer says whose it is; a
 subject the service does not watch reads as no bindings; and it carries `synced`, which is false
@@ -142,9 +142,11 @@ The Action Service serves a generic MCP frontend in the same process, with the s
 admission, Decision, Execution, and receipt authority as its HTTP interface. Its fixed tools
 discover Actions, submit/cancel requests, read receipts and results, and page durable events. A result
 reads as the tool that ran answered, an MCP backend's own result exactly with every content block, and a
-request without one says what it is waiting on or why it has none. Catalog responses omit input schemas
-and full descriptions unless explicitly requested. Lists and wait durations are bounded, and backend
-configuration is never exposed.
+request without one says what it is waiting on or why it has none. A submission answers the same way once
+its bounded wait ends, unless its caller asks for the receipt. A receipt reports an execution's state,
+error and timing but never its result, which is only ever answered as the tool answered it. Catalog
+responses omit input schemas and full descriptions unless explicitly requested. Lists and wait
+durations are bounded, and backend configuration is never exposed.
 
 A caller on an external Connection also sees direct tools: the Actions its group's reviewed
 configuration names, each as an MCP tool of its own, listed where a policy bound to the caller could

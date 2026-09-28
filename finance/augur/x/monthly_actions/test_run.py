@@ -8,6 +8,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.books import AccountRef
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.results import (
     Executed,
     Finished,
@@ -54,7 +55,7 @@ def test_bill_and_later_tax_are_paid_from_actual_sale_proceeds(example: Finished
     assert [
         row.balance
         for row in closing.balances
-        if row.account == AccountRef(agent_id="example-household", account_id="checking")
+        if row.account == AccountRef(agent_id=AgentId("example-household"), account_id=AccountId("checking"))
     ] == [3_800]
     assert [(lot.units_remaining, lot.basis_remaining) for lot in closing.lots] == [(0, 0)]
     for entry in financial.journal:
@@ -79,7 +80,7 @@ def test_unfunded_bill_preserves_sale_and_stops_without_later_actions(example: F
     assert [
         row.balance
         for row in stopped_book.balances
-        if row.account == AccountRef(agent_id="example-household", account_id="checking")
+        if row.account == AccountRef(agent_id=AgentId("example-household"), account_id=AccountId("checking"))
     ] == [10_000]
     assert [(lot.units_remaining, lot.basis_remaining) for lot in stopped_book.lots] == [(0, 0)]
 
@@ -174,7 +175,7 @@ def test_cash_only_cli_buys_unheld_asset_then_sells_and_pays_tax(tmp_path: Path)
         ending_cash = next(
             row.balance
             for row in financial.books[-1].balances
-            if row.account == AccountRef(agent_id="example-household", account_id="checking")
+            if row.account == AccountRef(agent_id=AgentId("example-household"), account_id=AccountId("checking"))
         )
         assert ending_cash == 8_200
 
@@ -182,7 +183,7 @@ def test_cash_only_cli_buys_unheld_asset_then_sells_and_pays_tax(tmp_path: Path)
     for summary, detailed in zip(compact, rollouts, strict=True):
         assert summary.summary == detailed.summary
         holding = summary.summary.public_holdings[0]
-        assert holding.account == AccountRef(agent_id="example-household", account_id="brokerage")
+        assert holding.account == AccountRef(agent_id=AgentId("example-household"), account_id=AccountId("brokerage"))
         assert holding.values[:3] == [0, 24_000, 0]
 
 

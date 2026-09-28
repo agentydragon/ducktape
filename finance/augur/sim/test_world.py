@@ -1,63 +1,94 @@
 """Actor-scoped financial execution, ordered request prefixes and canonical capture."""
 
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from itertools import pairwise
+from typing import Literal
 
 import pytest
 import pytest_bazel
 
-from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import Action, Buy, ClaimId, Consume, DecisionActions, LotSale, PayClaim, Sell, Transfer
 from finance.augur.sim.actor import MonthOpened
 from finance.augur.sim.agent import EconomicAgent, assemble
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.capture import FinancialCapture, WorldResult, event_log
-from finance.augur.sim.compiler.tax import PreparedTaxBracket
+from finance.augur.sim.capture import FinancialCapture, FinancialOutput, event_log
 from finance.augur.sim.events import EVENT_FRAME_SPECS
-from finance.augur.sim.ids import AgentId
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, LotId, PropertyId
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.mortgage import Mortgage, MortgageTerms
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import (
-    CompiledRun,
-    PreparedHoldingPool,
-    PreparedLot,
-    PreparedObligation,
-    PreparedRecurringObligation,
-    PreparedSeries,
-    PreparedTransfer,
-    _ScheduledSale,
-)
-from finance.augur.sim.product_metrics import product_row
 from finance.augur.sim.results import ConsumptionTarget, Executed, Finished, Rejected, RejectedAction, UnpaidClaims
+from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, prepared_scenario
+from finance.augur.sim.tax import TaxBracket, TaxProfile
+from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, opening, taxpayer, world_on
+from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import Capture, World
 
 
-def actor_run(horizon: int = 2, paths: int = 1) -> CompiledRun:
-    base = prepared_scenario()
-    scenario = replace(
-        base,
-        horizon_months=horizon,
-        tax_profiles=(),
-        accounts=tuple(
-            replace(account, opening_balance=10_000 if account.account == CASH else 0) for account in base.accounts
+@dataclass(frozen=True, kw_only=True)
+class Pool:
+    agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
+    quantity_scale: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class Lot:
+    lot_id: LotId
+    agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
+    purchase_month: int
+    quantity_scale: int
+    units: int
+    basis: int
+
+
+@dataclass(frozen=True)
+class Situation:
+    """What every path shares: the household's books, what it holds, and what it is billed or paid."""
+
+    series: tuple[Series, ...]
+    rollout_count: int
+    horizon_months: int
+    # Each account with its opening balance.
+    accounts: Mapping[AccountRef, int]
+    holding_pools: tuple[Pool, ...]
+    initial_lots: tuple[Lot, ...]
+    tax_profiles: tuple[TaxProfile, ...] = ()
+    obligations: tuple[Bill, ...] = ()
+    scheduled_transfers: tuple[Contribution, ...] = ()
+
+
+def situation(horizon: int = 2, paths: int = 1) -> Situation:
+    """10,000 in checking and 100 units of stock at 1000 bought for 50,000, on flat paths."""
+    return Situation(
+        series=(
+            Series(series_id="security:test_stock", snapshots=horizon + 1, values=(1000,) * ((horizon + 1) * paths)),
         ),
+        rollout_count=paths,
+        horizon_months=horizon,
+        accounts=opening({CASH: 10_000}),
         holding_pools=(
-            PreparedHoldingPool(
-                agent_id=HOUSEHOLD, account_id="checking", asset_id="test_stock", quantity_scale=1_000_000
+            Pool(
+                agent_id=HOUSEHOLD,
+                account_id=AccountId("checking"),
+                asset_id=AssetId("test_stock"),
+                quantity_scale=1_000_000,
             ),
         ),
         initial_lots=(
-            PreparedLot(
-                lot_id="timing-stock",
+            Lot(
+                lot_id=LotId("timing-stock"),
                 agent_id=HOUSEHOLD,
-                account_id="checking",
-                asset_id="test_stock",
+                account_id=AccountId("checking"),
+                asset_id=AssetId("test_stock"),
                 purchase_month=-24,
                 quantity_scale=1_000_000,
                 units=100_000_000,
@@ -65,50 +96,36 @@ def actor_run(horizon: int = 2, paths: int = 1) -> CompiledRun:
             ),
         ),
     )
-    return CompiledRun(
-        currency_code="USD",
-        currency_quantum="0.01",
-        rollout_count=paths,
-        scenario=scenario,
-        series=(
-            PreparedSeries(
-                series_id="security:test_stock", snapshots=horizon + 1, values=(1000,) * ((horizon + 1) * paths)
-            ),
-        ),
-    )
 
 
 @pytest.fixture
-def cash_only() -> CompiledRun:
-    run = actor_run()
+def cash_only() -> Situation:
+    run = situation()
     return replace(
         run,
-        scenario=replace(
-            run.scenario,
-            initial_lots=(),
-            accounts=tuple(
-                replace(account, opening_balance=2500 if account.account == CASH else 0)
-                for account in run.scenario.accounts
-            ),
-            holding_pools=(
-                replace(run.scenario.holding_pools[0], account_id="empty-brokerage"),
-                PreparedHoldingPool(
-                    agent_id=WORLD, account_id="other-brokerage", asset_id="test_stock", quantity_scale=1_000_000
-                ),
+        initial_lots=(),
+        accounts={account: 2500 if account == CASH else 0 for account in run.accounts},
+        holding_pools=(
+            replace(run.holding_pools[0], account_id=AccountId("empty-brokerage")),
+            Pool(
+                agent_id=WORLD,
+                account_id=AccountId("other-brokerage"),
+                asset_id=AssetId("test_stock"),
+                quantity_scale=1_000_000,
             ),
         ),
         series=(replace(run.series[0], values=(1000, 2000, 3000)),),
     )
 
 
-def world_for(run: CompiledRun, rollout: int = 0) -> World:
-    world = World.from_run(run, rollout)
+def world_for(run: Situation, rollout: int = 0) -> World:
+    world = composed(run, rollout)
     world.start()
     return world
 
 
 def checking(world: World) -> int | None:
-    return world.account_balance(HOUSEHOLD, "checking")
+    return world.account_balance(HOUSEHOLD, AccountId("checking"))
 
 
 def view(world: World) -> Observation:
@@ -116,33 +133,47 @@ def view(world: World) -> Observation:
     return assemble(HOUSEHOLD, world.month, world.open_mail(HOUSEHOLD))
 
 
-def next_month(world: World, capture: FinancialCapture, *, failed: bool = False) -> None:
+def next_month(world: World, capture: FinancialCapture | None, *, failed: bool = False) -> None:
     """Close the open month the way `step` does, record it, and open the next one unless finished."""
     world.failed = world.failed or failed
     world.close_month()
-    capture.record()
+    if capture is not None:
+        capture.record()
     if not world.finished:
         world.open_month()
+
+
+def pay_in_full(world: World, observation: Observation) -> None:
+    """The household pays each observed claim in full, in observed order."""
+    for index, claim in enumerate(observation.claims):
+        action = PayClaim(
+            request_id=index + 1,
+            cause_id=claim.cause_id,
+            claim=ClaimId(month=claim.month, index=claim.index),
+            from_account=claim.from_account,
+            amount=claim.amount_due,
+        )
+        assert isinstance(world.execute(HOUSEHOLD, action).outcome, Executed)
 
 
 def sell(units: int) -> Sell:
     return Sell(
         cause_id="chosen-sale",
         agent_id=HOUSEHOLD,
-        proceeds_account_id="checking",
-        asset_id="test_stock",
-        lots=(LotSale(account_id="checking", lot_id="timing-stock", units=units),),
+        proceeds_account_id=AccountId("checking"),
+        asset_id=AssetId("test_stock"),
+        lots=(LotSale(account_id=AccountId("checking"), lot_id=LotId("timing-stock"), units=units),),
     )
 
 
-def buy(id_: str, cash: str, units: int) -> Buy:
+def buy(id_: str, cash: AccountId, units: int) -> Buy:
     return Buy(
         cause_id=id_,
         agent_id=HOUSEHOLD,
         cash_account_id=cash,
-        holding_account_id="checking",
-        asset_id="test_stock",
-        lot_id=id_,
+        holding_account_id=AccountId("checking"),
+        asset_id=AssetId("test_stock"),
+        lot_id=LotId(id_),
         quantity_scale=1_000_000,
         units=units,
     )
@@ -163,21 +194,24 @@ def consume(amount: int) -> Consume:
     )
 
 
-def bill(amount: int) -> PreparedObligation:
-    return PreparedObligation(
-        month=0,
-        obligation_id="bill",
-        obligation_type="rent",
-        from_account=CASH,
-        to_account=EXOGENOUS,
-        amount_due=amount,
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=1_000_000_000,
-    )
+@dataclass(frozen=True)
+class Bill:
+    """Rent owed from checking to the world, due once."""
+
+    amount: int
+    month: int = 0
 
 
-def test_cash_only_actor_observes_and_purchases_an_unheld_declared_asset(cash_only: CompiledRun) -> None:
+@dataclass(frozen=True)
+class Contribution:
+    """A one-off transfer from the world into checking."""
+
+    cause_id: str
+    month: int
+    amount: int
+
+
+def test_cash_only_actor_observes_and_purchases_an_unheld_declared_asset(cash_only: Situation) -> None:
     world = world_for(cash_only)
     capture = FinancialCapture(world, capture="forensic")
     observation = view(world)
@@ -185,7 +219,7 @@ def test_cash_only_actor_observes_and_purchases_an_unheld_declared_asset(cash_on
     assert observation.holding_pools[0].account_id == "empty-brokerage"
     assert observation.holding_pools[0].price == 1000
     assert not observation.public_positions
-    action = buy("first-purchase", "checking", 2_000_000).model_copy(
+    action = buy("first-purchase", AccountId("checking"), 2_000_000).model_copy(
         update={"holding_account_id": "empty-brokerage", "lot_id": "new-position"}
     )
     assert isinstance(world.execute(HOUSEHOLD, action).outcome, Executed)
@@ -195,18 +229,16 @@ def test_cash_only_actor_observes_and_purchases_an_unheld_declared_asset(cash_on
     assert (observation.public_holdings, observation.cash) == (4000, 500)
     next_month(world, capture)
     financial = capture.financial()
-    assert financial is not None
     [lot] = financial.months[-1].lots
     assert (lot.units_remaining, lot.basis_remaining, lot.account_id) == (2_000_000, 2000, "empty-brokerage")
     assert all(sum(posting.amount for posting in entry.postings) == 0 for entry in financial.journal)
 
 
-def test_declaring_an_empty_pool_does_not_invest_cash_without_an_action(cash_only: CompiledRun) -> None:
+def test_declaring_an_empty_pool_does_not_invest_cash_without_an_action(cash_only: Situation) -> None:
     world = world_for(cash_only)
-    capture = FinancialCapture(world, capture="summary")
     balances = [checking(world)]
     for _ in range(2):
-        next_month(world, capture)
+        next_month(world, None)
         balances.append(checking(world))
     assert world.finished
     assert not world.book().lots
@@ -215,11 +247,11 @@ def test_declaring_an_empty_pool_does_not_invest_cash_without_an_action(cash_onl
 
 @pytest.mark.parametrize("wrong_scale", [False, True])
 def test_an_empty_pool_purchase_rejects_wrong_account_or_scale_without_mutation(
-    cash_only: CompiledRun, wrong_scale: bool
+    cash_only: Situation, wrong_scale: bool
 ) -> None:
     world = world_for(cash_only)
     capture = FinancialCapture(world, capture="forensic")
-    action = buy("invalid-purchase", "checking", 1).model_copy(
+    action = buy("invalid-purchase", AccountId("checking"), 1).model_copy(
         update={
             "holding_account_id": "empty-brokerage" if wrong_scale else "other-brokerage",
             "quantity_scale": 10 if wrong_scale else 1_000_000,
@@ -232,55 +264,39 @@ def test_an_empty_pool_purchase_rejects_wrong_account_or_scale_without_mutation(
     next_month(world, capture)
     assert world.finished
     financial = capture.financial()
-    assert financial is not None
     assert not financial.months[-1].lots
     assert all(entry.cause_id != "invalid-purchase" for entry in financial.journal)
 
 
 @pytest.mark.parametrize("case", ["no_pool", "unpriced", "duplicate"])
 def test_declarations_reject_missing_prices_and_do_not_fall_back_to_initial_lots(case: str) -> None:
-    run = actor_run(1)
-    pool = run.scenario.holding_pools[0]
+    run = situation(1)
+    pool = run.holding_pools[0]
     if case == "no_pool":
-        run = replace(run, scenario=replace(run.scenario, holding_pools=()))
+        run = replace(run, holding_pools=())
     elif case == "unpriced":
-        run = replace(
-            run, scenario=replace(run.scenario, initial_lots=(), holding_pools=(replace(pool, asset_id="unpriced"),))
-        )
+        run = replace(run, initial_lots=(), holding_pools=(replace(pool, asset_id=AssetId("unpriced")),))
     else:
-        run = replace(run, scenario=replace(run.scenario, initial_lots=(), holding_pools=(pool, pool)))
-    with pytest.raises(ValueError, match=r"holding pool|missing series"):
-        ActionSession.from_run(run, HOUSEHOLD, [0])
+        run = replace(run, initial_lots=(), holding_pools=(pool, pool))
+    with pytest.raises(ValueError, match=r"holding pool|missing public security series"):
+        composed(run)
 
 
 def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> None:
-    run = actor_run(13)
-    profile = prepared_scenario().tax_profiles[0]
+    run = situation(13)
+    profile = taxpayer(HOUSEHOLD)
     rules = replace(
         profile.jurisdictions[0],
-        ordinary_brackets=(PreparedTaxBracket(None, 200_000_000),),
-        long_term_capital_gain_brackets=(PreparedTaxBracket(None, 100_000_000),),
+        ordinary_brackets=(TaxBracket(None, 200_000_000),),
+        long_term_capital_gain_brackets=(TaxBracket(None, 100_000_000),),
         max_capital_loss_ordinary_offset=0,
     )
     run = replace(
         run,
-        scenario=replace(
-            run.scenario,
-            tax_profiles=(replace(profile, jurisdictions=(rules,)),),
-            obligations=(bill(50_000),),
-            accounts=tuple(replace(account, opening_balance=0) for account in run.scenario.accounts),
-            scheduled_transfers=(
-                PreparedTransfer(
-                    month=0,
-                    cause_id="current-contribution",
-                    from_account=EXOGENOUS,
-                    to_account=CASH,
-                    amount=20_000,
-                    income_category=None,
-                    deduction_category=None,
-                ),
-            ),
-        ),
+        tax_profiles=(replace(profile, jurisdictions=(rules,)),),
+        obligations=(Bill(50_000),),
+        accounts=dict.fromkeys(run.accounts, 0),
+        scheduled_transfers=(Contribution("current-contribution", month=0, amount=20_000),),
     )
     world = world_for(run)
     capture = FinancialCapture(world, capture="forensic")
@@ -294,19 +310,10 @@ def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> No
         units = 30_000_000 if month == 0 else 1_500_000 if month == 12 else 0
         if units:
             assert isinstance(world.execute(HOUSEHOLD, sell(units)).outcome, Executed)
-        for claim in observation.claims:
-            action = PayClaim(
-                request_id=7,
-                cause_id=f"pay-{claim.cause_id}",
-                claim=ClaimId(month=claim.month, index=claim.index),
-                from_account=claim.from_account,
-                amount=claim.amount_due,
-            )
-            assert isinstance(world.execute(HOUSEHOLD, action).outcome, Executed)
+        pay_in_full(world, observation)
         assert not world.unpaid_claims(HOUSEHOLD)
         next_month(world, capture)
     financial = capture.financial()
-    assert financial is not None
     assert len(financial.months) == 14
     sale = financial.dispositions[0]
     assert (sale.proceeds, sale.basis, sale.realized_gain) == (30_000, 15_000, 15_000)
@@ -316,13 +323,13 @@ def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> No
 
 
 def test_ordered_actions_can_buy_before_transferring_and_buy_again() -> None:
-    world = world_for(actor_run())
+    world = world_for(situation())
     capture = FinancialCapture(world, capture="forensic")
     actions: list[Action] = [
         sell(20_000_000),
-        buy("first-buy", "checking", 10_000_000),
+        buy("first-buy", AccountId("checking"), 10_000_000),
         transfer(15_000),
-        buy("second-buy", "savings", 15_000_000),
+        buy("second-buy", AccountId("savings"), 15_000_000),
         consume(5000),
     ]
     for action in actions:
@@ -332,25 +339,24 @@ def test_ordered_actions_can_buy_before_transferring_and_buy_again() -> None:
     assert (observation.cash, observation.public_holdings) == (0, 105_000)
     next_month(world, capture)
     financial = capture.financial()
-    assert financial is not None
     chosen = [action.cause_id for action in actions]
     assert [entry.cause_id for entry in financial.journal if entry.cause_id in chosen] == chosen
 
 
 def test_rejected_financial_request_preserves_prior_sale_and_independent_world() -> None:
-    run = actor_run(3, 2)
+    run = situation(3, 2)
     failed, live = world_for(run), world_for(run, rollout=1)
     failed_capture, live_capture = FinancialCapture(failed, capture="dense"), FinancialCapture(live, capture="dense")
     assert isinstance(failed.execute(HOUSEHOLD, sell(10_000_000)).outcome, Executed)
-    assert isinstance(failed.execute(HOUSEHOLD, buy("impossible", "checking", 1_000_000_000)).outcome, Rejected)
+    assert isinstance(
+        failed.execute(HOUSEHOLD, buy("impossible", AccountId("checking"), 1_000_000_000)).outcome, Rejected
+    )
     next_month(failed, failed_capture)
     assert failed.finished
     for _ in range(3):
         assert isinstance(live.execute(HOUSEHOLD, consume(1000)).outcome, Executed)
         next_month(live, live_capture)
     failed_output, live_output = failed_capture.financial(), live_capture.financial()
-    assert failed_output is not None
-    assert live_output is not None
     assert len(failed_output.dispositions) == 1
     assert not failed_output.transfers
     assert len(failed_output.months) == 2
@@ -364,8 +370,8 @@ def test_rejected_financial_request_preserves_prior_sale_and_independent_world()
 
 
 def test_payment_capture_names_the_actual_selected_source() -> None:
-    run = actor_run(1)
-    world = world_for(replace(run, scenario=replace(run.scenario, obligations=(bill(5000),))))
+    run = situation(1)
+    world = world_for(replace(run, obligations=(Bill(5000),)))
     [claim] = view(world).claims
     assert isinstance(world.execute(HOUSEHOLD, transfer(5000)).outcome, Executed)
     action = PayClaim(
@@ -383,12 +389,12 @@ def test_payment_capture_names_the_actual_selected_source() -> None:
 
 
 def test_compact_capture_replays_observed_prefixes_and_canonical_payment_identity() -> None:
-    run = actor_run(3)
+    run = situation(3)
     run = replace(run, series=(replace(run.series[0], values=(1000, 2000, 9000, 10_000)),))
     outputs = []
     modes: tuple[Capture, ...] = ("summary", "dense", "forensic")
     for mode in modes:
-        session = ActionSession.from_run(run, HOUSEHOLD, [0], capture=mode)
+        session = session_for(run, [0], capture=mode)
         batch = session.start()
         for month in range(2):
             assert not isinstance(batch, Finished)
@@ -423,9 +429,9 @@ def test_compact_capture_replays_observed_prefixes_and_canonical_payment_identit
 
 @pytest.mark.parametrize("mode", ["summary", "forensic"])
 def test_unpaid_claims_keep_occurrence_and_source_without_hidden_sales(mode: Capture) -> None:
-    run = actor_run(3)
-    world = world_for(replace(run, scenario=replace(run.scenario, obligations=(bill(5000), bill(7000)))))
-    capture = FinancialCapture(world, capture=mode)
+    run = situation(3)
+    world = world_for(replace(run, obligations=(Bill(5000), Bill(7000))))
+    capture = recorded(world, mode)
     unpaid = world.unpaid_claims(HOUSEHOLD)
     assert len(unpaid) == 2
     assert unpaid[0].id != unpaid[1].id
@@ -437,7 +443,7 @@ def test_unpaid_claims_keep_occurrence_and_source_without_hidden_sales(mode: Cap
     assert (first.from_account, first.to_account, first.amount_due, second.amount_due) == (CASH, EXOGENOUS, 5000, 7000)
     assert not world.payments
     assert checking(world) == 10_000
-    financial = capture.financial()
+    financial = None if capture is None else capture.financial()
     assert (financial is None) == (mode == "summary")
     if financial is not None:
         assert not financial.dispositions
@@ -445,58 +451,47 @@ def test_unpaid_claims_keep_occurrence_and_source_without_hidden_sales(mode: Cap
         assert all(row.amount_paid == 0 for row in financial.obligations)
 
 
-def assert_same_result(actual: WorldResult, expected: WorldResult) -> None:
-    # Compare every result field; Polars frames need explicit value equality.
-    assert replace(actual, events=None) == replace(expected, events=None)
-    if expected.events is None:
-        assert actual.events is None
-    else:
-        assert actual.events is not None
-        assert actual.events.rollout_ids == expected.events.rollout_ids
+def recorded(world: World, mode: Capture) -> FinancialCapture | None:
+    return None if mode == "summary" else FinancialCapture(world, capture=mode)
+
+
+def assert_same_result(actual: FinancialOutput | None, expected: FinancialOutput | None) -> None:
+    # Compare every recorded field and the frames projected from them; Polars frames need explicit value equality.
+    assert actual == expected
+    if actual is not None and expected is not None:
+        events, expected_events = event_log(actual), event_log(expected)
+        assert events.rollout_ids == expected_events.rollout_ids
         for spec in EVENT_FRAME_SPECS:
-            assert actual.events.frame(spec).equals(expected.events.frame(spec))
+            assert events.frame(spec).equals(expected_events.frame(spec))
 
 
 @pytest.fixture
-def year_run() -> CompiledRun:
-    run = actor_run(13)
-    lot = replace(run.scenario.initial_lots[0], units=50_000_000, basis=25_000)
-    profile = prepared_scenario().tax_profiles[0]
+def year_situation() -> Situation:
+    run = situation(13)
+    lot = replace(run.initial_lots[0], units=50_000_000, basis=25_000)
+    profile = taxpayer(HOUSEHOLD)
     rules = replace(
         profile.jurisdictions[0],
-        ordinary_brackets=(PreparedTaxBracket(None, 200_000_000),),
-        long_term_capital_gain_brackets=(PreparedTaxBracket(None, 100_000_000),),
+        ordinary_brackets=(TaxBracket(None, 200_000_000),),
+        long_term_capital_gain_brackets=(TaxBracket(None, 100_000_000),),
         max_capital_loss_ordinary_offset=0,
     )
     return replace(
         run,
-        scenario=replace(
-            run.scenario,
-            initial_lots=(lot, replace(lot, lot_id="second-lot", asset_id="second")),
-            holding_pools=(*run.scenario.holding_pools, replace(run.scenario.holding_pools[0], asset_id="second")),
-            tax_profiles=(replace(profile, jurisdictions=(rules,)),),
-            obligations=(bill(50_000), replace(bill(5000), month=12)),
-            scheduled_transfers=(
-                PreparedTransfer(
-                    month=12,
-                    cause_id="test-contribution",
-                    from_account=EXOGENOUS,
-                    to_account=CASH,
-                    amount=10_000,
-                    income_category=None,
-                    deduction_category=None,
-                ),
-            ),
-        ),
+        initial_lots=(lot, replace(lot, lot_id=LotId("second-lot"), asset_id=AssetId("second"))),
+        holding_pools=(*run.holding_pools, replace(run.holding_pools[0], asset_id=AssetId("second"))),
+        tax_profiles=(replace(profile, jurisdictions=(rules,)),),
+        obligations=(Bill(50_000), Bill(5000, month=12)),
+        scheduled_transfers=(Contribution("test-contribution", month=12, amount=10_000),),
         series=(*run.series, replace(run.series[0], series_id="security:second")),
     )
 
 
-def test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent(year_run: CompiledRun) -> None:
+def test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent(year_situation: Situation) -> None:
     run = replace(
-        year_run,
+        year_situation,
         rollout_count=2,
-        series=tuple(replace(s, values=(*s.values, *(v * 2 for v in s.values))) for s in year_run.series),
+        series=tuple(replace(s, values=(*s.values, *(v * 2 for v in s.values))) for s in year_situation.series),
     )
     before = deepcopy(run)
     first, second = world_for(run, rollout=0), world_for(run, rollout=1)
@@ -505,20 +500,18 @@ def test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent(yea
         capture = FinancialCapture(world, capture="forensic")
         for month in range(13):
             if month == 0:
-                for lot in run.scenario.initial_lots:
+                for lot in run.initial_lots:
                     action = Sell(
                         cause_id=f"sell-{lot.asset_id}",
                         agent_id=HOUSEHOLD,
-                        proceeds_account_id="checking",
+                        proceeds_account_id=AccountId("checking"),
                         asset_id=lot.asset_id,
                         lots=(LotSale(account_id=lot.account_id, lot_id=lot.lot_id, units=units),),
                     )
                     assert isinstance(world.execute(HOUSEHOLD, action).outcome, Executed)
-            settlement = world.settle_claims()
-            assert not settlement.failed
+            pay_in_full(world, view(world))
             next_month(world, capture)
         output = capture.financial()
-        assert output is not None
         assert output.failed_month is None
         assert [(p.month, p.amount_paid) for p in output.tax_payments] == [(12, tax_paid)]
         assert sum(e.cause_id == f"opening:{HOUSEHOLD}:checking" for e in output.journal) == 1
@@ -531,97 +524,117 @@ def test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent(yea
     assert run == before
 
 
-def composed(run: CompiledRun, rollout: int = 0) -> World:
-    """The prepared run's facts declared one at a time, as an experiment would write them."""
-    scenario = run.scenario
-    world = World(
-        MarketPath.from_run(run, rollout),
-        horizon_months=scenario.horizon_months,
-        income_sources=scenario.income_sources,
-        jurisdictions=scenario.jurisdictions,
+def declare_pool(world: World, pool: Pool) -> None:
+    world.declare_pool(
+        agent_id=pool.agent_id, account_id=pool.account_id, asset_id=pool.asset_id, quantity_scale=pool.quantity_scale
     )
-    for account in scenario.accounts:
-        world.declare_account(account)
-    for profile in scenario.tax_profiles:
-        world.track(TaxAuthority(profile))
-    for pool in scenario.holding_pools:
-        world.declare_pool(pool)
-    for lot in scenario.initial_lots:
-        world.hold(lot)
-    world.scheduled_transfers = scenario.scheduled_transfers
-    for obligation in scenario.obligations:
-        world.track(Biller(obligation))
+
+
+def hold(world: World, run: Situation) -> None:
+    """The situation's pools and opening lots."""
+    for pool in run.holding_pools:
+        declare_pool(world, pool)
+    for lot in run.initial_lots:
+        world.hold_lot(
+            lot_id=lot.lot_id,
+            agent_id=lot.agent_id,
+            account_id=lot.account_id,
+            asset_id=lot.asset_id,
+            purchase_month=lot.purchase_month,
+            quantity_scale=lot.quantity_scale,
+            units=lot.units,
+            basis=lot.basis,
+        )
+
+
+def composed(run: Situation, rollout: int = 0) -> World:
+    """The situation's facts declared one at a time on one path, as an experiment would write them."""
+    world = world_on(
+        run.series,
+        horizon_months=run.horizon_months,
+        rollout_id=rollout,
+        rollout_count=run.rollout_count,
+        accounts=run.accounts,
+        taxpayers=run.tax_profiles,
+    )
+    hold(world, run)
+    for flow in run.scheduled_transfers:
+        world.declare_flow(
+            cause_id=flow.cause_id,
+            from_account=EXOGENOUS,
+            to_account=CASH,
+            amount=flow.amount,
+            income_category=None,
+            deduction_category=None,
+            schedule=Once(month=flow.month),
+        )
+    for bill in run.obligations:
+        world.track(
+            Biller(
+                obligation_id="bill",
+                obligation_type="rent",
+                from_account=CASH,
+                to_account=EXOGENOUS,
+                amount_due=bill.amount,
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=1_000_000_000,
+                schedule=Once(month=bill.month),
+            )
+        )
     return world
 
 
-def recorded(world: World, mode: Capture) -> tuple[FinancialCapture, list[tuple[int, int, int, int, int, int, int]]]:
-    return FinancialCapture(world, capture=mode), [product_row(world, HOUSEHOLD)]
-
-
-def result_of(
-    world: World, capture: FinancialCapture, mode: Capture, rows: list[tuple[int, int, int, int, int, int, int]]
-) -> WorldResult:
-    financial = capture.financial()
-    return WorldResult(
-        world.rollout_id,
-        financial,
-        event_log(financial) if financial is not None else None,
-        capture.configured_summary() if mode == "summary" else None,
-        rows,
-    )
+def session_for(run: Situation, rollout_ids: list[int], *, capture: Capture = "forensic") -> ActionSession:
+    return ActionSession({id_: composed(run, id_) for id_ in rollout_ids}, HOUSEHOLD, capture=capture)
 
 
 def stepped(
-    run: CompiledRun, mode: Capture, *, rollout: int = 0, sales: tuple[_ScheduledSale, ...] = ()
-) -> WorldResult:
-    """One composed rollout to its horizon under a household that makes the scheduled sales."""
+    run: Situation, mode: Literal["dense", "forensic"], *, rollout: int = 0, sales: Mapping[int, Sequence[Action]]
+) -> FinancialOutput:
+    """One composed rollout to its horizon under a household that makes the scripted sales."""
     world = composed(run, rollout)
-    world.track(ConfiguredHousehold(HOUSEHOLD, (), scheduled_sales=sales))
-    capture, rows = recorded(world, mode)
+    world.track(Scripted(ClaimPayer(HOUSEHOLD), sales))
+    capture = FinancialCapture(world, capture=mode)
     world.start()
     while not world.finished:
         world.step()
         capture.record()
-        rows.append(product_row(world, HOUSEHOLD))
-    return result_of(world, capture, mode, rows)
+    return capture.financial()
 
 
 @pytest.mark.parametrize("stopped", [False, True])
 @pytest.mark.parametrize("mode", ["forensic", "dense", "summary"])
 def test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books(
-    year_run: CompiledRun, stopped: bool, mode: Capture
+    year_situation: Situation, stopped: bool, mode: Capture
 ) -> None:
     """`step` is open, decide, execute in order, close — and nothing else the phases do not do."""
-    run = year_run
-    sales = tuple(
-        _ScheduledSale(
-            month=0,
-            cause_id=f"sale-{lot.asset_id}",
-            agent_id=HOUSEHOLD,
-            account_id=lot.account_id,
-            asset_id=lot.asset_id,
-            units=20_000_000,
-            proceeds_account_id="checking",
-        )
-        for lot in run.scenario.initial_lots
-    )
+    run = year_situation
     if stopped:
         run = replace(
             run,
-            scenario=replace(
-                run.scenario, horizon_months=15, obligations=(bill(1000), replace(bill(999_999), month=12))
-            ),
+            horizon_months=15,
+            obligations=(Bill(1000), Bill(999_999, month=12)),
             series=tuple(replace(s, snapshots=16, values=(*s.values, 9000, 10_000)) for s in run.series),
         )
-        sales = (replace(sales[0], units=1_000_000),)
+    sales = tuple(
+        Sell(
+            cause_id=f"sale-{lot.asset_id}",
+            agent_id=HOUSEHOLD,
+            proceeds_account_id=AccountId("checking"),
+            asset_id=lot.asset_id,
+            lots=(LotSale(account_id=lot.account_id, lot_id=lot.lot_id, units=1_000_000 if stopped else 20_000_000),),
+        )
+        for lot in (run.initial_lots[:1] if stopped else run.initial_lots)
+    )
 
-    def household() -> ConfiguredHousehold:
-        return ConfiguredHousehold(HOUSEHOLD, (), scheduled_sales=sales)
+    def household() -> Scripted:
+        return Scripted(ClaimPayer(HOUSEHOLD), {0: sales})
 
     phased = composed(run)
     actor = household()
     phased.track(actor)
-    phased_capture, phased_rows = recorded(phased, mode)
+    phased_capture = recorded(phased, mode)
     phased.start()
     while not phased.finished:
         actions = actor.handle(MonthOpened(month=phased.month))
@@ -630,101 +643,67 @@ def test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books(
             if isinstance(phased.execute(HOUSEHOLD, action).outcome, Rejected):
                 break
         phased.close_month()
-        phased_capture.record()
-        phased_rows.append(product_row(phased, HOUSEHOLD))
+        if phased_capture is not None:
+            phased_capture.record()
         if not phased.finished:
             phased.open_month()
 
     path = composed(run)
     path.track(household())
-    capture, rows = recorded(path, mode)
+    capture = recorded(path, mode)
     path.start()
     while not path.finished:
         if path.month == 12:
             assert path.accounting.tax_liabilities[0].amount_owed == (50 if stopped else 2000)
         path.step()
-        capture.record()
-        rows.append(product_row(path, HOUSEHOLD))
-    result = result_of(path, capture, mode, rows)
-    assert_same_result(result, result_of(phased, phased_capture, mode, phased_rows))
+        if capture is not None:
+            capture.record()
+    financial = None if capture is None else capture.financial()
+    assert_same_result(financial, None if phased_capture is None else phased_capture.financial())
+    assert (path.book(), path.failed_month) == (phased.book(), phased.failed_month)
 
     stopped_book = deepcopy(path.book())
     with pytest.raises(ValueError, match="finished"):
         path.open_month()
     assert path.book() == stopped_book
-    if mode == "summary":
-        assert result.configured_summary is not None
-        assert result.configured_summary.failed_month == (12 if stopped else None)
-    else:
-        assert result.financial is not None
-        assert result.financial.failed_month == (12 if stopped else None)
-    if result.financial is not None:
-        assert len(result.financial.months) == 14
-        assert [(p.month, p.amount_paid) for p in result.financial.tax_payments] == (
-            [(12, 0)] if stopped else [(12, 2000)]
-        )
+    assert path.failed_month == (12 if stopped else None)
+    if financial is not None:
+        assert financial.failed_month == (12 if stopped else None)
+        assert len(financial.months) == 14
+        assert [(p.month, p.amount_paid) for p in financial.tax_payments] == ([(12, 0)] if stopped else [(12, 2000)])
         if mode == "dense":
-            assert not result.financial.journal
+            assert not financial.journal
 
 
-@pytest.mark.parametrize("mode", ["forensic", "dense", "summary"])
-def test_transfer_and_fifo_sale_remain_balanced(mode: Capture) -> None:
-    run = actor_run(2, 2)
+@pytest.mark.parametrize("mode", ["forensic", "dense"])
+def test_transfer_and_fifo_sale_remain_balanced(mode: Literal["dense", "forensic"]) -> None:
+    run = situation(2, 2)
     run = replace(
         run,
-        scenario=replace(
-            run.scenario,
-            accounts=tuple(
-                replace(a, opening_balance=1000 if a.account == CASH else 2000 if a.account == EXOGENOUS else 0)
-                for a in run.scenario.accounts
-            ),
-            initial_lots=(replace(run.scenario.initial_lots[0], units=2_000_000, basis=20_000),),
-            scheduled_transfers=(
-                PreparedTransfer(
-                    month=0,
-                    cause_id="gift",
-                    from_account=EXOGENOUS,
-                    to_account=CASH,
-                    amount=500,
-                    income_category=None,
-                    deduction_category=None,
-                ),
-            ),
-        ),
+        accounts={a: 1000 if a == CASH else 2000 if a == EXOGENOUS else 0 for a in run.accounts},
+        initial_lots=(replace(run.initial_lots[0], units=2_000_000, basis=20_000),),
+        scheduled_transfers=(Contribution("gift", month=0, amount=500),),
         series=(replace(run.series[0], values=(10_000, 15_000, 15_000, 10_000, 20_000, 20_000)),),
     )
-    sales = (
-        _ScheduledSale(
-            month=1,
-            cause_id="sell-stock",
-            agent_id=HOUSEHOLD,
-            account_id="checking",
-            asset_id="test_stock",
-            units=1_000_000,
-            proceeds_account_id="checking",
-        ),
-    )
+    sales = {
+        1: (
+            Sell(
+                cause_id="sell-stock",
+                agent_id=HOUSEHOLD,
+                proceeds_account_id=AccountId("checking"),
+                asset_id=AssetId("test_stock"),
+                lots=(LotSale(account_id=AccountId("checking"), lot_id=LotId("timing-stock"), units=1_000_000),),
+            ),
+        )
+    }
     for index in range(2):
         expected = stepped(run, "forensic", rollout=index, sales=sales)
-        output = stepped(run, mode, rollout=index, sales=sales)
-        assert output.product_metrics == expected.product_metrics
-        financial = expected.financial
-        assert financial is not None
-        [sale] = financial.dispositions
-        if mode == "summary":
-            assert output.financial is None
-            assert output.configured_summary is not None
-            assert output.configured_summary.rollout_id == index
-            assert output.configured_summary.ending_balances == financial.months[-1].balances
-            assert output.configured_summary.failed_month is None
-            assert output.configured_summary.disposition_count == len(financial.dispositions) == 1
-            assert output.configured_summary.journal_entry_count == len(financial.journal)
-        else:
-            assert output.financial is not None
-            assert output.financial.rollout_id == financial.rollout_id == index
-            assert output.financial.months == financial.months
-            assert output.financial.dispositions == financial.dispositions
-            assert output.financial.journal == ([] if mode == "dense" else financial.journal)
+        financial = stepped(run, mode, rollout=index, sales=sales)
+        [sale] = expected.dispositions
+        assert financial.rollout_id == expected.rollout_id == index
+        assert financial.months == expected.months
+        assert financial.dispositions == expected.dispositions
+        assert financial.journal == ([] if mode == "dense" else expected.journal)
         proceeds = (15_000, 20_000)[index]
         assert (sale.proceeds, sale.basis, sale.units, sale.realized_gain) == (
             proceeds,
@@ -733,14 +712,8 @@ def test_transfer_and_fifo_sale_remain_balanced(mode: Capture) -> None:
             proceeds - 10_000,
         )
         assert next(b.balance for b in financial.months[-1].balances if b.account == CASH) == 1500 + proceeds
-        assert all(sum(p.amount for p in entry.postings) == 0 for entry in financial.journal)
-        if mode == "summary":
-            assert output.financial is None
-        elif mode == "dense":
-            assert output.financial is not None
-            assert output.financial == replace(financial, journal=[])
-        else:
-            assert output.financial == financial
+        assert all(sum(p.amount for p in entry.postings) == 0 for entry in expected.journal)
+        assert financial == (replace(expected, journal=[]) if mode == "dense" else expected)
 
 
 class _Household(EconomicAgent):
@@ -771,10 +744,10 @@ class _Household(EconomicAgent):
 
 
 def test_tracked_agent_steps_agree_with_the_batch_session() -> None:
-    run = actor_run(horizon=3, paths=2)
-    run = replace(run, scenario=replace(run.scenario, obligations=(bill(1000),)))
+    run = situation(horizon=3, paths=2)
+    run = replace(run, obligations=(Bill(1000),))
     amounts = {0: 500, 2: 700}
-    world = World.from_run(run, 1)
+    world = composed(run, 1)
     agent = _Household(amounts)
     world.track(agent)
     world.start()
@@ -783,7 +756,7 @@ def test_tracked_agent_steps_agree_with_the_batch_session() -> None:
         world.step()
         balances.append(checking(world))
     assert agent.months == [0, 1, 2]
-    session = ActionSession.from_run(run, HOUSEHOLD, [1], capture="forensic")
+    session = session_for(run, [1], capture="forensic")
     batch = session.start()
     while not isinstance(batch, Finished):
         [decision] = batch
@@ -797,7 +770,7 @@ def test_tracked_agent_steps_agree_with_the_batch_session() -> None:
 
 
 def test_rejected_action_stops_the_path_before_later_decisions() -> None:
-    world = World.from_run(actor_run(horizon=3), 0)
+    world = composed(situation(horizon=3), 0)
     agent = _Household({0: 100, 1: 10_000_000, 2: 100})
     world.track(agent)
     world.start()
@@ -811,7 +784,7 @@ def test_rejected_action_stops_the_path_before_later_decisions() -> None:
 
 
 def test_tracking_is_checked_before_the_world_starts() -> None:
-    world = World.from_run(actor_run(), 0)
+    world = composed(situation(), 0)
     with pytest.raises(ValueError, match="not running"):
         world.step()
     with pytest.raises(ValueError, match="unknown actor"):
@@ -824,7 +797,7 @@ def test_tracking_is_checked_before_the_world_starts() -> None:
         world.track(_Household({}))
     with pytest.raises(ValueError, match="already started"):
         world.start()
-    untracked = World.from_run(actor_run(), 0)
+    untracked = composed(situation(), 0)
     untracked.start()
     with pytest.raises(ValueError, match="tracked agent"):
         untracked.step()
@@ -834,8 +807,8 @@ def loan(opening_principal: int | None = 6000) -> Mortgage:
     """One year at 12% on 6000: the level installment is 533."""
     return Mortgage(
         MortgageTerms(
-            liability_id="test-loan",
-            property_id="test-home",
+            liability_id=LiabilityId("test-loan"),
+            property_id=PropertyId("test-home"),
             borrower=CASH,
             lender=EXOGENOUS,
             origination_month=0,
@@ -848,13 +821,16 @@ def loan(opening_principal: int | None = 6000) -> Mortgage:
 
 
 def test_tracked_mortgage_is_serviced_from_the_ledger_through_payoff() -> None:
-    world = World.from_run(actor_run(horizon=14), 0)
+    world = composed(situation(horizon=14), 0)
     household, mortgage = _Household({}), loan()
     world.track(household)
     world.track(mortgage)
     world.start()
-    receivable = AccountRef(agent_id=WORLD, account_id="asset:mortgage-receivable:test-loan")
-    assert (world.mortgage_principal("test-loan"), world.accounting.ledger.balance(receivable)) == (6000, 6000)
+    receivable = AccountRef(agent_id=WORLD, account_id=AccountId("asset:mortgage-receivable:test-loan"))
+    assert (world.mortgage_principal(LiabilityId("test-loan")), world.accounting.ledger.balance(receivable)) == (
+        6000,
+        6000,
+    )
     principals, interest_ytd = [6000], []
     paid: list[tuple[int, int, int]] = []
     while not world.finished:
@@ -888,26 +864,23 @@ def test_tracked_mortgage_is_serviced_from_the_ledger_through_payoff() -> None:
     assert checking(world) == 10_000 - sum(interest + principal for _, interest, principal in paid)
 
 
-def rent() -> Biller:
+def rent(*, from_account: AccountRef = CASH, property_id: PropertyId | None = None) -> Biller:
     """Rent of 500 due in months 1 and 2."""
     return Biller(
-        PreparedRecurringObligation(
-            obligation_id="test-rent",
-            obligation_type="rent",
-            from_account=CASH,
-            to_account=EXOGENOUS,
-            amount_due=500,
-            property_id=None,
-            deduction_category=None,
-            deductible_fraction_ppb=1_000_000_000,
-            start_month=1,
-            end_month=2,
-        )
+        obligation_id="test-rent",
+        obligation_type="rent",
+        from_account=from_account,
+        to_account=EXOGENOUS,
+        amount_due=500,
+        property_id=property_id,
+        deduction_category=None,
+        deductible_fraction_ppb=1_000_000_000,
+        schedule=Recurring(start_month=1, end_month=2),
     )
 
 
 def test_a_tracked_bill_is_demanded_in_its_months_and_paid_by_the_household() -> None:
-    world = World.from_run(actor_run(horizon=4), 0)
+    world = composed(situation(horizon=4), 0)
     household = _Household({})
     world.track(household)
     world.track(rent())
@@ -920,14 +893,11 @@ def test_a_tracked_bill_is_demanded_in_its_months_and_paid_by_the_household() ->
 
 
 def test_a_composed_world_has_only_the_domains_it_declares() -> None:
-    run = actor_run(horizon=2)
-    world = World(MarketPath.from_run(run, 0), horizon_months=2)
-    for account in run.scenario.accounts:
-        world.declare_account(account)
-    for pool in run.scenario.holding_pools:
-        world.declare_pool(pool)
-    for lot in run.scenario.initial_lots:
-        world.hold(lot)
+    run = situation(horizon=2)
+    world = World(MarketPath(run.series, 0, rollout_count=1), horizon_months=2)
+    for account, balance in run.accounts.items():
+        world.declare_account(account=account, opening_balance=balance)
+    hold(world, run)
     world.track(_Household({0: 500}))
     capture = FinancialCapture(world, capture="forensic")
     world.start()
@@ -938,19 +908,23 @@ def test_a_composed_world_has_only_the_domains_it_declares() -> None:
     assert world.stop is None
     assert checking(world) == 9500
     book = world.book()
-    assert (book.bonds, book.properties, book.mortgages, book.tlh_portfolios) == ([], [], [], [])
+    assert (book.bonds, book.properties, book.mortgages, book.tlh_portfolios) == (None, None, [], None)
     financial = capture.financial()
-    assert financial is not None
-    assert not financial.bond_cashflows
-    assert not financial.property_purchases
-    assert not financial.tlh_financial_effects
+    assert (
+        financial.tlh_financial_effects,
+        financial.private_equity,
+        financial.bond_cashflows,
+        financial.distributions,
+        financial.properties,
+    ) == (None,) * 5
     with pytest.raises(ValueError, match="no managed portfolio"):
         world.managed_portfolios()
     with pytest.raises(ValueError, match="before starting"):
-        world.declare_pool(run.scenario.holding_pools[0])
+        declare_pool(world, run.holding_pools[0])
     with pytest.raises(ValueError, match="missing public security series"):
-        World(MarketPath.from_run(run, 0), horizon_months=2).declare_pool(
-            replace(run.scenario.holding_pools[0], asset_id="test-unpriced")
+        declare_pool(
+            World(MarketPath(run.series, 0, rollout_count=1), horizon_months=2),
+            replace(run.holding_pools[0], asset_id=AssetId("test-unpriced")),
         )
 
 
@@ -960,7 +934,7 @@ class _Deadbeat(EconomicAgent):
 
 
 def test_an_unpaid_installment_stops_the_path_and_leaves_the_contract_open() -> None:
-    world = World.from_run(actor_run(horizon=3), 0)
+    world = composed(situation(horizon=3), 0)
     mortgage = loan()
     world.track(_Deadbeat(HOUSEHOLD))
     world.track(mortgage)
@@ -970,19 +944,21 @@ def test_an_unpaid_installment_stops_the_path_and_leaves_the_contract_open() -> 
     world.step()
     assert world.finished
     assert world.stop == UnpaidClaims(month=1, claims=[ClaimId(month=1, index=0)])
-    assert (mortgage.active, world.mortgage_principal("test-loan"), checking(world)) == (True, 6000, 10_000)
+    assert (mortgage.active, world.mortgage_principal(LiabilityId("test-loan")), checking(world)) == (
+        True,
+        6000,
+        10_000,
+    )
 
 
 def test_tracked_bills_name_a_declared_payer_and_no_property() -> None:
-    world = World.from_run(actor_run(), 0)
+    world = composed(situation(), 0)
     with pytest.raises(ValueError, match="property"):
-        world.track(Biller(replace(rent().spec, property_id="test-home")))
+        world.track(rent(property_id=PropertyId("test-home")))
     with pytest.raises(ValueError, match="unknown actor"):
-        world.track(
-            Biller(replace(rent().spec, from_account=AccountRef(agent_id="test-nobody", account_id="checking")))
-        )
+        world.track(rent(from_account=AccountRef(agent_id=AgentId("test-nobody"), account_id=AccountId("checking"))))
     with pytest.raises(ValueError, match="not declared"):
-        world.track(Biller(replace(rent().spec, from_account=AccountRef(agent_id=HOUSEHOLD, account_id="test-none"))))
+        world.track(rent(from_account=AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("test-none"))))
     world.track(rent())
     world.start()
     with pytest.raises(ValueError, match="before starting"):
@@ -990,23 +966,30 @@ def test_tracked_bills_name_a_declared_payer_and_no_property() -> None:
 
 
 def test_tracked_mortgages_open_the_ledger_once_before_the_world_starts() -> None:
-    world = World.from_run(actor_run(), 0)
+    world = composed(situation(), 0)
     with pytest.raises(ValueError, match="outstanding"):
         world.track(loan(None))
     with pytest.raises(ValueError, match="unknown actor"):
         world.track(
-            Mortgage(replace(loan().terms, borrower=AccountRef(agent_id="test-nobody", account_id="checking")), 6000)
+            Mortgage(
+                replace(
+                    loan().terms, borrower=AccountRef(agent_id=AgentId("test-nobody"), account_id=AccountId("checking"))
+                ),
+                6000,
+            )
         )
     with pytest.raises(ValueError, match="not declared"):
         world.track(
-            Mortgage(replace(loan().terms, borrower=AccountRef(agent_id=HOUSEHOLD, account_id="test-none")), 6000)
+            Mortgage(
+                replace(loan().terms, borrower=AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("test-none"))), 6000
+            )
         )
     world.track(loan())
     with pytest.raises(ValueError, match="duplicate"):
         world.track(loan())
     world.start()
     with pytest.raises(ValueError, match="before starting"):
-        world.track(Mortgage(replace(loan().terms, liability_id="test-second"), 6000))
+        world.track(Mortgage(replace(loan().terms, liability_id=LiabilityId("test-second")), 6000))
     with pytest.raises(ValueError, match="servicing statement"):
         loan().handle(MonthOpened(month=0))
 

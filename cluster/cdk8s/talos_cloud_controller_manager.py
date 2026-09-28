@@ -6,17 +6,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref, oci_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "talos-cloud-controller-manager"
 NAMESPACE = "kube-system"
@@ -27,12 +22,7 @@ _PORT = 50258
 
 def helmrepository_chart(app: App) -> Chart:
     chart = Chart(app, "helmrepository", disable_resource_name_hashes=True)
-    HelmRepository(
-        chart,
-        "repository",
-        metadata=metadata(_REPOSITORY, NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", type=HelmRepositorySpecType.OCI, url="oci://ghcr.io/siderolabs/charts"),
-    )
+    oci_helm_repository(chart, _REPOSITORY, NAMESPACE, url="oci://ghcr.io/siderolabs/charts")
     return chart
 
 
@@ -58,7 +48,7 @@ def helmrelease_chart(app: App) -> Chart:
             "service": {"port": _PORT, "containerPort": _PORT},
             "enabledControllers": ["cloud-node", "cloud-node-lifecycle", "node-csr-approval"],
             "tolerations": [
-                {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"},
+                node_scheduling.CONTROL_PLANE_TOLERATION,
                 {"key": "node.cloudprovider.kubernetes.io/uninitialized", "operator": "Exists", "effect": "NoSchedule"},
             ],
             "transformations": [
@@ -79,13 +69,5 @@ def helmrelease_chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, helmrepository_chart, helmrelease_chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=["helmrepository.k8s.yaml", "helmrelease.k8s.yaml"]),
-    )
-
-
-def talos_cloud_controller_manager(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    return flux_kustomization(chart, NAME, artifact, interval="30m", target_namespace=NAMESPACE)
+def talos_cloud_controller_manager(chart: Chart, directory: RenderedDirectory) -> Kustomization:
+    return flux_kustomization(chart, NAME, directory, interval="30m", target_namespace=NAMESPACE)

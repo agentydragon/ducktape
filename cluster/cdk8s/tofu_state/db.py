@@ -25,8 +25,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cnpg
-from cluster.cdk8s.agentplane import node_scheduling
+from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -68,7 +67,7 @@ def chart(app: App) -> Chart:
         postgresql=ClusterSpecPostgresql(
             parameters={"tcp_keepalives_idle": "60", "tcp_keepalives_interval": "10", "tcp_keepalives_count": "6"}
         ),
-        node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh-ssd",
         size="1Gi",
         managed=ClusterSpecManaged(

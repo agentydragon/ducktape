@@ -10,8 +10,7 @@
 # same Kubernetes Secret used by the Forgejo tenant and its pull consumers.
 #
 # Auth: fine-grained GitHub PAT stored as K8s Secret (SOPS-deployed by Flux).
-# Required PAT permissions are documented in
-# cluster/k8s/github-secrets-sync/README.md.
+# Required PAT permissions are documented in README.md.
 
 provider "github" {
   owner = "agentydragon"

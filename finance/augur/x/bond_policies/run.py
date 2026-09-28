@@ -1,10 +1,9 @@
 """Run bond-construction and spending cells through Augur's canonical household engine.
 
 Construction functions supply unit prices and coupons; this module owns accounts,
-withdrawals, funding policy, and output. No `Scenario`: each spending cell is a
-`Situation` composed straight onto one `World` per path. The supplied curves are
-stipulated stress paths, not sampled evidence or forecasts, so cells have no
-probability weights.
+withdrawals, funding policy, and output. Each spending cell is a `Situation` composed
+straight onto one `World` per path. The supplied curves are stipulated stress paths,
+not sampled evidence or forecasts, so cells have no probability weights.
 """
 
 import argparse
@@ -22,27 +21,20 @@ from finance.augur.model.series import SecurityDistributionKey, SecurityKey, Sec
 from finance.augur.policy.funding import fund_claims
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Record
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.claims import ObligationType
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import (
     currency_amount_to_quanta,
     quantity_scale_for_asset,
     quantity_to_quanta,
     rate_to_ppb,
 )
-from finance.augur.sim.ids import AgentId
-from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedDistribution,
-    PreparedDistributionSlice,
-    PreparedHoldingPool,
-    PreparedLot,
-    PreparedObligation,
-    PreparedSeries,
-)
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable
+from finance.augur.sim.market_path import MarketPath, Series
+from finance.augur.sim.money import USD
 from finance.augur.sim.results import Finished, Rollout, Stop, UnpaidClaim
-from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, ObligationType
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 from finance.augur.x.bond_policies.construction import (
@@ -54,9 +46,9 @@ from finance.augur.x.bond_policies.construction import (
 
 QUANTUM = Decimal("0.01")
 HOUSEHOLD = AgentId("example_household")
-WORLD = "example_world"
-CHECKING = "checking"
-BROKERAGE = "brokerage"
+WORLD = AgentId("example_world")
+CHECKING = AccountId("checking")
+BROKERAGE = AccountId("brokerage")
 STRATEGY = SecuritySymbol("EXAMPLE_BOND_STRATEGY")
 INITIAL_WEALTH = Decimal(100_000)
 INITIAL_UNIT_PRICE = Decimal(100)
@@ -66,7 +58,7 @@ INITIAL_UNIT_PRICE = Decimal(100)
 class Situation:
     """What every path of a spending cell shares; `compose` declares it onto one World per path."""
 
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     rollout_count: int
     horizon_months: int
     annual_spending: int  # currency quanta, claimed at months 12, 24, ... inside the horizon; zero claims nothing
@@ -90,9 +82,7 @@ def situation(construction: DatedConstruction | ProxyConstruction, *, annual_spe
         horizon_months=horizon_months,
     )
     return Situation(
-        series=compile_series(
-            paths, rollout_count=rollout_count, horizon_months=horizon_months, currency_quantum=QUANTUM
-        ),
+        series=compile_series(paths, rollout_count=rollout_count, horizon_months=horizon_months, currency=USD),
         rollout_count=rollout_count,
         horizon_months=horizon_months,
         annual_spending=int(currency_amount_to_quanta(annual_spending, quantum=QUANTUM)),
@@ -110,52 +100,42 @@ def compose(case: Situation, rollout_id: int) -> World:
     world = World(
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
-        income_sources=(ORDINARY_INCOME, InterestIncome(issuer_jurisdiction_id=None)),
+        income_sources=(ORDINARY_INCOME, InterestIncome(character=Taxable())),
     )
     for agent_id in (HOUSEHOLD, WORLD):
-        world.declare_account(
-            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
-        )
+        world.declare_account(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
     scale = quantity_scale_for_asset(SecurityKey(symbol=STRATEGY))
-    world.declare_pool(
-        PreparedHoldingPool(agent_id=HOUSEHOLD, account_id=BROKERAGE, asset_id=str(STRATEGY), quantity_scale=scale)
-    )
-    world.hold(
-        PreparedLot(
-            lot_id="example_initial_strategy",
-            agent_id=HOUSEHOLD,
-            account_id=BROKERAGE,
-            asset_id=str(STRATEGY),
-            purchase_month=-1,
-            quantity_scale=scale,
-            units=int(quantity_to_quanta(INITIAL_WEALTH / INITIAL_UNIT_PRICE, scale=scale)),
-            basis=int(currency_amount_to_quanta(INITIAL_WEALTH, quantum=QUANTUM)),
-        )
+    world.declare_pool(agent_id=HOUSEHOLD, account_id=BROKERAGE, asset_id=AssetId(STRATEGY), quantity_scale=scale)
+    world.hold_lot(
+        lot_id=LotId("example_initial_strategy"),
+        agent_id=HOUSEHOLD,
+        account_id=BROKERAGE,
+        asset_id=AssetId(STRATEGY),
+        purchase_month=-1,
+        quantity_scale=scale,
+        units=quantity_to_quanta(INITIAL_WEALTH / INITIAL_UNIT_PRICE, scale=scale),
+        basis=int(currency_amount_to_quanta(INITIAL_WEALTH, quantum=QUANTUM)),
     )
     world.declare_distribution(
-        PreparedDistribution(
-            agent_id=HOUSEHOLD,
-            holding_account_id=BROKERAGE,
-            asset_id=str(STRATEGY),
-            to_account_id=CHECKING,
-            tax_character=(PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), issuer_jurisdiction_id=None),),
-        )
+        agent_id=HOUSEHOLD,
+        holding_account_id=BROKERAGE,
+        asset_id=AssetId(STRATEGY),
+        to_account_id=CHECKING,
+        tax_character={InterestIncome(character=Taxable()): rate_to_ppb(1)},
     )
     if case.annual_spending > 0:
         for month in range(12, case.horizon_months, 12):
             world.track(
                 Biller(
-                    PreparedObligation(
-                        month=month,
-                        obligation_id=f"annual_spending_{month}",
-                        obligation_type=ObligationType.CASH_SPEND,
-                        from_account=AccountRef(agent_id=HOUSEHOLD, account_id=CHECKING),
-                        to_account=AccountRef(agent_id=WORLD, account_id=CHECKING),
-                        amount_due=case.annual_spending,
-                        property_id=None,
-                        deduction_category=None,
-                        deductible_fraction_ppb=rate_to_ppb(1.0),
-                    )
+                    schedule=Once(month=month),
+                    obligation_id=f"annual_spending_{month}",
+                    obligation_type=ObligationType.CASH_SPEND,
+                    from_account=AccountRef(agent_id=HOUSEHOLD, account_id=CHECKING),
+                    to_account=AccountRef(agent_id=WORLD, account_id=CHECKING),
+                    amount_due=case.annual_spending,
+                    property_id=None,
+                    deduction_category=None,
+                    deductible_fraction_ppb=rate_to_ppb(1),
                 )
             )
     return world
@@ -170,7 +150,7 @@ def execute(
         batch = session.start()
         while not isinstance(batch, Finished):
             batch = session.advance(
-                fund_claims(batch, targets={(BROKERAGE, str(STRATEGY)): 1}, cash_account_id=CHECKING)
+                fund_claims(batch, targets={(BROKERAGE, AssetId(STRATEGY)): 1}, cash_account_id=CHECKING)
             )
         return batch.rollouts
     finally:

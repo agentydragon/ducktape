@@ -45,7 +45,7 @@ Use a new directory. It retains `policies.json`, `paths.json`, and compact
 selected `*.trace-N.json` actor results with detailed traces; replay re-composes the
 situation with fresh policy memory on the original path IDs. There is no
 execution-input artifact: the situation is code (`situation.py:compose` on the Trinity
-paths), declared onto each path's `World` without a `Scenario`.
+paths), declared onto each path's `World`.
 
 Every result has a summary containing observed account cash/public marks, exact
 ending books, canonical tax/payment records and precise stop reasons. No post-stop
@@ -99,8 +99,6 @@ The real cProfile records world composition, Python policy authoring,
 action/observation transfer, native steps and final JSON decoding. Path compilation is
 outside the profile; process memory includes it. These are not isolated native
 compute or heap measurements, and no cost budget or language verdict is inferred.
-Historical native-control measurements remain pinned to their measured commit in
-the [profiling investigation](../../../../finance/augur/debug/augur_python_policy_batches_20260909.md).
 
 `compare_test` and `python_policy_test` run the actual study/profile CLIs with
 synthetic data, compare scalar/batch and compact/forensic outcomes, and exercise

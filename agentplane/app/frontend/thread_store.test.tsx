@@ -401,16 +401,16 @@ function thread(sync: FakeSync, count: number, epoch = "epoch-1"): void {
 
 it("opens one shape on the tail and pages older rows into it", async () => {
   const sync = stubSync();
-  thread(sync, 70);
+  thread(sync, 130);
   const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
-  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(90));
   expect(itemsShown(container)).toContain("item-41@41");
 
   const older = container.querySelector("button")!;
   await act(async () => older.click());
-  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(60));
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(120));
   await act(async () => older.click());
-  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(70));
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(130));
   expect(older.disabled).toBe(true);
 
   // The proxy admits these forms exactly.
@@ -433,30 +433,36 @@ function olderPages(sync: FakeSync): Subset[] {
 
 it("shows a page before the tail as loading until it lands, and asks for it once however often asked", async () => {
   const sync = stubSync();
-  thread(sync, 70);
+  thread(sync, 130);
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(90));
+  // Reading the tail in is itself several of these same-shaped requests; only ones from here on
+  // are the button's.
+  const before = olderPages(sync).length;
   let land: () => void = () => undefined;
   sync.olderPage = () => new Promise((resolve) => (land = () => resolve(undefined)));
-  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
-  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
   const older = container.querySelector("button")!;
 
   await act(async () => older.click());
-  await vi.waitFor(() => expect(olderPages(sync)).toHaveLength(1));
+  await vi.waitFor(() => expect(olderPages(sync).length - before).toBe(1));
   expect(older.getAttribute("aria-busy")).toBe("true");
   await act(async () => older.click());
 
   await act(async () => land());
-  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(60));
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(120));
   expect(older.getAttribute("aria-busy")).toBe("false");
-  expect(olderPages(sync)).toHaveLength(1);
+  expect(olderPages(sync).length - before).toBe(1);
 });
 
 it("asks for no page before the tail after one stopped the window", async () => {
   const sync = stubSync();
-  thread(sync, 70);
-  sync.olderPage = async () => Response.json({ message: "test refusal" }, { status: 400 });
+  thread(sync, 130);
   const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
-  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(90));
+  // Reading the tail in is itself several of these same-shaped requests; only ones from here on
+  // are the button's.
+  const before = olderPages(sync).length;
+  sync.olderPage = async () => Response.json({ message: "test refusal" }, { status: 400 });
   const older = container.querySelector("button")!;
 
   await act(async () => older.click());
@@ -464,14 +470,15 @@ it("asks for no page before the tail after one stopped the window", async () => 
   await vi.waitFor(() => expect(older.getAttribute("aria-busy")).toBe("false"));
   await act(async () => older.click());
   expect(older.getAttribute("aria-busy")).toBe("false");
-  expect(olderPages(sync)).toHaveLength(1);
+  expect(olderPages(sync).length - before).toBe(1);
 });
 
 it("asks for no page before the tail after one found the window's epoch gone", async () => {
   const sync = stubSync();
-  thread(sync, 70);
+  thread(sync, 130);
   const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
-  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(90));
+  const before = olderPages(sync).length;
   // The scope read the 410 prompts is held, so the retired window stays on screen.
   sync.folded = false;
   sync.epoch = "epoch-2";
@@ -482,7 +489,7 @@ it("asks for no page before the tail after one found the window's epoch gone", a
   await vi.waitFor(() => expect(older.getAttribute("aria-busy")).toBe("false"));
   await act(async () => older.click());
   expect(older.getAttribute("aria-busy")).toBe("false");
-  expect(olderPages(sync)).toHaveLength(1);
+  expect(olderPages(sync).length - before).toBe(1);
 });
 
 it("re-issues a scope read the server answered without a fold at once, and opens the thread once it has one", async () => {
@@ -505,37 +512,37 @@ it("re-issues a scope read the server answered without a fold at once, and opens
 
 it("applies live changes to the rows it holds, and new rows, but not rows it has not loaded", async () => {
   const sync = stubSync();
-  thread(sync, 70);
+  thread(sync, 130);
   const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
-  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(90));
 
   await sync.send("entities", (relation) => [
-    change(relation, "update", item(70, "epoch-1", { revision_cursor: "71" })),
+    change(relation, "update", item(130, "epoch-1", { revision_cursor: "131" })),
     change(relation, "update", item(5, "epoch-1", { revision_cursor: "72" })),
-    change(relation, "insert", item(71)),
+    change(relation, "insert", item(131)),
   ]);
 
-  await vi.waitFor(() => expect(itemsShown(container)).toContain("item-71@71"));
-  expect(itemsShown(container)).toContain("item-70@71");
+  await vi.waitFor(() => expect(itemsShown(container)).toContain("item-131@131"));
+  expect(itemsShown(container)).toContain("item-130@131");
   expect(itemsShown(container).some((shown) => shown.startsWith("item-5@"))).toBe(false);
 });
 
 it("keeps reading the live log from where it was when a subset answers from further along", async () => {
   const sync = stubSync();
-  thread(sync, 70);
+  thread(sync, 130);
   const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
-  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(90));
   const reading = await sync.liveOffset("entities");
 
   await act(async () => container.querySelector("button")!.click());
-  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(60));
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(120));
 
   // The stream reads on from where it was, so what the subset's position is past still reaches it.
   expect(await sync.liveOffset("entities")).toBe(reading);
   await sync.send("entities", (relation) => [
-    change(relation, "update", item(70, "epoch-1", { revision_cursor: "71" })),
+    change(relation, "update", item(130, "epoch-1", { revision_cursor: "131" })),
   ]);
-  await vi.waitFor(() => expect(itemsShown(container)).toContain("item-70@71"));
+  await vi.waitFor(() => expect(itemsShown(container)).toContain("item-130@131"));
 });
 
 it("says it is reconnecting while Electric's client retries a failed read, until one succeeds", async () => {
@@ -575,21 +582,24 @@ it("sends the browser to log in when a shape read finds the login expired, and s
 
 it("does not take a live read it abandoned for a subset as a failed one", async () => {
   const sync = stubSync();
-  thread(sync, 70);
+  thread(sync, 130);
   sync.liveUnanswered = true;
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(90));
+  await vi.waitFor(() => expect(sync.waiting).toBe(1));
+  // Reading the tail in is itself several of these same-shaped requests; only ones from here on
+  // are the button's.
+  const before = olderPages(sync).length;
   let land: () => void = () => undefined;
   sync.olderPage = () => new Promise((resolve) => (land = () => resolve(undefined)));
-  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
-  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
-  await vi.waitFor(() => expect(sync.waiting).toBe(1));
 
   // The page's subset aborts the live read still awaiting its answer, and holds the stream until it lands.
   await act(async () => container.querySelector("button")!.click());
-  await vi.waitFor(() => expect(olderPages(sync)).toHaveLength(1));
+  await vi.waitFor(() => expect(olderPages(sync).length - before).toBe(1));
   expect(sync.waiting).toBe(0);
   expect(reconnecting(container)).toBe(false);
   await act(async () => land());
-  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(60));
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(120));
   expect(reconnecting(container)).toBe(false);
 });
 
@@ -640,17 +650,17 @@ it("re-reads the scope as soon as the live log retires its epoch", async () => {
 
 it("reloads as many rows as it held when Electric retires the shape's log, dropping deleted ones", async () => {
   const sync = stubSync();
-  thread(sync, 70);
+  thread(sync, 130);
   const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
-  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(90));
   await act(async () => container.querySelector("button")!.click());
-  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(60));
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(120));
 
   sync.entities = sync.entities.filter((row) => row.entity_id !== "item-50");
   await sync.rotate("entities", "entities-2");
 
   await vi.waitFor(() => expect(itemsShown(container)).not.toContain("item-50@50"));
-  expect(itemsShown(container)).toHaveLength(60);
+  expect(itemsShown(container)).toHaveLength(120);
   expect(itemsShown(container)).toContain("item-10@10");
 });
 

@@ -15,7 +15,7 @@ def presets() -> PresetCatalog:
             "public-coder": SandboxPreset(
                 title="Public coder",
                 template="runner",
-                policies=["github-public"],
+                policies=["github-agentydragon-agent"],
                 thread_preset="public-coder-codex",
                 bootstrap="mkdir -p /state/workspaces",
             )
@@ -39,7 +39,7 @@ def test_sandbox_preset_expands_to_fields_the_operator_can_set_individually(pres
         "name": "public-coder",
         "title": "Public coder",
         "template": "runner",
-        "policies": ["github-public"],
+        "policies": ["github-agentydragon-agent"],
         "action_policy_sets": [],
         "thread_defaults": {
             "harness": "HARNESS_CODEX",

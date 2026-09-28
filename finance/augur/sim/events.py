@@ -72,16 +72,20 @@ TAX_BREAKDOWN_EVENT_SCHEMA = pl.Schema(
         # Federal SALT deduction allowed this year: property tax paid this calendar year + state
         # income tax accrued this year for the profile's non-federal jurisdictions, capped per
         # the federal SALT schedule. Zero on state-jurisdiction links (SALT is a federal-only
-        # Schedule A concept) and on federal links without a FederalSaltDeductionPolicy.
+        # Schedule A concept) and on federal links with no SALT deduction declared.
         "salt_deduction_quanta": pl.Int64(),
-        # Total itemized deductions used after comparing against the standard: MID + SALT today,
-        # plus other Schedule A lines once we model them. Equals MID + SALT when itemized >
-        # standard; equals standard otherwise.
+        # Itemized deductions before comparing against the standard: MID plus, federally, SALT, and
+        # in a jurisdiction that itemizes real property tax without a cap, the owner's ad-valorem
+        # tax paid.
         "itemized_deduction_quanta": pl.Int64(),
         "ordinary_taxable_quanta": pl.Int64(),
         "capital_gain_taxable_quanta": pl.Int64(),
         "ordinary_tax_quanta": pl.Int64(),
         "capital_gain_tax_quanta": pl.Int64(),
+        # Additional taxes over a threshold, included in `total_tax_quanta`; zero where the
+        # jurisdiction levies none.
+        "net_investment_income_tax_quanta": pl.Int64(),
+        "taxable_income_surtax_quanta": pl.Int64(),
         "total_tax_quanta": pl.Int64(),
     }
 )
@@ -136,10 +140,11 @@ PROPERTY_PURCHASE_EVENT_SCHEMA = pl.Schema(
         "month_index": pl.Int64(),
         "cause_id": pl.Utf8(),
         "property_id": pl.Utf8(),
-        "location_id": pl.Utf8(),
+        "market": pl.Utf8(),
         "buyer_agent_id": pl.Utf8(),
         "purchase_price_quanta": pl.Int64(),
         "closing_cost_quanta": pl.Int64(),
+        "transfer_tax_quanta": pl.Int64(),
         "adjusted_basis_quanta": pl.Int64(),
         "stake_contribution_quanta": pl.Int64(),
         "equity_ledger_quanta": pl.Int64(),
@@ -247,7 +252,7 @@ TLH_FINANCIAL_EFFECT_SCHEMA = pl.Schema(
         "short_term_gain_quanta": pl.Int64(),
         "long_term_gain_quanta": pl.Int64(),
         "basis_change_quanta": pl.Int64(),
-        "interest_income_quanta": pl.Int64(),
+        "income_quanta": pl.Int64(),
     }
 )
 
@@ -282,6 +287,9 @@ PROPERTY_SALE_EVENT_SCHEMA = pl.Schema(
         "month_index": pl.Int64(),
         "property_id": pl.Utf8(),
         "gross_proceeds_quanta": pl.Int64(),
+        "commission_quanta": pl.Int64(),
+        "escrow_title_quanta": pl.Int64(),
+        "transfer_tax_quanta": pl.Int64(),
         "mortgage_payoff_quanta": pl.Int64(),
         "net_cash_to_owner_quanta": pl.Int64(),
         "realized_gain_quanta": pl.Int64(),
@@ -561,13 +569,3 @@ def _decode_frame(spec: FrameSpec, rows: list[dict[str, Any]]) -> pl.DataFrame:
                 f"and omitted {sorted(declared - present)}"
             )
     return pl.DataFrame(rows, schema=spec.schema)
-
-
-def decode_serialized_event_log(output: Mapping[str, Any]) -> EventLog:
-    """Decode canonical event frames at the simulator result boundary."""
-    ids = (
-        [rollout["rollout_id"] for rollout in output["rollouts"]]
-        if "rollouts" in output
-        else [output["financial"]["rollout_id"]]
-    )
-    return EventLog.from_serialized(output["event_frames"], rollout_ids=ids)

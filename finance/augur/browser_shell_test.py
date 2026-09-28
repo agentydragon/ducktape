@@ -32,10 +32,10 @@ if TYPE_CHECKING:
 
 # A single Base scenario that buys the fixture property `location_a_property` (so the recurring
 # property-expense events — tax, insurance, maintenance — fire) plus three mid-horizon lifecycle
-# events. Encoded in the `?scenarios=` base+overrides codec (v2); the horizon rides the tab-shared
+# events. Encoded in the `?scenarios=` base+overrides codec (v3); the horizon rides the tab-shared
 # `?h=` control and every other knob inherits `productInputDefaults`.
 _PROPERTY_LIFECYCLE_SCENARIOS = {
-    "v": 2,
+    "v": 3,
     "base": {
         "label": "Base",
         "input": {
