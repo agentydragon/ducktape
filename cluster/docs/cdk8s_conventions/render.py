@@ -14,7 +14,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 from markupsafe import Markup, escape
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from util.bazel.workspace import get_build_workspace_directory
 
@@ -31,7 +31,7 @@ _SECTIONS = (
     ("examples", "Worked examples"),
     ("decisions", "Decisions for you"),
     ("prs", "Open PRs"),
-    ("migration", "Migration"),
+    ("migration", "What is left"),
     ("agents-md", "AGENTS.md changes"),
     ("rejected", "Rejected alternatives"),
     ("method", "How this was made"),
@@ -58,16 +58,21 @@ class Frequency(StrEnum):
 class Disposition(StrEnum):
     LAND = "land as is"
     REVISE = "revise"
+    HOLD = "hold"
     CLOSE = "close"
-    FOLD = "fold into migration"
-    MERGED = "merged"
 
 
-class VerificationStatus(StrEnum):
-    VERIFIED = "verified"
-    VERIFIED_AFTER_FIXES = "verified after fixes"
-    VERIFIED_EARLIER = "verified on an earlier devel"
-    UNVERIFIED = "not verified"
+class DecisionStatus(StrEnum):
+    OPEN = "open"
+    POSTPONED = "postponed"
+
+
+class Track(StrEnum):
+    """Migration tracks, in the order the page lists them."""
+
+    READY = "ready now"
+    DECISION = "waiting on a decision"
+    HELD = "postponed or deferred"
 
 
 class Pattern(_Model):
@@ -108,6 +113,7 @@ class Convention(_Model):
     id: str
     name: str
     rule: str
+    adoption: str = Field(description="How far devel follows the rule today, stated as a fact.")
     when_to_use: str
     when_not: str
     signature_shape: str
@@ -127,9 +133,8 @@ class MatrixRow(_Model):
 
 
 class Verification(_Model):
-    status: VerificationStatus
+    rendered_at: str = Field(description="The revision (or revisions) the after code was last synthesized on.")
     evidence: str
-    fixed: str
 
 
 class Example(_Model):
@@ -140,10 +145,11 @@ class Example(_Model):
     after: str
     rendered_effect: str
     conventions_shown: list[str]
-    verification: Verification | None = None
+    verification: Verification
 
 
 class Decision(_Model):
+    status: DecisionStatus
     question: str
     recommendation: str
     tradeoff: str
@@ -157,7 +163,9 @@ class OpenPr(_Model):
 
 
 class MigrationStep(_Model):
+    track: Track
     step: str
+    gate: str = Field(description="What the step waits on: `Ready`, a decision, or an earlier step.")
     scope: str
     risk: str
 
@@ -212,6 +220,7 @@ class Proposal(_Model):
     examples: list[Example]
     decisions: list[Decision]
     open_prs: list[OpenPr]
+    migration_intro: str
     migration: list[MigrationStep]
     agents_md_changes: list[str]
     rejected: list[Rejected]
@@ -221,6 +230,13 @@ class Proposal(_Model):
     def patterns_used_by(self, row: MatrixRow) -> set[str]:
         by_id = {c.id: c for c in self.conventions}
         return {p for c in row.chosen_conventions for p in by_id[c].patterns_used}
+
+    def tracks(self) -> list[tuple[Track, list[MigrationStep]]]:
+        """The migration grouped by track, in `Track` order; raises if the steps are not already grouped so."""
+        order = [step.track for step in self.migration]
+        if order != sorted(order, key=list(Track).index):
+            raise ValueError(f"migration steps must be grouped by track in Track order: {order}")
+        return [(track, [step for step in self.migration if step.track is track]) for track in Track]
 
 
 def inline(text: str) -> Markup:

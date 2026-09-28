@@ -178,6 +178,7 @@
   <article class="conv" id="{{ c.id }}">
     <header><span class="cid">{{ c.id }}</span><h3>{{ c.name }}</h3></header>
     <div class="rule">{{ c.rule | rich }}</div>
+    <div class="adoption"><span class="lbl">On devel</span>{{ c.adoption | rich }}</div>
     <div class="pats">{% for pid in c.patterns_used %}{{ chip(pid ~ " " ~ pattern_names[pid]) }} {% endfor %}</div>
     {{ code(c.signature_shape) }}
     <dl>
@@ -200,19 +201,16 @@
   </div>
   {% for ex in p.examples %}
   <article class="ex" id="ex-{{ ex.id }}">
-    <header><span class="cid">{{ ex.id }}</span><h3>{{ ex.title }}</h3>{% if ex.verification %}{{ chip(ex.verification.status) }}{% endif %}</header>
+    <header><span class="cid">{{ ex.id }}</span><h3>{{ ex.title }}</h3><span class="chip chip-rev">after rendered at {{ ex.verification.rendered_at }}</span></header>
     <div class="target">Deploys to: {{ ex.deploys_to | inline }} · shows {% for cid in ex.conventions_shown %}<a class="cid" href="#{{ cid }}">{{ cid }}</a> {% endfor %}</div>
     <div class="cols">
       <div class="col before"><span class="lbl">Today</span>{{ code(ex.before) }}</div>
       <div class="col after"><span class="lbl">Proposed</span>{{ code(ex.after) }}</div>
     </div>
     <div class="effect"><span class="lbl">Rendered effect</span>{{ ex.rendered_effect | rich }}</div>
-    {% if ex.verification %}
     <details class="vnote"><summary>How this example was checked</summary>
       {{ ex.verification.evidence | rich }}
-      {% if ex.verification.fixed %}<span class="lbl">Fixed during verification</span>{{ ex.verification.fixed | rich }}{% endif %}
     </details>
-    {% endif %}
   </article>
   {% endfor %}
 </section>
@@ -221,7 +219,7 @@
   {{ heading("decisions") }}
   <ol class="decisions">
   {% for d in p.decisions %}
-    <li><div class="q">{{ d.question | rich }}</div><div><span class="lbl">Recommendation</span>{{ d.recommendation | rich }}</div><div class="t"><span class="lbl">Trade-off</span>{{ d.tradeoff | rich }}</div></li>
+    <li{% if d.status == "postponed" %} class="postponed"{% endif %}>{% if d.status == "postponed" %}<div>{{ chip(d.status) }}</div>{% endif %}<div class="q">{{ d.question | rich }}</div><div><span class="lbl">Recommendation</span>{{ d.recommendation | rich }}</div><div class="t"><span class="lbl">Trade-off</span>{{ d.tradeoff | rich }}</div></li>
   {% endfor %}
   </ol>
 </section>
@@ -240,11 +238,15 @@
 
 <section id="migration">
   {{ heading("migration") }}
+  <div class="prose">{{ p.migration_intro | rich }}</div>
+  {% for track, steps in p.tracks() %}
+  <h3 class="track">{{ chip(track) }}<span>{{ steps | length }} steps</span></h3>
   <ol class="steps">
-  {% for s in p.migration %}
-    <li><div class="st">{{ s.step | rich }}</div><div class="sc">{{ s.scope | rich }}</div><div class="sr"><span class="lbl">Risk</span>{{ s.risk | rich }}</div></li>
+  {% for s in steps %}
+    <li><div class="st">{{ s.step | rich }}</div><div class="sg"><span class="lbl">Gate</span>{{ s.gate | rich }}</div><div class="sc"><span class="lbl">Scope</span>{{ s.scope | rich }}</div><div class="sr"><span class="lbl">Risk</span>{{ s.risk | rich }}</div></li>
   {% endfor %}
   </ol>
+  {% endfor %}
 </section>
 
 <section id="agents-md">
