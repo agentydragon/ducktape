@@ -58,16 +58,16 @@ from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import node_scheduling, pod_policy
-from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console_config, database
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.settings_file import SettingsFile
 from haku.console.config import CONFIG_FILE_ENV
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.settings import Settings
-from util.settings_contract import checked_value, env_name, settings_file
+from util.settings_contract import checked_value, env_name
 
 NAMESPACE = "haku-console"
 NAME = "haku-console"
@@ -83,8 +83,6 @@ _STATIC_PORT = 8081
 _STATIC_SERVICE_PORT = 8080
 LABELS = {"app.kubernetes.io/name": NAME}
 _STATIC_LABELS = {"app.kubernetes.io/name": STATIC_NAME}
-_CONFIG_MAP_NAME = "haku-console-config"
-_CONFIG_DIR = "/etc/haku-console/config"
 # Hand-written siblings carrying Flux image-automation markers: the static image's tag,
 # projected as a file so /api/deployment reports the frontend revision without a
 # frontend-only release rolling the API, and the API image's own tag as an env var.
@@ -130,7 +128,7 @@ class Console(Construct):
         super().__init__(scope, id)
         self._secrets: dict[str, ISecret] = {}
         # Settings-file leaves the Deployment supplies from Secrets, so the file validates as
-        # the whole model with those filled in (settings_file's `supplied`).
+        # the whole model with those filled in (SettingsFile's `supplied`).
         self._supplied: list[tuple[str, ...]] = []
 
         # Narrow runtime identity: SubjectAccessReview for the Kubernetes-grant flow, plus
@@ -141,8 +139,16 @@ class Console(Construct):
         )
         self._add_rbac(service_account)
         env = self._container_env()
-        config_map = self._add_config()
-        self._add_deployment(service_account, env, config_map)
+        config = SettingsFile(
+            self,
+            "config",
+            metadata=ApiObjectMetadata(name="haku-console-config", namespace=NAMESPACE),
+            model=ConsoleConfigFile,
+            content=console_config.config(),
+            path="/etc/haku-console/config/config.yaml",
+            supplied=[path for path in self._supplied if path[0] in ConsoleConfigFile.model_fields],
+        )
+        self._add_deployment(service_account, env, config)
         self._add_service()
         self._add_service_monitor()
         self._add_static()
@@ -262,7 +268,6 @@ class Console(Construct):
                 (env_name(Settings, "haku_ui_url"), EnvValue.from_value("https://haku-ui.allegedly.works")),
                 (env_name(Settings, "auth_origin"), EnvValue.from_value(_AUTHENTIK)),
                 (env_name(Settings, "public_base_url"), EnvValue.from_value(PUBLIC_BASE_URL)),
-                (CONFIG_FILE_ENV, EnvValue.from_value(f"{_CONFIG_DIR}/config.yaml")),
                 (
                     env_name(Settings, "static_image_tag_file"),
                     EnvValue.from_value(f"{_STATIC_METADATA_DIR}/{_IMAGE_TAG_KEY}"),
@@ -320,17 +325,7 @@ class Console(Construct):
             ]
         )
 
-    def _add_config(self) -> ConfigMap:
-        supplied = [path for path in self._supplied if path[0] in ConsoleConfigFile.model_fields]
-        content = settings_file(ConsoleConfigFile, console_config.config(), supplied=supplied)
-        return ConfigMap(
-            self,
-            "config",
-            metadata=ApiObjectMetadata(name=_CONFIG_MAP_NAME, namespace=NAMESPACE),
-            data={"config.yaml": yaml_config(content)},
-        )
-
-    def _add_deployment(self, service_account: ServiceAccount, env: dict[str, EnvValue], config_map: ConfigMap) -> None:
+    def _add_deployment(self, service_account: ServiceAccount, env: dict[str, EnvValue], config: SettingsFile) -> None:
         deployment = Deployment(
             self,
             "deployment",
@@ -342,7 +337,7 @@ class Console(Construct):
                     # Only the API's own mounted ConfigMap and credentials, never reloader's
                     # blanket auto mode: the projected static-image metadata changes on every
                     # frontend release and must not restart API/MCP/background work.
-                    "configmap.reloader.stakater.com/reload": _CONFIG_MAP_NAME,
+                    "configmap.reloader.stakater.com/reload": config.config_map.name,
                     "secret.reloader.stakater.com/reload": ",".join(sorted(self._secrets)),
                 },
             ),
@@ -392,7 +387,7 @@ class Console(Construct):
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         container.mount("/tmp", Volume.from_empty_dir(self, "tmp-volume", "tmp"))
-        container.mount(_CONFIG_DIR, Volume.from_config_map(self, "config-volume", config_map), read_only=True)
+        config.mount_into(container, env=CONFIG_FILE_ENV)
         static_metadata = ConfigMap.from_config_map_name(self, "static-metadata-ref", STATIC_METADATA_CONFIG_MAP)
         container.mount(
             _STATIC_METADATA_DIR,
