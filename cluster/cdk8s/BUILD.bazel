@@ -404,6 +404,7 @@ py_library(
         ":manifest_roots",
         "//cluster/cdk8s/cert_manager:config",
         "//cluster/cdk8s/providers/gateway_api:gateway",
+        "//cluster/cdk8s/providers/gateway_api:gateway_api_gateway",
         "//cluster/cdk8s/providers/gateway_api:http_route",
         "//cluster/cdk8s/providers/gateway_api:httproute",
         "//cluster/cdk8s/providers/gateway_api:listener",

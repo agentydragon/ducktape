@@ -22,8 +22,6 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
 )
 from constructs import Construct
 from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
     HttpRouteSpecRules,
     HttpRouteSpecRulesBackendRefs,
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
@@ -35,7 +33,7 @@ from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
-from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter, RouteMatch
+from cluster.cdk8s.providers.gateway_api.http_route import HttpRoute, RouteFilter, RouteMatch
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/study-casino"
 _NAME = "study-casino"
@@ -304,23 +302,21 @@ def _route(scope: Construct) -> None:
         scope,
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=["casino.allegedly.works"],
-            rules=[
-                # Hermetic font files — content-stable; cache forever.
-                _cache_rule("/fonts/", _IMMUTABLE),
-                # Vite's content-hashed bundle output (after frontend migrates to Vite):
-                # /assets/<name>-<hash>.{js,css,…}. URL changes whenever bytes change,
-                # so safe to cache forever.
-                _cache_rule("/assets/", _IMMUTABLE),
-                # Everything else (index.html, sw.js, manifest, icon, current /main.js,
-                # API endpoints): do not store. Bazel-normalized mtimes can make app-shell
-                # validators lie across deploys, while hashed /assets/ remain immutable
-                # above.
-                _cache_rule("/", "no-store"),
-            ],
-        ),
+        parent_refs=[cluster_gateway_parent_ref()],
+        hostnames=["casino.allegedly.works"],
+        rules=[
+            # Hermetic font files — content-stable; cache forever.
+            _cache_rule("/fonts/", _IMMUTABLE),
+            # Vite's content-hashed bundle output (after frontend migrates to Vite):
+            # /assets/<name>-<hash>.{js,css,…}. URL changes whenever bytes change,
+            # so safe to cache forever.
+            _cache_rule("/assets/", _IMMUTABLE),
+            # Everything else (index.html, sw.js, manifest, icon, current /main.js,
+            # API endpoints): do not store. Bazel-normalized mtimes can make app-shell
+            # validators lie across deploys, while hashed /assets/ remain immutable
+            # above.
+            _cache_rule("/", "no-store"),
+        ],
     )
 
 
