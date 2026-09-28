@@ -38,8 +38,8 @@ from plaid.model.item_remove_response import ItemRemoveResponse as PlaidItemRemo
 from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.liabilities_get_response import LiabilitiesGetResponse as PlaidLiabilitiesGetResponse
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
-from plaid.model.link_token_create_response import LinkTokenCreateResponse as PlaidLinkTokenCreateResponse
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+from plaid.model.link_token_create_response import LinkTokenCreateResponse as PlaidLinkTokenCreateResponse
 from plaid.model.link_token_transactions import LinkTokenTransactions
 from plaid.model.products import Products
 from plaid.model.sandbox_public_token_create_request import SandboxPublicTokenCreateRequest
@@ -162,12 +162,8 @@ class PlaidSdkApiLike(Protocol):
     def sandbox_public_token_create(
         self, request: SandboxPublicTokenCreateRequest, /
     ) -> PlaidSandboxPublicTokenCreateResponse: ...
-    def institutions_search(
-        self, request: InstitutionsSearchRequest, /
-    ) -> PlaidInstitutionsSearchResponse: ...
-    def institutions_get_by_id(
-        self, request: InstitutionsGetByIdRequest, /
-    ) -> PlaidInstitutionsGetByIdResponse: ...
+    def institutions_search(self, request: InstitutionsSearchRequest, /) -> PlaidInstitutionsSearchResponse: ...
+    def institutions_get_by_id(self, request: InstitutionsGetByIdRequest, /) -> PlaidInstitutionsGetByIdResponse: ...
 
 
 class PlaidClient:
