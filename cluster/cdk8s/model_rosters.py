@@ -229,8 +229,8 @@ class CodexModel:
 # The Codex models with known serving-path limits: Astra from Codex's bundled metadata,
 # the 5.6 models measured (CODEX_CONTEXT_WINDOW above), and GPT-6 Sol/Luna using the
 # same conservative bound until their subscription path is probed. The LiteLLM manifest
-# advertises these limits in model_info, and OpenClaw's model picker exposes exactly this
-# subset, declaring the limits itself because its bundled LiteLLM provider does not query
+# advertises these limits in model_info; consumer pickers can expose narrower subsets.
+# OpenClaw declares the limits itself because its bundled LiteLLM provider does not query
 # the proxy's authenticated /v1/models endpoint. gpt-5.4/5.5/5.3-codex-spark were never
 # probed and stay out.
 OPENCLAW_CODEX_MODELS: tuple[CodexModel, ...] = (
@@ -255,6 +255,12 @@ OPENCLAW_CODEX_MODELS: tuple[CodexModel, ...] = (
     CodexModel(
         id="gpt-5.6-sol", display_name="GPT-5.6 Sol", context_window=CODEX_CONTEXT_WINDOW, max_tokens=CODEX_MAX_TOKENS
     ),
+)
+
+# GPT-6 subset for cluster consumers whose picker and LiteLLM key are restricted to the
+# current generation. Keep the full roster above for serving-limit metadata on old routes.
+GPT6_CODEX_MODELS: tuple[CodexModel, ...] = tuple(
+    model for model in OPENCLAW_CODEX_MODELS if model.id.startswith("gpt-6-")
 )
 
 # Tana-UI models served by the main LiteLLM proxy's in-process Tana provider. Tana

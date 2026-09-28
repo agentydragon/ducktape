@@ -107,10 +107,10 @@ data:
           display_name: Gemma 4 31B (128K)
         - model: chatgpt/oai-responses/gpt-6-astra
           display_name: GPT-6 Astra
-        - model: chatgpt/oai-responses/gpt-6-sol
-          display_name: GPT-6 Sol
         - model: chatgpt/oai-responses/gpt-6-luna
           display_name: GPT-6 Luna
+        - model: chatgpt/oai-responses/gpt-6-sol
+          display_name: GPT-6 Sol
       harnesses:
         HARNESS_CLAUDE:
           - anthropic-max20/ant-messages/claude-opus-5
@@ -139,8 +139,8 @@ data:
           - ollama/oai-chat/gemma4-31b-it-q8_0-128k
         HARNESS_CODEX:
           - chatgpt/oai-responses/gpt-6-astra
-          - chatgpt/oai-responses/gpt-6-sol
           - chatgpt/oai-responses/gpt-6-luna
+          - chatgpt/oai-responses/gpt-6-sol
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
           - ollama/oai-chat/gpt-oss-20b-128k

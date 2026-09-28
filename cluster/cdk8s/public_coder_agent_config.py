@@ -34,8 +34,8 @@ from cluster.cdk8s.model_rosters import (
     GEMINI_CONTEXT_WINDOW,
     GEMINI_MAX_OUTPUT_TOKENS,
     GEMINI_MODELS,
+    GPT6_CODEX_MODELS,
     OLLAMA_EMBEDDING_MODEL,
-    OPENCLAW_CODEX_MODELS,
     AntigravityModel,
     ApiShape,
     CodexModel,
@@ -52,7 +52,7 @@ from cluster.cdk8s.openclaw_gateway import (
 )
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
-_CODEX_BY_ID = {model.id: model for model in OPENCLAW_CODEX_MODELS}
+_CODEX_BY_ID = {model.id: model for model in GPT6_CODEX_MODELS}
 _DEFAULT_CODEX_MODEL = _CODEX_BY_ID["gpt-6-luna"]
 _TPM_CODEX_MODEL = _CODEX_BY_ID["gpt-6-astra"]
 _CONFIG_MAP_NAME = "public-coder-agent-config"
@@ -238,7 +238,7 @@ def config() -> dict:
                     "apiKey": "${OPENCLAW_LITELLM_API_KEY}",
                     "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
                     "models": [
-                        *(_codex_model_entry(model) for model in OPENCLAW_CODEX_MODELS),
+                        *(_codex_model_entry(model) for model in GPT6_CODEX_MODELS),
                         *(_gemini_model_entry(model) for model in GEMINI_MODELS),
                         *(_antigravity_model_entry(model) for model in _ANTIGRAVITY_OPENCLAW_MODELS),
                     ],
