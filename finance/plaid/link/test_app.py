@@ -41,7 +41,7 @@ from plaid.model.webhook_verification_key_get_response import WebhookVerificatio
 from finance.plaid.db.client import PlaidClient, PlaidSdkApiLike
 from finance.plaid.db.config import PlaidWebSettings
 from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
-from finance.plaid.link.app import PlaidWebClient, create_app
+from finance.plaid.link.app import create_app
 from finance.plaid.link.auth import session_cookie_name
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
@@ -265,7 +265,7 @@ def _client(
             settings,
             storage=cast(PlaidLinkStorage, storage or _FakeStorage()),
             secrets=secrets or _FakeSecrets(),
-            client=cast(PlaidWebClient, PlaidClient(api=cast(PlaidSdkApiLike, api or _FakePlaidApi()))),
+            client=PlaidClient(api=cast(PlaidSdkApiLike, api or _FakePlaidApi())),
         ),
         base_url=settings.public_base_url,
         headers={"Origin": settings.public_base_url},

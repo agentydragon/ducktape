@@ -10,25 +10,15 @@ import sys
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from importlib import resources
-from typing import Annotated, Literal, Protocol, cast
+from typing import Annotated, Literal
 from uuid import UUID
 
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Path as ApiPath, Query, Request
 from fastapi.responses import HTMLResponse, Response
-from plaid.model.webhook_verification_key_get_request import WebhookVerificationKeyGetRequest
-from plaid.model.webhook_verification_key_get_response import WebhookVerificationKeyGetResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from finance.plaid.db.client import (
-    InstitutionDetail,
-    InstitutionSummary,
-    LinkTokenResult,
-    PlaidClient,
-    PlaidClientError,
-    PlaidCreds,
-    PublicTokenExchange,
-)
+from finance.plaid.db.client import InstitutionDetail, PlaidClient, PlaidClientError, PlaidCreds
 from finance.plaid.db.config import MAX_TRANSACTION_DAYS, PlaidWebSettings
 from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink, SyncAlreadyRunningError, TransactionSyncClaim
 from finance.plaid.db.products import Product, syncable_products
@@ -151,41 +141,9 @@ class LinkSummary(BaseModel):
     sync_running: bool
 
 
-class PlaidWebClient(PlaidApiLike, Protocol):
-    """Plaid operations used by the Link management UI and sync path."""
-
-    def close(self) -> None: ...
-    def create_link_token(
-        self,
-        *,
-        products: list[str],
-        redirect_uri: str,
-        client_user_id: str,
-        transaction_days_requested: int = 730,
-        webhook_url: str | None = None,
-        client_name: str = "Plaid MCP",
-    ) -> LinkTokenResult: ...
-    def search_institutions(self, query: str, *, count: int = 10) -> list[InstitutionSummary]: ...
-    def get_institution(self, institution_id: str) -> InstitutionDetail: ...
-    def create_update_link_token(
-        self,
-        *,
-        access_token: str,
-        redirect_uri: str,
-        client_user_id: str,
-        additional_products: list[str] | None = None,
-        client_name: str = "Plaid MCP",
-    ) -> LinkTokenResult: ...
-    def exchange_public_token(self, public_token: str) -> PublicTokenExchange: ...
-    def remove_item(self, access_token: str) -> None: ...
-    def webhook_verification_key_get(
-        self, request: WebhookVerificationKeyGetRequest, /
-    ) -> WebhookVerificationKeyGetResponse: ...
-
-
 class AppState:
     def __init__(self) -> None:
-        self.client: PlaidWebClient | None = None
+        self.client: PlaidClient | None = None
         self.webhook_verifier: PlaidWebhookVerifier | None = None
         self.storage: PlaidLinkStorage | None = None
         self.secrets: SecretStore | None = None
@@ -196,22 +154,23 @@ def create_app(
     *,
     storage: PlaidLinkStorage | None = None,
     secrets: SecretStore | None = None,
-    client: PlaidWebClient | None = None,
+    client: PlaidClient | None = None,
 ) -> FastAPI:
     state = AppState()
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        owned_client = None
+        owned_client: PlaidClient | None = None
         owned_secrets = None
         if client is None:
             owned_client = PlaidClient(
                 PlaidCreds(client_id=settings.client_id, secret=settings.client_secret, env=settings.plaid_env)
             )
-            state.client = owned_client
+            runtime_client = owned_client
         else:
-            state.client = client
-        state.webhook_verifier = PlaidWebhookVerifier(cast(PlaidClient, state.client))
+            runtime_client = client
+        state.client = runtime_client
+        state.webhook_verifier = PlaidWebhookVerifier(runtime_client)
         runtime_storage = storage or await PlaidLinkStorage.initialize(settings.database_url)
         state.storage = runtime_storage
         runtime_secrets: SecretStore
@@ -222,9 +181,7 @@ def create_app(
             runtime_secrets = secrets
         state.secrets = runtime_secrets
         worker_task = asyncio.create_task(
-            _transaction_sync_worker(
-                api=cast(PlaidApiLike, state.client), storage=runtime_storage, secrets=runtime_secrets
-            )
+            _transaction_sync_worker(api=runtime_client, storage=runtime_storage, secrets=runtime_secrets)
         )
         try:
             yield
@@ -244,7 +201,7 @@ def create_app(
     app = FastAPI(title="Plaid Link Service", docs_url=None, redoc_url=None, lifespan=lifespan)
     install_oidc_auth(app, settings)
 
-    def require_client() -> PlaidWebClient:
+    def require_client() -> PlaidClient:
         if state.client is None:
             raise RuntimeError("Plaid client not initialized")
         return state.client
@@ -582,7 +539,7 @@ def _merge_products(*groups: list[str]) -> list[str]:
     return merged
 
 
-def _cached_institution(client: PlaidWebClient, institution_id: str) -> InstitutionDetail | None:
+def _cached_institution(client: PlaidClient, institution_id: str) -> InstitutionDetail | None:
     now = datetime.now(UTC)
     if (hit := _institution_cache.get(institution_id)) is not None and now - hit[0] < _INSTITUTION_TTL:
         return hit[1]
@@ -596,7 +553,7 @@ def _cached_institution(client: PlaidWebClient, institution_id: str) -> Institut
     return detail
 
 
-def _addable_products(client: PlaidWebClient, link: StoredLink) -> list[Product] | None:
+def _addable_products(client: PlaidClient, link: StoredLink) -> list[Product] | None:
     """Products the UI could still add to this link, or None if that can't be determined.
 
     Diffed against products_authorized, matching what /update-link-token actually sends as
