@@ -13,13 +13,17 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSel
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
 NAME = "cert-manager"
 NAMESPACE = "cert-manager"
 OUTPUT_DIR = f"{GENERATED_ROOT}/cert-manager/app"
+_REPOSITORY_NAME = "jetstack"
+_REPOSITORY_NAMESPACE = "flux-system"
+# trust-manager installs from this repository too, from its own chart.
+JETSTACK_SOURCE_REF = helm_repository_source_ref(_REPOSITORY_NAME, _REPOSITORY_NAMESPACE)
 
 
 def _values() -> dict[str, object]:
@@ -106,7 +110,9 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        repository=https_helm_repository(chart, "jetstack", "flux-system", url="https://charts.jetstack.io"),
+        repository=https_helm_repository(
+            chart, _REPOSITORY_NAME, _REPOSITORY_NAMESPACE, url="https://charts.jetstack.io"
+        ),
         chart="cert-manager",
         version="v1.21.2",
         interval="30m",

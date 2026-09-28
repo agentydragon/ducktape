@@ -1,4 +1,4 @@
-"""trust-manager: its Namespace, HelmRepository and HelmRelease.
+"""trust-manager: its Namespace and HelmRelease, from cert-manager's jetstack HelmRepository.
 
 `values` is an untyped dict: Helm values carry no schema for `cdk8s_import` to ingest.
 """
@@ -9,8 +9,9 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.cert_manager.app import JETSTACK_SOURCE_REF
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "trust-manager"
@@ -25,7 +26,7 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        repository=https_helm_repository(chart, "cert-manager", NAMESPACE, url="https://charts.jetstack.io"),
+        repository=JETSTACK_SOURCE_REF,
         chart="trust-manager",
         version="0.25.*",
         interval="30m",
