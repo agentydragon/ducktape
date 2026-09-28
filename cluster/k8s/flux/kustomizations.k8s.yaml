@@ -3006,6 +3006,12 @@ spec:
   dependsOn:
     - name: volsync
       namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+    - name: valkey
+      namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
   interval: 10m
@@ -3027,6 +3033,12 @@ metadata:
 spec:
   dependsOn:
     - name: volsync
+      namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+    - name: valkey
+      namespace: ducktape-flux
+    - name: monitoring-crds
       namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
@@ -3316,33 +3328,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: grocy-mcp-sf
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: valkey
-      namespace: ducktape-flux
-    - name: monitoring-crds
-      namespace: ducktape-flux
-    - name: kyverno
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/grocy/sf/mcp
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: grocy-mcp-sf
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: grocy-sf-user-perms
   namespace: ducktape-flux
 spec:
@@ -3356,33 +3341,6 @@ spec:
   sourceRef:
     kind: ExternalArtifact
     name: grocy-sf-user-perms
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: grocy-mcp-vallejo
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: valkey
-      namespace: ducktape-flux
-    - name: monitoring-crds
-      namespace: ducktape-flux
-    - name: kyverno
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/grocy/vallejo/mcp
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: grocy-mcp-vallejo
     namespace: ducktape-flux
   timeout: 5m
   wait: true

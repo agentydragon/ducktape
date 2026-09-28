@@ -258,11 +258,19 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/grocy/sf/app/**"
           to: "@artifact/cluster/k8s/grocy/sf/app/"
+        - from: "@repo/cluster/k8s/grocy/sf/mcp/**"
+          to: "@artifact/cluster/k8s/grocy/sf/mcp/"
+        - from: "@repo/cluster/k8s/grocy/mcp-base/**"
+          to: "@artifact/cluster/k8s/grocy/mcp-base/"
       name: grocy-sf
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/grocy/vallejo/app/**"
           to: "@artifact/cluster/k8s/grocy/vallejo/app/"
+        - from: "@repo/cluster/k8s/grocy/vallejo/mcp/**"
+          to: "@artifact/cluster/k8s/grocy/vallejo/mcp/"
+        - from: "@repo/cluster/k8s/grocy/mcp-base/**"
+          to: "@artifact/cluster/k8s/grocy/mcp-base/"
       name: grocy-vallejo
       originRevision: "@repo"
     - copy:
@@ -505,25 +513,11 @@ spec:
       name: google-mcp
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/grocy/sf/mcp/**"
-          to: "@artifact/cluster/k8s/grocy/sf/mcp/"
-        - from: "@repo/cluster/k8s/grocy/mcp-base/**"
-          to: "@artifact/cluster/k8s/grocy/mcp-base/"
-      name: grocy-mcp-sf
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/grocy/sf/user-perms/**"
           to: "@artifact/cluster/k8s/grocy/sf/user-perms/"
         - from: "@repo/cluster/k8s/grocy/user-perms-base/**"
           to: "@artifact/cluster/k8s/grocy/user-perms-base/"
       name: grocy-sf-user-perms
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/grocy/vallejo/mcp/**"
-          to: "@artifact/cluster/k8s/grocy/vallejo/mcp/"
-        - from: "@repo/cluster/k8s/grocy/mcp-base/**"
-          to: "@artifact/cluster/k8s/grocy/mcp-base/"
-      name: grocy-mcp-vallejo
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/grocy/vallejo/user-perms/**"
