@@ -7,20 +7,20 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { Markdown } from "./markdown";
+import { Markdown, STREAMING_CURSOR } from "./markdown";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
 
-async function render(source: string): Promise<HTMLDivElement> {
+async function render(source: string, streaming = false): Promise<HTMLDivElement> {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   await act(async () =>
     root.render(
       <MantineProvider env="test">
-        <Markdown source={source} />
+        <Markdown source={source} streaming={streaming} />
       </MantineProvider>
     )
   );
@@ -41,6 +41,17 @@ describe("Markdown", () => {
     const link = rendered.querySelector("a");
     expect(link?.getAttribute("href")).toBe("https://example.test/x");
     expect(link?.textContent).toBe("a link");
+  });
+
+  it("appends the streaming cursor inline to the final Markdown paragraph", async () => {
+    const rendered = await render("The answer is still being written.", true);
+    const paragraph = rendered.querySelector(".agentplane-markdown p");
+    const cursor = paragraph?.querySelector<HTMLElement>(".agentplane-streaming-cursor");
+
+    expect(cursor?.getAttribute("role")).toBe("img");
+    expect(cursor?.getAttribute("aria-label")).toBe("Streaming");
+    expect(paragraph?.lastElementChild).toBe(cursor);
+    expect(paragraph?.textContent).toBe(`The answer is still being written.${STREAMING_CURSOR}`);
   });
 
   it("syntax-highlights a fenced code block in a registered language", async () => {
