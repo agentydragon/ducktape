@@ -7949,7 +7949,7 @@ def _storage(scope: Construct) -&gt; None:
         reclaim_policy=None,
         grant_name=NAMESPACE,
     )
-    identity = s3.Identity(scope, &#34;identity&#34;, name=NAME)
+    identity = s3.Identity(scope, &#34;identity&#34;, name=NAME, namespace=NAMESPACE)
     bucket.grant_read_write(identity)
     identity.credentials(namespace=NAMESPACE, secret=_S3_SECRET, key_fields=s3.AWS_ENV_KEY_FIELDS)
 # cluster/cdk8s/nix_cache/attic.py:112, 116-117
@@ -8083,19 +8083,15 @@ def _storage(scope: Construct) -&gt; s3.PrivateBucket:
                 <code>reclaimPolicy: Retain</code>, which the CRD already defaulted to.
               </li>
               <li>
-                S3Identity <code>seaweedfs/attic</code> becomes <code>nix-cache/attic</code> (every S3Identity in its
-                tenant), with the description annotation and <code>seaweedRef.namespace: seaweedfs</code>. The IAM user
-                <code>attic</code> keeps its key and its bucket grant: the new object adopts the user the old one leaves
-                under <code>Retain</code>. That half deletes one object and creates another, so it is not a plain apply:
-                it lands first, alone, with today&#39;s <code>s3.Identity(..., namespace=NAMESPACE)</code>, and the
-                conversion then renders the identity where it already is.
+                S3Identity <code>nix-cache/attic</code>, already in its tenant: gains the description annotation. The
+                IAM user <code>attic</code>, its key and its bucket grant are untouched.
               </li>
               <li>
                 The ResourceReferenceGrant <code>seaweedfs/nix-cache</code> becomes
                 <code>seaweedfs/nix-cache-attic</code> (one grant per bucket,
-                <code>&lt;tenant&gt;-&lt;bucket&gt;</code>) and admits <code>S3Identity</code> from nix-cache besides
-                Bucket and S3Credentials. Both grants are in this unit, so Flux applies the new grant before it prunes
-                the old one. It renders after S3Credentials.
+                <code>&lt;tenant&gt;-&lt;bucket&gt;</code>), still admitting Bucket, S3Identity and S3Credentials from
+                nix-cache. Both grants are in this unit, so Flux applies the new grant before it prunes the old one. It
+                renders after S3Credentials.
               </li>
               <li>The Deployment, CronJob and bootstrap Job changes in this file are E6&#39;s.</li>
             </ul>
@@ -8123,10 +8119,11 @@ def _storage(scope: Construct) -&gt; s3.PrivateBucket:
               renders after S3Credentials.
             </p>
             <p>
-              The identity move alone, today&#39;s <code>s3.Identity(..., namespace=NAMESPACE)</code> (a one-line
-              change), moves only the S3Identity and adds <code>S3Identity</code> to the <code>nix-cache</code> grant.
+              Devel has since moved the S3Identity into nix-cache (<code>attic.py:77</code> gained
+              <code>namespace=NAMESPACE</code>; the before excerpt shows devel d86d9ae49d, where no other excerpted line
+              changed). Against that devel, the S3Identity differs only by its annotation; that follows from the
+              12a18e9c2c per-object diff and was not re-rendered.
             </p>
-            <p>Not run: the move against the live operator.</p>
           </div>
         </details>
       </article>
