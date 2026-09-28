@@ -195,6 +195,8 @@ per location over a purchase, hold, rent-out and sale horizon.
   conventions before its result is labeled a reproduction.
 - **RUN** (after BIND, the tax slices and MIDYEAR): public synthetic-lot household example of
   a spending-flex × allocation grid on shared paths, extending `x/joint_spending_allocation`.
+  Each cell reports the chance of ruin and how deep, how long and how often spending is forced
+  below plan, not final wealth.
 - **ROBUST** (after RUN and ADOPT): select RUN's policies under each model, evaluate them on
   fresh draws under the others.
 
