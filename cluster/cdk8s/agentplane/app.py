@@ -73,6 +73,7 @@ from cluster.cdk8s.model_rosters import OLLAMA_CHAT_MODELS, ApiShape, Provider, 
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name
@@ -91,6 +92,15 @@ _RUNNER_LABELS = {"app.kubernetes.io/name": "agentplane-runner"}
 _STATE_VOLUME_NAME = "state"
 _STATE_DIR = "/state"
 _QWEN_IQ4XS = "qwen3.8-flash-next-iq4xs"
+
+
+def service(namespace: str) -> ServiceRef:
+    """The app's Service in one environment's namespace."""
+    return ServiceRef(
+        name=NAME,
+        port=Port(name="http", number=CONTAINER_PORT),
+        pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())),
+    )
 
 
 def _runner_model_context_windows() -> dict[str, int]:
@@ -345,8 +355,7 @@ class App(Construct):
             "httproute",
             metadata=ApiObjectMetadata(name=namespace, namespace=namespace),
             hostnames=[self.env.app.hostname],
-            backend=NAME,
-            port=CONTAINER_PORT,
+            backend=service(namespace),
             # A session stream stays attached for as long as the tab is open.
             timeout="3600s",
         )

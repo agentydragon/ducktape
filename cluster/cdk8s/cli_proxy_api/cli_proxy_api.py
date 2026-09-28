@@ -37,6 +37,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cli-proxy-api"
 NAME = "cli-proxy-api"
@@ -44,6 +45,9 @@ NAMESPACE = "cli-proxy-api"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/cli-proxy-api:unset"
 PORT = 8317
+SERVICE = ServiceRef(
+    name=NAME, port=Port(name="http", number=PORT), pods=Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items()))
+)
 _CONFIG_SECRET = "cli-proxy-api-config"
 _DATA_CLAIM = "cli-proxy-api-data"
 _ADMIN_OIDC_SECRET = "cli-proxy-api-admin-oidc"
@@ -224,8 +228,7 @@ def _routes(scope: Construct) -> None:
         "route",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         hostnames=["cli-proxy-api.allegedly.works"],
-        backend=NAME,
-        port=PORT,
+        backend=SERVICE,
         path_prefix="/v1",
         timeout="600s",
         hsts=False,
@@ -236,8 +239,7 @@ def _routes(scope: Construct) -> None:
         "admin-route",
         metadata=ApiObjectMetadata(name="cli-proxy-api-admin", namespace=NAMESPACE),
         hostnames=["cli-proxy-api-admin.allegedly.works"],
-        backend=NAME,
-        port=PORT,
+        backend=SERVICE,
         hsts=False,
         listener=None,
     )
