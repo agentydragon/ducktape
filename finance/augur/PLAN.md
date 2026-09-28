@@ -46,10 +46,10 @@ Every change is checked against an independent calculation, never a copy of the 
 ### Property taxes (San Francisco and Vallejo)
 
 Goal: Augur computes a homeowner's and a landlord's property-related taxes correctly in San
-Francisco, mainland Vallejo and Mare Island. Today `sim/property_tax.py` bills purchase price
-× one flat rate plus one flat assessment from `sim.locations.Location`, in monthly twelfths,
-fixed for the horizon, and a sale pays one flat `closing_cost_ppb`. The sourced facts sit in
-`sim/data/locations/*.yaml`, which nothing has read since 2026-05-27.
+Francisco, mainland Vallejo and Mare Island. Today a parcel's situs is a tax rate area loaded
+from `sim/data/jurisdictions/`, and `sim/property_tax.py` assesses it under Proposition 13 and
+bills its secured tax in monthly twelfths; San Francisco is the only rate area, and a sale pays one
+flat `closing_cost_ppb`.
 
 **Model.**
 
@@ -82,23 +82,15 @@ fixed for the horizon, and a sale pays one flat `closing_cost_ppb`. The sourced 
   mainland Vallejo, Mare Island) buys, holds, rents part out and sells, with every bill and
   deduction worked independently of the engine.
 
-**Caller shape.** A purchase's `parcel` names its rate area, loaded with
-`load_jurisdiction` (parents resolve through the tree), plus its districts and the seller's
-prior assessed value; `market` names the `home_value:`/`rent:` region. `declare_housing` loses
-its `Location` tuple and `PropertyTaxPolicy` its rate override: a study wanting a hypothetical
-rate builds or copies a `Jurisdiction` value in code, so shipped files stay the vetted law.
+**Caller shape.** A purchase's `parcel` gains its districts (DISTRICTS) and the seller's prior
+assessed value (SUPPLEMENTAL) beside its situs.
 
 **First milestone: San Francisco and mainland Vallejo, county and city level.** Accepted when
 each of these holds against an independent calculation or published source:
 
-- **A. Assessed value:** set to the price at purchase; each January lien date grown by the
-  year's factor capped at 2% (3% CPI gives +2%, 1% gives +1%, a negative year a factor below
-  1); capital improvements add their cost when completed; a sale resets it. Past years use the
-  Board of Equalization's published factors. Deviation: simulated years use modeled national
-  CPI, where the law uses California's October-to-October CPI.
 - **B. Secured tax:** (1% + the rate area's debt rate for the fiscal year) × (assessed value −
-  the homeowners' exemption for a primary residence), to the cent, for San Francisco's
-  published rate and one documented mainland-Vallejo rate area.
+  the homeowners' exemption for a primary residence), to the cent, for one documented
+  mainland-Vallejo rate area.
 - **C. Supplemental bill:** (new − prior assessed value) × rate × the fiscal year's remaining
   share, in the purchase year.
 - **D. Transfer tax:** San Francisco's table just below, at and above bracket edges;
@@ -118,19 +110,12 @@ without them.
 
 **Items**, each landing its rule, data and tests together:
 
-- **ASSESS** (first): parcel situs replaces `Location`. `california.yaml` gains the Proposition
-  13 rules, and a San Francisco rate-area file its debt rates. Assessed value is its own state:
-  reset to the purchase price on change of ownership, grown each lien date by the California CPI
-  factor capped at 2%, raised by new construction at cost. The bill is 1% plus the rate area's
-  debt rate on assessed value less the homeowners' exemption for a primary residence. Deletes
-  `sim.locations`, `sim/data/locations/` and `locations_test.py` once their facts are in
-  jurisdiction files. The app's location config names a situs instead of a rate, and its unread
-  `LocalRegulation` fields go.
 - **VALLEJO** (after ASSESS): Solano County's rate area for mainland Vallejo, sourced from the
   county's published rate book.
 - **DISTRICTS** (after ASSESS): district files with a per-category maximum, escalation and
   end date from each district's rate-and-method document: Mare Island's CFDs 2002-1, 2005-1A
-  and 2005-1B, and San Francisco's parcel taxes.
+  and 2005-1B (research so far: <docs/mare_island_special_taxes.md>), and San Francisco's parcel
+  taxes.
 - **SUPPLEMENTAL** (after ASSESS): the purchase-year supplemental bill on the change in assessed
   value, prorated over the rest of the fiscal year.
 - **DECLINE** (after ASSESS): a Proposition 8 reduction while the home-value path is below the

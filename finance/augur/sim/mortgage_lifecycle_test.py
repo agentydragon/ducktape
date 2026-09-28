@@ -21,24 +21,21 @@ from finance.augur.sim.books import AccountRef, Book, JournalEntry
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
-from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.property import Housing, MortgageFinancing, Purchase, Sale, ScheduledPurchase, ScheduledSale
 from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rejected
 from finance.augur.sim.schedule import Once
+from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
 ALICE = AgentId("alice")
 BOB = AgentId("bob")
 CHECKING = AccountId("checking")
-SF = Location(
-    location_id=LocationId("sf"),
-    annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.0118")),
-    annual_special_assessment=0,
-)
+# Each home's parcel, taxed a flat 1.2% of its price.
+HOME_PARCEL = flat_parcel(Decimal("0.012"))
 SF_HOME = HomeValueKey(location_id=LocationId("sf"))
 
 
@@ -94,7 +91,8 @@ def home(
         month=month,
         cause_id=f"{buyer}-buys-home",
         property_id=PropertyId(f"{buyer}-home"),
-        location_id=SF.location_id,
+        parcel=HOME_PARCEL,
+        market=LocationId("sf"),
         buyer_agent_id=buyer,
         buyer_account_id=CHECKING,
         seller_agent_id=AgentId("seller"),
@@ -120,7 +118,7 @@ def compose(
     world = World(MarketPath(series, rollout_id, rollout_count=rollout_count), horizon_months=horizon_months)
     for opened, balance in accounts:
         world.declare_account(account=opened, opening_balance=balance)
-    world.declare_housing(housing, tax_policies, (SF,))
+    world.declare_housing(housing, tax_policies)
     return world
 
 
@@ -138,7 +136,7 @@ def home_value_of(world: World) -> int:
         if purchase.buyer_agent_id == ALICE
         and purchase.property_id in properties.properties
         and properties.properties[purchase.property_id].state.active
-        and f"home_value:{purchase.location_id}" in world.market.series
+        and f"home_value:{purchase.market}" in world.market.series
     )
 
 
@@ -244,7 +242,7 @@ def test_financed_purchase_and_first_installment_match_contract() -> None:
                 from_account_id=CHECKING,
                 tax_authority_agent_id=AgentId("county"),
                 tax_authority_account_id=CHECKING,
-                annual_tax_rate_ppb=rate_to_ppb(Decimal("0.012")),
+                start_year=START_YEAR,
                 start_month=0,
                 end_month=None,
             ),

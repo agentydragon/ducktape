@@ -11,7 +11,14 @@ from finance.augur.sim import tax
 from finance.augur.sim.fixed_point import rate_to_ppb
 from finance.augur.sim.ids import CHECKING, AccountId, AgentId, JurisdictionId
 from finance.augur.sim.income import OrdinaryIncome, TransferIncomeCategory, income_source_sort_key
-from finance.augur.sim.jurisdictions import Jurisdiction, StatutoryAmount, StatutoryIndexation, TaxBracket, ThresholdTax
+from finance.augur.sim.jurisdictions import (
+    IncomeTax,
+    Jurisdiction,
+    StatutoryAmount,
+    StatutoryIndexation,
+    TaxBracket,
+    ThresholdTax,
+)
 from finance.augur.sim.money import Currency, NonNegativeCurrencyAmount
 
 
@@ -77,16 +84,16 @@ def compile_income_sources(named: Iterable[TransferIncomeCategory]) -> tuple[Tra
 
 
 def _agreed_capital_loss_offset_cap(
-    profile: TaxProfile, jurisdictions: Mapping[JurisdictionId, Jurisdiction], *, currency: Currency
+    profile: TaxProfile, laws: Mapping[JurisdictionId, IncomeTax], *, currency: Currency
 ) -> int:
     """Netting runs once per taxpayer; reject jurisdictions requiring different offset caps, now or once indexed."""
 
     caps = {
         jurisdiction_id: (
-            jurisdictions[jurisdiction_id].max_capital_loss_ordinary_offset[profile.filing_status],
-            jurisdictions[jurisdiction_id].indexation[StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET],
+            law.max_capital_loss_ordinary_offset[profile.filing_status],
+            law.indexation[StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET],
         )
-        for jurisdiction_id in profile.jurisdiction_ids
+        for jurisdiction_id, law in laws.items()
     }
     if len(set(caps.values())) > 1:
         raise ValueError(
@@ -120,38 +127,41 @@ def compile_profile(
     profile: TaxProfile, jurisdictions: Mapping[JurisdictionId, Jurisdiction], *, currency: Currency
 ) -> tax.TaxProfile:
     """One taxpayer's routing and quantized rules, as a composed world enrolls them."""
-    offset_cap = _agreed_capital_loss_offset_cap(profile, jurisdictions, currency=currency)
-    rules = []
+    laws = {}
     for jurisdiction_id in profile.jurisdiction_ids:
-        jurisdiction = jurisdictions[jurisdiction_id]
+        law = jurisdictions[jurisdiction_id].income_tax
+        if law is None:
+            raise ValueError(
+                f"tax profile for {profile.agent_id!r} names {jurisdiction_id!r}, which levies no income tax"
+            )
+        laws[jurisdiction_id] = law
+    offset_cap = _agreed_capital_loss_offset_cap(profile, laws, currency=currency)
+    rules = []
+    for jurisdiction_id, law in laws.items():
         rules.append(
             tax.TaxRules(
                 jurisdiction_id=jurisdiction_id,
-                exempt_interest=jurisdiction.exempt_interest,
-                ordinary_brackets=_brackets(
-                    jurisdiction.ordinary_income_brackets[profile.filing_status], currency=currency
-                ),
+                exempt_interest=law.exempt_interest,
+                ordinary_brackets=_brackets(law.ordinary_income_brackets[profile.filing_status], currency=currency),
                 long_term_capital_gain_brackets=(
-                    _brackets(jurisdiction.ltcg_brackets[profile.filing_status], currency=currency)
-                    if jurisdiction.ltcg_brackets is not None
+                    _brackets(law.ltcg_brackets[profile.filing_status], currency=currency)
+                    if law.ltcg_brackets is not None
                     else ()
                 ),
-                standard_deduction=currency.quanta(jurisdiction.standard_deduction[profile.filing_status]),
+                standard_deduction=currency.quanta(law.standard_deduction[profile.filing_status]),
                 max_capital_loss_ordinary_offset=offset_cap,
                 section_1250_rate_ppb=rate_to_ppb(
                     SECTION_1250_FEDERAL_CAP_RATE if jurisdiction_id == SECTION_1250_FEDERAL_JURISDICTION_ID else 0
                 ),
                 net_investment_income_tax=_threshold_tax(
-                    jurisdiction.net_investment_income_tax, profile.filing_status, currency=currency
+                    law.net_investment_income_tax, profile.filing_status, currency=currency
                 ),
                 taxable_income_surtax=_threshold_tax(
-                    jurisdiction.taxable_income_surtax, profile.filing_status, currency=currency
+                    law.taxable_income_surtax, profile.filing_status, currency=currency
                 ),
-                law_year=jurisdiction.law_year,
+                law_year=law.law_year,
                 indexed=frozenset(
-                    amount
-                    for amount, indexation in jurisdiction.indexation.items()
-                    if indexation is StatutoryIndexation.CPI
+                    amount for amount, indexation in law.indexation.items() if indexation is StatutoryIndexation.CPI
                 ),
             )
         )

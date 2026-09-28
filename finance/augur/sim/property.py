@@ -14,6 +14,7 @@ from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.mortgage import Mortgage, MortgageTerms
+from finance.augur.sim.situs import SitusLaw
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -27,11 +28,21 @@ class MortgageFinancing:
 
 
 @dataclass(frozen=True, kw_only=True)
+class Parcel:
+    """Where a property is for tax purposes: the law of its situs, from its tax rate area up."""
+
+    situs: SitusLaw
+
+
+@dataclass(frozen=True, kw_only=True)
 class ScheduledPurchase:
+    """`market` is the region whose `home_value:` and `rent:` series price the property."""
+
     month: int
     cause_id: str
     property_id: PropertyId
-    location_id: LocationId
+    parcel: Parcel
+    market: LocationId
     buyer_agent_id: AgentId
     buyer_account_id: AccountId
     seller_agent_id: AgentId
@@ -75,7 +86,7 @@ class Purchase:
     month: int
     cause_id: str
     property_id: PropertyId
-    location_id: LocationId
+    market: LocationId
     buyer_agent_id: AgentId
     purchase_price: int
     closing_cost: int
@@ -265,12 +276,15 @@ def _check_residence(
 
 
 class PropertyStatement(Statement):
-    """What a property tells the contracts attached to it: whether it is held and how much is let."""
+    """What a property tells the contracts attached to it: whether it is held, how much is let, whether
+    its owner lives there, and the cost of the construction completed on it this month."""
 
     property_id: PropertyId
     active: bool
     purchase_month: int
     rented_fraction_ppb: int
+    owner_occupied: bool
+    new_construction: int
 
 
 class Properties:
@@ -334,13 +348,25 @@ class Properties:
             active=property_.state.active,
             purchase_month=property_.state.purchase_month,
             rented_fraction_ppb=property_.state.rented_fraction_ppb,
+            owner_occupied=self.owner_occupied(property_.state),
+            new_construction=sum(
+                improvement.amount for improvement in self.improvements if improvement.property_id == property_id
+            ),
+        )
+
+    def owner_occupied(self, state: PropertyState) -> bool:
+        """Held, not wholly let, and its owner's primary residence."""
+        return (
+            state.active
+            and state.rented_fraction_ppb < MONEY_FACTOR_SCALE
+            and self.primary.get(state.owner_agent_id) == state.property_id
         )
 
     def snapshots(self) -> list[PropertyState]:
         return [property_.state for property_ in self.properties.values()]
 
     def market_value(self, purchase: ScheduledPurchase, market: MarketPath, month: int) -> int:
-        series = f"home_value:{purchase.location_id}"
+        series = f"home_value:{purchase.market}"
         return mul_div(
             purchase.purchase_price,
             market.value(series, month),
@@ -598,7 +624,7 @@ class Properties:
                 postings.append(Posting(account=clearing, amount=debt))
             state = PropertyState(
                 property_id=purchase.property_id,
-                location_id=purchase.location_id,
+                market=purchase.market,
                 owner_agent_id=purchase.buyer_agent_id,
                 purchase_month=month,
                 adjusted_basis=adjusted,
@@ -626,7 +652,7 @@ class Properties:
                     month,
                     purchase.cause_id,
                     purchase.property_id,
-                    purchase.location_id,
+                    purchase.market,
                     purchase.buyer_agent_id,
                     purchase.purchase_price,
                     purchase.buyer_closing_cost,
@@ -640,11 +666,7 @@ class Properties:
     def accrue(self, accounting: Accounting, month: int) -> None:
         for property_ in self.properties.values():
             state = property_.state
-            occupied = (
-                state.active
-                and state.rented_fraction_ppb < MONEY_FACTOR_SCALE
-                and self.primary.get(state.owner_agent_id) == state.property_id
-            )
+            occupied = self.owner_occupied(state)
             property_.occupied_window[month % 60] = occupied
             occupied_months = state.owner_occupied_months + int(occupied)
             if occupied_months >= 1 << 32:

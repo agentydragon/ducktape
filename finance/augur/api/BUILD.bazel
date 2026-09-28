@@ -53,19 +53,9 @@ py_library(
 )
 
 py_library(
-    name = "local_regulation",
-    srcs = ["local_regulation.py"],
-    deps = [
-        ":schemas",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "wire",
     srcs = ["wire.py"],
     deps = [
-        ":local_regulation",
         ":schemas",
         "//finance/augur/model:series",
         "//finance/augur/product:wire",
@@ -78,7 +68,6 @@ py_library(
     name = "config",
     srcs = ["config.py"],
     deps = [
-        ":local_regulation",
         ":portfolio_source_config",
         ":schemas",
         ":wire",
@@ -131,7 +120,6 @@ py_test(
         ":config",
         ":conftest",
         ":finance",
-        ":local_regulation",
         ":portfolio",
         ":portfolio_source_config",
         ":wire",
@@ -169,19 +157,6 @@ py_test(
         "//finance/plaid/db:read_model",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "local_regulation_test",
-    size = "medium",
-    srcs = ["local_regulation_test.py"],
-    deps = [
-        ":conftest",
-        ":local_regulation",
-        "//:conftest",
-        "//finance/augur:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -249,7 +224,6 @@ py_test(
         ":catalog",
         ":config",
         ":conftest",
-        ":local_regulation",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/sim:ids",
@@ -267,7 +241,6 @@ py_library(
     deps = [
         ":config",
         ":finance",
-        ":local_regulation",
         ":portfolio_source_config",
         ":server",
         ":wire",
@@ -485,7 +458,6 @@ py_library(
     deps = [
         ":config",
         ":finance",
-        ":local_regulation",
         ":portfolio_source_config",
         ":server",
         ":wire",

@@ -9,6 +9,7 @@ the path carries, and an issuer's protocol path stays in range.
 
 from collections.abc import Callable, Mapping
 from dataclasses import replace
+from fractions import Fraction
 from functools import partial
 
 import pytest
@@ -37,12 +38,12 @@ from finance.augur.sim.income import (
     TransferIncomeCategory,
     Treasury,
 )
-from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
 from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
 from finance.augur.sim.property import (
     Housing,
     MortgageFinancing,
+    Parcel,
     PrimaryResidence,
     PrimaryResidenceEvent,
     RentedFraction,
@@ -52,6 +53,7 @@ from finance.augur.sim.property import (
 from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.tax_authority import MortgageInterestDeduction
+from finance.augur.sim.testing.situs import START_YEAR, UNTAXED
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
@@ -63,7 +65,6 @@ STOCK = AssetId("test-stock")
 LOT = LotId("test-lot")
 SCALE = 1000
 HORIZON = 2
-LOCATION = Location(location_id=LocationId("test-market"), annual_property_tax_rate_ppb=0, annual_special_assessment=0)
 TAXABLE = Taxable()
 # A payout that is all taxable interest.
 WHOLLY_INTEREST: Mapping[TransferIncomeCategory, int] = {InterestIncome(character=TAXABLE): 1_000_000_000}
@@ -241,7 +242,8 @@ PURCHASE = ScheduledPurchase(
     month=0,
     cause_id="test-purchase",
     property_id=PropertyId("test-home"),
-    location_id=LOCATION.location_id,
+    parcel=UNTAXED,
+    market=LocationId("test-market"),
     buyer_agent_id=HOLDER,
     buyer_account_id=CHECKING,
     seller_agent_id=COUNTERPARTY,
@@ -263,23 +265,21 @@ LOAN = MortgageFinancing(
 )
 
 
-def housed(purchase: ScheduledPurchase, *locations: Location) -> None:
-    composed().declare_housing(Housing(purchases=(purchase,)), (), locations)
+def housed(purchase: ScheduledPurchase) -> None:
+    composed().declare_housing(Housing(purchases=(purchase,)), ())
 
 
-def test_a_property_purchase_names_a_known_location_and_declared_parties() -> None:
-    housed(PURCHASE, LOCATION)
-    with pytest.raises(ValueError, match="unknown location"):
-        housed(PURCHASE)
+def test_a_property_purchase_names_declared_parties() -> None:
+    housed(PURCHASE)
     with pytest.raises(ValueError, match="unknown account"):
-        housed(replace(PURCHASE, seller_agent_id=AgentId("test-stranger")), LOCATION)
+        housed(replace(PURCHASE, seller_agent_id=AgentId("test-stranger")))
 
 
 def test_a_purchase_price_is_covered_by_the_down_payment_and_the_loan() -> None:
-    housed(replace(PURCHASE, down_payment=4, mortgage=LOAN), LOCATION)
+    housed(replace(PURCHASE, down_payment=4, mortgage=LOAN))
     for gap in (replace(PURCHASE, down_payment=9), replace(PURCHASE, down_payment=3, mortgage=LOAN)):
         with pytest.raises(ValueError, match="invalid property terms"):
-            housed(gap, LOCATION)
+            housed(gap)
 
 
 def distribution(
@@ -507,10 +507,9 @@ def test_housing_is_bought_inside_the_horizon_and_its_lifecycle_follows_the_purc
             initial_residences=(PrimaryResidence(agent_id=HOLDER, property_id=PURCHASE.property_id),),
         ),
         (),
-        (LOCATION,),
     )
     with pytest.raises(ValueError, match=match):
-        composed().declare_housing(housing, (), (LOCATION,))
+        composed().declare_housing(housing, ())
 
 
 PROPERTY_TAX = PropertyTaxPolicy(
@@ -519,7 +518,7 @@ PROPERTY_TAX = PropertyTaxPolicy(
     from_account_id=CHECKING,
     tax_authority_agent_id=COUNTERPARTY,
     tax_authority_account_id=CHECKING,
-    annual_tax_rate_ppb=None,
+    start_year=START_YEAR,
     start_month=0,
     end_month=None,
 )
@@ -538,9 +537,16 @@ PROPERTY_TAX = PropertyTaxPolicy(
 def test_one_property_tax_policy_at_a_time_is_owed_by_the_buyer(
     policies: tuple[PropertyTaxPolicy, ...], match: str
 ) -> None:
-    composed().declare_housing(Housing(purchases=(PURCHASE,)), (PROPERTY_TAX,), (LOCATION,))
+    composed().declare_housing(Housing(purchases=(PURCHASE,)), (PROPERTY_TAX,))
     with pytest.raises(ValueError, match=match):
-        composed().declare_housing(Housing(purchases=(PURCHASE,)), policies, (LOCATION,))
+        composed().declare_housing(Housing(purchases=(PURCHASE,)), policies)
+
+
+def test_a_taxed_parcel_s_rate_area_publishes_its_first_billed_fiscal_year() -> None:
+    """Month 1 is in fiscal year START_YEAR - 1, which a rate area first publishing START_YEAR cannot bill."""
+    later = replace(UNTAXED.situs, debt_rates={START_YEAR: Fraction(0)})
+    with pytest.raises(ValueError, match="publishes no debt rate as early as fiscal year"):
+        composed().declare_housing(Housing(purchases=(replace(PURCHASE, parcel=Parcel(situs=later)),)), (PROPERTY_TAX,))
 
 
 def test_a_deduction_is_claimed_by_an_enrolled_taxpayer() -> None:

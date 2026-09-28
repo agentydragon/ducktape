@@ -1,0 +1,21 @@
+# City and County of San Francisco: one tax rate area covering the whole city.
+jurisdiction_id: san_francisco
+parent: california
+
+# The voter-approved debt rate is the combined secured rate less Proposition 13's 1% base.
+# FY 2020-21 through 2024-25: Controller, "Property Tax Rate History", Budget and Finance
+# Committee, September 18, 2024, combined secured rates 1.19846368%, 1.18248499%, 1.17973782%,
+# 1.17769382% and 1.17143563%.
+# https://sfgov.legistar.com/View.ashx?GUID=5E30D56D-839C-4366-97F8-4122960E0D4F&ID=13306109&M=F
+# FY 2025-26: Treasurer & Tax Collector, "The secured property tax rate for Fiscal Year 2025-26
+# is 1.18268325%." https://sftreasurer.org/property/secured-property-taxes
+debt_rates:
+  2020: "0.0019846368"
+  2021: "0.0018248499"
+  2022: "0.0017973782"
+  2023: "0.0017769382"
+  2024: "0.0017143563"
+  2025: "0.0018268325"
+# The Controller's rate history above, "Comparative Tax Bill": "Secured property tax bill pennies
+# are rounded down to next even penny value."
+bill_rounding: down_to_even

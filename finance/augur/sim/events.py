@@ -140,7 +140,7 @@ PROPERTY_PURCHASE_EVENT_SCHEMA = pl.Schema(
         "month_index": pl.Int64(),
         "cause_id": pl.Utf8(),
         "property_id": pl.Utf8(),
-        "location_id": pl.Utf8(),
+        "market": pl.Utf8(),
         "buyer_agent_id": pl.Utf8(),
         "purchase_price_quanta": pl.Int64(),
         "closing_cost_quanta": pl.Int64(),

@@ -203,7 +203,7 @@ def product_row(world: World, actor: AgentId) -> tuple[int, int, int, int, int, 
             if purchase.buyer_agent_id == actor
             and purchase.property_id in properties.properties
             and properties.properties[purchase.property_id].state.active
-            and f"home_value:{purchase.location_id}" in world.market.series
+            and f"home_value:{purchase.market}" in world.market.series
         )
     )
     debt = sum(loan.principal for loan in world.mortgage_snapshots() if loan.agent_id == actor)

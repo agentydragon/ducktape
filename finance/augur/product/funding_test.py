@@ -36,6 +36,7 @@ from finance.augur.sim.external_series import ExternalSeriesContext, compile_ser
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId
 from finance.augur.sim.income import Taxable
 from finance.augur.sim.jurisdictions import (
+    IncomeTax,
     InterestExemptions,
     Jurisdiction,
     StatutoryAmount,
@@ -372,20 +373,22 @@ def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim()
     config = FundingPolicy(sleeve_weights=(SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),))
     rule = Jurisdiction(
         jurisdiction_id=JurisdictionId("test-flat"),
-        exempt_interest=InterestExemptions(treasury=False, municipal=set()),
-        ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
-        ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
-        standard_deduction={FilingStatus.SINGLE: Decimal(0)},
-        max_capital_loss_ordinary_offset={FilingStatus.SINGLE: Decimal(0)},
-        law_year=2024,
-        indexation=dict.fromkeys(
-            (
-                StatutoryAmount.ORDINARY_INCOME_BRACKETS,
-                StatutoryAmount.LTCG_BRACKETS,
-                StatutoryAmount.STANDARD_DEDUCTION,
-                StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET,
+        income_tax=IncomeTax(
+            exempt_interest=InterestExemptions(treasury=False, municipal=set()),
+            ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
+            ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
+            standard_deduction={FilingStatus.SINGLE: Decimal(0)},
+            max_capital_loss_ordinary_offset={FilingStatus.SINGLE: Decimal(0)},
+            law_year=2024,
+            indexation=dict.fromkeys(
+                (
+                    StatutoryAmount.ORDINARY_INCOME_BRACKETS,
+                    StatutoryAmount.LTCG_BRACKETS,
+                    StatutoryAmount.STANDARD_DEDUCTION,
+                    StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET,
+                ),
+                StatutoryIndexation.FIXED,
             ),
-            StatutoryIndexation.FIXED,
         ),
     )
     product = product_situation(

@@ -34,7 +34,6 @@ from finance.augur.model.series import (
     HomeValueKey,
     InflationKey,
     LevelSeriesKey,
-    LocationId,
     RentKey,
     SecurityDistributionKey,
     SecurityKey,
@@ -156,9 +155,11 @@ def level_series_demand(
         _add_amount_series_key(amount, add)
     for pe_policy in tender_policies:
         _add_amount_series_key(pe_policy.liquid_net_worth_floor, add)
-    # A property is valued at sale off its location's home-value series.
+    # A property is valued at sale off its market's home-value series, and its parcel's assessed
+    # value grows on a simulated lien date by the modeled CPI.
     for purchase in purchases:
-        add(HomeValueKey(location_id=LocationId(purchase.location_id)))
+        add(HomeValueKey(location_id=purchase.market))
+        add(InflationKey())
     return tuple(keys)
 
 

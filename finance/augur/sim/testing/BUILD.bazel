@@ -101,3 +101,15 @@ py_library(
         "@pypi//numpy",
     ],
 )
+
+py_library(
+    name = "situs",
+    srcs = ["situs.py"],
+    deps = [
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:money",
+        "//finance/augur/sim:property",
+        "//finance/augur/sim:situs",
+    ],
+)

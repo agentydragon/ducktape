@@ -21,14 +21,7 @@ PROPERTY_ROWS_ADAPTER = TypeAdapter(tuple[Property, ...])
 
 
 def _location_from_config(config: LocationConfig) -> Location:
-    return Location(
-        id=config.location_id,
-        label=config.label,
-        city=config.city,
-        state=config.state,
-        local_regulation=config.local_regulation,
-        notes=config.notes,
-    )
+    return Location(id=config.location_id, label=config.label, city=config.city, state=config.state, notes=config.notes)
 
 
 def _locations_for_config(config: Config) -> tuple[Location, ...]:

@@ -26,7 +26,6 @@ from finance.augur.sim.fixed_point import (
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.property import Housing, MortgageFinancing, ScheduledPurchase
@@ -36,6 +35,7 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
 from finance.augur.sim.testing.scripted import Scripted
+from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
 from finance.augur.sim.world import World
 
 IRS = AgentId("irs")
@@ -46,11 +46,8 @@ CHECKING = AccountId("checking")
 FEDERAL = JurisdictionId("federal_us")
 CALIFORNIA = JurisdictionId("california")
 SP500 = SecurityKey(symbol=SP500_SYMBOL)
-SF = Location(
-    location_id=LocationId("sf"),
-    annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.0118")),
-    annual_special_assessment=0,
-)
+# The home's parcel, taxed a flat 1.2% of its price.
+HOME_PARCEL = flat_parcel(Decimal("0.012"))
 
 
 def money(amount: Decimal | int) -> int:
@@ -269,7 +266,8 @@ def purchase(
         month=month,
         cause_id="alice_buys_home",
         property_id=PropertyId("home"),
-        location_id=SF.location_id,
+        parcel=HOME_PARCEL,
+        market=LocationId("sf"),
         buyer_agent_id=ALICE,
         buyer_account_id=CHECKING,
         seller_agent_id=AgentId("seller"),
@@ -287,9 +285,7 @@ def test_cash_property_purchase_moves_the_whole_stake() -> None:
     # All-cash home purchase at month 2: the buyer's down payment + closing cost moves to the seller
     # and the property goes active.
     world = world_for(account(ALICE, 600_000), account(AgentId("seller")), horizon_months=6)
-    world.declare_housing(
-        Housing(purchases=(purchase(month=2, down_payment=500_000, buyer_closing_cost=10_000),)), (), (SF,)
-    )
+    world.declare_housing(Housing(purchases=(purchase(month=2, down_payment=500_000, buyer_closing_cost=10_000),)), ())
     books = run(world)
 
     # stake = down payment + closing = 510k, moved buyer -> seller during month 2 (snapshot index 3).
@@ -311,12 +307,11 @@ def test_property_tax_accrues_only_once_the_property_is_held() -> None:
                 from_account_id=CHECKING,
                 tax_authority_agent_id=AgentId("county"),
                 tax_authority_account_id=CHECKING,
-                annual_tax_rate_ppb=rate_to_ppb(Decimal("0.012")),
+                start_year=START_YEAR,
                 start_month=0,
                 end_month=None,
             ),
         ),
-        (SF,),
     )
     books = run(world)
 
@@ -349,7 +344,6 @@ def test_financed_purchase_originates_then_services_the_loan() -> None:
             )
         ),
         (),
-        (SF,),
     )
     books = run(world)
 

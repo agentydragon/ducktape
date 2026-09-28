@@ -29,7 +29,6 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.property import Housing, MortgageFinancing, ScheduledPurchase
@@ -40,6 +39,7 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import MortgageInterestDeduction, SaltCap, SaltDeduction, TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -80,9 +80,8 @@ def usd(row: dict[str, Any], field: str) -> float:
     return int(row[field]) / 100
 
 
-SAN_FRANCISCO = Location(
-    location_id=LOCATION_ID, annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.01180")), annual_special_assessment=0
-)
+# The home's parcel, taxed a flat 1.2% of its price.
+HOME_PARCEL = flat_parcel(Decimal("0.012"))
 
 DEFAULT_SALT_SCHEDULE = (
     SaltCap(effective_year_index=0, cap=money(int(OBBBA_CAP))),
@@ -124,7 +123,8 @@ def financed_purchase(
         month=0,
         cause_id=cause_id,
         property_id=property_id,
-        location_id=LOCATION_ID,
+        parcel=HOME_PARCEL,
+        market=LOCATION_ID,
         buyer_agent_id=ALICE,
         buyer_account_id=CHECKING,
         seller_agent_id=SELLER,
@@ -250,12 +250,11 @@ def compose(case: Situation) -> World:
                 from_account_id=CHECKING,
                 tax_authority_agent_id=COLLECTOR,
                 tax_authority_account_id=CHECKING,
-                annual_tax_rate_ppb=rate_to_ppb(Decimal("0.012")),
+                start_year=START_YEAR,
                 start_month=0,
                 end_month=None,
             ),
         ),
-        (SAN_FRANCISCO,),
     )
     world.declare_flow(
         schedule=Recurring(start_month=0, end_month=case.horizon_months - 1),

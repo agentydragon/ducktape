@@ -23,6 +23,7 @@ from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, currency_amount_to
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable
 from finance.augur.sim.jurisdictions import (
+    IncomeTax,
     InterestExemptions,
     Jurisdiction,
     StatutoryAmount,
@@ -49,20 +50,22 @@ BROKERAGE = AccountId("brokerage")
 SYNTHETIC = JurisdictionId("synthetic")
 TAX = Jurisdiction(
     jurisdiction_id=SYNTHETIC,
-    exempt_interest=InterestExemptions(treasury=False, municipal=set()),
-    ordinary_income_brackets={"single": [TaxBracket(upper="Infinity", rate=Decimal("0.2"))]},
-    ltcg_brackets={"single": [TaxBracket(upper="Infinity", rate=Decimal("0.1"))]},
-    standard_deduction={"single": Decimal(0)},
-    max_capital_loss_ordinary_offset={"single": Decimal(0)},
-    law_year=2024,
-    indexation=dict.fromkeys(
-        (
-            StatutoryAmount.ORDINARY_INCOME_BRACKETS,
-            StatutoryAmount.LTCG_BRACKETS,
-            StatutoryAmount.STANDARD_DEDUCTION,
-            StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET,
+    income_tax=IncomeTax(
+        exempt_interest=InterestExemptions(treasury=False, municipal=set()),
+        ordinary_income_brackets={"single": [TaxBracket(upper="Infinity", rate=Decimal("0.2"))]},
+        ltcg_brackets={"single": [TaxBracket(upper="Infinity", rate=Decimal("0.1"))]},
+        standard_deduction={"single": Decimal(0)},
+        max_capital_loss_ordinary_offset={"single": Decimal(0)},
+        law_year=2024,
+        indexation=dict.fromkeys(
+            (
+                StatutoryAmount.ORDINARY_INCOME_BRACKETS,
+                StatutoryAmount.LTCG_BRACKETS,
+                StatutoryAmount.STANDARD_DEDUCTION,
+                StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET,
+            ),
+            StatutoryIndexation.FIXED,
         ),
-        StatutoryIndexation.FIXED,
     ),
 )
 

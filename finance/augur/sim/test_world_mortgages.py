@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from decimal import Decimal
 
 import pytest
 import pytest_bazel
@@ -12,7 +13,6 @@ from finance.augur.sim.agent import assemble
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.capture import FinancialCapture
 from finance.augur.sim.ids import AccountId, LiabilityId, PropertyId
-from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import Series
 from finance.augur.sim.mortgage import Mortgage, MortgagePayment, MortgageTerms
 from finance.augur.sim.property import Housing, MortgageFinancing, ScheduledPurchase, ScheduledSale
@@ -20,9 +20,8 @@ from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Executed
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, opening, world_on
+from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, flat_parcel
 from finance.augur.sim.world import World
-
-LOCATION = Location(location_id=LocationId("test-market"), annual_property_tax_rate_ppb=0, annual_special_assessment=0)
 
 
 @dataclass(frozen=True)
@@ -42,7 +41,8 @@ def case() -> Situation:
             month=2,
             cause_id="test-purchase",
             property_id=PropertyId("test-home"),
-            location_id=LocationId("test-market"),
+            parcel=flat_parcel(Decimal("0.012")),
+            market=LocationId("test-market"),
             buyer_agent_id=HOUSEHOLD,
             buyer_account_id=AccountId("checking"),
             seller_agent_id=WORLD,
@@ -114,12 +114,11 @@ def composed(case: Situation, rollout: int = 0) -> World:
                 from_account_id=AccountId("checking"),
                 tax_authority_agent_id=WORLD,
                 tax_authority_account_id=AccountId("cash"),
-                annual_tax_rate_ppb=12_000_000,
+                start_year=START_YEAR,
                 start_month=3,
                 end_month=None,
             ),
         ),
-        (LOCATION,),
     )
     return world
 
@@ -291,7 +290,8 @@ def test_a_building_basis_rounds_in_the_engine_not_in_the_authoring() -> None:
                     month=0,
                     cause_id="test-purchase",
                     property_id=PropertyId("test-home"),
-                    location_id=LocationId("test-market"),
+                    parcel=UNTAXED,
+                    market=LocationId("test-market"),
                     buyer_agent_id=HOUSEHOLD,
                     buyer_account_id=AccountId("checking"),
                     seller_agent_id=WORLD,
@@ -304,8 +304,7 @@ def test_a_building_basis_rounds_in_the_engine_not_in_the_authoring() -> None:
                     mortgage=None,
                 ),
             )
-        ),
-        locations=(LOCATION,),
+        )
     )
     world.prepare_month(0, {}, {})
     properties = world.properties

@@ -17,6 +17,7 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_sc
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import (
+    IncomeTax,
     InterestExemptions,
     Jurisdiction,
     StatutoryAmount,
@@ -40,20 +41,22 @@ STEADY = SecuritySymbol("test-steady")
 SECURITIES = (GROWTH, STEADY)
 _FLAT_TAX = Jurisdiction(
     jurisdiction_id=JurisdictionId("test-flat-tax"),
-    exempt_interest=InterestExemptions(treasury=False, municipal=set()),
-    ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
-    ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
-    standard_deduction={FilingStatus.SINGLE: Decimal(0)},
-    max_capital_loss_ordinary_offset={FilingStatus.SINGLE: Decimal(0)},
-    law_year=2024,
-    indexation=dict.fromkeys(
-        (
-            StatutoryAmount.ORDINARY_INCOME_BRACKETS,
-            StatutoryAmount.LTCG_BRACKETS,
-            StatutoryAmount.STANDARD_DEDUCTION,
-            StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET,
+    income_tax=IncomeTax(
+        exempt_interest=InterestExemptions(treasury=False, municipal=set()),
+        ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
+        ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
+        standard_deduction={FilingStatus.SINGLE: Decimal(0)},
+        max_capital_loss_ordinary_offset={FilingStatus.SINGLE: Decimal(0)},
+        law_year=2024,
+        indexation=dict.fromkeys(
+            (
+                StatutoryAmount.ORDINARY_INCOME_BRACKETS,
+                StatutoryAmount.LTCG_BRACKETS,
+                StatutoryAmount.STANDARD_DEDUCTION,
+                StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET,
+            ),
+            StatutoryIndexation.FIXED,
         ),
-        StatutoryIndexation.FIXED,
     ),
 )
 

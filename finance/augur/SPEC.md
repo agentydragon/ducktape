@@ -169,6 +169,16 @@ path since purchase. Pre-purchase index changes do not alter the purchase anchor
 Sale costs, loan payoff and tax basis are separate; no property sale is implied
 merely by reaching the horizon.
 
+Property tax follows the parcel's situs, a tax rate area in the jurisdiction tree. Its assessed
+value is the price at purchase, grown on each January lien date by the Board of Equalization's
+inflation factor, or for a lien year it has not published by the modeled CPI's change capped at
+2%, and raised by completed construction at its cost. A fiscal year's secured bill is the 1% base
+plus the rate area's voter-approved debt rate on the value enrolled on its lien date, less the
+homeowners' exemption when the owner lived there then, paid in monthly twelfths; a fiscal year
+after the rate area's last published one keeps that year's debt rate. San Francisco is the rate
+area shipped. Supplemental bills, Proposition 8 reductions, special districts and the two
+installment dates are not modeled.
+
 PE paths distinguish marks, voluntary opportunities, eligibility/capacity,
 liquidity blocks and forced sale/recovery. A stated recovery cashout is a total
 for the remaining position, not a per-unit quote; proceeds and disposed basis

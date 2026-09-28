@@ -30,7 +30,6 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.property import (
@@ -49,6 +48,7 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, flat_parcel
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -84,17 +84,12 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
-def location(location_id: LocationId, *, annual_rate: Decimal | int) -> Location:
-    return Location(
-        location_id=location_id, annual_property_tax_rate_ppb=rate_to_ppb(annual_rate), annual_special_assessment=0
-    )
-
-
-LOCATIONS = (location(LOCATION_ID, annual_rate=0),)
-MULTI_PROPERTY_LOCATIONS = (
-    location(HOME_LOCATION_ID, annual_rate=Decimal("0.012")),
-    location(RENTAL_LOCATION_ID, annual_rate=Decimal("0.024")),
-)
+# Each market's parcels are taxed at one flat rate.
+PARCELS = {
+    LOCATION_ID: UNTAXED,
+    HOME_LOCATION_ID: flat_parcel(Decimal("0.012")),
+    RENTAL_LOCATION_ID: flat_parcel(Decimal("0.024")),
+}
 
 
 def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
@@ -118,7 +113,7 @@ def financing(
 def purchase(
     cause_id: str,
     property_id: PropertyId,
-    location_id: LocationId,
+    market: LocationId,
     *,
     month: int = 0,
     seller: AgentId = SELLER,
@@ -132,7 +127,8 @@ def purchase(
         month=month,
         cause_id=cause_id,
         property_id=property_id,
-        location_id=location_id,
+        parcel=PARCELS[market],
+        market=market,
         buyer_agent_id=ALICE,
         buyer_account_id=CHECKING,
         seller_agent_id=seller,
@@ -147,14 +143,13 @@ def purchase(
 
 
 def property_tax(property_id: PropertyId, collector: AgentId) -> PropertyTaxPolicy:
-    """No rate of its own, so the authority charges the rate of the location the property sits in."""
     return PropertyTaxPolicy(
         property_id=property_id,
         owner_agent_id=ALICE,
         from_account_id=CHECKING,
         tax_authority_agent_id=collector,
         tax_authority_account_id=CHECKING,
-        annual_tax_rate_ppb=None,
+        start_year=START_YEAR,
         start_month=0,
         end_month=None,
     )
@@ -176,7 +171,6 @@ class Situation:
     accounts: tuple[tuple[AccountRef, int], ...]
     housing: Housing
     rollout_count: int = 1
-    locations: tuple[Location, ...] = LOCATIONS
     tax_policies: tuple[PropertyTaxPolicy, ...] = ()
     jurisdiction_ids: tuple[JurisdictionId, ...] = ()
     rent: Rent | None = None
@@ -224,7 +218,7 @@ def compose(case: Situation, rollout_id: int) -> World:
                 indexation=FixedNominalLaw(),
             )
         )
-    world.declare_housing(case.housing, case.tax_policies, case.locations)
+    world.declare_housing(case.housing, case.tax_policies)
     if case.rent is not None:
         world.declare_flow(
             schedule=Recurring(start_month=0, end_month=case.rent.end_month),
@@ -351,7 +345,6 @@ def home_and_rental_case() -> Situation:
             account(COUNTY),
             account(IRS),
         ),
-        locations=MULTI_PROPERTY_LOCATIONS,
         jurisdiction_ids=(FEDERAL, CALIFORNIA),
         rent=Rent(MONTHLY_RENT, end_month=RENTAL_SALE_MONTH - 1),
         housing=Housing(
@@ -448,7 +441,7 @@ def test_only_a_purchase_with_a_stake_moves_the_buyer_s_cash() -> None:
 
 
 def test_property_tax_is_charged_at_each_property_s_own_rate(lifecycle: Rollout) -> None:
-    """Two locations, two rates, and the rental's stops at its sale while the home's does not."""
+    """Two parcels, two rates, and the rental's stops at its sale while the home's does not."""
     home_tax = tax_transfers(lifecycle, "home_property_tax_m")
     assert home_tax.get_column("month_index").to_list() == list(range(1, LIFECYCLE_HORIZON))
     assert home_tax.get_column("amount_quanta").to_list() == [50_000] * (LIFECYCLE_HORIZON - 1)

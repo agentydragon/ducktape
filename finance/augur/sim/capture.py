@@ -389,7 +389,7 @@ def event_log(output: FinancialOutput) -> EventLog:
                     "month_index": row.month,
                     "cause_id": row.cause_id,
                     "property_id": row.property_id,
-                    "location_id": row.location_id,
+                    "market": row.market,
                     "buyer_agent_id": row.buyer_agent_id,
                     "purchase_price_quanta": row.purchase_price,
                     "closing_cost_quanta": row.closing_cost,

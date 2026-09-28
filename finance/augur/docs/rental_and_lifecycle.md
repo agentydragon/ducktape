@@ -29,7 +29,7 @@ before vacancy:
 full_property_monthly_rent * fraction_rented * leasing_fee_months
 ```
 
-Both tenant rent and agency fees index annually by the property's `rent:<location_id>`
+Both tenant rent and agency fees index annually by the property's `rent:<market>`
 series.
 
 `PropertyPurchase.is_primary_residence` does two separate things at purchase time:
@@ -110,7 +110,7 @@ On sale, the engine looks back 60 months and applies the profile's Section 121 c
 there are at least 24 qualifying months. Only single-filer $250k is wired today;
 other filing statuses raise in `sim/tax_profile.py`.
 
-Property sale computes market value from the property's `home_value:<location_id>`
+Property sale computes market value from the property's `home_value:<market>`
 series, pays off attached mortgage principal, computes realized gain, separates Section
 1250 recapture, applies Section 121 to post-recapture gain, then routes the remainder to
 long-term capital gain. Federal-style Section 1250 uses the lesser of the implied ordinary

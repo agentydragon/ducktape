@@ -41,7 +41,6 @@ from finance.augur.sim.income import (
     TransferIncomeCategory,
 )
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Observation
@@ -49,6 +48,7 @@ from finance.augur.sim.property import (
     CapitalImprovement,
     Housing,
     MortgageFinancing,
+    Parcel,
     PrimaryResidence,
     PrimaryResidenceEvent,
     RentedFraction,
@@ -62,6 +62,7 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import MortgageInterestDeduction, SaltCap, SaltDeduction, TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, flat_parcel
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -86,9 +87,6 @@ HOME_VALUE = HomeValueKey(location_id=LocationId(SF))
 # $500k house, 20% land: the building basis §168 depreciates, and the ceiling on the total.
 BUILDING_BASIS_QUANTA = 400_000 * 100
 MUNI_INTEREST = InterestIncome(character=Municipal(state=CALIFORNIA))
-SF_LOCATION = Location(
-    location_id=SF, annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.01180")), annual_special_assessment=0
-)
 
 
 def money(amount: Decimal | int) -> int:
@@ -270,6 +268,7 @@ def purchase(
     land_value_fraction: Decimal | int = Decimal("0.20"),
     closing_cost: Decimal | int = 0,
     mortgage: MortgageFinancing | None = None,
+    parcel: Parcel = UNTAXED,
 ) -> ScheduledPurchase:
     """A property bought outright, or with a loan funding the rest of the price."""
 
@@ -278,7 +277,8 @@ def purchase(
         month=month,
         cause_id=f"{property_id}_purchase",
         property_id=property_id,
-        location_id=SF,
+        parcel=parcel,
+        market=SF,
         buyer_agent_id=buyer,
         buyer_account_id=CHECKING,
         seller_agent_id=SELLER,
@@ -292,16 +292,14 @@ def purchase(
     )
 
 
-def property_tax(
-    property_id: PropertyId, owner: AgentId, *, rate: Decimal | int | None = None, end_month: int | None = None
-) -> PropertyTaxPolicy:
+def property_tax(property_id: PropertyId, owner: AgentId, *, end_month: int | None = None) -> PropertyTaxPolicy:
     return PropertyTaxPolicy(
         property_id=property_id,
         owner_agent_id=owner,
         from_account_id=CHECKING,
         tax_authority_agent_id=COUNTY,
         tax_authority_account_id=CHECKING,
-        annual_tax_rate_ppb=None if rate is None else rate_to_ppb(rate),
+        start_year=START_YEAR,
         start_month=0,
         end_month=end_month,
     )
@@ -353,7 +351,6 @@ class Situation:
     scheduled_property_cashflows: tuple[Cashflow, ...] = ()
     obligations: tuple[Dues, ...] = ()
     housing: Housing = field(default_factory=Housing)
-    locations: tuple[Location, ...] = ()
     property_tax_policies: tuple[PropertyTaxPolicy, ...] = ()
     mortgage_interest_policies: tuple[MortgageInterestDeduction, ...] = ()
     salt_policies: tuple[SaltDeduction, ...] = ()
@@ -376,7 +373,7 @@ def compose(situation: Situation, rollout_id: int) -> World:
     for interest in situation.mortgage_interest_policies:
         world.declare_deduction(interest)
     if situation.housing != Housing() or situation.property_tax_policies:
-        world.declare_housing(situation.housing, situation.property_tax_policies, situation.locations)
+        world.declare_housing(situation.housing, situation.property_tax_policies)
     # Counterparty cashflows rather than actions: the world moves these when their month opens,
     # before the month's claims are assembled.
     for flow in (
@@ -675,7 +672,6 @@ def sale_situation(
                 ),
             ),
         ),
-        locations=(SF_LOCATION,),
     )
 
 
@@ -919,7 +915,6 @@ class TestRentalIncomeTaxation:
                 ),
             ),
             housing=Housing(purchases=(purchase(PropertyId("p1"), rented_fraction=1),)),
-            locations=(SF_LOCATION,),
         )
         [rollout] = run(situation)
         # Cumulative depreciation grows monotonically; at the post-horizon snapshot it has
@@ -960,7 +955,6 @@ class TestRentalIncomeTaxation:
                     RentedFraction(month=12, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(1)),
                 ),
             ),
-            locations=(SF_LOCATION,),
         )
         [rollout] = run(situation)
         # Year 0: not rented all year, no rental income, no depreciation → ordinary income $0.
@@ -1020,7 +1014,6 @@ class TestRentalIncomeTaxation:
                     )
                 ),
             ),
-            locations=(SF_LOCATION,),
             mortgage_interest_policies=(mortgage_interest_deduction(LiabilityId("p1_mortgage"), OWNER),),
         )
         [rollout] = run(situation)
@@ -1055,7 +1048,6 @@ class TestRentalIncomeTaxation:
                     RentedFraction(month=12, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(0)),
                 ),
             ),
-            locations=(SF_LOCATION,),
         )
         [rollout] = run(situation)
         assert breakdown(rollout, month=11, jurisdiction=FEDERAL)["ordinary_income_quanta"] / 100 == pytest.approx(
@@ -1095,7 +1087,6 @@ class TestRentalIncomeTaxation:
                     ),
                 ),
             ),
-            locations=(SF_LOCATION,),
         )
         [rollout] = run(situation)
         # 6 × $400k/27.5/12 + 6 × $500k/27.5/12 = 7,272.73 + 9,090.91 = 16,363.64.
@@ -1141,7 +1132,6 @@ class TestRentalIncomeTaxation:
                     ),
                 ),
             ),
-            locations=(SF_LOCATION,),
         )
         [rollout] = run(situation)
 
@@ -1248,7 +1238,6 @@ class TestRentalIncomeTaxation:
                     RentedFraction(month=12, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(0)),
                 ),
             ),
-            locations=(SF_LOCATION,),
         )
         rollouts = run(situation)
         assert [rollout.rollout_id for rollout in rollouts] == [0, 1]
@@ -1341,6 +1330,7 @@ class TestRentalIncomeTaxation:
                         PropertyId("alice_rental"),
                         buyer=ALICE,
                         rented_fraction=1,
+                        parcel=flat_parcel(annual_property_tax_rate),
                         mortgage=financing(
                             LiabilityId("alice_rental_mortgage"),
                             principal=mortgage_principal,
@@ -1352,6 +1342,7 @@ class TestRentalIncomeTaxation:
                         PropertyId("bob_home"),
                         buyer=BOB,
                         rented_fraction=0,
+                        parcel=flat_parcel(annual_property_tax_rate),
                         mortgage=financing(
                             LiabilityId("bob_home_mortgage"),
                             principal=mortgage_principal,
@@ -1374,10 +1365,9 @@ class TestRentalIncomeTaxation:
                 ),
                 initial_residences=(PrimaryResidence(agent_id=BOB, property_id=PropertyId("bob_home")),),
             ),
-            locations=(SF_LOCATION,),
             property_tax_policies=(
-                property_tax(PropertyId("alice_rental"), ALICE, rate=annual_property_tax_rate),
-                property_tax(PropertyId("bob_home"), BOB, rate=annual_property_tax_rate),
+                property_tax(PropertyId("alice_rental"), ALICE),
+                property_tax(PropertyId("bob_home"), BOB),
             ),
             mortgage_interest_policies=(
                 mortgage_interest_deduction(LiabilityId("alice_rental_mortgage"), ALICE),
@@ -1645,7 +1635,6 @@ class TestRentalIncomeTaxation:
                 ),
                 initial_residences=(PrimaryResidence(agent_id=OWNER, property_id=PropertyId("p1")),),
             ),
-            locations=(SF_LOCATION,),
         )
         [rollout] = run(situation)
         sale = sale_rows(rollout)["p1"]
@@ -1698,7 +1687,6 @@ class TestRentalIncomeTaxation:
                     PrimaryResidenceEvent(month=primary_end_month, agent_id=OWNER, property_id=None),
                 ),
             ),
-            locations=(SF_LOCATION,),
         )
         [rollout] = run(situation)
 
@@ -1734,7 +1722,6 @@ class TestRentalIncomeTaxation:
                     ),
                 ),
             ),
-            locations=(SF_LOCATION,),
         )
         [rollout] = run(situation)
         sale = sale_rows(rollout)["p1"]
@@ -1764,7 +1751,6 @@ class TestRentalIncomeTaxation:
                 ),
                 residence_events=(PrimaryResidenceEvent(month=6, agent_id=OWNER, property_id=PropertyId("p1")),),
             ),
-            locations=(SF_LOCATION,),
         )
         [rollout] = run(situation)
 
@@ -1840,7 +1826,6 @@ class TestRentalIncomeTaxation:
                     ),
                 ),
             ),
-            locations=(SF_LOCATION,),
         )
         [rollout] = run(situation)
         events = trace(rollout).events
@@ -1903,7 +1888,6 @@ class TestRentalIncomeTaxation:
                 ),
             ),
             housing=Housing(purchases=(purchase(PropertyId("p1"), rented_fraction=0),)),
-            locations=(SF_LOCATION,),
         )
         [rollout] = run(situation)
         # No depreciation → ordinary income equals gross paycheck income: $60,000.
@@ -1955,7 +1939,6 @@ class TestRentalIncomeTaxation:
                     ),
                 )
             ),
-            locations=(SF_LOCATION,),
             mortgage_interest_policies=(mortgage_interest_deduction(LiabilityId("p1_mortgage"), OWNER),),
         )
         [rollout] = run(situation)
@@ -1994,11 +1977,11 @@ class TestRentalIncomeTaxation:
                         # A land-only basis makes the building basis zero, so no §168
                         # depreciation accrues to blur the property-tax assertion.
                         land_value_fraction=1,
+                        parcel=flat_parcel(annual_tax_rate),
                     ),
                 )
             ),
-            locations=(SF_LOCATION,),
-            property_tax_policies=(property_tax(PropertyId("p1"), OWNER, rate=annual_tax_rate, end_month=11),),
+            property_tax_policies=(property_tax(PropertyId("p1"), OWNER, end_month=11),),
             salt_policies=(salt_cap(OWNER, 10_000),),
         )
         [rollout] = run(situation)

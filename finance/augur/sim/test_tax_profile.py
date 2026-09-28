@@ -36,8 +36,14 @@ def _alice(*jurisdiction_ids: JurisdictionId) -> TaxProfile:
     )
 
 
+def _revised(jurisdiction: Jurisdiction, **update: object) -> Jurisdiction:
+    """`jurisdiction` with its income tax's fields replaced."""
+    assert jurisdiction.income_tax is not None
+    return jurisdiction.model_copy(update={"income_tax": jurisdiction.income_tax.model_copy(update=update)})
+
+
 def _capping(jurisdiction: Jurisdiction, *, offset: Decimal) -> Jurisdiction:
-    return jurisdiction.model_copy(update={"max_capital_loss_ordinary_offset": {"single": offset}})
+    return _revised(jurisdiction, max_capital_loss_ordinary_offset={"single": offset})
 
 
 def test_the_shipped_jurisdictions_agree_on_the_cap() -> None:
@@ -68,13 +74,13 @@ def test_a_profile_whose_jurisdictions_index_the_offset_differently_is_refused()
     """Equal caps today diverge in a CPI-indexed year once one jurisdiction indexes its cap."""
 
     california = load_jurisdiction(JurisdictionId("california"))
-    indexing = california.model_copy(
-        update={
-            "indexation": {
-                **california.indexation,
-                StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET: StatutoryIndexation.CPI,
-            }
-        }
+    assert california.income_tax is not None
+    indexing = _revised(
+        california,
+        indexation={
+            **california.income_tax.indexation,
+            StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET: StatutoryIndexation.CPI,
+        },
     )
     with pytest.raises(ValueError, match="cap the capital-loss ordinary offset differently"):
         compile_profile(
@@ -136,16 +142,15 @@ def test_profile_order_routes_and_jurisdiction_specific_rules_survive_compilatio
 
 
 def test_compiled_thresholds_and_rates_convert_exactly() -> None:
-    jurisdiction = load_jurisdiction(FEDERAL_US).model_copy(
-        update={
-            "ordinary_income_brackets": {
-                "single": [
-                    TaxBracket(upper=Decimal("10.05"), rate=Decimal("0.100000001")),
-                    TaxBracket(upper="Infinity", rate=Decimal("0.20")),
-                ]
-            },
-            "standard_deduction": {"single": Decimal("5.05")},
-        }
+    jurisdiction = _revised(
+        load_jurisdiction(FEDERAL_US),
+        ordinary_income_brackets={
+            "single": [
+                TaxBracket(upper=Decimal("10.05"), rate=Decimal("0.100000001")),
+                TaxBracket(upper="Infinity", rate=Decimal("0.20")),
+            ]
+        },
+        standard_deduction={"single": Decimal("5.05")},
     )
     profile = compile_profile(
         _alice(FEDERAL_US), {FEDERAL_US: jurisdiction}, currency=Currency(code="TEST-NICKEL", quantum=Decimal("0.05"))
@@ -158,21 +163,21 @@ def test_compiled_thresholds_and_rates_convert_exactly() -> None:
     assert rule.max_capital_loss_ordinary_offset == 60_000
     assert profile.section_121_exclusion == 5_000_000
     # Compiled schedules own the resolved values, not references to mutable source tables.
-    jurisdiction.ordinary_income_brackets["single"][0].upper = Decimal("99.95")
+    assert jurisdiction.income_tax is not None
+    jurisdiction.income_tax.ordinary_income_brackets["single"][0].upper = Decimal("99.95")
     assert first.upper == 201
 
 
 def test_largest_finite_threshold_is_not_an_open_bracket_sentinel() -> None:
     maximum = (1 << 63) - 1
-    jurisdiction = load_jurisdiction(FEDERAL_US).model_copy(
-        update={
-            "ordinary_income_brackets": {
-                "single": [
-                    TaxBracket(upper=Decimal(maximum) * USD.quantum, rate=Decimal("0.10")),
-                    TaxBracket(upper="Infinity", rate=Decimal("0.20")),
-                ]
-            }
-        }
+    jurisdiction = _revised(
+        load_jurisdiction(FEDERAL_US),
+        ordinary_income_brackets={
+            "single": [
+                TaxBracket(upper=Decimal(maximum) * USD.quantum, rate=Decimal("0.10")),
+                TaxBracket(upper="Infinity", rate=Decimal("0.20")),
+            ]
+        },
     )
     profile = compile_profile(_alice(FEDERAL_US), {FEDERAL_US: jurisdiction}, currency=USD)
     assert [bracket.upper for bracket in profile.jurisdictions[0].ordinary_brackets] == [maximum, None]

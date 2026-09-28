@@ -28,7 +28,6 @@ from finance.augur.sim.external_series import ExternalSeriesContext, compile_ser
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
-from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.property import Housing, ScheduledPurchase, ScheduledSale
@@ -37,6 +36,7 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.scripted import Scripted
+from finance.augur.sim.testing.situs import UNTAXED
 from finance.augur.sim.world import Capture, World
 
 CHECKING = AccountId("checking")
@@ -140,7 +140,8 @@ def a_property_bought_and_sold(closing_cost_pct: Decimal = Decimal(0)) -> Worlds
         month=0,
         cause_id="buy-house",
         property_id=PropertyId("house"),
-        location_id=LOCATION,
+        parcel=UNTAXED,
+        market=LOCATION,
         buyer_agent_id=AGENT,
         buyer_account_id=CHECKING,
         seller_agent_id=SELLER,
@@ -162,7 +163,6 @@ def a_property_bought_and_sold(closing_cost_pct: Decimal = Decimal(0)) -> Worlds
         horizon_months=HORIZON_MONTHS,
         currency=USD,
     )
-    location = Location(location_id=LOCATION, annual_property_tax_rate_ppb=0, annual_special_assessment=0)
 
     def compose() -> World:
         # Untaxed on purpose: what the gain is assessed at is the statute suites' business, and
@@ -187,7 +187,6 @@ def a_property_bought_and_sold(closing_cost_pct: Decimal = Decimal(0)) -> Worlds
                 ),
             ),
             (),
-            (location,),
         )
         world.track(ClaimPayer(AgentId(AGENT)))
         return world

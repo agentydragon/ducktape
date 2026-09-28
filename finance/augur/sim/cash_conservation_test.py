@@ -26,6 +26,7 @@ from decimal import Decimal
 import numpy as np
 import polars as pl
 import pytest_bazel
+from more_itertools import one
 
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.series import (
@@ -52,19 +53,28 @@ from finance.augur.sim.fixed_point import (
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.private_equity import TenderPolicy
-from finance.augur.sim.property import CapitalImprovement, Housing, MortgageFinancing, ScheduledPurchase, ScheduledSale
+from finance.augur.sim.property import (
+    CapitalImprovement,
+    Housing,
+    MortgageFinancing,
+    Parcel,
+    ScheduledPurchase,
+    ScheduledSale,
+)
+from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.situs import compile_situs
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.issuer_protocol import at_month, issuer_protocol
 from finance.augur.sim.testing.scripted import Scripted
+from finance.augur.sim.testing.situs import START_YEAR
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -92,9 +102,7 @@ TENDER_PROCEEDS_QUANTA = TENDER_UNITS * int(TENDER_MARK) * QUANTA_PER_UNIT
 
 PROPERTY_HORIZON, PROPERTY_SALE_MONTH, CAPEX_MONTH = 36, 24, 12
 PROPERTY_LOCATION_ID = LocationId("loc")
-PROPERTY_LOCATION = Location(
-    location_id=PROPERTY_LOCATION_ID, annual_property_tax_rate_ppb=0, annual_special_assessment=0
-)
+COUNTY = AgentId("county")
 
 
 def money(amount: Decimal | int) -> int:
@@ -316,6 +324,7 @@ def property_sale_world() -> World:
         (AgentId("seller"), 0),
         (AgentId("bank"), 0),
         (AgentId("irs"), 0),
+        (COUNTY, 0),
     ):
         account(world, agent_id, balance)
     world.track(
@@ -335,7 +344,10 @@ def property_sale_world() -> World:
                     month=0,
                     cause_id="buy-house",
                     property_id=PropertyId("house"),
-                    location_id=PROPERTY_LOCATION_ID,
+                    parcel=Parcel(
+                        situs=compile_situs(load_jurisdiction(JurisdictionId("san_francisco")), currency=USD)
+                    ),
+                    market=PROPERTY_LOCATION_ID,
                     buyer_agent_id=ALICE,
                     buyer_account_id=CHECKING,
                     seller_agent_id=AgentId("seller"),
@@ -368,8 +380,18 @@ def property_sale_world() -> World:
                 ),
             ),
         ),
-        (),
-        (PROPERTY_LOCATION,),
+        (
+            PropertyTaxPolicy(
+                property_id=PropertyId("house"),
+                owner_agent_id=ALICE,
+                from_account_id=CHECKING,
+                tax_authority_agent_id=COUNTY,
+                tax_authority_account_id=CHECKING,
+                start_year=START_YEAR,
+                start_month=0,
+                end_month=None,
+            ),
+        ),
     )
     return world
 
@@ -443,6 +465,18 @@ def test_a_property_sale_brings_in_its_net_and_not_its_gross() -> None:
     assert sale["mortgage_payoff_quanta"] > 0, "a payoff of nothing would not tell gross from net"
     assert sale["net_cash_to_owner_quanta"] > 0
     assert crossed_the_boundary(rollout, accounts, month=PROPERTY_SALE_MONTH) == sale["net_cash_to_owner_quanta"]
+
+
+def test_property_tax_moves_cash_only_to_the_modeled_county() -> None:
+    """A month whose only flows are the installment and the tax bill: both reach a modeled agent."""
+
+    world = property_sale_world()
+    accounts = declared(world)
+    rollout = run(world)
+    county = AccountRef(agent_id=COUNTY, account_id=CHECKING)
+
+    assert crossed_the_boundary(rollout, accounts, month=1) == 0
+    assert one(row.balance for row in book(rollout, 2).balances if row.account == county) > 0
 
 
 def test_a_capital_improvement_takes_cash_out_of_the_modeled_world() -> None:
