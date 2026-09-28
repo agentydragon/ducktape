@@ -381,9 +381,8 @@ class Properties:
             new_construction=sum(
                 improvement.amount for improvement in self.improvements if improvement.property_id == property_id
             ),
-            transfer_tax=sum(
-                row.transfer_tax for row in (*self.purchases, *self.sales) if row.property_id == property_id
-            ),
+            transfer_tax=sum(row.transfer_tax for row in self.purchases if row.property_id == property_id)
+            + sum(row.transfer_tax for row in self.sales if row.property_id == property_id),
         )
 
     def owner_occupied(self, state: PropertyState) -> bool:
