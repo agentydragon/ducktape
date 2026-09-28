@@ -46,5 +46,18 @@ def test_public_route_exposes_protocol_paths_only(
     assert paths >= _MCP_PROTOCOL_PATHS
 
 
+def test_staging_exposes_only_the_configured_grocy_cimd_path(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    route = one(
+        doc
+        for doc in agentplane_manifests["agentplane-staging"]
+        if doc["kind"] == "HTTPRoute" and doc["metadata"]["name"] == "agentplane-actions-mcp"
+    )
+    paths = {match["path"]["value"] for rule in route["spec"]["rules"] for match in rule["matches"]}
+    assert "/oauth/client-metadata/grocy_sf.json" in paths
+    assert "/oauth/client-metadata/" not in paths
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

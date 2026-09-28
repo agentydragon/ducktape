@@ -603,6 +603,14 @@ def _error(status_code: int, detail: str) -> JSONResponse:
 
 
 def _mcp_linkage_routes(app: FastAPI, authority: McpLinkageAuthority) -> None:
+    @app.get("/oauth/client-metadata/{server_id}.json")
+    async def client_metadata_document(server_id: str) -> JSONResponse:
+        document = authority.client_metadata_document(server_id)
+        return JSONResponse(
+            content=document.model_dump(mode="json", exclude_none=True),
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
     @app.exception_handler(McpLinkageError)
     async def mcp_linkage_failed(request: Request, error: McpLinkageError) -> JSONResponse:
         # A provider that refused or could not answer the token exchange; the more specific

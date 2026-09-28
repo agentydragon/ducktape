@@ -11,10 +11,11 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 from uuid import UUID, uuid4
 
 import httpx2
+from fastmcp.server.auth.cimd import CIMDDocument
 from mcp.client.auth.utils import (
     build_oauth_authorization_server_metadata_discovery_urls,
     build_protected_resource_metadata_discovery_urls,
@@ -27,7 +28,7 @@ from mcp.client.auth.utils import (
 from mcp.shared.auth import OAuthMetadata, ProtectedResourceMetadata
 from mcp.shared.auth_utils import check_resource_allowed, resource_url_from_server_url
 from prometheus_client import Histogram
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -57,11 +58,49 @@ class McpOAuthServer(BaseModel):
     server_url: str = Field(min_length=1)
     authorization_endpoint: str | None = None
     token_endpoint: str | None = None
-    client_id: str = Field(min_length=1)
+    client_id: str | None = Field(default=None, min_length=1)
+    client_metadata_url: str | None = Field(default=None, min_length=1)
+    client_name: str | None = Field(default=None, min_length=1)
     client_secret_file: Path | None = None
     redirect_uri: str = Field(min_length=1)
     scopes: list[str] = Field(default_factory=list)
     resource: str | None = None
+
+    @model_validator(mode="after")
+    def validate_client_configuration(self) -> McpOAuthServer:
+        if (self.client_id is None) == (self.client_metadata_url is None):
+            raise ValueError("configure exactly one of client_id or client_metadata_url")
+        if self.client_metadata_url is None:
+            if self.client_name is not None:
+                raise ValueError("client_name is only valid with client_metadata_url")
+            return self
+        if self.client_name is None:
+            raise ValueError("client_name is required with client_metadata_url")
+        if self.client_secret_file is not None:
+            raise ValueError("CIMD clients use public token authentication and cannot have a client secret")
+        parsed = urlsplit(self.client_metadata_url)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.port is not None
+            or parsed.query
+            or parsed.fragment
+            or parsed.path != f"/oauth/client-metadata/{self.server_id}.json"
+        ):
+            raise ValueError("client_metadata_url must be an HTTPS URL at this server's public metadata path")
+        if str(AnyHttpUrl(self.client_metadata_url)) != self.client_metadata_url:
+            raise ValueError("client_metadata_url must use its canonical URL form")
+        return self
+
+    @property
+    def oauth_client_id(self) -> str:
+        """The OAuth client identifier sent to the remote authorization server."""
+        if self.client_metadata_url is not None:
+            return self.client_metadata_url
+        assert self.client_id is not None
+        return self.client_id
 
 
 class McpLinkageStart(BaseModel):
@@ -211,7 +250,11 @@ class McpLinkageAuthority:
 
     async def start(self, server_id: str, request: McpLinkageStart, operator: OperatorPrincipal) -> McpLinkageStartView:
         server = self._server(server_id)
-        authorization_endpoint, token_endpoint, resource, discovered_scopes = await self._discover(server)
+        authorization_endpoint, token_endpoint, resource, discovered_scopes, cimd_supported = await self._discover(
+            server
+        )
+        if server.client_metadata_url is not None and not cimd_supported:
+            raise McpLinkageConflictError("MCP OAuth metadata does not advertise Client ID Metadata Document support")
         scopes = _scopes(request.scopes or server.scopes or discovered_scopes, server.scopes or discovered_scopes)
         now = datetime.now(UTC)
         expires_at = now + timedelta(minutes=10)
@@ -237,7 +280,7 @@ class McpLinkageAuthority:
             )
         query = {
             "response_type": "code",
-            "client_id": server.client_id,
+            "client_id": server.oauth_client_id,
             "redirect_uri": server.redirect_uri,
             "state": state,
             "code_challenge": _challenge(verifier),
@@ -359,7 +402,21 @@ class McpLinkageAuthority:
             raise McpLinkageConflictError("MCP server is not linked or its token has expired")
         return state.access_token
 
-    async def _discover(self, server: McpOAuthServer) -> tuple[str, str, str | None, list[str]]:
+    def client_metadata_document(self, server_id: str) -> CIMDDocument:
+        """Build the public metadata document for one configured CIMD client."""
+        server = self._server(server_id)
+        if server.client_metadata_url is None or server.client_name is None:
+            raise McpLinkageNotFoundError("unknown MCP client metadata document")
+        return CIMDDocument(
+            client_id=AnyHttpUrl(server.client_metadata_url),
+            client_name=server.client_name,
+            redirect_uris=[server.redirect_uri],
+            token_endpoint_auth_method="none",
+            grant_types=["authorization_code", "refresh_token"],
+            response_types=["code"],
+        )
+
+    async def _discover(self, server: McpOAuthServer) -> tuple[str, str, str | None, list[str], bool]:
         """Discover MCP protected-resource and authorization-server metadata before linking."""
         started = asyncio.get_running_loop().time()
         client = self._http or httpx2.AsyncClient(timeout=10, follow_redirects=False)
@@ -399,6 +456,7 @@ class McpLinkageAuthority:
             )
             if not authorization_endpoint or not token_endpoint:
                 raise McpLinkageConflictError("MCP OAuth metadata did not provide authorization and token endpoints")
+            cimd_supported = bool(oauth_metadata and oauth_metadata.client_id_metadata_document_supported)
             configured_resource = (
                 str(resource_metadata.resource) if resource_metadata and resource_metadata.resource else None
             )
@@ -414,7 +472,7 @@ class McpLinkageAuthority:
                 else get_client_metadata_scopes(extract_scope_from_www_auth(probe), resource_metadata, oauth_metadata)
             )
             _observe_oauth_metric("discovery", "success", started)
-            return authorization_endpoint, token_endpoint, resource, scope.split() if scope else []
+            return authorization_endpoint, token_endpoint, resource, scope.split() if scope else [], cimd_supported
         except McpLinkageError:
             _observe_oauth_metric("discovery", "rejected", started)
             raise
@@ -551,7 +609,7 @@ class McpLinkageAuthority:
             "grant_type": "authorization_code",
             "code": code,
             "redirect_uri": server.redirect_uri,
-            "client_id": server.client_id,
+            "client_id": server.oauth_client_id,
             "code_verifier": verifier,
         }
         if scopes:
@@ -568,7 +626,7 @@ class McpLinkageAuthority:
     ) -> dict[str, object]:
         if token_endpoint is None:
             raise _RefreshError("no token endpoint was discovered for this server", action="reconnect")
-        data = {"grant_type": "refresh_token", "refresh_token": refresh_token, "client_id": server.client_id}
+        data = {"grant_type": "refresh_token", "refresh_token": refresh_token, "client_id": server.oauth_client_id}
         if scopes:
             data["scope"] = " ".join(scopes)
         return await self._post_token(server, token_endpoint, resource, data, operation="refresh")

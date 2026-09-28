@@ -59,6 +59,7 @@ py_library(
         ":catalog",
         ":db",
         ":models",
+        "@pypi//fastmcp_slim",
         "@pypi//httpx2",
         "@pypi//mcp",
         "@pypi//mcp_types",

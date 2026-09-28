@@ -53,6 +53,7 @@ from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, 
 
 _NAMESPACE = "agentplane-staging"
 _HOSTNAME = "agentplane-staging.allegedly.works"
+_ACTIONS_HOSTNAME = "agentplane-actions-staging.allegedly.works"
 _AUTHENTIK = "https://auth.allegedly.works"
 _ACTIONS_OIDC_APP = f"{_AUTHENTIK}/application/o/agentplane-staging-actions"
 # The push services web-push subscriptions may target: both the Action Service's own
@@ -61,15 +62,7 @@ _WEB_PUSH_ALLOWED_HOSTS = ("fcm.googleapis.com", "updates.push.services.mozilla.
 _GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
 _GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
-# grocy-mcp-sf's OIDCProxy authorization server (mcp_infra/authentik_auth) only advertises
-# `none`/`private_key_jwt` in `token_endpoint_auth_methods_supported` -- no client_secret_post
-# or client_secret_basic -- so this is a public, PKCE-only client (RFC 7591 dynamic client
-# registration against https://grocy-mcp-sf.allegedly.works/register, redirect_uri
-# https://agentplane-staging.allegedly.works/mcp-linkage/callback), the same shape as
-# `kubernetes_admin` below. No client secret exists to rotate or leak. If the registration is ever
-# lost (e.g. the server's Valkey-backed client store is wiped), re-run the DCR POST and update
-# this literal; nothing else changes.
-_GROCY_SF_MCP_CLIENT_ID = "cb57e244-c13c-4eac-a299-e052698b774e"
+_GROCY_SF_MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata/grocy_sf.json"
 _HOME_ASSISTANT_MCP_URL = "http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp"
 _TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
 # One google-mcp pod (cluster/cdk8s/google_mcp.py) serves both tool sets at
@@ -128,7 +121,8 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
         "grocy_sf": McpOAuthServer(
             server_id="grocy_sf",
             server_url=_GROCY_SF_MCP_URL,
-            client_id=_GROCY_SF_MCP_CLIENT_ID,
+            client_metadata_url=_GROCY_SF_MCP_CLIENT_METADATA_URL,
+            client_name="Agentplane staging Grocy SF",
             redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
         ),
     },
@@ -308,7 +302,7 @@ ENV = Environment(
         oidc_session_secret_name=_OIDC_SESSION_SECRET,
     ),
     actions=ActionsProps(
-        hostname="agentplane-actions-staging.allegedly.works",
+        hostname=_ACTIONS_HOSTNAME,
         settings=_ACTIONS_SETTINGS,
         extra_reload_secrets=(
             _GITHUB_MCP_CLIENT_SECRET,
