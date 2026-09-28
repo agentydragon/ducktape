@@ -1,36 +1,25 @@
 # Augur Prior Art Audit
 
-## Executive Summary
+## Summary
 
-Augur is closest to a dynamic household microsimulation and personal-finance
-projection engine: it samples exogenous market paths, then projects typed
-scenarios through deterministic actor policies, accounting applications, and
-result views. In financial-risk terms, `SamplingRequest` plus
-`SampledExogenousBundle` is an economic scenario generator input/output,
-`ScenarioSet` is the portfolio of household scenario variants, `rollout_id`
-selects one sampled path, and the policy runtime is the pathwise deterministic
-projector.
+Augur is closest to a dynamic household microsimulation driven by an economic
+scenario generator. Exogenous models sample market paths first; a `World` of
+simulated actors is built on each path and reads it, with no feedback into the
+paths. In financial-risk terms, a `Sampler` returning a `SampledExogenousBundle`
+is the scenario generator, one `World` per path is the pathwise deterministic
+projector, and the caller's loop is the Monte Carlo driver. Augur supplies
+building blocks rather than a framework: the caller samples, declares, steps and
+reads results (README § Using Augur).
 
-The important gaps the rest of this audit explores:
+The prior art below still points at open work:
 
-- A run-scoped `rollout_id` is not sufficient provenance. Reproducibility needs
-  IDs backed by persisted evidence/calibration artifacts, generator versions,
-  scenario inputs, and any non-market event streams.
-- Policy execution traces need richer coverage for no-op, rejected, instructed,
-  and applied decisions as policy families grow.
-- Cash-under-zero and failed-rollout semantics should generalize beyond the
-  annual-tax obligation slice to mortgages, other cash demands, explicit
-  credit/default state, and continued-vs-terminated projection behavior.
-- Ledger and accounting detail are valuable but not yet accounting-grade.
-  Postings are still stringly typed `domain`/`category` rows rather than
-  balanced journal entries with typed accounts, lots, liabilities, cause ids,
-  and reconciliation invariants.
-- Model governance has a first typed surface but is not yet decision-grade:
-  validation is placeholder-level and evidence/calibration artifacts are not
-  persisted reviewed records.
-- Calibration/evidence and projection boundaries should be explicit: evidence
-  feeds model fitting; fitted scenario generators feed `SampledExogenousBundle`;
-  the sim projector should not know source-specific evidence.
+- `cause_id` on journal entries, payments, claims and tax accruals is a
+  formatted string whose shape differs per module.
+- Tax law is one `law_year` per jurisdiction, held flat or CPI-indexed into
+  later years, with no external oracle checking it.
+- Promoting a fitted model from `x/models/` into core needs evidence beyond the
+  current sanity bands, and providers record evidence and fit identity in
+  `provenance` inconsistently.
 
 ## Prior-Art Catalog
 
@@ -49,10 +38,11 @@ Carlo architecture is relevant. The core pattern is clean separation of:
 - path pricing or pathwise deterministic evaluation;
 - sample accumulation and error/statistics reporting.
 
-Augur should copy the separation, not the instrument domain.
-`SampledExogenousBundle` should remain path generation output. The household
-policy/accounting projector should be deterministic conditional on a selected
-path bundle.
+Augur has the same separation without the instrument domain: a `Sampler` or
+`HistoricalWindowsModel.materialize` generates paths, `compile_series` fixes
+them onto the monthly grid, each `World` evaluates one `MarketPath`
+deterministically given the caller's ordered actions, and accumulation is the
+caller's (or the product's metric fans).
 
 ### Open Source Risk Engine (ORE)
 
@@ -64,12 +54,16 @@ ORE demonstrates how a production risk system splits trade/portfolio input,
 market data, application configuration, simulation configuration, risk-factor
 evolution, scenario generation, exposure simulation, stress scenarios,
 sensitivity scenarios, historical scenarios, and generated reports. Its scenario
-module names useful concepts for Augur: scenario generator, scenario path
-generator, scenario data, scenario sim market, risk-factor key, stress scenario,
-historical scenario, and aggregation scenario data.
+module names useful concepts: scenario generator, scenario path generator,
+scenario data, scenario sim market, risk-factor key, stress scenario, historical
+scenario, and aggregation scenario data.
 
 Augur is not pricing derivatives, but ORE is useful prior art for path identity,
-scenario metadata, market data provenance, stress/path replay, and auditability.
+market data provenance, stress/path replay, and auditability. Its risk-factor
+key corresponds to `LevelSeriesKey`, its scenario sim market to the
+`MarketPath` over `compile_series` output, and its historical scenarios to
+`HistoricalWindowsModel`. ORE's application configuration owns the run; in Augur
+the caller does.
 
 ### OpenFisca
 
@@ -92,9 +86,11 @@ relevant:
 - simulations as caches of input data and computed results;
 - calculation tracing.
 
-Augur should use the OpenFisca pattern for tax/regulation/policy parameters and
-calculation traceability, while keeping dynamic behavior and market paths
-outside OpenFisca's static assumptions.
+Augur keeps tax law as data: jurisdiction tables in `sim/data/jurisdictions/`,
+each stating its `law_year`, resolved by `sim/tax_profile.py` into immutable
+profiles. Tax facts are traced as `TaxAccrual` rows. Parameters are not yet
+perioded (§ Open recommendations). Engine-level options are evaluated in
+<../sim/docs/tax_engine_evaluation.md>.
 
 ### PolicyEngine
 
@@ -106,13 +102,10 @@ generic microsimulation framework and country-specific logic, parameters, and
 data. The framework calculates variables for periods and can trace computation
 trees; the country packages define entities, variables, parameters, and data.
 
-For Augur, the transferable pattern is not the tax-benefit scope. It is the
-boundary between:
-
-- framework/runtime code;
-- domain rules and parameters;
-- deployment-specific/private data;
-- inspectable calculation traces.
+Augur draws the same boundaries: core code in this repo, jurisdiction rules as
+data, deployment-specific and private data in downstream repos (README
+§ Planning boundary), and inspectable `Trace` output (books, journal, events,
+receipts).
 
 ### Tax-Calculator and PSL
 
@@ -131,9 +124,11 @@ Tax-Calculator is a public federal tax microsimulation model. Relevant patterns:
 - tests include unit, integration, and cross-model validation against TAXSIM;
 - reports should cite release/version and replication materials.
 
-For Augur, this points toward explicit scenario input records, policy parameter
-sets, model/release identity, and reproducibility materials for any result that
-will guide real financial decisions.
+In Augur, month-0 declarations on a `World` play the role of `Records`, the
+resolved tax profile the role of `Policy`, and the `World` the role of
+`Calculator`. Cross-model validation is the open item: Tax-Calculator is the
+recommended federal oracle in <../sim/docs/tax_engine_evaluation.md>. Citing
+model and replication materials is AGENTS § Provenance of a reported number.
 
 ### Dynamic Microsimulation Literature
 
@@ -153,8 +148,10 @@ Useful patterns and warnings:
 - behavioral/agent feedback is hard and data hungry;
 - building too much complexity too early is a known failure mode.
 
-Augur should stay spiral-driven: first make a small dynamic household model
-traceable, reproducible, and auditable, then add richer behavior.
+Augur's answers: ex-post validation is the `study/` reproductions of published
+results; behavioral feedback into markets is excluded by the one-way contract;
+and "no layer without a caller that needs it now" (AGENTS § Conventions) guards
+against early complexity.
 
 ### Agent-Based and Discrete-Event Frameworks
 
@@ -171,9 +168,13 @@ vocabulary:
 - data collection;
 - repeated runs over the same model.
 
-Augur should not turn into a general agent-based market simulator unless needed.
-It can still borrow scheduling and data-collection vocabulary for policy
-programs, exogenous opportunities, failure events, and trace records.
+In Augur, agents are tracked `Actor[In, Out]`s exchanging closed typed message
+unions, the model is the `World`, and the schedule is its monthly open, act and
+close, counterparties before agents, skipping undeclared domains. Data
+collection is the caller reading
+state between steps, or `FinancialCapture`; a Mesa-style collector or event bus
+was considered and rejected (<../sim/DESIGN.md> § Common experiment session and
+§ Rejected designs).
 
 ### Model Governance and Risk Data Governance
 
@@ -192,451 +193,74 @@ BCBS 239 is likewise overkill for a personal simulator, but its risk-data
 principles translate well: data should be accurate, complete, timely, adaptable,
 and traceable enough that reports can be reproduced and reconciled.
 
-## Proven Patterns Likely Relevant To Augur
-
-### 1. Separate Scenario Generation From Projection
-
-Pattern: economic scenario generation produces exogenous paths; deterministic
-projection evaluates policies and accounting on those paths.
-
-Current Augur alignment:
-
-- `SamplingRequest` requests model id, rollout count, horizon, and seed.
-- `Sampler.sample()` samples a `SampledExogenousBundle`.
-- The API translator validates the `ScenarioSet`, materializes sim scenarios,
-  samples or accepts a `SampledExogenousBundle`, then runs each translated
-  scenario through `augur/sim`.
-
-Gap:
-
-- The boundary is not yet named as a model artifact lifecycle:
-  evidence -> calibration -> scenario generator run -> exogenous path set ->
-  deterministic projection run.
-
-Recommended vocabulary:
-
-- `EvidenceSet`
-- `CalibrationRun`
-- `ScenarioGeneratorRun`
-- `ExogenousPathSet`
-- `ProjectionRun`
-
-### 2. Make Path Identity First-Class
-
-Pattern: a path identifier must be stable enough to reproduce and compare a
-trajectory.
-
-Current Augur alignment:
-
-- `SampledExogenousBundle.metadata` carries exogenous model id, seed, rollout count,
-  horizon, event stream ids, notes, and source metadata.
-- Original `rollout_id` is used in actions, policy decisions, observations, ledger
-  entries, balance snapshots, accounting details, monthly columns, and selected
-  trajectory UI.
-- Shared exogenous paths make paired scenario comparisons meaningful.
-
-Gap:
-
-- `rollout_id` identifies a path within its prepared run, not globally. Selected
-  result-array columns are internal positions and may have a different order.
-- Seed plus `rollout_id` is not enough without generator version,
-  factor definitions, evidence/calibration identity, and path-set id.
-- Future non-market randomness could collide with market-path randomness unless
-  Augur separates random streams.
-
-Recommended vocabulary:
-
-- `ExogenousPathId`: stable id for one sampled exogenous world.
-- `PathSetId`: stable id for the whole sampled bundle.
-- `RiskFactorPath`: one factor's path within an exogenous path.
-- `OpportunityStream`: event streams such as private-equity tender windows.
-- `ProjectionTrajectoryId`: scenario id plus exogenous path id plus policy
-  program version.
-
-### 3. Policy Engines Need Ordered Programs And Traces
-
-Pattern: policy/rule systems should separate rules, parameters, periods,
-decisions, actions, and trace output.
-
-Current Augur alignment:
-
-- `Policy` is a discriminated union.
-- Ordered actor-policy programs group enabled actor policies.
-- Row-level `SimulationPolicyDecision` records decisions such as monthly spend,
-  public-stock sale, private-equity sale, and partner contribution.
-
-Gap:
-
-- Native sim policy execution still needs a complete policy-step id, priority,
-  phase, and per-step input trace model.
-- Some compatibility policy types are still schema-only.
-
-Recommended vocabulary:
-
-- `PolicyProgram`: ordered sequence for an actor.
-- `PolicyStep`: one executable rule with id, order, phase, and parameters.
-- `PolicyDecision`: trace of what the step decided and why.
-- `Instruction`: intended mutation emitted by a decision.
-- `PolicyExecutionTrace`: ordered per-month/per-rollout trace of step inputs,
-  decision, emitted instructions, rejects, and applied actions.
-
-### 4. Separate Events, Opportunities, Decisions, Actions, And Ledger
-
-Pattern: exogenous events/opportunities are observations; policies make
-decisions; accounting appliers validate and produce actions/postings.
-
-Current Augur alignment:
-
-- `ExogenousPathObservation` and `PrivateEquitySaleOpportunityObservation` are
-  separate from policy decisions.
-- `PrivateEquitySaleDecision`, `SellPrivateEquityAction`, and
-  private-equity sale ledger rows are distinct.
-
-Gap:
-
-- Cause linking is partial. Not every ledger entry/action has a strongly typed
-  cause id that points back to observation, event, policy decision, accounting
-  process, or validation failure.
-- `event_id` is often optional, and market opportunities do not yet have stable
-  event ids.
-
-Recommended vocabulary:
-
-- `ExogenousObservation`
-- `ScheduledEvent`
-- `Opportunity`
-- `PolicyDecision`
-- `Instruction`
-- `Action`
-- `AccountingEvent`
-- `JournalEntry`
-- `Posting`
-- `CauseId`
-
-### 5. Accounting Should Be Reconciled, Not Merely Reported
-
-Pattern: result arrays are derived views. Accounting truth lives in journal
-entries, balances, lots, basis, liabilities, and reconciliation checks.
-
-Current Augur alignment:
-
-- `SimulationLedgerEntry`, `SimulationBalanceSnapshot`, and
-  `SimulationAccountingDetail` exist.
-- Many compatibility response fields are derived from ledger/accounting detail.
-- Sim/API smoke tests need to keep explicit reconciliation assertions as native
-  accounting frames land.
-
-Gap:
-
-- Ledger rows are not balanced journal entries. `domain` and `category` are
-  strings; there is no chart of accounts, posting group id, debit/credit
-  direction, or requirement that postings balance.
-- Asset lots, basis, realized gain, tax liabilities, and payment timing are only
-  partly modeled.
-- Some explanatory arrays still bypass typed accounting detail.
-
-Recommended vocabulary:
-
-- `ChartOfAccounts`
-- `AccountId`
-- `JournalEntry`
-- `Posting`
-- `Lot`
-- `CostBasis`
-- `TaxLotDisposition`
-- `LiabilitySchedule`
-- `ReconciliationCheck`
-
-### 6. Failure And Default States Must Be Explicit
-
-Pattern: a simulation should distinguish a bad outcome from an invalid state.
-
-Current Augur alignment:
-
-- `checking_floor_shortfall_usd` records a liquidity shortfall for one policy.
-- The TODO explicitly asks whether `cash_usd <= 0` should produce failure unless
-  an enabled sale/financing policy can cover it.
-
-Risk:
-
-- Negative cash currently behaves like an implicit, unlimited credit facility.
-  That can make infeasible plans look viable.
-
-Recommended vocabulary:
-
-- `RolloutStatus`: `active`, `failed`, `defaulted`, `insolvent`,
-  `terminated`.
-- `FailureEvent`: first month and cause of failure.
-- `Shortfall`
-- `RejectedInstruction`
-- `CreditFacility` or `OverdraftAccount` if negative cash is allowed.
-
-### 7. Provenance And Governance Should Ride With Every Result
-
-Pattern: a result should carry enough provenance to know what model, data,
-parameters, code, and limitations produced it.
-
-Current Augur alignment:
-
-- `SampledExogenousBundle.metadata` has source metadata.
-- `ScenarioSetRunResponse` includes request, market request, report spec,
-  market metadata, and warnings.
-- `augur/model/markets/data.py` separates evidence loading from historical
-  series construction.
-
-Gap:
-
-- No model inventory exists.
-- No evidence/calibration artifact hash is required.
-- Warnings are generic strings rather than typed limitations.
-
-Recommended vocabulary:
-
-- `ModelSpec`
-- `ModelVersion`
-- `ValidationReport`
-- `EvidenceSetId`
-- `CalibrationArtifactId`
-- `RunProvenance`
-
-### 8. Keep Calibration And Evidence Separate From Runtime Inputs
-
-Pattern: evidence informs fitted models; fitted models generate scenario paths;
-projection consumes paths.
-
-Current Augur alignment:
-
-- `augur/model/` owns evidence loading, exogenous model protocols, fitting, and
-  sim-native joint exogenous models.
-- `augur/sim/README.md` explicitly says source-data shapes belong in
-  `augur/model`, not app state or the simulator contract.
-
-Gap:
-
-- The result metadata should state which evidence and calibration were used.
-- Core should never accept source-specific data such as FRED/Zillow/Manifold
-  shapes.
-
-Recommended vocabulary:
-
-- `RawEvidence`
-- `EvidenceSet`
-- `CalibratedPredictiveSeriesModel`
-- `PredictiveSeriesModelFit`
-- `ScenarioGenerator`
-- `SampledExogenousBundle`
-
-## Recommended Architecture Vocabulary
-
-Standardize these names before the next large redesign:
-
-| Concept                             | Proposed name                     | Purpose                                                                   |
-| ----------------------------------- | --------------------------------- | ------------------------------------------------------------------------- |
-| Raw observations                    | `RawEvidence`                     | Source-specific data before alignment or cleaning.                        |
-| Aligned model input                 | `EvidenceSet`                     | Versioned, cleaned data used for fitting.                                 |
-| Fitting run                         | `CalibrationRun`                  | Produces fitted parameters/artifacts.                                     |
-| Fitted generator                    | `CalibratedPredictiveSeriesModel` | Model ready to simulate paths.                                            |
-| Scenario generation invocation      | `ScenarioGeneratorRun`            | Records seed, generator version, evidence id, calibration id, factor set. |
-| Sampled exogenous worlds            | `ExogenousPathSet`                | Current `SampledExogenousBundle` plus stronger identity/provenance.       |
-| One sampled world                   | `ExogenousPathId`                 | Stable identity for one path.                                             |
-| Factor path                         | `RiskFactorPath`                  | SP500, CPI, home value, rent, mortgage rate, PE mark, etc.                |
-| Event/opportunity stream            | `OpportunityStream`               | Tender/IPO/acquisition/lockup/other exogenous opportunities.              |
-| Deterministic projection invocation | `ProjectionRun`                   | Scenario set plus exogenous path set plus code/model versions.            |
-| Per-scenario path result            | `ProjectionTrajectoryId`          | Scenario id plus exogenous path id plus policy version.                   |
-| Runtime state                       | `RolloutState`                    | Accounts, assets, liabilities, lots, tax state, ownership ledgers.        |
-| Rollout health                      | `RolloutStatus`                   | Active/failed/defaulted/terminated state.                                 |
-| Actor rules                         | `PolicyProgram`                   | Ordered policy sequence for one actor.                                    |
-| One rule                            | `PolicyStep`                      | Executable policy node with order and phase.                              |
-| Decision trace                      | `PolicyExecutionTrace`            | Inputs, decision, instructions, rejects, applied actions.                 |
-| Intended mutation                   | `Instruction`                     | Policy output before validation/application.                              |
-| Realized mutation                   | `Action`                          | Applied operation after validation.                                       |
-| Accounting truth                    | `JournalEntry` and `Posting`      | Balanced economic record.                                                 |
-| Point-in-time truth                 | `BalanceSnapshot`                 | State value at a month.                                                   |
-| Explanatory detail                  | `AccountingDetail`                | Basis/gain/tax/depreciation calculation detail.                           |
-| Result mode                         | `DistributionResult`              | Percentiles/fans over many trajectories.                                  |
-| Result mode                         | `TrajectoryResult`                | One selected trajectory with trace rows.                                  |
-| Result mode                         | `AccountingTrace`                 | Journal, postings, lots, liabilities, reconciliation.                     |
-| Governance                          | `ModelCard`                       | Intended use, assumptions, limitations, validation.                       |
-| Governance                          | `ValidationReport`                | Backtests, invariants, sensitivity/stress results.                        |
-
-## Prioritized Recommendations
-
-### Near-Term Implementation Slices
-
-1. Generalize rollout health and required-obligation settlement.
-   - Extend the landed `RolloutStatus`, `FailureEvent`, obligation, funding
-     decision, and settlement-result shapes beyond annual tax obligations.
-   - Decide whether `cash_usd < 0` is failed, defaulted, or allowed only through
-     an explicit `CreditFacility`.
-   - Add tests for mortgage/payment shortfalls, policy rescue through sale, and
-     unrecoverable default.
-
-2. Persist explicit trajectory/path provenance.
-   - Keep `rollout_id`, `PathSetId`, `ExogenousPathId`, and
-     `ProjectionTrajectoryId` as the public identity vocabulary.
-   - Back those IDs with persisted exogenous model, generator version, evidence,
-     calibration, seed, path index, risk-factor set, event-stream, and code
-     version artifacts where available.
-
-3. Extend ordered actor program tracing.
-   - Keep policy execution on the ordered actor program dispatcher.
-   - Emit `PolicyExecutionTrace` rows even for no-op or rejected decisions.
-   - Preserve vectorized performance, but make semantics actor/order-first.
-
-4. Strengthen cause ids.
-   - Require every action, ledger row, balance snapshot, and accounting detail
-     to carry a typed cause: policy decision, scheduled event, market
-     observation/opportunity, or system accounting process.
-   - Give private-equity sale opportunities stable ids.
-
-5. Continue Step 7 reconciliation.
-   - Move the remaining explanatory arrays into typed accounting detail or
-     documented state snapshots.
-   - Add tests that fail if monthly columns drift from ledger/snapshot/detail
-     rows.
-
-6. Replace placeholder governance with reviewed artifacts.
-   - Keep the current model-version fields, but back them with reviewed source
-     data, calibration, validation status, and known non-goals.
-   - Attach durable artifact hashes or reviewed IDs to `SampledExogenousBundle`
-     metadata.
-
-### Medium-Term Redesign
-
-1. Replace stringly ledger rows with journal entries and postings.
-   - Keep compatibility views for UI arrays.
-   - Add typed accounts, assets, liabilities, lots, tax liabilities, and
-     ownership claims.
-
-2. Move tax/regulation toward OpenFisca-like parameters.
-   - Put tax/regulation constants in perioded parameter sets.
-   - Keep approximations explicit, versioned, and testable.
-   - Separate rules from deployment-specific location/property data.
-
-3. Introduce fitted exogenous-model artifacts.
-   - Persist evidence/calibration identity, factor set, fitted parameters, and
-     validation metrics.
-   - Let sim-native joint exogenous models report those artifacts, not just latest
-     observations.
-
-4. Make result helpers mode-specific.
-   - `DistributionResult` should not expose selected-path rows except through
-     explicit trajectory selection.
-   - `TrajectoryResult` should expose observations, decisions, actions, ledger,
-     balances, and accounting trace locally.
-
-5. Add scenario-variant/reform vocabulary.
-   - For comparing policies, model "baseline vs changed scenario" as two
-     scenario variants over the same exogenous path set.
-   - Borrow the OpenFisca/Tax-Calculator "reform" pattern only where it means
-     modification to a reference rule/parameter set.
-
-### Things To Avoid
+Augur's model inventory is its stability tiers: historical replay in core,
+fitted models in `x/models/` until evidence promotes one, and a checked-in fit
+either passing `x/models/calibrated/sanity_test.py` or listed in its
+`QUARANTINED`. A model names itself with a `model_id` string that results
+display.
+
+## Where Augur Stands
+
+| Pattern                                      | Augur today                                                                                                                                                                                                        |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Scenario generation separate from projection | Exogenous models sample first; `World` reads a `MarketPath` and never feeds back. `fit/` and model providers own evidence; `sim/` never loads it.                                                                  |
+| Path identity                                | Original `rollout_id` survives selection and reordering (SPEC). Independent series models derive a per-stream seed from each rollout seed (`derive_stream_rollout_seeds`). `model_id` plus free-form `provenance`. |
+| Decisions, actions and outcomes kept apart   | Caller policies emit `Action`s; each gets a `Receipt` with `Executed` or `Rejected`. Private-equity opportunities carry ids and come from the issuer protocol, not from policy.                                    |
+| Accounting as truth, arrays as views         | `Ledger` applies balanced `JournalEntry` groups atomically; lots keep exact basis; mortgage principal lives in the liability ledger. The product projects from canonical frames.                                   |
+| Explicit failure states                      | A path stops on `RejectedAction` or `UnpaidClaims`; an unfunded action is rejected, never an implicit overdraft (SPEC § Accounting and failure).                                                                   |
+| Provenance on reported results               | AGENTS § Provenance of a reported number: sampler, fit window, policy config, instrument construction, sampling noise.                                                                                             |
+
+## Open Recommendations
+
+1. **Typed causes.** Replace the formatted `cause_id` strings (`opening-lot:…`,
+   `pe_forced_sale_m…`, `…_estimated_tax_q…`) with a typed cause naming the
+   claim, action receipt, scheduled flow, opportunity or opening declaration, so
+   a journal entry links back without string parsing.
+2. **Perioded tax parameters.** Let jurisdiction tables carry dated law changes
+   (OpenFisca parameters) instead of one `law_year` held flat or CPI-indexed.
+3. **External tax oracle.** Cross-check annual tax facts against Tax-Calculator,
+   as <../sim/docs/tax_engine_evaluation.md> recommends.
+4. **Promotion evidence for fitted models.** Define what moves a model from
+   `x/models/` into core using SR 11-7's list: intended use, limitations,
+   holdout and rolling-origin scores (`fit/metrics.py`), stressed conditions,
+   and sensitivity of household outcomes to the major assumptions.
+5. **Consistent fit provenance.** `vecm` and `state_space` put digests of their
+   evidence and fit into `provenance`; `structural_macro` records only a note.
+   Every fitted provider should record which evidence and fit artifact it
+   sampled from, kept descriptive per the `SampledExogenousBundle.provenance`
+   contract.
+
+## Considered and Rejected
+
+These follow naturally from the prior art and were rejected; the reasons are in
+<../sim/DESIGN.md> § Rejected designs.
+
+- **Scenario and reform objects** (OpenFisca reforms, a baseline-vs-variant
+  vocabulary). A comparison is two worlds per path over the same sampled series,
+  as in `x/bounded_spending/compare.py`; see "A scenario object".
+- **Run objects** (ORE application configuration, a `ProjectionRun` or
+  generator-run manifest tying inputs, paths and code versions). The caller owns
+  the run; see "A facade that runs the rollout loop".
+- **Policy programs** (ordered rule steps with a framework-owned execution
+  trace). Strategies are caller code; the world records only receipts; see "A
+  facade that runs the rollout loop" and "a universal component/plugin
+  framework".
+- **Typed model or path identity objects.** A model identifies itself with a
+  `model_id` string (AGENTS § Conventions).
+
+## Things To Avoid
 
 - Do not make a single deterministic rollout the main product API. It is an
-  inspection view for one path from a distribution.
-- Do not let the browser-side flat scenario row become the source of truth.
-- Do not put FRED, Zillow, Manifold, or other source-specific evidence objects
-  in the API or sim runtime.
-- Do not revive arbitrary manual sale controls as the private-equity liquidity
-  model.
-- Do not treat tender-eligible private-equity marks as liquid net worth.
-- Do not build a general equilibrium or agent-based market simulator until a
-  concrete policy question requires it.
-- Do not add more policy enum hacks for actor agreements. Model agreements as
-  contracts or policy programs between actors.
-
-## Testing And Verification Implications
-
-### Golden Projection Tests
-
-Keep deterministic flat market fixtures and hand-computed tests. Expand
-them for:
-
-- property purchase and sale;
-- public stock sale with basis and tax;
-- private-equity tender opportunity, sale, and non-sale reasons;
-- partner contribution and ownership accrual;
-- tax liability timing;
-- failure/default outcomes.
-
-### Reproducibility Tests
-
-Add tests that assert:
-
-- same scenario input plus same path-set provenance produces identical outputs;
-- changing seed changes path ids and usually results;
-- changing evidence/calibration/model version changes provenance even if some
-  values happen to match;
-- `ExogenousPathId` is preserved across scenarios in one scenario-set run.
-
-### Invariant Tests
-
-Add invariant checks for:
-
-- no state mutation without a cause id;
-- no negative cash unless an explicit credit/default/failure state explains it;
-- nonnegative asset units and remaining basis;
-- ownership claims reconcile to equity ledger rules;
-- liability balances follow schedules and payments;
-- tax lots reconcile sale proceeds, basis, gain, tax, and cash proceeds;
-- `liquid_net_worth_usd` excludes tender-only private-equity value;
-- terminal distribution metrics equal statistics over terminal trajectory
-  values.
-
-### Ledger Reconciliation Tests
-
-Continue the current e2e pattern:
-
-- arrays that describe transaction flows must equal ledger sums;
-- arrays that describe balances must equal balance snapshots or explicit state;
-- arrays that explain calculations must equal typed accounting detail;
-- compatibility aliases must document their backing source.
-
-The target is not "no arrays"; the target is "arrays are views, not truth."
-
-### Policy Program Tests
-
-Add tests for:
-
-- actor policy order;
-- policy no-op trace rows;
-- policy rejection rows;
-- two policies competing for the same cash or asset;
-- policy decisions caused by market observations;
-- policy actions linked back to decisions and accounting postings.
-
-### Failure Semantics Tests
-
-Add tests that cover:
-
-- monthly spending draining cash below zero;
-- mortgage/property costs exceeding cash;
-- sale policy covering a shortfall;
-- sale policy unable to cover a shortfall;
-- rollout termination vs continued projection after failure;
-- distribution summaries that include failed-rollout rates.
-
-### Backtesting And Calibration Checks
-
-Add model-layer tests and reports for:
-
-- historical holdout/backtest behavior;
-- calibration data coverage and recency;
-- factor correlation/covariance sanity;
-- path distribution sanity against historical moments;
-- stress scenarios outside ordinary expectations;
-- sensitivity of household outcomes to major assumptions.
-
-### UI And Result-Mode Verification
-
-Keep visual and browser tests that assert:
-
-- distribution pages show only distribution panels;
-- trajectory pages show selected-path and accounting-detail panels;
-- property/location data is scenario context, not a result;
-- selected trajectory URLs include enough provenance to reproduce or reject the
-  selected path when provenance is missing.
+  inspection view of one path from a distribution.
+- Do not let source-specific evidence (FRED, Zillow, Manifold shapes) reach the
+  API or `sim/`; a `World` reads integer series only.
+- Do not model private-equity liquidity as manual sale controls; it comes from
+  the issuer protocol and `declare_tender_policy`.
+- Do not count tender-eligible private-equity marks as liquid net worth.
+- Do not model actor feedback into markets or build a general-equilibrium
+  simulator; exogenous paths flow one way.
+- Do not add core options for agreements between actors. An agreement is a
+  tracked counterparty or contract (`Biller`, `Mortgage`).
 
 ## Source Categories Covered
 
