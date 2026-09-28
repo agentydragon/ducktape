@@ -30,7 +30,12 @@ The native Ollama failures occur in LiteLLM 1.100.1 before inference:
 `llms/ollama/chat/transformation.py:178` evaluates
 `value in {"low", "medium", "high"}` with a dictionary reasoning value and raises
 `TypeError: unhashable type: 'dict'`. Codex displays a generic high-demand error.
-This adapter failure remains under investigation; use `oai-chat` for Codex.
+The Responses bridge retains the whole reasoning object when `summary` is present;
+the native Qwen mapper expects a string effort. The same bridge defect was
+[previously reproduced with GPT-OSS](agentplane_ollama_live_smoke_2026_09_24.md),
+whose mapper forwards the object to Ollama instead of failing locally.
+Use `oai-chat` for Codex. A native-adapter correction must preserve effort and
+thinking semantics; dropping reasoning options is not equivalent.
 
 Both environments advertise these routes. Actual tasks ran on testing with image
 `devel-20260928010047-9a3565b`, wheel `agentplane-runner-42b857721ffb`.
