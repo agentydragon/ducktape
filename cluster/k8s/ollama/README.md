@@ -50,8 +50,10 @@ One loaded model and one inference slot avoid concurrent KV-cache growth.
 `LLAMA_ARG_FIT_TARGET=4096,2048` leaves runtime allocation room on both GPUs and
 additional desktop-GPU headroom. The tested 2/0 GiB setting passed short requests
 but hit CUDA OOM on GPU1 during a 145K-token prompt at 256K context. These are
-placement targets, not exclusive reservations. The 4/2 GiB retry still needs its
-long-input acceptance check. This differs from the host experiments' 8/2 GiB targets;
+placement targets, not exclusive reservations. The 4/2 GiB configuration passed a
+145K-token prompt and a 1,024-token continuation at 256K context; see the
+[serving acceptance results](../../docs/inference/runs/2026-09-27_ollama_ssd/README.md).
+This differs from the host experiments' 8/2 GiB targets;
 record actual placement and headroom when comparing throughput. Vulkan discovery is
 disabled and CUDA uses PCI bus ordering. Startup logs sort GPUs by free memory and
 do not establish runner order: inspect the runner's `CUDA_VISIBLE_DEVICES` and

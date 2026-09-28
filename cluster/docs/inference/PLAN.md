@@ -188,8 +188,8 @@ Completed here:
   trajectories can explain hour-scale tasks without a broken timeout. These are
   recorded harness counters, not independently validated server accounting.
 
-Current state checked September 26: no host Docker experiment containers running;
-Ollama was re-enabled by #8000 and now runs image `ollama/ollama:0.34.4`, context
+Historical state checked September 26: no host Docker experiment containers running;
+Ollama was re-enabled by #8000 and ran image `ollama/ollama:0.34.4`, context
 default 131072, on a 350 GiB HDD PVC. The model SSD has about 384 GiB available;
 host RAM about 30 GiB available while Ollama is loaded. An initial GPU snapshot
 showed only about 1 GiB free on desktop GPU0. This is not evidence of a desktop
@@ -237,7 +237,14 @@ an experiment-allocation policy, not a claim that either model will win.
 
 ### 1. Measure usable context for one session
 
-Reuse the demonstrated SSD/llama.cpp/OpenCode configuration for these measurements.
+September 27: [cluster SSD serving acceptance](runs/2026-09-27_ollama_ssd/README.md)
+now passes 24/24 LiteLLM text/tool probes across both 128K/256K routes and all three
+API shapes. A 145K input passes at 256K with 4/2 GiB fit margins; a continuation
+decodes at 29.07 tokens/s. Full-window reasoning quality and parallel slots remain
+untested. The [updated tradeoff plan](runs/2026-09-27_ollama_ssd/tradeoffs.md) separates
+measured capacity from projections and records Ollama's native-context clamp.
+
+Reuse the demonstrated SSD configuration for these measurements.
 Capture effective settings and do only enough startup/tool checking to establish
 that the reference is running. Ollama deployment and a new coding harness are not
 prerequisites.
@@ -288,8 +295,8 @@ in 7h 40m total. Q5 and IQ4_XS downloads finished at 04:48 Pacific. The matched
 [IQ4_XS attempt](runs/2026-09-26_qwen38_iq4_terminus_result/README.md) also passed all
 six verifier tests after three compactions, but exhausted its eight-hour agent limit
 while still testing. Its wrapper exited cleanly; decode averaged 40.79 tokens/s
-versus Q4's 24.74, without earlier agent completion. The KV sweep, native 256K and Q5
-comparison remain follow-ups. Desktop RAM/VRAM reserves remain enforced; overlapping
+versus Q4's 24.74, without earlier agent completion. The KV sweep, filled-window
+256K task quality and Q5 comparison remain follow-ups. Desktop RAM/VRAM reserves remain enforced; overlapping
 download traffic in Q4's first hour is a latency confounder. Its wrapper guard failed
 after the passing result because the Kubernetes API was unreachable; distinguish
 that cleanup outcome from the completed evaluation.
@@ -306,9 +313,9 @@ intuition.
 - Keep Q4 as control and try Q5 later to test quality retention, once safe placement
   is established. Its larger working set may cost speed or page-cache capacity;
   more bits do not guarantee a better completed task within the available budget.
-- IQ4_XS is the first smaller candidate to test whether reducing CPU/offload traffic could
-  free context or improve latency. Assess it on the same tasks; do not jump directly
-  to a very low-bit checkpoint.
+- IQ4_XS is now the deployed baseline. IQ3_XXS is the next substantial capacity
+  comparison (10.92 GiB fewer non-PLE weights); Q3_K_XL is a smaller 3.44 GiB step.
+  Assess matched tasks before adopting either; published fidelity is not agent success.
 - Set reasoning explicitly. The official default is xhigh; our initial probes used
   medium. Compare medium and xhigh under an adequate, explicit output allowance.
   Short-output protocol probes cannot establish the model's reasoning ceiling.
