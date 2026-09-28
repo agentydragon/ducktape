@@ -466,6 +466,10 @@ one. Which lists the service enforces is its contract
   diagnostic at the completion position, retaining any partial output. A confirmed input remains
   confirmed; a failed turn neither creates a delivery retry nor resends that input. Later input
   can start another turn while the harness remains available.
+- **Interrupted or lost turns:** the fold keeps streamed text, tool arguments, and any tool output
+  the harness reported. An item without a terminal native result stays incomplete; an unfinished
+  tool result is unknown and is never retried automatically. Resume continues the same native
+  session, whose history recovery can differ from the app's folded evidence.
 
 ## Action live updates and browser notifications
 

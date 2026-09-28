@@ -166,6 +166,28 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   grace and exits. Whatever supervises the runner must allow it at least twenty seconds before
   killing it; a harness killed outright is `HarnessLost` on the next start instead.
 
+## In-flight turns and native resume
+
+`//agentplane/app:test_bridge` runs each case through the app, runner, pinned native harness, and
+scripted model endpoint, then reads the app's materialized Thread rows and payload chunks. The
+observed recovery contract is:
+
+- `StopRunnerSession` interrupts an active turn before the harness exits. The turn is
+  `INTERRUPTED`; already observed text stays in the Thread fold. Claude closes its partial text
+  item, while Codex leaves it incomplete. Both keep the interrupted turn distinct from a completed
+  turn. After resume, Claude includes that partial text and its interruption marker in the next
+  model request. Codex includes its interruption marker but not the partial assistant text.
+- If the harness process group is killed while a tool runs, the turn is `PROCESS_LOST`. The Thread
+  keeps the tool call and its arguments incomplete and does not invent an output or terminal result.
+  The blocking shell in the integration test writes stdout before it is killed, but neither pinned
+  harness reports that text as an output delta before the process exits. The native tool call is not
+  reissued during resume in the tested case. A process lost mid-tool still cannot prove whether
+  external side effects happened.
+- If a tool result is complete before the turn is interrupted, the Thread fold keeps its success
+  and output. Codex includes that output in its next model request after resume. Claude drops it
+  from that request even though the Thread fold retains it. Native resume owns transcript recovery;
+  the runner does not synthesize missing native history from the fold.
+
 ## Standing instructions across a resume
 
 Both harnesses put the session's instructions in front of the model on every turn, a resumed
@@ -234,7 +256,7 @@ hooks off, so the runner's own handling of it is read off the harnesses' schemas
 - Read-only authorization for follower attachments; every attachment may issue commands.
 - Log compaction or retention; a session log grows for the session's lifetime.
 - Transport security; the listener is plaintext on loopback.
-- Recovery semantics for a turn lost mid-tool beyond reporting `PROCESS_LOST`.
+- Determining whether an incomplete tool call caused side effects outside the harness process group.
 - Duplicate-free recovery when native execution precedes durable runner evidence.
 
 ### History-independent recovery and replay
