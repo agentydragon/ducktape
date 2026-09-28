@@ -121,6 +121,7 @@ spec:
           ports:
             - containerPort: 8124
               name: backend
+              protocol: TCP
           readinessProbe:
             httpGet:
               host: 127.0.0.1
