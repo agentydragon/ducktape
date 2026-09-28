@@ -1199,9 +1199,9 @@
               SeaweedFS provider split (#8035).
             </li>
             <li>
-              <strong>Waiting on a decision:</strong> everything built on C4&#39;s references (decision 1), the secrets
-              roster (decisions 3 to 6), the fleet-rule tightening (7), the Kyverno edges (8), the namespace labels (9,
-              10), three small unit and provider calls (11 to 13) and #7094 (2).
+              <strong>Waiting on a decision:</strong> everything built on C4&#39;s references (decision 1), the
+              stated-token rule (decision 6) and the secrets roster (3 to 5), the fleet-rule tightening (7), the Kyverno
+              edges (8), the namespace labels (9, 10), three small unit and provider calls (11 to 13) and #7094 (2).
             </li>
             <li>
               <strong>Postponed or deferred by you:</strong> the <code>wait</code> default, derived Orphan and the
@@ -4121,8 +4121,8 @@
               <p>
                 <code>Lazy</code> works only in <code>any</code>-typed slots, such as <code>metadata.add(...)</code> or
                 HelmRelease <code>values</code>. Put into a typed struct field, it fails jsii&#39;s type check with a
-                <code>TypeError</code>, which is why #8067 was closed. The TypeScript cdk8s-plus pattern, where a
-                wrapper renders its spec lazily from mutable state, cannot be reproduced on typed Python bindings.
+                <code>TypeError</code> (#8067). The TypeScript cdk8s-plus pattern, where a wrapper renders its spec
+                lazily from mutable state, cannot be reproduced on typed Python bindings.
               </p>
             </div>
           </li>
