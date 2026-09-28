@@ -12,30 +12,47 @@ from plaid.api import plaid_api
 from plaid.exceptions import ApiException as PlaidApiException
 from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
 from plaid.model.accounts_get_request import AccountsGetRequest
+from plaid.model.accounts_get_response import AccountsGetResponse as PlaidAccountsGetResponse
 from plaid.model.country_code import CountryCode
 from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
 from plaid.model.institutions_get_by_id_request_options import InstitutionsGetByIdRequestOptions
+from plaid.model.institutions_get_by_id_response import InstitutionsGetByIdResponse as PlaidInstitutionsGetByIdResponse
 from plaid.model.institutions_search_request import InstitutionsSearchRequest
+from plaid.model.institutions_search_response import InstitutionsSearchResponse as PlaidInstitutionsSearchResponse
 from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
+from plaid.model.investments_holdings_get_response import (
+    InvestmentsHoldingsGetResponse as PlaidInvestmentsHoldingsGetResponse,
+)
 from plaid.model.investments_transactions_get_request import InvestmentsTransactionsGetRequest
+from plaid.model.investments_transactions_get_response import (
+    InvestmentsTransactionsGetResponse as PlaidInvestmentsTransactionsGetResponse,
+)
 from plaid.model.item_get_request import ItemGetRequest
+from plaid.model.item_get_response import ItemGetResponse as PlaidItemGetResponse
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
+from plaid.model.item_public_token_exchange_response import (
+    ItemPublicTokenExchangeResponse as PlaidItemPublicTokenExchangeResponse,
+)
 from plaid.model.item_remove_request import ItemRemoveRequest
+from plaid.model.item_remove_response import ItemRemoveResponse as PlaidItemRemoveResponse
 from plaid.model.liabilities_get_request import LiabilitiesGetRequest
+from plaid.model.liabilities_get_response import LiabilitiesGetResponse as PlaidLiabilitiesGetResponse
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
+from plaid.model.link_token_create_response import LinkTokenCreateResponse as PlaidLinkTokenCreateResponse
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+from plaid.model.link_token_transactions import LinkTokenTransactions
 from plaid.model.products import Products
 from plaid.model.sandbox_public_token_create_request import SandboxPublicTokenCreateRequest
+from plaid.model.sandbox_public_token_create_response import (
+    SandboxPublicTokenCreateResponse as PlaidSandboxPublicTokenCreateResponse,
+)
 from plaid.model.transactions_get_request import TransactionsGetRequest
+from plaid.model.transactions_get_response import TransactionsGetResponse as PlaidTransactionsGetResponse
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
+from plaid.model.transactions_sync_response import TransactionsSyncResponse as PlaidTransactionsSyncResponse
 from pydantic import ValidationError
 
-from finance.plaid.db.models import (
-    InstitutionsGetByIdResponse,
-    InstitutionsSearchResponse,
-    PlaidError,
-    PlaidLinkTokenTransactionsOptions,
-)
+from finance.plaid.db.models import PlaidError
 from finance.plaid.db.products import Product
 
 # Plaid removed the `development` environment in 2024; only sandbox/production remain.
@@ -107,23 +124,6 @@ class PlaidClientError(RuntimeError):
         return detail
 
 
-class LinkTokenCreateResponse(Protocol):
-    link_token: str
-
-
-class ItemPublicTokenExchangeResponse(Protocol):
-    access_token: str
-    item_id: str
-
-
-class SandboxPublicTokenCreateResponse(Protocol):
-    public_token: str
-
-
-class DictResponse(Protocol):
-    def to_dict(self) -> dict[str, object]: ...
-
-
 class PlaidPoolManagerLike(Protocol):
     def clear(self) -> None: ...
 
@@ -142,24 +142,32 @@ class PlaidApiClientLike(Protocol):
 class PlaidSdkApiLike(Protocol):
     api_client: PlaidApiClientLike
 
-    def link_token_create(self, request: LinkTokenCreateRequest, /) -> LinkTokenCreateResponse: ...
+    def link_token_create(self, request: LinkTokenCreateRequest, /) -> PlaidLinkTokenCreateResponse: ...
     def item_public_token_exchange(
         self, request: ItemPublicTokenExchangeRequest, /
-    ) -> ItemPublicTokenExchangeResponse: ...
-    def item_remove(self, request: ItemRemoveRequest, /) -> object: ...
-    def item_get(self, request: ItemGetRequest, /) -> object: ...
-    def accounts_get(self, request: AccountsGetRequest, /) -> DictResponse: ...
-    def accounts_balance_get(self, request: AccountsBalanceGetRequest, /) -> object: ...
-    def transactions_get(self, request: TransactionsGetRequest, /) -> object: ...
-    def transactions_sync(self, request: TransactionsSyncRequest, /) -> DictResponse: ...
-    def investments_holdings_get(self, request: InvestmentsHoldingsGetRequest, /) -> object: ...
-    def investments_transactions_get(self, request: InvestmentsTransactionsGetRequest, /) -> object: ...
-    def liabilities_get(self, request: LiabilitiesGetRequest, /) -> object: ...
+    ) -> PlaidItemPublicTokenExchangeResponse: ...
+    def item_remove(self, request: ItemRemoveRequest, /) -> PlaidItemRemoveResponse: ...
+    def item_get(self, request: ItemGetRequest, /) -> PlaidItemGetResponse: ...
+    def accounts_get(self, request: AccountsGetRequest, /) -> PlaidAccountsGetResponse: ...
+    def accounts_balance_get(self, request: AccountsBalanceGetRequest, /) -> PlaidAccountsGetResponse: ...
+    def transactions_get(self, request: TransactionsGetRequest, /) -> PlaidTransactionsGetResponse: ...
+    def transactions_sync(self, request: TransactionsSyncRequest, /) -> PlaidTransactionsSyncResponse: ...
+    def investments_holdings_get(
+        self, request: InvestmentsHoldingsGetRequest, /
+    ) -> PlaidInvestmentsHoldingsGetResponse: ...
+    def investments_transactions_get(
+        self, request: InvestmentsTransactionsGetRequest, /
+    ) -> PlaidInvestmentsTransactionsGetResponse: ...
+    def liabilities_get(self, request: LiabilitiesGetRequest, /) -> PlaidLiabilitiesGetResponse: ...
     def sandbox_public_token_create(
         self, request: SandboxPublicTokenCreateRequest, /
-    ) -> SandboxPublicTokenCreateResponse: ...
-    def institutions_search(self, request: InstitutionsSearchRequest, /) -> DictResponse: ...
-    def institutions_get_by_id(self, request: InstitutionsGetByIdRequest, /) -> DictResponse: ...
+    ) -> PlaidSandboxPublicTokenCreateResponse: ...
+    def institutions_search(
+        self, request: InstitutionsSearchRequest, /
+    ) -> PlaidInstitutionsSearchResponse: ...
+    def institutions_get_by_id(
+        self, request: InstitutionsGetByIdRequest, /
+    ) -> PlaidInstitutionsGetByIdResponse: ...
 
 
 class PlaidClient:
@@ -194,7 +202,7 @@ class PlaidClient:
         # type-checks every kwarg it receives and rejects None for both.
         request = InstitutionsSearchRequest(query=query, country_codes=[CountryCode("US")])
         try:
-            response = InstitutionsSearchResponse.model_validate(self._api.institutions_search(request).to_dict())
+            response = self._api.institutions_search(request)
         except PlaidApiException as exc:
             raise _plaid_api_error("/institutions/search", exc) from exc
         return [
@@ -209,7 +217,7 @@ class PlaidClient:
             options=InstitutionsGetByIdRequestOptions(include_optional_metadata=True),
         )
         try:
-            response = InstitutionsGetByIdResponse.model_validate(self._api.institutions_get_by_id(request).to_dict())
+            response = self._api.institutions_get_by_id(request)
         except PlaidApiException as exc:
             raise _plaid_api_error("/institutions/get_by_id", exc) from exc
         institution = response.institution
@@ -244,21 +252,18 @@ class PlaidClient:
         the flow, so a product that turns out not to apply is simply skipped.
         """
         anchor, conditional = _split_link_products(products)
-        request_args: dict[str, object] = {
-            "client_name": client_name,
-            "user": LinkTokenCreateRequestUser(client_user_id=client_user_id),
-            "products": [Products(anchor)],
-            "country_codes": [CountryCode("US")],
-            "language": "en",
-            "redirect_uri": redirect_uri,
-        }
+        request = LinkTokenCreateRequest(
+            client_name=client_name,
+            user=LinkTokenCreateRequestUser(client_user_id=client_user_id),
+            products=[Products(anchor)],
+            country_codes=[CountryCode("US")],
+            language="en",
+            redirect_uri=redirect_uri,
+        )
         if conditional:
-            request_args["required_if_supported_products"] = [Products(product) for product in conditional]
+            request.required_if_supported_products = [Products(product) for product in conditional]
         if Product.TRANSACTIONS.value in products:
-            request_args["transactions"] = PlaidLinkTokenTransactionsOptions(
-                days_requested=transaction_days_requested
-            ).model_dump(mode="json", exclude_unset=True)
-        request = LinkTokenCreateRequest(**request_args)
+            request.transactions = LinkTokenTransactions(days_requested=transaction_days_requested)
         try:
             response = self._api.link_token_create(request)
         except PlaidApiException as exc:
@@ -309,42 +314,48 @@ class PlaidClient:
         except PlaidApiException as exc:
             raise _plaid_api_error("/item/remove", exc) from exc
 
-    def link_token_create(self, request: LinkTokenCreateRequest, /) -> LinkTokenCreateResponse:
+    def link_token_create(self, request: LinkTokenCreateRequest, /) -> PlaidLinkTokenCreateResponse:
         return self._api.link_token_create(request)
 
-    def item_public_token_exchange(self, request: ItemPublicTokenExchangeRequest, /) -> ItemPublicTokenExchangeResponse:
+    def item_public_token_exchange(
+        self, request: ItemPublicTokenExchangeRequest, /
+    ) -> PlaidItemPublicTokenExchangeResponse:
         return self._api.item_public_token_exchange(request)
 
-    def item_remove(self, request: ItemRemoveRequest, /) -> object:
+    def item_remove(self, request: ItemRemoveRequest, /) -> PlaidItemRemoveResponse:
         return self._api.item_remove(request)
 
-    def item_get(self, request: ItemGetRequest, /) -> object:
+    def item_get(self, request: ItemGetRequest, /) -> PlaidItemGetResponse:
         return self._api.item_get(request)
 
-    def accounts_get(self, request: AccountsGetRequest, /) -> DictResponse:
+    def accounts_get(self, request: AccountsGetRequest, /) -> PlaidAccountsGetResponse:
         return self._api.accounts_get(request)
 
-    def accounts_balance_get(self, request: AccountsBalanceGetRequest, /) -> object:
+    def accounts_balance_get(self, request: AccountsBalanceGetRequest, /) -> PlaidAccountsGetResponse:
         return self._api.accounts_balance_get(request)
 
-    def transactions_get(self, request: TransactionsGetRequest, /) -> object:
+    def transactions_get(self, request: TransactionsGetRequest, /) -> PlaidTransactionsGetResponse:
         return self._api.transactions_get(request)
 
-    def transactions_sync(self, request: TransactionsSyncRequest, /) -> DictResponse:
+    def transactions_sync(self, request: TransactionsSyncRequest, /) -> PlaidTransactionsSyncResponse:
         return self._api.transactions_sync(request)
 
-    def investments_holdings_get(self, request: InvestmentsHoldingsGetRequest, /) -> object:
+    def investments_holdings_get(
+        self, request: InvestmentsHoldingsGetRequest, /
+    ) -> PlaidInvestmentsHoldingsGetResponse:
         return self._api.investments_holdings_get(request)
 
-    def investments_transactions_get(self, request: InvestmentsTransactionsGetRequest, /) -> object:
+    def investments_transactions_get(
+        self, request: InvestmentsTransactionsGetRequest, /
+    ) -> PlaidInvestmentsTransactionsGetResponse:
         return self._api.investments_transactions_get(request)
 
-    def liabilities_get(self, request: LiabilitiesGetRequest, /) -> object:
+    def liabilities_get(self, request: LiabilitiesGetRequest, /) -> PlaidLiabilitiesGetResponse:
         return self._api.liabilities_get(request)
 
     def sandbox_public_token_create(
         self, request: SandboxPublicTokenCreateRequest, /
-    ) -> SandboxPublicTokenCreateResponse:
+    ) -> PlaidSandboxPublicTokenCreateResponse:
         return self._api.sandbox_public_token_create(request)
 
 

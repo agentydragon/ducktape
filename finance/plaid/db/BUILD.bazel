@@ -190,7 +190,6 @@ py_library(
     deps = [
         ":client",
         ":dev_creds",
-        ":models",
         "@pypi//plaid_python",
     ],
 )

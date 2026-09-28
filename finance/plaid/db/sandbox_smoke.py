@@ -19,7 +19,6 @@ from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
 from finance.plaid.db.client import PlaidClient
 from finance.plaid.db.dev_creds import load
-from finance.plaid.db.models import AccountsGetResponse, TransactionsSyncResponse
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +43,7 @@ def main() -> None:
         logger.info("access_token=%s…", access_token[:24])
 
         logger.info("fetching /accounts/get …")
-        accounts_payload = AccountsGetResponse.model_validate(
-            api.accounts_get(AccountsGetRequest(access_token=access_token)).to_dict()
-        )
+        accounts_payload = api.accounts_get(AccountsGetRequest(access_token=access_token))
         for acct in accounts_payload.accounts or []:
             bal = acct.balances
             logger.info(
@@ -67,14 +64,14 @@ def main() -> None:
             request = TransactionsSyncRequest(access_token=access_token, count=500)
             if cursor:
                 request.cursor = cursor
-            result = TransactionsSyncResponse.model_validate(api.transactions_sync(request).to_dict())
-            added = result.added
+            result = api.transactions_sync(request)
+            added = result.added or []
             logger.info("  page=%d added=%d has_more=%s", page, len(added), result.has_more)
             for txn in added[:5]:
                 logger.info(
                     "    %s  %8.2f %s  %s",
                     txn.date,
-                    txn.amount,
+                    txn.amount or 0,
                     txn.iso_currency_code or "",
                     txn.name or txn.merchant_name or "",
                 )

@@ -1,8 +1,9 @@
-"""Pydantic views of the Plaid payloads consumed by plaid-mcp.
+"""Pydantic views of shaped Plaid payloads consumed by sync and storage boundaries.
 
 REST shapes follow Plaid's official OpenAPI document:
 https://github.com/plaid/plaid-openapi/blob/master/2020-09-14.yml. The models type the fields this
 service reads while allowing additional fields so Plaid can extend responses without breaking us.
+The SDK client itself uses plaid-python's generated request and response classes directly.
 """
 
 from __future__ import annotations
@@ -155,21 +156,6 @@ class LiabilitiesGetResponse(PlaidApiResponse):
     accounts: list[PlaidAccount] | None = None
 
 
-class PlaidInstitution(PlaidPayload):
-    institution_id: str
-    name: str
-    products: list[str] | None = None
-    url: str | None = None
-
-
-class InstitutionsSearchResponse(PlaidApiResponse):
-    institutions: list[PlaidInstitution] | None = None
-
-
-class InstitutionsGetByIdResponse(PlaidApiResponse):
-    institution: PlaidInstitution
-
-
 class PlaidError(PlaidPayload):
     error_type: str | None = None
     error_code: str | None = None
@@ -177,9 +163,3 @@ class PlaidError(PlaidPayload):
     display_message: str | None = None
     documentation_url: str | None = None
     request_id: str | None = Field(default=None, validation_alias=AliasChoices("request_id", "requestId"))
-
-
-class PlaidLinkTokenTransactionsOptions(PlaidPayload):
-    """The `LinkTokenCreateRequestTransactions` shape used by the existing Link flow."""
-
-    days_requested: int
