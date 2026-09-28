@@ -29,7 +29,7 @@ NAME = "clickhouse-schema"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/schema"
 NAMESPACE = "clickhouse"
 SCHEMA_CONFIG_MAP = ConfigMapArgs(name="clickhouse-aiquota-schema", namespace=NAMESPACE, files=[client.SCHEMA_FILE])
-_JOB_NAME = "clickhouse-aiquota-schema-v10"
+_JOB_NAME = "clickhouse-aiquota-schema-v11"
 _LABELS = {
     "app.kubernetes.io/name": NAME,
     "app.kubernetes.io/instance": "clickhouse",

@@ -53,6 +53,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.haku import console_config
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/cluster"
 SOPS_FILES = (
@@ -63,9 +64,17 @@ SOPS_FILES = (
     "public-coder-credentials.sops.yaml",
 )
 _KEEPER_NAME = "clickhouse-keeper"
-_KEEPER_LABELS = {"app.kubernetes.io/name": _KEEPER_NAME, "app.kubernetes.io/instance": _KEEPER_NAME}
+# The Keeper operator's client Service in front of the quorum.
+_KEEPER = ServiceRef(
+    name=f"keeper-{_KEEPER_NAME}",
+    port=Port(name="zk", number=2181),
+    pods=Pods(
+        namespace=client.NAMESPACE,
+        labels=(("app.kubernetes.io/name", _KEEPER_NAME), ("app.kubernetes.io/instance", _KEEPER_NAME)),
+    ),
+)
 _ADMIN_CREDENTIALS = "clickhouse-admin-credentials"  # admin-credentials.sops.yaml
-_METRICS_PORT = 9363
+_METRICS = Port(name="metrics", number=9363)
 _INTERSERVER_PORT = 9009
 _CLICKHOUSE_UID = 101  # the images' `clickhouse` user
 _STORAGE_CLASS = "local-path-ovh-hdd-retain"
@@ -236,9 +245,11 @@ def clickhouse_chart(app: App) -> Chart:
                     # The CHK operator exposes its three-member ensemble behind this stable
                     # service. Using the service address keeps the CHI compatible with the
                     # versioned CRD schema while Kubernetes removes unavailable endpoints.
+                    # The FQDN: any other string is a ZooKeeper config change, which the
+                    # operator hot-reloads into both live replicas.
                     nodes=[
                         ClickHouseInstallationSpecConfigurationZookeeperNodes(
-                            host=f"keeper-{_KEEPER_NAME}.{client.NAMESPACE}.svc.cluster.local", port=2181
+                            host=_KEEPER.fqdn, port=_KEEPER.port.number
                         )
                     ],
                     session_timeout_ms=30000,
@@ -271,7 +282,7 @@ def clickhouse_chart(app: App) -> Chart:
                 },
                 settings={
                     "prometheus/endpoint": "/metrics",
-                    "prometheus/port": _METRICS_PORT,
+                    "prometheus/port": _METRICS.number,
                     "prometheus/metrics": "true",
                     "prometheus/events": "true",
                     "prometheus/asynchronous_metrics": "true",
@@ -315,7 +326,7 @@ def clickhouse_chart(app: App) -> Chart:
                                     "name": "clickhouse",
                                     "image": client.IMAGE,
                                     "imagePullPolicy": "IfNotPresent",
-                                    "ports": [{"name": "metrics", "containerPort": _METRICS_PORT, "protocol": _TCP}],
+                                    "ports": [_METRICS.k8s_container_port()],
                                     "resources": {
                                         "requests": {"cpu": "500m", "memory": "2Gi"},
                                         "limits": {
@@ -354,7 +365,7 @@ def clickhouse_chart(app: App) -> Chart:
         "podmonitor",
         metadata=ApiObjectMetadata(name=client.NAME, namespace=client.NAMESPACE),
         selector=PodMonitorSpecSelector(match_labels=client.LABELS),
-        pod_metrics_endpoints=[Endpoint.plain(port="metrics", scrape_timeout="15s")],
+        pod_metrics_endpoints=[Endpoint.plain(port=_METRICS.name, scrape_timeout="15s")],
     )
     return chart
 
@@ -408,12 +419,12 @@ def keeper_chart(app: App) -> Chart:
                 pod_templates=[
                     ClickHouseKeeperInstallationSpecTemplatesPodTemplates(
                         name=pod_template,
-                        metadata={"labels": _KEEPER_LABELS},
+                        metadata={"labels": _KEEPER.pods.selector},
                         spec={
                             "nodeSelector": _HDD_NODE_SELECTOR,
                             # Three-member Keeper quorum needs distinct HDD-tier hosts; use all workers.
                             "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
-                            "affinity": _one_per_host(_KEEPER_LABELS),
+                            "affinity": _one_per_host(_KEEPER.pods.selector),
                             "securityContext": {"fsGroup": _CLICKHOUSE_UID, "seccompProfile": _RUNTIME_DEFAULT_SECCOMP},
                             "containers": [
                                 {
@@ -453,32 +464,13 @@ def service_chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(
-            name=client.NAME,
+            name=client.HTTP.name,
             namespace=client.NAMESPACE,
             annotations={"description": "Stable client endpoint for the shared ClickHouse installation."},
         ),
         spec=k8s.ServiceSpec(
-            # The operator's labels on a ready replica of this installation.
-            selector={
-                "clickhouse.altinity.com/app": "chop",
-                "clickhouse.altinity.com/chi": client.NAME,
-                "clickhouse.altinity.com/namespace": client.NAMESPACE,
-                "clickhouse.altinity.com/ready": "yes",
-            },
-            ports=[
-                k8s.ServicePort(
-                    name="http",
-                    port=client.HTTP_PORT,
-                    target_port=k8s.IntOrString.from_number(client.HTTP_PORT),
-                    protocol=_TCP,
-                ),
-                k8s.ServicePort(
-                    name="native",
-                    port=client.NATIVE_PORT,
-                    target_port=k8s.IntOrString.from_number(client.NATIVE_PORT),
-                    protocol=_TCP,
-                ),
-            ],
+            selector=client.HTTP.pods.selector,
+            ports=[client.HTTP.port.k8s_service_port(), client.NATIVE.port.k8s_service_port()],
         ),
     )
     return chart
@@ -510,34 +502,34 @@ def networkpolicy_chart(app: App) -> Chart:
             ingress=[
                 k8s.NetworkPolicyIngressRule(
                     from_=same_namespace,
-                    ports=_ports(client.HTTP_PORT, client.NATIVE_PORT, _INTERSERVER_PORT, _METRICS_PORT),
+                    ports=_ports(client.HTTP.pod_port, client.NATIVE.pod_port, _INTERSERVER_PORT, _METRICS.number),
                 ),
                 k8s.NetworkPolicyIngressRule(
                     from_=_from_namespace("cli-proxy-api", {"app.kubernetes.io/name": "aiquota"}),
                     # The `migrate` init container runs clickhouse-client (native
                     # protocol) to apply schema.sql; the main container only ever uses
                     # the HTTP port.
-                    ports=_ports(client.HTTP_PORT, client.NATIVE_PORT),
+                    ports=_ports(client.HTTP.pod_port, client.NATIVE.pod_port),
                 ),
                 # The agent app itself cannot reach ClickHouse. Its credential-bearing
                 # egress proxy is the only cross-namespace client admitted for the native
                 # read-only public_coder_analytics account.
                 k8s.NetworkPolicyIngressRule(
                     from_=_from_namespace(public_coder_proxy.NAMESPACE, public_coder_proxy.LABELS),
-                    ports=_ports(client.HTTP_PORT),
+                    ports=_ports(client.HTTP.pod_port),
                 ),
                 k8s.NetworkPolicyIngressRule(
                     # Grafana Operator's generated Deployment uses app=grafana.
                     from_=_from_namespace("monitoring", {"app": "grafana"}),
-                    ports=_ports(client.HTTP_PORT, _METRICS_PORT),
+                    ports=_ports(client.HTTP.pod_port, _METRICS.number),
                 ),
                 k8s.NetworkPolicyIngressRule(
                     from_=_from_namespace("monitoring", {"app.kubernetes.io/name": "alloy"}),
-                    ports=_ports(client.HTTP_PORT, _METRICS_PORT),
+                    ports=_ports(client.HTTP.pod_port, _METRICS.number),
                 ),
                 k8s.NetworkPolicyIngressRule(
                     from_=_from_namespace("langfuse", {"app.kubernetes.io/name": "langfuse"}),
-                    ports=_ports(client.HTTP_PORT, client.NATIVE_PORT),
+                    ports=_ports(client.HTTP.pod_port, client.NATIVE.pod_port),
                 ),
             ],
         ),
@@ -547,7 +539,7 @@ def networkpolicy_chart(app: App) -> Chart:
         "keeper",
         metadata=k8s.ObjectMeta(name="clickhouse-keeper-ingress", namespace=client.NAMESPACE),
         spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels=_KEEPER_LABELS),
+            pod_selector=k8s.LabelSelector(match_labels=_KEEPER.pods.selector),
             policy_types=["Ingress"],
             ingress=[k8s.NetworkPolicyIngressRule(from_=same_namespace)],
         ),

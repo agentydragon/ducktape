@@ -31,12 +31,27 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+
 NAME = "clickhouse"  # the ClickHouseInstallation and the Service clients connect through
 NAMESPACE = "clickhouse"
-HOST = f"{NAME}.{NAMESPACE}.svc.cluster.local"
 LABELS = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/instance": NAME}  # the installation's Pods
-NATIVE_PORT = 9000
-HTTP_PORT = 8123
+# The Service selects the operator's labels on a ready replica of the installation.
+_READY_REPLICAS = Pods(
+    namespace=NAMESPACE,
+    labels=(
+        ("clickhouse.altinity.com/app", "chop"),
+        ("clickhouse.altinity.com/chi", NAME),
+        ("clickhouse.altinity.com/namespace", NAMESPACE),
+        ("clickhouse.altinity.com/ready", "yes"),
+    ),
+)
+HTTP = ServiceRef(name=NAME, port=Port(name="http", number=8123), pods=_READY_REPLICAS)
+NATIVE = ServiceRef(name=NAME, port=Port(name="native", number=9000), pods=_READY_REPLICAS)
+# CLEANUP(added 2026-09-28): remove once nothing outside this module reads HOST or HTTP_PORT
+#   (aiquota.py, public_coder_proxy.py and test_public_coder_agent_config.py do today).
+HOST = HTTP.fqdn
+HTTP_PORT = HTTP.port.number
 SCHEMA_FILE = "schema.sql"  # the key of every schema ConfigMap, and the hand-written file it is generated from
 PASSWORD_KEY = "password"  # the key of every user's credentials Secret
 # public-coder's read-only account. Its credentials Secret (public-coder-credentials.sops.yaml) is
@@ -59,8 +74,8 @@ def queries_file_container(scope: Construct, name: str, *, schema: IConfigMap, c
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         command=["clickhouse-client"],
         args=[
-            f"--host={HOST}",
-            f"--port={NATIVE_PORT}",
+            f"--host={NATIVE.host}",
+            f"--port={NATIVE.port.number}",
             "--connect_timeout=10",
             "--receive_timeout=60",
             "--multiquery",

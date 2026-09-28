@@ -33,10 +33,10 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 NAME = "attic"
 NAMESPACE = "nix-cache"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/nix-cache"
-_PORT = 8080
-_SELECTOR = {"app.kubernetes.io/name": NAME}
 SERVICE = ServiceRef(
-    name=NAME, port=Port(name="http", number=_PORT), pods=Pods(namespace=NAMESPACE, labels=tuple(_SELECTOR.items()))
+    name=NAME,
+    port=Port(name="http", number=8080),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
 )
 _DB = "attic-db"
 # The operator mints the S3 key pair straight into this namespace (`_storage` below).
@@ -90,9 +90,9 @@ def _server(scope: Construct) -> None:
         metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
         spec=k8s.DeploymentSpec(
             replicas=1,
-            selector=k8s.LabelSelector(match_labels=_SELECTOR),
+            selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_SELECTOR),
+                metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     # Co-located with SeaweedFS and attic-db on OVH kimsufi workers.
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
@@ -123,19 +123,23 @@ def _server(scope: Construct) -> None:
                                 _S3.key("AWS_SECRET_ACCESS_KEY").env_var("AWS_SECRET_ACCESS_KEY"),
                             ],
                             args=["-f", "/config/server.toml", "--mode", "monolithic"],
-                            ports=[k8s.ContainerPort(name="http", container_port=_PORT, protocol="TCP")],
+                            ports=[SERVICE.port.k8s_container_port()],
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path="/config", read_only=True),
                                 k8s.VolumeMount(name="tmp", mount_path="/tmp"),
                             ],
                             liveness_probe=k8s.Probe(
-                                http_get=k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_string("http")),
+                                http_get=k8s.HttpGetAction(
+                                    path="/", port=k8s.IntOrString.from_string(SERVICE.port.name)
+                                ),
                                 initial_delay_seconds=10,
                                 period_seconds=30,
                                 timeout_seconds=5,
                             ),
                             readiness_probe=k8s.Probe(
-                                http_get=k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_string("http")),
+                                http_get=k8s.HttpGetAction(
+                                    path="/", port=k8s.IntOrString.from_string(SERVICE.port.name)
+                                ),
                                 initial_delay_seconds=5,
                                 period_seconds=10,
                                 timeout_seconds=3,
@@ -153,16 +157,8 @@ def _server(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(
-            type="ClusterIP",
-            ports=[
-                k8s.ServicePort(
-                    port=_PORT, target_port=k8s.IntOrString.from_string("http"), protocol="TCP", name="http"
-                )
-            ],
-            selector=_SELECTOR,
-        ),
+        metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAMESPACE),
+        spec=k8s.ServiceSpec(type="ClusterIP", ports=[SERVICE.port.k8s_service_port()], selector=SERVICE.pods.selector),
     )
     https_route(
         scope,
