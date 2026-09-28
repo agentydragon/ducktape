@@ -988,16 +988,29 @@ py_library(
 )
 
 py_library(
+    name = "agent_sandbox",
+    srcs = ["agent_sandbox.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/agent_sandbox:sandbox_template",
+        "//cluster/cdk8s/providers/agent_sandbox:sandbox_warm_pool",
+        "//cluster/cdk8s/providers/agent_sandbox:sandboxwarmpool",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "agent_workspaces",
     srcs = ["agent_workspaces.py"],
     deps = [
+        ":agent_sandbox",
         ":artifact_generators",
         ":flux",
         ":forgejo_images",
         ":manifest_roots",
         "//cluster/cdk8s/providers/agent_sandbox:sandbox_template",
         "//cluster/cdk8s/providers/agent_sandbox:sandboxtemplate",
-        "//cluster/cdk8s/providers/agent_sandbox:sandboxwarmpool",
         "//cluster/cdk8s/providers/kyverno:cleanuppolicy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -1564,8 +1577,10 @@ py_library(
         ":generation",
         ":manifest_roots",
         ":node_scheduling",
+        "//cluster/cdk8s/kubevirt:virtual_machine",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//cluster/cdk8s/providers/kubevirt:virtual_machine",
         "//cluster/cdk8s/providers/kubevirt:virtualmachine",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
