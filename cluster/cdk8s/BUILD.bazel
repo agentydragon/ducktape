@@ -65,11 +65,30 @@ py_library(
     srcs = ["helm.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        "//cluster/cdk8s/providers/flux:git_repository",
+        "//cluster/cdk8s/providers/flux:helm_release",
         "//cluster/cdk8s/providers/flux:helm_repository",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "@pypi//cdk8s",
         "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_helm",
+    srcs = ["test_helm.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":helm",
+        "//:conftest",
+        "//cluster/cdk8s/providers/flux:git_repository",
+        "//cluster/cdk8s/providers/flux:helm_repository",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
