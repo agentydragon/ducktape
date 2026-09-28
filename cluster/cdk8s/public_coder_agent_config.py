@@ -52,6 +52,7 @@ from cluster.cdk8s.openclaw_gateway import (
 )
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _CODEX_BY_ID = {model.id: model for model in GPT6_CODEX_MODELS}
 _DEFAULT_CODEX_MODEL = _CODEX_BY_ID["gpt-6-luna"]
@@ -60,6 +61,10 @@ _CONFIG_MAP_NAME = "public-coder-agent-config"
 _NAME = "public-coder-agent"
 NAMESPACE = "public-coder-agent"
 LABELS = {"app.kubernetes.io/name": _NAME}
+# The gateway the Authentik outpost proxies to.
+_SERVICE = ServiceRef(
+    name=_NAME, port=Port(name="gateway", number=18789), pods=Pods(namespace=NAMESPACE, labels=tuple(LABELS.items()))
+)
 _NAMESPACE_ANNOTATIONS = {
     "description": (
         "Second OpenClaw agent, egress-confined to a CONNECT proxy and reachable only through the Authentik proxy "
@@ -67,7 +72,6 @@ _NAMESPACE_ANNOTATIONS = {
     )
 }
 _IMAGE = "git.allegedly.works/ducktape-ci/public-coder-agent:unset"
-_GATEWAY_PORT = 18789
 _HOME = "/home/openclaw"
 _CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
 _STATE_CLAIM_NAME = "public-coder-agent-state-v2"
@@ -75,9 +79,7 @@ _DIAGNOSTICS_CLAIM_NAME = "public-coder-agent-diagnostics"
 _GATEWAY_PASSWORD = SecretRef(namespace=NAMESPACE, name="public-coder-agent-gateway-password")
 # Also the Matrix channel's `proxy` in config(): the same proxy performs Matrix login-password
 # substitution.
-_EGRESS_PROXY = (
-    f"http://{public_coder_proxy.NAME}.{public_coder_proxy.NAMESPACE}.svc.cluster.local:{public_coder_proxy.PROXY_PORT}"
-)
+_EGRESS_PROXY = public_coder_proxy.PROXY.url
 _KUBECONFIG_CONFIG_MAP_NAME = "public-coder-agent-kubeconfig"
 # Rendered by the kustomization.yaml's configMapGenerator.
 _SSH_CONFIG_MAP_NAME = "public-coder-agent-ssh"
@@ -476,7 +478,7 @@ def _openclaw_container() -> k8s.Container:
             _env("REQUESTS_CA_BUNDLE", _CA_BUNDLE),
             _env("PIP_CERT", _CA_BUNDLE),
         ],
-        ports=[k8s.ContainerPort(name="gateway", container_port=_GATEWAY_PORT)],
+        ports=[_SERVICE.port.k8s_container_port()],
         # Without this the Deployment reports 1/1 Running whenever a process exists, which hid
         # two different outages during the 2026.8.1 recovery: a gateway crash-looping every ~4
         # minutes, and one that started but never bound its port. /healthz answers 200
@@ -490,7 +492,7 @@ def _openclaw_container() -> k8s.Container:
         # that and never let it finish. A failing readiness probe restarts nothing; it just makes
         # "not serving yet" visible, which is the whole point.
         readiness_probe=k8s.Probe(
-            http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string("gateway")),
+            http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string(_SERVICE.port.name)),
             initial_delay_seconds=10,
             period_seconds=10,
             timeout_seconds=5,
@@ -548,15 +550,15 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE, labels=LABELS),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE, labels=_SERVICE.pods.selector),
         spec=k8s.DeploymentSpec(
             # Keep the replica count GitOps-owned; the worker-local state claim is selected by the
             # affinity and PVC declarations below.
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
-            selector=k8s.LabelSelector(match_labels=LABELS),
+            selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=LABELS),
+                metadata=k8s.ObjectMeta(labels=_SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     security_context=k8s.PodSecurityContext(fs_group=1000),
                     # Keep Public Coder on the worker class that serves its local state PVC; do
@@ -697,15 +699,8 @@ def _service(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(
-            selector=LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name="gateway", port=_GATEWAY_PORT, target_port=k8s.IntOrString.from_number(_GATEWAY_PORT)
-                )
-            ],
-        ),
+        metadata=k8s.ObjectMeta(name=_SERVICE.name, namespace=NAMESPACE),
+        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.port.k8s_service_port()]),
     )
 
 
@@ -729,7 +724,7 @@ def _network_policies(scope: Construct) -> None:
         "egress",
         metadata=k8s.ObjectMeta(name="public-coder-agent-egress", namespace=NAMESPACE),
         spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels=LABELS),
+            pod_selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
             policy_types=["Egress"],
             egress=[
                 # Scoped to kube-dns specifically: an unscoped port-53 rule lets the agent tunnel
@@ -740,8 +735,12 @@ def _network_policies(scope: Construct) -> None:
                     ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(53), protocol="UDP"), _tcp(53)],
                 ),
                 k8s.NetworkPolicyEgressRule(
-                    to=[k8s.NetworkPolicyPeer(pod_selector=k8s.LabelSelector(match_labels=public_coder_proxy.LABELS))],
-                    ports=[_tcp(public_coder_proxy.PROXY_PORT)],
+                    to=[
+                        k8s.NetworkPolicyPeer(
+                            pod_selector=k8s.LabelSelector(match_labels=public_coder_proxy.PROXY.pods.selector)
+                        )
+                    ],
+                    ports=[_tcp(public_coder_proxy.PROXY.pod_port)],
                 ),
                 # `ssh devbox`. Deliberately the piper and not the devbox itself: without a route
                 # to port 22 on the VM, terminating at the piper is the only way through, which is
@@ -749,9 +748,11 @@ def _network_policies(scope: Construct) -> None:
                 # argument as the proxy above.
                 k8s.NetworkPolicyEgressRule(
                     to=[
-                        k8s.NetworkPolicyPeer(pod_selector=k8s.LabelSelector(match_labels=public_coder_sshpiper.LABELS))
+                        k8s.NetworkPolicyPeer(
+                            pod_selector=k8s.LabelSelector(match_labels=public_coder_sshpiper.SERVICE.pods.selector)
+                        )
                     ],
-                    ports=[_tcp(public_coder_sshpiper.PORT)],
+                    ports=[_tcp(public_coder_sshpiper.SERVICE.pod_port)],
                 ),
                 k8s.NetworkPolicyEgressRule(
                     to=[_peer("litellm", {"app.kubernetes.io/name": "litellm"})], ports=[_tcp(4000)]
@@ -767,7 +768,7 @@ def _network_policies(scope: Construct) -> None:
         "ingress",
         metadata=k8s.ObjectMeta(name="public-coder-agent-ingress", namespace=NAMESPACE),
         spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels=LABELS),
+            pod_selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
             policy_types=["Ingress"],
             ingress=[
                 k8s.NetworkPolicyIngressRule(
@@ -777,7 +778,7 @@ def _network_policies(scope: Construct) -> None:
                             {"app.kubernetes.io/component": "server", "app.kubernetes.io/instance": "authentik"},
                         )
                     ],
-                    ports=[_tcp(_GATEWAY_PORT)],
+                    ports=[_tcp(_SERVICE.pod_port)],
                 )
             ],
         ),
